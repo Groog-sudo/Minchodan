@@ -1,12 +1,12 @@
 ---
 name: yolo-obstacle-detection
 description: |
-  서버에 전송된 실시간 카메라 프레임에서 YOLO26으로 킥보드·볼라드·계단 등 시각장애인 위험 사물을 탐지하고,
-  SegFormer로 노면 상태를 의미 분할하며, ByteTrack으로 객체를 추적한다.
+  서버에 전송된 실시간 카메라 프레임에서 Yolo 26N - Object Detection으로 킥보드·볼라드·계단 등 시각장애인 위험 사물을 탐지하고,
+  Yolo 26N - Segmentation으로 노면 상태를 분할하며, ByteTrack으로 객체를 추적한다.
   이중 게이트(Reflex Gate + Surface Gate)로 위험도를 1차 분류하는 듀얼헤드 파이프라인.
 ---
 
-# YOLO Obstacle Detection (3단계: AI 장애물 실시간 인식)  v1.1 핵심
+# Yolo 26N - Object Detection (3단계: AI 장애물 실시간 인식)  v1.1 핵심
 
 > **작성일**: 2026-06-24
 > **버전**: v0.2.0
@@ -15,14 +15,14 @@ description: |
 
 ## 개요
 
-2단계(프레임 수신)에서 받은 640x640 BGR 프레임을 **YOLO26**으로 추론하여 킥보드, 볼라드, 계단, 차량 등 위험 사물을 탐지하고, **SegFormer**로 노면 상태(보행 가능 영역, 횡단보도, 점자블록 파손 등)를 의미 분할하며, **ByteTrack**으로 Track ID를 부여한다. **이중 게이트**(Reflex Gate + Surface Gate) 룰로 위험도를 1차 분류한다.
+2단계(프레임 수신)에서 받은 640x640 BGR 프레임을 **Yolo 26N - Object Detection**으로 추론하여 킥보드, 볼라드, 계단, 차량 등 위험 사물을 탐지하고, **Yolo 26N - Segmentation**으로 노면 상태(보행 가능 영역, 횡단보도, 점자블록 파손 등)를 분할하며, **ByteTrack**으로 Track ID를 부여한다. **이중 게이트**(Reflex Gate + Surface Gate) 룰로 위험도를 1차 분류한다.
 
 ## v1.1 핵심 변경 사항
 
 | 항목 | 기존 | v1.1 |
 | --- | --- | --- |
-| 모델 | YOLOv8 | **YOLO26** (NMS-free, sm_120, 소형객체 최적화) |
-| 분할 | 없음 | **SegFormer** (semantic segmentation) |
+| 객체 탐지 | YOLOv8 | **Yolo 26N - Object Detection** (NMS-free, sm_120, 소형객체 최적화) |
+| 분할 | 없음 | **Yolo 26N - Segmentation** |
 | 게이트 | 단일 Risk Gate | **이중 게이트**: Reflex Gate (Detection) + Surface Gate (Seg) |
 | 노면 클래스 | 혼합 | **분리(C2)**: `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution` |
 | LLM 경유 | high도 LLM 거침 | **반사 경로 LLM 미경유** (비협상 원칙) |
@@ -30,7 +30,7 @@ description: |
 ## 전체 아키텍처 위치
 
 ```
-[모바일 카메라]  [2단계: 프레임 수신]  3단계: YOLO26 + SegFormer + ByteTrack + 이중 게이트
+[모바일 카메라]  [2단계: 프레임 수신]  3단계: Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트
                                              high  Reflex Gate  사전합성 클립 (LLM 미경유)
                                              P0 노면  Surface Gate  사전합성 클립 (LLM 미경유)
                                              mid/low  Redis Streams  5단계 RAG  6단계 LangGraph
@@ -44,8 +44,8 @@ description: |
 |------|----------|
 | Python | 3.13 |
 | GPU | Blackwell sm_120 (RTX 5090/5070 Ti), CUDA 12.8 + cu128 PyTorch 휠 |
-| 패키지 | `ultralytics>=8.3`, `transformers>=4.45`, `opencv-python>=4.10`, `redis>=5.0`, `bytetracker` |
-| 모델 파일 | `server/models/yolo26/det_weights.pt`, `server/models/segformer/segformer_weights/` |
+| 패키지 | `ultralytics>=8.3`, `opencv-python>=4.10`, `redis>=5.0`, `bytetracker` |
+| 모델 파일 | `server/models/yolo26n/object_detection.pt`, `server/models/yolo26n/segmentation.pt` |
 | Redis | 7 이상, Streams 지원 필수 |
 | 이전 단계 | 2단계에서 640x640 BGR numpy 배열이 전달되어야 함 |
 
@@ -54,8 +54,8 @@ description: |
 ```
 server/detection/
 ├── __init__.py
-├── yolo_detector.py          # YOLO26 모델 로딩 + 추론
-├── segformer_segmentor.py    # SegFormer 의미 분할
+├── yolo_detector.py          # Yolo 26N - Object Detection 로딩 + 추론
+├── yolo_segmentor.py         # Yolo 26N - Segmentation 로딩 + 추론
 ├── bytetrack_tracker.py      # ByteTrack 래퍼
 ├── schemas.py                # DetectionResult, SurfaceResult, RiskEvent 타입
 └── gates/
@@ -65,7 +65,7 @@ server/detection/
 
 ## 핵심 구현 절차
 
-### 단계 3-1. YOLO26 모델 로딩 (서버 시작 시 1회)
+### 단계 3-1. Yolo 26N - Object Detection 모델 로딩 (서버 시작 시 1회)
 
 ```python
 # -*- coding: utf-8 -*-
@@ -77,10 +77,10 @@ from ultralytics import YOLO
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
-# 가이드 3.3: 절대 경로 사용
+# 가이드 3.3: 실행 위치와 무관한 모델 경로 계산
 current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.dirname(os.path.dirname(current_dir))
-model_path = os.path.join(root_dir, "server", "models", "yolo26", "det_weights.pt")
+project_root = os.path.dirname(os.path.dirname(current_dir))
+model_path = os.path.join(project_root, "server", "models", "yolo26n", "object_detection.pt")
 
 model = YOLO(model_path)
 print(model.names)
@@ -90,7 +90,7 @@ print(model.names)
 - 모델은 **싱글턴**으로 유지 — 매 요청마다 재로딩 금지
 - `verify_gpu.py`로 `device_capability >= (12,0)` 사전 검증
 
-### 단계 3-2. YOLO26 추론 실행
+### 단계 3-2. Yolo 26N - Object Detection 추론 실행
 
 ```python
 results = model.predict(source=frame, conf=0.35, verbose=False)
@@ -101,27 +101,27 @@ boxes = result.boxes
 - `conf=0.35` — Confidence Threshold (design_note 기준)
 - `verbose=False` — 콘솔 로그 억제 (성능)
 
-### 단계 3-3. SegFormer 의미 분할
+### 단계 3-3. Yolo 26N - Segmentation 추론 실행
 
 ```python
 # -*- coding: utf-8 -*-
-# server/detection/segformer_segmentor.py
+# server/detection/yolo_segmentor.py
 import os
 import sys
-from transformers import SegformerForSemanticSegmentation, SegformerImageProcessor
+from ultralytics import YOLO
 
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
-# 가이드 3.3: 절대 경로 사용
+# 가이드 3.3: 실행 위치와 무관한 모델 경로 계산
 current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.dirname(os.path.dirname(current_dir))
-model_path = os.path.join(root_dir, "server", "models", "segformer", "segformer_weights")
+project_root = os.path.dirname(os.path.dirname(current_dir))
+model_path = os.path.join(project_root, "server", "models", "yolo26n", "segmentation.pt")
 
-segmentor = SegformerForSemanticSegmentation.from_pretrained(model_path)
-processor = SegformerImageProcessor(...)
-
-outputs = segmentor(pixel_values=processor(images=frame, return_tensors="pt").pixel_values)
+segmentor = YOLO(model_path)
+results = segmentor.predict(source=frame, conf=0.35, verbose=False)
+result = results[0]
+masks = result.masks if result.masks is not None else []
 # 노면 클래스: braille_normal, braille_damaged, sidewalk_normal, sidewalk_damaged, crosswalk, roadway, caution
 ```
 
@@ -306,7 +306,7 @@ class RiskEvent(BaseModel):
 | 항목 | 기대 결과 | 합격 기준 |
 |------|-----------|-----------|
 | 킥보드 탐지 | `conf>=0.87, track_id` | 추론 < 80ms |
-| SegFormer 분할 | 노면 마스크 생성 | 클래스 분리 확인 |
+| Yolo 26N - Segmentation | 노면 마스크 생성 | 클래스 분리 확인 |
 | Reflex Gate 분기 | 고위험+근접  alert_id+방향 | LLM 미경유 |
 | Surface Gate 분기 | P0 노면 하단  alert_id | LLM 미경유 |
 | Redis 컨텍스트 TTL | 30초 후 자동 삭제 | `exists`  False |

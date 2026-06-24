@@ -15,7 +15,7 @@ description: |
 
 ## 개요
 
-3단계(YOLO26 객체 탐지)에서 감지된 장애물 정보를 기반으로, 4단계에서 구축한 ChromaDB 로컬 벡터 DB에서 관련 행동 수칙을 **50ms 이내**에 검색하여 LangGraph 상태에 RAG 컨텍스트로 주입한다.
+3단계(Yolo 26N - Object Detection)에서 감지된 장애물 정보를 기반으로, 4단계에서 구축한 ChromaDB 로컬 벡터 DB에서 관련 행동 수칙을 **50ms 이내**에 검색하여 LangGraph 상태에 RAG 컨텍스트로 주입한다.
 
 ## 핵심 가치
 
@@ -26,7 +26,7 @@ description: |
 ## 시스템 내 위치
 
 ```
-[3단계: YOLO26 탐지]  detected_classes
+[3단계: Yolo 26N - Object Detection]  detected_classes
         
 [5단계: RAG 실시간 검색]  ChromaDB (4단계에서 구축)
         

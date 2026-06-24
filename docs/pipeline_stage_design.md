@@ -20,7 +20,7 @@ graph LR
     subgraph Reflex ["반사 경로 (목표 <300ms)"]
         R1["1단계 WS 연결"]
         R2["2단계 반사 캡처<br/>8~10fps"]
-        R3["3단계 YOLO26 + Gates<br/>(LLM 미경유)"]
+        R3["3단계 Yolo 26N - Object Detection + Gates<br/>(LLM 미경유)"]
         R7a["7단계 사전합성 클립<br/>선점 재생"]
         R1 --> R2 --> R3 --> R7a
     end
@@ -28,7 +28,7 @@ graph LR
     subgraph Cognitive ["인지 경로 (1~2Hz)"]
         C1["1단계 WS 연결"]
         C2["2단계 인지 캡처<br/>1~2fps"]
-        C3["3단계 YOLO26 + SegFormer<br/>mid/low 발행"]
+        C3["3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation<br/>mid/low 발행"]
         C4["4단계 RAG DB<br/>(오프라인)"]
         C5["5단계 RAG 검색"]
         C6["6단계 LangGraph<br/>L1/L2/L3"]
@@ -59,7 +59,7 @@ graph LR
 
 | 경로 | 흐름 | 목표 | 비고 |
 | --- | --- | --- | --- |
-| 반사 | 캡처  WS  YOLO26  Gate  사전합성 클립 재생 | **<300ms** (Detection 기준) | LLM/RAG/실시간 TTS 미경유 |
+| 반사 | 캡처  WS  Yolo 26N - Object Detection  Gate  사전합성 클립 재생 | **<300ms** (Detection 기준) | LLM/RAG/실시간 TTS 미경유 |
 | 인지 | 캡처  WS  탐지  Redis  RAG  LangGraph  TTS  재생 | 1~2Hz | 상세 가이드 |
 
 단계별 지연 목표:
@@ -92,7 +92,7 @@ graph LR
 
 ### 5.3 3단계 - AI 장애물 실시간 인식  핵심
 
-- YOLO26 Detection `predict(conf=0.35)` + SegFormer 분할 + ByteTrack 추적
+- Yolo 26N - Object Detection `predict(conf=0.35)` + Yolo 26N - Segmentation + ByteTrack 추적
 - **이중 게이트 (룰베이스, LLM 미경유)**:
   - Reflex Gate: 고위험 + 근접  `alert_id`+방향  반사 경로
   - Surface Gate: P0 노면 하단  `alert_id`  반사 경로

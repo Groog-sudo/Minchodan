@@ -200,8 +200,8 @@ def build_chroma_db(captions: list, persist_dir: str = "data/chroma_db"):
 
 | 메타데이터 필드 | 값 예시 | 3단계 클래스와의 관계 |
 | --- | --- | --- |
-| `objects` | `["kickboard", "bollard"]` | YOLO26 Detection 클래스와 일치 |
-| `scene_type` | `braille_damaged` | SegFormer 분할 클래스와 일치 |
+| `objects` | `["kickboard", "bollard"]` | Yolo 26N - Object Detection 클래스와 일치 |
+| `scene_type` | `braille_damaged` | Yolo 26N - Segmentation 클래스와 일치 |
 | `risk_level` | `high` / `mid` / `low` | Reflex/Surface Gate 위험도와 일치 |
 | `guidance_template` | `"전방 점자블록 파손, 우측으로 우회하세요"` | RAG 검색 결과 텍스트 |
 
