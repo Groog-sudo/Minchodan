@@ -10,8 +10,9 @@ description: |
 # TTS Voice Streamer (7단계: 음성 안내 출력, 이중 채널)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16, 17.2
 
 ## 개요
 
@@ -77,12 +78,18 @@ client/assets/reflex_clips/   # 사전합성 클립 앱 번들 (server/data와 �
 ### 단계 7-1. 인지 경로: 실시간 TTS 합성
 
 ```python
+# -*- coding: utf-8 -*-
 # server/tts/realtime_tts.py
+import base64
+import io
+import logging
+import sys
+
 import kokoro
 import soundfile as sf
-import io
-import base64
-import logging
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +121,13 @@ class RealtimeTTS:
 ### 단계 7-2. 반사 경로: 사전합성 클립 전송
 
 ```python
+# -*- coding: utf-8 -*-
 # server/tts/reflex_clip_sender.py
 import logging
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +168,13 @@ async def send_reflex_clip(websocket, device_id, alert_id: str, direction: str, 
 ### 단계 7-3. 중복 억제
 
 ```python
+# -*- coding: utf-8 -*-
 # server/tts/suppressor.py
+import sys
 import redis.asyncio as aioredis
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class Suppressor:
     """Redis setex(suppress:…, 60) 중복 억제"""
@@ -174,8 +191,13 @@ class Suppressor:
 ### 단계 7-4. TTSService 추상화
 
 ```python
+# -*- coding: utf-8 -*-
 # server/tts/tts_service.py
+import sys
 from typing import Protocol
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class TTSService(Protocol):
     """TTS 출력 규격 통일 추상화"""

@@ -1,13 +1,14 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 
 ## 문서 목록
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
 | 설계 노트 (원본) | [minchodan_design_note.md](minchodan_design_note.md) | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영 |
+| **코딩 패턴 기준** | [course_codebase_guide.md](course_codebase_guide.md) | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 에이전트 가이드 | [AGENTS.md](AGENTS.md) | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템 |
 | 시스템 아키텍처 | [architecture.md](architecture.md) | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수 |
 | API 명세서 | [api_specification.md](api_specification.md) | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷 |
@@ -24,10 +25,11 @@
 1. [`../README.md`](../README.md) - 프로젝트 개요 및 7단계 요약
 2. [`minchodan_design_note.md`](minchodan_design_note.md) - 7단계 상세 설계 (백본)
 3. [`AGENTS.md`](AGENTS.md) - 코딩·커뮤니케이션 규칙
-4. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
-5. [`api_specification.md`](api_specification.md) - WebSocket API 계약
-6. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
-7. [`test_specification.md`](test_specification.md) - 검증 기준
+4. [`course_codebase_guide.md`](course_codebase_guide.md) - **코딩 패턴·함수 시그니처 표준 (코딩 전 필수 참조)**
+5. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
+6. [`api_specification.md`](api_specification.md) - WebSocket API 계약
+7. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
+8. [`test_specification.md`](test_specification.md) - 검증 기준
 
 ---
 

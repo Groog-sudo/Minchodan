@@ -9,8 +9,9 @@ description: |
 # Yolo 26N - Object Detection (3단계: AI 장애물 실시간 인식)  v1.1 핵심
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 3단계 (v1.1 듀얼헤드 + 이중 게이트)
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 10, 9, 17.2
 
 ## 개요
 
@@ -67,10 +68,21 @@ server/detection/
 ### 단계 3-1. Yolo 26N - Object Detection 모델 로딩 (서버 시작 시 1회)
 
 ```python
+# -*- coding: utf-8 -*-
 # server/detection/yolo_detector.py
+import os
+import sys
 from ultralytics import YOLO
 
-model = YOLO("server/models/yolo26n/object_detection.pt")
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
+# 가이드 3.3: 실행 위치와 무관한 모델 경로 계산
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+model_path = os.path.join(project_root, "server", "models", "yolo26n", "object_detection.pt")
+
+model = YOLO(model_path)
 print(model.names)
 # 커스텀 클래스: kickboard, bollard, stair, car, truck, bus, ...
 ```
@@ -92,20 +104,37 @@ boxes = result.boxes
 ### 단계 3-3. Yolo 26N - Segmentation 추론 실행
 
 ```python
+# -*- coding: utf-8 -*-
 # server/detection/yolo_segmentor.py
+import os
+import sys
 from ultralytics import YOLO
 
-segmentor = YOLO("server/models/yolo26n/segmentation.pt")
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
+# 가이드 3.3: 실행 위치와 무관한 모델 경로 계산
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+model_path = os.path.join(project_root, "server", "models", "yolo26n", "segmentation.pt")
+
+segmentor = YOLO(model_path)
 results = segmentor.predict(source=frame, conf=0.35, verbose=False)
-masks = results[0].masks
+result = results[0]
+masks = result.masks if result.masks is not None else []
 # 노면 클래스: braille_normal, braille_damaged, sidewalk_normal, sidewalk_damaged, crosswalk, roadway, caution
 ```
 
 ### 단계 3-4. ByteTrack 객체 추적
 
 ```python
+# -*- coding: utf-8 -*-
 # server/detection/bytetrack_tracker.py
+import sys
 from bytetracker import ByteTracker
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 tracker = ByteTracker()
 tracks = tracker.update(detections, frame)
@@ -140,7 +169,12 @@ for track in tracks:
 ### 단계 3-6. Reflex Risk Gate (룰베이스, LLM 미경유)
 
 ```python
+# -*- coding: utf-8 -*-
 # server/detection/gates/reflex_gate.py
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 HIGH_RISK_CLASSES = {"car", "truck", "bus", "motorcycle"}
 PROXIMITY_THRESHOLD = 0.15  # 프레임 하단 면적 비율
@@ -167,7 +201,12 @@ def _estimate_direction(bbox, frame_width):
 ### 단계 3-7. Surface Fast-Alert Gate (룰베이스, LLM 미경유)
 
 ```python
+# -*- coding: utf-8 -*-
 # server/detection/gates/surface_gate.py
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 # P0 노면 클래스 (즉시 경보 대상)
 P0_SURFACE_CLASSES = {
@@ -228,9 +267,14 @@ def publish_to_cognitive_path(detection, risk):
 ## Pydantic 스키마
 
 ```python
+# -*- coding: utf-8 -*-
 # server/detection/schemas.py
-from pydantic import BaseModel
+import sys
 from typing import List, Optional
+from pydantic import BaseModel
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class BBox(BaseModel):
     x: float; y: float; w: float; h: float
