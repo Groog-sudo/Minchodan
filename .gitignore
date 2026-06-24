@@ -230,6 +230,7 @@ langgraph_checkpoints/
 
 **/.agents/
 **/.master_agents/
+.contexty/
 
 
 
