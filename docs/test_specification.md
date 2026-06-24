@@ -1,8 +1,8 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
-> **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`
+> **버전**: v0.2.0
+> **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md)
 
 ---
 

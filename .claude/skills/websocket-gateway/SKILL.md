@@ -9,8 +9,9 @@ description: |
 # WebSocket Gateway (1단계: 서버와 실시간 통신망 연결)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 1단계
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16.3, 17.2, 17.3
 
 ## 개요
 
@@ -78,18 +79,31 @@ websockets>=12.0
 ### 단계 1-2. config.py — 환경 설정
 
 ```python
+# -*- coding: utf-8 -*-
 # server/api/config.py
+import os
+import sys
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
+# 환경 변수 로드 (가이드 3.3, 3.4 준수)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(current_dir))
+env_path = os.path.join(root_dir, ".env")
+load_dotenv(dotenv_path=env_path)
 
 class Settings(BaseSettings):
-    WS_HOST: str = "0.0.0.0"
-    WS_PORT: int = 8000
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    HEARTBEAT_INTERVAL: int = 5      # 초 단위
-    HEARTBEAT_TIMEOUT: int = 5       # pong 응답 대기 시간
-    MAX_RECONNECT_ATTEMPTS: int = 3  # 클라이언트 재접속 최대 횟수
+    WS_HOST: str = os.getenv("WS_HOST", "0.0.0.0")
+    WS_PORT: int = int(os.getenv("WS_PORT", "8000"))
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    HEARTBEAT_INTERVAL: int = int(os.getenv("HEARTBEAT_INTERVAL", "5"))      # 초 단위
+    HEARTBEAT_TIMEOUT: int = int(os.getenv("HEARTBEAT_TIMEOUT", "5"))       # pong 응답 대기 시간
+    MAX_RECONNECT_ATTEMPTS: int = int(os.getenv("MAX_RECONNECT_ATTEMPTS", "3"))  # 클라이언트 재접속 최대 횟수
     CORS_ORIGINS: list[str] = ["*"]  # 개발 시 전체 허용, 운영 시 제한
 
     class Config:
@@ -101,11 +115,17 @@ settings = Settings()
 ### 단계 1-3. main.py — FastAPI 앱 인스턴스
 
 ```python
+# -*- coding: utf-8 -*-
 # server/main.py
+import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from server.api.ws_router import router as ws_router
+
 from server.api.config import settings
+from server.api.ws_router import router as ws_router
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 app = FastAPI(
     title="Minchodan 시각장애인 보행보조 AI - WebSocket Gateway",
@@ -130,10 +150,15 @@ async def health_check():
 ### 단계 1-4. schemas.py — 메시지 스키마
 
 ```python
+# -*- coding: utf-8 -*-
 # server/api/schemas.py
-from pydantic import BaseModel
-from typing import Optional, Any
+import sys
 from datetime import datetime
+from typing import Any, Optional
+from pydantic import BaseModel
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class WSMessage(BaseModel):
     type: str                        # "hello" | "ping" | "pong" | "detection" | "welcome" | "ack" | "alert_reflex" | "guide"
@@ -158,10 +183,15 @@ class AckMessage(BaseModel):
 ### 단계 1-5. session_manager.py — 연결 관리자
 
 ```python
+# -*- coding: utf-8 -*-
 # server/api/session_manager.py
-from fastapi import WebSocket
-from typing import Dict
 import logging
+import sys
+from typing import Dict
+from fastapi import WebSocket
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -195,8 +225,13 @@ manager = SessionManager()
 ### 단계 1-6. auth.py — 디바이스 토큰 검증
 
 ```python
+# -*- coding: utf-8 -*-
 # server/api/auth.py
 import logging
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -220,11 +255,16 @@ async def verify_device(device_id: str, token: str) -> bool:
 ### 단계 1-7. heartbeat.py — 하트비트 관리
 
 ```python
+# -*- coding: utf-8 -*-
 # server/api/heartbeat.py
 import asyncio
-import time
 import logging
+import sys
+import time
 from fastapi import WebSocket
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -263,17 +303,23 @@ class HeartbeatManager:
 ### 단계 1-8. ws_router.py — WebSocket 엔드포인트
 
 ```python
+# -*- coding: utf-8 -*-
 # server/api/ws_router.py
-import json
 import asyncio
-import logging
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from server.api.session_manager import manager
+import json
+import logging
+import sys
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+
 from server.api.auth import verify_device
-from server.api.heartbeat import HeartbeatManager
-from server.bus.redis_client import redis_bus
 from server.api.config import settings
+from server.api.heartbeat import HeartbeatManager
+from server.api.session_manager import manager
+from server.bus.redis_client import redis_bus
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

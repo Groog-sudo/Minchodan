@@ -1,8 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 1·2·7단계 인터페이스
+> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
 

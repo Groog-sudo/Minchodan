@@ -9,8 +9,9 @@ description: |
 # Camera Frame Capture (2단계: 카메라 화면 전송)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 9, 16, 17.2
 
 ## 개요
 
@@ -251,13 +252,19 @@ export function CameraView({ deviceId, token }: CameraViewProps) {
 ### 단계 2-4. frame_decoder.py — 프레임 디코딩
 
 ```python
+# -*- coding: utf-8 -*-
 # server/capture/frame_decoder.py
 import base64
-import logging
-import numpy as np
-import cv2
 from dataclasses import dataclass
+import logging
+import sys
 from typing import Optional
+
+import cv2
+import numpy as np
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -314,10 +321,16 @@ async def decode_frame(payload: dict) -> Optional[ProcessedFrame]:
 ### 단계 2-5. stream_splitter.py — 스트림 분기
 
 ```python
+# -*- coding: utf-8 -*-
 # server/capture/stream_splitter.py
 import logging
-from server.capture.frame_decoder import ProcessedFrame
+import sys
+
 from server.bus.redis_client import redis_bus
+from server.capture.frame_decoder import ProcessedFrame
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
