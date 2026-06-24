@@ -48,7 +48,7 @@ from pydantic_settings import BaseSettings
 
 class DetectionConfig(BaseSettings):
     # YOLO 설정
-    YOLO_MODEL_PATH: str = "models/det_weights.pt"
+    YOLO_MODEL_PATH: str = "models/yolo26n/object_detection.pt"
     YOLO_CONFIDENCE_THRESHOLD: float = 0.4
     YOLO_DEVICE: str = "cuda:0"  # "cpu" 로 폴백 가능
     YOLO_HALF_PRECISION: bool = True  # FP16 (GPU 전용)
@@ -149,7 +149,7 @@ from server.detection.detection_models import Detection, BBox, DetectionResult
 logger = logging.getLogger(__name__)
 
 class YOLODetector:
-    """YOLO26 기반 장애물 탐지기 — 서버 수명 주기 동안 싱글턴"""
+    """Yolo 26N - Object Detection 기반 장애물 탐지기 — 서버 수명 주기 동안 싱글턴"""
 
     _instance: Optional["YOLODetector"] = None
 
@@ -170,7 +170,7 @@ class YOLODetector:
             logger.info(f"YOLO 모델 로딩 완료: {self.config.YOLO_MODEL_PATH}")
         except Exception as e:
             logger.warning(f"커스텀 모델 로딩 실패, 기본 모델 다운로드: {e}")
-            self.model = YOLO("det_weights.pt")  # 자동 다운로드 폴백
+            self.model = YOLO("yolo26n.pt")  # 사전학습 모델 자동 다운로드 폴백
 
         # [3-2] 커스텀 클래스 확인
         self.class_names = self.model.names
@@ -848,7 +848,7 @@ class TestRiskGate:
 
 ## 5. 커스텀 YOLO 모델 학습 참고 (선택)
 
-시각장애인 보행에 특화된 클래스를 탐지하려면 커스텀 데이터셋으로 YOLO26을 파인튜닝할 수 있다.
+시각장애인 보행에 특화된 클래스를 탐지하려면 커스텀 데이터셋으로 Yolo 26N - Object Detection을 파인튜닝할 수 있다.
 
 ```yaml
 # data/custom_dataset.yaml
@@ -874,7 +874,7 @@ names:
 # scripts/train_custom.py
 from ultralytics import YOLO
 
-model = YOLO("det_weights.pt")  # 사전학습 모델 기반
+model = YOLO("yolo26n.pt")  # Yolo 26N - Object Detection 사전학습 모델 기반
 results = model.train(
     data="data/custom_dataset.yaml",
     epochs=100,

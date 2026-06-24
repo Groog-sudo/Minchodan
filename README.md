@@ -22,8 +22,8 @@
   ┌─────────────────── WebSocket /ws/detect ───────────────────┐
   │                                                            │
   ▼ 【즉시 경보 — LLM/RAG/실시간TTS 미경유】     ▼ 【인지 경로 — 1~2Hz】
-  YOLO26 Det  Reflex Gate (룰베이스)           YOLO26 Det + SegFormer
-  SegFormer   Surface Gate (룰베이스)           Redis Streams
+  Yolo 26N - Object Detection  Reflex Gate     Yolo 26N - Object Detection + Yolo 26N - Segmentation
+  Yolo 26N - Segmentation      Surface Gate    Redis Streams
         │ alert_id + 방향                         LangGraph L1/L2/L3 + RAG
         ▼                                          실시간 TTS
   단말: 사전합성 음성 즉시 재생 (선점)            단말: 상세 가이드 음성 재생
@@ -40,7 +40,7 @@
 | --- | --- | --- | --- |
 | 1 | 서버-앱 실시간 통신 (WebSocket) | FastAPI, uvicorn, asyncio | 양방향 echo, **RTT < 100ms** |
 | 2 | 카메라 화면 전송 (이중 캡처) | react-native-vision-camera, OpenCV | 640x640 수신, **캡처수신 < 50ms** |
-| 3 | AI 장애물 실시간 인식 (듀얼헤드) | YOLO26, SegFormer, ByteTrack | 킥보드 conf≈0.87, **Detection < 80ms** |
+| 3 | AI 장애물 실시간 인식 (듀얼헤드) | Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack | 킥보드 conf≈0.87, **Detection < 80ms** |
 | 4 | 위험 대처 수칙 DB 구축 (RAG 시드) | Ollama(Llava), ChromaDB, nomic-embed | collection ≥ 100, **Top-5 hit-rate ≥ 0.6** |
 | 5 | 실시간 대처 수칙 검색 (RAG) | ChromaDB | kickboard 쿼리 정합, **검색 < 50ms** |
 | 6 | 종합 회피 가이드 생성 (계층 LLM) | LangGraph, ChatOllama(Gemma2) | bollard 주입 시 20자 내·방향 포함 |
@@ -55,7 +55,7 @@
 ### 서버 (GPU 추론)
 
 - Python 3.13, FastAPI, uvicorn
-- Ultralytics YOLO26 (Detection), SegFormer (Semantic Segmentation)
+- Ultralytics Yolo 26N - Object Detection, Yolo 26N - Segmentation
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + 컨텍스트 TTL)
 - LangGraph + LangChain (L1/L2/L3 오케스트레이션)
@@ -92,7 +92,7 @@ Minchodan/
 ├── server/                          # GPU 서버 (FastAPI)
 │   ├── api/                         # WebSocket /ws/detect, 세션, 하트비트
 │   ├── capture/                     # 프레임 디코딩, 이중 스트림 분기
-│   ├── detection/                   # YOLO26, SegFormer, ByteTrack, Gates
+│   ├── detection/                   # Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack, Gates
 │   │   └── gates/                   # Reflex Gate, Surface Gate
 │   ├── rag/                         # Vector DB 구축·검색
 │   │   └── build/                   # 오프라인 배치 (캡셔닝, 임베딩)
@@ -101,8 +101,7 @@ Minchodan/
 │   ├── tts/                         # 실시간 TTS, 반사 클립 전송, 억제
 │   ├── bus/                         # Redis Streams 인터페이스
 │   └── models/                      # 모델 가중치 (git-ignore)
-│       ├── yolo26/
-│       └── segformer/
+│       └── yolo26n/
 │
 ├── client/                          # React Native 앱 (thin client)
 │   └── src/
@@ -126,7 +125,7 @@ Minchodan/
 │
 ├── training/                        # 모델 학습 (오프라인)
 │   ├── datasets/                    # detection, segmentation
-│   ├── configs/                     # yolo26_det.yaml, segformer_seg.yaml
+│   ├── configs/                     # yolo26n_detection.yaml, yolo26n_segmentation.yaml
 │   ├── train_detection.py
 │   ├── train_segmentation.py
 │   └── export_tensorrt.py
@@ -201,7 +200,7 @@ bash scripts/build_chroma.sh
 | `CHROMA_COLLECTION` | ChromaDB 컬렉션명 | `bidding_kb` |
 | `WS_PORT` | WebSocket 서버 포트 | `8000` |
 | `TTS_ENGINE` | TTS 엔진 (`kokoro` 또는 `coqui`) | `kokoro` |
-| `YOLO_CONF` | YOLO26 신뢰도 임계값 | `0.35` |
+| `YOLO_CONF` | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35` |
 | `FRAME_SIZE` | 프레임 리사이즈 크기 | `640` |
 | `REFLEX_FPS` | 반사 캡처 목표 fps | `10` |
 | `COGNITIVE_FPS` | 인지 캡처 목표 fps | `2` |

@@ -100,8 +100,8 @@ server/capture/
 
 | 스트림 | 목표 fps | 용도 | 후속 처리 |
 | --- | --- | --- | --- |
-| **반사 (reflex)** | 8~10fps | Detection 전용, 즉시 경보 | 3단계 YOLO26  Reflex Gate  사전합성 클립 |
-| **인지 (cognitive)** | 1~2fps | 상세 가이드 | 3단계 YOLO26+SegFormer  Redis Streams  LangGraph |
+| **반사 (reflex)** | 8~10fps | Detection 전용, 즉시 경보 | 3단계 Yolo 26N - Object Detection  Reflex Gate  사전합성 클립 |
+| **인지 (cognitive)** | 1~2fps | 상세 가이드 | 3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation  Redis Streams  LangGraph |
 
 ## 핵심 구현 절차 (React Native 앱 측)
 
@@ -324,7 +324,7 @@ logger = logging.getLogger(__name__)
 async def route_frame(processed: ProcessedFrame):
     """스트림 타입에 따라 Redis 발행 또는 즉시 탐지 경로로 전달"""
     if processed.stream == "reflex":
-        # 반사 스트림: 3단계 YOLO26 Detection 전용 (Reflex Gate 우선)
+        # 반사 스트림: 3단계 Yolo 26N - Object Detection 전용 (Reflex Gate 우선)
         await redis_bus.publish_event("risk.events", {
             "event_id": processed.event_id,
             "device_id": processed.device_id,
@@ -333,7 +333,7 @@ async def route_frame(processed: ProcessedFrame):
             "frame_hex": processed.frame.tobytes().hex(),
         })
     else:
-        # 인지 스트림: 3단계 YOLO26 + SegFormer (인지 경로)
+        # 인지 스트림: 3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation (인지 경로)
         await redis_bus.publish_event("risk.events", {
             "event_id": processed.event_id,
             "device_id": processed.device_id,

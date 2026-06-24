@@ -14,7 +14,7 @@ description: |
 
 ## 개요
 
-3단계(YOLO26)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 Gemma2 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
+3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 Gemma2 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
 
 ## 핵심 가치
 
@@ -25,7 +25,7 @@ description: |
 ## 시스템 내 위치
 
 ```
-[3단계: YOLO26 탐지]  detected_classes, risk_level
+[3단계: Yolo 26N - Object Detection]  detected_classes, risk_level
 [5단계: RAG 검색]  rag_context
         
 [6단계: LLM 가이드 오케스트레이터]
