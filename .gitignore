@@ -125,6 +125,9 @@ apikey.txt
 # Upload Files
 # ==========================================
 
+# 이미지 폴더
+**/images/*
+
 uploads/
 temp/
 tmp/
@@ -144,6 +147,9 @@ tmp/
 *.png
 *.jpg
 *.jpeg
+
+
+
 
 # ==========================================
 # Generated AI Results
@@ -205,3 +211,25 @@ langgraph_checkpoints/
 *.bak
 *.backup
 *.old
+
+# ==========================================
+# Repository structure placeholders
+# ==========================================
+
+# Keep scaffold directories that otherwise match generated-data rules.
+!server/rag/build/
+!server/rag/build/.gitkeep
+!data/chroma_db/
+!data/chroma_db/.gitkeep
+!training/datasets/detection/images/.gitkeep
+!training/datasets/segmentation/images/.gitkeep
+
+# ==========================================
+# 기타 등등...
+# ==========================================
+
+**/.agents/
+**/.master_agents/
+
+
+
