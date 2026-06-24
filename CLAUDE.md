@@ -3,8 +3,9 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
+> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
 
@@ -24,8 +25,8 @@
 
 * Language: Python 3.13
 * Framework: FastAPI, uvicorn, asyncio
-* Detection: Ultralytics YOLO26 (NMS-free, sm_120 최적화)
-* Segmentation: SegFormer (semantic segmentation)
+* Detection: Ultralytics Yolo 26N - Object Detection (NMS-free, sm_120 최적화)
+* Segmentation: Ultralytics Yolo 26N - Segmentation
 * Tracking: ByteTrack
 * Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
 * LLM Orchestration: LangGraph, LangChain
@@ -67,7 +68,7 @@
 * `server/`: GPU 추론 서버 (FastAPI)
   * `api/`: WebSocket `/ws/detect`, 세션 관리, 하트비트
   * `capture/`: 프레임 디코딩, 이중 스트림 분기
-  * `detection/`: YOLO26, SegFormer, ByteTrack, Gates
+  * `detection/`: Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack, Gates
   * `rag/`: Vector DB 구축(build/) 및 검색
   * `orchestration/`: LangGraph L1/L2/L3 (nodes/)
   * `tts/`: 실시간 TTS, 반사 클립 전송, 중복 억제
@@ -87,9 +88,16 @@
 
 ## 5. AI Coding Rules
 
+* **Coding Pattern Compliance**: 모든 Python 코드는 [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)의 코딩 패턴과 함수 시그니처 표준을 준수합니다. 특히 아래 항목은 필수 준수 대상입니다.
+  - **파일 헤더 인코딩** (guide 3.1): 모든 Python 파일 첫 줄에 UTF-8 선언 및 `sys.stdout.reconfigure` 패턴 포함.
+  - **임포트 순서** (guide 3.2): 표준 라이브러리 → 외부 라이브러리 → 로컬 모듈 순서로 정렬.
+  - **경로 처리** (guide 3.3): `os.path.dirname(os.path.abspath(__file__))` 기반 절대 경로 사용. 하드코딩 경로 금지.
+  - **환경 변수 로드** (guide 3.4): `load_dotenv()` + `os.getenv(..., default)` 패턴 적용.
+  - **방어적 코딩** (guide 17.2): None 가드레일, API 키 검증, Mock 폴백, 예외 후 루프 유지, 방어적 dict 접근 5종 패턴.
+  - **계층 분리** (guide 17.1): Router → Service → Repository 3계층 구조 (FastAPI 프로젝트).
 * No Emojis: 코드 주석, 커밋 메시지, 문서 내부에서 이모지 사용 금지.
 * Conciseness: 코드와 설명은 핵심 로직 위주로 간결하게 작성. 불필요한 서술 지양.
-* Pathing: 항상 프로젝트 루트(`D:\korea_IT\2025_LangChain_\Minchodan`) 기준의 경로 사용.
+* Pathing: 항상 프로젝트 루트(`./Minchodan`) 기준의 경로 사용.
 * UTF-8 Only: 문서, 스크립트, 설정 파일은 UTF-8로 저장.
 * LF Policy: 추적되는 텍스트 파일은 LF 줄바꿈을 기준으로 유지하고, Windows 로컬 Git은 `core.autocrlf=false`, `core.eol=lf`를 권장.
 * Defensive Coding: 프레임 버퍼/디코딩 결과가 `None`인 경우 반드시 가드레일 처리. 무탐지 시 에러 없이 빈 리스트 반환(파이프라인 영속성).
@@ -112,9 +120,9 @@
 
 ## 7. Git Branching Strategy
 
-* Branches: 3계층 구조 (`master` / `dev` / `[이니셜]`)를 엄격히 준수.
+* Branches: 3계층 구조 (`master` 또는 `main` / `dev` / `[이니셜]`)를 엄격히 준수.
 * Roles:
-  * `master`: 운영 기준선. 직접 push 금지.
+  * `master` 또는 `main`: 운영 기준선. 직접 push 금지.
   * `dev`: 통합 개발 및 머지 브랜치. 직접 push 금지.
   * `dg`, `jh`, `jy`, `kb`, `th`: 개별 개발 브랜치.
 * Compliance: 상세 내용은 [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md)를 참조하고, 모든 작업은 PR(Pull Request) 기반으로 진행.
@@ -129,7 +137,7 @@
 | --- | --- | --- | --- |
 | `websocket-gateway` | 1 | `.agents/skills/websocket-gateway/` | FastAPI WebSocket 실시간 통신, Redis Streams |
 | `camera-frame-capture` | 2 | `.agents/skills/camera-frame-capture/` | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송 |
-| `yolo-obstacle-detection` | 3 | `.agents/skills/yolo-obstacle-detection/` | YOLO26 + SegFormer + ByteTrack + 이중 게이트 |
+| `yolo-obstacle-detection` | 3 | `.agents/skills/yolo-obstacle-detection/` | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트 |
 | `rag-knowledge-builder` | 4 | `.agents/skills/rag-knowledge-builder/` | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드 |
 | `rag-realtime-search` | 5 | `.agents/skills/rag-realtime-search/` | similarity_search(k=5) < 50ms, VectorDBFactory |
 | `llm-guidance-orchestrator` | 6 | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑 |
@@ -144,6 +152,7 @@
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
 | 설계 노트 (원본) | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md) | 7단계 골격, 비전 v1.1 반영 |
+| **코딩 패턴 기준** | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md) | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스 | [`docs/README.md`](docs/README.md) | 문서 목록 및 권장 독해 순서 |
 | 시스템 아키텍처 | [`docs/architecture.md`](docs/architecture.md) | 이중 경로 구조, 컴포넌트 상세, 데이터 계약 |
 | API 명세서 | [`docs/api_specification.md`](docs/api_specification.md) | WebSocket `/ws/detect` 계약, 이벤트 타입 |

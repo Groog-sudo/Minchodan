@@ -1,8 +1,8 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
-> **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`
+> **버전**: v0.2.0
+> **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md)
 
 ---
 
@@ -10,7 +10,7 @@
 
 Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이 설계서대로 이어지는지 확인하는 데 목적이 있습니다.
 
-`단말 카메라 캡처  WebSocket 전송  프레임 디코딩  YOLO26/SegFormer 탐지·분할  이중 게이트 분기  (반사) 사전합성 클립 즉시 재생 / (인지) Redis Streams  LangGraph L1/L2/L3 + RAG  실시간 TTS  단말 재생`
+`단말 카메라 캡처  WebSocket 전송  프레임 디코딩  Yolo 26N - Object Detection / Yolo 26N - Segmentation  이중 게이트 분기  (반사) 사전합성 클립 즉시 재생 / (인지) Redis Streams  LangGraph L1/L2/L3 + RAG  실시간 TTS  단말 재생`
 
 핵심 검증 대상은 다음 7가지입니다.
 
@@ -30,7 +30,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 - 1~7단계 파이프라인 흐름
 - 반사/인지 이중 경로 분기
-- YOLO26 Detection + SegFormer 분할
+- Yolo 26N - Object Detection + Yolo 26N - Segmentation
 - ByteTrack 추적 + Redis 컨텍스트 TTL
 - ChromaDB 검색 품질
 - LangGraph L1/L2/L3 + Fallback
@@ -62,7 +62,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 ### 3.3 현재 설계를 기준으로 명세를 고정한다
 
 1. 반사 캡처는 8~10fps, 인지 캡처는 1~2fps입니다.
-2. YOLO26 신뢰도 임계값은 `conf=0.35`입니다.
+2. Yolo 26N - Object Detection 신뢰도 임계값은 `conf=0.35`입니다.
 3. 프레임 리사이즈 크기는 640x640입니다.
 4. 노면 클래스는 분리(C2)합니다 (`braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution`).
 5. L2 가이드는 한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함입니다.
@@ -77,7 +77,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 - OS: Windows + PowerShell
 - GPU: Blackwell sm_120 (RTX 5090 / 5070 Ti), CUDA 12.8 + cu128 PyTorch 휠
-- 서버 루트: `D:\korea_IT\2025_LangChain_\Minchodan`
+- 서버 루트: `./Minchodan`
 - Vector Store: 로컬 `data/chroma_db/`
 - 외부 의존성: Ollama(Gemma2:9b, Llava, nomic-embed-text), Redis, Kokoro/Coqui TTS
 
@@ -117,10 +117,10 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 | ID | 검증 항목 | 기준 | 상태 |
 | --- | --- | --- | --- |
-| TC-DET-001 | YOLO26 킥보드 추론 | `conf≈0.87` | 대기 |
+| TC-DET-001 | Yolo 26N - Object Detection 킥보드 추론 | `conf≈0.87` | 대기 |
 | TC-DET-002 | track_id 부여 | ByteTrack `update()`  track_id | 대기 |
 | TC-DET-003 | Detection 추론 지연 | **< 80ms** | 대기 |
-| TC-DET-004 | SegFormer 분할 마스크 | 노면 의미분할 마스크 생성 | 대기 |
+| TC-DET-004 | Yolo 26N - Segmentation 마스크 | 노면 의미분할 마스크 생성 | 대기 |
 | TC-DET-005 | Reflex Gate 분기 | 고위험+근접  `alert_id`+방향 | 대기 |
 | TC-DET-006 | Surface Gate 분기 | P0 노면 하단 검출  `alert_id` | 대기 |
 | TC-DET-007 | Redis 컨텍스트 TTL | 30초 후 Track ctx 키 자동 삭제 | 대기 |

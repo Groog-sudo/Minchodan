@@ -66,7 +66,8 @@
 │                 │                                        │
 │  ┌──────────────▼───────────────────────────┐           │
 │  │  10. cv2.resize(frame, (640, 640))       │           │
-│  │       YOLO26 입력 크기로 통일            │           │
+│  │ Yolo 26N - Object Detection 입력 통일    │           │
+│  │ Yolo 26N - Segmentation 입력 통일        │           │
 │  │      interpolation: INTER_LINEAR         │           │
 │  │      최종 shape: (640, 640, 3)           │           │
 │  └──────────────┬───────────────────────────┘           │
@@ -93,7 +94,7 @@
 | base64 인코딩 팽창률 | ×1.33 | 3바이트  4문자 |
 | 원본 JPEG 크기 | 약 30-50KB | 저품질 JPEG |
 | base64 문자열 크기 | 약 40-67KB | 원본 × 1.33 |
-| 목표 리사이즈 | 640×640 | YOLO26 표준 입력 |
+| 목표 리사이즈 | 640×640 | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 표준 입력 |
 | 리사이즈 후 JPEG 크기 | 약 20-40KB | 640×640 재인코딩 |
 
 ### 1.3 프레임 레이트 설계 근거
@@ -777,7 +778,7 @@ for stream, messages in events:
         np_buffer = np.frombuffer(jpeg_bytes, dtype=np.uint8)
         frame = cv2.imdecode(np_buffer, cv2.IMREAD_COLOR)
 
-        # YOLO26 추론
+        # Yolo 26N - Object Detection 추론
         results = yolo_model(frame)
         # ... 후속 처리 ...
 ```

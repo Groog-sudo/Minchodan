@@ -1,16 +1,17 @@
 # Minchodan Git 브랜칭 전략
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
+> **기준 문서**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 
 ---
 
 ## 1. 개요
 
-Minchodan 프로젝트는 3계층 브랜치 구조를 사용합니다. 모든 팀원은 자신의 개인 브랜치에서 작업하고, `dev` 브랜치를 거쳐 `master`에 반영합니다.
+Minchodan 프로젝트는 3계층 브랜치 구조를 사용합니다. 모든 팀원은 자신의 개인 브랜치에서 작업하고, `dev` 브랜치를 거쳐 `master` 또는 `main`에 반영합니다.
 
 ```text
-master          (운영 기준선, 직접 커밋 금지)
+master 또는 main (운영 기준선, 직접 커밋 금지)
   └── dev       (통합 개발 브랜치)
         ├── dg  (대근)
         ├── jh  (진형)
@@ -25,7 +26,7 @@ master          (운영 기준선, 직접 커밋 금지)
 
 | 브랜치 | 용도 | 보호 수준 | 병합 방식 |
 | --- | --- | --- | --- |
-| `master` | 운영 기준선. 배포 가능한 상태만 유지 | 보호됨 (직접 push 금지) | `dev`에서 병합 |
+| `master` 또는 `main` | 운영 기준선. 배포 가능한 상태만 유지 | 보호됨 (직접 push 금지) | `dev`에서 병합 |
 | `dev` | 통합 개발. 모든 기능이 모이는 곳 | 보호됨 (직접 push 금지) | 개인 브랜치 변경 사항 병합 |
 | `dg`, `jh`, `jy`, `kb`, `th` | 개인 작업 브랜치 | 자유 push | 자유 커밋 |
 
@@ -66,16 +67,16 @@ master          (운영 기준선, 직접 커밋 금지)
 2. 로컬에서 커밋 및 테스트
 3. 개인 브랜치 변경 사항을 dev에 반영
 4. 코드 리뷰 후 dev에 병합
-5. dev 안정성 확인 후 master에 반영
-6. master에 병합 (릴리스)
+5. dev 안정성 확인 후 master 또는 main에 반영
+6. master 또는 main에 병합 (릴리스)
 ```
 
 ### 4.2 처음 브랜치 생성 (최초 1회)
 
 ```bash
-# dev 브랜치 생성 (master 기준)
-git checkout master
-git pull origin master
+# dev 브랜치 생성 (master 또는 main 기준)
+git checkout master  # 또는: git checkout main
+git pull origin master  # 또는: git pull origin main
 git checkout -b dev
 git push -u origin dev
 
@@ -97,11 +98,11 @@ git checkout dg
 git merge dev        # dev 최신 반영
 # ... 코드 작성 ...
 git add .
-git commit -m "3단계: YOLO26 추론 래퍼 추가"
+git commit -m "3단계: Yolo 26N - Object Detection 래퍼 추가"
 git push origin dg
 
 # dev에 병합 (PR 기반)
-gh pr create --base dev --head dg --title "3단계 YOLO26 추론 래퍼"
+gh pr create --base dev --head dg --title "3단계 Yolo 26N - Object Detection 래퍼"
 ```
 
 ---
@@ -130,13 +131,13 @@ gh pr create --base dev --head dg --title "3단계 YOLO26 추론 래퍼"
 - 모든 `dev` 병합은 PR(Pull Request) 기반으로 진행합니다.
 - PR 제목은 작업 단계와 핵심 내용을 포함합니다.
 - PR 설명에 변경 파일과 검증 결과를 기재합니다.
-- `master` 병합은 `dev` 안정성 확인 후 별도 PR로 진행합니다.
+- `master` 또는 `main` 병합은 `dev` 안정성 확인 후 별도 PR로 진행합니다.
 
 ---
 
 ## 7. 주의 사항
 
-- `master`와 `dev`에 직접 push하지 않습니다.
+- 기본 브랜치(`master` 또는 `main`)와 `dev`에 직접 push하지 않습니다.
 - 이모지는 커밋 메시지·코드·문서 어디에도 사용하지 않습니다.
 - 작업 완료 후 [`README.md`](../README.md)의 **최근 변경 사항**을 업데이트합니다.
 - Windows 로컬 Git은 `core.autocrlf=false`, `core.eol=lf`를 권장합니다.

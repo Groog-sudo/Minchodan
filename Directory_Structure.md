@@ -21,8 +21,8 @@ guidedog-ai/
 │   │   └── stream_splitter.py       # 반사 스트림(8~10fps) / 인지 스트림(1~2fps) 분기
 │   │
 │   ├── detection/                   # ─── 3단계: 탐지·분할·게이트 ───
-│   │   ├── yolo_detector.py         # YOLO26 predict(conf=0.35), boxes 파싱
-│   │   ├── segformer_segmentor.py   # SegFormer 의미분할 마스크 생성
+│   │   ├── yolo_detector.py         # Yolo 26N - Object Detection predict(conf=0.35), boxes 파싱
+│   │   ├── yolo_segmentor.py        # Yolo 26N - Segmentation 마스크 생성
 │   │   ├── bytetrack_tracker.py     # ByteTrack update()  track_id 부여
 │   │   │
 │   │   ├── gates/
@@ -64,11 +64,9 @@ guidedog-ai/
 │   │   └── consumer.py              # xread 구독 — orchestration 진입
 │   │
 │   └── models/                      # 모델 파일 저장소 (git-ignore)
-│       ├── yolo26/
-│       │   ├── det_weights.pt       # YOLO26 Detection 가중치
-│       │   └── seg_weights.pt       # YOLO26-Seg (SegFormer 대체 옵션)
-│       └── segformer/
-│           └── segformer_weights/   # SegFormer 체크포인트
+│       └── yolo26n/
+│           ├── object_detection.pt  # Yolo 26N - Object Detection 가중치
+│           └── segmentation.pt      # Yolo 26N - Segmentation 가중치
 │
 ├── data/                            # ─── 학습·RAG 데이터 ───
 │   ├── raw/                         # AI Hub 보행자 데이터셋 (dataSetSn=18) 원본
@@ -83,15 +81,15 @@ guidedog-ai/
 │
 ├── training/                        # ─── 모델 학습 (오프라인) ───
 │   ├── datasets/
-│   │   ├── detection/               # YOLO26 학습 데이터 (labels/images)
+│   │   ├── detection/               # Yolo 26N - Object Detection 학습 데이터 (labels/images)
 │   │   │   ├── images/
 │   │   │   └── labels/
-│   │   └── segmentation/            # SegFormer 학습 데이터 (마스크)
+│   │   └── segmentation/            # Yolo 26N - Segmentation 학습 데이터 (labels/images)
 │   │       ├── images/
 │   │       └── masks/
 │   ├── configs/
-│   │   ├── yolo26_det.yaml          # 클래스: braille_normal, braille_damaged, crosswalk …
-│   │   └── segformer_seg.yaml       # sidewalk_normal, sidewalk_damaged, roadway …
+│   │   ├── yolo26n_detection.yaml   # 객체 탐지 클래스: kickboard, bollard, car …
+│   │   └── yolo26n_segmentation.yaml # 분할 클래스: braille_normal, sidewalk_damaged, roadway …
 │   ├── train_detection.py
 │   ├── train_segmentation.py
 │   └── export_tensorrt.py           # TRT 엔진 빌드 (데모 머신에서 실행)
