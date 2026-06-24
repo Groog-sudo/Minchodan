@@ -17,30 +17,30 @@ guidedog-ai/
 │   │   └── heartbeat.py             # 5초 ping/pong asyncio 루프
 │   │
 │   ├── capture/                     # ─── 2단계: 프레임 수신 ───
-│   │   ├── frame_decoder.py         # base64 → np.frombuffer → cv2.imdecode → resize(640,640)
+│   │   ├── frame_decoder.py         # base64  np.frombuffer  cv2.imdecode  resize(640,640)
 │   │   └── stream_splitter.py       # 반사 스트림(8~10fps) / 인지 스트림(1~2fps) 분기
 │   │
 │   ├── detection/                   # ─── 3단계: 탐지·분할·게이트 ───
 │   │   ├── yolo_detector.py         # YOLO26 predict(conf=0.35), boxes 파싱
 │   │   ├── segformer_segmentor.py   # SegFormer 의미분할 마스크 생성
-│   │   ├── bytetrack_tracker.py     # ByteTrack update() → track_id 부여
+│   │   ├── bytetrack_tracker.py     # ByteTrack update()  track_id 부여
 │   │   │
 │   │   ├── gates/
-│   │   │   ├── reflex_gate.py       # Reflex Risk Gate: 고위험 클래스 + 근접 → alert_id+방향
-│   │   │   └── surface_gate.py      # Surface Fast-Alert Gate: P0 노면 하단 검출 → alert_id
+│   │   │   ├── reflex_gate.py       # Reflex Risk Gate: 고위험 클래스 + 근접  alert_id+방향
+│   │   │   └── surface_gate.py      # Surface Fast-Alert Gate: P0 노면 하단 검출  alert_id
 │   │   │
 │   │   └── schemas.py               # DetectionResult, SurfaceResult, RiskEvent 타입
 │   │
 │   ├── rag/                         # ─── 4·5단계: Vector DB 구축·검색 ───
 │   │   ├── build/                   # 오프라인 배치 (4단계)
-│   │   │   ├── frame_extractor.py   # 영상 → 1fps 프레임 추출
+│   │   │   ├── frame_extractor.py   # 영상  1fps 프레임 추출
 │   │   │   ├── dedup_phash.py       # pHash 중복 제거
 │   │   │   ├── llava_captioner.py   # Ollama(Llava) 한글 캡셔닝
 │   │   │   └── db_builder.py        # Chroma.from_documents(persist_directory)
 │   │   │
 │   │   ├── retriever.py             # 5단계: similarity_search_with_score(k=5)
 │   │   ├── fallback.py              # 유사도 미달 시 룰 기반 fallback 문자열
-│   │   └── vector_db_factory.py     # [추상화] Chroma ↔ Qdrant 핫스왑
+│   │   └── vector_db_factory.py     # [추상화] Chroma  Qdrant 핫스왑
 │   │
 │   ├── orchestration/               # ─── 6단계: LangGraph L1/L2/L3 ───
 │   │   ├── state.py                 # OrchState TypedDict (event, risk_level, rag_context)
@@ -49,12 +49,12 @@ guidedog-ai/
 │   │   │   ├── l1_classifier.py     # L1: 룰 기반 위험도 분류 (mid/low만 진입)
 │   │   │   ├── l2_generator.py      # L2: ChatOllama(Gemma2) ainvoke — 20자/방향 포함
 │   │   │   ├── l3_validator.py      # L3: 길이·방향 키워드 검증, RETRY(최대 1회)
-│   │   │   └── fallback_node.py     # 최종 실패 → 고정 문장("전방 주의, 천천히 멈추세요")
-│   │   └── llm_client_factory.py    # [추상화] BaseChatModel — Ollama ↔ gpt-4o-mini 핫스왑
+│   │   │   └── fallback_node.py     # 최종 실패  고정 문장("전방 주의, 천천히 멈추세요")
+│   │   └── llm_client_factory.py    # [추상화] BaseChatModel — Ollama  gpt-4o-mini 핫스왑
 │   │
 │   ├── tts/                         # ─── 7단계: 음성 출력 (서버 측) ───
-│   │   ├── realtime_tts.py          # 인지 경로: Kokoro/Coqui generate() → base64 MP3
-│   │   ├── reflex_clip_sender.py    # 반사 경로: alert_id → 사전합성 클립 WS 고우선 전송
+│   │   ├── realtime_tts.py          # 인지 경로: Kokoro/Coqui generate()  base64 MP3
+│   │   ├── reflex_clip_sender.py    # 반사 경로: alert_id  사전합성 클립 WS 고우선 전송
 │   │   ├── suppressor.py            # Redis setex(suppress:…, 60) 중복 억제
 │   │   └── tts_service.py           # [추상화] TTSService — 출력 MP3/WAV 규격 통일
 │   │
@@ -72,7 +72,7 @@ guidedog-ai/
 │
 ├── data/                            # ─── 학습·RAG 데이터 ───
 │   ├── raw/                         # AI Hub 보행자 데이터셋 (dataSetSn=18) 원본
-│   ├── frames/                      # 영상 → 1fps 추출 프레임
+│   ├── frames/                      # 영상  1fps 추출 프레임
 │   ├── deduped/                     # pHash 중복 제거 후 프레임
 │   ├── captions/                    # Llava 캡셔닝 결과 JSON
 │   ├── chroma_db/                   # ChromaDB persist 디렉토리 (4단계 산출물)
@@ -103,7 +103,7 @@ guidedog-ai/
 │   │   │   ├── useWebSocket.ts      # 1단계: WS 연결·hello/welcome 핸드셰이크
 │   │   │   └── useCamera.ts         # 2단계: useCameraDevice('back') + 이중 타이머
 │   │   ├── services/
-│   │   │   ├── frameCapture.ts      # takePhoto({qualityPrioritization:'speed'}) → base64
+│   │   │   ├── frameCapture.ts      # takePhoto({qualityPrioritization:'speed'})  base64
 │   │   │   ├── audioPlayer.ts       # 7단계: decodeAudioData() Web Audio 재생
 │   │   │   └── reflexClipPlayer.ts  # 반사 클립 즉시 재생 (선점 로직)
 │   │   ├── components/
@@ -132,10 +132,10 @@ guidedog-ai/
 │
 ├── tests/
 │   ├── test_ws_echo.py              # 1단계: RTT < 100ms echo 검증
-│   ├── test_frame_decode.py         # 2단계: 캡처→수신 < 50ms 검증
+│   ├── test_frame_decode.py         # 2단계: 캡처수신 < 50ms 검증
 │   ├── test_detection.py            # 3단계: conf≈0.87, track_id, < 80ms 검증
 │   ├── test_rag_retrieval.py        # 5단계: kickboard 쿼리 < 50ms 검증
-│   ├── test_langgraph.py            # 6단계: bollard 주입 → 20자/방향 포함 검증
+│   ├── test_langgraph.py            # 6단계: bollard 주입  20자/방향 포함 검증
 │   └── test_tts_reflex.py           # 7단계: 반사 클립 선점 재생 검증
 │
 ├── docker/                          # ─── Docker Build & Setting ───

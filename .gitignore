@@ -228,7 +228,8 @@ langgraph_checkpoints/
 # 기타 등등...
 # ==========================================
 
-**/.agents/
+# .agents/ 하위는 Git에서 추적 (스킬, 에이전트 설정 공유)
+# 단 .master_agents/ 와 .contexty/ 는 제외
 **/.master_agents/
 .contexty/
 
