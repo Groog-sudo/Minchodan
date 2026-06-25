@@ -32,7 +32,7 @@ README를 처음부터 끝까지 읽고 다음을 파악합니다:
 - 7단계 파이프라인의 11개 필드 표준 양식
 - 각 단계의 핵심 절차, 활용 스택, 데이터 인터페이스, 의존성·예외
 - 분업 제안 및 MVP 스코프
-- 비전 설계서 v1.1 반영 사항 (YOLO26, SegFormer, 이중 게이트, 노면 클래스 분리)
+- 비전 설계서 v1.1 반영 사항 (Yolo 26N - Object Detection, Yolo 26N - Segmentation, 이중 게이트, 노면 클래스 분리)
 
 ---
 
@@ -42,7 +42,7 @@ README를 처음부터 끝까지 읽고 다음을 파악합니다:
 
 AGENTS.md를 읽고 다음을 숙지합니다:
 
-- 기술 스택 (FastAPI, YOLO26, SegFormer, LangGraph, Ollama)
+- 기술 스택 (FastAPI, Yolo 26N - Object Detection, Yolo 26N - Segmentation, LangGraph, Ollama)
 - 코딩 규칙 (이모지 금지, 간결한 코드, 프로젝트 루트 기준 경로)
 - 커뮤니케이션 규칙 (한국어 응답 필수)
 - Mermaid 및 Markdown 표준
@@ -53,13 +53,13 @@ AGENTS.md를 읽고 다음을 숙지합니다:
 
 작업 유형에 따라 아래 문서를 추가로 읽습니다:
 
-| 작업 유형 | 참조 문서 |
-| --- | --- |
-| 시스템 아키텍처 변경 | [`docs/architecture.md`](docs/architecture.md) |
-| 테스트 작성/수정 | [`docs/test_specification.md`](docs/test_specification.md) |
-| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md) |
-| 브랜치/PR 작업 | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) |
-| 문서 전체 인덱스 | [`docs/README.md`](docs/README.md) |
+| 작업 유형            | 참조 문서                                                          |
+| -------------------- | ------------------------------------------------------------------ |
+| 시스템 아키텍처 변경 | [`docs/architecture.md`](docs/architecture.md)                     |
+| 테스트 작성/수정     | [`docs/test_specification.md`](docs/test_specification.md)         |
+| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   |
+| 브랜치/PR 작업       | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) |
+| 문서 전체 인덱스     | [`docs/README.md`](docs/README.md)                                 |
 
 단계별 구현 작업은 아래 스킬 인덱스를 참조합니다.
 
@@ -69,15 +69,15 @@ AGENTS.md를 읽고 다음을 숙지합니다:
 
 각 스킬은 단계별 구현 가이드(SKILL.md)와 상세 레퍼런스(references/implementation_detail.md)를 포함합니다. 작업 시작 시 해당 스킬의 `SKILL.md`를 먼저 읽습니다.
 
-| 스킬 | 단계 | 경로 | 설명 |
-| --- | --- | --- | --- |
-| `websocket-gateway` | 1 | `.agents/skills/websocket-gateway/` | FastAPI WebSocket 실시간 통신, Redis Streams |
-| `camera-frame-capture` | 2 | `.agents/skills/camera-frame-capture/` | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송 |
-| `yolo-obstacle-detection` | 3 | `.agents/skills/yolo-obstacle-detection/` | YOLO26 + SegFormer + ByteTrack + 이중 게이트 |
-| `rag-knowledge-builder` | 4 | `.agents/skills/rag-knowledge-builder/` | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드 |
-| `rag-realtime-search` | 5 | `.agents/skills/rag-realtime-search/` | similarity_search(k=5) < 50ms, VectorDBFactory |
-| `llm-guidance-orchestrator` | 6 | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑 |
-| `tts-voice-streamer` | 7 | `.agents/skills/tts-voice-streamer/` | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점 |
+| 스킬                        | 단계 | 경로                                        | 설명                                                                            |
+| --------------------------- | ---- | ------------------------------------------- | ------------------------------------------------------------------------------- |
+| `websocket-gateway`         | 1    | `.agents/skills/websocket-gateway/`         | FastAPI WebSocket 실시간 통신, Redis Streams                                    |
+| `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송                                |
+| `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트 |
+| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드                             |
+| `rag-realtime-search`       | 5    | `.agents/skills/rag-realtime-search/`       | similarity_search(k=5) < 50ms, VectorDBFactory                                  |
+| `llm-guidance-orchestrator` | 6    | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑                                     |
+| `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점                                  |
 
 ---
 
@@ -87,19 +87,19 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 
 핵심 구조:
 
-| 계층 | 역할 |
-| --- | --- |
-| `server/` | GPU 추론 서버 (FastAPI, WebSocket, 탐지, RAG, LangGraph, TTS) |
-| `client/` | React Native thin client (카메라 캡처, 음성/햡틱 재생) |
-| `console/` | React 운영자 모니터링 콘솔 |
-| `data/` | 학습·RAG 데이터 (원본, 프레임, 캡션, ChromaDB, 반사 클립) |
-| `training/` | 모델 학습 (오프라인, YOLO26, SegFormer) |
-| `docker/` | Docker 구성 (Redis + Ollama + FastAPI) |
+| 계층        | 역할                                                                       |
+| ----------- | -------------------------------------------------------------------------- |
+| `server/`   | GPU 추론 서버 (FastAPI, WebSocket, 탐지, RAG, LangGraph, TTS)              |
+| `client/`   | React Native thin client (카메라 캡처, 음성/햡틱 재생)                     |
+| `console/`  | React 운영자 모니터링 콘솔                                                 |
+| `data/`     | 학습·RAG 데이터 (원본, 프레임, 캡션, ChromaDB, 반사 클립)                  |
+| `training/` | 모델 학습 (오프라인, Yolo 26N - Object Detection, Yolo 26N - Segmentation) |
+| `docker/`   | Docker 구성 (Redis + Ollama + FastAPI)                                     |
 
 이중 경로 원칙 (비협상):
 
 - **반사 경로**: 고위험 즉시 경보. LLM/RAG/실시간 TTS 미경유. 사전합성 음성 선점 재생. 목표 <300ms.
-- **인지 경로**: mid/low 위험 상세 가이드. Redis Streams  LangGraph L1/L2/L3 + RAG  실시간 TTS.
+- **인지 경로**: mid/low 위험 상세 가이드. Redis Streams LangGraph L1/L2/L3 + RAG 실시간 TTS.
 
 ---
 
@@ -140,8 +140,8 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 3. 사전 허가 없이 새로운 Python 라이브러리 추가 (`requirements.txt` 변경)
 4. `.env` 파일의 실제 값을 코드나 문서에 노출
 5. 반사 경로에 LLM/RAG/실시간 TTS를 경유시키는 설계 (비협상 원칙 위반)
-6. `master` 브랜치에 직접 push
-7. README의 최근 변경 사항을 업데이트하지 않고 주요 작업 완료 처리
+6. `master` 또는 `main` 브랜치에 직접 push
+7. `docs/changelogs/`에 changelog 파일을 작성하지 않고 주요 작업 완료 처리
 
 ---
 
@@ -154,4 +154,5 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 - [ ] `docs/AGENTS.md` 읽기 완료
 - [ ] 작업 유형에 맞는 추가 문서 참조 완료
 - [ ] 현재 프로젝트가 GPU/CUDA 환경에서 실행 가능한 상태인지 확인
-- [ ] 작업 완료 후 README 최근 변경 사항 업데이트 여부 확인
+- [ ] 작업 완료 후 `docs/changelogs/TEMPLATE.md`를 복사하여 changelog 파일 작성 여부 확인
+- [ ] `docs/changelogs/README.md` 파일 목록 테이블에 새 항목 추가 여부 확인

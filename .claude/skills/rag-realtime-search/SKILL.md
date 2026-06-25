@@ -9,12 +9,13 @@ description: |
 # RAG Realtime Search (5단계: 실시간 대처 수칙 검색)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 5단계
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 13, 17.2, 17.4
 
 ## 개요
 
-3단계(YOLO26 객체 탐지)에서 감지된 장애물 정보를 기반으로, 4단계에서 구축한 ChromaDB 로컬 벡터 DB에서 관련 행동 수칙을 **50ms 이내**에 검색하여 LangGraph 상태에 RAG 컨텍스트로 주입한다.
+3단계(Yolo 26N - Object Detection)에서 감지된 장애물 정보를 기반으로, 4단계에서 구축한 ChromaDB 로컬 벡터 DB에서 관련 행동 수칙을 **50ms 이내**에 검색하여 LangGraph 상태에 RAG 컨텍스트로 주입한다.
 
 ## 핵심 가치
 
@@ -25,7 +26,7 @@ description: |
 ## 시스템 내 위치
 
 ```
-[3단계: YOLO26 탐지]  detected_classes
+[3단계: Yolo 26N - Object Detection]  detected_classes
         
 [5단계: RAG 실시간 검색]  ChromaDB (4단계에서 구축)
         
@@ -56,10 +57,26 @@ server/rag/
 ### 단계 5-1. ChromaDB 로컬 인스턴스 로드 (읽기 전용)
 
 ```python
+# -*- coding: utf-8 -*-
 # server/rag/retriever.py
+import os
+import sys
+
 import chromadb
-from langchain_community.vectorstores import Chroma
+from dotenv import load_dotenv
 from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
+# 가이드 3.3, 3.4 준수: 절대 경로 및 환경 변수
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(current_dir))
+env_path = os.path.join(root_dir, ".env")
+load_dotenv(dotenv_path=env_path)
+
+db_path = os.path.join(root_dir, "data", "chroma_db")
 
 embeddings = OllamaEmbeddings(
     model="nomic-embed-text",
@@ -67,7 +84,7 @@ embeddings = OllamaEmbeddings(
 )
 
 vector_db = Chroma(
-    persist_directory="data/chroma_db",
+    persist_directory=db_path,
     embedding_function=embeddings,
     collection_name="safety_guidelines",
 )
@@ -140,7 +157,12 @@ async def search(detected_classes: list, positions: list = None) -> dict:
 ### 단계 5-4. Fallback 룰
 
 ```python
+# -*- coding: utf-8 -*-
 # server/rag/fallback.py
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 FALLBACK_RULES = {
     "car": "전방에 차량이 있습니다. 즉시 멈추고 차량이 지나갈 때까지 대기하세요.",
@@ -164,8 +186,13 @@ def get_fallback_guidance(detected_classes: list) -> str:
 ### 단계 5-5. VectorDBFactory 추상화
 
 ```python
+# -*- coding: utf-8 -*-
 # server/rag/vector_db_factory.py
+import sys
 from typing import Protocol
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class VectorStore(Protocol):
     def similarity_search_with_score(self, query: str, k: int): ...

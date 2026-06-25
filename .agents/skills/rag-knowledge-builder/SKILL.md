@@ -9,8 +9,9 @@ description: |
 # RAG Knowledge Builder (4단계: 위험 대처 수칙 DB 구축)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 4단계
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 13, 3.3, 17.2
 
 ## 개요
 
@@ -59,9 +60,14 @@ data/
 ### 단계 4-1. 프레임 샘플링 및 중복 제거
 
 ```python
+# -*- coding: utf-8 -*-
 # server/rag/build/frame_extractor.py
-import cv2
 from pathlib import Path
+import sys
+import cv2
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 def extract_frames(video_path: str, output_dir: str, fps: float = 1.0):
     """영상  1fps 프레임 추출"""
@@ -77,10 +83,16 @@ def extract_frames(video_path: str, output_dir: str, fps: float = 1.0):
 ```
 
 ```python
+# -*- coding: utf-8 -*-
 # server/rag/build/dedup_phash.py
-import imagehash
-from PIL import Image
 from pathlib import Path
+import sys
+
+from PIL import Image
+import imagehash
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 def dedup_frames(input_dir: str, output_dir: str, threshold: int = 5):
     """pHash 중복 제거 (유사도 threshold 이하는 제거)"""
@@ -101,10 +113,16 @@ def dedup_frames(input_dir: str, output_dir: str, threshold: int = 5):
 ### 단계 4-2. 로컬 VLM (Llava) 캡셔닝
 
 ```python
+# -*- coding: utf-8 -*-
 # server/rag/build/llava_captioner.py
 import base64
 import json
+import sys
+
 import requests
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 LLAVA_MODEL = "llava"
@@ -128,10 +146,24 @@ def caption_image(image_path: str) -> str:
 ### 단계 4-3. 로컬 임베딩 및 ChromaDB 인덱싱
 
 ```python
+# -*- coding: utf-8 -*-
 # server/rag/build/db_builder.py
+import os
+import sys
+
+from dotenv import load_dotenv
+from langchain.schema import Document
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain.schema import Document
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
+# 환경 변수 및 절대 경로 설정 (가이드 3.3, 3.4 준수)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+env_path = os.path.join(root_dir, ".env")
+load_dotenv(dotenv_path=env_path)
 
 embeddings = OllamaEmbeddings(
     model="nomic-embed-text",
@@ -168,8 +200,8 @@ def build_chroma_db(captions: list, persist_dir: str = "data/chroma_db"):
 
 | 메타데이터 필드 | 값 예시 | 3단계 클래스와의 관계 |
 | --- | --- | --- |
-| `objects` | `["kickboard", "bollard"]` | YOLO26 Detection 클래스와 일치 |
-| `scene_type` | `braille_damaged` | SegFormer 분할 클래스와 일치 |
+| `objects` | `["kickboard", "bollard"]` | Yolo 26N - Object Detection 클래스와 일치 |
+| `scene_type` | `braille_damaged` | Yolo 26N - Segmentation 클래스와 일치 |
 | `risk_level` | `high` / `mid` / `low` | Reflex/Surface Gate 위험도와 일치 |
 | `guidance_template` | `"전방 점자블록 파손, 우측으로 우회하세요"` | RAG 검색 결과 텍스트 |
 

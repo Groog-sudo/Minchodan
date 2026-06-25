@@ -9,8 +9,9 @@ description: |
 # Camera Frame Capture (2단계: 카메라 화면 전송)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 9, 16, 17.2
 
 ## 개요
 
@@ -100,8 +101,8 @@ server/capture/
 
 | 스트림 | 목표 fps | 용도 | 후속 처리 |
 | --- | --- | --- | --- |
-| **반사 (reflex)** | 8~10fps | Detection 전용, 즉시 경보 | 3단계 YOLO26  Reflex Gate  사전합성 클립 |
-| **인지 (cognitive)** | 1~2fps | 상세 가이드 | 3단계 YOLO26+SegFormer  Redis Streams  LangGraph |
+| **반사 (reflex)** | 8~10fps | Detection 전용, 즉시 경보 | 3단계 Yolo 26N - Object Detection  Reflex Gate  사전합성 클립 |
+| **인지 (cognitive)** | 1~2fps | 상세 가이드 | 3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation  Redis Streams  LangGraph |
 
 ## 핵심 구현 절차 (React Native 앱 측)
 
@@ -251,13 +252,19 @@ export function CameraView({ deviceId, token }: CameraViewProps) {
 ### 단계 2-4. frame_decoder.py — 프레임 디코딩
 
 ```python
+# -*- coding: utf-8 -*-
 # server/capture/frame_decoder.py
 import base64
-import logging
-import numpy as np
-import cv2
 from dataclasses import dataclass
+import logging
+import sys
 from typing import Optional
+
+import cv2
+import numpy as np
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -314,17 +321,23 @@ async def decode_frame(payload: dict) -> Optional[ProcessedFrame]:
 ### 단계 2-5. stream_splitter.py — 스트림 분기
 
 ```python
+# -*- coding: utf-8 -*-
 # server/capture/stream_splitter.py
 import logging
-from server.capture.frame_decoder import ProcessedFrame
+import sys
+
 from server.bus.redis_client import redis_bus
+from server.capture.frame_decoder import ProcessedFrame
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
 async def route_frame(processed: ProcessedFrame):
     """스트림 타입에 따라 Redis 발행 또는 즉시 탐지 경로로 전달"""
     if processed.stream == "reflex":
-        # 반사 스트림: 3단계 YOLO26 Detection 전용 (Reflex Gate 우선)
+        # 반사 스트림: 3단계 Yolo 26N - Object Detection 전용 (Reflex Gate 우선)
         await redis_bus.publish_event("risk.events", {
             "event_id": processed.event_id,
             "device_id": processed.device_id,
@@ -333,7 +346,7 @@ async def route_frame(processed: ProcessedFrame):
             "frame_hex": processed.frame.tobytes().hex(),
         })
     else:
-        # 인지 스트림: 3단계 YOLO26 + SegFormer (인지 경로)
+        # 인지 스트림: 3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation (인지 경로)
         await redis_bus.publish_event("risk.events", {
             "event_id": processed.event_id,
             "device_id": processed.device_id,

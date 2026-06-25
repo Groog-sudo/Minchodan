@@ -9,12 +9,13 @@ description: |
 # LLM Guidance Orchestrator (6단계: 종합 회피 가이드 생성)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
+> **버전**: v0.2.0
 > **설계 기준**: `docs/minchodan_design_note.md` 6단계
+> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 14, 12, 11, 17.2
 
 ## 개요
 
-3단계(YOLO26)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 Gemma2 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
+3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 Gemma2 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
 
 ## 핵심 가치
 
@@ -25,7 +26,7 @@ description: |
 ## 시스템 내 위치
 
 ```
-[3단계: YOLO26 탐지]  detected_classes, risk_level
+[3단계: Yolo 26N - Object Detection]  detected_classes, risk_level
 [5단계: RAG 검색]  rag_context
         
 [6단계: LLM 가이드 오케스트레이터]
@@ -87,8 +88,13 @@ server/orchestration/
 ### 단계 6-1. State 정의
 
 ```python
+# -*- coding: utf-8 -*-
 # server/orchestration/state.py
-from typing import TypedDict, List, Optional, Literal
+import sys
+from typing import List, Literal, Optional, TypedDict
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class OrchState(TypedDict, total=False):
     event: dict
@@ -109,7 +115,12 @@ class OrchState(TypedDict, total=False):
 ### 단계 6-2. L1 노드 — 룰 기반 위험도 분류
 
 ```python
+# -*- coding: utf-8 -*-
 # server/orchestration/nodes/l1_classifier.py
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 MID_RISK_CLASSES = {"bicycle", "kickboard", "pothole", "manhole", "construction_cone"}
 # high 위험도는 3단계 게이트에서 이미 반사 경로로 처리됨
@@ -128,13 +139,26 @@ async def l1_classifier_node(state: dict) -> dict:
 ### 단계 6-3. L2 노드 — Gemma2 가이드 생성
 
 ```python
+# -*- coding: utf-8 -*-
 # server/orchestration/llm_client_factory.py
+import os
+import sys
+
+from dotenv import load_dotenv
 from langchain_community.chat_models import ChatOllama
 from langchain_openai import ChatOpenAI
-import os
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
+# 환경 변수 및 절대 경로 설정 (가이드 3.3, 3.4 준수)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(current_dir))
+env_path = os.path.join(root_dir, ".env")
+load_dotenv(dotenv_path=env_path)
 
 class LLMClientFactory:
-    """BaseChatModel 핫스왑: Ollama  gpt-4o-mini"""
+    """BaseChatModel 핫스왑: Ollama / gpt-4o-mini"""
     _ollama: ChatOllama = None
     _openai: ChatOpenAI = None
 
@@ -147,7 +171,11 @@ class LLMClientFactory:
     @classmethod
     def get_openai(cls) -> ChatOpenAI:
         if cls._openai is None:
-            cls._openai = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, max_tokens=50, api_key=os.getenv("OPENAI_API_KEY", ""))
+            api_key = os.getenv("OPENAI_API_KEY", "")
+            # 가이드 17.2: API 키 부재 시 방어적 폴백
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
+            cls._openai = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, max_tokens=50, api_key=api_key)
         return cls._openai
 
     @classmethod
@@ -157,9 +185,16 @@ class LLMClientFactory:
 ```
 
 ```python
+# -*- coding: utf-8 -*-
 # server/orchestration/nodes/l2_generator.py
+import sys
+
 from langchain.schema import HumanMessage, SystemMessage
+
 from server.orchestration.llm_client_factory import LLMClientFactory
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 GUIDANCE_SYSTEM_PROMPT = """당신은 시각장애인 보행 보조 AI입니다.
 탐지된 장애물 정보와 안전 수칙을 바탕으로 즉각적인 회피 안내를 생성합니다.
@@ -196,7 +231,13 @@ def extract_direction(text: str) -> str:
 ### 단계 6-4. L3 노드 — 가드레일 검증
 
 ```python
+# -*- coding: utf-8 -*-
 # server/orchestration/nodes/l3_validator.py
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
 MAX_LEN = 20
 MAX_RETRY = 1
 
@@ -224,7 +265,13 @@ async def l3_validator_node(state: dict) -> dict:
 ### 단계 6-5. Fallback 노드
 
 ```python
+# -*- coding: utf-8 -*-
 # server/orchestration/nodes/fallback_node.py
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+
 # 최종 실패 시 고정 문장 반환
 FALLBACK_MESSAGE = "전방 주의, 천천히 멈추세요"
 
@@ -235,12 +282,19 @@ async def fallback_node(state: dict) -> dict:
 ### 단계 6-6. LangGraph StateGraph 조립
 
 ```python
+# -*- coding: utf-8 -*-
 # server/orchestration/graph.py
-from langgraph.graph import StateGraph, END
-from server.orchestration.state import OrchState
+import sys
+
+from langgraph.graph import END, StateGraph
+
 from server.orchestration.nodes.l1_classifier import l1_classifier_node
 from server.orchestration.nodes.l2_generator import l2_generator_node
 from server.orchestration.nodes.l3_validator import l3_validator_node
+from server.orchestration.state import OrchState
+
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 def route_after_l3(state: dict) -> str:
     if state.get("verified"): return "end"
