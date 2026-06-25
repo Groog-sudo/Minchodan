@@ -27,21 +27,21 @@ description: |
 
 ```
 [3단계: Yolo 26N - Object Detection]  detected_classes
-
+        
 [5단계: RAG 실시간 검색]  ChromaDB (4단계에서 구축)
-
+        
 [6단계: LangGraph 가이드 생성]  rag_context
 ```
 
 ## 기술 스택
 
-| 구성 요소   | 기술                    | 버전/모델               |
-| ----------- | ----------------------- | ----------------------- |
-| 벡터 DB     | ChromaDB                | >= 0.5.x                |
+| 구성 요소 | 기술 | 버전/모델 |
+|-----------|------|-----------|
+| 벡터 DB | ChromaDB | >= 0.5.x |
 | 임베딩 모델 | Ollama nomic-embed-text | nomic-embed-text:latest |
-| 유사도 측정 | Cosine Distance         | ChromaDB 기본값         |
-| 상태 관리   | LangGraph State         | langgraph >= 0.2.x      |
-| 추상화      | VectorDBFactory         | Chroma Qdrant 핫스왑    |
+| 유사도 측정 | Cosine Distance | ChromaDB 기본값 |
+| 상태 관리 | LangGraph State | langgraph >= 0.2.x |
+| 추상화 | VectorDBFactory | Chroma  Qdrant 핫스왑 |
 
 ## 디렉토리 구조 (Minchodan 기준)
 
@@ -92,7 +92,7 @@ vector_db = Chroma(
 
 > 서버 시작 시 워밍업 필수. 4단계에서 `data/chroma_db`에 데이터가 persist되어 있어야 함.
 
-### 단계 5-2. 탐지 클래스 검색 쿼리 변환
+### 단계 5-2. 탐지 클래스  검색 쿼리 변환
 
 ```python
 # server/rag/retriever.py (계속)
@@ -220,10 +220,10 @@ def create_vector_store(provider: str = "chroma", **kwargs) -> VectorStore:
 
 ## 데이터 인터페이스
 
-| 방향 | 페이로드                                                        |
-| ---- | --------------------------------------------------------------- |
-| In   | 탐지 클래스/쿼리(String)                                        |
-| Out  | 결합 컨텍스트(String) — LangGraph `state["rag_context"]`에 저장 |
+| 방향 | 페이로드 |
+| --- | --- |
+| In | 탐지 클래스/쿼리(String) |
+| Out | 결합 컨텍스트(String) — LangGraph `state["rag_context"]`에 저장 |
 
 ## 의존성·예외
 
@@ -232,23 +232,23 @@ def create_vector_store(provider: str = "chroma", **kwargs) -> VectorStore:
 
 ## 성능 최적화
 
-| 전략            | 설명                                          |
-| --------------- | --------------------------------------------- |
+| 전략 | 설명 |
+|------|------|
 | 싱글톤 인스턴스 | ChromaDB 인스턴스를 서버 수명 동안 1회만 생성 |
-| Top-K 제한      | k=5로 제한                                    |
-| 점수 필터링     | 임계값 미달 결과 제거                         |
-| 임베딩 캐싱     | 동일 쿼리 반복 시 캐싱 (LRU)                  |
+| Top-K 제한 | k=5로 제한 |
+| 점수 필터링 | 임계값 미달 결과 제거 |
+| 임베딩 캐싱 | 동일 쿼리 반복 시 캐싱 (LRU) |
 
 ## 테스트 체크리스트
 
-| 항목                | 기대 결과                                       | 합격 기준           |
-| ------------------- | ----------------------------------------------- | ------------------- |
-| 읽기 전용 로드      | `Chroma(persist_directory, embedding_function)` | 인스턴스 생성       |
-| kickboard 쿼리 정합 | 원본 수칙 일치 반환 + score 정상                | 정합 확인           |
-| **검색 지연**       | 전체 검색 소요                                  | **< 50ms**          |
-| k=5                 | 상위 5건 반환                                   | `len(results) <= 5` |
-| 미적중 fallback     | 디폴트 안내 문자열 반환                         | `is_fallback=True`  |
-| DB 손상 가드        | `FileNotFoundError` 시 안내 문자열              | 중단 없음           |
+| 항목 | 기대 결과 | 합격 기준 |
+|------|-----------|-----------|
+| 읽기 전용 로드 | `Chroma(persist_directory, embedding_function)` | 인스턴스 생성 |
+| kickboard 쿼리 정합 | 원본 수칙 일치 반환 + score 정상 | 정합 확인 |
+| **검색 지연** | 전체 검색 소요 | **< 50ms** |
+| k=5 | 상위 5건 반환 | `len(results) <= 5` |
+| 미적중 fallback | 디폴트 안내 문자열 반환 | `is_fallback=True` |
+| DB 손상 가드 | `FileNotFoundError` 시 안내 문자열 | 중단 없음 |
 
 ## 참고 자료
 
