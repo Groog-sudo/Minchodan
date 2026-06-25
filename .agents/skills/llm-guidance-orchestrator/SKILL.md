@@ -28,12 +28,12 @@ description: |
 ```
 [3단계: Yolo 26N - Object Detection]  detected_classes, risk_level
 [5단계: RAG 검색]  rag_context
-        
+
 [6단계: LLM 가이드 오케스트레이터]
    ├── L1: 룰 기반 위험도 분류 (high는 이미 반사 경로에서 처리됨, mid/low만 진입)
    ├── L2: ChatOllama(Gemma2) ainvoke — 20자/방향 포함
    └── L3: 가드레일 검증, RETRY(최대 1회)
-        
+
 [7단계: 실시간 TTS]  guidance_text
 ```
 
@@ -61,13 +61,13 @@ description: |
 
 ## 기술 스택
 
-| 구성 요소 | 기술 | 버전/모델 |
-|-----------|------|-----------|
-| LLM (기본) | Ollama Gemma2 | gemma2:9b |
-| LLM (Fallback) | OpenAI GPT-4o-mini | gpt-4o-mini |
-| 오케스트레이션 | LangGraph | >= 0.2.x |
-| LLM 래퍼 | LangChain ChatOllama / ChatOpenAI | langchain >= 0.3 |
-| 추상화 | LLMClientFactory | BaseChatModel 핫스왑 |
+| 구성 요소      | 기술                              | 버전/모델            |
+| -------------- | --------------------------------- | -------------------- |
+| LLM (기본)     | Ollama Gemma2                     | gemma2:9b            |
+| LLM (Fallback) | OpenAI GPT-4o-mini                | gpt-4o-mini          |
+| 오케스트레이션 | LangGraph                         | >= 0.2.x             |
+| LLM 래퍼       | LangChain ChatOllama / ChatOpenAI | langchain >= 0.3     |
+| 추상화         | LLMClientFactory                  | BaseChatModel 핫스왑 |
 
 ## 디렉토리 구조 (Minchodan 기준)
 
@@ -320,19 +320,19 @@ def get_orchestrator():
 
 ## 핫스왑 라우팅 (LLMClientFactory)
 
-| 조건 | 전환 |
-| --- | --- |
-| 기본 | ChatOllama(gemma2:9b) 로컬 |
-| L3 실패율 > 10% | gpt-4o-mini 자동 전환 |
-| `LLM_PROVIDER=openai` | gpt-4o-mini 강제 |
-| L3 최종 실패 | 고정 문장("전방 주의, 천천히 멈추세요") |
+| 조건                  | 전환                                    |
+| --------------------- | --------------------------------------- |
+| 기본                  | ChatOllama(gemma2:9b) 로컬              |
+| L3 실패율 > 10%       | gpt-4o-mini 자동 전환                   |
+| `LLM_PROVIDER=openai` | gpt-4o-mini 강제                        |
+| L3 최종 실패          | 고정 문장("전방 주의, 천천히 멈추세요") |
 
 ## 데이터 인터페이스
 
-| 방향 | 페이로드 |
-| --- | --- |
-| In | `OrchState{event, risk_level, rag_context}` |
-| Out | 가이드 문장(String) — 20자 내, 방향 포함 |
+| 방향 | 페이로드                                    |
+| ---- | ------------------------------------------- |
+| In   | `OrchState{event, risk_level, rag_context}` |
+| Out  | 가이드 문장(String) — 20자 내, 방향 포함    |
 
 ## 의존성·예외
 
@@ -341,16 +341,16 @@ def get_orchestrator():
 
 ## 테스트 체크리스트
 
-| 항목 | 기대 결과 | 합격 기준 |
-|------|-----------|-----------|
-| bollard 주입 가이드 | 20자 내 안내 정상 적재 | 길이 <= 20 |
-| 방향 키워드 포함 | 좌/우/직진/정지 중 하나 | 키워드 존재 |
-| L1 위험도 분류 | high 제외, mid/low만 진입 | high 진입 안 함 |
-| L2 Gemma2 ainvoke | 한국어 1문장 생성 | 한국어 포함 |
-| L3 검증 + RETRY | 위반 시 RETRY(최대 1회) | retry_count <= 1 |
-| Fallback 고정 문장 | 최종 실패 시 "전방 주의, 천천히 멈추세요" | 문장 일치 |
-| 조건부 분기 | StateGraph 엣지 정상 | END 도달 |
-| API 장애 디폴트 | Rate Limit 시 디폴트 수칙 반환 | 중단 없음 |
+| 항목                | 기대 결과                                 | 합격 기준        |
+| ------------------- | ----------------------------------------- | ---------------- |
+| bollard 주입 가이드 | 20자 내 안내 정상 적재                    | 길이 <= 20       |
+| 방향 키워드 포함    | 좌/우/직진/정지 중 하나                   | 키워드 존재      |
+| L1 위험도 분류      | high 제외, mid/low만 진입                 | high 진입 안 함  |
+| L2 Gemma2 ainvoke   | 한국어 1문장 생성                         | 한국어 포함      |
+| L3 검증 + RETRY     | 위반 시 RETRY(최대 1회)                   | retry_count <= 1 |
+| Fallback 고정 문장  | 최종 실패 시 "전방 주의, 천천히 멈추세요" | 문장 일치        |
+| 조건부 분기         | StateGraph 엣지 정상                      | END 도달         |
+| API 장애 디폴트     | Rate Limit 시 디폴트 수칙 반환            | 중단 없음        |
 
 ## 참고 자료
 

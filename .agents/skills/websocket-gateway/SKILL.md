@@ -33,13 +33,13 @@ description: |
 
 ## 기술 스택
 
-| 구분 | 기술 | 용도 |
-|------|------|------|
-| 서버 프레임워크 | FastAPI + Uvicorn | 비동기 WebSocket 서버 |
-| 메시지 버스 | Redis 7 (Streams) | 내부 모듈 간 이벤트 전달 |
-| 프로토콜 | WebSocket (RFC 6455) | 양방향 실시간 통신 |
-| 앱 클라이언트 | React Native WebSocket API | 모바일 앱 통신 |
-| 컨테이너 | Docker (redis:7-alpine) | Redis 실행 환경 |
+| 구분            | 기술                       | 용도                     |
+| --------------- | -------------------------- | ------------------------ |
+| 서버 프레임워크 | FastAPI + Uvicorn          | 비동기 WebSocket 서버    |
+| 메시지 버스     | Redis 7 (Streams)          | 내부 모듈 간 이벤트 전달 |
+| 프로토콜        | WebSocket (RFC 6455)       | 양방향 실시간 통신       |
+| 앱 클라이언트   | React Native WebSocket API | 모바일 앱 통신           |
+| 컨테이너        | Docker (redis:7-alpine)    | Redis 실행 환경          |
 
 ## 디렉토리 구조 (Minchodan 기준)
 
@@ -416,32 +416,34 @@ uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 
 ```typescript
 // client/src/hooks/useWebSocket.ts
-import { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect, useState } from "react";
 
-const WS_URL = 'ws://서버IP:8000/ws/detect';
+const WS_URL = "ws://서버IP:8000/ws/detect";
 const MAX_RECONNECT = 3;
 const RECONNECT_DELAY = 1000;
 const HEARTBEAT_INTERVAL = 5000;
 
-type WSStatus = 'connecting' | 'connected' | 'disconnected' | 'fallback';
+type WSStatus = "connecting" | "connected" | "disconnected" | "fallback";
 
 export function useWebSocket(deviceId: string, token: string) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectCount = useRef(0);
   const heartbeatTimer = useRef<NodeJS.Timeout | null>(null);
-  const [status, setStatus] = useState<WSStatus>('disconnected');
+  const [status, setStatus] = useState<WSStatus>("disconnected");
 
   const connect = useCallback(() => {
     const ws = new WebSocket(`${WS_URL}?device_id=${deviceId}`);
     wsRef.current = ws;
-    setStatus('connecting');
+    setStatus("connecting");
 
     ws.onopen = () => {
       reconnectCount.current = 0;
-      ws.send(JSON.stringify({ type: 'hello', device_id: deviceId, token: token }));
+      ws.send(
+        JSON.stringify({ type: "hello", device_id: deviceId, token: token }),
+      );
       heartbeatTimer.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+          ws.send(JSON.stringify({ type: "ping", ts: Date.now() }));
         }
       }, HEARTBEAT_INTERVAL);
     };
@@ -449,28 +451,41 @@ export function useWebSocket(deviceId: string, token: string) {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       switch (data.type) {
-        case 'welcome': setStatus('connected'); break;
-        case 'auth_ok': break;
-        case 'pong': break;
-        case 'ping': ws.send(JSON.stringify({ type: 'pong', ts: Date.now() })); break;
-        case 'ack': break;
-        case 'alert_reflex': handleAlertReflex(data); break;
-        case 'guide': handleGuide(data); break;
+        case "welcome":
+          setStatus("connected");
+          break;
+        case "auth_ok":
+          break;
+        case "pong":
+          break;
+        case "ping":
+          ws.send(JSON.stringify({ type: "pong", ts: Date.now() }));
+          break;
+        case "ack":
+          break;
+        case "alert_reflex":
+          handleAlertReflex(data);
+          break;
+        case "guide":
+          handleGuide(data);
+          break;
       }
     };
 
     ws.onclose = () => {
-      setStatus('disconnected');
+      setStatus("disconnected");
       if (heartbeatTimer.current) clearInterval(heartbeatTimer.current);
       if (reconnectCount.current < MAX_RECONNECT) {
         reconnectCount.current += 1;
         setTimeout(connect, RECONNECT_DELAY);
       } else {
-        setStatus('fallback');
+        setStatus("fallback");
       }
     };
 
-    ws.onerror = (error) => { console.error('[WS] 오류:', error); };
+    ws.onerror = (error) => {
+      console.error("[WS] 오류:", error);
+    };
   }, [deviceId, token]);
 
   const send = useCallback((data: object) => {
@@ -493,37 +508,37 @@ export function useWebSocket(deviceId: string, token: string) {
 
 ## 데이터 인터페이스
 
-| 방향 | 페이로드 |
-| --- | --- |
-| In (hello) | `{type:"hello", device_id, token}` |
-| Out (welcome) | `{type:"welcome", session_id, server_time}` |
-| Out (auth_ok) | `{type:"auth_ok", device_id}` |
-| In (detection) | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream, thumbnail_jpeg_b64}}` |
-| Out (ack) | `{type:"ack", event_id, received_at}` |
-| Out (alert_reflex) | `{type:"alert_reflex", event_id, alert_id, direction, risk_level, clip, haptic, ts}` |
-| Out (guide) | `{type:"guide", event_id, risk_level, guidance_text, audio_mp3_b64, ts}` |
+| 방향               | 페이로드                                                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| In (hello)         | `{type:"hello", device_id, token}`                                                            |
+| Out (welcome)      | `{type:"welcome", session_id, server_time}`                                                   |
+| Out (auth_ok)      | `{type:"auth_ok", device_id}`                                                                 |
+| In (detection)     | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream, thumbnail_jpeg_b64}}` |
+| Out (ack)          | `{type:"ack", event_id, received_at}`                                                         |
+| Out (alert_reflex) | `{type:"alert_reflex", event_id, alert_id, direction, risk_level, clip, haptic, ts}`          |
+| Out (guide)        | `{type:"guide", event_id, risk_level, guidance_text, audio_mp3_b64, ts}`                      |
 
 ## 테스트 체크리스트
 
-| 항목 | 기대 결과 | 합격 기준 |
-|------|-----------|-----------|
-| 연결 수립 | welcome 메시지 수신 | 3초 이내 |
-| hello/인증 | auth_ok 응답 | 토큰 일치 시 성공 |
-| 하트비트 | pingpong 왕복 | 5초 간격, RTT < 100ms |
-| 메시지 echo | 앱서버앱 왕복 | **RTT < 100ms** |
-| 연결 끊김 복구 | 자동 재연결 | 3회 이내 성공 |
-| Redis 발행 | xadd 성공 | 메시지 ID 반환 |
-| WebSocketDisconnect | 소켓 close + 리소스 해제 | 예외 없이 정리 |
+| 항목                | 기대 결과                | 합격 기준             |
+| ------------------- | ------------------------ | --------------------- |
+| 연결 수립           | welcome 메시지 수신      | 3초 이내              |
+| hello/인증          | auth_ok 응답             | 토큰 일치 시 성공     |
+| 하트비트            | pingpong 왕복            | 5초 간격, RTT < 100ms |
+| 메시지 echo         | 앱서버앱 왕복            | **RTT < 100ms**       |
+| 연결 끊김 복구      | 자동 재연결              | 3회 이내 성공         |
+| Redis 발행          | xadd 성공                | 메시지 ID 반환        |
+| WebSocketDisconnect | 소켓 close + 리소스 해제 | 예외 없이 정리        |
 
 ## Redis Streams 활용 로드맵
 
-| 단계 | 용도 | 핵심 명령 |
-|------|------|-----------|
-| 1단계 (본 스킬) | 이벤트 발행 | `xadd risk.events {...}` |
-| 3단계 | 컨텍스트 캐싱 (TTL=30초) | `hset ctx:{track_id} ...` + `expire 30` |
-| 3단계 | mid/low 발행 | `xadd risk.events {...}` |
-| 6단계 | Consumer Group 재처리 | `xgroup create`, `xreadgroup` |
-| 7단계 | 중복 알림 억제 | `setex suppress:{alert_id} 60 ""` |
+| 단계            | 용도                     | 핵심 명령                               |
+| --------------- | ------------------------ | --------------------------------------- |
+| 1단계 (본 스킬) | 이벤트 발행              | `xadd risk.events {...}`                |
+| 3단계           | 컨텍스트 캐싱 (TTL=30초) | `hset ctx:{track_id} ...` + `expire 30` |
+| 3단계           | mid/low 발행             | `xadd risk.events {...}`                |
+| 6단계           | Consumer Group 재처리    | `xgroup create`, `xreadgroup`           |
+| 7단계           | 중복 알림 억제           | `setex suppress:{alert_id} 60 ""`       |
 
 ## 참고 자료
 

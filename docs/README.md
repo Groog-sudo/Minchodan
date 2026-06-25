@@ -5,18 +5,19 @@
 
 ## 문서 목록
 
-| 문서 | 파일 | 설명 |
-| --- | --- | --- |
-| 설계 노트 (원본) | [minchodan_design_note.md](minchodan_design_note.md) | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영 |
-| **코딩 패턴 기준** | [course_codebase_guide.md](course_codebase_guide.md) | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
-| 에이전트 가이드 | [AGENTS.md](AGENTS.md) | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템 |
-| 시스템 아키텍처 | [architecture.md](architecture.md) | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수 |
-| API 명세서 | [api_specification.md](api_specification.md) | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷 |
-| 테스트 명세서 | [test_specification.md](test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
-| Git 브랜칭 전략 | [git_branching_strategy.md](git_branching_strategy.md) | 3계층 브랜치 구조(`master` 또는 `main` / `dev` / 개인), 작업 규칙 |
-| 파이프라인 단계 설계 | [pipeline_stage_design.md](pipeline_stage_design.md) | 7단계 run mode, 종단 지연 목표, 추상화 지점 |
-| 디렉토리 구조 | [../directory_Structure.md](../directory_Structure.md) | 계획된 물리적 폴더 구조 |
-| 에이전트 스킬 | [../skills.md](../skills.md) | 시작 시퀀스, 문서 규칙, 금지 행위 |
+| 문서                 | 파일                                                   | 설명                                                              |
+| -------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| 설계 노트 (원본)     | [minchodan_design_note.md](minchodan_design_note.md)   | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영                      |
+| **코딩 패턴 기준**   | [course_codebase_guide.md](course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| 에이전트 가이드      | [AGENTS.md](AGENTS.md)                                 | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템                  |
+| 시스템 아키텍처      | [architecture.md](architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수             |
+| API 명세서           | [api_specification.md](api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷             |
+| 테스트 명세서        | [test_specification.md](test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑                |
+| Git 브랜칭 전략      | [git_branching_strategy.md](git_branching_strategy.md) | 3계층 브랜치 구조(`master` 또는 `main` / `dev` / 개인), 작업 규칙 |
+| 파이프라인 단계 설계 | [pipeline_stage_design.md](pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
+| **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
+| 디렉토리 구조        | [../directory_Structure.md](../directory_Structure.md) | 계획된 물리적 폴더 구조                                           |
+| 에이전트 스킬        | [../skills.md](../skills.md)                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
 
 ---
 
@@ -50,12 +51,12 @@
 
 ## 1주차 미결정 7개 (잠정 기본값)
 
-| 항목 | MVP 잠정 | 대안/승급 |
-| --- | --- | --- |
-| Vector DB | ChromaDB | Qdrant |
-| 임베딩 | nomic-embed-text | gemini-embedding-001 |
-| L2 LLM | Gemma2:9b | gpt-4o-mini |
+| 항목           | MVP 잠정           | 대안/승급              |
+| -------------- | ------------------ | ---------------------- |
+| Vector DB      | ChromaDB           | Qdrant                 |
+| 임베딩         | nomic-embed-text   | gemini-embedding-001   |
+| L2 LLM         | Gemma2:9b          | gpt-4o-mini            |
 | On-device 추론 | 없음 (thin client) | 반사 레이어 (post-MVP) |
-| 통신 프로토콜 | WS·REST·SSE·Redis | WebRTC/gRPC 등 |
-| TTS | Kokoro/Coqui | OpenAI TTS |
-| RDB | (미정) | MariaDB/PostgreSQL |
+| 통신 프로토콜  | WS·REST·SSE·Redis  | WebRTC/gRPC 등         |
+| TTS            | Kokoro/Coqui       | OpenAI TTS             |
+| RDB            | (미정)             | MariaDB/PostgreSQL     |

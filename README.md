@@ -36,15 +36,15 @@
 
 ## 7단계 파이프라인 요약
 
-| 단계 | 주제 | 핵심 스택 | 완료 기준 (KPI) |
-| --- | --- | --- | --- |
-| 1 | 서버-앱 실시간 통신 (WebSocket) | FastAPI, uvicorn, asyncio | 양방향 echo, **RTT < 100ms** |
-| 2 | 카메라 화면 전송 (이중 캡처) | react-native-vision-camera, OpenCV | 640x640 수신, **캡처수신 < 50ms** |
-| 3 | AI 장애물 실시간 인식 (듀얼헤드) | Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack | 킥보드 conf≈0.87, **Detection < 80ms** |
-| 4 | 위험 대처 수칙 DB 구축 (RAG 시드) | Ollama(Llava), ChromaDB, nomic-embed | collection ≥ 100, **Top-5 hit-rate ≥ 0.6** |
-| 5 | 실시간 대처 수칙 검색 (RAG) | ChromaDB | kickboard 쿼리 정합, **검색 < 50ms** |
-| 6 | 종합 회피 가이드 생성 (계층 LLM) | LangGraph, ChatOllama(Gemma2) | bollard 주입 시 20자 내·방향 포함 |
-| 7 | 음성 안내 출력 (이중 채널) | Kokoro/Coqui, Web Audio, Haptics | 반사 클립 선점 재생, 햅틱 동시 출력 |
+| 단계 | 주제                              | 핵심 스택                                                       | 완료 기준 (KPI)                            |
+| ---- | --------------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
+| 1    | 서버-앱 실시간 통신 (WebSocket)   | FastAPI, uvicorn, asyncio                                       | 양방향 echo, **RTT < 100ms**               |
+| 2    | 카메라 화면 전송 (이중 캡처)      | react-native-vision-camera, OpenCV                              | 640x640 수신, **캡처수신 < 50ms**          |
+| 3    | AI 장애물 실시간 인식 (듀얼헤드)  | Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack | 킥보드 conf≈0.87, **Detection < 80ms**     |
+| 4    | 위험 대처 수칙 DB 구축 (RAG 시드) | Ollama(Llava), ChromaDB, nomic-embed                            | collection ≥ 100, **Top-5 hit-rate ≥ 0.6** |
+| 5    | 실시간 대처 수칙 검색 (RAG)       | ChromaDB                                                        | kickboard 쿼리 정합, **검색 < 50ms**       |
+| 6    | 종합 회피 가이드 생성 (계층 LLM)  | LangGraph, ChatOllama(Gemma2)                                   | bollard 주입 시 20자 내·방향 포함          |
+| 7    | 음성 안내 출력 (이중 채널)        | Kokoro/Coqui, Web Audio, Haptics                                | 반사 클립 선점 재생, 햅틱 동시 출력        |
 
 상세 설계는 [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)와 [`docs/architecture.md`](docs/architecture.md)를 참조합니다.
 
@@ -188,22 +188,22 @@ bash scripts/build_chroma.sh
 
 ## 환경 변수
 
-| 변수 | 설명 | 기본값 |
-| --- | --- | --- |
-| `LLM_PROVIDER` | LLM 공급자 (`ollama` 또는 `openai`) | `ollama` |
-| `OLLAMA_BASE_URL` | Ollama 서버 주소 | `http://localhost:11434` |
-| `GEMMA_MODEL` | L2 가이드 생성 모델 | `gemma2:9b` |
-| `LLAVA_MODEL` | 4단계 캡셔닝 모델 | `llava` |
-| `EMBEDDING_MODEL` | 임베딩 모델 | `nomic-embed-text` |
-| `REDIS_URL` | Redis 연결 URL | `redis://localhost:6379` |
-| `CHROMA_PATH` | ChromaDB persist 디렉토리 | `data/chroma_db` |
-| `CHROMA_COLLECTION` | ChromaDB 컬렉션명 | `bidding_kb` |
-| `WS_PORT` | WebSocket 서버 포트 | `8000` |
-| `TTS_ENGINE` | TTS 엔진 (`kokoro` 또는 `coqui`) | `kokoro` |
-| `YOLO_CONF` | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35` |
-| `FRAME_SIZE` | 프레임 리사이즈 크기 | `640` |
-| `REFLEX_FPS` | 반사 캡처 목표 fps | `10` |
-| `COGNITIVE_FPS` | 인지 캡처 목표 fps | `2` |
+| 변수                | 설명                                      | 기본값                   |
+| ------------------- | ----------------------------------------- | ------------------------ |
+| `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
+| `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
+| `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma2:9b`              |
+| `LLAVA_MODEL`       | 4단계 캡셔닝 모델                         | `llava`                  |
+| `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
+| `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
+| `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
+| `CHROMA_COLLECTION` | ChromaDB 컬렉션명                         | `bidding_kb`             |
+| `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
+| `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)          | `kokoro`                 |
+| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
+| `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
+| `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
+| `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
 
 전체 목록은 [`.env.example`](.env.example)을 참조합니다.
 
@@ -214,12 +214,12 @@ bash scripts/build_chroma.sh
 개인 문서 폴더는 사용하지 않으며, 모든 설계 문서는 `docs/` 폴더에서 공유로 관리합니다.
 
 | 이니셜 | 담당 영역 (할당 가능) |
-| --- | --- |
-| `dg` | (할당 가능) |
-| `jh` | (할당 가능) |
-| `jy` | (할당 가능) |
-| `kb` | (할당 가능) |
-| `th` | (할당 가능) |
+| ------ | --------------------- |
+| `dg`   | (할당 가능)           |
+| `jh`   | (할당 가능)           |
+| `jy`   | (할당 가능)           |
+| `kb`   | (할당 가능)           |
+| `th`   | (할당 가능)           |
 
 단계별 분업 인원수 제안은 [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md) 각 단계의 **분업** 필드를 참조합니다. 브랜치 전략은 [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md)를 따릅니다.
 
@@ -227,52 +227,28 @@ bash scripts/build_chroma.sh
 
 ## 문서 인덱스
 
-| 문서 | 파일 | 설명 |
-| --- | --- | --- |
-| 설계 노트 (원본) | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md) | 7단계 골격, 비전 v1.1 반영 |
-| 문서 인덱스 | [`docs/README.md`](docs/README.md) | 문서 목록 및 권장 독해 순서 |
-| 에이전트 가이드 | [`docs/AGENTS.md`](docs/AGENTS.md) | 코딩·커뮤니케이션 규칙, 기술 스택 |
-| 시스템 아키텍처 | [`docs/architecture.md`](docs/architecture.md) | 이중 경로 구조, 컴포넌트 상세, 데이터 계약 |
-| API 명세서 | [`docs/api_specification.md`](docs/api_specification.md) | WebSocket `/ws/detect` 계약, 이벤트 타입 |
-| 테스트 명세서 | [`docs/test_specification.md`](docs/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스 |
-| Git 브랜칭 전략 | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙 |
-| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md) | 7단계 run mode, 종단 지연 목표 |
-| 에이전트 스킬 가이드 | [`skills.md`](skills.md) | 시작 시퀀스, 문서 규칙, 금지 행위, 스킬 인덱스 |
-| 단계별 구현 스킬 | `.agents/skills/` | 1~7단계별 SKILL.md + references (7종) |
+| 문서                 | 파일                                                               | 설명                                           |
+| -------------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
+| 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                     |
+| 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                    |
+| 에이전트 가이드      | [`docs/AGENTS.md`](docs/AGENTS.md)                                 | 코딩·커뮤니케이션 규칙, 기술 스택              |
+| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약     |
+| API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입       |
+| 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스               |
+| Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                   |
+| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                 |
+| 에이전트 스킬 가이드 | [`skills.md`](skills.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위, 스킬 인덱스 |
+| 단계별 구현 스킬     | `.agents/skills/`                                                  | 1~7단계별 SKILL.md + references (7종)          |
 
 ---
 
 ## 최근 변경 사항
 
-> **작성 양식** (팀원 참고용)
->
-> 모든 작업 완료 후 아래 양식으로 최근 변경 사항을 추가합니다. 가장 최근 항목을 위에 배치합니다.
->
-> ```text
-> - **YYYY-MM-DD (작성자)**: **작업 제목**
->   - 변경 내용을 한 줄씩 작성합니다. 구체적인 파일·함수·동작을 명시합니다.
->   - 여러 변경 사항이면 줄바꿈으로 나눠 작성합니다.
->   - **관련 파일**: `경로/파일1`, `경로/파일2`, ...
-> ```
->
-> 예시:
->
-> ```text
-> - **2026-06-24 (김관범)**: **1단계 WebSocket 핸드셰이크 구현**
->   - `FastAPI()` + `CORSMiddleware` 초기화 후 `APIRouter().websocket("/ws/detect")` 엔드포인트를 추가했다.
->   - `ws.accept()`  welcome 송신  hello 수신·`device_token` 검증  5초 ping/pong 하트비트 루프를 구현했다.
->   - `WebSocketDisconnect` 예외 포착 시 소켓 close 및 리소스 해제 처리를 추가했다.
->   - **관련 파일**: `server/api/ws_router.py`, `server/api/session_manager.py`, `server/api/heartbeat.py`, `tests/test_ws_echo.py`
-> ```
+변경 사항은 가독성 및 관리 효율을 위해 [`docs/changelogs/`](docs/changelogs/) 폴더로 분리하여 관리합니다.
 
----
-
-- **2026-06-24 (초기)**: **문서 기준선 구축**
-  - `minchodan_design_note.md` 7단계 골격을 기반으로 루트 README, skills, docs 문서 세트(AGENTS, architecture, api_specification, test_specification, git_branching_strategy, pipeline_stage_design)를 작성했습니다.
-  - `.env.example` 환경변수 템플릿과 `requirements.txt` 파이썬 의존성을 채웠습니다.
-  - 개인 문서 폴더(`docs/{dg,jh,jy,kb,th}/`)를 제거하고, 모든 설계 문서를 `docs/` 폴더에서 공유로 관리하도록 통일했습니다.
-  - 디렉토리 골격(`.gitkeep`)은 유지하며, 코드 구현은 각 단계별로 진행합니다.
-  - **관련 파일**: `README.md`, `skills.md`, `docs/README.md`, `docs/AGENTS.md`, `docs/architecture.md`, `docs/api_specification.md`, `docs/test_specification.md`, `docs/git_branching_strategy.md`, `docs/pipeline_stage_design.md`, `.env.example`, `requirements.txt`
+- 작업 완료 후 [`docs/changelogs/TEMPLATE.md`](docs/changelogs/TEMPLATE.md)를 복사해 새 파일을 생성합니다.
+- 파일명 규칙: `YYYY-MM-DD_[이니셜]_[작업요약].md`
+- 전체 이력은 [`docs/changelogs/README.md`](docs/changelogs/README.md)에서 확인합니다.
 
 ---
 

@@ -43,35 +43,35 @@ graph LR
 
 ## 3. 단계별 run mode
 
-| 단계 | 이름 | run mode | 실행 환경 | 동기/비동기 |
-| --- | --- | --- | --- | --- |
-| 1 | 서버-앱 통신 | `online` | FastAPI 서버 | 비동기 (asyncio) |
-| 2 | 카메라 캡처 전송 | `online_reflex` / `online_cognitive` | 단말 + 서버 | 비동기 (이중 타이머) |
-| 3 | 탐지·분할·게이트 | `online_inference` | GPU 서버 | 동기 (프레임 단위) |
-| 4 | RAG DB 구축 | `offline_batch` | GPU 서버 (오프라인) | 배치 |
-| 5 | RAG 검색 | `online_retrieval` | 서버 | 동기 (쿼리 단위) |
-| 6 | LangGraph 가이드 | `online_orchestration` | 서버 (Ollama) | 비동기 (`ainvoke`) |
-| 7 | 음성 출력 | `online_reflex_clip` / `online_cognitive_tts` | 서버 + 단말 | 비동기 |
+| 단계 | 이름             | run mode                                      | 실행 환경           | 동기/비동기          |
+| ---- | ---------------- | --------------------------------------------- | ------------------- | -------------------- |
+| 1    | 서버-앱 통신     | `online`                                      | FastAPI 서버        | 비동기 (asyncio)     |
+| 2    | 카메라 캡처 전송 | `online_reflex` / `online_cognitive`          | 단말 + 서버         | 비동기 (이중 타이머) |
+| 3    | 탐지·분할·게이트 | `online_inference`                            | GPU 서버            | 동기 (프레임 단위)   |
+| 4    | RAG DB 구축      | `offline_batch`                               | GPU 서버 (오프라인) | 배치                 |
+| 5    | RAG 검색         | `online_retrieval`                            | 서버                | 동기 (쿼리 단위)     |
+| 6    | LangGraph 가이드 | `online_orchestration`                        | 서버 (Ollama)       | 비동기 (`ainvoke`)   |
+| 7    | 음성 출력        | `online_reflex_clip` / `online_cognitive_tts` | 서버 + 단말         | 비동기               |
 
 ---
 
 ## 4. 종단 지연 목표
 
-| 경로 | 흐름 | 목표 | 비고 |
-| --- | --- | --- | --- |
-| 반사 | 캡처  WS  Yolo 26N - Object Detection  Gate  사전합성 클립 재생 | **<300ms** (Detection 기준) | LLM/RAG/실시간 TTS 미경유 |
-| 인지 | 캡처  WS  탐지  Redis  RAG  LangGraph  TTS  재생 | 1~2Hz | 상세 가이드 |
+| 경로 | 흐름                                                        | 목표                        | 비고                      |
+| ---- | ----------------------------------------------------------- | --------------------------- | ------------------------- |
+| 반사 | 캡처 WS Yolo 26N - Object Detection Gate 사전합성 클립 재생 | **<300ms** (Detection 기준) | LLM/RAG/실시간 TTS 미경유 |
+| 인지 | 캡처 WS 탐지 Redis RAG LangGraph TTS 재생                   | 1~2Hz                       | 상세 가이드               |
 
 단계별 지연 목표:
 
-| 단계 | 항목 | 목표 |
-| --- | --- | --- |
-| 1 | WS RTT | < 100ms |
-| 2 | 캡처수신 | < 50ms |
-| 3 | Detection 추론 | < 80ms |
-| 5 | RAG 검색 | < 50ms |
-| 6 | L2 `ainvoke` | (측정 필요) |
-| 7 | 실시간 TTS 합성 | (측정 필요) |
+| 단계 | 항목            | 목표        |
+| ---- | --------------- | ----------- |
+| 1    | WS RTT          | < 100ms     |
+| 2    | 캡처수신        | < 50ms      |
+| 3    | Detection 추론  | < 80ms      |
+| 5    | RAG 검색        | < 50ms      |
+| 6    | L2 `ainvoke`    | (측정 필요) |
+| 7    | 실시간 TTS 합성 | (측정 필요) |
 
 ---
 
@@ -79,35 +79,35 @@ graph LR
 
 ### 5.1 1단계 - 서버-앱 실시간 통신
 
-- `FastAPI()` + `CORSMiddleware`  `APIRouter().websocket("/ws/detect")`
-- `ws.accept()`  welcome  hello 검증  5초 ping/pong  `WebSocketDisconnect` 정리
+- `FastAPI()` + `CORSMiddleware` `APIRouter().websocket("/ws/detect")`
+- `ws.accept()` welcome hello 검증 5초 ping/pong `WebSocketDisconnect` 정리
 - 출력: WS 엔드포인트 (2단계 공유)
 
 ### 5.2 2단계 - 카메라 화면 전송
 
 - **이중 타이머**: 반사 8~10fps / 인지 1~2fps 분리 (v1.1, 충돌 회피)
-- `takePhoto({qualityPrioritization:'speed'})`  JPEG base64  `ws.send()`
-- 서버: `base64.b64decode`  `np.frombuffer`  `cv2.imdecode`  `resize(640,640)`  ack
+- `takePhoto({qualityPrioritization:'speed'})` JPEG base64 `ws.send()`
+- 서버: `base64.b64decode` `np.frombuffer` `cv2.imdecode` `resize(640,640)` ack
 - 출력: 640x640 프레임 (3단계 입력)
 
-### 5.3 3단계 - AI 장애물 실시간 인식  핵심
+### 5.3 3단계 - AI 장애물 실시간 인식 핵심
 
 - Yolo 26N - Object Detection `predict(conf=0.35)` + Yolo 26N - Segmentation + ByteTrack 추적
 - **이중 게이트 (룰베이스, LLM 미경유)**:
-  - Reflex Gate: 고위험 + 근접  `alert_id`+방향  반사 경로
-  - Surface Gate: P0 노면 하단  `alert_id`  반사 경로
-- mid/low  `redis_bus.xadd("risk.events")`  인지 경로
+  - Reflex Gate: 고위험 + 근접 `alert_id`+방향 반사 경로
+  - Surface Gate: P0 노면 하단 `alert_id` 반사 경로
+- mid/low `redis_bus.xadd("risk.events")` 인지 경로
 - 노면 클래스 분리(C2): `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution`
 
 ### 5.4 4단계 - RAG DB 구축 (오프라인 배치)
 
-- 영상  1fps 프레임 추출  pHash 중복 제거  Llava 한글 캡셔닝  nomic-embed-text(768d)  `Chroma.from_documents(persist_directory)`
+- 영상 1fps 프레임 추출 pHash 중복 제거 Llava 한글 캡셔닝 nomic-embed-text(768d) `Chroma.from_documents(persist_directory)`
 - 메타데이터 `objects`/`scene_type`을 3단계 분리 클래스와 일치
 
 ### 5.5 5단계 - 실시간 대처 수칙 검색
 
 - `Chroma(persist_directory, embedding_function)` 읽기 전용 로드
-- 탐지 클래스 쿼리  `similarity_search_with_score(k=5)`  `page_content` 결합  `state["rag_context"]`
+- 탐지 클래스 쿼리 `similarity_search_with_score(k=5)` `page_content` 결합 `state["rag_context"]`
 - 미적중 시 룰 기반 fallback
 
 ### 5.6 6단계 - 종합 회피 가이드 생성 (LangGraph)
@@ -120,7 +120,7 @@ graph LR
 
 ### 5.7 7단계 - 음성 안내 출력 (이중 채널)
 
-- **인지**: Kokoro/Coqui `generate()`  base64 MP3  WS  Web Audio
+- **인지**: Kokoro/Coqui `generate()` base64 MP3 WS Web Audio
 - **반사**: 사전합성 고정 클립 `alert_id`로 즉시 재생 (선점, 실시간 합성 금지)
 - 중복 억제 `setex(suppress:…, 60)`, 햅틱 연동
 
@@ -128,12 +128,12 @@ graph LR
 
 ## 6. 추상화 지점 (핫스왑)
 
-| 추상화 | 기본 | 대안 | 위치 |
-| --- | --- | --- | --- |
-| Vector DB | ChromaDB | Qdrant | `server/rag/vector_db_factory.py` |
-| LLM Client | ChatOllama(Gemma2) | gpt-4o-mini | `server/orchestration/llm_client_factory.py` |
-| Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상) |
-| TTS | Kokoro/Coqui | OpenAI TTS | `server/tts/tts_service.py` |
+| 추상화     | 기본                               | 대안                 | 위치                                         |
+| ---------- | ---------------------------------- | -------------------- | -------------------------------------------- |
+| Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
+| LLM Client | ChatOllama(Gemma2)                 | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
+| Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상)        |
+| TTS        | Kokoro/Coqui                       | OpenAI TTS           | `server/tts/tts_service.py`                  |
 
 ---
 
@@ -154,15 +154,15 @@ graph LR
 
 ## 9. MVP 스코프
 
-| 단계 | MVP 스코프 |
-| --- | --- |
-| 1 | 시작 버튼  연결  echo 왕복, 초기 안정화 |
-| 2 | 640 해상도 시작, 전송 속도 확보 후 점진 상향 |
-| 3 | 탐지 클래스 3~5개 시작, 사전학습+fine-tuning은 여유 시 |
-| 4 | 10~15개로 작게 시작, 검색 품질 확인 후 확장 |
-| 5 | top_k 3~5 조정하며 품질 확인 |
-| 6 | temperature 0.2~0.3, 일관·안전 우선 |
-| 7 | 위험물+행동 핵심만 짧게 |
+| 단계 | MVP 스코프                                             |
+| ---- | ------------------------------------------------------ |
+| 1    | 시작 버튼 연결 echo 왕복, 초기 안정화                  |
+| 2    | 640 해상도 시작, 전송 속도 확보 후 점진 상향           |
+| 3    | 탐지 클래스 3~5개 시작, 사전학습+fine-tuning은 여유 시 |
+| 4    | 10~15개로 작게 시작, 검색 품질 확인 후 확장            |
+| 5    | top_k 3~5 조정하며 품질 확인                           |
+| 6    | temperature 0.2~0.3, 일관·안전 우선                    |
+| 7    | 위험물+행동 핵심만 짧게                                |
 
 ---
 

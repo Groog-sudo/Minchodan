@@ -64,13 +64,13 @@ description: |
 
 ## 기술 스택
 
-| 구분 | 기술 | 용도 |
-|------|------|------|
-| 모바일 카메라 | react-native-vision-camera v4 | 후면 카메라 이중 캡처 |
-| 이미지 인코딩 | base64 (JPEG) | 바이너리텍스트 변환 (WS 전송용) |
-| 서버 이미지 처리 | OpenCV (cv2) + NumPy | JPEG 디코딩 + 리사이징 |
-| 전송 프로토콜 | WebSocket (1단계 연결 재사용) | 프레임 데이터 전송 |
-| 이벤트 버스 | Redis Streams | YOLO 파이프라인으로 프레임 전달 |
+| 구분             | 기술                          | 용도                            |
+| ---------------- | ----------------------------- | ------------------------------- |
+| 모바일 카메라    | react-native-vision-camera v4 | 후면 카메라 이중 캡처           |
+| 이미지 인코딩    | base64 (JPEG)                 | 바이너리텍스트 변환 (WS 전송용) |
+| 서버 이미지 처리 | OpenCV (cv2) + NumPy          | JPEG 디코딩 + 리사이징          |
+| 전송 프로토콜    | WebSocket (1단계 연결 재사용) | 프레임 데이터 전송              |
+| 이벤트 버스      | Redis Streams                 | YOLO 파이프라인으로 프레임 전달 |
 
 ## 디렉토리 구조 (Minchodan 기준)
 
@@ -99,10 +99,10 @@ server/capture/
 
 단일 2fps 캡처는 충돌 회피에 부적합하므로 **이중 스트림**으로 분리한다.
 
-| 스트림 | 목표 fps | 용도 | 후속 처리 |
-| --- | --- | --- | --- |
-| **반사 (reflex)** | 8~10fps | Detection 전용, 즉시 경보 | 3단계 Yolo 26N - Object Detection  Reflex Gate  사전합성 클립 |
-| **인지 (cognitive)** | 1~2fps | 상세 가이드 | 3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation  Redis Streams  LangGraph |
+| 스트림               | 목표 fps | 용도                      | 후속 처리                                                                           |
+| -------------------- | -------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| **반사 (reflex)**    | 8~10fps  | Detection 전용, 즉시 경보 | 3단계 Yolo 26N - Object Detection Reflex Gate 사전합성 클립                         |
+| **인지 (cognitive)** | 1~2fps   | 상세 가이드               | 3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation Redis Streams LangGraph |
 
 ## 핵심 구현 절차 (React Native 앱 측)
 
@@ -110,12 +110,17 @@ server/capture/
 
 ```typescript
 // client/src/hooks/useCamera.ts
-import { useEffect, useRef, useCallback, useState } from 'react';
-import { Camera, useCameraDevice, useCameraPermission, PhotoFile } from 'react-native-vision-camera';
+import { useEffect, useRef, useCallback, useState } from "react";
+import {
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  PhotoFile,
+} from "react-native-vision-camera";
 
 export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
   const { hasPermission, requestPermission } = useCameraPermission();
-  const device = useCameraDevice('back');
+  const device = useCameraDevice("back");
   const cameraRef = useRef<Camera>(null);
   const reflexTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cognitiveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -125,21 +130,24 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
-  const captureFrame = useCallback(async (stream: 'reflex' | 'cognitive'): Promise<string | null> => {
-    if (!cameraRef.current) return null;
-    try {
-      const photo: PhotoFile = await cameraRef.current.takePhoto({
-        qualityPrioritization: 'speed',
-        flash: 'off',
-        enableShutterSound: false,
-      });
-      const base64 = await photo.toBase64();
-      return base64;
-    } catch (error) {
-      console.error(`[캡처] ${stream} 프레임 오류:`, error);
-      return null;
-    }
-  }, []);
+  const captureFrame = useCallback(
+    async (stream: "reflex" | "cognitive"): Promise<string | null> => {
+      if (!cameraRef.current) return null;
+      try {
+        const photo: PhotoFile = await cameraRef.current.takePhoto({
+          qualityPrioritization: "speed",
+          flash: "off",
+          enableShutterSound: false,
+        });
+        const base64 = await photo.toBase64();
+        return base64;
+      } catch (error) {
+        console.error(`[캡처] ${stream} 프레임 오류:`, error);
+        return null;
+      }
+    },
+    [],
+  );
 
   const startCapture = useCallback(() => {
     if (isCapturing) return;
@@ -149,28 +157,46 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
     const cognitiveInterval = Math.floor(1000 / cognitiveFps);
 
     reflexTimerRef.current = setInterval(async () => {
-      const frame = await captureFrame('reflex');
-      if (frame) sendFrame(frame, 'reflex');
+      const frame = await captureFrame("reflex");
+      if (frame) sendFrame(frame, "reflex");
     }, reflexInterval);
 
     cognitiveTimerRef.current = setInterval(async () => {
-      const frame = await captureFrame('cognitive');
-      if (frame) sendFrame(frame, 'cognitive');
+      const frame = await captureFrame("cognitive");
+      if (frame) sendFrame(frame, "cognitive");
     }, cognitiveInterval);
 
-    console.log(`[캡처] 이중 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`);
+    console.log(
+      `[캡처] 이중 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`,
+    );
   }, [reflexFps, cognitiveFps, isCapturing, captureFrame]);
 
   const stopCapture = useCallback(() => {
-    if (reflexTimerRef.current) { clearInterval(reflexTimerRef.current); reflexTimerRef.current = null; }
-    if (cognitiveTimerRef.current) { clearInterval(cognitiveTimerRef.current); cognitiveTimerRef.current = null; }
+    if (reflexTimerRef.current) {
+      clearInterval(reflexTimerRef.current);
+      reflexTimerRef.current = null;
+    }
+    if (cognitiveTimerRef.current) {
+      clearInterval(cognitiveTimerRef.current);
+      cognitiveTimerRef.current = null;
+    }
     setIsCapturing(false);
-    console.log('[캡처] 루프 중지');
+    console.log("[캡처] 루프 중지");
   }, []);
 
-  useEffect(() => { return () => stopCapture(); }, [stopCapture]);
+  useEffect(() => {
+    return () => stopCapture();
+  }, [stopCapture]);
 
-  return { cameraRef, device, hasPermission, isCapturing, startCapture, stopCapture, captureFrame };
+  return {
+    cameraRef,
+    device,
+    hasPermission,
+    isCapturing,
+    startCapture,
+    stopCapture,
+    captureFrame,
+  };
 }
 ```
 
@@ -182,14 +208,20 @@ let frameCounter = 0;
 
 export function generateEventId(): string {
   const ts = Date.now();
-  const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  const rand = Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, "0");
   return `evt-${ts}-${rand}`;
 }
 
-export function buildDetectionEvent(base64: string, deviceId: string, stream: 'reflex' | 'cognitive') {
+export function buildDetectionEvent(
+  base64: string,
+  deviceId: string,
+  stream: "reflex" | "cognitive",
+) {
   frameCounter += 1;
   return {
-    type: 'detection',
+    type: "detection",
     payload: {
       event_id: generateEventId(),
       device_id: deviceId,
@@ -202,10 +234,17 @@ export function buildDetectionEvent(base64: string, deviceId: string, stream: 'r
   };
 }
 
-export function sendFrame(base64: string, stream: 'reflex' | 'cognitive', deviceId: string, send: (data: object) => void) {
+export function sendFrame(
+  base64: string,
+  stream: "reflex" | "cognitive",
+  deviceId: string,
+  send: (data: object) => void,
+) {
   const event = buildDetectionEvent(base64, deviceId, stream);
   send(event);
-  console.log(`[전송] stream=${stream}, frame_id=${frameCounter}, size≈${Math.round(base64.length * 0.75 / 1024)}KB`);
+  console.log(
+    `[전송] stream=${stream}, frame_id=${frameCounter}, size≈${Math.round((base64.length * 0.75) / 1024)}KB`,
+  );
 }
 ```
 
@@ -213,35 +252,63 @@ export function sendFrame(base64: string, stream: 'reflex' | 'cognitive', device
 
 ```tsx
 // client/src/components/CameraView.tsx
-import React, { useEffect } from 'react';
-import { StyleSheet, View, Text } from 'react-native';
-import { Camera } from 'react-native-vision-camera';
-import { useCamera } from '../hooks/useCamera';
-import { useWebSocket } from '../hooks/useWebSocket';
-import { sendFrame } from '../services/frameCapture';
+import React, { useEffect } from "react";
+import { StyleSheet, View, Text } from "react-native";
+import { Camera } from "react-native-vision-camera";
+import { useCamera } from "../hooks/useCamera";
+import { useWebSocket } from "../hooks/useWebSocket";
+import { sendFrame } from "../services/frameCapture";
 
-interface CameraViewProps { deviceId: string; token: string; }
+interface CameraViewProps {
+  deviceId: string;
+  token: string;
+}
 
 export function CameraView({ deviceId, token }: CameraViewProps) {
   const { status, send } = useWebSocket(deviceId, token);
-  const { cameraRef, device, hasPermission, isCapturing, startCapture, stopCapture } = useCamera(10, 2);
+  const {
+    cameraRef,
+    device,
+    hasPermission,
+    isCapturing,
+    startCapture,
+    stopCapture,
+  } = useCamera(10, 2);
 
   useEffect(() => {
-    if (status === 'connected' && !isCapturing) startCapture();
-    else if (status !== 'connected' && isCapturing) stopCapture();
+    if (status === "connected" && !isCapturing) startCapture();
+    else if (status !== "connected" && isCapturing) stopCapture();
   }, [status, isCapturing, startCapture, stopCapture]);
 
   // frameCapture 서비스에서 sendFrame 호출 시 send 함수 전달
   // 실제 구현에서는 useCamera 내부에서 send를 받거나 별도 훅으로 연결
 
-  if (!hasPermission) return <View><Text>카메라 권한이 필요합니다.</Text></View>;
-  if (!device) return <View><Text>카메라를 찾을 수 없습니다.</Text></View>;
+  if (!hasPermission)
+    return (
+      <View>
+        <Text>카메라 권한이 필요합니다.</Text>
+      </View>
+    );
+  if (!device)
+    return (
+      <View>
+        <Text>카메라를 찾을 수 없습니다.</Text>
+      </View>
+    );
 
   return (
     <View style={styles.container}>
-      <Camera ref={cameraRef} device={device} isActive={true} photo={true} style={StyleSheet.absoluteFill} />
-      <View style={styles.statusOverlay}
-        accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? '활성' : '비활성'}`} />
+      <Camera
+        ref={cameraRef}
+        device={device}
+        isActive={true}
+        photo={true}
+        style={StyleSheet.absoluteFill}
+      />
+      <View
+        style={styles.statusOverlay}
+        accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}`}
+      />
     </View>
   );
 }
@@ -358,10 +425,10 @@ async def route_frame(processed: ProcessedFrame):
 
 ## 데이터 인터페이스
 
-| 방향 | 페이로드 |
-| --- | --- |
-| In | 비디오 프레임 (이중 타이머 캡처) |
-| Out | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream:"reflex"\|"cognitive", thumbnail_jpeg_b64}}` |
+| 방향 | 페이로드                                                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------- |
+| In   | 비디오 프레임 (이중 타이머 캡처)                                                                                    |
+| Out  | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream:"reflex"\|"cognitive", thumbnail_jpeg_b64}}` |
 
 ## 의존성·예외
 
@@ -371,17 +438,17 @@ async def route_frame(processed: ProcessedFrame):
 
 ## 테스트 체크리스트
 
-| 항목 | 기대 결과 | 합격 기준 |
-|------|-----------|-----------|
-| 카메라 권한 요청 | 승인 다이얼로그 | Android/iOS 모두 |
-| 후면 카메라 활성화 | isActive=true | device !== null |
-| 반사 캡처 8~10fps | setInterval 주기 확인 | ±100ms 오차 |
-| 인지 캡처 1~2fps | setInterval 주기 확인 | ±100ms 오차 |
-| base64 변환 | JPEG base64 문자열 | 30~50KB 범위 |
-| 서버 수신 | 프레임 디코딩 성공 | frame.shape == (640, 640, 3) |
-| **캡처수신 지연** | 전체 파이프라인 | **< 50ms** |
-| ack 응답 | 클라이언트 ack 수신 | event_id 일치 |
-| 소켓 유실 타이머 해제 | clearInterval | 자원 해제 확인 |
+| 항목                  | 기대 결과             | 합격 기준                    |
+| --------------------- | --------------------- | ---------------------------- |
+| 카메라 권한 요청      | 승인 다이얼로그       | Android/iOS 모두             |
+| 후면 카메라 활성화    | isActive=true         | device !== null              |
+| 반사 캡처 8~10fps     | setInterval 주기 확인 | ±100ms 오차                  |
+| 인지 캡처 1~2fps      | setInterval 주기 확인 | ±100ms 오차                  |
+| base64 변환           | JPEG base64 문자열    | 30~50KB 범위                 |
+| 서버 수신             | 프레임 디코딩 성공    | frame.shape == (640, 640, 3) |
+| **캡처수신 지연**     | 전체 파이프라인       | **< 50ms**                   |
+| ack 응답              | 클라이언트 ack 수신   | event_id 일치                |
+| 소켓 유실 타이머 해제 | clearInterval         | 자원 해제 확인               |
 
 ## 참고 자료
 

@@ -20,41 +20,41 @@ description: |
 
 ## v1.1 핵심 변경 사항
 
-| 항목 | 기존 | v1.1 |
-| --- | --- | --- |
-| 반사 음성 | 실시간 TTS 합성 | **사전합성 고정 클립**(앱 번들), 실시간 합성 금지 |
-| 선점 | 없음 | **반사 음성이 인지 음성을 중단시키고 재생**(preempt) |
-| WS 타입 | 단일 alert | **반사 = 고우선 타입**, 인지 = 일반 가이드 |
-| 추상화 | 없음 | **TTSService** 추상화, MP3/WAV 규격 통일 |
-| Whisper | 7단계에 혼재 | **Whisper는 STT 전용**, 7단계(출력)에 등장 안 함 |
+| 항목      | 기존            | v1.1                                                 |
+| --------- | --------------- | ---------------------------------------------------- |
+| 반사 음성 | 실시간 TTS 합성 | **사전합성 고정 클립**(앱 번들), 실시간 합성 금지    |
+| 선점      | 없음            | **반사 음성이 인지 음성을 중단시키고 재생**(preempt) |
+| WS 타입   | 단일 alert      | **반사 = 고우선 타입**, 인지 = 일반 가이드           |
+| 추상화    | 없음            | **TTSService** 추상화, MP3/WAV 규격 통일             |
+| Whisper   | 7단계에 혼재    | **Whisper는 STT 전용**, 7단계(출력)에 등장 안 함     |
 
 ## 아키텍처
 
 ```
 [6단계 LangGraph]  guidance_text
-        
+
 [7-인지] 로컬 TTS(Kokoro/Coqui) generate()  base64 MP3  WS 스트리밍  단말 Web Audio 재생
 
 [3단계 Gate]  alert_id
-        
+
 [7-반사] 단말 사전합성 고정 클립 즉시 재생 (선점, 실시간 TTS 미경유)
-        
+
 중복 억제: setex(suppress:alert_id, 60)
 햡틱: Haptics + announceForAccessibility
 ```
 
 ## 기술 스택
 
-| 구분 | 스택 | 용도 |
-|------|------|------|
-| 로컬 TTS (인지) | Kokoro-82M / Coqui | 실시간 한글 음성 합성 |
-| 사전합성 클립 (반사) | MP3 파일 (앱 번들) | 즉시 재생 |
-| 서버 프레임워크 | FastAPI + Uvicorn | WebSocket |
-| 메시지 버스 | Redis SETEX | 중복 억제 (60초) |
-| 모바일 오디오 | Web Audio API | 인지 음성 재생 |
-| 모바일 TTS 백업 | react-native-tts | 서버 TTS 실패 시 우회 |
-| 접근성 | AccessibilityInfo | VoiceOver/TalkBack |
-| 햅틱 | expo-haptics | 위험도 기반 진동 |
+| 구분                 | 스택               | 용도                  |
+| -------------------- | ------------------ | --------------------- |
+| 로컬 TTS (인지)      | Kokoro-82M / Coqui | 실시간 한글 음성 합성 |
+| 사전합성 클립 (반사) | MP3 파일 (앱 번들) | 즉시 재생             |
+| 서버 프레임워크      | FastAPI + Uvicorn  | WebSocket             |
+| 메시지 버스          | Redis SETEX        | 중복 억제 (60초)      |
+| 모바일 오디오        | Web Audio API      | 인지 음성 재생        |
+| 모바일 TTS 백업      | react-native-tts   | 서버 TTS 실패 시 우회 |
+| 접근성               | AccessibilityInfo  | VoiceOver/TalkBack    |
+| 햅틱                 | expo-haptics       | 위험도 기반 진동      |
 
 ## 디렉토리 구조 (Minchodan 기준)
 
@@ -224,7 +224,7 @@ class OpenAITTSService:
 
 ```typescript
 // client/src/services/audioPlayer.ts
-import { Buffer } from 'buffer';
+import { Buffer } from "buffer";
 
 export class AudioPlayer {
   private audioContext: AudioContext | null = null;
@@ -235,7 +235,7 @@ export class AudioPlayer {
 
   async play(audioBase64: string, panning: number = 0) {
     if (!this.audioContext) await this.initialize();
-    const arrayBuffer = Buffer.from(audioBase64, 'base64').buffer;
+    const arrayBuffer = Buffer.from(audioBase64, "base64").buffer;
     const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
     const panner = this.audioContext.createStereoPanner();
     panner.pan.value = panning;
@@ -251,7 +251,7 @@ export class AudioPlayer {
 
 ```typescript
 // client/src/services/reflexClipPlayer.ts
-import { Audio } from 'expo-av';
+import { Audio } from "expo-av";
 
 export class ReflexClipPlayer {
   private currentSound: Audio.Sound | null = null;
@@ -275,18 +275,18 @@ export class ReflexClipPlayer {
 
 ```typescript
 // client/src/utils/haptics.ts
-import * as Haptics from 'expo-haptics';
-import { AccessibilityInfo } from 'react-native';
+import * as Haptics from "expo-haptics";
+import { AccessibilityInfo } from "react-native";
 
-export async function triggerHaptic(severity: 'high' | 'mid' | 'low') {
+export async function triggerHaptic(severity: "high" | "mid" | "low") {
   switch (severity) {
-    case 'high':
+    case "high":
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       break;
-    case 'mid':
+    case "mid":
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       break;
-    case 'low':
+    case "low":
       await Haptics.selectionAsync();
       break;
   }
@@ -305,12 +305,12 @@ export function announceForAccessibility(text: string) {
 
 ## 데이터 인터페이스
 
-| 방향 | 페이로드 |
-| --- | --- |
-| In (인지) | 가이드 문장(String) |
-| In (반사) | `alert_id` |
+| 방향       | 페이로드                                  |
+| ---------- | ----------------------------------------- |
+| In (인지)  | 가이드 문장(String)                       |
+| In (반사)  | `alert_id`                                |
 | Out (인지) | 오디오 bytes(ArrayBuffer) — base64 MP3 WS |
-| Out (반사) | 사전합성 클립 경로 — WS 고우선 타입 |
+| Out (반사) | 사전합성 클립 경로 — WS 고우선 타입       |
 
 ## 의존성·예외
 
@@ -319,15 +319,15 @@ export function announceForAccessibility(text: string) {
 
 ## 테스트 체크리스트
 
-| 항목 | 기대 결과 | 합격 기준 |
-|------|-----------|-----------|
-| 실시간 TTS 합성 | Kokoro/Coqui generate()  base64 MP3 | TTFB < 200ms |
-| 단말 재생 성공 | Web Audio decodeAudioData() 재생 | 재생 확인 |
-| **반사 클립 선점 재생** | 인지 음성 중단 후 반사 재생 | 선목 동작 |
-| high 햅틱 동시 출력 | Haptics 동시 동작 | 진동 확인 |
-| 중복 억제 | setex(suppress:…, 60) 60초 | 60초 내 재전송 없음 |
-| TTS 실패 우회 | 기기 내장 TTS로 우회 | 중단 없음 |
-| **반사 클립 사전합성** | 실시간 합성 미사용 확인 | 고정 클립만 |
+| 항목                    | 기대 결과                          | 합격 기준           |
+| ----------------------- | ---------------------------------- | ------------------- |
+| 실시간 TTS 합성         | Kokoro/Coqui generate() base64 MP3 | TTFB < 200ms        |
+| 단말 재생 성공          | Web Audio decodeAudioData() 재생   | 재생 확인           |
+| **반사 클립 선점 재생** | 인지 음성 중단 후 반사 재생        | 선목 동작           |
+| high 햅틱 동시 출력     | Haptics 동시 동작                  | 진동 확인           |
+| 중복 억제               | setex(suppress:…, 60) 60초         | 60초 내 재전송 없음 |
+| TTS 실패 우회           | 기기 내장 TTS로 우회               | 중단 없음           |
+| **반사 클립 사전합성**  | 실시간 합성 미사용 확인            | 고정 클립만         |
 
 ## 참고 자료
 
