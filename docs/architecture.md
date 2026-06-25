@@ -221,8 +221,9 @@ graph TD
 3. **Yolo 26N - Segmentation** 노면 의미 분할 마스크
 4. **ByteTrack** `update()` Track ID 부여, Redis `hset`+TTL=30 접근/이탈·속도 산출
 5. **Reflex Risk Gate(룰베이스, LLM 미경유)**: 고위험 클래스 && 근접(면적·하단) 즉시 `alert_id`+방향
-6. **Surface Fast-Alert Gate(룰베이스)**: P0 노면(횡단보도/맨홀/계단/그레이팅/점자블록파손) 하단 검출 즉시 `alert_id`
+6. **Surface Fast-Alert Gate(룰베이스)**: P0 노면(횡단볼도/맨홀/계단/그레이팅/점자블록파손) 하단 검출 즉시 `alert_id`
 7. mid/low만 `redis_bus.xadd("risk.events", …)`로 인지 경로에 발행
+8. **방어적 코딩**: Detector/Segmentor 중 하나가 예외를 던져도 나머지 결과는 유지하고 파이프라인은 멈추지 않음. Redis 연결 실패 시에도 탐지 결과는 정상 반환
 
 노면 클래스 분리(C2): `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution`(stairs/manhole/grating)을 **독립 클래스**로 분리합니다.
 
@@ -395,12 +396,12 @@ sequenceDiagram
 
 코드 검증:
 
-- `python tests/test_ws_echo.py` - 1단계: RTT < 100ms echo 검증
-- `python tests/test_frame_decode.py` - 2단계: 캡처수신 < 50ms 검증
-- `python tests/test_detection.py` - 3단계: conf≈0.87, track_id, < 80ms 검증
-- `python tests/test_rag_retrieval.py` - 5단계: kickboard 쿼리 < 50ms 검증
-- `python tests/test_langgraph.py` - 6단계: bollard 주입 20자/방향 포함 검증
-- `python tests/test_tts_reflex.py` - 7단계: 반사 클립 선점 재생 검증
+- `python -m pytest tests/test_ws_echo.py -v` - 1단계: RTT < 100ms echo 검증
+- `python -m pytest tests/test_frame_decode.py -v` - 2단계: 캡처수신 < 50ms 검증
+- `python -m pytest tests/test_detection.py -v` - 3단계: 게이트 분기, track_id, 예외 영속성 검증
+- `python -m pytest tests/test_rag_retrieval.py -v` - 5단계: kickboard 쿼리 < 50ms 검증
+- `python -m pytest tests/test_langgraph.py -v` - 6단계: bollard 주입 20자/방향 포함 검증
+- `python -m pytest tests/test_tts_reflex.py -v` - 7단계: 반사 클립 선점 재생 검증
 - `python scripts/eval_hitrate.py` - 4단계: Top-5 hit-rate ≥ 0.6 평가
 - `python scripts/verify_gpu.py` - GPU: sm_120 + CUDA 12.8 검증
 
