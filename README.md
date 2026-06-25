@@ -268,6 +268,13 @@ bash scripts/build_chroma.sh
 
 ---
 
+- **2026-06-25 (문서 작성)**: **3단계 탐지·분할·게이트 백엔드 설계서 작성**
+  - `docs/stage3_detection_design.md`를 신규 작성했습니다. 팀원 모델 학습 중 전제로 Mock Detector + 인터페이스 추상화 패턴을 적용했습니다.
+  - 구현 범위는 `server/detection/` + `server/bus/`로 한정하며, 17개 신규 파일과 2개 수정 파일 목록을 명시했습니다.
+  - 추상화 계층(DetectorInterface/SegmentorInterface), ByteTrack(ultralytics 내장), 이중 경로 분리(비협상), 방어적 코딩 매트릭스를 설계했습니다.
+  - `docs/README.md` 문서 인덱스 및 권장 독해 순서에 3단계 설계서를 추가했습니다.
+  - **관련 파일**: `docs/stage3_detection_design.md`, `docs/README.md`
+
 - **2026-06-24 (초기)**: **문서 기준선 구축**
   - `minchodan_design_note.md` 7단계 골격을 기반으로 루트 README, skills, docs 문서 세트(AGENTS, architecture, api_specification, test_specification, git_branching_strategy, pipeline_stage_design)를 작성했습니다.
   - `.env.example` 환경변수 템플릿과 `requirements.txt` 파이썬 의존성을 채웠습니다.

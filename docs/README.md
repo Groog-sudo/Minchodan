@@ -14,6 +14,7 @@
 | 테스트 명세서 | [test_specification.md](test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
 | Git 브랜칭 전략 | [git_branching_strategy.md](git_branching_strategy.md) | 3계층 브랜치 구조(master/dev/개인), 작업 규칙 |
 | 파이프라인 단계 설계 | [pipeline_stage_design.md](pipeline_stage_design.md) | 7단계 run mode, 종단 지연 목표, 추상화 지점 |
+| 3단계 탐지 설계서 | [stage3_detection_design.md](stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
 | 디렉토리 구조 | [../directory_Structure.md](../directory_Structure.md) | 계획된 물리적 폴더 구조 |
 | 에이전트 스킬 | [../skills.md](../skills.md) | 시작 시퀀스, 문서 규칙, 금지 행위 |
 
@@ -24,10 +25,12 @@
 1. [`../README.md`](../README.md) - 프로젝트 개요 및 7단계 요약
 2. [`minchodan_design_note.md`](minchodan_design_note.md) - 7단계 상세 설계 (백본)
 3. [`AGENTS.md`](AGENTS.md) - 코딩·커뮤니케이션 규칙
-4. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
-5. [`api_specification.md`](api_specification.md) - WebSocket API 계약
-6. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
-7. [`test_specification.md`](test_specification.md) - 검증 기준
+4. [`course_codebase_guide.md`](course_codebase_guide.md) - **코딩 패턴·함수 시그니처 표준 (코딩 전 필수 참조)**
+5. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
+6. [`api_specification.md`](api_specification.md) - WebSocket API 계약
+7. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
+8. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+9. [`test_specification.md`](test_specification.md) - 검증 기준
 
 ---
 
