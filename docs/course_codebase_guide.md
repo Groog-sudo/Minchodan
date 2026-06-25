@@ -15,10 +15,10 @@
 
 ### 1.2 분석 범위
 
-| 분석 소스 | 수량 | 내용 |
-| --- | --- | --- |
-| Notion 하위 페이지 | ~30개 (1~2단계) | 이론 노트, 소스 코드, 실습 평가, 치트시트 |
-| 로컬 프로젝트 폴더 | 34개 | Python 스크립트, Jupyter Notebook, FastAPI/Django 웹앱 |
+| 분석 소스          | 수량            | 내용                                                   |
+| ------------------ | --------------- | ------------------------------------------------------ |
+| Notion 하위 페이지 | ~30개 (1~2단계) | 이론 노트, 소스 코드, 실습 평가, 치트시트              |
+| 로컬 프로젝트 폴더 | 34개            | Python 스크립트, Jupyter Notebook, FastAPI/Django 웹앱 |
 
 ### 1.3 사용법
 
@@ -94,62 +94,62 @@ graph TD
 
 ### 2.2 폴더-주제 매핑 테이블
 
-| 폴더 | 주 분류 | 핵심 스택 | Python 파일 수 | 비고 |
-| --- | --- | --- | --- | --- |
-| `2025_LangChain_PythonBasic-master` | Python 기초 | turtle, csv, datetime | ~40 | 단일 예제 스크립트 모음 |
-| `dataCrawling` | 데이터 수집 | BeautifulSoup, pymysql, requests | 9 | Repository 패턴 CRUD |
-| `crawlingSTD` | 데이터 수집 | - | 0 | venv만 존재 (빈 폴더) |
-| `Bid_API_Data_Fetching` | 데이터 수집 | Django, pymysql, XML, threading | ~15 | 조달청 API 비동기 수집 |
-| `apiOpenWeather` | 데이터 수집 | requests, xml.etree | 1 | OpenWeatherMap XML 파싱 |
-| `ML+DL` | 데이터 처리 | NumPy, Pandas, seaborn | 8 | Colab 노트북 변환 |
-| `data` | ML/DL | scikit-learn, TensorFlow, Keras | 5스크립트+22노트북 | ML/DL 종합 학습 |
-| `dataDiff` | 데이터 처리 | json, csv, xml (표준라이브러리) | 1 | CSV->JSON/XML 변환 |
-| `ml_web_project` | ML/DL | Django, scikit-learn, XGBoost, Folium | ~20 | Django ML 웹서비스 4앱 |
-| `anti_Vibe` | ML/DL | FastAPI, SQLAlchemy, Polars, LGBM, CatBoost | ~30 | 입찰가 예측 v8~v25 |
-| `bid_box` | 통합 프로젝트 | Django, ChromaDB, Gemini, XGBoost | ~50 | Hybrid RAG 챗봇 + 모델 레지스트리 |
-| `MariaDB` | 데이터베이스 | SQL (DDL/DML/Join/Subquery) | 0 | SQL 스크립트만 |
-| `post_api` | FastAPI/DB | FastAPI, SQLAlchemy 2.0, pymysql | 8 | MVC 3계층 + 트랜잭션 |
-| `fastAPI_basic` | FastAPI | FastAPI, Pydantic, AsyncOpenAI | 9 | 도서 CRUD + LLM 연동 |
-| `fastAPI_CRUD` | FastAPI | FastAPI, Pydantic | 2 | 회원 CRUD (메모리 DB) |
-| `opencv` | OpenCV | cv2, numpy, matplotlib | 2 | 노트북 가공 스크립트 |
-| `ai-cctv-platform` | OpenCV/YOLO/LLM | ultralytics, langchain, openai, easyocr | ~20 | 5파트 학습 커리큘럼 |
-| `web_yolov8n` | YOLO | FastAPI, React, Celery, Redis, ultralytics | ~25 | YOLO 학습 웹 플랫폼 |
-| `auto_labeler` | YOLO | ultralytics (YOLO/RTDETR), cv2 | 1 | 배치 자동 라벨링 |
-| `prompt_engineering_test` | LLM | openai, dotenv, json | 3 | 프롬프트 엔지니어링 평가 |
-| `LLM API_JSON_Test` | LLM | openai, pandas, json | 1 | LLM JSON 파싱 종합 평가 |
-| `conv_openCV_langchain` | LangChain/YOLO | ultralytics, langchain, cv2 | 1 | YOLO + LCEL 위험도 분석 |
-| `rag_skill` | RAG/LangChain | HuggingFace, ChromaDB, langchain | 5 | 모듈형 RAG 스킬 |
-| `RAG_Test` | RAG | OpenAI Embeddings, ChromaDB, langchain | 2 | 심청전 RAG Q&A |
-| `saramin_project` | LangChain | LangChain, ChatOpenAI, @tool, BeautifulSoup | 9 | Agent 기반 채용 필터링 |
-| `saramin_langChain_mnProject` | LangChain/FastAPI | FastAPI, SSE, @tool, langchain | 10 | 사람인 매칭 + SSE 스트림 |
-| `Mini_Project_Saramin` | LangGraph | LangGraph, Streamlit, Pydantic | 15 | LangGraph 채용 워크플로우 |
-| `langGraphEx_recomendAgent` | LangGraph | LangGraph, langchain, pydantic | 13 | 여행 추천 에이전트 (단계별) |
-| `2025_LangChain_AI_Vision_Platform` | 통합 프로젝트 | FastAPI, langgraph, langchain, ultralytics, sklearn | ~20 | 통합 AI 비전 플랫폼 |
-| `final_project_meet` | 설계 문서 | - | 0 | 문서/JS만 (Python 없음) |
-| `Coding_Agent` | - | - | 0 | 빈 폴더 |
-| `NLP` | - | - | 0 | 빈 폴더 |
-| `bid_box_presentation` | 기타 | python-pptx | 1 | PPTX 자동 생성 |
+| 폴더                                | 주 분류           | 핵심 스택                                           | Python 파일 수     | 비고                              |
+| ----------------------------------- | ----------------- | --------------------------------------------------- | ------------------ | --------------------------------- |
+| `2025_LangChain_PythonBasic-master` | Python 기초       | turtle, csv, datetime                               | ~40                | 단일 예제 스크립트 모음           |
+| `dataCrawling`                      | 데이터 수집       | BeautifulSoup, pymysql, requests                    | 9                  | Repository 패턴 CRUD              |
+| `crawlingSTD`                       | 데이터 수집       | -                                                   | 0                  | venv만 존재 (빈 폴더)             |
+| `Bid_API_Data_Fetching`             | 데이터 수집       | Django, pymysql, XML, threading                     | ~15                | 조달청 API 비동기 수집            |
+| `apiOpenWeather`                    | 데이터 수집       | requests, xml.etree                                 | 1                  | OpenWeatherMap XML 파싱           |
+| `ML+DL`                             | 데이터 처리       | NumPy, Pandas, seaborn                              | 8                  | Colab 노트북 변환                 |
+| `data`                              | ML/DL             | scikit-learn, TensorFlow, Keras                     | 5스크립트+22노트북 | ML/DL 종합 학습                   |
+| `dataDiff`                          | 데이터 처리       | json, csv, xml (표준라이브러리)                     | 1                  | CSV->JSON/XML 변환                |
+| `ml_web_project`                    | ML/DL             | Django, scikit-learn, XGBoost, Folium               | ~20                | Django ML 웹서비스 4앱            |
+| `anti_Vibe`                         | ML/DL             | FastAPI, SQLAlchemy, Polars, LGBM, CatBoost         | ~30                | 입찰가 예측 v8~v25                |
+| `bid_box`                           | 통합 프로젝트     | Django, ChromaDB, Gemini, XGBoost                   | ~50                | Hybrid RAG 챗봇 + 모델 레지스트리 |
+| `MariaDB`                           | 데이터베이스      | SQL (DDL/DML/Join/Subquery)                         | 0                  | SQL 스크립트만                    |
+| `post_api`                          | FastAPI/DB        | FastAPI, SQLAlchemy 2.0, pymysql                    | 8                  | MVC 3계층 + 트랜잭션              |
+| `fastAPI_basic`                     | FastAPI           | FastAPI, Pydantic, AsyncOpenAI                      | 9                  | 도서 CRUD + LLM 연동              |
+| `fastAPI_CRUD`                      | FastAPI           | FastAPI, Pydantic                                   | 2                  | 회원 CRUD (메모리 DB)             |
+| `opencv`                            | OpenCV            | cv2, numpy, matplotlib                              | 2                  | 노트북 가공 스크립트              |
+| `ai-cctv-platform`                  | OpenCV/YOLO/LLM   | ultralytics, langchain, openai, easyocr             | ~20                | 5파트 학습 커리큘럼               |
+| `web_yolov8n`                       | YOLO              | FastAPI, React, Celery, Redis, ultralytics          | ~25                | YOLO 학습 웹 플랫폼               |
+| `auto_labeler`                      | YOLO              | ultralytics (YOLO/RTDETR), cv2                      | 1                  | 배치 자동 라벨링                  |
+| `prompt_engineering_test`           | LLM               | openai, dotenv, json                                | 3                  | 프롬프트 엔지니어링 평가          |
+| `LLM API_JSON_Test`                 | LLM               | openai, pandas, json                                | 1                  | LLM JSON 파싱 종합 평가           |
+| `conv_openCV_langchain`             | LangChain/YOLO    | ultralytics, langchain, cv2                         | 1                  | YOLO + LCEL 위험도 분석           |
+| `rag_skill`                         | RAG/LangChain     | HuggingFace, ChromaDB, langchain                    | 5                  | 모듈형 RAG 스킬                   |
+| `RAG_Test`                          | RAG               | OpenAI Embeddings, ChromaDB, langchain              | 2                  | 심청전 RAG Q&A                    |
+| `saramin_project`                   | LangChain         | LangChain, ChatOpenAI, @tool, BeautifulSoup         | 9                  | Agent 기반 채용 필터링            |
+| `saramin_langChain_mnProject`       | LangChain/FastAPI | FastAPI, SSE, @tool, langchain                      | 10                 | 사람인 매칭 + SSE 스트림          |
+| `Mini_Project_Saramin`              | LangGraph         | LangGraph, Streamlit, Pydantic                      | 15                 | LangGraph 채용 워크플로우         |
+| `langGraphEx_recomendAgent`         | LangGraph         | LangGraph, langchain, pydantic                      | 13                 | 여행 추천 에이전트 (단계별)       |
+| `2025_LangChain_AI_Vision_Platform` | 통합 프로젝트     | FastAPI, langgraph, langchain, ultralytics, sklearn | ~20                | 통합 AI 비전 플랫폼               |
+| `final_project_meet`                | 설계 문서         | -                                                   | 0                  | 문서/JS만 (Python 없음)           |
+| `Coding_Agent`                      | -                 | -                                                   | 0                  | 빈 폴더                           |
+| `NLP`                               | -                 | -                                                   | 0                  | 빈 폴더                           |
+| `bid_box_presentation`              | 기타              | python-pptx                                         | 1                  | PPTX 자동 생성                    |
 
 ### 2.3 Notion 페이지 계층 구조
 
-| 1단계 페이지 | 2단계 하위 | 관련 로컬 폴더 |
-| --- | --- | --- |
-| 파이썬 특징, 역사 | - | `2025_LangChain_PythonBasic-master` |
-| Python | 변수, 조건문, 반복문, 리스트, 튜플, 딕셔너리, Set, 클래스, 예외처리, 파일입출력, 언패킹 등 20개 | `2025_LangChain_PythonBasic-master` |
-| 파이썬 가상환경 PIP | venv 생성/활성화, requirements.txt | 전체 프로젝트 |
-| DataBase (MariaDB) | Select, 테이블, 데이터타입, SQL함수, DML, DDL, 서브쿼리, 조인 등 15개 | `MariaDB`, `post_api` |
-| 데이터 수집 | 웹크롤링 개요, API 호출, 데이터 표현 방식 등 7개 | `dataCrawling`, `Bid_API_Data_Fetching` |
-| 데이터 분석 + ML + DL | Road Map, 데이터 분석, 인공지능/ML/DL, 머신러닝, 데이터 누수 방지, 웹서버 ML 연동 등 10개 | `ML+DL`, `data`, `ml_web_project` |
-| 웹 개발 | 기초 상식, 웹표준, html, Bootstrap, jQuery, Back-End 등 7개 | `fastAPI_basic`, `post_api` |
-| 컴퓨터 비전 + OPENCV | ch1~ch11 + 응용 (색공간, 필터, 에지, 모폴로지, SIFT, 동영상, BBox, Haar Cascade, 배경차분) 18개 | `opencv`, `ai-cctv-platform` |
-| FastAPI & SqlAlchemy | Layered Architecture, FastAPI 기초, CORS, API호출, 파일업로드, ORM, SQLAlchemy CRUD, post_api, 트랜잭션 등 12개 | `fastAPI_basic`, `fastAPI_CRUD`, `post_api` |
-| Docker | 개념, 기초실습, DockerFile/Compose, 배포준비, 전체서비스배포 6개 | `docker/` (Minchodan) |
+| 1단계 페이지                          | 2단계 하위                                                                                                             | 관련 로컬 폴더                                                              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 파이썬 특징, 역사                     | -                                                                                                                      | `2025_LangChain_PythonBasic-master`                                         |
+| Python                                | 변수, 조건문, 반복문, 리스트, 튜플, 딕셔너리, Set, 클래스, 예외처리, 파일입출력, 언패킹 등 20개                        | `2025_LangChain_PythonBasic-master`                                         |
+| 파이썬 가상환경 PIP                   | venv 생성/활성화, requirements.txt                                                                                     | 전체 프로젝트                                                               |
+| DataBase (MariaDB)                    | Select, 테이블, 데이터타입, SQL함수, DML, DDL, 서브쿼리, 조인 등 15개                                                  | `MariaDB`, `post_api`                                                       |
+| 데이터 수집                           | 웹크롤링 개요, API 호출, 데이터 표현 방식 등 7개                                                                       | `dataCrawling`, `Bid_API_Data_Fetching`                                     |
+| 데이터 분석 + ML + DL                 | Road Map, 데이터 분석, 인공지능/ML/DL, 머신러닝, 데이터 누수 방지, 웹서버 ML 연동 등 10개                              | `ML+DL`, `data`, `ml_web_project`                                           |
+| 웹 개발                               | 기초 상식, 웹표준, html, Bootstrap, jQuery, Back-End 등 7개                                                            | `fastAPI_basic`, `post_api`                                                 |
+| 컴퓨터 비전 + OPENCV                  | ch1~ch11 + 응용 (색공간, 필터, 에지, 모폴로지, SIFT, 동영상, BBox, Haar Cascade, 배경차분) 18개                        | `opencv`, `ai-cctv-platform`                                                |
+| FastAPI & SqlAlchemy                  | Layered Architecture, FastAPI 기초, CORS, API호출, 파일업로드, ORM, SQLAlchemy CRUD, post_api, 트랜잭션 등 12개        | `fastAPI_basic`, `fastAPI_CRUD`, `post_api`                                 |
+| Docker                                | 개념, 기초실습, DockerFile/Compose, 배포준비, 전체서비스배포 6개                                                       | `docker/` (Minchodan)                                                       |
 | LLM, RAG, MultiModal, LangChain, YOLO | Part01 LLM기초, Part02 LangChain, Part03 RAG, Part04 MultiModal, YOLO, LLM API JSON, 랭체인기초, 랭체인 OpenCV융합 8개 | `prompt_engineering_test`, `rag_skill`, `RAG_Test`, `conv_openCV_langchain` |
-| Front-End, Back-End 기술들 | - | `saramin_langChain_mnProject/frontend` |
-| REST API Status_Code | 2xx/4xx/5xx 표 | `post_api`, `fastAPI_basic` |
-| Curl 방식으로 api 호출 | 15가지 방법 | `fastAPI_basic` |
-| 시각장애인과 정안인의 보행 역학 | - | `Minchodan` (최종 프로젝트) |
-| BIDBOX 낙찰가 예측 프로그램 | - | `bid_box`, `anti_Vibe` |
+| Front-End, Back-End 기술들            | -                                                                                                                      | `saramin_langChain_mnProject/frontend`                                      |
+| REST API Status_Code                  | 2xx/4xx/5xx 표                                                                                                         | `post_api`, `fastAPI_basic`                                                 |
+| Curl 방식으로 api 호출                | 15가지 방법                                                                                                            | `fastAPI_basic`                                                             |
+| 시각장애인과 정안인의 보행 역학       | -                                                                                                                      | `Minchodan` (최종 프로젝트)                                                 |
+| BIDBOX 낙찰가 예측 프로그램           | -                                                                                                                      | `bid_box`, `anti_Vibe`                                                      |
 
 ---
 
@@ -276,11 +276,11 @@ except UnicodeDecodeError:
 
 ### 4.1 웹 크롤링 vs 웹 스크래핑
 
-| 구분 | 크롤링 (Crawling) | 스크래핑 (Scraping) |
-| --- | --- | --- |
-| 목적 | 페이지 링크 구조 수집 | 특정 데이터 추출 |
-| 도구 | 크롤러 봇 | BeautifulSoup, Selenium |
-| 속도 | 느림 (전체 탐색) | 빠름 (특정 페이지) |
+| 구분 | 크롤링 (Crawling)     | 스크래핑 (Scraping)     |
+| ---- | --------------------- | ----------------------- |
+| 목적 | 페이지 링크 구조 수집 | 특정 데이터 추출        |
+| 도구 | 크롤러 봇             | BeautifulSoup, Selenium |
+| 속도 | 느림 (전체 탐색)      | 빠름 (특정 페이지)      |
 
 ### 4.2 BeautifulSoup 기반 크롤링 패턴 (dataCrawling)
 
@@ -972,11 +972,11 @@ class FishClassifierService:
 
 > **Notion 소스**: 데이터 누수 방지를 위한 pipeline
 
-| 유형 | 원인 | 방지 방법 |
-| --- | --- | --- |
+| 유형                | 원인                                    | 방지 방법                                         |
+| ------------------- | --------------------------------------- | ------------------------------------------------- |
 | **Train-Test 오염** | 전체 데이터에 스케일링/PCA 적용 후 분리 | 분리 후 `fit_transform(train)`, `transform(test)` |
-| **미래 정보 사용** | 시계열에서 미래 이동평균 포함 | `shift(1)`로 지연 처리 |
-| **타겟 누수** | 타겟과 직접 연결된 변수 사용 | 타겟 관련 변수 제외 |
+| **미래 정보 사용**  | 시계열에서 미래 이동평균 포함           | `shift(1)`로 지연 처리                            |
+| **타겟 누수**       | 타겟과 직접 연결된 변수 사용            | 타겟 관련 변수 제외                               |
 
 ```python
 # 올바른 스케일링 순서
@@ -1132,14 +1132,14 @@ def get_with_relations(post_id: int) -> Post | None:
 
 ### 7.4 SQL 핵심 개념 (Notion - DataBase MariaDB)
 
-| 분류 | 키워드 | 설명 |
-| --- | --- | --- |
-| **DDL** | CREATE, ALTER, DROP | 테이블 구조 정의/변경/삭제 |
-| **DML** | INSERT, UPDATE, DELETE | 데이터 조작 |
-| **DQL** | SELECT | 데이터 조회 |
-| **JOIN** | INNER, LEFT, RIGHT, FULL | 테이블 간 결합 |
-| **Subquery** | 스칼라, 인라인 뷰, 중첩 | 쿼리 내 쿼리 |
-| **함수** | COUNT, SUM, AVG, MAX, MIN | 집계 함수 |
+| 분류         | 키워드                    | 설명                       |
+| ------------ | ------------------------- | -------------------------- |
+| **DDL**      | CREATE, ALTER, DROP       | 테이블 구조 정의/변경/삭제 |
+| **DML**      | INSERT, UPDATE, DELETE    | 데이터 조작                |
+| **DQL**      | SELECT                    | 데이터 조회                |
+| **JOIN**     | INNER, LEFT, RIGHT, FULL  | 테이블 간 결합             |
+| **Subquery** | 스칼라, 인라인 뷰, 중첩   | 쿼리 내 쿼리               |
+| **함수**     | COUNT, SUM, AVG, MAX, MIN | 집계 함수                  |
 
 ---
 
@@ -1392,15 +1392,15 @@ app = FastAPI(lifespan=lifespan)
 
 ### 8.7 REST API Status Code 요약
 
-| 코드 | 의미 | 사용 예시 |
-| --- | --- | --- |
-| **200** | OK | GET 조회 성공 |
-| **201** | Created | 리소스 생성 (POST) |
-| **204** | No Content | 삭제 성공 (DELETE) |
-| **400** | Bad Request | 잘못된 요청 |
-| **404** | Not Found | 데이터 없음 |
-| **422** | Unprocessable Entity | Pydantic 검증 실패 |
-| **500** | Internal Server Error | 서버 버그 |
+| 코드    | 의미                  | 사용 예시          |
+| ------- | --------------------- | ------------------ |
+| **200** | OK                    | GET 조회 성공      |
+| **201** | Created               | 리소스 생성 (POST) |
+| **204** | No Content            | 삭제 성공 (DELETE) |
+| **400** | Bad Request           | 잘못된 요청        |
+| **404** | Not Found             | 데이터 없음        |
+| **422** | Unprocessable Entity  | Pydantic 검증 실패 |
+| **500** | Internal Server Error | 서버 버그          |
 
 ### 8.8 부분 수정 패턴
 
@@ -1511,19 +1511,19 @@ class OpenCVProcessor:
 
 ### 9.6 OpenCV 학습 챕터 구조 (Notion)
 
-| 챕터 | 주제 | 핵심 함수 |
-| --- | --- | --- |
-| ch1 | 컴퓨터는 사진을 어떻게 볼까 | `cv2.imread`, `np.array` |
-| ch2 | 색공간 이해 | `cv2.cvtColor` (BGR/RGB/HSV) |
-| ch3 | 밝기, 대비 필터 | `cv2.addWeighted`, `cv2.convertScaleAbs` |
-| ch4 | 크기, 자르기, 회전 | `cv2.resize`, `cv2.warpAffine` |
-| ch5 | 에지 검출 | `cv2.Canny` |
-| ch6 | 모폴로지 연산 | `cv2.erode`, `cv2.dilate`, `cv2.morphologyEx` |
-| ch7 | 특징점 (SIFT) | `cv2.SIFT_create` |
-| ch8 | 동영상 처리 | `cv2.VideoCapture`, `cv2.VideoWriter` |
-| ch9 | BBox 지정 | `cv2.rectangle`, `cv2.selectROI` |
-| ch10 | Haar Cascade | `cv2.CascadeClassifier` |
-| ch11 | 배경 차분 | `cv2.createBackgroundSubtractorMOG2` |
+| 챕터 | 주제                        | 핵심 함수                                     |
+| ---- | --------------------------- | --------------------------------------------- |
+| ch1  | 컴퓨터는 사진을 어떻게 볼까 | `cv2.imread`, `np.array`                      |
+| ch2  | 색공간 이해                 | `cv2.cvtColor` (BGR/RGB/HSV)                  |
+| ch3  | 밝기, 대비 필터             | `cv2.addWeighted`, `cv2.convertScaleAbs`      |
+| ch4  | 크기, 자르기, 회전          | `cv2.resize`, `cv2.warpAffine`                |
+| ch5  | 에지 검출                   | `cv2.Canny`                                   |
+| ch6  | 모폴로지 연산               | `cv2.erode`, `cv2.dilate`, `cv2.morphologyEx` |
+| ch7  | 특징점 (SIFT)               | `cv2.SIFT_create`                             |
+| ch8  | 동영상 처리                 | `cv2.VideoCapture`, `cv2.VideoWriter`         |
+| ch9  | BBox 지정                   | `cv2.rectangle`, `cv2.selectROI`              |
+| ch10 | Haar Cascade                | `cv2.CascadeClassifier`                       |
+| ch11 | 배경 차분                   | `cv2.createBackgroundSubtractorMOG2`          |
 
 ---
 
@@ -1759,11 +1759,11 @@ result = response.choices[0].message.content
 
 ### 11.2 temperature 전략
 
-| 용도 | temperature | 이유 |
-| --- | --- | --- |
-| **분류/JSON 출력** | 0.0 | 일관성, 재현성 |
-| **요약/설명문** | 0.7 | 자연스러운 표현 |
-| **추천/창작** | 0.7~1.0 | 다양성 |
+| 용도               | temperature | 이유            |
+| ------------------ | ----------- | --------------- |
+| **분류/JSON 출력** | 0.0         | 일관성, 재현성  |
+| **요약/설명문**    | 0.7         | 자연스러운 표현 |
+| **추천/창작**      | 0.7~1.0     | 다양성          |
 
 ### 11.3 JSON Mode 강제
 
@@ -2007,15 +2007,15 @@ def crawl_saramin_jobs(keyword: str) -> str:
 
 ### 12.8 LangChain 주요 컴포넌트 요약
 
-| 컴포넌트 | 임포트 | 용도 |
-| --- | --- | --- |
-| **ChatPromptTemplate** | `langchain_core.prompts` | 프롬프트 템플릿 |
-| **StrOutputParser** | `langchain_core.output_parsers` | 문자열 출력 파싱 |
-| **JsonOutputParser** | `langchain_core.output_parsers` | JSON 출력 파싱 |
-| **RunnablePassthrough** | `langchain_core.runnables` | 입력 그대로 전달 |
-| **RunnableLambda** | `langchain_core.runnables` | 커스텀 함수 래핑 |
-| **@tool** | `langchain_core.tools` | 도구 데코레이터 |
-| **ChatOpenAI** | `langchain_openai` | OpenAI 채팅 모델 |
+| 컴포넌트                | 임포트                          | 용도             |
+| ----------------------- | ------------------------------- | ---------------- |
+| **ChatPromptTemplate**  | `langchain_core.prompts`        | 프롬프트 템플릿  |
+| **StrOutputParser**     | `langchain_core.output_parsers` | 문자열 출력 파싱 |
+| **JsonOutputParser**    | `langchain_core.output_parsers` | JSON 출력 파싱   |
+| **RunnablePassthrough** | `langchain_core.runnables`      | 입력 그대로 전달 |
+| **RunnableLambda**      | `langchain_core.runnables`      | 커스텀 함수 래핑 |
+| **@tool**               | `langchain_core.tools`          | 도구 데코레이터  |
+| **ChatOpenAI**          | `langchain_openai`              | OpenAI 채팅 모델 |
 
 ---
 
@@ -2045,10 +2045,10 @@ documents = text_splitter.split_documents(raw_documents)
 
 ### 13.2 임베딩 모델 (무료 vs 유료)
 
-| 모델 | 패키지 | 차원 | 비용 | 사용 폴더 |
-| --- | --- | --- | --- | --- |
-| **all-MiniLM-L6-v2** | `HuggingFaceEmbeddings` | 384 | 무료 (로컬) | `rag_skill` |
-| **text-embedding-3-small** | `OpenAIEmbeddings` | 1536 | 유료 (API) | `RAG_Test` |
+| 모델                       | 패키지                  | 차원 | 비용        | 사용 폴더   |
+| -------------------------- | ----------------------- | ---- | ----------- | ----------- |
+| **all-MiniLM-L6-v2**       | `HuggingFaceEmbeddings` | 384  | 무료 (로컬) | `rag_skill` |
+| **text-embedding-3-small** | `OpenAIEmbeddings`      | 1536 | 유료 (API)  | `RAG_Test`  |
 
 **HuggingFace 로컬 임베딩 (rag_skill)**:
 
@@ -2171,13 +2171,13 @@ else:
 
 ### 13.7 모듈 분리 패턴 (rag_skill)
 
-| 모듈 | 함수 | 역할 |
-| --- | --- | --- |
-| `rag_loader.py` | `load_documents(data_path)` | PDF/CSV 로드 + 청킹 |
-| `rag_vectorstore.py` | `get_embedding_function()`, `create_vectorstore()`, `load_vectorstore()` | 임베딩 + ChromaDB |
-| `rag_chain.py` | `get_rag_chain()`, `ask_question(query)` | LCEL 체인 + invoke |
-| `rag_ingest.py` | `main()` | 문서 적재 스크립트 |
-| `rag_main.py` | `main()` | 대화형 CLI 진입점 |
+| 모듈                 | 함수                                                                     | 역할                |
+| -------------------- | ------------------------------------------------------------------------ | ------------------- |
+| `rag_loader.py`      | `load_documents(data_path)`                                              | PDF/CSV 로드 + 청킹 |
+| `rag_vectorstore.py` | `get_embedding_function()`, `create_vectorstore()`, `load_vectorstore()` | 임베딩 + ChromaDB   |
+| `rag_chain.py`       | `get_rag_chain()`, `ask_question(query)`                                 | LCEL 체인 + invoke  |
+| `rag_ingest.py`      | `main()`                                                                 | 문서 적재 스크립트  |
+| `rag_main.py`        | `main()`                                                                 | 대화형 CLI 진입점   |
 
 ### 13.8 Hybrid RAG (SQL + Vector, bid_box)
 
@@ -2212,13 +2212,13 @@ class HybridRAGEngine:
 
 ### 13.9 R-DB vs Vector DB 차이 (Notion)
 
-| 구분 | R-DB (MariaDB) | Vector DB (ChromaDB) |
-| --- | --- | --- |
-| **저장 방식** | 행/열 테이블 | 고차원 벡터 |
-| **검색 방식** | 정확 매칭 (SQL) | 유사도 매칭 (코사인) |
-| **질의 언어** | SQL | 자연어 -> 임베딩 |
-| **적합 데이터** | 정형 데이터 | 비정형 텍스트/이미지 |
-| **응답** | 정확한 값 | 의미적으로 가까운 결과 |
+| 구분            | R-DB (MariaDB)  | Vector DB (ChromaDB)   |
+| --------------- | --------------- | ---------------------- |
+| **저장 방식**   | 행/열 테이블    | 고차원 벡터            |
+| **검색 방식**   | 정확 매칭 (SQL) | 유사도 매칭 (코사인)   |
+| **질의 언어**   | SQL             | 자연어 -> 임베딩       |
+| **적합 데이터** | 정형 데이터     | 비정형 텍스트/이미지   |
+| **응답**        | 정확한 값       | 의미적으로 가까운 결과 |
 
 ---
 
@@ -2365,11 +2365,11 @@ result = chain.invoke({"budget": 250, "days": 4})
 
 ### 14.7 하드코딩 -> LLM 노드 발전 패턴 (langGraphEx)
 
-| 단계 | 노드 방식 | 특징 |
-| --- | --- | --- |
-| **step04** | 하드코딩 Node | 규칙 기반 (budget >= 300 -> 도쿄) |
-| **step01(LLM)** | LLM Node | `llm.with_structured_output()`로 자연어 판단 |
-| **공통** | 그래프 구조 동일 | State/Edge/Router는 동일하게 유지 |
+| 단계            | 노드 방식        | 특징                                         |
+| --------------- | ---------------- | -------------------------------------------- |
+| **step04**      | 하드코딩 Node    | 규칙 기반 (budget >= 300 -> 도쿄)            |
+| **step01(LLM)** | LLM Node         | `llm.with_structured_output()`로 자연어 판단 |
+| **공통**        | 그래프 구조 동일 | State/Edge/Router는 동일하게 유지            |
 
 > **핵심 원칙**: 자연어 판단은 LLM, 수치 계산은 코드로 분담합니다.
 
@@ -2722,15 +2722,15 @@ def split_date_range(start_date, end_date) -> list[tuple]:
 
 ### 16.7 비동기/실시간 기술 비교
 
-| 기술 | 용도 | 지속성 | 방향성 | 사용 폴더 |
-| --- | --- | --- | --- | --- |
-| **asyncio** | 동시 실행 | 1회성 | 단방향 | `asyncawait` |
-| **SSE** | 서버->클라이언트 스트림 | 지속 | 단방향 | `saramin_langChain_mnProject` |
-| **WebSocket** | 양방향 실시간 | 지속 | 양방향 | `web_yolov8n` |
-| **Redis pub/sub** | 프로세스 간 메시지 | 즉시 | 발행/구독 | `web_yolov8n` |
-| **Celery** | 백그라운드 작업 큐 | 비동기 | 작업 큐 | `web_yolov8n` |
-| **threading** | Django 백그라운드 | 데몬 | 단방향 | `Bid_API` |
-| **APScheduler** | 정기 실행 | 스케줄 | 단방향 | `anti_Vibe` |
+| 기술              | 용도                    | 지속성 | 방향성    | 사용 폴더                     |
+| ----------------- | ----------------------- | ------ | --------- | ----------------------------- |
+| **asyncio**       | 동시 실행               | 1회성  | 단방향    | `asyncawait`                  |
+| **SSE**           | 서버->클라이언트 스트림 | 지속   | 단방향    | `saramin_langChain_mnProject` |
+| **WebSocket**     | 양방향 실시간           | 지속   | 양방향    | `web_yolov8n`                 |
+| **Redis pub/sub** | 프로세스 간 메시지      | 즉시   | 발행/구독 | `web_yolov8n`                 |
+| **Celery**        | 백그라운드 작업 큐      | 비동기 | 작업 큐   | `web_yolov8n`                 |
+| **threading**     | Django 백그라운드       | 데몬   | 단방향    | `Bid_API`                     |
+| **APScheduler**   | 정기 실행               | 스케줄 | 단방향    | `anti_Vibe`                   |
 
 ---
 
@@ -2738,13 +2738,13 @@ def split_date_range(start_date, end_date) -> list[tuple]:
 
 ### 17.1 계층 분리 패턴
 
-| 패턴 | 계층 구조 | 사용 폴더 |
-| --- | --- | --- |
-| **MVC 3계층** | Router -> Service -> Repository | `post_api` |
-| **Django apps** | apps/domain/services + views + models | `ml_web_project`, `bid_box` |
-| **FastAPI 라우터 분리** | main + routers/ + schemas/ + services/ | `fastAPI_basic`, `web_yolov8n` |
-| **RAG 모듈 분리** | loader + vectorstore + chain + ingest + main | `rag_skill` |
-| **LangGraph 노드 분리** | State + Nodes + Graph + Router | `langGraphEx` |
+| 패턴                    | 계층 구조                                    | 사용 폴더                      |
+| ----------------------- | -------------------------------------------- | ------------------------------ |
+| **MVC 3계층**           | Router -> Service -> Repository              | `post_api`                     |
+| **Django apps**         | apps/domain/services + views + models        | `ml_web_project`, `bid_box`    |
+| **FastAPI 라우터 분리** | main + routers/ + schemas/ + services/       | `fastAPI_basic`, `web_yolov8n` |
+| **RAG 모듈 분리**       | loader + vectorstore + chain + ingest + main | `rag_skill`                    |
+| **LangGraph 노드 분리** | State + Nodes + Graph + Router               | `langGraphEx`                  |
 
 ### 17.2 방어적 코딩 패턴
 
@@ -2857,96 +2857,96 @@ graph LR
 
 ### 18.1 라이브러리 버전 매트릭스
 
-| 라이브러리 | 버전 | 용도 | 사용 폴더 |
-| --- | --- | --- | --- |
-| fastapi | 0.115~0.137 | 웹 프레임워크 | `fastAPI_basic`, `post_api`, `web_yolov8n`, `anti_Vibe` |
-| uvicorn | 0.49.0 | ASGI 서버 | FastAPI 프로젝트 |
-| sqlalchemy | 2.0.51 | ORM | `post_api`, `web_yolov8n`, `anti_Vibe` |
-| pymysql | 1.2.0 | MariaDB 드라이버 | `dataCrawling`, `post_api`, `Bid_API` |
-| pydantic | 2.13.4 | 스키마 검증 | FastAPI 프로젝트 전체 |
-| openai | 2.41.0 | LLM API | `fastAPI_basic`, `prompt_engineering_test` |
-| langchain | 0.3.19 | LLM 오케스트레이션 | `rag_skill`, `saramin_project` |
-| langgraph | 0.4.1 | 워크플로우 | `langGraphEx`, `Mini_Project_Saramin` |
-| chromadb | 0.6.3 | Vector DB | `rag_skill`, `RAG_Test`, `bid_box` |
-| ultralytics | 8.3 | YOLO | `conv_openCV_langchain`, `web_yolov8n`, `auto_labeler` |
-| opencv | 4.10 | 컴퓨터 비전 | `opencv`, `ai-cctv-platform` |
-| scikit-learn | 1.6 | ML | `data`, `ml_web_project` |
-| xgboost | 2.1 | GBDT | `anti_Vibe`, `bid_box` |
-| lightgbm | 4.5 | GBDT | `anti_Vibe`, `bid_box` |
-| catboost | 1.2 | GBDT | `anti_Vibe`, `bid_box` |
-| tensorflow | 2.x | DL | `data` |
-| pandas | 2.x | 데이터 처리 | 전체 |
-| numpy | 2.x | 수치 계산 | 전체 |
-| httpx | 0.28.1 | 비동기 HTTP | `anti_Vibe`, `bid_box` |
-| celery | - | 비동기 작업 큐 | `web_yolov8n` |
-| redis | - | 메시지 버스 | `web_yolov8n` |
-| apscheduler | - | 정기 스케줄 | `anti_Vibe` |
-| beautifulsoup4 | 4.x | HTML 파싱 | `dataCrawling`, `saramin_project` |
-| folium | - | 지도 시각화 | `data`, `ml_web_project` |
-| streamlit | - | 웹 UI | `Mini_Project_Saramin` |
+| 라이브러리     | 버전        | 용도               | 사용 폴더                                               |
+| -------------- | ----------- | ------------------ | ------------------------------------------------------- |
+| fastapi        | 0.115~0.137 | 웹 프레임워크      | `fastAPI_basic`, `post_api`, `web_yolov8n`, `anti_Vibe` |
+| uvicorn        | 0.49.0      | ASGI 서버          | FastAPI 프로젝트                                        |
+| sqlalchemy     | 2.0.51      | ORM                | `post_api`, `web_yolov8n`, `anti_Vibe`                  |
+| pymysql        | 1.2.0       | MariaDB 드라이버   | `dataCrawling`, `post_api`, `Bid_API`                   |
+| pydantic       | 2.13.4      | 스키마 검증        | FastAPI 프로젝트 전체                                   |
+| openai         | 2.41.0      | LLM API            | `fastAPI_basic`, `prompt_engineering_test`              |
+| langchain      | 0.3.19      | LLM 오케스트레이션 | `rag_skill`, `saramin_project`                          |
+| langgraph      | 0.4.1       | 워크플로우         | `langGraphEx`, `Mini_Project_Saramin`                   |
+| chromadb       | 0.6.3       | Vector DB          | `rag_skill`, `RAG_Test`, `bid_box`                      |
+| ultralytics    | 8.3         | YOLO               | `conv_openCV_langchain`, `web_yolov8n`, `auto_labeler`  |
+| opencv         | 4.10        | 컴퓨터 비전        | `opencv`, `ai-cctv-platform`                            |
+| scikit-learn   | 1.6         | ML                 | `data`, `ml_web_project`                                |
+| xgboost        | 2.1         | GBDT               | `anti_Vibe`, `bid_box`                                  |
+| lightgbm       | 4.5         | GBDT               | `anti_Vibe`, `bid_box`                                  |
+| catboost       | 1.2         | GBDT               | `anti_Vibe`, `bid_box`                                  |
+| tensorflow     | 2.x         | DL                 | `data`                                                  |
+| pandas         | 2.x         | 데이터 처리        | 전체                                                    |
+| numpy          | 2.x         | 수치 계산          | 전체                                                    |
+| httpx          | 0.28.1      | 비동기 HTTP        | `anti_Vibe`, `bid_box`                                  |
+| celery         | -           | 비동기 작업 큐     | `web_yolov8n`                                           |
+| redis          | -           | 메시지 버스        | `web_yolov8n`                                           |
+| apscheduler    | -           | 정기 스케줄        | `anti_Vibe`                                             |
+| beautifulsoup4 | 4.x         | HTML 파싱          | `dataCrawling`, `saramin_project`                       |
+| folium         | -           | 지도 시각화        | `data`, `ml_web_project`                                |
+| streamlit      | -           | 웹 UI              | `Mini_Project_Saramin`                                  |
 
 ### 18.2 환경 변수 목록
 
-| 변수명 | 용도 | 사용 폴더 |
-| --- | --- | --- |
-| `OPENAI_API_KEY` | OpenAI API 키 | LLM/RAG 프로젝트 전체 |
-| `OPEN_AI_MODEL` | LLM 모델명 (기본: gpt-4o-mini) | `conv_openCV_langchain`, `prompt_engineering_test` |
-| `DB_HOST` | DB 호스트 | `dataCrawling`, `post_api`, `Bid_API` |
-| `DB_PORT` | DB 포트 (기본: 3307) | `dataCrawling`, `post_api` |
-| `DB_USER` | DB 사용자 | DB 프로젝트 전체 |
-| `DB_PASSWORD` | DB 비밀번호 | DB 프로젝트 전체 |
-| `DB_NAME` | DB 이름 | DB 프로젝트 전체 |
-| `DATABASE_URL` | SQLAlchemy 연결 문자열 | `post_api`, `web_yolov8n`, `anti_Vibe` |
-| `REDIS_URL` | Redis 연결 문자열 | `web_yolov8n` |
-| `SERVICE_KEY` | 조달청 API 서비스 키 | `Bid_API`, `anti_Vibe` |
-| `GOOGLE_API_KEY` | Gemini API 키 | `bid_box`, `saramin_project` |
+| 변수명           | 용도                           | 사용 폴더                                          |
+| ---------------- | ------------------------------ | -------------------------------------------------- |
+| `OPENAI_API_KEY` | OpenAI API 키                  | LLM/RAG 프로젝트 전체                              |
+| `OPEN_AI_MODEL`  | LLM 모델명 (기본: gpt-4o-mini) | `conv_openCV_langchain`, `prompt_engineering_test` |
+| `DB_HOST`        | DB 호스트                      | `dataCrawling`, `post_api`, `Bid_API`              |
+| `DB_PORT`        | DB 포트 (기본: 3307)           | `dataCrawling`, `post_api`                         |
+| `DB_USER`        | DB 사용자                      | DB 프로젝트 전체                                   |
+| `DB_PASSWORD`    | DB 비밀번호                    | DB 프로젝트 전체                                   |
+| `DB_NAME`        | DB 이름                        | DB 프로젝트 전체                                   |
+| `DATABASE_URL`   | SQLAlchemy 연결 문자열         | `post_api`, `web_yolov8n`, `anti_Vibe`             |
+| `REDIS_URL`      | Redis 연결 문자열              | `web_yolov8n`                                      |
+| `SERVICE_KEY`    | 조달청 API 서비스 키           | `Bid_API`, `anti_Vibe`                             |
+| `GOOGLE_API_KEY` | Gemini API 키                  | `bid_box`, `saramin_project`                       |
 
 ### 18.3 Notion 페이지 인덱스
 
 > **안내**: 아래 페이지 ID는 Notion 워크스페이스 내부 식별자입니다. 팀원은 Notion 워크스페이스에서 **페이지 제목으로 검색**하여 접근하세요. (ID 자체는 클릭 가능한 링크가 아님)
 
-| 페이지 제목 | 하위 수 | 관련 섹션 |
-| --- | --- | --- |
-| 2025 랭체인활용 AI비전 과정 (메인) | ~30 | 전체 |
-| 파이썬 특징, 역사 | 0 | 3 |
-| Python | 20 | 3 |
-| 파이썬 가상환경 PIP | 0 | 3.5 |
-| DataBase (MariaDB) | 15 | 7 |
-| 데이터 수집 | 7 | 4 |
-| 데이터 분석 + ML + DL | 10 | 5, 6 |
-| 웹 개발 | 7 | 8, 15 |
-| 컴퓨터 비전 + OPENCV | 18 | 9 |
-| FastAPI & SqlAlchemy | 12 | 8 |
-| Docker | 6 | - |
-| LLM, RAG, MultiModal, LangChain, YOLO | 8 | 10, 11, 12, 13 |
-| REST API Status_Code | 0 | 8.7 |
-| Curl 방식으로 api 호출 | 0 | 8 |
-| Front-End, Back-End 기술들 | 0 | - |
-| 시각장애인과 정안인의 보행 역학 | - | Minchodan |
-| BIDBOX 낙찰가 예측 | - | 6, 15 |
+| 페이지 제목                           | 하위 수 | 관련 섹션      |
+| ------------------------------------- | ------- | -------------- |
+| 2025 랭체인활용 AI비전 과정 (메인)    | ~30     | 전체           |
+| 파이썬 특징, 역사                     | 0       | 3              |
+| Python                                | 20      | 3              |
+| 파이썬 가상환경 PIP                   | 0       | 3.5            |
+| DataBase (MariaDB)                    | 15      | 7              |
+| 데이터 수집                           | 7       | 4              |
+| 데이터 분석 + ML + DL                 | 10      | 5, 6           |
+| 웹 개발                               | 7       | 8, 15          |
+| 컴퓨터 비전 + OPENCV                  | 18      | 9              |
+| FastAPI & SqlAlchemy                  | 12      | 8              |
+| Docker                                | 6       | -              |
+| LLM, RAG, MultiModal, LangChain, YOLO | 8       | 10, 11, 12, 13 |
+| REST API Status_Code                  | 0       | 8.7            |
+| Curl 방식으로 api 호출                | 0       | 8              |
+| Front-End, Back-End 기술들            | 0       | -              |
+| 시각장애인과 정안인의 보행 역학       | -       | Minchodan      |
+| BIDBOX 낙찰가 예측                    | -       | 6, 15          |
 
 ### 18.4 에이전트 코딩 시 빠른 참조
 
-| 작업 유형 | 참조 섹션 | 핵심 폴더 |
-| --- | --- | --- |
-| Python 기초 스크립트 | 3 | `2025_LangChain_PythonBasic-master` |
-| 웹 크롤링 | 4 | `dataCrawling`, `saramin_project` |
-| 공공 API 호출 | 4.3 | `Bid_API_Data_Fetching`, `apiOpenWeather` |
-| Pandas 데이터 분석 | 5 | `ML+DL`, `data` |
-| ML 모델 학습 | 6.1~6.3 | `data`, `ml_web_project` |
-| XGBoost/LGBM 앙상블 | 6.4 | `anti_Vibe`, `bid_box` |
-| Keras 딥러닝 | 6.5 | `data` |
-| MariaDB + SQLAlchemy | 7 | `post_api` |
-| FastAPI CRUD | 8 | `fastAPI_basic`, `fastAPI_CRUD`, `post_api` |
-| OpenCV 이미지 처리 | 9 | `opencv`, `ai-cctv-platform` |
-| YOLO 객체 탐지 | 10 | `web_yolov8n`, `auto_labeler` |
-| OpenAI API 호출 | 11 | `prompt_engineering_test`, `LLM API_JSON_Test` |
-| LangChain LCEL | 12 | `rag_skill`, `conv_openCV_langchain` |
-| RAG 체인 | 13 | `rag_skill`, `RAG_Test` |
-| LangGraph 워크플로우 | 14 | `langGraphEx_recomendAgent` |
-| Django 웹 서비스 | 15 | `ml_web_project`, `bid_box` |
-| 비동기/SSE/WebSocket | 16 | `saramin_langChain_mnProject`, `web_yolov8n` |
-| 공통 패턴 | 17 | 전체 |
+| 작업 유형            | 참조 섹션 | 핵심 폴더                                      |
+| -------------------- | --------- | ---------------------------------------------- |
+| Python 기초 스크립트 | 3         | `2025_LangChain_PythonBasic-master`            |
+| 웹 크롤링            | 4         | `dataCrawling`, `saramin_project`              |
+| 공공 API 호출        | 4.3       | `Bid_API_Data_Fetching`, `apiOpenWeather`      |
+| Pandas 데이터 분석   | 5         | `ML+DL`, `data`                                |
+| ML 모델 학습         | 6.1~6.3   | `data`, `ml_web_project`                       |
+| XGBoost/LGBM 앙상블  | 6.4       | `anti_Vibe`, `bid_box`                         |
+| Keras 딥러닝         | 6.5       | `data`                                         |
+| MariaDB + SQLAlchemy | 7         | `post_api`                                     |
+| FastAPI CRUD         | 8         | `fastAPI_basic`, `fastAPI_CRUD`, `post_api`    |
+| OpenCV 이미지 처리   | 9         | `opencv`, `ai-cctv-platform`                   |
+| YOLO 객체 탐지       | 10        | `web_yolov8n`, `auto_labeler`                  |
+| OpenAI API 호출      | 11        | `prompt_engineering_test`, `LLM API_JSON_Test` |
+| LangChain LCEL       | 12        | `rag_skill`, `conv_openCV_langchain`           |
+| RAG 체인             | 13        | `rag_skill`, `RAG_Test`                        |
+| LangGraph 워크플로우 | 14        | `langGraphEx_recomendAgent`                    |
+| Django 웹 서비스     | 15        | `ml_web_project`, `bid_box`                    |
+| 비동기/SSE/WebSocket | 16        | `saramin_langChain_mnProject`, `web_yolov8n`   |
+| 공통 패턴            | 17        | 전체                                           |
 
 ---
 

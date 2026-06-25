@@ -144,56 +144,56 @@ graph TD
 
 ## 4. 디렉토리 구조 및 기능 매핑
 
-| 디렉토리 / 파일                               | 기능적 역할                                                  | 단계 |
-| :-------------------------------------------- | :----------------------------------------------------------- | :--- |
-| `server/api/`                                 | WebSocket 엔드포인트, 세션 관리, 하트비트                    | 1    |
-| `server/api/ws_router.py`                     | `APIRouter` + `WebSocket /ws/detect`                         | 1    |
-| `server/api/session_manager.py`               | `device_token` 검증, `session_id` 발급                       | 1    |
-| `server/api/heartbeat.py`                     | 5초 ping/pong asyncio 루프                                   | 1    |
-| `server/capture/frame_decoder.py`             | base64 `np.frombuffer` `cv2.imdecode` resize(640,640)        | 2    |
-| `server/capture/stream_splitter.py`           | 반사 스트림(8~10fps) / 인지 스트림(1~2fps) 분기              | 2    |
-| `server/detection/yolo_detector.py`           | Yolo 26N - Object Detection `predict(conf=0.35)`, boxes 파싱 | 3    |
-| `server/detection/yolo_segmentor.py`          | Yolo 26N - Segmentation 마스크 생성                          | 3    |
-| `server/detection/bytetrack_tracker.py`       | ByteTrack `update()` track_id 부여                           | 3    |
-| `server/detection/gates/reflex_gate.py`       | Reflex Risk Gate (고위험 + 근접 alert_id+방향)               | 3    |
-| `server/detection/gates/surface_gate.py`      | Surface Fast-Alert Gate (P0 노면 하단 검출 alert_id)         | 3    |
-| `server/detection/schemas.py`                 | `DetectionResult`, `SurfaceResult`, `RiskEvent` 타입         | 3    |
-| `server/rag/build/frame_extractor.py`         | 영상 1fps 프레임 추출                                        | 4    |
-| `server/rag/build/dedup_phash.py`             | pHash 중복 제거                                              | 4    |
-| `server/rag/build/llava_captioner.py`         | Ollama(Llava) 한글 캡셔닝                                    | 4    |
-| `server/rag/build/db_builder.py`              | `Chroma.from_documents(persist_directory)`                   | 4    |
-| `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)`                          | 5    |
-| `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열                       | 5    |
-| `server/rag/vector_db_factory.py`             | Chroma Qdrant 핫스왑 추상화                                  | 4·5  |
-| `server/orchestration/state.py`               | `OrchState` TypedDict (event, risk_level, rag_context)       | 6    |
-| `server/orchestration/graph.py`               | `StateGraph` 조립, 노드 등록, 엣지 정의                      | 6    |
-| `server/orchestration/nodes/l1_classifier.py` | L1 룰 기반 위험도 분류 (mid/low만 진입)                      | 6    |
-| `server/orchestration/nodes/l2_generator.py`  | L2 ChatOllama(Gemma2) ainvoke (20자/방향)                    | 6    |
-| `server/orchestration/nodes/l3_validator.py`  | L3 길이·방향 키워드 검증, RETRY(최대 1회)                    | 6    |
-| `server/orchestration/nodes/fallback_node.py` | 최종 실패 고정 문장                                          | 6    |
-| `server/orchestration/llm_client_factory.py`  | `BaseChatModel` Ollama gpt-4o-mini 핫스왑                    | 6    |
-| `server/tts/realtime_tts.py`                  | 인지 경로 Kokoro/Coqui `generate()` base64 MP3               | 7    |
-| `server/tts/reflex_clip_sender.py`            | 반사 경로 alert_id 사전합성 클립 WS 고우선 전송              | 7    |
-| `server/tts/suppressor.py`                    | Redis `setex(suppress:…, 60)` 중복 억제                      | 7    |
-| `server/tts/tts_service.py`                   | `TTSService` 추상화, MP3/WAV 규격 통일                       | 7    |
-| `server/bus/redis_client.py`                  | aioredis 연결 풀                                             | 3·6  |
-| `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                      | 3    |
-| `server/bus/consumer.py`                      | `xread` 구독, orchestration 진입                             | 6    |
-| `server/models/yolo26n/`                      | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 가중치 (git-ignore) | 3 |
-| `data/raw/`                                   | AI Hub 보행자 데이터셋 원본                                  | 4    |
-| `data/frames/`                                | 영상 1fps 추출 프레임                                        | 4    |
-| `data/deduped/`                               | pHash 중복 제거 후 프레임                                    | 4    |
-| `data/captions/`                              | Llava 캡셔닝 결과 JSON                                       | 4    |
-| `data/chroma_db/`                             | ChromaDB persist 디렉토리                                    | 4    |
-| `data/reflex_clips/`                          | 사전합성 반사 음성 클립 (alert_id별 MP3)                     | 7    |
-| `training/`                                   | 모델 학습 (오프라인)                                         | 3    |
-| `client/src/hooks/useWebSocket.ts`            | WS 연결·hello/welcome 핸드셰이크                             | 1    |
-| `client/src/hooks/useCamera.ts`               | `useCameraDevice('back')` + 이중 타이머                      | 2    |
-| `client/src/services/frameCapture.ts`         | `takePhoto({qualityPrioritization:'speed'})` base64          | 2    |
-| `client/src/services/audioPlayer.ts`          | `decodeAudioData()` Web Audio 재생                           | 7    |
-| `client/src/services/reflexClipPlayer.ts`     | 반사 클립 즉시 재생 (선점 로직)                              | 7    |
-| `client/src/utils/haptics.ts`                 | Haptics + `announceForAccessibility`                         | 7    |
-| `console/src/`                                | 운영자 모니터링 (DetectionFeed, RiskEventLog, SessionStatus) | -    |
+| 디렉토리 / 파일                               | 기능적 역할                                                                | 단계 |
+| :-------------------------------------------- | :------------------------------------------------------------------------- | :--- |
+| `server/api/`                                 | WebSocket 엔드포인트, 세션 관리, 하트비트                                  | 1    |
+| `server/api/ws_router.py`                     | `APIRouter` + `WebSocket /ws/detect`                                       | 1    |
+| `server/api/session_manager.py`               | `device_token` 검증, `session_id` 발급                                     | 1    |
+| `server/api/heartbeat.py`                     | 5초 ping/pong asyncio 루프                                                 | 1    |
+| `server/capture/frame_decoder.py`             | base64 `np.frombuffer` `cv2.imdecode` resize(640,640)                      | 2    |
+| `server/capture/stream_splitter.py`           | 반사 스트림(8~10fps) / 인지 스트림(1~2fps) 분기                            | 2    |
+| `server/detection/yolo_detector.py`           | Yolo 26N - Object Detection `predict(conf=0.35)`, boxes 파싱               | 3    |
+| `server/detection/yolo_segmentor.py`          | Yolo 26N - Segmentation 마스크 생성                                        | 3    |
+| `server/detection/bytetrack_tracker.py`       | ByteTrack `update()` track_id 부여                                         | 3    |
+| `server/detection/gates/reflex_gate.py`       | Reflex Risk Gate (고위험 + 근접 alert_id+방향)                             | 3    |
+| `server/detection/gates/surface_gate.py`      | Surface Fast-Alert Gate (P0 노면 하단 검출 alert_id)                       | 3    |
+| `server/detection/schemas.py`                 | `DetectionResult`, `SurfaceResult`, `RiskEvent` 타입                       | 3    |
+| `server/rag/build/frame_extractor.py`         | 영상 1fps 프레임 추출                                                      | 4    |
+| `server/rag/build/dedup_phash.py`             | pHash 중복 제거                                                            | 4    |
+| `server/rag/build/llava_captioner.py`         | Ollama(Llava) 한글 캡셔닝                                                  | 4    |
+| `server/rag/build/db_builder.py`              | `Chroma.from_documents(persist_directory)`                                 | 4    |
+| `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)`                                        | 5    |
+| `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열                                     | 5    |
+| `server/rag/vector_db_factory.py`             | Chroma Qdrant 핫스왑 추상화                                                | 4·5  |
+| `server/orchestration/state.py`               | `OrchState` TypedDict (event, risk_level, rag_context)                     | 6    |
+| `server/orchestration/graph.py`               | `StateGraph` 조립, 노드 등록, 엣지 정의                                    | 6    |
+| `server/orchestration/nodes/l1_classifier.py` | L1 룰 기반 위험도 분류 (mid/low만 진입)                                    | 6    |
+| `server/orchestration/nodes/l2_generator.py`  | L2 ChatOllama(Gemma2) ainvoke (20자/방향)                                  | 6    |
+| `server/orchestration/nodes/l3_validator.py`  | L3 길이·방향 키워드 검증, RETRY(최대 1회)                                  | 6    |
+| `server/orchestration/nodes/fallback_node.py` | 최종 실패 고정 문장                                                        | 6    |
+| `server/orchestration/llm_client_factory.py`  | `BaseChatModel` Ollama gpt-4o-mini 핫스왑                                  | 6    |
+| `server/tts/realtime_tts.py`                  | 인지 경로 Kokoro/Coqui `generate()` base64 MP3                             | 7    |
+| `server/tts/reflex_clip_sender.py`            | 반사 경로 alert_id 사전합성 클립 WS 고우선 전송                            | 7    |
+| `server/tts/suppressor.py`                    | Redis `setex(suppress:…, 60)` 중복 억제                                    | 7    |
+| `server/tts/tts_service.py`                   | `TTSService` 추상화, MP3/WAV 규격 통일                                     | 7    |
+| `server/bus/redis_client.py`                  | aioredis 연결 풀                                                           | 3·6  |
+| `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                                    | 3    |
+| `server/bus/consumer.py`                      | `xread` 구독, orchestration 진입                                           | 6    |
+| `server/models/yolo26n/`                      | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 가중치 (git-ignore) | 3    |
+| `data/raw/`                                   | AI Hub 보행자 데이터셋 원본                                                | 4    |
+| `data/frames/`                                | 영상 1fps 추출 프레임                                                      | 4    |
+| `data/deduped/`                               | pHash 중복 제거 후 프레임                                                  | 4    |
+| `data/captions/`                              | Llava 캡셔닝 결과 JSON                                                     | 4    |
+| `data/chroma_db/`                             | ChromaDB persist 디렉토리                                                  | 4    |
+| `data/reflex_clips/`                          | 사전합성 반사 음성 클립 (alert_id별 MP3)                                   | 7    |
+| `training/`                                   | 모델 학습 (오프라인)                                                       | 3    |
+| `client/src/hooks/useWebSocket.ts`            | WS 연결·hello/welcome 핸드셰이크                                           | 1    |
+| `client/src/hooks/useCamera.ts`               | `useCameraDevice('back')` + 이중 타이머                                    | 2    |
+| `client/src/services/frameCapture.ts`         | `takePhoto({qualityPrioritization:'speed'})` base64                        | 2    |
+| `client/src/services/audioPlayer.ts`          | `decodeAudioData()` Web Audio 재생                                         | 7    |
+| `client/src/services/reflexClipPlayer.ts`     | 반사 클립 즉시 재생 (선점 로직)                                            | 7    |
+| `client/src/utils/haptics.ts`                 | Haptics + `announceForAccessibility`                                       | 7    |
+| `console/src/`                                | 운영자 모니터링 (DetectionFeed, RiskEventLog, SessionStatus)               | -    |
 
 ---
 
@@ -364,24 +364,24 @@ sequenceDiagram
 
 ## 10. 환경 변수
 
-| 변수                | 설명                                | 기본값                   |
-| ------------------- | ----------------------------------- | ------------------------ |
-| `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`) | `ollama`                 |
-| `OLLAMA_BASE_URL`   | Ollama 서버 주소                    | `http://localhost:11434` |
-| `GEMMA_MODEL`       | L2 가이드 생성 모델                 | `gemma2:9b`              |
-| `LLAVA_MODEL`       | 4단계 캡셔닝 모델                   | `llava`                  |
-| `EMBEDDING_MODEL`   | 임베딩 모델                         | `nomic-embed-text`       |
-| `REDIS_URL`         | Redis 연결 URL                      | `redis://localhost:6379` |
-| `CHROMA_PATH`       | ChromaDB persist 디렉토리           | `data/chroma_db`         |
-| `CHROMA_COLLECTION` | ChromaDB 컬렉션명                   | `bidding_kb`             |
-| `WS_PORT`           | WebSocket 서버 포트                 | `8000`                   |
-| `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)    | `kokoro`                 |
-| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`              |
-| `FRAME_SIZE`        | 프레임 리사이즈 크기                | `640`                    |
-| `REFLEX_FPS`        | 반사 캡처 목표 fps                  | `10`                     |
-| `COGNITIVE_FPS`     | 인지 캡처 목표 fps                  | `2`                      |
-| `LLM_PROVIDER`      | LLM 핫스왑 (`ollama`/`openai`)      | `ollama`                 |
-| `OPENAI_API_KEY`    | OpenAI 전환 시 필요                 | (미설정)                 |
+| 변수                | 설명                                      | 기본값                   |
+| ------------------- | ----------------------------------------- | ------------------------ |
+| `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
+| `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
+| `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma2:9b`              |
+| `LLAVA_MODEL`       | 4단계 캡셔닝 모델                         | `llava`                  |
+| `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
+| `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
+| `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
+| `CHROMA_COLLECTION` | ChromaDB 컬렉션명                         | `bidding_kb`             |
+| `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
+| `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)          | `kokoro`                 |
+| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
+| `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
+| `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
+| `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
+| `LLM_PROVIDER`      | LLM 핫스왑 (`ollama`/`openai`)            | `ollama`                 |
+| `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
 
 ---
 

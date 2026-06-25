@@ -21,9 +21,9 @@ description: |
 
 ```
 [원천 영상/사진 데이터]  [프레임 추출/pHash 중복 제거]  [로컬 VLM Llava 캡셔닝]
-                                                                
+
 [ChromaDB 로컬 DB 저장]  [로컬 임베딩 nomic-embed-text]  [대처 수칙 메타데이터 결합]
-          
+
 [5단계: 실시간 RAG 검색 엔진에서 활용]
 ```
 
@@ -31,12 +31,12 @@ description: |
 
 ## 사전 조건
 
-| 항목 | 요구사항 |
-|------|----------|
-| Python | 3.13 |
-| Ollama | 로컬에 설치 및 실행 중 (`ollama run llava`, `ollama run nomic-embed-text`) |
-| 패키지 | `chromadb>=0.5`, `langchain-community`, `langchain-ollama`, `imagehash`, `pillow`, `numpy` |
-| 원천 데이터 | `data/raw/` 내에 위험 상황을 담은 비디오 또는 사진 100건 이상 |
+| 항목        | 요구사항                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| Python      | 3.13                                                                                       |
+| Ollama      | 로컬에 설치 및 실행 중 (`ollama run llava`, `ollama run nomic-embed-text`)                 |
+| 패키지      | `chromadb>=0.5`, `langchain-community`, `langchain-ollama`, `imagehash`, `pillow`, `numpy` |
+| 원천 데이터 | `data/raw/` 내에 위험 상황을 담은 비디오 또는 사진 100건 이상                              |
 
 ## 디렉토리 구조 (Minchodan 기준)
 
@@ -198,19 +198,19 @@ def build_chroma_db(captions: list, persist_dir: str = "data/chroma_db"):
 
 메타데이터 `objects`·`scene_type`을 3단계 **분리 클래스**(예: `braille_damaged`)와 일치시켜 검색 정합을 확보한다.
 
-| 메타데이터 필드 | 값 예시 | 3단계 클래스와의 관계 |
-| --- | --- | --- |
-| `objects` | `["kickboard", "bollard"]` | Yolo 26N - Object Detection 클래스와 일치 |
-| `scene_type` | `braille_damaged` | Yolo 26N - Segmentation 클래스와 일치 |
-| `risk_level` | `high` / `mid` / `low` | Reflex/Surface Gate 위험도와 일치 |
-| `guidance_template` | `"전방 점자블록 파손, 우측으로 우회하세요"` | RAG 검색 결과 텍스트 |
+| 메타데이터 필드     | 값 예시                                     | 3단계 클래스와의 관계                     |
+| ------------------- | ------------------------------------------- | ----------------------------------------- |
+| `objects`           | `["kickboard", "bollard"]`                  | Yolo 26N - Object Detection 클래스와 일치 |
+| `scene_type`        | `braille_damaged`                           | Yolo 26N - Segmentation 클래스와 일치     |
+| `risk_level`        | `high` / `mid` / `low`                      | Reflex/Surface Gate 위험도와 일치         |
+| `guidance_template` | `"전방 점자블록 파손, 우측으로 우회하세요"` | RAG 검색 결과 텍스트                      |
 
 ## 데이터 인터페이스
 
-| 방향 | 페이로드 |
-| --- | --- |
-| In | `List[Document]`(page_content=수칙, metadata={scene_type, risk_level, objects, guidance_template}) |
-| Out | 로컬 persist 디렉토리 (`data/chroma_db/`) |
+| 방향 | 페이로드                                                                                           |
+| ---- | -------------------------------------------------------------------------------------------------- |
+| In   | `List[Document]`(page_content=수칙, metadata={scene_type, risk_level, objects, guidance_template}) |
+| Out  | 로컬 persist 디렉토리 (`data/chroma_db/`)                                                          |
 
 ## 의존성·예외
 
@@ -223,16 +223,16 @@ def build_chroma_db(captions: list, persist_dir: str = "data/chroma_db"):
 
 ## 테스트 체크리스트
 
-| 항목 | 기대 결과 | 합격 기준 |
-|------|-----------|-----------|
-| 1fps 프레임 추출 | 영상  프레임 정상 추출 | 파일 생성 확인 |
-| pHash 중복 제거 | 유사 프레임 제거 | deduped 파일 수 < frames |
-| Llava 한글 캡셔닝 | 캡션 JSON 생성 | 한국어 포함 |
-| 임베딩 768d | nomic-embed-text 벡터 차원 | 768 |
-| ChromaDB persist | 디렉토리 정상 생성 | `data/chroma_db/` 존재 |
-| **collection 건수** | **>= 100** (MVP 10~15) | `collection.count()` |
-| **Top-5 hit-rate** | **>= 0.6** | `eval_hitrate.py` |
-| 메타데이터 정합 | `objects`/`scene_type`이 분리 클래스와 일치 | 수동 검증 |
+| 항목                | 기대 결과                                   | 합격 기준                |
+| ------------------- | ------------------------------------------- | ------------------------ |
+| 1fps 프레임 추출    | 영상 프레임 정상 추출                       | 파일 생성 확인           |
+| pHash 중복 제거     | 유사 프레임 제거                            | deduped 파일 수 < frames |
+| Llava 한글 캡셔닝   | 캡션 JSON 생성                              | 한국어 포함              |
+| 임베딩 768d         | nomic-embed-text 벡터 차원                  | 768                      |
+| ChromaDB persist    | 디렉토리 정상 생성                          | `data/chroma_db/` 존재   |
+| **collection 건수** | **>= 100** (MVP 10~15)                      | `collection.count()`     |
+| **Top-5 hit-rate**  | **>= 0.6**                                  | `eval_hitrate.py`        |
+| 메타데이터 정합     | `objects`/`scene_type`이 분리 클래스와 일치 | 수동 검증                |
 
 ## 참고 자료
 

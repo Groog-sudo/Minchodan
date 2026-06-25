@@ -124,14 +124,14 @@
 
 `.agents/skills/` 폴더에 7단계별 구현 스킬이 있습니다. 작업 시작 시 해당 스킬의 `SKILL.md`를 먼저 읽습니다.
 
-| 스킬                        | 단계 | 경로                                        | 설명                                                |
-| --------------------------- | ---- | ------------------------------------------- | --------------------------------------------------- |
-| `websocket-gateway`         | 1    | `.agents/skills/websocket-gateway/`         | FastAPI WebSocket 실시간 통신, Redis Streams        |
-| `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송    |
+| 스킬                        | 단계 | 경로                                        | 설명                                                                            |
+| --------------------------- | ---- | ------------------------------------------- | ------------------------------------------------------------------------------- |
+| `websocket-gateway`         | 1    | `.agents/skills/websocket-gateway/`         | FastAPI WebSocket 실시간 통신, Redis Streams                                    |
+| `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송                                |
 | `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트 |
-| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드 |
-| `rag-realtime-search`       | 5    | `.agents/skills/rag-realtime-search/`       | similarity_search(k=5) < 50ms, VectorDBFactory      |
-| `llm-guidance-orchestrator` | 6    | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑         |
-| `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점      |
+| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드                             |
+| `rag-realtime-search`       | 5    | `.agents/skills/rag-realtime-search/`       | similarity_search(k=5) < 50ms, VectorDBFactory                                  |
+| `llm-guidance-orchestrator` | 6    | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑                                     |
+| `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점                                  |
 
 > 스킬은 `.agents/skills/` (opencode, 범용) 와 `.claude/skills/` (Claude Code) 양쪽에서 접근 가능합니다. `.claude/skills/`는 `.agents/skills/`의 junction 링크입니다.

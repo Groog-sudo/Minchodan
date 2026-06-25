@@ -87,15 +87,15 @@
 
 ### 1.2 이미지 크기/품질 계산
 
-| 항목 | 값 | 설명 |
-|------|-----|------|
-| 원본 해상도 | 디바이스 의존 (예: 1920x1080) | 후면 카메라 기본 해상도 |
-| JPEG 품질 | speed 우선 (약 50-70%) | qualityPrioritization: 'speed' |
-| base64 인코딩 팽창률 | ×1.33 | 3바이트  4문자 |
-| 원본 JPEG 크기 | 약 30-50KB | 저품질 JPEG |
-| base64 문자열 크기 | 약 40-67KB | 원본 × 1.33 |
-| 목표 리사이즈 | 640×640 | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 표준 입력 |
-| 리사이즈 후 JPEG 크기 | 약 20-40KB | 640×640 재인코딩 |
+| 항목                  | 값                            | 설명                                                             |
+| --------------------- | ----------------------------- | ---------------------------------------------------------------- |
+| 원본 해상도           | 디바이스 의존 (예: 1920x1080) | 후면 카메라 기본 해상도                                          |
+| JPEG 품질             | speed 우선 (약 50-70%)        | qualityPrioritization: 'speed'                                   |
+| base64 인코딩 팽창률  | ×1.33                         | 3바이트 4문자                                                    |
+| 원본 JPEG 크기        | 약 30-50KB                    | 저품질 JPEG                                                      |
+| base64 문자열 크기    | 약 40-67KB                    | 원본 × 1.33                                                      |
+| 목표 리사이즈         | 640×640                       | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 표준 입력 |
+| 리사이즈 후 JPEG 크기 | 약 20-40KB                    | 640×640 재인코딩                                                 |
 
 ### 1.3 프레임 레이트 설계 근거
 
@@ -170,8 +170,8 @@ photo.toBase64() // Promise<string>: base64 인코딩
 
 ```typescript
 // src/hooks/useLocation.ts
-import * as Location from 'expo-location';
-import { useEffect, useState } from 'react';
+import * as Location from "expo-location";
+import { useEffect, useState } from "react";
 
 export function useLocation() {
   const [location, setLocation] = useState<{
@@ -185,13 +185,13 @@ export function useLocation() {
 
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      if (status !== "granted") return;
 
       subscription = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.High,
-          timeInterval: 5000,       // 5초마다 갱신
-          distanceInterval: 2,      // 2m 이동 시 갱신
+          timeInterval: 5000, // 5초마다 갱신
+          distanceInterval: 2, // 2m 이동 시 갱신
         },
         (loc) => {
           setLocation({
@@ -199,7 +199,7 @@ export function useLocation() {
             lon: loc.coords.longitude,
             accuracy: loc.coords.accuracy ?? 0,
           });
-        }
+        },
       );
     })();
 
@@ -216,8 +216,8 @@ export function useLocation() {
 
 ```typescript
 // src/hooks/useBatteryOptimizedCapture.ts
-import { useEffect, useRef, useState } from 'react';
-import * as Battery from 'expo-battery';
+import { useEffect, useRef, useState } from "react";
+import * as Battery from "expo-battery";
 
 /**
  * 배터리 잔량에 따라 캡처 fps를 자동 조절하는 훅.
@@ -415,33 +415,33 @@ async def restore_frame_from_redis(event_data: dict) -> np.ndarray:
 
 ### 4.1 앱 측 에러 처리
 
-| 상황 | 처리 방법 | 구현 위치 |
-|------|-----------|-----------|
-| 카메라 권한 거부 | 권한 안내 화면 표시, TTS 음성 안내 | CameraView.tsx |
-| 카메라 디바이스 없음 | 에러 화면 표시, 앱 비정상 종료 방지 | CameraView.tsx |
-| takePhoto() 실패 | 에러 로그, 다음 간격에 재시도 | useCameraCapture.ts |
-| base64 변환 실패 | null 반환, 해당 프레임 스킵 | useCameraCapture.ts |
-| WebSocket 미연결 시 캡처 | 캡처 중지 (status !== 'connected') | CameraView.tsx |
-| 앱 백그라운드 전환 | isActive=false, 캡처 중지 | AppState 리스너 |
-| 메모리 부족 | JPEG 품질 낮춤, 캡처 빈도 감소 | useBatteryOptimizedCapture.ts |
+| 상황                     | 처리 방법                           | 구현 위치                     |
+| ------------------------ | ----------------------------------- | ----------------------------- |
+| 카메라 권한 거부         | 권한 안내 화면 표시, TTS 음성 안내  | CameraView.tsx                |
+| 카메라 디바이스 없음     | 에러 화면 표시, 앱 비정상 종료 방지 | CameraView.tsx                |
+| takePhoto() 실패         | 에러 로그, 다음 간격에 재시도       | useCameraCapture.ts           |
+| base64 변환 실패         | null 반환, 해당 프레임 스킵         | useCameraCapture.ts           |
+| WebSocket 미연결 시 캡처 | 캡처 중지 (status !== 'connected')  | CameraView.tsx                |
+| 앱 백그라운드 전환       | isActive=false, 캡처 중지           | AppState 리스너               |
+| 메모리 부족              | JPEG 품질 낮춤, 캡처 빈도 감소      | useBatteryOptimizedCapture.ts |
 
 ### 4.2 서버 측 에러 처리
 
-| 상황 | 처리 방법 | 구현 위치 |
-|------|-----------|-----------|
-| base64 디코딩 실패 | error 응답 전송, 해당 이벤트 스킵 | frame_processor.py |
-| JPEG 손상 (imdecode 실패) | error 응답 전송, 로그 경고 | frame_processor.py |
-| 프레임 크기 초과 (>500KB) | 거부, 클라이언트에 품질 조정 요청 | frame_processor.py |
-| Redis 연결 실패 | 프레임 임시 메모리 큐에 버퍼링, 재연결 시 발행 | ws_routes.py |
-| numpy/OpenCV 메모리 오류 | MemoryError 캐치, 로그 critical | frame_processor.py |
-| 동시 다수 프레임 수신 | asyncio.Queue로 순차 처리 | ws_routes.py |
+| 상황                      | 처리 방법                                      | 구현 위치          |
+| ------------------------- | ---------------------------------------------- | ------------------ |
+| base64 디코딩 실패        | error 응답 전송, 해당 이벤트 스킵              | frame_processor.py |
+| JPEG 손상 (imdecode 실패) | error 응답 전송, 로그 경고                     | frame_processor.py |
+| 프레임 크기 초과 (>500KB) | 거부, 클라이언트에 품질 조정 요청              | frame_processor.py |
+| Redis 연결 실패           | 프레임 임시 메모리 큐에 버퍼링, 재연결 시 발행 | ws_routes.py       |
+| numpy/OpenCV 메모리 오류  | MemoryError 캐치, 로그 critical                | frame_processor.py |
+| 동시 다수 프레임 수신     | asyncio.Queue로 순차 처리                      | ws_routes.py       |
 
 ### 4.3 앱 백그라운드 전환 처리
 
 ```typescript
 // src/hooks/useAppState.ts
-import { useEffect, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { useEffect, useRef } from "react";
+import { AppState, AppStateStatus } from "react-native";
 
 /**
  * 앱 상태(포그라운드/백그라운드) 변화 감지 훅.
@@ -449,27 +449,27 @@ import { AppState, AppStateStatus } from 'react-native';
  */
 export function useAppState(
   onForeground: () => void,
-  onBackground: () => void
+  onBackground: () => void,
 ) {
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     const subscription = AppState.addEventListener(
-      'change',
+      "change",
       (nextState: AppStateStatus) => {
         if (
           appState.current.match(/inactive|background/) &&
-          nextState === 'active'
+          nextState === "active"
         ) {
           onForeground();
         } else if (
-          appState.current === 'active' &&
+          appState.current === "active" &&
           nextState.match(/inactive|background/)
         ) {
           onBackground();
         }
         appState.current = nextState;
-      }
+      },
     );
 
     return () => subscription.remove();
