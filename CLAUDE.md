@@ -1,7 +1,5 @@
 # AI Coding & Communication Guidelines (Minchodan)
 
-@SKILLS.md
-
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
@@ -161,4 +159,4 @@
 | 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스                                  |
 | Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                                      |
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
-| 에이전트 스킬 가이드 | [SKILLS.md](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
+| 에이전트 스킬 가이드 | [`skills.md`](skills.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |

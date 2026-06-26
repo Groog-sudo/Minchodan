@@ -244,11 +244,11 @@ bash scripts/build_chroma.sh
 
 ## 최근 변경 사항
 
-변경 사항은 가독성 및 관리 효율을 위해 [`docs/changelogs/`](docs/changelogs/) 폴더에서 팀원별 단일 파일에 누적 기록하여 관리합니다.
+변경 사항은 가독성 및 관리 효율을 위해 [`docs/changelogs/`](docs/changelogs/) 폴더로 분리하여 관리합니다.
 
-- 작업 완료 후 [`docs/changelogs/`](docs/changelogs/) 내의 본인 이니셜 파일(예: `kb.md`) 상단에 [`TEMPLATE.md`](docs/changelogs/TEMPLATE.md) 형식을 적용하여 변경 사항을 누적하여 기록합니다.
-- 전체 이력 및 자세한 가이드는 [`docs/changelogs/README.md`](docs/changelogs/README.md)에서 확인합니다.
-
+- 작업 완료 후 [`docs/changelogs/TEMPLATE.md`](docs/changelogs/TEMPLATE.md)를 복사해 새 파일을 생성합니다.
+- 파일명 규칙: `YYYY-MM-DD_[이니셜]_[작업요약].md`
+- 전체 이력은 [`docs/changelogs/README.md`](docs/changelogs/README.md)에서 확인합니다.
 
 ---
 
