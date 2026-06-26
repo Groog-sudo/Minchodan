@@ -139,9 +139,9 @@ guidedog-ai/
 ├── docker/                          # ─── Docker Build & Setting ───
 │   ├── .dockerignore                #  컨테이너 생성 시 예외 파일 작성
 │   ├── docker-compose.yml           # Redis + Ollama + FastAPI 컨테이너 구성
-│   ├── linux_Docker_Build.sh        # Linux OS에서 Docker Image 생성 자동화 파일
-│   ├── macOS_Docker_Build.sh        # MacOS에서 Docker Image 생성 자동화 파일
-│   ├── windows_Docker_Build.bat      # windows OS에서 Docker Image 생성 자동화 파일
+│   ├── linux_docker_start.sh        # Linux에서 Docker Image 빌드 및 컨테이너 시작
+│   ├── macos_docker_start.sh        # macOS에서 Docker Image 빌드 및 컨테이너 시작
+│   ├── windows_docker_start.bat     # Windows에서 Docker Image 빌드 및 컨테이너 시작
 │   └── Dockerfile                   #  컨테이너 구성
 ├── .env.example                     # LLM_PROVIDER, REDIS_URL, CHROMA_PATH 등
 └── README.md

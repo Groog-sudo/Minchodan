@@ -3,8 +3,9 @@ REM ============================================================================
 REM Script Name : postwork.bat
 REM Platform    : Windows (cmd)
 REM Purpose     : Minchodan Post-work automation -- coding rule check, test run,
-REM               changelog creation, git commit/push, PR creation.
+REM               changelog record, git commit/push, PR creation.
 REM Usage       : scripts\postwork.bat  (run from project root)
+REM NOTE        : For Korean version, use scripts\postwork.ps1
 REM =============================================================================
 setlocal enabledelayedexpansion
 
@@ -54,7 +55,6 @@ echo [OK] Stage: !STAGE!
 REM --- Date ---
 set /p DATE=Enter today's date (YYYY-MM-DD): 
 
-REM Basic format validation (check length = 10, contains dashes)
 set "DATE_LEN=0"
 set "TMP_DATE=!DATE!"
 :DATE_LEN_LOOP
@@ -64,28 +64,26 @@ if defined TMP_DATE (
     goto :DATE_LEN_LOOP
 )
 if not "!DATE_LEN!"=="10" (
-    echo [ERROR] Invalid date format '!DATE!'. Must be YYYY-MM-DD (10 characters^).
+    echo [ERROR] Invalid date format '!DATE!'. Must be YYYY-MM-DD (10 chars).
     exit /b 1
 )
 echo [OK] Date: !DATE!
 
 REM --- Summary ---
-set /p SUMMARY=Enter a short work summary (lowercase, digits, underscores only, e.g. websocket_handshake): 
+set /p SUMMARY=Enter work summary (lowercase, digits, underscores only, e.g. websocket_handshake):
 
-REM Validate summary: check for spaces
 echo !SUMMARY! | findstr /r " " >nul 2>&1
 if not errorlevel 1 (
     echo [ERROR] Invalid summary '!SUMMARY!'. Spaces are not allowed.
     exit /b 1
 )
-REM Check for empty
 if "!SUMMARY!"=="" (
     echo [ERROR] Summary cannot be empty.
     exit /b 1
 )
 echo [OK] Summary: !SUMMARY!
 
-set "CHANGELOG_FILE=docs\changelogs\!DATE!_!INITIAL!_!SUMMARY!.md"
+set "CHANGELOG_FILE=docs\changelogs\!INITIAL!.md"
 echo.
 
 REM =============================================================================
@@ -93,40 +91,40 @@ REM Step B -- Coding rule self-check (informational)
 REM =============================================================================
 echo === Step B: Coding Rule Self-Check ===
 echo.
-echo   [CODING RULE SELF-CHECK -- Verify manually before continuing]
-echo     [ ] All new Python files start with: # -*- coding: utf-8 -*- and sys.stdout.reconfigure(encoding='utf-8')
+echo   [CODING RULE SELF-CHECK -- Verify before continuing]
+echo     [ ] Python file header: # -*- coding: utf-8 -*- and sys.stdout.reconfigure
 echo     [ ] Import order: stdlib -^> third-party -^> local
-echo     [ ] No hardcoded absolute paths (use os.path.dirname(os.path.abspath(__file__)))
-echo     [ ] Environment variables loaded via load_dotenv() + os.getenv(key, default)
-echo     [ ] Defensive coding: None guard, dict.get(), exception handling with loop continuation
-echo     [ ] FastAPI structure: Router -^> Service -^> Repository (3-layer)
-echo     [ ] No emoji in code comments, commit messages, or documents
+echo     [ ] No hardcoded absolute paths
+echo     [ ] Environment vars: load_dotenv() + os.getenv(key, default)
+echo     [ ] Defensive coding: None guard, dict.get(), exception handling
+echo     [ ] FastAPI 3-layer: Router -^> Service -^> Repository
+echo     [ ] No emoji in code, commits, or docs
 echo     [ ] All files saved as UTF-8
 echo.
 
 set /p CODING_CHECK=Have you completed the above checks? (y/N): 
 if /i not "!CODING_CHECK!"=="y" (
-    echo [WARN] Coding rule check not confirmed. Please review the checklist above and re-run.
+    echo [WARN] Coding rule check not confirmed. Review the checklist and re-run.
     exit /b 1
 )
 echo [OK] Coding rule self-check confirmed.
 echo.
 
 REM =============================================================================
-REM Step C -- Dual-path principle violation check (informational)
+REM Step C -- Dual-path principle violation check
 REM =============================================================================
 echo === Step C: Dual Path Violation Check ===
 echo.
 echo   [DUAL PATH VIOLATION CHECK]
-echo     [ ] Reflex path code has NO LLM calls
-echo     [ ] Reflex path code has NO RAG search calls
-echo     [ ] Reflex path code has NO real-time TTS synthesis calls
-echo     [ ] Reflex audio references only pre-synthesized clips in data\reflex_clips\
+echo     [ ] Reflex path: NO LLM calls
+echo     [ ] Reflex path: NO RAG search calls
+echo     [ ] Reflex path: NO real-time TTS synthesis
+echo     [ ] Reflex audio: only pre-synthesized clips in data\reflex_clips\
 echo.
 
 set /p DUAL_CHECK=Confirm no dual-path violations? (y/N): 
 if /i not "!DUAL_CHECK!"=="y" (
-    echo [WARN] Dual-path violation check not confirmed. Please review your reflex path code.
+    echo [WARN] Dual-path violation not confirmed. Review reflex path code.
     exit /b 1
 )
 echo [OK] Dual-path principle confirmed.
@@ -171,31 +169,36 @@ if "!STAGE!"=="7" (
 echo.
 set /p TEST_PASS=Did all tests pass and KPI targets met? (y/N): 
 if /i not "!TEST_PASS!"=="y" (
-    echo [WARN] Tests not fully passed. Proceeding anyway -- please fix issues before PR merge.
+    echo [WARN] Tests not fully passed. Proceeding -- fix before PR merge.
 )
 echo.
 
 REM =============================================================================
-REM Step E -- Changelog file creation
+REM Step E -- Changelog entry append
 REM =============================================================================
-echo === Step E: Changelog File Creation ===
+echo === Step E: Changelog Entry Append ===
 
-if exist "!CHANGELOG_FILE!" (
-    echo [WARN] File already exists: !CHANGELOG_FILE!
-    set /p OVERWRITE=Overwrite? (y/N): 
-    if /i not "!OVERWRITE!"=="y" (
-        echo [INFO] Skipped changelog file creation.
-        goto :CHANGELOG_DONE
-    )
+if not exist "!CHANGELOG_FILE!" (
+    echo # Changelog - !INITIAL!> "!CHANGELOG_FILE!"
+    echo.>> "!CHANGELOG_FILE!"
+    echo ^> Work log for **!INITIAL!**. New entries appended at the bottom.>> "!CHANGELOG_FILE!"
+    echo [OK] Created changelog file: !CHANGELOG_FILE!
 )
 
-copy "docs\changelogs\TEMPLATE.md" "!CHANGELOG_FILE!" >nul
-echo [OK] Changelog file created: !CHANGELOG_FILE!
+echo.>> "!CHANGELOG_FILE!"
+echo --->> "!CHANGELOG_FILE!"
+echo.>> "!CHANGELOG_FILE!"
+echo ### !DATE! ^| Stage !STAGE! ^| !SUMMARY!>> "!CHANGELOG_FILE!"
+echo.>> "!CHANGELOG_FILE!"
+echo - **Commit**: `(to be filled after commit)`>> "!CHANGELOG_FILE!"
+echo - **Changes**:>> "!CHANGELOG_FILE!"
+echo   - (Fill in details after work is done.)>> "!CHANGELOG_FILE!"
+echo - **Files**: (List changed files.)>> "!CHANGELOG_FILE!"
+echo - **Verification**: (Test results and KPI status.)>> "!CHANGELOG_FILE!"
 
-:CHANGELOG_DONE
+echo [OK] Changelog entry appended to: !CHANGELOG_FILE!
 echo.
-echo [MANUAL] [ACTION REQUIRED] Open the changelog file and fill in the change details, related files, and verification results.
-echo [MANUAL] [ACTION REQUIRED] Add a new row to the top of the table in docs\changelogs\README.md.
+echo [MANUAL] Open !CHANGELOG_FILE! and fill in the change details.
 echo.
 
 REM =============================================================================
@@ -208,23 +211,23 @@ set "FORBIDDEN_FOUND=0"
 for /f "tokens=1,*" %%a in ('git status --short 2^>nul') do (
     set "FILE_PATH=%%b"
     if "!FILE_PATH!"==".env" (
-        echo [ERROR] Forbidden file detected in git status: .env -- Do NOT commit this file.
+        echo [ERROR] Forbidden file detected: .env -- Do NOT commit this file.
         set "FORBIDDEN_FOUND=1"
     )
     echo !FILE_PATH! | findstr /b "server\models\" >nul 2>&1
     if not errorlevel 1 (
-        echo [ERROR] Forbidden file detected in git status: !FILE_PATH! -- Do NOT commit model weights.
+        echo [ERROR] Forbidden file detected: !FILE_PATH! -- Do NOT commit model weights.
         set "FORBIDDEN_FOUND=1"
     )
     echo !FILE_PATH! | findstr /b "server/models/" >nul 2>&1
     if not errorlevel 1 (
-        echo [ERROR] Forbidden file detected in git status: !FILE_PATH! -- Do NOT commit model weights.
+        echo [ERROR] Forbidden file detected: !FILE_PATH! -- Do NOT commit model weights.
         set "FORBIDDEN_FOUND=1"
     )
 )
 
 if "!FORBIDDEN_FOUND!"=="1" (
-    echo [ERROR] Forbidden files detected. Add them to .gitignore and remove from staging before committing.
+    echo [ERROR] Forbidden files detected. Add to .gitignore and remove from staging.
     exit /b 1
 )
 echo [OK] No forbidden files detected.
@@ -235,7 +238,7 @@ REM Step G -- Git commit
 REM =============================================================================
 echo === Step G: Git Commit ===
 
-set /p PREFIX=Enter commit prefix (e.g. 1단계, docs, infra, test): 
+set /p PREFIX=Enter commit prefix (e.g. stage1, docs, infra, test):
 set /p DESC=Enter commit description: 
 
 set "COMMIT_MSG=!PREFIX!: !DESC!"
@@ -283,30 +286,30 @@ if /i "!CREATE_PR!"=="y" (
     set /p PR_TITLE=Enter PR title: 
     gh pr create --base dev --head !INITIAL! --title "!PR_TITLE!"
     if errorlevel 1 (
-        echo [WARN] PR creation failed. You can create it manually.
+        echo [WARN] PR creation failed. Create it manually.
         set "PR_STATUS=failed"
     ) else (
         echo [OK] Pull Request created.
         set "PR_STATUS=created"
     )
     echo.
-    echo [MANUAL] [REMINDER] Add to PR description: changed files list, test results (KPI), dual-path principle confirmation.
+    echo [MANUAL] Add to PR description: changed files, test results (KPI), dual-path confirmation.
 ) else (
     echo.
-    echo [INFO] To create a PR manually, run:
-    echo   gh pr create --base dev --head !INITIAL! --title "[!STAGE!단계] !SUMMARY!"
+    echo [INFO] To create a PR manually:
+    echo   gh pr create --base dev --head !INITIAL! --title "[Stage !STAGE!] !SUMMARY!"
 )
 echo.
 
 REM =============================================================================
-REM Step J -- Document consistency reminder (informational)
+REM Step J -- Document consistency reminder
 REM =============================================================================
 echo === Step J: Document Consistency Check ===
 echo.
 echo   [DOCUMENT CONSISTENCY CHECK -- Verify manually]
 echo     [ ] New files added? -^> Update Directory_Structure.md
-echo     [ ] New environment variables? -^> Update .env.example and README.md env table
-echo     [ ] New Python dependencies? -^> Update requirements.txt (team approval required first)
+echo     [ ] New env variables? -^> Update .env.example and README.md
+echo     [ ] New dependencies? -^> Update requirements.txt (team approval required)
 echo     [ ] API contract changed? -^> Update docs\api_specification.md
 echo     [ ] Architecture changed? -^> Update docs\architecture.md
 echo.
@@ -319,13 +322,12 @@ echo.
 echo   Branch     : !INITIAL!
 echo   Stage      : !STAGE!
 echo   Date       : !DATE!
-echo   Changelog  : !CHANGELOG_FILE!
+echo   Changelog  : !CHANGELOG_FILE! (entry appended)
 echo   Committed  : !COMMIT_MSG!
 echo   Pushed     : origin/!INITIAL!
 echo   PR         : !PR_STATUS!
 echo   ---
-echo   [MANUAL] Fill in changelog file details
-echo   [MANUAL] Add row to docs\changelogs\README.md
+echo   [MANUAL] Fill in changelog entry details in !CHANGELOG_FILE!
 echo   [MANUAL] Document consistency checks
 echo.
 echo ===========================================
