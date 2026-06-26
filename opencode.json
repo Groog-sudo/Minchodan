@@ -4,5 +4,9 @@
     "skill": {
       "*": "allow"
     }
-  }
+  },
+  "rules": [
+    "@SKILLS.md"
+  ],
+  "systemPrompt": "Read SKILLS.md before starting any task."
 }
