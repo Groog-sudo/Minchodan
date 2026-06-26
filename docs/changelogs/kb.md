@@ -15,6 +15,7 @@
 - 다른 팀원들의 원활한 변경 사항 기록을 위해 `dg.md`, `jh.md`, `jy.md`, `th.md` 누적용 이력 파일을 생성하였습니다.
 - 변경 사항 작성법 안내와 템플릿 파일([TEMPLATE.md](TEMPLATE.md), [README.md](README.md))을 새 누적 양식에 맞춰 수정하였습니다.
 - 프로젝트 전체 가이드 문서인 루트 [README.md](../README.md), [SKILLS.md](../SKILLS.md), [docs/README.md](../docs/README.md), [docs/git_branching_strategy.md](../docs/git_branching_strategy.md)에 존재하는 changelog 생성 관련 지침을 누적 기록 방식에 맞춰 동기화하였습니다.
+- 실제 사용될 **YOLO26n** 및 **YOLO26n-seg**의 공개 사전 학습 가중치를 다운로드하고 로드 검증하는 스크립트를 각각 [download_pretrained_weights.py](../../scripts/download_pretrained_weights.py) 및 [verify_pretrained_weights.py](../../scripts/verify_pretrained_weights.py)로 작성하여 실제 가중치 기반 연산 검증이 성공하는 실 작동 테스트 환경을 확보하였습니다.
 
 ### 관련 파일
 | 파일 경로 | 변경 유형 | 설명 |
@@ -31,6 +32,8 @@
 | `SKILLS.md` | 수정 | 체크리스트 및 금지행위 내 changelog 작성 규칙 갱신 |
 | `docs/README.md` | 수정 | 문서 인덱스 내 설명 갱신 |
 | `docs/git_branching_strategy.md` | 수정 | 주의 사항 내 changelog 작성 가이드 갱신 |
+| `scripts/download_pretrained_weights.py` | 신규 | 실제 YOLO26n 가중치 다운로드 유틸리티 스크립트 |
+| `scripts/verify_pretrained_weights.py` | 신규 | 실제 YOLO26n 모델 로딩 및 추론 연산 검증 스크립트 |
 
 ### 검증 결과
 - [x] 문서 포맷 검증 (이모지 없음, 한국어 존댓말)
