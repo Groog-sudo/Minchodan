@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **이 저장소에서 작업할 때는 먼저 [`docs/AGENTS.md`](docs/AGENTS.md), [`docs/README.md`](docs/README.md), [`skills.md`](skills.md)를 읽고 프로젝트 규칙과 문서 기준선을 확인합니다.
+> **이 저장소에서 작업할 때는 먼저 [`docs/AGENTS.md`](docs/AGENTS.md), [`docs/README.md`](docs/README.md), [`SKILLS.md`](SKILLS.md)를 읽고 프로젝트 규칙과 문서 기준선을 확인합니다.
 
 # Minchodan (민초단)
 
@@ -288,7 +288,7 @@ bash scripts/build_chroma.sh
 | 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스               |
 | Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                   |
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                 |
-| 에이전트 스킬 가이드 | [`skills.md`](skills.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위, 스킬 인덱스 |
+| 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위, 스킬 인덱스 |
 | 단계별 구현 스킬     | `.agents/skills/`                                                  | 1~7단계별 SKILL.md + references (7종)          |
 
 ---

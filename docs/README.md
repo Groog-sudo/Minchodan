@@ -19,7 +19,7 @@
 | 보행이론 인사이트 보고서 | [behavior_and_risk_insight.md](behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
 | 디렉토리 구조        | [../directory_Structure.md](../directory_Structure.md) | 계획된 물리적 폴더 구조                                           |
-| 에이전트 스킬        | [../skills.md](../skills.md)                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
+| 에이전트 스킬        | [../SKILLS.md](../SKILLS.md)                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
 
 ---
 
