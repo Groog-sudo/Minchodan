@@ -233,5 +233,9 @@ langgraph_checkpoints/
 **/.master_agents/
 .contexty/
 
+# Temporary Smoke Test Outputs
+temp_smoke_*
+
+
 
 
