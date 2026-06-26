@@ -5,6 +5,7 @@ REM Platform    : Windows (cmd)
 REM Purpose     : Minchodan Pre-work automation -- Git sync, env check, GPU check,
 REM               infrastructure/document reminders before coding.
 REM Usage       : scripts\prework.bat  (run from project root)
+REM NOTE        : For Korean version, use scripts\prework.ps1
 REM =============================================================================
 setlocal enabledelayedexpansion
 
@@ -17,7 +18,7 @@ echo.
 REM =============================================================================
 REM Step A -- Prompt for team initial
 REM =============================================================================
-echo === Step A: Team Initial ===
+echo === Step A: Branch Initial ===
 set /p INITIAL=Enter your branch initial (dg/jh/jy/kb/th): 
 
 if "!INITIAL!"=="dg" goto :INITIAL_OK
@@ -133,7 +134,7 @@ if exist ".env" (
 ) else (
     if exist ".env.example" (
         copy .env.example .env >nul
-        echo [WARN] .env was not found. Copied from .env.example. Please fill in actual values before running the server.
+        echo [WARN] .env not found. Copied from .env.example. Fill in actual values before running server.
         set "STATUS_ENV=WARN"
     ) else (
         echo [ERROR] .env.example also missing. Cannot create .env.
@@ -183,7 +184,7 @@ if !STAGE! GEQ 3 (
         set "STATUS_GPU=WARN"
     )
 ) else (
-    echo [SKIP] GPU check skipped (Stage ^< 3^).
+    echo [SKIP] GPU check skipped (Stage ^< 3).
 )
 echo.
 
@@ -192,9 +193,9 @@ REM Step H -- Infrastructure service check (informational)
 REM =============================================================================
 echo === Step H: Infrastructure Service Check ===
 echo.
-echo [MANUAL] Please verify the following services are running before you start coding:
+echo [MANUAL] Verify the following services are running before coding:
 echo     - Redis (default: localhost:6379)
-echo     - Ollama with models: gemma2:9b, llava, nomic-embed-text (default: localhost:11434)
+echo     - Ollama models: gemma2:9b, llava, nomic-embed-text (default: localhost:11434)
 echo     - Docker containers if applicable: docker\windows_docker_start.bat
 echo.
 
@@ -218,9 +219,9 @@ echo === Step J: Dual Path Principle Reminder ===
 echo.
 echo   [CRITICAL -- DUAL PATH PRINCIPLE (NON-NEGOTIABLE)]
 echo     REFLEX path:  MUST NOT call LLM / RAG / real-time TTS.
-echo                   MUST use only pre-synthesized audio clips from data\reflex_clips\.
+echo                   Use only pre-synthesized clips from data\reflex_clips\.
 echo                   Latency target: ^< 300ms (detection basis).
-echo     COGNITIVE path: Uses Redis Streams -^> LangGraph L1/L2/L3 -^> RAG -^> real-time TTS.
+echo     COGNITIVE path: Redis Streams -^> LangGraph L1/L2/L3 -^> RAG -^> real-time TTS.
 echo.
 
 REM =============================================================================

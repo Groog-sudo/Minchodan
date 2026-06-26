@@ -141,7 +141,7 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 4. `.env` 파일의 실제 값을 코드나 문서에 노출
 5. 반사 경로에 LLM/RAG/실시간 TTS를 경유시키는 설계 (비협상 원칙 위반)
 6. `master` 또는 `main` 브랜치에 직접 push
-7. `docs/changelogs/`에 changelog 파일을 작성하지 않고 주요 작업 완료 처리
+7. `docs/changelogs/[이니셜].md`에 changelog 엔트리를 추가하지 않고 주요 작업 완료 처리
 
 ---
 
@@ -154,5 +154,4 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 - [ ] `docs/AGENTS.md` 읽기 완료
 - [ ] 작업 유형에 맞는 추가 문서 참조 완료
 - [ ] 현재 프로젝트가 GPU/CUDA 환경에서 실행 가능한 상태인지 확인
-- [ ] 작업 완료 후 `docs/changelogs/TEMPLATE.md`를 복사하여 changelog 파일 작성 여부 확인
-- [ ] `docs/changelogs/README.md` 파일 목록 테이블에 새 항목 추가 여부 확인
+- [ ] 작업 완료 후 `docs/changelogs/[이니셜].md` 파일에 changelog 엔트리 추가 여부 확인
