@@ -269,7 +269,7 @@ bash scripts/build_chroma.sh
 | `dg`   | (할당 가능)                        |
 | `jh`   | (할당 가능)                        |
 | `jy`   | (할당 가능)                        |
-| `kb`   | 3단계 AI 장애물 실시간 인식        |
+| kb   | 3단계 AI 장애물 실시간 인식, 6단계 종합 회피 가이드 생성 |
 | `th`   | (할당 가능)                        |
 
 단계별 분업 인원수 제안은 [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md) 각 단계의 **분업** 필드를 참조합니다. 브랜치 전략은 [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md)를 따릅니다.
