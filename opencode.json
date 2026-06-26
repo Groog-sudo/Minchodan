@@ -4,11 +4,6 @@
     "skill": {
       "*": "allow"
     }
-  },
-  "context_files": [
-    "SKILLS.md"
-  ],
-  "rules": [
-    "@SKILLS.md"
-  ]
+  }
 }
+
