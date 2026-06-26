@@ -16,6 +16,7 @@
 | Git 브랜칭 전략      | [git_branching_strategy.md](git_branching_strategy.md) | 3계층 브랜치 구조(`master` 또는 `main` / `dev` / 개인), 작업 규칙 |
 | 파이프라인 단계 설계 | [pipeline_stage_design.md](pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
 | 3단계 탐지 설계서     | [stage3_detection_design.md](stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
+| 보행이론 인사이트 보고서 | [behavior_and_risk_insight.md](behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 이니셜별 단일 파일 누적 changelog 목록           |
 | 디렉토리 구조        | [../directory_Structure.md](../directory_Structure.md) | 계획된 물리적 폴더 구조                                           |
 | 에이전트 스킬        | [../skills.md](../skills.md)                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
@@ -31,8 +32,9 @@
 5. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
 6. [`api_specification.md`](api_specification.md) - WebSocket API 계약
 7. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
-8. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-9. [`test_specification.md`](test_specification.md) - 검증 기준
+8. [`behavior_and_risk_insight.md`](behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
+9. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+10. [`test_specification.md`](test_specification.md) - 검증 기준
 
 ---
 
