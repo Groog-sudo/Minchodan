@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> 이 저장소에서 작업할 때는 먼저 [`docs/AGENTS.md`](docs/AGENTS.md), [`docs/README.md`](docs/README.md), [`skills.md`](skills.md)를 읽고 프로젝트 규칙과 문서 기준선을 확인합니다.
+> **이 저장소에서 작업할 때는 먼저 [`docs/AGENTS.md`](docs/AGENTS.md), [`docs/README.md`](docs/README.md), [`skills.md`](skills.md)를 읽고 프로젝트 규칙과 문서 기준선을 확인합니다.
 
 # Minchodan (민초단)
 
@@ -147,6 +147,15 @@ Minchodan/
 
 ### 1. 환경 변수 설정
 
+#### Windows (PowerShell)
+
+```powershell
+Copy-Item .env.example .env
+# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL 등을 설정합니다.
+```
+
+#### macOS / Linux (bash 또는 zsh)
+
 ```bash
 cp .env.example .env
 # LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL 등을 설정합니다.
@@ -154,17 +163,37 @@ cp .env.example .env
 
 ### 2. 서버 의존성 설치 및 실행
 
+#### Windows (PowerShell)
+
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+python -m pip install -r requirements.txt
+python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+#### macOS / Linux (bash 또는 zsh)
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 3. GPU 환경 검증 (Blackwell sm_120 / CUDA 12.8)
 
+#### Windows (PowerShell)
+
 ```powershell
 python scripts\verify_gpu.py
+# device_capability >= (12, 0) 및 GPU 1 step 연산 검증
+```
+
+#### macOS / Linux (bash 또는 zsh)
+
+```bash
+python scripts/verify_gpu.py
 # device_capability >= (12, 0) 및 GPU 1 step 연산 검증
 ```
 
@@ -172,12 +201,34 @@ python scripts\verify_gpu.py
 
 ### 4. Docker 구성 (Redis + Ollama + FastAPI)
 
+#### Windows (PowerShell)
+
 ```powershell
-docker\windows_Docker_Build.bat
-docker-compose -f docker\docker-compose.yml up
+docker\windows_docker_start.bat
+```
+
+#### macOS (bash 또는 zsh)
+
+```bash
+bash docker/macos_docker_start.sh
+```
+
+#### Linux (bash)
+
+```bash
+bash docker/linux_docker_start.sh
 ```
 
 ### 5. RAG 지식베이스 빌드 (오프라인)
+
+#### Windows (PowerShell, Git Bash 또는 WSL bash 필요)
+
+```powershell
+bash scripts/build_chroma.sh
+# 영상  1fps 프레임 추출  pHash 중복 제거  Llava 캡셔닝  임베딩  ChromaDB persist
+```
+
+#### macOS / Linux (bash 또는 zsh)
 
 ```bash
 bash scripts/build_chroma.sh
@@ -244,15 +295,22 @@ bash scripts/build_chroma.sh
 
 ## 최근 변경 사항
 
-변경 사항은 가독성 및 관리 효율을 위해 [`docs/changelogs/`](docs/changelogs/) 폴더로 분리하여 관리합니다.
+변경 사항은 가독성 및 관리 효율을 위해 [`docs/changelogs/`](docs/changelogs/) 폴더에서 **팀원별 단일 파일**로 관리합니다.
 
-- 작업 완료 후 [`docs/changelogs/TEMPLATE.md`](docs/changelogs/TEMPLATE.md)를 복사해 새 파일을 생성합니다.
-- 파일명 규칙: `YYYY-MM-DD_[이니셜]_[작업요약].md`
-- 전체 이력은 [`docs/changelogs/README.md`](docs/changelogs/README.md)에서 확인합니다.
+- 각 팀원은 본인 이니셜 파일(`[이니셜].md`)에 작업 로그를 **하단에 누적** 기록합니다.
+- 작업 후 아래 명령을 실행하면 본인 changelog 파일에 자동으로 append됩니다.
+- 전체 구조는 [`docs/changelogs/README.md`](docs/changelogs/README.md)에서 확인합니다.
+
+| OS | 명령 |
+| --- | --- |
+| **Windows (PowerShell 또는 cmd)** | `scripts\postwork.bat` |
+| **macOS / Linux (bash 또는 zsh)** | `bash scripts/postwork.sh` |
 
 ---
 
 ## 검증 기준선 (계획)
+
+### Windows (PowerShell)
 
 ```powershell
 python tests\test_ws_echo.py          # 1단계: RTT < 100ms
@@ -263,6 +321,19 @@ python tests\test_langgraph.py        # 6단계: bollard  20자/방향 포함
 python tests\test_tts_reflex.py       # 7단계: 반사 클립 선점 재생
 python scripts\eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
 python scripts\verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
+```
+
+### macOS / Linux (bash 또는 zsh)
+
+```bash
+python tests/test_ws_echo.py          # 1단계: RTT < 100ms
+python tests/test_frame_decode.py     # 2단계: 캡처수신 < 50ms
+python tests/test_detection.py        # 3단계: conf≈0.87, < 80ms
+python tests/test_rag_retrieval.py    # 5단계: kickboard 쿼리 < 50ms
+python tests/test_langgraph.py        # 6단계: bollard  20자/방향 포함
+python tests/test_tts_reflex.py       # 7단계: 반사 클립 선점 재생
+python scripts/eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
+python scripts/verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
 ```
 
 상세 검증 기준은 [`docs/test_specification.md`](docs/test_specification.md)를 참조합니다.

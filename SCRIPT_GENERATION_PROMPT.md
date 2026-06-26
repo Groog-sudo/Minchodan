@@ -86,7 +86,8 @@ Print a clear checklist at the end showing what was automated and what must be d
 #### Step E — Python virtual environment activation check
 - Check if the virtual environment is already active by inspecting the `VIRTUAL_ENV` environment variable.
 - If NOT active, print instructions for the user:
-  - Windows: `.\.venv\Scripts\activate.bat`
+  - Windows PowerShell: `.\.venv\Scripts\Activate.ps1`
+  - Windows cmd: `.\.venv\Scripts\activate.bat`
   - Linux/macOS: `source .venv/bin/activate`
 - Do NOT auto-activate (sourcing in a subprocess has no effect on the parent shell). Print the command for the user to run manually.
 - If already active, print: `[OK] Virtual environment is active.`
@@ -107,7 +108,10 @@ Print a clear checklist at the end showing what was automated and what must be d
   Please verify the following services are running before you start coding:
     - Redis (default: localhost:6379)
     - Ollama with models: gemma2:9b, llava, nomic-embed-text (default: localhost:11434)
-    - Docker containers if applicable: docker/windows_docker_start.bat (Windows) or docker/linux_docker_start.sh (Linux)
+    - Docker containers if applicable:
+      - Windows: docker/windows_docker_start.bat
+      - macOS: docker/macos_docker_start.sh
+      - Linux: docker/linux_docker_start.sh
   ```
 
 #### Step I — Print document reading checklist (informational)
@@ -210,14 +214,20 @@ Guide the user through steps that require human input (commit message, PR title)
 - Print test output.
 - Prompt: `Did all tests pass and KPI targets met? (y/N):` If not `y`, print warning (do NOT block — the user may choose to proceed).
 
-#### Step E — Changelog file creation
-- Construct the changelog filename: `${DATE}_${INITIAL}_${SUMMARY}.md`
-  - Example: `2026-06-25_dg_websocket_handshake.md`
-- Copy `docs/changelogs/TEMPLATE.md` to `docs/changelogs/${DATE}_${INITIAL}_${SUMMARY}.md`.
-- If the destination file already exists, print a warning and ask: `File already exists. Overwrite? (y/N):`. If `N`, skip.
-- Print: `[OK] Changelog file created: docs/changelogs/${DATE}_${INITIAL}_${SUMMARY}.md`
-- Print reminder: `[ACTION REQUIRED] Open the changelog file and fill in the change details, related files, and verification results.`
-- Print reminder: `[ACTION REQUIRED] Add a new row to the top of the table in docs/changelogs/README.md.`
+#### Step E — Changelog entry append
+- The changelog file is `docs/changelogs/${INITIAL}.md` (one file per team member, entries appended at the bottom).
+- If the file does not exist, create it with a header: `# Changelog - ${INITIAL}` and a description line.
+- Append a new entry block to the end of the file with the following format:
+  ```
+  ---
+  ### ${DATE} | ${STAGE}단계 | ${SUMMARY}
+  - **커밋**: `(postwork 스크립트에서 입력 예정)`
+  - **변경 내용**: (작업 완료 후 상세 내용을 직접 기입하세요.)
+  - **관련 파일**: (변경된 파일 목록을 기입하세요.)
+  - **검증 결과**: (테스트 결과 및 KPI 달성 여부를 기입하세요.)
+  ```
+- Print: `[OK] Changelog entry appended to: docs/changelogs/${INITIAL}.md`
+- Print reminder: `[ACTION REQUIRED] Open docs/changelogs/${INITIAL}.md and fill in the change details.`
 
 #### Step F — Git staging safety check
 - Run `git status --short` and capture output.
@@ -326,20 +336,30 @@ Apply the following rules when writing the shell and batch scripts:
 ## EXAMPLE USAGE
 
 ### prework
-```bash
-# Linux/macOS
-bash scripts/prework.sh
 
-# Windows
+#### macOS / Linux
+
+```bash
+bash scripts/prework.sh
+```
+
+#### Windows
+
+```cmd
 scripts\prework.bat
 ```
 
 ### postwork
-```bash
-# Linux/macOS
-bash scripts/postwork.sh
 
-# Windows
+#### macOS / Linux
+
+```bash
+bash scripts/postwork.sh
+```
+
+#### Windows
+
+```cmd
 scripts\postwork.bat
 ```
 
