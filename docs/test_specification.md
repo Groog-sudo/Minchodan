@@ -115,18 +115,18 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 **테스트 파일:** `tests/test_detection.py`
 
-| ID         | 검증 항목                               | 기준                               | 상태 |
-| ---------- | --------------------------------------- | ---------------------------------- | ---- |
-| TC-DET-001 | Yolo 26N - Object Detection 킥보드 추론 | `conf≈0.87`                        | 대기 |
-| TC-DET-002 | track_id 부여                           | ByteTrack `update()` track_id      | 대기 |
-| TC-DET-003 | Detection 추론 지연                     | **< 80ms**                         | 대기 |
-| TC-DET-004 | Yolo 26N - Segmentation 마스크          | 노면 의미분할 마스크 생성          | 대기 |
-| TC-DET-005 | Reflex Gate 분기                        | 고위험+근접 `alert_id`+방향        | 대기 |
-| TC-DET-006 | Surface Gate 분기                       | P0 노면 하단 검출 `alert_id`       | 대기 |
-| TC-DET-007 | Redis 컨텍스트 TTL                      | 30초 후 Track ctx 키 자동 삭제     | 대기 |
-| TC-DET-008 | mid/low 발행                            | `xadd("risk.events")` 정상         | 대기 |
-| TC-DET-009 | 무탐지 빈 리스트                        | 에러 없이 빈 리스트 반환           | 대기 |
-| TC-DET-010 | 노면 클래스 분리 (C2)                   | `braille_damaged` 독립 클래스 검출 | 대기 |
+| ID         | 검증 항목                               | 기준                               | 상태          |
+| ---------- | --------------------------------------- | ---------------------------------- | ------------- |
+| TC-DET-001 | Yolo 26N - Object Detection 킥보드 추론 | `conf≈0.87`                        | 대기          |
+| TC-DET-002 | track_id 부여                           | ByteTrack `update()` track_id      | Mock 검증 완료 |
+| TC-DET-003 | Detection 추론 지연                     | **< 80ms**                         | 대기          |
+| TC-DET-004 | Yolo 26N - Segmentation 마스크          | 노면 의미분할 마스크 생성          | 대기          |
+| TC-DET-005 | Reflex Gate 분기                        | 고위험+근접 `alert_id`+방향        | 완료          |
+| TC-DET-006 | Surface Gate 분기                       | P0 노면 하단 검출 `alert_id`       | 완료          |
+| TC-DET-007 | Redis 컨텍스트 TTL                      | 30초 후 Track ctx 키 자동 삭제     | 대기          |
+| TC-DET-008 | mid/low 발행                            | `xadd("risk.events")` 정상         | 완료          |
+| TC-DET-009 | 무탐지 빈 리스트                        | 에러 없이 빈 리스트 반환           | 완료          |
+| TC-DET-010 | 노면 클래스 분리 (C2)                   | `braille_damaged` 독립 클래스 검출 | 대기          |
 
 ### 5.4 4단계 - RAG 지식베이스 구축
 
@@ -189,13 +189,13 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 ## 6. 이중 경로 분리 검증
 
-| ID          | 검증 항목                    | 기준                                | 상태 |
-| ----------- | ---------------------------- | ----------------------------------- | ---- |
-| TC-PATH-001 | 반사 경로 LLM 미경유         | Reflex/Surface Gate에 LLM 호출 없음 | 대기 |
-| TC-PATH-002 | 반사 경로 RAG 미경유         | 반사 메시지에 RAG 검색 없음         | 대기 |
-| TC-PATH-003 | 반사 경로 실시간 TTS 미사용  | 사전합성 클립만 사용                | 대기 |
-| TC-PATH-004 | 인지 경로 Redis Streams 경유 | `xadd("risk.events")` `xread`       | 대기 |
-| TC-PATH-005 | 선점 우선순위                | 반사 WS 고우선 타입 > 인지          | 대기 |
+| ID          | 검증 항목                    | 기준                                | 상태     |
+| ----------- | ---------------------------- | ----------------------------------- | -------- |
+| TC-PATH-001 | 반사 경로 LLM 미경유         | Reflex/Surface Gate에 LLM 호출 없음 | 완료     |
+| TC-PATH-002 | 반사 경로 RAG 미경유         | 반사 메시지에 RAG 검색 없음         | 완료     |
+| TC-PATH-003 | 반사 경로 실시간 TTS 미사용  | 사전합성 클립만 사용                | 완료     |
+| TC-PATH-004 | 인지 경로 Redis Streams 경유 | `xadd("risk.events")` `xread`       | 발행 완료 |
+| TC-PATH-005 | 선점 우선순위                | 반사 WS 고우선 타입 > 인지          | 대기     |
 
 ---
 

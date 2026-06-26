@@ -6,7 +6,7 @@ description: |
   이중 게이트(Reflex Gate + Surface Gate)로 위험도를 1차 분류하는 듀얼헤드 파이프라인.
 ---
 
-# Yolo 26N - Object Detection (3단계: AI 장애물 실시간 인식) v1.1 핵심
+# Yolo 26N - Object Detection (3단계: AI 장애물 실시간 인식)  v1.1 핵심
 
 > **작성일**: 2026-06-24
 > **버전**: v0.2.0
@@ -19,13 +19,13 @@ description: |
 
 ## v1.1 핵심 변경 사항
 
-| 항목        | 기존            | v1.1                                                                                                 |
-| ----------- | --------------- | ---------------------------------------------------------------------------------------------------- |
-| 객체 탐지   | YOLOv8          | **Yolo 26N - Object Detection** (NMS-free, sm_120, 소형객체 최적화)                                  |
-| 분할        | 없음            | **Yolo 26N - Segmentation**                                                                          |
-| 게이트      | 단일 Risk Gate  | **이중 게이트**: Reflex Gate (Detection) + Surface Gate (Seg)                                        |
-| 노면 클래스 | 혼합            | **분리(C2)**: `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution` |
-| LLM 경유    | high도 LLM 거침 | **반사 경로 LLM 미경유** (비협상 원칙)                                                               |
+| 항목 | 기존 | v1.1 |
+| --- | --- | --- |
+| 객체 탐지 | YOLOv8 | **Yolo 26N - Object Detection** (NMS-free, sm_120, 소형객체 최적화) |
+| 분할 | 없음 | **Yolo 26N - Segmentation** |
+| 게이트 | 단일 Risk Gate | **이중 게이트**: Reflex Gate (Detection) + Surface Gate (Seg) |
+| 노면 클래스 | 혼합 | **분리(C2)**: `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution` |
+| LLM 경유 | high도 LLM 거침 | **반사 경로 LLM 미경유** (비협상 원칙) |
 
 ## 전체 아키텍처 위치
 
@@ -40,14 +40,14 @@ description: |
 
 ## 사전 조건
 
-| 항목      | 요구사항                                                                             |
-| --------- | ------------------------------------------------------------------------------------ |
-| Python    | 3.13                                                                                 |
-| GPU       | Blackwell sm_120 (RTX 5090/5070 Ti), CUDA 12.8 + cu128 PyTorch 휠                    |
-| 패키지    | `ultralytics>=8.3`, `opencv-python>=4.10`, `redis>=5.0`, `bytetracker`               |
+| 항목 | 요구사항 |
+|------|----------|
+| Python | 3.13 |
+| GPU | Blackwell sm_120 (RTX 5090/5070 Ti), CUDA 12.8 + cu128 PyTorch 휠 |
+| 패키지 | `ultralytics>=8.3`, `opencv-python>=4.10`, `redis>=5.0`, `bytetracker` |
 | 모델 파일 | `server/models/yolo26n/object_detection.pt`, `server/models/yolo26n/segmentation.pt` |
-| Redis     | 7 이상, Streams 지원 필수                                                            |
-| 이전 단계 | 2단계에서 640x640 BGR numpy 배열이 전달되어야 함                                     |
+| Redis | 7 이상, Streams 지원 필수 |
+| 이전 단계 | 2단계에서 640x640 BGR numpy 배열이 전달되어야 함 |
 
 ## 디렉토리 구조 (Minchodan 기준)
 
@@ -227,12 +227,12 @@ def surface_gate(surface_result, frame_height):
 
 ### 단계 3-8. 위험도별 처리 분기
 
-| 위험도 | 게이트        | 행동                                                          |
-| ------ | ------------- | ------------------------------------------------------------- |
-| `high` | Reflex Gate   | **LLM/RAG 미경유**, 사전합성 클립 즉시 재생 (7단계 반사 경로) |
-| `high` | Surface Gate  | **LLM/RAG 미경유**, 사전합성 클립 즉시 재생 (7단계 반사 경로) |
-| `mid`  | (게이트 통과) | Redis Streams `xadd("risk.events")` 발행 인지 경로            |
-| `low`  | (게이트 통과) | Redis Streams `xadd("risk.events")` 발행 인지 경로            |
+| 위험도 | 게이트 | 행동 |
+|--------|--------|------|
+| `high` | Reflex Gate | **LLM/RAG 미경유**, 사전합성 클립 즉시 재생 (7단계 반사 경로) |
+| `high` | Surface Gate | **LLM/RAG 미경유**, 사전합성 클립 즉시 재생 (7단계 반사 경로) |
+| `mid` | (게이트 통과) | Redis Streams `xadd("risk.events")` 발행  인지 경로 |
+| `low` | (게이트 통과) | Redis Streams `xadd("risk.events")` 발행  인지 경로 |
 
 ### 단계 3-9. mid/low Redis Streams 발행
 
@@ -252,15 +252,15 @@ def publish_to_cognitive_path(detection, risk):
 
 ## 노면 클래스 분리 (C2)
 
-| 클래스             | 설명               | 게이트            |
-| ------------------ | ------------------ | ----------------- |
-| `braille_normal`   | 점자블록 정상      | (해당 없음)       |
-| `braille_damaged`  | 점자블록 파손      | Surface Gate (P0) |
-| `sidewalk_normal`  | 보도 정상          | (해당 없음)       |
-| `sidewalk_damaged` | 보도 파손          | (해당 없음, mid)  |
-| `crosswalk`        | 횡단보도           | Surface Gate (P0) |
-| `roadway`          | 차도               | (주의, mid)       |
-| `caution`          | 계단/맨홀/그레이팅 | Surface Gate (P0) |
+| 클래스 | 설명 | 게이트 |
+| --- | --- | --- |
+| `braille_normal` | 점자블록 정상 | (해당 없음) |
+| `braille_damaged` | 점자블록 파손 | Surface Gate (P0) |
+| `sidewalk_normal` | 보도 정상 | (해당 없음) |
+| `sidewalk_damaged` | 보도 파손 | (해당 없음, mid) |
+| `crosswalk` | 횡단보도 | Surface Gate (P0) |
+| `roadway` | 차도 | (주의, mid) |
+| `caution` | 계단/맨홀/그레이팅 | Surface Gate (P0) |
 
 > 같은 클래스로 묶으면 파손 학습이 불가하므로 **독립 클래스**로 분리한다.
 
@@ -303,26 +303,26 @@ class RiskEvent(BaseModel):
 
 ## 테스트 체크리스트
 
-| 항목                    | 기대 결과                   | 합격 기준         |
-| ----------------------- | --------------------------- | ----------------- |
-| 킥보드 탐지             | `conf>=0.87, track_id`      | 추론 < 80ms       |
-| Yolo 26N - Segmentation | 노면 마스크 생성            | 클래스 분리 확인  |
-| Reflex Gate 분기        | 고위험+근접 alert_id+방향   | LLM 미경유        |
-| Surface Gate 분기       | P0 노면 하단 alert_id       | LLM 미경유        |
-| Redis 컨텍스트 TTL      | 30초 후 자동 삭제           | `exists` False    |
-| mid/low 발행            | `xadd("risk.events")`       | 메시지 ID 반환    |
-| 무탐지 빈 리스트        | 에러 없이 빈 리스트         | 파이프라인 영속성 |
-| 노면 클래스 분리 (C2)   | `braille_damaged` 독립 검출 | 분리 클래스 학습  |
+| 항목 | 기대 결과 | 합격 기준 |
+|------|-----------|-----------|
+| 킥보드 탐지 | `conf>=0.87, track_id` | 추론 < 80ms |
+| Yolo 26N - Segmentation | 노면 마스크 생성 | 클래스 분리 확인 |
+| Reflex Gate 분기 | 고위험+근접  alert_id+방향 | LLM 미경유 |
+| Surface Gate 분기 | P0 노면 하단  alert_id | LLM 미경유 |
+| Redis 컨텍스트 TTL | 30초 후 자동 삭제 | `exists`  False |
+| mid/low 발행 | `xadd("risk.events")` | 메시지 ID 반환 |
+| 무탐지 빈 리스트 | 에러 없이 빈 리스트 | 파이프라인 영속성 |
+| 노면 클래스 분리 (C2) | `braille_damaged` 독립 검출 | 분리 클래스 학습 |
 
 ## 에러 처리
 
-| 상황                  | 처리                                          |
-| --------------------- | --------------------------------------------- |
-| 모델 파일 없음        | 서버 시작 실패 + 로그 경고                    |
-| 프레임이 None         | 추론 스킵, 빈 detections 반환                 |
-| Redis 연결 실패       | 컨텍스트 업데이트 스킵, 탐지 결과는 정상 반환 |
-| CUDA OOM              | CPU 폴백 (`device='cpu'`)                     |
-| ByteTrack 초기화 실패 | Track ID 없이 탐지 결과만 반환                |
+| 상황 | 처리 |
+|------|------|
+| 모델 파일 없음 | 서버 시작 실패 + 로그 경고 |
+| 프레임이 None | 추론 스킵, 빈 detections 반환 |
+| Redis 연결 실패 | 컨텍스트 업데이트 스킵, 탐지 결과는 정상 반환 |
+| CUDA OOM | CPU 폴백 (`device='cpu'`) |
+| ByteTrack 초기화 실패 | Track ID 없이 탐지 결과만 반환 |
 
 ## 참고 자료
 
