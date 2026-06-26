@@ -99,7 +99,7 @@
 - Conciseness: 코드와 설명은 핵심 로직 위주로 간결하게 작성. 불필요한 서술 지양.
 - Pathing: 문서·명령은 프로젝트 루트(`./Minchodan`) 기준의 상대경로를 사용하고, Python 실행 경로는 `__file__` 기반으로 계산합니다. 환경별 절대경로 하드코딩은 금지합니다.
 - UTF-8 Only: 문서, 스크립트, 설정 파일은 UTF-8로 저장.
-- LF Policy: 추적되는 텍스트 파일은 LF 줄바꿈을 기준으로 유지하고, Windows 로컬 Git은 `core.autocrlf=false`, `core.eol=lf`를 권장.
+- LF Policy: 추적되는 텍스트 파일은 LF 줄바꿈을 기준으로 유지합니다. Windows 로컬 Git은 `core.autocrlf=false`, `core.eol=lf`를 권장하며, macOS/Linux도 프로젝트 단위 설정이 필요하면 동일한 값을 사용합니다.
 - Defensive Coding: 프레임 버퍼/디코딩 결과가 `None`인 경우 반드시 가드레일 처리. 무탐지 시 에러 없이 빈 리스트 반환(파이프라인 영속성).
 - Dual Path Discipline: **반사 경로에는 LLM/RAG/실시간 TTS를 절대 경유시키지 않습니다.** 반사 음성은 사전합성 고정 클립만 사용합니다.
 - Mermaid & Markdown Standards:

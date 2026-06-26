@@ -160,7 +160,7 @@ graph TD
 
 ### 3.1 파일 헤더 인코딩 (수업 표준 패턴)
 
-모든 Python 파일 첫 줄에 UTF-8 선언과 Windows 터미널 한글 인코딩 설정을 포함합니다.
+모든 Python 파일 첫 줄에 UTF-8 선언과 터미널 한글 출력 안정화 설정을 포함합니다.
 
 ```python
 # -*- coding: utf-8 -*-
@@ -213,21 +213,33 @@ model = os.getenv("OPEN_AI_MODEL", "gpt-4o-mini")  # 기본값 지정
 
 ### 3.5 가상환경 관리
 
-```bash
-# 생성
+#### Windows (PowerShell)
+
+```powershell
 python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip freeze > requirements.txt
+python -m pip install -r requirements.txt
+deactivate
+```
 
-# 활성화 (Windows)
-venv\Scripts\activate
+#### Windows (cmd)
 
-# 활성화 (macOS/Linux)
+```cmd
+python -m venv venv
+venv\Scripts\activate.bat
+python -m pip freeze > requirements.txt
+python -m pip install -r requirements.txt
+deactivate
+```
+
+#### macOS / Linux (bash 또는 zsh)
+
+```bash
+python3 -m venv venv
 source venv/bin/activate
-
-# 의존성 저장/복원
-pip freeze > requirements.txt
-pip install -r requirements.txt
-
-# 비활성화
+python -m pip freeze > requirements.txt
+python -m pip install -r requirements.txt
 deactivate
 ```
 
