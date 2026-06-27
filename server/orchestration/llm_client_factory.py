@@ -5,9 +5,10 @@ Ollama 공식 SDK 및 httpx를 사용하여, 외부 langchain_community/langchai
 로컬 Gemma2 및 상용 GPT-4o-mini 모델 간의 비동기 호출 및 핫스왑을 지원합니다.
 """
 
+import asyncio
+import logging
 import os
 import sys
-import logging
 from typing import List
 
 from dotenv import load_dotenv
@@ -128,6 +129,9 @@ class LLMClientFactory:
     """
     _ollama: SimpleOllamaClient = None
     _openai: SimpleOpenAIClient = None
+    _current_provider: str = "ollama"
+    _monitor_task: asyncio.Task = None
+    _gpu_monitor = None
 
     @classmethod
     def get_ollama(cls) -> SimpleOllamaClient:
@@ -147,11 +151,47 @@ class LLMClientFactory:
         return cls._openai
 
     @classmethod
+    def start_gpu_monitor(cls, interval_seconds: float = 2.0):
+        """
+        백그라운드에서 GPU 상태를 감시하여 임계치 돌파 시 openai로 자동 핫스왑하도록 설정합니다.
+        (아웃오브밴드 비동기 루프)
+        """
+        from server.mcp.gpu_monitor import GPUMonitorMCP
+        if cls._gpu_monitor is None:
+            cls._gpu_monitor = GPUMonitorMCP()
+        
+        # 기본 provider를 환경변수에서 설정
+        cls._current_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+
+        async def _monitor_loop():
+            while True:
+                try:
+                    should_fallback = await cls._gpu_monitor.check_hotswap_trigger()
+                    if should_fallback and cls._current_provider == "ollama":
+                        cls._current_provider = "openai"
+                        logger.warning("[MCP HOTSWAP] GPU 부하 임계치 도달로 인해 OpenAI(gpt-4o-mini)로 핫스왑을 수행합니다.")
+                    elif not should_fallback and cls._current_provider == "openai":
+                        # 리소스 정상 복구 시 다시 ollama 복귀 (환경변수가 ollama로 고정된 상태일 때만)
+                        default_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+                        if default_provider == "ollama":
+                            cls._current_provider = "ollama"
+                            logger.info("[MCP HOTSWAP] GPU 부하 정상 복구로 인해 로컬 Ollama(Gemma2)로 복귀합니다.")
+                except Exception as e:
+                    logger.error(f"[MCP HOTSWAP] GPU 모니터 루프 예외 발생: {str(e)}")
+                await asyncio.sleep(interval_seconds)
+
+        if cls._monitor_task is None or cls._monitor_task.done():
+            cls._monitor_task = asyncio.create_task(_monitor_loop())
+            logger.info("GPU 모니터 백그라운드 태스크가 성공적으로 시작되었습니다.")
+
+    @classmethod
     def get_client(cls, provider: str = None):
         """
         지정된 provider 또는 환경변수 설정을 확인해 적절한 클라이언트를 반환합니다.
         """
-        target_provider = provider or os.getenv("LLM_PROVIDER", "ollama").lower()
+        # start_gpu_monitor가 아직 호출되지 않았다면 기본값 기준 설정
+        target_provider = provider or cls._current_provider
+        
         if target_provider == "openai":
             try:
                 return cls.get_openai()
@@ -159,3 +199,4 @@ class LLMClientFactory:
                 sys.stderr.write(f"[WARN] OpenAI Client init failed: {str(e)}. Falling back to Ollama.\n")
                 return cls.get_ollama()
         return cls.get_ollama()
+

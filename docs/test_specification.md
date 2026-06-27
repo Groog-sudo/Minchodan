@@ -170,6 +170,16 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-LG-006 | Fallback 고정 문장  | 최종 실패 시 "전방 주의, 천천히 멈추세요" | 완료 |
 | TC-LG-007 | 조건부 분기         | StateGraph 엣지 정상                      | 완료 |
 | TC-LG-008 | API 장애 디폴트     | Rate Limit 시 디폴트 수칙 반환            | 완료 |
+| TC-LG-009 | GPU Monitor 핫스왑  | GPU 리소스 임계치 돌파 시 OpenAI 핫스왑   | 완료 |
+
+### 5.8 공통 - MCP 및 실시간 관제 스트림
+
+**테스트 파일:** `tests/test_mcp_integration.py`
+
+| ID         | 검증 항목                  | 기준                                        | 상태 |
+| ---------- | ------------------------- | ------------------------------------------- | ---- |
+| TC-MCP-001 | SSE 모니터링 브로드캐스트 | `/api/v1/monitor/stream` 정상 데이터 전송  | 완료 |
+
 
 ### 5.7 7단계 - 음성 안내 출력
 
@@ -228,6 +238,8 @@ python tests\test_detection.py
 python tests\test_rag_retrieval.py
 python tests\test_langgraph.py
 python tests\test_tts_reflex.py
+python tests\test_mcp_gpu.py
+python tests\test_mcp_integration.py
 
 # 3. RAG 품질 평가
 python scripts\eval_hitrate.py
@@ -251,6 +263,8 @@ python tests/test_detection.py
 python tests/test_rag_retrieval.py
 python tests/test_langgraph.py
 python tests/test_tts_reflex.py
+python tests/test_mcp_gpu.py
+python tests/test_mcp_integration.py
 
 # 3. RAG 품질 평가
 python scripts/eval_hitrate.py

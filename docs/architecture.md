@@ -406,3 +406,77 @@ sequenceDiagram
 - `python scripts/verify_gpu.py` - GPU: sm_120 + CUDA 12.8 검증
 
 상세 검증 기준은 [`docs/test_specification.md`](test_specification.md)를 참조합니다.
+
+---
+
+## 13. MCP (Model Context Protocol) 연동 및 저지연 가드레일
+
+본 프로젝트의 관측 가능성(Observability) 확보와 자원 관리를 위해 MCP를 연동하되, 핵심 지표인 **로우 레이턴시(반사 경로 < 300ms)**를 훼손하지 않도록 비동기 설계를 강제합니다.
+
+### 13.1 단계별 MCP 연동 매트릭스
+
+| 대상 단계 | MCP 구분 | RAG와의 차별점 및 구체적 역할 |
+| :--- | :--- | :--- |
+| **6단계 (오케스트레이션)** | **LangSmith Trace MCP** | `StateGraph` 내의 노드 전이 및 실행 지연(Latency)을 시각적으로 추적하고 가드레일 위반 시의 재시도 루프를 감시합니다. |
+| **6단계 (오케스트레이션)** | **System / GPU Monitor MCP** | GPU 자원 사용량과 CUDA 메모리 한계를 모니터링하여 로컬 Ollama 모델 부하 임계치 도달 시 OpenAI GPT-4o-mini로의 핫스왑을 제어합니다. |
+| **7단계 (음성 출력)** | **Audio Validator MCP** | 실시간 생성된 음성 안내(base64 MP3)의 샘플 레이트 규격(24kHz) 준수 여부, 오디오 TTFB 및 무음 구간(Silence)을 검증합니다. |
+| **7단계 (음성 출력)** | **Redis Cache Monitor MCP** | 중복 경보 방지를 위한 `suppress:alert_id` 캐시 키와 TTL(60초)의 정밀 상태를 상시 모니터링하고 관리합니다. |
+| **7단계 (음성 출력)** | **Accessibility Simulator MCP** | `announceForAccessibility` 텍스트와 실제 재생되는 오디오 파일 간의 의미 정합성을 시각장애인 접근성 관점에서 비교 검증합니다. |
+| **공통 (경보)** | **Slack Notification MCP** | L3 가드레일 최종 실패(Fallback 작동) 및 추론 서버 크리티컬 예외 발생 시 실시간으로 개발팀 채널에 즉시 에러 로그를 전송합니다. |
+
+### 13.2 저지연(Low-Latency) 보장을 위한 3대 가드레일
+
+모니터링 데이터 수집으로 인해 메인 추론/전송 스레드에 블로킹(Blocking)이 발생하는 것을 방지하기 위해 다음 원칙을 반드시 준수합니다.
+
+1. **아웃오브밴드 비동기 처리 (Out-of-Band)**: 메인 API 통신 및 오디오 전송 루프 내에 MCP 연동 코드를 인라인(Inline)으로 배치하는 것을 전면 금지하며, `asyncio.create_task` 등 비동기 백그라운드 태스크나 멀티프로세싱을 사용하여 통신 오버헤드 지연을 **0ms**로 유지합니다.
+2. **Redis Streams 완충**: 메인 파이프라인은 로컬 Redis 버퍼에 초고속(<1ms)으로 메트릭 데이터만 밀어 넣고, MCP 수집기가 별도의 프로세스에서 이 이벤트를 컨슈밍하여 비동기 처리하도록 구성해 결합도를 완전히 제거합니다.
+3. **운영 환경 조건부 비활성화 (No-op)**: 개발 및 QA(CI/CD) 테스트 단계에서만 상세 모니터링 MCP를 기동하고, 프로덕션(Production) 빌드 단계에서는 해당 모니터링 함수를 `No-op` (더미 함수) 처리하여 가동 자원 오버헤드를 제로화합니다.
+
+### 13.3 프론트엔드 관제 연동 및 SSE 전송 규격
+
+통합 MCP 모듈이 Redis Streams에서 수집한 메트릭 데이터는 운영자 콘솔(React)에서 실시간으로 모니터링할 수 있도록 FastAPI의 SSE(Server-Sent Events) 채널을 통해 전달됩니다.
+
+1. **관제 연동 아키텍처**
+   - **이벤트 발행자(Publisher)**: 메인 추론 모듈이 `mcp:metrics` Redis Stream으로 메트릭을 초고속 발행합니다.
+   - **수집/가공기(MCP Manager)**: 백그라운드에서 실행되는 `MCPManager`가 스트림 데이터를 컨슈밍하고 정규화합니다.
+   - **브로드캐스터(FastAPI Router)**: `/api/v1/monitor/stream` 엔드포인트를 통해 연결된 클라이언트들에게 SSE 형식으로 정규화된 JSON 데이터를 전송합니다.
+
+2. **SSE 이벤트 전송 데이터 포맷**
+   - 프론트엔드에서 수신하는 실시간 JSON 규격은 다음과 같습니다:
+
+| 필드명 | 타입 | 설명 |
+| :--- | :--- | :--- |
+| **event_type** | `string` | 모니터링 이벤트 종류 (`gpu_status`, `audio_validation`, `cache_suppression`, `system_error`) |
+| **timestamp** | `string` | ISO 8601 형식의 이벤트 발생 일시 |
+| **payload** | `dict` | 각 이벤트 타입에 대응하는 상세 메트릭 오브젝트 |
+
+3. **이벤트 페이로드 예시**
+   - **gpu_status**: `{"gpu_usage_pct": 45.2, "memory_used_mb": 2048, "current_provider": "ollama"}`
+   - **audio_validation**: `{"alert_id": "ref_alert_001", "ttfb_ms": 120, "is_valid": true}`
+   - **cache_suppression**: `{"suppressed_keys": ["suppress:ref_alert_001"], "ttl_seconds": 45}`
+   - **system_error**: `{"error_message": "Ollama connection timeout, hot-swapping to OpenAI", "severity": "warning"}`
+
+### 13.4 MCP별 자격 증명 및 API 키 요구사항
+
+각 MCP 및 연동 기술 스택의 외부 API 의존성과 키 발급 필요 여부는 아래와 같이 정의됩니다.
+
+1. **외부 자격 증명(API Key) 요구 사항**
+   - 상용 SaaS 서비스 또는 클라우드 모니터링 연동을 활성화하기 위해 다음의 키를 `.env` 설정에 필수로 기입해야 합니다.
+
+| 연동 모듈 | 필수 환경변수 필드 | 발급처 및 용도 |
+| :--- | :--- | :--- |
+| **OpenAI 핫스왑 폴백** | `OPENAI_API_KEY` | **OpenAI API Platform**<br/>GPU 자원 초과 시 로컬 Ollama에서 GPT-4o-mini 백업 모델로 실시간 핫스왑하기 위해 사용됩니다. |
+| **Slack Notification MCP** | `SLACK_WEBHOOK_URL` | **Slack App Console (Incoming Webhooks)**<br/>L3 가드레일 최종 실패 및 서버 크리티컬 예외 상황 발생 시 개발팀 전용 채널로 실시간 경보 메시지를 발행하기 위해 사용됩니다. |
+| **LangSmith Trace MCP** | `LANGCHAIN_API_KEY`<br/>`LANGCHAIN_TRACING_V2` | **LangSmith Platform**<br/>StateGraph의 비정상 루프 및 병목 구간 모니터링을 활성화하기 위해 선택적으로 기입합니다. |
+
+2. **자격 증명이 불필요한 로컬/내부 모듈**
+   - 로컬 머신의 자원을 직접 쿼리하거나 오프라인 분석을 활용하므로 별도의 외부 자격 증명이 불필요합니다.
+
+| 모듈명 | 분석 대상 및 작동 방식 | 비고 |
+| :--- | :--- | :--- |
+| **Redis Streams** | 로컬 메모리 기반 버퍼 통신 | 로컬 Docker 네트워크의 Redis 환경을 직접 사용하여 키가 불필요합니다. |
+| **System / GPU Monitor MCP** | PyTorch CUDA API 및 OS 자원 조회 | 하드웨어 드라이버 수준의 자원을 직접 점검하므로 인증이 필요 없습니다. |
+| **Audio Validator MCP** | 생성된 base64 오디오 바이너리 헤더 직접 분석 | 로컬에서 무음 구간 및 샘플 레이트 규칙을 파싱하는 순수 연산이므로 키가 필요 없습니다. |
+| **Accessibility Simulator MCP** | 스키마 정합성 직접 대조 연산 | 시각장애인 텍스트와 실제 합성된 음성 가이드 간의 일치 여부를 대조하는 순수 연산 모듈입니다. |
+
+
