@@ -10,9 +10,10 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.3.0 (2026-06-27 코드 품질 검증 가이드 연동)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+> **코드 품질 검증 기준**: [`docs/code_quality_guide.md`](docs/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
 
 ---
 
@@ -102,6 +103,12 @@
   - **환경 변수 로드** (guide 3.4): `load_dotenv()` + `os.getenv(..., default)` 패턴 적용.
   - **방어적 코딩** (guide 17.2): None 가드레일, API 키 검증, Mock 폴백, 예외 후 루프 유지, 방어적 dict 접근 5종 패턴.
   - **계층 분리** (guide 17.1): Router → Service → Repository 3계층 구조 (FastAPI 프로젝트).
+- **Code Quality Verification**: 코드 품질 검증은 [`docs/code_quality_guide.md`](docs/code_quality_guide.md)의 파이프라인을 준수합니다. 커밋·푸시·PR 시 자동 실행됩니다.
+  - **검증 도구**: Ruff(린트+포맷+보안 1차), Bandit(보안 심층 2차), mypy(타입 점진적), jscpd(중복 검출), pip-audit(의존성 CVE).
+  - **실행 시점 분리**: pre-commit(Ruff+Bandit, 빠름) / pre-push(mypy+jscpd+pip-audit, 느림) / GitHub Actions(PR 게이트).
+  - **자동 수정 명령**: `ruff format . ; ruff check --fix .` (커밋 전 실행 권장).
+  - **전체 검사 명령**: `ruff check . ; bandit -r server/ scripts/ ; mypy server/ ; jscpd ; pip-audit -r requirements.txt`.
+  - **이중 경로 분리 강제**: 반사 경로(`server/detection/gates/`)에서 오케스트레이션/RAG/TTS 모듈 임포트 금지. 현재 코드 리뷰로 강제, 후속 커스텀 Ruff 룰로 자동 탐지 예정.
 - No Emojis: 코드 주석, 커밋 메시지, 문서 내부에서 이모지 사용 금지.
 - Conciseness: 코드와 설명은 핵심 로직 위주로 간결하게 작성. 불필요한 서술 지양.
 - Pathing: 문서·명령은 프로젝트 루트(`./Minchodan`) 기준의 상대경로를 사용하고, Python 실행 경로는 `__file__` 기반으로 계산합니다. 환경별 절대경로 하드코딩은 금지합니다.
@@ -160,6 +167,7 @@
 | -------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                                        |
 | **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| **코드 품질 검증 가이드** | [`docs/code_quality_guide.md`](docs/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                                       |
 | 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동              |
 | API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입                          |

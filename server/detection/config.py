@@ -1,13 +1,11 @@
-# -*- coding: utf-8 -*-
 import logging
 import os
 import sys
-from typing import Optional
 
 from dotenv import load_dotenv
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +35,7 @@ def resolve_path(path: str) -> str:
 def get_yolo_device() -> str:
     try:
         import torch
+
         return "cuda" if torch.cuda.is_available() else "cpu"
     except Exception:
         return "cpu"

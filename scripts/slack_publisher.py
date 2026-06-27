@@ -1,39 +1,38 @@
-# -*- coding: utf-8 -*-
 """
 Slack Integration Helper Script for Minchodan
 This script allows reading channel history and posting messages or local files
 to the specified Slack channel using standard HTTP client (urllib).
 """
 
-import os
-import sys
 import argparse
+import contextlib
 import json
 import logging
+import os
+import sys
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 
 # Reconfigure stdout for UTF-8 output formatting support
-if sys.stdout.encoding != 'utf-8':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except AttributeError:
-        pass
+if sys.stdout.encoding != "utf-8":
+    with contextlib.suppress(AttributeError):
+        sys.stdout.reconfigure(encoding="utf-8")
 
 # Setup basic logging config
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="[%(asctime)s] %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
 # Try to load environment variables from local .env file safely
 try:
     from dotenv import load_dotenv
+
     # Compute relative path to workspace root .env
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env_path = os.path.join(base_dir, '.env')
+    env_path = os.path.join(base_dir, ".env")
     if os.path.exists(env_path):
         load_dotenv(env_path)
         logger.info("Successfully loaded environment configuration from .env")
@@ -47,13 +46,16 @@ class SlackClient:
     """
     Lightweight Slack Web API Client wrapper using standard library urllib.
     """
+
     def __init__(self, token=None):
         # Defensive check: load token from environment if not explicitly provided
         self.token = token or os.getenv("SLACK_BOT_TOKEN")
         if not self.token:
             logger.warning("SLACK_BOT_TOKEN environment variable is not defined.")
 
-    def _send_request(self, api_method: str, payload: dict = None, method: str = "POST") -> dict:
+    def _send_request(
+        self, api_method: str, payload: dict | None = None, method: str = "POST"
+    ) -> dict:
         """
         Internal helper to send API requests to Slack.
         """
@@ -64,7 +66,7 @@ class SlackClient:
         url = f"https://slack.com/api/{api_method}"
         headers = {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json; charset=utf-8"
+            "Content-Type": "application/json; charset=utf-8",
         }
 
         try:
@@ -74,7 +76,7 @@ class SlackClient:
                 data = json.dumps(payload).encode("utf-8")
 
             req = Request(url, data=data, headers=headers, method=method)
-            with urlopen(req, timeout=10) as response:
+            with urlopen(req, timeout=10) as response:  # nosec B310: Slack API URL만 사용
                 res_body = response.read().decode("utf-8")
                 res_data = json.loads(res_body)
                 return res_data
@@ -85,7 +87,7 @@ class SlackClient:
             logger.error(f"Network Connection Error: {e.reason}")
             return {"ok": False, "error": "network_error"}
         except Exception as e:
-            logger.error(f"Unexpected error encountered: {str(e)}")
+            logger.error(f"Unexpected error encountered: {e!s}")
             return {"ok": False, "error": "internal_error"}
 
     def post_message(self, channel_id: str, text: str) -> dict:
@@ -96,10 +98,7 @@ class SlackClient:
             logger.error("Target Channel ID is empty.")
             return {"ok": False, "error": "missing_channel_id"}
 
-        payload = {
-            "channel": channel_id,
-            "text": text
-        }
+        payload = {"channel": channel_id, "text": text}
         logger.info(f"Attempting to post message to channel: {channel_id}")
         result = self._send_request("chat.postMessage", payload)
         if result.get("ok"):
@@ -116,12 +115,9 @@ class SlackClient:
             logger.error("Target Channel ID is empty.")
             return {"ok": False, "error": "missing_channel_id"}
 
-        payload = {
-            "channel": channel_id,
-            "limit": limit
-        }
+        payload = {"channel": channel_id, "limit": limit}
         logger.info(f"Retrieving recent history (limit={limit}) from channel: {channel_id}")
-        
+
         # Slack history reading API requires GET query parameters or JSON payload
         result = self._send_request("conversations.history", payload, method="POST")
         if result.get("ok"):
@@ -139,15 +135,15 @@ def summarize_file_content(file_path: str) -> str:
         raise FileNotFoundError(f"File not found: {file_path}")
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             lines = f.readlines()
     except Exception as e:
-        raise IOError(f"Failed to read file {file_path}: {str(e)}")
+        raise OSError(f"Failed to read file {file_path}: {e!s}") from e
 
     total_lines = len(lines)
     # Extract headers (Markdown titles)
     headers = [line.strip() for line in lines if line.strip().startswith("#")]
-    
+
     # Extract first few content lines (excluding header blocks)
     preview_lines = []
     for line in lines:
@@ -164,11 +160,11 @@ def summarize_file_content(file_path: str) -> str:
     )
     for h in headers[:5]:
         summary += f"  > {h}\n"
-    
-    if len(headers) > 5:
-        summary += f"  > ...외 {len(headers)-5}개 헤더\n"
 
-    summary += f"- 본문 초입 요약:\n"
+    if len(headers) > 5:
+        summary += f"  > ...외 {len(headers) - 5}개 헤더\n"
+
+    summary += "- 본문 초입 요약:\n"
     for pl in preview_lines:
         summary += f"  {pl}\n"
 
@@ -177,31 +173,39 @@ def summarize_file_content(file_path: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Minchodan Slack Integration Publisher Tool")
-    parser.add_argument("--post-text", type=str, help="Raw text message to publish directly to Slack")
-    parser.add_argument("--post-file", type=str, help="Path of a local file to summarize and post to Slack")
-    parser.add_argument("--get-history", action="store_true", help="Fetch and display recent channel history")
+    parser.add_argument(
+        "--post-text", type=str, help="Raw text message to publish directly to Slack"
+    )
+    parser.add_argument(
+        "--post-file", type=str, help="Path of a local file to summarize and post to Slack"
+    )
+    parser.add_argument(
+        "--get-history", action="store_true", help="Fetch and display recent channel history"
+    )
     parser.add_argument("--channel", type=str, help="Override default target Slack Channel ID")
-    parser.add_argument("--limit", type=int, default=10, help="Limit number of history logs (default: 10)")
+    parser.add_argument(
+        "--limit", type=int, default=10, help="Limit number of history logs (default: 10)"
+    )
 
     args = parser.parse_args()
 
     # Define fallback defaults
     channel_id = args.channel or os.getenv("SLACK_CHANNEL_ID") or "C0BCZSB5TJS"
-    
+
     client = SlackClient()
 
     # Execute flow depending on command args
     if args.post_text:
         client.post_message(channel_id, args.post_text)
-    
+
     elif args.post_file:
         try:
             summary = summarize_file_content(args.post_file)
             client.post_message(channel_id, summary)
         except Exception as e:
-            logger.error(f"Failed to post file summary: {str(e)}")
+            logger.error(f"Failed to post file summary: {e!s}")
             sys.exit(1)
-            
+
     elif args.get_history:
         res = client.get_history(channel_id, args.limit)
         if res.get("ok"):

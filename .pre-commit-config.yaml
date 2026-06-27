@@ -1,0 +1,82 @@
+# Minchodan pre-commit 훅 설정
+# 기준: docs/code_quality_guide.md 7절 (실행 흐름)
+# 실행 시점 분리:
+#   pre-commit (빠름): Ruff format + Ruff check + Bandit
+#   pre-push   (느림): mypy + jscpd + pip-audit
+
+repos:
+  # ==========================================
+  # pre-commit stage (빠른 검사, 커밋 시 실행)
+  # ==========================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff-format
+        name: Ruff Format
+        stages: [pre-commit]
+      - id: ruff
+        name: Ruff Lint
+        args: [--fix, --exit-non-zero-on-fix]
+        stages: [pre-commit]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        name: Bandit Security Scan
+        args: ["-c", "pyproject.toml", "-r", "server/", "scripts/"]
+        stages: [pre-commit]
+        pass_filenames: false
+
+  # ==========================================
+  # pre-push stage (느린 검사, 푸시 시 실행)
+  # ==========================================
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy Type Check
+        entry: mypy
+        language: system
+        types: [python]
+        files: ^server/
+        stages: [pre-push]
+        pass_filenames: false
+        args: [server/]
+
+      - id: jscpd
+        name: jscpd Duplication Check
+        entry: jscpd
+        language: system
+        files: \.py$
+        stages: [pre-push]
+        pass_filenames: false
+
+      - id: pip-audit
+        name: pip-audit Dependency CVE
+        entry: pip-audit
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        args: ["-r", "requirements.txt"]
+
+  # ==========================================
+  # 공통 (모든 단계)
+  # ==========================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        name: Fix End of Files
+        stages: [pre-commit]
+      - id: check-yaml
+        name: Check YAML
+        stages: [pre-commit]
+      - id: check-toml
+        name: Check TOML
+        stages: [pre-commit]
+      - id: check-merge-conflict
+        name: Check Merge Conflict
+        stages: [pre-commit]

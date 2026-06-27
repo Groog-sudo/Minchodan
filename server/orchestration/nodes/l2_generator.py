@@ -1,24 +1,21 @@
-# -*- coding: utf-8 -*-
 """
 L2 Generator Node.
 탐지된 장애물 정보와 RAG 컨텍스트를 결합하여, LLM(Gemma2/GPT-4o-mini)을 호출해
 20자 이내의 한국어 우회 안내 문장을 비동기적으로 생성합니다.
 """
 
-import sys
+import contextlib
 import logging
+import sys
 
 from langchain_core.messages import HumanMessage, SystemMessage
-
 
 from server.orchestration.llm_client_factory import LLMClientFactory
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
-if sys.stdout.encoding != 'utf-8':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except AttributeError:
-        pass
+if sys.stdout.encoding != "utf-8":
+    with contextlib.suppress(AttributeError):
+        sys.stdout.reconfigure(encoding="utf-8")
 
 logger = logging.getLogger(__name__)
 
@@ -39,24 +36,26 @@ GUIDANCE_SYSTEM_PROMPT = """당신은 시각장애인 보행 보조 AI입니다.
 - "전방 주의, 정지하세요" (11자)
 """
 
+
 def extract_direction(text: str) -> str:
     """
     텍스트 내에서 방향성 키워드를 찾아내어 단일 방향 문자로 매핑합니다.
     """
     if not text:
         return ""
-        
+
     keyword_mapping = {
         "좌": ["좌측", "좌", "왼쪽", "왼"],
         "우": ["우측", "우", "오른쪽", "오른"],
         "직진": ["직진", "앞으로", "전방"],
-        "정지": ["정지", "멈추", "서세요", "대기"]
+        "정지": ["정지", "멈추", "서세요", "대기"],
     }
-    
+
     for direction, keywords in keyword_mapping.items():
         if any(kw in text for kw in keywords):
             return direction
     return ""
+
 
 async def l2_generator_node(state: dict) -> dict:
     """
@@ -66,9 +65,9 @@ async def l2_generator_node(state: dict) -> dict:
     detected_classes = state.get("detected_classes", [])
     risk_level = state.get("risk_level", "low")
     rag_context = state.get("rag_context", "관련 수칙 없음")
-    
+
     classes_str = ", ".join(detected_classes) if detected_classes else "장애물 없음"
-    
+
     # 사용자 프롬프트 조립 (설계서 10.2절 프롬프트 준수)
     user_prompt = (
         f"[탐지 장애물]: {classes_str}\n"
@@ -76,15 +75,12 @@ async def l2_generator_node(state: dict) -> dict:
         f"[안전 수칙]:\n{rag_context}\n\n"
         f"위 정보를 바탕으로 20자 이내 한국어 1문장 회피 안내를 작성하세요."
     )
-    
-    messages = [
-        SystemMessage(content=GUIDANCE_SYSTEM_PROMPT),
-        HumanMessage(content=user_prompt)
-    ]
-    
+
+    messages = [SystemMessage(content=GUIDANCE_SYSTEM_PROMPT), HumanMessage(content=user_prompt)]
+
     used_fallback = False
     response_content = ""
-    
+
     try:
         # 1차 시도: 기본 설정된 클라이언트 호출 (Ollama)
         client = LLMClientFactory.get_client()
@@ -92,7 +88,9 @@ async def l2_generator_node(state: dict) -> dict:
         response = await client.ainvoke(messages)
         response_content = response.content.strip()
     except Exception as e:
-        logger.warning(f"Primary LLM client invocation failed: {str(e)}. Attempting OpenAI Fallback...")
+        logger.warning(
+            f"Primary LLM client invocation failed: {e!s}. Attempting OpenAI Fallback..."
+        )
         try:
             # 2차 시도: OpenAI gpt-4o-mini로 자동 핫스왑
             fallback_client = LLMClientFactory.get_client(provider="openai")
@@ -102,13 +100,13 @@ async def l2_generator_node(state: dict) -> dict:
             logger.info("OpenAI Fallback invocation completed successfully.")
         except Exception as fallback_err:
             # 모든 LLM 호출 실패 시: 안내 텍스트를 빈 값으로 넘겨 L3 검증기에서 정적 Fallback이 트리거되도록 함
-            logger.critical(f"All LLM clients failed to respond: {str(fallback_err)}")
+            logger.critical(f"All LLM clients failed to respond: {fallback_err!s}")
             response_content = ""
-            
+
     direction = extract_direction(response_content)
-    
+
     return {
         "guidance_text": response_content,
         "direction": direction,
-        "used_fallback_llm": used_fallback
+        "used_fallback_llm": used_fallback,
     }

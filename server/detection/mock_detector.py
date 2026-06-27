@@ -1,10 +1,7 @@
-# -*- coding: utf-8 -*-
 import sys
-import time
-from typing import List, Optional
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from server.detection.detector_interface import DetectorInterface, SegmentorInterface
 from server.detection.schemas import BBox, Detection, SurfaceResult
@@ -13,13 +10,13 @@ from server.detection.schemas import BBox, Detection, SurfaceResult
 class MockDetector(DetectorInterface):
     """가중치 없을 때 사용하는 Mock 탐지기."""
 
-    def __init__(self, mock_detections: Optional[List[Detection]] = None):
+    def __init__(self, mock_detections: list[Detection] | None = None):
         self._detections = mock_detections
 
     def load(self) -> bool:
         return True
 
-    def predict(self, frame) -> List[Detection]:
+    def predict(self, frame) -> list[Detection]:
         if self._detections is not None:
             return self._detections
         height, width = frame.shape[:2]
@@ -44,13 +41,13 @@ class MockDetector(DetectorInterface):
 class MockSegmentor(SegmentorInterface):
     """가중치 없을 때 사용하는 Mock 분할기."""
 
-    def __init__(self, mock_surfaces: Optional[List[SurfaceResult]] = None):
+    def __init__(self, mock_surfaces: list[SurfaceResult] | None = None):
         self._surfaces = mock_surfaces
 
     def load(self) -> bool:
         return True
 
-    def predict(self, frame) -> List[SurfaceResult]:
+    def predict(self, frame) -> list[SurfaceResult]:
         if self._surfaces is not None:
             return self._surfaces
         height, width = frame.shape[:2]

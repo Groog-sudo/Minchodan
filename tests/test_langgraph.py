@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 tests/test_langgraph.py
 6단계 LangGraph 오케스트레이션 단위 테스트 및 기능 검증 파일.
@@ -7,7 +6,6 @@ tests/test_langgraph.py
 
 import os
 import sys
-import unittest
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,19 +16,16 @@ root_dir = os.path.dirname(current_dir)
 if root_dir not in sys.path:
     sys.path.append(root_dir)
 
-from server.orchestration.state import OrchState
-from server.orchestration.graph import get_orchestrator, run_orchestrator
-from server.orchestration.llm_client_factory import LLMClientFactory
-from server.orchestration.nodes.l1_classifier import classify_risk, l1_classifier_node
-from server.orchestration.nodes.l3_validator import validate_guidance, l3_validator_node
-from server.orchestration.nodes.fallback_node import fallback_node
+import contextlib
+
+from server.orchestration.graph import run_orchestrator
+from server.orchestration.nodes.l1_classifier import classify_risk
+from server.orchestration.nodes.l3_validator import l3_validator_node, validate_guidance
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
-if sys.stdout.encoding != 'utf-8':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except AttributeError:
-        pass
+if sys.stdout.encoding != "utf-8":
+    with contextlib.suppress(AttributeError):
+        sys.stdout.reconfigure(encoding="utf-8")
 
 
 def test_l1_risk_classification():
@@ -90,10 +85,7 @@ async def test_l3_validator_retry_logic():
     TC-LG-005 & TC-LG-006: L3 검증 실패 시 재시도(RETRY) 카운트 제어 및 최종 정적 폴백 검증.
     """
     # 최초 실패 시 -> retry_count가 1로 증가하고 verified=False
-    state_first_fail = {
-        "guidance_text": "오류 가이드라인 (방향키워드없음)",
-        "retry_count": 0
-    }
+    state_first_fail = {"guidance_text": "오류 가이드라인 (방향키워드없음)", "retry_count": 0}
     res = await l3_validator_node(state_first_fail)
     assert res["verified"] is False
     assert res["retry_count"] == 1
@@ -102,14 +94,13 @@ async def test_l3_validator_retry_logic():
     # 2차 실패 시 (retry_count == 1) -> 최종 고정 Fallback 메시지 주입 및 verified=True
     state_final_fail = {
         "guidance_text": "두번째 오류 가이드라인 (방향키워드없음)",
-        "retry_count": 1
+        "retry_count": 1,
     }
     res = await l3_validator_node(state_final_fail)
     assert res["verified"] is True
     assert res["guidance_text"] == "전방 주의, 천천히 멈추세요"
     assert res["direction"] == "정지"
     assert res["used_static_fallback"] is True
-
 
 
 @pytest.mark.asyncio
@@ -119,14 +110,16 @@ async def test_langgraph_flow_with_mock_llm():
     """
     initial_state = {
         "detected_classes": ["bollard"],
-        "rag_context": "볼라드 충돌 시 무릎 부상 위험이 있습니다. 우측으로 피하십시오."
+        "rag_context": "볼라드 충돌 시 무릎 부상 위험이 있습니다. 우측으로 피하십시오.",
     }
 
     # L2 LLM 호출부 Mocking하여 정상 가이드 생성 시뮬레이션
     mock_response = AsyncMock()
     mock_response.content = "우측으로 피하세요"
-    
-    with patch("server.orchestration.llm_client_factory.LLMClientFactory.get_client") as mock_factory:
+
+    with patch(
+        "server.orchestration.llm_client_factory.LLMClientFactory.get_client"
+    ) as mock_factory:
         mock_client = AsyncMock()
         mock_client.ainvoke.return_value = mock_response
         mock_factory.return_value = mock_client
@@ -154,17 +147,19 @@ async def test_langgraph_retry_recovery_flow():
     """
     initial_state = {
         "detected_classes": ["kickboard"],
-        "rag_context": "킥보드는 속도가 빠릅니다. 우측으로 피하세요."
+        "rag_context": "킥보드는 속도가 빠릅니다. 우측으로 피하세요.",
     }
 
     # 1차 시도는 비정상 문장(길이 초과), 2차 시도는 정상 문장 반환하도록 설정
     mock_response_1 = AsyncMock()
-    mock_response_1.content = "전방 우측 도로에 킥보드가 빠르게 접근하고 있으니 좌측으로 조심해서 이동하세요" # 44자 (길이 초과)
-    
-    mock_response_2 = AsyncMock()
-    mock_response_2.content = "좌측으로 피하세요" # 정상 (9자, 방향포함)
+    mock_response_1.content = "전방 우측 도로에 킥보드가 빠르게 접근하고 있으니 좌측으로 조심해서 이동하세요"  # 44자 (길이 초과)
 
-    with patch("server.orchestration.llm_client_factory.LLMClientFactory.get_client") as mock_factory:
+    mock_response_2 = AsyncMock()
+    mock_response_2.content = "좌측으로 피하세요"  # 정상 (9자, 방향포함)
+
+    with patch(
+        "server.orchestration.llm_client_factory.LLMClientFactory.get_client"
+    ) as mock_factory:
         mock_client = AsyncMock()
         # ainvoke 연속 호출 시 다른 응답 반환하도록 side_effect 설정
         mock_client.ainvoke.side_effect = [mock_response_1, mock_response_2]
@@ -186,12 +181,12 @@ async def test_langgraph_api_error_fallback():
     """
     TC-LG-008: LLM API 호출 장애 발생 시 정적 Fallback으로 즉시 우회하여 파이프라인 영속성이 확보되는지 검증.
     """
-    initial_state = {
-        "detected_classes": ["kickboard"]
-    }
+    initial_state = {"detected_classes": ["kickboard"]}
 
     # ainvoke 호출 시 강제로 Exception을 발생시킴
-    with patch("server.orchestration.llm_client_factory.LLMClientFactory.get_client") as mock_factory:
+    with patch(
+        "server.orchestration.llm_client_factory.LLMClientFactory.get_client"
+    ) as mock_factory:
         mock_client = AsyncMock()
         mock_client.ainvoke.side_effect = Exception("Ollama Connection Timeout")
         mock_factory.return_value = mock_client

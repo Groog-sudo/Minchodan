@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-06-27 인덱스 보완)
+> **버전**: v0.5.0 (2026-06-27 코드 품질 검증 파이프라인 구현 완료)
 
 ## 문서 목록
 
@@ -9,6 +9,7 @@
 | -------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
 | 설계 노트 (원본)     | [minchodan_design_note.md](minchodan_design_note.md)   | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영                      |
 | **코딩 패턴 기준**   | [course_codebase_guide.md](course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| **코드 품질 검증 가이드** | [code_quality_guide.md](code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증 (코딩 전 필수 참조)** |
 | 에이전트 가이드      | [../AGENTS.md](../AGENTS.md)                           | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템, 문서 인덱스     |
 | 시스템 아키텍처      | [architecture.md](architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수, MCP 연동   |
 | API 명세서           | [api_specification.md](api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷             |
@@ -33,15 +34,16 @@
 2. [`minchodan_design_note.md`](minchodan_design_note.md) - 7단계 상세 설계 (백본)
 3. [`../AGENTS.md`](../AGENTS.md) - 코딩·커뮤니케이션 규칙
 4. [`course_codebase_guide.md`](course_codebase_guide.md) - **코딩 패턴·함수 시그니처 표준 (코딩 전 필수 참조)**
-5. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
-6. [`api_specification.md`](api_specification.md) - WebSocket API 계약
-7. [`environment_variables.md`](environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
-8. [`deployment_guide.md`](deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
-9. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
-10. [`behavior_and_risk_insight.md`](behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
-11. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-12. [`stage6_orchestration_design.md`](stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
-13. [`test_specification.md`](test_specification.md) - 검증 기준
+5. [`code_quality_guide.md`](code_quality_guide.md) - **코드 품질 검증 파이프라인 (린트·보안·중복·CVE, 코딩 전 필수 참조)**
+6. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
+7. [`api_specification.md`](api_specification.md) - WebSocket API 계약
+8. [`environment_variables.md`](environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
+9. [`deployment_guide.md`](deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
+10. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
+11. [`behavior_and_risk_insight.md`](behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
+12. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+13. [`stage6_orchestration_design.md`](stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
+14. [`test_specification.md`](test_specification.md) - 검증 기준
 
 ---
 
