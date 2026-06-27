@@ -72,7 +72,7 @@
   - `orchestration/`: LangGraph L1/L2/L3 (nodes/)
   - `tts/`: 실시간 TTS, 반사 클립 전송, 중복 억제
   - `bus/`: Redis Streams 인터페이스
-  - `models/`: 모델 가중치 (git-ignore)
+  - `models/`: 사전학습 가중치 Git 추적 (yolo26n/*.pt), 커스텀 학습 가중치 git-ignore
 - `client/`: React Native thin client
 - `console/`: React 운영자 모니터링 콘솔
 - `data/`: 학습·RAG 데이터

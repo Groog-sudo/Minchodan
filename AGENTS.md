@@ -80,7 +80,7 @@
   - `orchestration/`: LangGraph L1/L2/L3 (nodes/)
   - `tts/`: 실시간 TTS, 반사 클립 전송, 중복 억제
   - `bus/`: Redis Streams 인터페이스
-  - `models/`: 모델 가중치 (git-ignore)
+  - `models/`: 사전학습 가중치 Git 추적 (yolo26n/*.pt), 커스텀 학습 가중치 git-ignore
 - `client/`: React Native thin client
 - `console/`: React 운영자 모니터링 콘솔
 - `data/`: 학습·RAG 데이터
@@ -161,9 +161,14 @@
 | 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                                        |
 | **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                                       |
-| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약                        |
+| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동              |
 | API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입                          |
 | 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스                                  |
 | Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                                      |
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
+| **환경 변수 명세서** | [`docs/environment_variables.md`](docs/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**                              |
+| **배포 가이드**      | [`docs/deployment_guide.md`](docs/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004**                   |
+| 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                                    |
+| 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계                            |
+| 보행이론 인사이트    | [`docs/behavior_and_risk_insight.md`](docs/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의         |
 | 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |

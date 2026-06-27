@@ -100,7 +100,7 @@ Minchodan/
 │   │   └── nodes/                   # 분류, 생성, 검증, fallback
 │   ├── tts/                         # 실시간 TTS, 반사 클립 전송, 억제
 │   ├── bus/                         # Redis Streams 인터페이스
-│   └── models/                      # 모델 가중치 (git-ignore)
+│   └── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
 │       └── yolo26n/
 │
 ├── client/                          # React Native 앱 (thin client)
@@ -139,7 +139,7 @@ Minchodan/
 └── README.md
 ```
 
-상세 구조는 [`directory_Structure.md`](directory_Structure.md)를 참조합니다.
+상세 구조는 [`Directory_Structure.md`](Directory_Structure.md)를 참조합니다.
 
 ---
 
@@ -201,6 +201,8 @@ python scripts/verify_gpu.py
 
 ### 4. Docker 구성 (Redis + Ollama + FastAPI)
 
+> 상세 배포 절차는 [`docs/deployment_guide.md`](docs/deployment_guide.md)를 참조하십시오.
+
 #### Windows (PowerShell)
 
 ```powershell
@@ -239,6 +241,8 @@ bash scripts/build_chroma.sh
 
 ## 환경 변수
 
+> **단일 명세**: 환경 변수의 전체 목록·타입·필수 여부·기본값·참조는 [`docs/environment_variables.md`](docs/environment_variables.md)를 기준으로 합니다. 본 표는 핵심 변수 요약만 제공합니다.
+
 | 변수                | 설명                                      | 기본값                   |
 | ------------------- | ----------------------------------------- | ------------------------ |
 | `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
@@ -249,14 +253,18 @@ bash scripts/build_chroma.sh
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
 | `CHROMA_COLLECTION` | ChromaDB 컬렉션명                         | `bidding_kb`             |
+| `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
+| `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
 | `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)          | `kokoro`                 |
 | `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
+| `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
+| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
 
-전체 목록은 [`.env.example`](.env.example)을 참조합니다.
+전체 목록은 [`.env.example`](.env.example) 및 [`docs/environment_variables.md`](docs/environment_variables.md)를 참조합니다.
 
 ---
 
@@ -281,13 +289,19 @@ bash scripts/build_chroma.sh
 | 문서                 | 파일                                                               | 설명                                           |
 | -------------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
 | 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                     |
+| **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                    |
-| 에이전트 가이드      | [`docs/AGENTS.md`](docs/AGENTS.md)                                 | 코딩·커뮤니케이션 규칙, 기술 스택              |
-| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약     |
+| 에이전트 가이드      | [`AGENTS.md`](AGENTS.md)                                           | 코딩·커뮤니케이션 규칙, 기술 스택, 문서 인덱스 |
+| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동 |
 | API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입       |
 | 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스               |
 | Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                   |
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                 |
+| **환경 변수 명세서** | [`docs/environment_variables.md`](docs/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**           |
+| **배포 가이드**      | [`docs/deployment_guide.md`](docs/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004** |
+| 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                |
+| 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계       |
+| 보행이론 인사이트    | [`docs/behavior_and_risk_insight.md`](docs/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
 | 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위, 스킬 인덱스 |
 | 단계별 구현 스킬     | `.agents/skills/`                                                  | 1~7단계별 SKILL.md + references (7종)          |
 

@@ -174,11 +174,15 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 ### 5.8 공통 - MCP 및 실시간 관제 스트림
 
-**테스트 파일:** `tests/test_mcp_integration.py`
+**테스트 파일:** `tests/test_mcp_integration.py`, `tests/test_mcp_gpu.py`
 
-| ID         | 검증 항목                  | 기준                                        | 상태 |
-| ---------- | ------------------------- | ------------------------------------------- | ---- |
-| TC-MCP-001 | SSE 모니터링 브로드캐스트 | `/api/v1/monitor/stream` 정상 데이터 전송  | 완료 |
+> **최종 검증일**: 2026-06-27 (pytest 9.1.1 + pytest-asyncio 1.4.0, **3 passed in 21.60s**)
+
+| ID         | 검증 항목                          | 기준                                                                   | 상태 |
+| ---------- | --------------------------------- | ---------------------------------------------------------------------- | ---- |
+| TC-MCP-001 | SSE 모니터링 브로드캐스트         | `/api/v1/monitor/stream` `connection_established` + 페이로드 정상 전송 | 완료 |
+| TC-MCP-002 | GPU Mock 폴백 및 임계치 트리거     | `MOCK_GPU_USAGE_PCT` 90% 시 `should_fallback=True`, 20% 시 `False`     | 완료 |
+| TC-MCP-003 | LLMClientFactory 핫스왑 라이프사이클 | 부하 95% 시 Ollama->OpenAI 전환, 복구 10% 시 Ollama 복귀              | 완료 |
 
 
 ### 5.7 7단계 - 음성 안내 출력

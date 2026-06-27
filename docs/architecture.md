@@ -365,6 +365,8 @@ sequenceDiagram
 
 ## 10. 환경 변수
 
+> **단일 명세**: 환경 변수의 전체 목록·타입·필수 여부·기본값·참조는 [`docs/environment_variables.md`](environment_variables.md)를 기준으로 합니다. 본 절은 핵심 변수 요약만 제공합니다.
+
 | 변수                | 설명                                      | 기본값                   |
 | ------------------- | ----------------------------------------- | ------------------------ |
 | `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
@@ -375,14 +377,18 @@ sequenceDiagram
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
 | `CHROMA_COLLECTION` | ChromaDB 컬렉션명                         | `bidding_kb`             |
+| `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
+| `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
 | `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)          | `kokoro`                 |
 | `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
-| `LLM_PROVIDER`      | LLM 핫스왑 (`ollama`/`openai`)            | `ollama`                 |
 | `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
+| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
+
+> **불일치 해소 이력**: 2026-06-27 환경 변수 3원화(`.env.example`·본 절·루트 `README.md`)를 단일 명세서로 통합. 상세 내용은 [`docs/environment_variables.md`](environment_variables.md) 4절을 참조.
 
 ---
 
@@ -478,5 +484,30 @@ sequenceDiagram
 | **System / GPU Monitor MCP** | PyTorch CUDA API 및 OS 자원 조회 | 하드웨어 드라이버 수준의 자원을 직접 점검하므로 인증이 필요 없습니다. |
 | **Audio Validator MCP** | 생성된 base64 오디오 바이너리 헤더 직접 분석 | 로컬에서 무음 구간 및 샘플 레이트 규칙을 파싱하는 순수 연산이므로 키가 필요 없습니다. |
 | **Accessibility Simulator MCP** | 스키마 정합성 직접 대조 연산 | 시각장애인 텍스트와 실제 합성된 음성 가이드 간의 일치 여부를 대조하는 순수 연산 모듈입니다. |
+
+### 13.5 내부 MCP 구현 현황 및 단계적 착수 로드맵
+
+`server/mcp/` 패키지의 현재 구현 상태와 향후 착수 시점을 명시합니다. 설계 6종 중 구현 시점이 도래한 모듈만 단계적으로 착수되었으며, 7단계 의존 모듈은 7단계 착수 시 동시 구현을 원칙으로 합니다.
+
+1. **구현 현황 매트릭스 (2026-06-27 기준)**
+
+| MCP 모듈 | 대상 단계 | 구현 위치 | 상태 | 비고 |
+| :--- | :--- | :--- | :--- | :--- |
+| **System / GPU Monitor MCP** | 6단계 | `server/mcp/gpu_monitor.py` | **구현 완료** | 6단계 핫스왑 제어 신호로 즉시 필요 |
+| **MCPManager (공통 기반)** | 공통 | `server/mcp/manager.py` | **구현 완료** | 6종 MCP 공통 Redis Streams 컨슈머 + SSE 브로드캐스트 백본 |
+| **Slack Notification MCP** | 공통 | `scripts/slack_publisher.py` (standalone) | **부분 구현** | 일반 발행 스크립트로 도입, `server/mcp/` 통합 미완 |
+| **LangSmith Trace MCP** | 6단계 | - | 미구현 | `LANGCHAIN_API_KEY` 필수, 설계상 "선택적" 명시 |
+| **Audio Validator MCP** | 7단계 | - | 미구현 | 7단계 TTS 미구현, base64 MP3 검증 대상 없음 |
+| **Redis Cache Monitor MCP** | 7단계 | - | 미구현 | 7단계 `suppress:alert_id` 캐시 미생성 |
+| **Accessibility Simulator MCP** | 7단계 | - | 미구현 | 7단계 `announceForAccessibility` 텍스트 미생성 |
+
+2. **단계적 착수 원칙**
+   - **6단계 완료 시점**: 6단계 전용 MCP(GPU Monitor) + 공통 인프라(MCPManager) 우선 구현 완료.
+   - **7단계 착수 시점**: Audio Validator, Redis Cache Monitor, Accessibility Simulator 3종 동시 구현 권장. 검증 입력 데이터가 7단계 TTS 출력에 의존.
+   - **즉시 구현 가능**: Slack Notification MCP는 단계 의존성 없으므로 `scripts/slack_publisher.py`를 `server/mcp/slack_notifier.py`로 통합하여 즉시 구현 가능.
+
+3. **검증 상태**
+   - 구현 완료 2종 + 공통 기반 1종에 대해 `tests/test_mcp_gpu.py`(2 케이스) 및 `tests/test_mcp_integration.py`(1 케이스) pytest 통과 완료 (2026-06-27, **3 passed in 21.60s**).
+   - 상세 검증 항목은 [`docs/test_specification.md`](test_specification.md) 5.8절을 참조.
 
 
