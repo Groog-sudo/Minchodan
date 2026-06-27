@@ -2,11 +2,12 @@
 # 기준: docs/code_quality_guide.md 7절 (실행 흐름)
 # 실행 시점 분리:
 #   pre-commit (빠름): Ruff format + Ruff check + Bandit
-#   pre-push   (느림): mypy + jscpd + pip-audit
+#   pre-push   (느림): CI 전용 (GitHub Actions에서 실행)
 #
-# 참고: mypy/jscpd/pip-audit는 local 훅으로 .venv 활성화 시에만 동작합니다.
-#       미활성화 시 푸시가 차단되므로, 아래 --hook-stage pre-push 라인을
-#       주석 처리하면 pre-commit만 실행합니다. 무거운 검사는 CI가 보완합니다.
+# 무거운 검사(mypy/jscpd/pip-audit)는 로컬 가상환경 의존성 문제로
+# pre-push 훅에서 제거하고 GitHub Actions(.github/workflows/lint.yml)에서만 실행합니다.
+# 로컬에서 수동 실행하려면 .venv 활성화 후 아래 명령 사용:
+#   mypy server/ ; jscpd ; pip-audit -r requirements.txt
 
 repos:
   # ==========================================
@@ -31,40 +32,6 @@ repos:
         args: ["-c", "pyproject.toml", "-r", "server/", "scripts/"]
         stages: [pre-commit]
         pass_filenames: false
-
-  # ==========================================
-  # pre-push stage (느린 검사, 푸시 시 실행)
-  # local 훅은 .venv 활성화 상태에서만 동작합니다.
-  # 미활성화 시 아래 stages 라인을 주석 처리하면 pre-commit만 실행합니다.
-  # 무거운 검사는 GitHub Actions(.github/workflows/lint.yml)가 보완합니다.
-  # ==========================================
-  - repo: local
-    hooks:
-      - id: mypy
-        name: mypy Type Check
-        entry: python -m mypy
-        language: system
-        types: [python]
-        files: ^server/
-        stages: [pre-push]
-        pass_filenames: false
-        args: [server/]
-
-      - id: jscpd
-        name: jscpd Duplication Check
-        entry: jscpd
-        language: system
-        files: \.py$
-        stages: [pre-push]
-        pass_filenames: false
-
-      - id: pip-audit
-        name: pip-audit Dependency CVE
-        entry: python -m pip_audit
-        language: system
-        stages: [pre-push]
-        pass_filenames: false
-        args: ["-r", "requirements.txt"]
 
   # ==========================================
   # 공통 (모든 단계)
