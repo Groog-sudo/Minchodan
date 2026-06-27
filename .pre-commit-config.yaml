@@ -3,6 +3,10 @@
 # 실행 시점 분리:
 #   pre-commit (빠름): Ruff format + Ruff check + Bandit
 #   pre-push   (느림): mypy + jscpd + pip-audit
+#
+# 참고: mypy/jscpd/pip-audit는 local 훅으로 .venv 활성화 시에만 동작합니다.
+#       미활성화 시 푸시가 차단되므로, 아래 --hook-stage pre-push 라인을
+#       주석 처리하면 pre-commit만 실행합니다. 무거운 검사는 CI가 보완합니다.
 
 repos:
   # ==========================================
@@ -30,12 +34,15 @@ repos:
 
   # ==========================================
   # pre-push stage (느린 검사, 푸시 시 실행)
+  # local 훅은 .venv 활성화 상태에서만 동작합니다.
+  # 미활성화 시 아래 stages 라인을 주석 처리하면 pre-commit만 실행합니다.
+  # 무거운 검사는 GitHub Actions(.github/workflows/lint.yml)가 보완합니다.
   # ==========================================
   - repo: local
     hooks:
       - id: mypy
         name: mypy Type Check
-        entry: mypy
+        entry: python -m mypy
         language: system
         types: [python]
         files: ^server/
@@ -53,7 +60,7 @@ repos:
 
       - id: pip-audit
         name: pip-audit Dependency CVE
-        entry: pip-audit
+        entry: python -m pip_audit
         language: system
         stages: [pre-push]
         pass_filenames: false
