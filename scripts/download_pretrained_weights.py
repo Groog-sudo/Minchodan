@@ -36,7 +36,7 @@ def main():
     det_dest = os.path.join(models_dir, "object_detection.pt")
     seg_dest = os.path.join(models_dir, "segmentation.pt")
 
-    logger.info("사전 학습된 YOLOv8 모델 가중치 다운로드를 시작합니다.")
+    logger.info("사전 학습된 Yolo 26N 모델 가중치 다운로드를 시작합니다.")
 
     try:
         download_file(det_weights_url, det_dest)

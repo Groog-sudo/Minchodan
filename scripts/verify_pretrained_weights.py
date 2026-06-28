@@ -23,7 +23,7 @@ from server.detection.yolo_segmentor import YoloSegmentor
 
 def main():
     logger.info(
-        "사전 학습된 YOLOv8 가중치(Object Detection / Segmentation) 로드 및 추론 테스트를 시작합니다."
+        "사전 학습된 Yolo 26N 가중치(Object Detection / Segmentation) 로드 및 추론 테스트를 시작합니다."
     )
 
     # 팩토리에서 가져오기
