@@ -176,6 +176,7 @@
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
 | **환경 변수 명세서** | [`docs/environment_variables.md`](docs/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**                              |
 | **배포 가이드**      | [`docs/deployment_guide.md`](docs/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004**                   |
+| 2단계 캡처 설계서    | [`docs/stage2_capture_design.md`](docs/stage2_capture_design.md) | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue) |
 | 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                                    |
 | 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계                            |
 | 보행이론 인사이트    | [`docs/behavior_and_risk_insight.md`](docs/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의         |
