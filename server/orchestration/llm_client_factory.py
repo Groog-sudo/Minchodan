@@ -1,7 +1,7 @@
 """
 LLMClientFactory 구현 파일.
 Ollama 공식 SDK 및 httpx를 사용하여, 외부 langchain_community/langchain_openai 의존성 없이
-로컬 Gemma2 및 상용 GPT-4o-mini 모델 간의 비동기 호출 및 핫스왑을 지원합니다.
+로컬 gemma4-e4b 및 상용 GPT-4o-mini 모델 간의 비동기 호출 및 핫스왑을 지원합니다.
 """
 
 import asyncio
@@ -135,7 +135,7 @@ class LLMClientFactory:
     def get_ollama(cls) -> SimpleOllamaClient:
         if cls._ollama is None:
             base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            model_name = os.getenv("GEMMA_MODEL", "gemma2:9b")
+            model_name = os.getenv("GEMMA_MODEL", "gemma4-e4b")
             cls._ollama = SimpleOllamaClient(model_name=model_name, base_url=base_url)
         return cls._ollama
 
@@ -177,7 +177,7 @@ class LLMClientFactory:
                         if default_provider == "ollama":
                             cls._current_provider = "ollama"
                             logger.info(
-                                "[MCP HOTSWAP] GPU 부하 정상 복구로 인해 로컬 Ollama(Gemma2)로 복귀합니다."
+                                "[MCP HOTSWAP] GPU 부하 정상 복구로 인해 로컬 Ollama(gemma4-e4b)로 복귀합니다."
                             )
                 except Exception as e:
                     logger.error(f"[MCP HOTSWAP] GPU 모니터 루프 예외 발생: {e!s}")

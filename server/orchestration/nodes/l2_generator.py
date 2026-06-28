@@ -1,6 +1,6 @@
 """
 L2 Generator Node.
-탐지된 장애물 정보와 RAG 컨텍스트를 결합하여, LLM(Gemma2/GPT-4o-mini)을 호출해
+탐지된 장애물 정보와 RAG 컨텍스트를 결합하여, LLM(gemma4-e4b/GPT-4o-mini)을 호출해
 20자 이내의 한국어 우회 안내 문장을 비동기적으로 생성합니다.
 """
 
@@ -60,7 +60,7 @@ def extract_direction(text: str) -> str:
 async def l2_generator_node(state: dict) -> dict:
     """
     LangGraph L2 생성기 노드 진입점.
-    Ollama(Gemma2) 비동기 호출을 처리하며, 예외 상황 발생 시 OpenAI 핫스왑을 시도합니다.
+    Ollama(gemma4-e4b) 비동기 호출을 처리하며, 예외 상황 발생 시 OpenAI 핫스왑을 시도합니다.
     """
     detected_classes = state.get("detected_classes", [])
     risk_level = state.get("risk_level", "low")

@@ -17,10 +17,10 @@
 ```
 입력: detected_classes=["pothole"], rag_context="포트홀 발견 시..."
    L1: risk_level="mid"
-   L2: Gemma 2 호출  guidance_text="좌측으로 피하세요"
+   L2: gemma4-e4b 호출  guidance_text="좌측으로 피하세요"
    L3: 검증 통과 (9자, "좌측" 포함)
    END
-  총 소요: ~500ms-2000ms (Gemma 2 추론 시간 의존)
+  총 소요: ~300ms-1000ms (gemma4-e4b 추론 시간 의존)
 ```
 
 #### 시나리오 C: L3 실패 + 재시도 성공
@@ -82,25 +82,25 @@
                   │           ┌───────▼────────┐   │
                   │           │  L3: 가드레일    │   │
                   │           │     검증        │   │
-                  │           └───────┬────────┘   │
-                  │                   │              │
-                  │         ┌─────────┴─────────┐   │
-                  │         │                   │   │
-                  │    통과  │          실패+재시도│   │
-                  │         │          가능     │   │
-                  │         │                   │   │
-                  │         │           ┌───────┘   │
-                  │         │           │ RETRY     │
-                  │         │           └───────────┘
-                  │         │
-                  │         │  실패+재시도 불가
-                  │         │   정적 fallback
-                  │         │
-                  ▼         ▼
-             ┌────────────────┐
-             │      END       │
-             │ guidance_text  │
-             └────────────────┘
+                  └───────────┴───────┬────────┘   │
+                                      │            │
+                            ┌─────────┴─────────┐  │
+                            │                   │  │
+                       통과  │          실패+재시도│  │
+                            │          가능     │  │
+                            │                   │  │
+                            │           ┌───────┘  │
+                            │           │ RETRY    │
+                            │           └──────────┘
+                            │
+                            │  실패+재시도 불가
+                            │   정적 fallback
+                            │
+                            ▼
+                     ┌────────────────┐
+                     │      END       │
+                     │ guidance_text  │
+                     └────────────────┘
 ```
 
 ---
@@ -154,7 +154,7 @@ RETRY_PROMPT_SUFFIX = """
 다시 작성하세요."""
 ```
 
-### 2.4 Gemma 2 모델 특성 고려사항
+### 2.4 gemma4-e4b 모델 특성 고려사항
 
 | 특성 | 설명 | 대응 |
 |------|------|------|
@@ -167,13 +167,13 @@ RETRY_PROMPT_SUFFIX = """
 
 ## 3. 성능 최적화
 
-### 3.1 Gemma 2 추론 성능 예상치
+### 3.1 gemma4-e4b 추론 성능 예상치
 
 | 환경 | 첫 토큰 지연 | 토큰/초 | 20자 안내 생성 총 시간 |
 |------|-------------|---------|----------------------|
-| CPU Only (8코어) | ~2-5초 | 5-15 | ~3-8초 |
-| GPU (RTX 3060 6GB) | ~200ms | 30-50 | ~500ms-1.5초 |
-| GPU (RTX 4080 16GB) | ~100ms | 50-80 | ~300ms-800ms |
+| CPU Only (8코어) | ~1-3초 | 10-25 | ~2-5초 |
+| GPU (RTX 3060 6GB) | ~100ms | 50-80 | ~300ms-800ms |
+| GPU (RTX 4080 16GB) | ~50ms | 80-120 | ~150ms-400ms |
 
 ### 3.2 최적화 전략
 
@@ -398,7 +398,7 @@ class TestPerformance:
          │                            │
          ├─ 평균 지연 > 3000ms? ─YES──▶ GPT-4o-mini 사용
          │                            │
-         └─ 모두 정상 ──────────────▶ Gemma 2 유지
+         └─ 모두 정상 ──────────────▶ gemma4-e4b 유지
 ```
 
 ### 5.2 Fallback 복귀 조건
@@ -451,7 +451,7 @@ class CostTracker:
 
 ---
 
-## 6. Ollama Gemma 2 설치 및 설정 상세
+## 6. Ollama gemma4-e4b 설치 및 설정 상세
 
 ### 6.1 설치
 
@@ -462,13 +462,13 @@ curl -fsSL https://ollama.com/install.sh | sh
 # Ollama 설치 (Windows)
 # https://ollama.com/download 에서 설치 파일 다운로드
 
-# Gemma 2 9B 모델 다운로드
-ollama pull gemma2:9b
+# gemma4-e4b 모델 다운로드
+ollama pull gemma4-e4b
 
 # 모델 확인
 ollama list
 # NAME              ID          SIZE    MODIFIED
-# gemma2:9b         ...         5.4GB   ...
+# gemma4-e4b        ...         2.5GB   ...
 ```
 
 ### 6.2 환경변수 설정
@@ -478,7 +478,7 @@ ollama list
 export OLLAMA_HOST=0.0.0.0:11434      # 바인딩 주소
 export OLLAMA_KEEP_ALIVE=30m           # 모델 메모리 유지 시간
 export OLLAMA_NUM_PARALLEL=1           # 동시 요청 수
-export OLLAMA_MAX_LOADED_MODELS=2      # 최대 로드 모델 수 (gemma2 + nomic-embed)
+export OLLAMA_MAX_LOADED_MODELS=2      # 최대 로드 모델 수 (gemma4-e4b + nomic-embed)
 
 # GPU 설정 (NVIDIA)
 export CUDA_VISIBLE_DEVICES=0          # 사용할 GPU
@@ -491,7 +491,7 @@ export CUDA_VISIBLE_DEVICES=0          # 사용할 GPU
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemma2:9b",
+    "model": "gemma4-e4b",
     "prompt": "시각장애인이 전방 포트홀을 피하는 10자 이내 안내를 작성해줘.",
     "stream": false,
     "options": {
@@ -528,7 +528,7 @@ async def get_orchestrator_health():
         async with httpx.AsyncClient() as client:
             resp = await client.get("http://localhost:11434/api/tags", timeout=3.0)
             models = [m["name"] for m in resp.json().get("models", [])]
-            gemma_loaded = "gemma2:9b" in models
+            gemma_loaded = "gemma4-e4b" in models
     except Exception:
         gemma_loaded = False
 
@@ -536,7 +536,7 @@ async def get_orchestrator_health():
     stats = metrics.get_stats()
 
     return {
-        "gemma2_available": gemma_loaded,
+        "gemma4_available": gemma_loaded,
         "using_fallback": stats["using_fallback"],
         "failure_rate": stats["failure_rate"],
         "avg_latency_ms": stats["avg_latency_ms"],
@@ -550,11 +550,11 @@ async def get_orchestrator_health():
 
 | 문제 | 원인 | 해결책 |
 |------|------|--------|
-| Gemma 2 첫 응답 매우 느림 (>10초) | 모델 콜드 스타트 | 서버 시작 시 워밍업 쿼리 실행 |
-| 한국어 출력 대신 영어 출력 | Gemma 2 한국어 이해 부족 | 시스템 프롬프트에 "반드시 한국어로" 강조, few-shot 추가 |
+| gemma4-e4b 첫 응답 매우 느림 (>10초) | 모델 콜드 스타트 | 서버 시작 시 워밍업 쿼리 실행 |
+| 한국어 출력 대신 영어 출력 | gemma4-e4b 한국어 이해 부족 | 시스템 프롬프트에 "반드시 한국어로" 강조, few-shot 추가 |
 | 20자 초과 빈번 발생 | 모델이 길이 제약 무시 | `num_predict` 토큰 수 제한, 프롬프트 강화 |
 | 방향 키워드 누락 빈번 | 모델이 방향 포함 규칙 무시 | 프롬프트에 예시 추가, L3 재시도로 보완 |
-| Fallback이 자주 발생 | Gemma 2 품질 부족 | GPT-4o-mini를 기본으로 전환 검토 |
-| GPU 메모리 부족 (OOM) | gemma2:9b + nomic-embed-text 동시 로드 | `OLLAMA_MAX_LOADED_MODELS=1`로 제한, 또는 gemma2:2b 사용 |
+| Fallback이 자주 발생 | gemma4-e4b 품질 부족 | GPT-4o-mini를 기본으로 전환 검토 |
+| GPU 메모리 부족 (OOM) | gemma4-e4b + nomic-embed-text 동시 로드 | `OLLAMA_MAX_LOADED_MODELS=1`로 제한, 또는 nomic-embed-text 크기 확인 |
 | Ollama 서버 크래시 | 메모리 부족 | 시스템 RAM/VRAM 확인, swap 확대 |
 | LangGraph 무한 루프 | L3L2 재시도 조건 오류 | `max_retry_count`로 최대 1회 재시도 제한 확인 |

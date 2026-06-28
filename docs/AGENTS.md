@@ -29,7 +29,7 @@
 - Tracking: ByteTrack
 - Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
 - LLM Orchestration: LangGraph, LangChain
-- Local LLM/Embedding: Ollama (Gemma2:9b, Llava, nomic-embed-text)
+- Local LLM/Embedding: Ollama (gemma4-e4b, Llava, nomic-embed-text)
 - TTS: Kokoro-82M / Coqui (로컬)
 - Message Bus: Redis (Streams + 컨텍스트 TTL)
 - Image: OpenCV

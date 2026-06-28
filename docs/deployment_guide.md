@@ -22,7 +22,7 @@ graph TD
         subgraph Compose ["docker-compose.yml"]
             FastAPI["FastAPI Container<br/>(server/main:app)"]
             Redis["Redis Container<br/>(Streams + TTL)"]
-            Ollama["Ollama Container<br/>(Gemma2:9b, Llava, nomic-embed)"]
+            Ollama["Ollama Container<br/>(gemma4-e4b, Llava, nomic-embed)"]
         end
         GPU["CUDA 12.8 + cu128 PyTorch<br/>(sm_120 전제)"]
         Volumes["Volumes<br/>data/, server/models/"]
@@ -43,7 +43,7 @@ graph TD
 | :--- | :--- | :--- | :--- | :--- |
 | **fastapi** | `minchodan-server:latest` (로컬 빌드) | `${WS_PORT:-8000}:8000` | `./server:/app/server`, `./data:/app/data`, `./.env:/app/.env` | FastAPI + uvicorn, WebSocket `/ws/detect`, SSE `/api/v1/monitor/stream` |
 | **redis** | `redis:7-alpine` (공식) | `6379:6379` | `redis_data:/data` | Redis Streams(`risk.events`, `mcp:metrics`) + Track 컨텍스트 TTL(30초) |
-| **ollama** | `ollama/ollama:latest` (공식) | `11434:11434` | `ollama_data:/root/.ollama` | 로컬 LLM(Gemma2:9b, Llava, nomic-embed-text) 추론 |
+| **ollama** | `ollama/ollama:latest` (공식) | `11434:11434` | `ollama_data:/root/.ollama` | 로컬 LLM(gemma4-e4b, Llava, nomic-embed-text) 추론 |
 
 ### 2.2 GPU 접근 가드레일
 
@@ -86,7 +86,7 @@ cp .env.example .env
 
 ```bash
 # 호스트에서 Ollama 컨테이너 기동 후 모델 pull
-docker exec -it minchodan-ollama ollama pull gemma2:9b
+docker exec -it minchodan-ollama ollama pull gemma4-e4b
 docker exec -it minchodan-ollama ollama pull llava
 docker exec -it minchodan-ollama ollama pull nomic-embed-text
 ```
@@ -111,7 +111,7 @@ Copy-Item .env.example .env
 docker\windows_docker_start.bat
 
 # 4. Ollama 모델 다운로드 (최초 1회)
-docker exec -it minchodan-ollama ollama pull gemma2:9b
+docker exec -it minchodan-ollama ollama pull gemma4-e4b
 docker exec -it minchodan-ollama ollama pull llava
 docker exec -it minchodan-ollama ollama pull nomic-embed-text
 
@@ -135,7 +135,7 @@ bash docker/linux_docker_start.sh    # Linux
 bash docker/macos_docker_start.sh    # macOS
 
 # 4. Ollama 모델 다운로드 (최초 1회)
-docker exec -it minchodan-ollama ollama pull gemma2:9b
+docker exec -it minchodan-ollama ollama pull gemma4-e4b
 docker exec -it minchodan-ollama ollama pull llava
 docker exec -it minchodan-ollama ollama pull nomic-embed-text
 
@@ -307,7 +307,7 @@ docker compose -f docker/docker-compose.yml ps
 | FastAPI 컨테이너가 Ollama에 연결 불가 | `OLLAMA_BASE_URL`이 `localhost`로 설정됨 | `.env`에서 `OLLAMA_BASE_URL=http://ollama:11434`로 변경 |
 | FastAPI 컨테이너가 Redis에 연결 불가 | `REDIS_URL`이 `localhost`로 설정됨 | `.env`에서 `REDIS_URL=redis://redis:6379`로 변경 |
 | GPU 인식 실패 | NVIDIA Container Toolkit 미설치 | `nvidia-container-toolkit` 설치 후 Docker 데몬 재시작 |
-| Ollama 모델 pull 실패 | 디스크 공간 부족 또는 네트워크 | 디스크 여유 공간 확인 (Gemma2:9b 약 5GB) |
+| Ollama 모델 pull 실패 | 디스크 공간 부족 또는 네트워크 | 디스크 여유 공간 확인 (gemma4-e4b 약 2.5GB) |
 | 포트 8000 충돌 | 기존 프로세스 사용 중 | `WS_PORT` 환경 변수 변경 또는 기존 프로세스 종료 |
 | `.env` 파일 미발견 | `.env.example`을 `.env`로 복사하지 않음 | `cp .env.example .env` 실행 |
 

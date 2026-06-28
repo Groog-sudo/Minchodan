@@ -43,7 +43,7 @@
 | 3    | AI 장애물 실시간 인식 (듀얼헤드)  | Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack | 킥보드 conf≈0.87, **Detection < 80ms**     |
 | 4    | 위험 대처 수칙 DB 구축 (RAG 시드) | Ollama(Llava), ChromaDB, nomic-embed                            | collection ≥ 100, **Top-5 hit-rate ≥ 0.6** |
 | 5    | 실시간 대처 수칙 검색 (RAG)       | ChromaDB                                                        | kickboard 쿼리 정합, **검색 < 50ms**       |
-| 6    | 종합 회피 가이드 생성 (계층 LLM)  | LangGraph, ChatOllama(Gemma2)                                   | bollard 주입 시 20자 내·방향 포함          |
+| 6    | 종합 회피 가이드 생성 (계층 LLM)  | LangGraph, ChatOllama(gemma4-e4b)                               | bollard 주입 시 20자 내·방향 포함          |
 | 7    | 음성 안내 출력 (이중 채널)        | Kokoro/Coqui, Web Audio, Haptics                                | 반사 클립 선점 재생, 햅틱 동시 출력        |
 
 상세 설계는 [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)와 [`docs/architecture.md`](docs/architecture.md)를 참조합니다.
@@ -59,7 +59,7 @@
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + 컨텍스트 TTL)
 - LangGraph + LangChain (L1/L2/L3 오케스트레이션)
-- Ollama (Llava 캡셔닝, Gemma2 가이드 생성, nomic-embed-text 임베딩)
+- Ollama (Llava 캡셔닝, gemma4-e4b 가이드 생성, nomic-embed-text 임베딩)
 - ChromaDB (로컬 벡터 저장소)
 - Kokoro-82M / Coqui (로컬 TTS)
 - OpenCV (프레임 디코딩)
@@ -247,7 +247,7 @@ bash scripts/build_chroma.sh
 | ------------------- | ----------------------------------------- | ------------------------ |
 | `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
 | `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
-| `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma2:9b`              |
+| `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4-e4b`             |
 | `LLAVA_MODEL`       | 4단계 캡셔닝 모델                         | `llava`                  |
 | `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |

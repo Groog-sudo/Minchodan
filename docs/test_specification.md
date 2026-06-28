@@ -79,7 +79,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 - GPU: Blackwell sm_120 (RTX 5090 / 5070 Ti), CUDA 12.8 + cu128 PyTorch 휠
 - 서버 루트: `./Minchodan`
 - Vector Store: 로컬 `data/chroma_db/`
-- 외부 의존성: Ollama(Gemma2:9b, Llava, nomic-embed-text), Redis, Kokoro/Coqui TTS
+- 외부 의존성: Ollama(gemma4-e4b, Llava, nomic-embed-text), Redis, Kokoro/Coqui TTS
 
 ---
 
@@ -170,7 +170,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-LG-001 | bollard 주입 가이드 | 20자 내 안내 정상 적재                    | 완료 |
 | TC-LG-002 | 방향 키워드 포함    | 좌/우/직진/정지 중 하나                   | 완료 |
 | TC-LG-003 | L1 위험도 분류      | high 제외, mid/low만 진입                 | 완료 |
-| TC-LG-004 | L2 Gemma2 ainvoke   | 한국어 1문장 생성                         | 완료 |
+| TC-LG-004 | L2 gemma4-e4b ainvoke   | 한국어 1문장 생성                         | 완료 |
 | TC-LG-005 | L3 검증 + RETRY     | 위반 시 RETRY(최대 1회)                   | 완료 |
 | TC-LG-006 | Fallback 고정 문장  | 최종 실패 시 "전방 주의, 천천히 멈추세요" | 완료 |
 | TC-LG-007 | 조건부 분기         | StateGraph 엣지 정상                      | 완료 |

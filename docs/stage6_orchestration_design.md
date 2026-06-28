@@ -10,7 +10,7 @@
 
 ## 1. 개요 및 핵심 가치
 
-**6단계**는 3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, 로컬 **Gemma2 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성하는 단계입니다.
+**6단계**는 3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, 로컬 **gemma4-e4b 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성하는 단계입니다.
 
 | 핵심 가치 | 설명 |
 | --------- | ---- |
@@ -42,7 +42,7 @@ graph LR
 
     subgraph Stage6 ["6단계: LangGraph 오케스트레이션"]
         L1["L1 Classifier<br/>(룰 기반 위험도)"]
-        L2["L2 Generator<br/>(ChatOllama Gemma2)"]
+        L2["L2 Generator<br/>(ChatOllama gemma4-e4b)"]
         L3["L3 Validator<br/>(길이·방향 검증)"]
         FB["Fallback Node<br/>(고정 문장)"]
     end
@@ -71,7 +71,7 @@ graph LR
 
 | 구성 요소 | 기술 | 버전/모델 | 비고 |
 | --------- | ---- | --------- | ---- |
-| LLM (기본) | Ollama Gemma2 | `gemma2:9b` | 로컬 추론, temperature=0.3 |
+| LLM (기본) | Ollama gemma4-e4b | `gemma4-e4b` | 로컬 추론, temperature=0.3 |
 | LLM (Fallback) | OpenAI GPT-4o-mini | `gpt-4o-mini` | 핫스왑, max_tokens=50 |
 | 오케스트레이션 | LangGraph | `>= 0.2.x` | StateGraph + 조건부 엣지 |
 | LLM 래퍼 | LangChain | `>= 0.3` | ChatOllama / ChatOpenAI |
@@ -91,7 +91,7 @@ server/orchestration/
 └── nodes/
     ├── __init__.py
     ├── l1_classifier.py       # L1: 룰 기반 위험도 분류 (mid/low만 진입)
-    ├── l2_generator.py        # L2: ChatOllama(Gemma2) ainvoke
+    ├── l2_generator.py        # L2: ChatOllama(gemma4-e4b) ainvoke
     ├── l3_validator.py        # L3: 길이·방향 검증, RETRY(최대 1회)
     └── fallback_node.py       # 최종 실패 → 고정 문장
 ```
@@ -102,7 +102,7 @@ server/orchestration/
 | `graph.py` | StateGraph 조립, 엔트리포인트, 조건부 엣지 | guide 14(LangGraph) |
 | `llm_client_factory.py` | `LLMClientFactory` 클래스, 환경 변수 로드 | guide 3.3(경로), 3.4(.env), 17.2(방어적) |
 | `nodes/l1_classifier.py` | 룰 기반 위험도 분류 함수 | guide 17.2(None 가드레일) |
-| `nodes/l2_generator.py` | Gemma2 ainvoke, 프롬프트 조립 | guide 11(LLM), 12(LCEL) |
+| `nodes/l2_generator.py` | gemma4-e4b ainvoke, 프롬프트 조립 | guide 11(LLM), 12(LCEL) |
 | `nodes/l3_validator.py` | 가드레일 검증, RETRY 카운터 | guide 17.2(예외 후 루프 유지) |
 | `nodes/fallback_node.py` | 고정 문장 반환 | guide 17.2(Mock 폴백) |
 
@@ -233,7 +233,7 @@ graph TD
 
 > **코딩 패턴**: L1은 LLM을 호출하지 않는 **순수 룰베이스** 노드입니다. `state.get("detected_classes", [])`로 None 가드레일을 적용합니다 (guide 17.2).
 
-### 7.2 L2 노드 - Gemma2 가이드 생성
+### 7.2 L2 노드 - gemma4-e4b 가이드 생성
 
 | 항목 | 내용 |
 | ---- | ---- |
@@ -345,7 +345,7 @@ def get_orchestrator():
 
 | 조건 | 전환 대상 | 트리거 |
 | ---- | --------- | ------ |
-| 기본 | `ChatOllama(gemma2:9b)` | `LLM_PROVIDER=ollama` (기본값) |
+| 기본 | `ChatOllama(gemma4-e4b)` | `LLM_PROVIDER=ollama` (기본값) |
 | 강제 전환 | `ChatOpenAI(gpt-4o-mini)` | `LLM_PROVIDER=openai` 환경 변수 |
 | L3 실패율 > 10% | `ChatOpenAI(gpt-4o-mini)` | 자동 전환 (모니터링 기반) |
 | 최종 실패 | 고정 문장 | Fallback Node |
@@ -366,7 +366,7 @@ def get_orchestrator():
 | ---- | ---- | ------ |
 | `LLM_PROVIDER` | LLM 공급자 (`ollama` 또는 `openai`) | `ollama` |
 | `OLLAMA_BASE_URL` | Ollama 서버 주소 | `http://localhost:11434` |
-| `GEMMA_MODEL` | L2 가이드 생성 모델 | `gemma2:9b` |
+| `GEMMA_MODEL` | L2 가이드 생성 모델 | `gemma4-e4b` |
 | `OPENAI_API_KEY` | OpenAI 전환 시 필요 | (미설정) |
 
 ---
@@ -450,7 +450,7 @@ def get_orchestrator():
 | 1 | bollard 주입 가이드 | 20자 내 안내 정상 적재 | `len(guidance_text) <= 20` |
 | 2 | 방향 키워드 포함 | 좌/우/직진/정지 중 하나 | 키워드 존재 |
 | 3 | L1 위험도 분류 | high 제외, mid/low만 진입 | high 진입 안 함 |
-| 4 | L2 Gemma2 ainvoke | 한국어 1문장 생성 | 한국어 문자 포함 |
+| 4 | L2 gemma4-e4b ainvoke | 한국어 1문장 생성 | 한국어 문자 포함 |
 | 5 | L3 검증 + RETRY | 위반 시 RETRY (최대 1회) | `retry_count <= 1` |
 | 6 | Fallback 고정 문장 | 최종 실패 시 `"전방 주의, 천천히 멈추세요"` | 문장 일치 |
 | 7 | 조건부 분기 | StateGraph 엣지 정상 | END 도달 |
@@ -475,7 +475,7 @@ python -m pytest tests/test_langgraph.py -v
 | 2 | `state.py` - `OrchState` TypedDict 정의 | 상태 모델 | 없음 |
 | 3 | `llm_client_factory.py` - `LLMClientFactory` 구현 | 핫스왑 클라이언트 | `.env` |
 | 4 | `nodes/l1_classifier.py` - L1 룰 분류 | L1 노드 | `state.py` |
-| 5 | `nodes/l2_generator.py` - L2 Gemma2 ainvoke | L2 노드 | `llm_client_factory.py` |
+| 5 | `nodes/l2_generator.py` - L2 gemma4-e4b ainvoke | L2 노드 | `llm_client_factory.py` |
 | 6 | `nodes/l3_validator.py` - L3 가드레일 | L3 노드 | 없음 |
 | 7 | `nodes/fallback_node.py` - Fallback 고정 문장 | Fallback 노드 | 없음 |
 | 8 | `graph.py` - StateGraph 조립 | 컴파일된 그래프 | 모든 노드 |

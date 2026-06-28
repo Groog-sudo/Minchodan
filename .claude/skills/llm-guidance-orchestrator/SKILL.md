@@ -1,7 +1,7 @@
 ---
 name: llm-guidance-orchestrator
 description: |
-  LangGraph 3계층 오케스트레이션(L1 룰 분류  L2 Gemma2 문장 생성  L3 가드레일 검증)으로
+  LangGraph 3계층 오케스트레이션(L1 룰 분류  L2 gemma4-e4b 문장 생성  L3 가드레일 검증)으로
   탐지 장애물과 RAG 수칙을 종합하여 20자 이내 한국어 회피 안내 문장을 생성하는 모듈.
   LLMClientFactory로 로컬(Ollama)  상용(gpt-4o-mini) 핫스왑을 지원한다.
 ---
@@ -15,7 +15,7 @@ description: |
 
 ## 개요
 
-3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 Gemma2 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
+3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 gemma4-e4b 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
 
 ## 핵심 가치
 
@@ -28,12 +28,12 @@ description: |
 ```
 [3단계: Yolo 26N - Object Detection]  detected_classes, risk_level
 [5단계: RAG 검색]  rag_context
-        
+
 [6단계: LLM 가이드 오케스트레이터]
    ├── L1: 룰 기반 위험도 분류 (high는 이미 반사 경로에서 처리됨, mid/low만 진입)
-   ├── L2: ChatOllama(Gemma2) ainvoke — 20자/방향 포함
+   ├── L2: ChatOllama(gemma4-e4b) ainvoke — 20자/방향 포함
    └── L3: 가드레일 검증, RETRY(최대 1회)
-        
+
 [7단계: 실시간 TTS]  guidance_text
 ```
 
@@ -63,7 +63,7 @@ description: |
 
 | 구성 요소 | 기술 | 버전/모델 |
 |-----------|------|-----------|
-| LLM (기본) | Ollama Gemma2 | gemma2:9b |
+| LLM (기본) | Ollama gemma4-e4b | gemma4-e4b |
 | LLM (Fallback) | OpenAI GPT-4o-mini | gpt-4o-mini |
 | 오케스트레이션 | LangGraph | >= 0.2.x |
 | LLM 래퍼 | LangChain ChatOllama / ChatOpenAI | langchain >= 0.3 |
@@ -78,7 +78,7 @@ server/orchestration/
 ├── llm_client_factory.py      # BaseChatModel Ollama  gpt-4o-mini 핫스왑
 └── nodes/
     ├── l1_classifier.py       # L1: 룰 기반 위험도 분류 (mid/low만 진입)
-    ├── l2_generator.py        # L2: ChatOllama(Gemma2) ainvoke
+    ├── l2_generator.py        # L2: ChatOllama(gemma4-e4b) ainvoke
     ├── l3_validator.py        # L3: 길이·방향 검증, RETRY(최대 1회)
     └── fallback_node.py       # 최종 실패  고정 문장
 ```
@@ -136,7 +136,7 @@ async def l1_classifier_node(state: dict) -> dict:
     return {"risk_level": risk_level, "retry_count": 0}
 ```
 
-### 단계 6-3. L2 노드 — Gemma2 가이드 생성
+### 단계 6-3. L2 노드 — gemma4-e4b 가이드 생성
 
 ```python
 # -*- coding: utf-8 -*-
@@ -165,7 +165,7 @@ class LLMClientFactory:
     @classmethod
     def get_ollama(cls) -> ChatOllama:
         if cls._ollama is None:
-            cls._ollama = ChatOllama(model="gemma2:9b", base_url="http://localhost:11434", temperature=0.3, num_predict=50)
+            cls._ollama = ChatOllama(model="gemma4-e4b", base_url="http://localhost:11434", temperature=0.3, num_predict=50)
         return cls._ollama
 
     @classmethod
@@ -322,7 +322,7 @@ def get_orchestrator():
 
 | 조건 | 전환 |
 | --- | --- |
-| 기본 | ChatOllama(gemma2:9b) 로컬 |
+| 기본 | ChatOllama(gemma4-e4b) 로컬 |
 | L3 실패율 > 10% | gpt-4o-mini 자동 전환 |
 | `LLM_PROVIDER=openai` | gpt-4o-mini 강제 |
 | L3 최종 실패 | 고정 문장("전방 주의, 천천히 멈추세요") |
@@ -346,7 +346,7 @@ def get_orchestrator():
 | bollard 주입 가이드 | 20자 내 안내 정상 적재 | 길이 <= 20 |
 | 방향 키워드 포함 | 좌/우/직진/정지 중 하나 | 키워드 존재 |
 | L1 위험도 분류 | high 제외, mid/low만 진입 | high 진입 안 함 |
-| L2 Gemma2 ainvoke | 한국어 1문장 생성 | 한국어 포함 |
+| L2 gemma4-e4b ainvoke | 한국어 1문장 생성 | 한국어 포함 |
 | L3 검증 + RETRY | 위반 시 RETRY(최대 1회) | retry_count <= 1 |
 | Fallback 고정 문장 | 최종 실패 시 "전방 주의, 천천히 멈추세요" | 문장 일치 |
 | 조건부 분기 | StateGraph 엣지 정상 | END 도달 |

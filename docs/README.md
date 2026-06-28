@@ -58,7 +58,7 @@
 - **반사 음성은 사전합성 고정 클립**(앱 번들)입니다. 실시간 TTS 합성은 금지하며, 반사 음성은 인지 음성을 중단시키고 선점 재생합니다.
 - **Whisper는 STT 전용**이며 7단계(가이드 출력)에 등장하지 않습니다. 사용자 음성 명령(STT) 경로는 본 골격 범위 밖입니다.
 - **Vector DB는 ChromaDB 로컬 파일 기반**(`data/chroma_db/`)이며, `VectorDBFactory`로 Qdrant 핫스왑을 대비합니다.
-- **LLM은 로컬 Ollama(Gemma2:9b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
+- **LLM은 로컬 Ollama(gemma4-e4b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
 - **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.
 
@@ -70,7 +70,7 @@
 | -------------- | ------------------ | ---------------------- |
 | Vector DB      | ChromaDB           | Qdrant                 |
 | 임베딩         | nomic-embed-text   | gemini-embedding-001   |
-| L2 LLM         | Gemma2:9b          | gpt-4o-mini            |
+| L2 LLM         | gemma4-e4b         | gpt-4o-mini            |
 | On-device 추론 | 없음 (thin client) | 반사 레이어 (post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis  | WebRTC/gRPC 등         |
 | TTS            | Kokoro/Coqui       | OpenAI TTS             |
