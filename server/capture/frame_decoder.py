@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import logging
 import os
 import sys
@@ -55,7 +56,24 @@ async def decode_frame(payload: dict) -> ProcessedFrame | None:
     event_id = payload.get("event_id", "unknown")
     device_id = payload.get("device_id", "unknown")
     stream = payload.get("stream", "cognitive")
-    ts = int(payload.get("ts", 0))
+    # 방어적 시간 정보 파싱: ts(밀리초 epoch) 우선, 없을 경우 ISO 8601형식 timestamp 파싱 시도
+    raw_ts = payload.get("ts")
+    ts = 0
+    if raw_ts is not None:
+        with contextlib.suppress(ValueError, TypeError):
+            ts = int(raw_ts)
+
+    if ts == 0:
+        timestamp_str = payload.get("timestamp")
+        if timestamp_str:
+            with contextlib.suppress(Exception):
+                from datetime import datetime
+
+                if timestamp_str.endswith("Z"):
+                    timestamp_str = timestamp_str[:-1] + "+00:00"
+                dt = datetime.fromisoformat(timestamp_str)
+                ts = int(dt.timestamp() * 1000)
+
     b64_str = payload.get("thumbnail_jpeg_b64")
 
     if not b64_str:

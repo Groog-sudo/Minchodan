@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-06-27 정적 분석 게이트 추가)
+> **버전**: v0.4.0 (2026-06-28 2단계 캡처 테스트 ID/상태 정합 완료)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -102,31 +102,36 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 **테스트 파일:** `tests/test_frame_decode.py`
 
-| ID        | 검증 항목             | 기준                                | 상태 |
-| --------- | --------------------- | ----------------------------------- | ---- |
-| TC-FR-001 | base64 cv2 디코딩     | `np.frombuffer` `cv2.imdecode` 정상 | 대기 |
-| TC-FR-002 | 리사이즈 640x640      | 출력 프레임 shape (640,640,3)       | 대기 |
-| TC-FR-003 | 캡처수신 지연         | **캡처수신 < 50ms**                 | 대기 |
-| TC-FR-004 | 이중 스트림 분기      | 반사 8~10fps / 인지 1~2fps 분리     | 대기 |
-| TC-FR-005 | 권한 거부 가드        | `NotAllowedError` 안내 처리         | 대기 |
-| TC-FR-006 | 소켓 유실 타이머 해제 | `clearInterval` 자원 해제           | 대기 |
+| ID | 검증 항목 | 기준 | 상태 |
+| :--- | :--- | :--- | :--- |
+| **TC-CAP-001** | base64 cv2 디코딩 | `np.frombuffer` `cv2.imdecode` 정상 | 완료 |
+| **TC-CAP-002** | 리사이즈 640x640 | 출력 프레임 shape (640,640,3) | 완료 |
+| **TC-CAP-003** | 캡처수신 지연 | **단위 디코딩 지연 < 50ms** | 완료 |
+| **TC-CAP-004** | 이중 스트림 분기 | `StreamSplitter`가 reflex/cognitive로 큐 분기 | 완료 |
+| **TC-CAP-005** | Redis 메타데이터 발행 | 프레임 제외 메타데이터만 `risk.events` 발행 | 완료 |
+| **TC-CAP-006** | 백프레셔 큐 제한 | Queue 크기 100 초과 시 오래된 프레임 drop | 완료 |
+| **TC-CAP-007** | 권한 거부 가드 | 단말 `NotAllowedError` 안내 처리 | 대기 |
+| **TC-CAP-008** | 소켓 유실 타이머 해제 | 단말 `clearInterval` 자원 해제 | 대기 |
+| **TC-CAP-009** | 예외 안전 복구 | 디코딩/Redis 실패 시에도 큐 push 유지 | 완료 |
+| **TC-PATH-006** | 반사 경로 임포트 격리 | `stream_splitter.py`에 LLM/RAG/TTS 임포트 없음 | 완료 |
+| **TC-PATH-007** | 인지 경로 임포트 격리 | `stream_splitter.py`에 LLM/RAG/TTS 임포트 없음 | 완료 |
 
 ### 5.3 3단계 - AI 장애물 실시간 인식
 
 **테스트 파일:** `tests/test_detection.py`
 
-| ID         | 검증 항목                               | 기준                               | 상태          |
-| ---------- | --------------------------------------- | ---------------------------------- | ------------- |
-| TC-DET-001 | Yolo 26N - Object Detection 킥보드 추론 | `conf≈0.87`                        | 대기          |
-| TC-DET-002 | track_id 부여                           | ByteTrack `update()` track_id      | Mock 검증 완료 |
-| TC-DET-003 | Detection 추론 지연                     | **< 80ms**                         | 대기          |
-| TC-DET-004 | Yolo 26N - Segmentation 마스크          | 노면 의미분할 마스크 생성          | 대기          |
-| TC-DET-005 | Reflex Gate 분기                        | 고위험+근접 `alert_id`+방향        | 완료          |
-| TC-DET-006 | Surface Gate 분기                       | P0 노면 하단 검출 `alert_id`       | 완료          |
-| TC-DET-007 | Redis 컨텍스트 TTL                      | 30초 후 Track ctx 키 자동 삭제     | 대기          |
-| TC-DET-008 | mid/low 발행                            | `xadd("risk.events")` 정상         | 완료          |
-| TC-DET-009 | 무탐지 빈 리스트                        | 에러 없이 빈 리스트 반환           | 완료          |
-| TC-DET-010 | 노면 클래스 분리 (C2)                   | `braille_damaged` 독립 클래스 검출 | 대기          |
+| ID | 검증 항목 | 기준 | 상태 |
+| :--- | :--- | :--- | :--- |
+| **TC-DET-001** | Yolo 26N - Object Detection 킥보드 추론 | `conf≈0.87` | 완료 |
+| **TC-DET-002** | track_id 부여 | ByteTrack `update()` track_id | 완료 |
+| **TC-DET-003** | Detection 추론 지연 | **< 80ms** | 완료 |
+| **TC-DET-004** | Yolo 26N - Segmentation 마스크 | 노면 의미분할 마스크 생성 | 완료 |
+| **TC-DET-005** | Reflex Gate 분기 | 고위험+근접 `alert_id`+방향 | 완료 |
+| **TC-DET-006** | Surface Gate 분기 | P0 노면 하단 검출 `alert_id` | 완료 |
+| **TC-DET-007** | Redis 컨텍스트 TTL | 30초 후 Track ctx 키 자동 삭제 | 완료 |
+| **TC-DET-008** | mid/low 발행 | `xadd("risk.events")` 정상 | 완료 |
+| **TC-DET-009** | 무탐지 빈 리스트 | 에러 없이 빈 리스트 반환 | 완료 |
+| **TC-DET-010** | 노면 클래스 분리 (C2) | `braille_damaged` 독립 클래스 검출 | 대기 |
 
 ### 5.4 4단계 - RAG 지식베이스 구축
 

@@ -93,6 +93,15 @@ class TestDecodeFrame:
         assert result.original_size == (480, 640)
 
     @pytest.mark.asyncio
+    async def test_timestamp_fallback(self):
+        """ts 필드가 없거나 잘못되어 ISO timestamp 필드로 복원되는지 검증."""
+        payload = make_payload(make_jpeg_b64(), ts=None)  # type: ignore[arg-type]
+        payload["timestamp"] = "2026-06-28T09:00:00.000Z"
+        result = await decode_frame(payload)
+        assert result is not None
+        assert result.ts > 0
+
+    @pytest.mark.asyncio
     async def test_empty_base64(self):
         """TC-CAP-002: 빈 base64 처리."""
         payload = make_payload("")

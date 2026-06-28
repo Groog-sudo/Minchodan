@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.1.0
+> **버전**: v0.2.0 (2026-06-28 Docker Compose 포트 매핑 동기화)
 > **설계 기준**: [`docs/architecture.md`](architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`docs/environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -41,7 +41,7 @@ graph TD
 
 | 컨테이너 | 이미지 | 포트 | 볼륨 마운트 | 역할 |
 | :--- | :--- | :--- | :--- | :--- |
-| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `8000:8000` | `./server:/app/server`, `./data:/app/data`, `./.env:/app/.env` | FastAPI + uvicorn, WebSocket `/ws/detect`, SSE `/api/v1/monitor/stream` |
+| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `${WS_PORT:-8000}:8000` | `./server:/app/server`, `./data:/app/data`, `./.env:/app/.env` | FastAPI + uvicorn, WebSocket `/ws/detect`, SSE `/api/v1/monitor/stream` |
 | **redis** | `redis:7-alpine` (공식) | `6379:6379` | `redis_data:/data` | Redis Streams(`risk.events`, `mcp:metrics`) + Track 컨텍스트 TTL(30초) |
 | **ollama** | `ollama/ollama:latest` (공식) | `11434:11434` | `ollama_data:/root/.ollama` | 로컬 LLM(Gemma2:9b, Llava, nomic-embed-text) 추론 |
 
