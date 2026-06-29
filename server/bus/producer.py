@@ -1,14 +1,13 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
 import logging
 import sys
 import time
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from server.bus.redis_client import RedisBus, redis_bus
 
@@ -33,8 +32,8 @@ class RiskEventProducer:
         event_id: str,
         detection: Detection,
         risk_hint: str,
-    ) -> Optional[str]:
-        payload: Dict[str, Any] = {
+    ) -> str | None:
+        payload: dict[str, Any] = {
             "event_id": event_id,
             "track_id": detection.track_id or "unknown",
             "class_name": detection.class_name,
@@ -50,7 +49,7 @@ class RiskEventProducer:
     async def update_track_context(
         self,
         track_id: str,
-        bbox: Dict[str, float],
+        bbox: dict[str, float],
         speed: float,
         direction: str,
         class_name: str,

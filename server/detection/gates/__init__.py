@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from server.detection.gates.reflex_gate import reflex_gate
 from server.detection.gates.surface_gate import surface_gate
 

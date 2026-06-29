@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.detector_interface import DetectorInterface, SegmentorInterface

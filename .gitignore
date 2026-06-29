@@ -158,6 +158,7 @@ tmp/
 outputs/
 results/
 generated/
+reports/
 
 # ==========================================
 # Cache

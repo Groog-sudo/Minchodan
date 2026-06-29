@@ -152,7 +152,7 @@
 - **선택 이유:** 탐지 유무로 워크플로를 제어하는 상태 그래프가 적합. 로컬 LLM으로 RTT·토큰비용·프라이버시 해결, 성능 부족 시에만 상용 승급.
 - **핵심 절차:** `StateGraph(OrchState)`
   - **L1**: 룰 기반 위험도 분류(high는 이미 즉시 경보 처리됨 / mid·low만 진입)
-  - **L2**: RAG+탐지 결합 프롬프트로 ChatOllama(Gemma2) `ainvoke` — "한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함"
+  - **L2**: RAG+탐지 결합 프롬프트로 ChatOllama(gemma4-e4b) `ainvoke` — "한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함"
   - **L3**: 길이·방향 키워드 검증, 위반 시 L2 RETRY(최대 1회)
   - Fallback/핫스왑: L3 실패율 >10% 또는 `LLM_PROVIDER=openai` 시 gpt-4o-mini 자동 전환; 최종 실패 시 고정 문장("전방 주의, 천천히 멈추세요")
 - **활용 스택·핵심 함수:** LangGraph, LangChain, ChatOllama / `StateGraph()`, `ainvoke()` — _LLMClientFactory(BaseChatModel)로 로컬상용 핫스왑_
@@ -196,7 +196,7 @@
 | -------------- | ----------------- | --------------------- |
 | Vector DB      | ChromaDB          | Qdrant                |
 | 임베딩         | nomic-embed-text  | gemini-embedding-001  |
-| L2 LLM         | Gemma2:9b         | gpt-4o-mini           |
+| L2 LLM         | gemma4-e4b        | gpt-4o-mini           |
 | On-device 추론 | 없음(thin client) | 반사 레이어(post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis | WebRTC/gRPC 등        |
 | TTS            | Kokoro/Coqui      | OpenAI TTS            |

@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 import logging
 import sys
-from typing import List
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import numpy as np
 from ultralytics import YOLO
@@ -34,7 +32,7 @@ class YoloDetector(DetectorInterface):
             self.model = None
             return False
 
-    def predict(self, frame: np.ndarray) -> List[Detection]:
+    def predict(self, frame: np.ndarray) -> list[Detection]:
         if self.model is None:
             logger.warning("[YoloDetector] 모델이 로드되지 않았습니다.")
             return []
@@ -60,7 +58,7 @@ class YoloDetector(DetectorInterface):
             return []
 
         result = results[0]
-        detections: List[Detection] = []
+        detections: list[Detection] = []
         if result.boxes is None or len(result.boxes) == 0:
             return detections
 
@@ -69,7 +67,7 @@ class YoloDetector(DetectorInterface):
             cls_id = int(box.cls[0])
             class_name = names.get(cls_id, str(cls_id))
             confidence = float(box.conf[0])
-            x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
+            x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].tolist())
             track_id = None
             if box.id is not None:
                 track_id = f"T-{int(box.id[0]):04d}"

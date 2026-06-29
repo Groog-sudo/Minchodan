@@ -1,11 +1,19 @@
 # AI Coding & Communication Guidelines (Minchodan)
 
+> [!IMPORTANT]
+> **에이전트 시작 규칙 (Agent Startup Rule)**:
+> 에이전트는 세션 시작 직후 다른 작업을 진행하기 전에 반드시 `view_file` 도구를 사용하여 프로젝트 루트의 [SKILLS.md](SKILLS.md) 파일을 열어 처음부터 끝까지 읽어야 합니다.
+> 에이전트 도구는 이 규칙과 지침을 세션 시작 시 자동으로 결합하기 위해 최상단의 `@SKILLS.md` 구문을 분석하여 컨텍스트에 주입합니다.
+
+@SKILLS.md
+
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.3.0 (2026-06-27 코드 품질 검증 가이드 연동)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+> **코드 품질 검증 기준**: [`docs/code_quality_guide.md`](docs/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
 
 ---
 
@@ -30,7 +38,7 @@
 - Tracking: ByteTrack
 - Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
 - LLM Orchestration: LangGraph, LangChain
-- Local LLM/Embedding: Ollama (Gemma2:9b, Llava, nomic-embed-text)
+- Local LLM/Embedding: Ollama (gemma4-e4b, Llava, nomic-embed-text)
 - TTS: Kokoro-82M / Coqui (로컬)
 - Message Bus: Redis (Streams + 컨텍스트 TTL)
 - Image: OpenCV
@@ -73,7 +81,7 @@
   - `orchestration/`: LangGraph L1/L2/L3 (nodes/)
   - `tts/`: 실시간 TTS, 반사 클립 전송, 중복 억제
   - `bus/`: Redis Streams 인터페이스
-  - `models/`: 모델 가중치 (git-ignore)
+  - `models/`: 사전학습 가중치 Git 추적 (yolo26n/*.pt), 커스텀 학습 가중치 git-ignore
 - `client/`: React Native thin client
 - `console/`: React 운영자 모니터링 콘솔
 - `data/`: 학습·RAG 데이터
@@ -95,6 +103,12 @@
   - **환경 변수 로드** (guide 3.4): `load_dotenv()` + `os.getenv(..., default)` 패턴 적용.
   - **방어적 코딩** (guide 17.2): None 가드레일, API 키 검증, Mock 폴백, 예외 후 루프 유지, 방어적 dict 접근 5종 패턴.
   - **계층 분리** (guide 17.1): Router → Service → Repository 3계층 구조 (FastAPI 프로젝트).
+- **Code Quality Verification**: 코드 품질 검증은 [`docs/code_quality_guide.md`](docs/code_quality_guide.md)의 파이프라인을 준수합니다. 커밋·푸시·PR 시 자동 실행됩니다.
+  - **검증 도구**: Ruff(린트+포맷+보안 1차), Bandit(보안 심층 2차), mypy(타입 점진적), jscpd(중복 검출), pip-audit(의존성 CVE).
+  - **실행 시점 분리**: pre-commit(Ruff+Bandit, 빠름) / pre-push(mypy+jscpd+pip-audit, 느림) / GitHub Actions(PR 게이트).
+  - **자동 수정 명령**: `ruff format . ; ruff check --fix .` (커밋 전 실행 권장).
+  - **전체 검사 명령**: `ruff check . ; bandit -r server/ scripts/ ; mypy server/ ; jscpd ; pip-audit -r requirements.txt`.
+  - **이중 경로 분리 강제**: 반사 경로(`server/detection/gates/`)에서 오케스트레이션/RAG/TTS 모듈 임포트 금지. 현재 코드 리뷰로 강제, 후속 커스텀 Ruff 룰로 자동 탐지 예정.
 - No Emojis: 코드 주석, 커밋 메시지, 문서 내부에서 이모지 사용 금지.
 - Conciseness: 코드와 설명은 핵심 로직 위주로 간결하게 작성. 불필요한 서술 지양.
 - Pathing: 문서·명령은 프로젝트 루트(`./Minchodan`) 기준의 상대경로를 사용하고, Python 실행 경로는 `__file__` 기반으로 계산합니다. 환경별 절대경로 하드코딩은 금지합니다.
@@ -153,10 +167,17 @@
 | -------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                                        |
 | **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| **코드 품질 검증 가이드** | [`docs/code_quality_guide.md`](docs/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                                       |
-| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약                        |
+| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동              |
 | API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입                          |
 | 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스                                  |
 | Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                                      |
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
-| 에이전트 스킬 가이드 | [`skills.md`](skills.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
+| **환경 변수 명세서** | [`docs/environment_variables.md`](docs/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**                              |
+| **배포 가이드**      | [`docs/deployment_guide.md`](docs/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004**                   |
+| 2단계 캡처 설계서    | [`docs/stage2_capture_design.md`](docs/stage2_capture_design.md) | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue) |
+| 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                                    |
+| 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계                            |
+| 보행이론 인사이트    | [`docs/behavior_and_risk_insight.md`](docs/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의         |
+| 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |

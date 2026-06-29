@@ -1,0 +1,18 @@
+{
+  "threshold": 5,
+  "reporters": ["console", "html"],
+  "format": ["python"],
+  "min-lines": 5,
+  "min-tokens": 50,
+  "ignore": [
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/data/**",
+    "**/models/**",
+    "**/node_modules/**",
+    "**/reports/**"
+  ],
+  "output": "./reports/jscpd",
+  "absolute": true
+}

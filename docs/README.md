@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.6.0 (2026-06-28 2단계 캡처 백엔드 설계서 추가)
 
 ## 문서 목록
 
@@ -9,16 +9,23 @@
 | -------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
 | 설계 노트 (원본)     | [minchodan_design_note.md](minchodan_design_note.md)   | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영                      |
 | **코딩 패턴 기준**   | [course_codebase_guide.md](course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
-| 에이전트 가이드      | [AGENTS.md](AGENTS.md)                                 | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템                  |
-| 시스템 아키텍처      | [architecture.md](architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수             |
+| **코드 품질 검증 가이드** | [code_quality_guide.md](code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증 (코딩 전 필수 참조)** |
+| 에이전트 가이드      | [../AGENTS.md](../AGENTS.md)                           | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템, 문서 인덱스     |
+| 시스템 아키텍처      | [architecture.md](architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수, MCP 연동   |
 | API 명세서           | [api_specification.md](api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷             |
 | 테스트 명세서        | [test_specification.md](test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑                |
 | Git 브랜칭 전략      | [git_branching_strategy.md](git_branching_strategy.md) | 3계층 브랜치 구조(`master` 또는 `main` / `dev` / 개인), 작업 규칙 |
 | 파이프라인 단계 설계 | [pipeline_stage_design.md](pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
+| **환경 변수 명세서** | [environment_variables.md](environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류**             |
+| **배포 가이드**      | [deployment_guide.md](deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
+| 2단계 캡처 설계서     | [stage2_capture_design.md](stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 | 3단계 탐지 설계서     | [stage3_detection_design.md](stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
+| 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
+| 보행이론 인사이트 보고서 | [behavior_and_risk_insight.md](behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
-| 디렉토리 구조        | [../directory_Structure.md](../directory_Structure.md) | 계획된 물리적 폴더 구조                                           |
-| 에이전트 스킬        | [../skills.md](../skills.md)                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
+| Changelog 템플릿     | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md)       | 신규 changelog 작성 양식                                           |
+| 디렉토리 구조        | [../Directory_Structure.md](../Directory_Structure.md) | 계획된 물리적 폴더 구조                                           |
+| 에이전트 스킬        | [../SKILLS.md](../SKILLS.md)                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
 
 ---
 
@@ -26,13 +33,19 @@
 
 1. [`../README.md`](../README.md) - 프로젝트 개요 및 7단계 요약
 2. [`minchodan_design_note.md`](minchodan_design_note.md) - 7단계 상세 설계 (백본)
-3. [`AGENTS.md`](AGENTS.md) - 코딩·커뮤니케이션 규칙
+3. [`../AGENTS.md`](../AGENTS.md) - 코딩·커뮤니케이션 규칙
 4. [`course_codebase_guide.md`](course_codebase_guide.md) - **코딩 패턴·함수 시그니처 표준 (코딩 전 필수 참조)**
-5. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
-6. [`api_specification.md`](api_specification.md) - WebSocket API 계약
-7. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
-8. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-9. [`test_specification.md`](test_specification.md) - 검증 기준
+5. [`code_quality_guide.md`](code_quality_guide.md) - **코드 품질 검증 파이프라인 (린트·보안·중복·CVE, 코딩 전 필수 참조)**
+6. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
+7. [`api_specification.md`](api_specification.md) - WebSocket API 계약
+8. [`environment_variables.md`](environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
+9. [`deployment_guide.md`](deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
+10. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
+11. [`behavior_and_risk_insight.md`](behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
+12. [`stage2_capture_design.md`](stage2_capture_design.md) - 2단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+13. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+14. [`stage6_orchestration_design.md`](stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
+15. [`test_specification.md`](test_specification.md) - 검증 기준
 
 ---
 
@@ -45,7 +58,7 @@
 - **반사 음성은 사전합성 고정 클립**(앱 번들)입니다. 실시간 TTS 합성은 금지하며, 반사 음성은 인지 음성을 중단시키고 선점 재생합니다.
 - **Whisper는 STT 전용**이며 7단계(가이드 출력)에 등장하지 않습니다. 사용자 음성 명령(STT) 경로는 본 골격 범위 밖입니다.
 - **Vector DB는 ChromaDB 로컬 파일 기반**(`data/chroma_db/`)이며, `VectorDBFactory`로 Qdrant 핫스왑을 대비합니다.
-- **LLM은 로컬 Ollama(Gemma2:9b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
+- **LLM은 로컬 Ollama(gemma4-e4b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
 - **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.
 
@@ -57,7 +70,7 @@
 | -------------- | ------------------ | ---------------------- |
 | Vector DB      | ChromaDB           | Qdrant                 |
 | 임베딩         | nomic-embed-text   | gemini-embedding-001   |
-| L2 LLM         | Gemma2:9b          | gpt-4o-mini            |
+| L2 LLM         | gemma4-e4b         | gpt-4o-mini            |
 | On-device 추론 | 없음 (thin client) | 반사 레이어 (post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis  | WebRTC/gRPC 등         |
 | TTS            | Kokoro/Coqui       | OpenAI TTS             |
