@@ -80,3 +80,16 @@
   - `AGENTS.md`, `SKILLS.md`, `docs/README.md`에서 해당 문서를 참조하도록 업데이트했습니다.
 - **관련 파일**: `docs/llm_collaboration_workflow.md`, `AGENTS.md`, `SKILLS.md`, `docs/README.md`
 - **검증 결과**: 문서 링크와 changelog 반영 확인
+
+---
+
+### 2026-06-30 | 3단계+7단계 | YOLO/TTS MVP 다음 작업 계획 문서화
+
+- **커밋**: `docs: YOLO TTS MVP 다음 작업 계획 추가`
+- **변경 내용**:
+  - `docs/yolo_tts_mvp_next_steps.md`를 추가해 2026-07-01 이후 작업 순서와 직접 코딩 항목을 정리했습니다.
+  - 내일부터는 `direction.py`, `risk_rules.py`, 데모 실행 명령어를 담당자가 직접 입력하고 LLM은 연결·검증·문서화를 맡도록 명시했습니다.
+  - `docs/llm_collaboration_workflow.md`에 다음 세션 시작 규칙을 추가했습니다.
+  - `docs/README.md` 문서 인덱스에 다음 작업 계획 문서를 등록했습니다.
+- **관련 파일**: `docs/yolo_tts_mvp_next_steps.md`, `docs/llm_collaboration_workflow.md`, `docs/README.md`
+- **검증 결과**: 다음 작업 문서 생성 및 문서 인덱스 링크 반영 확인
