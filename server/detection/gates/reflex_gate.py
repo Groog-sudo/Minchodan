@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 import sys
-from typing import Optional
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from server.detection.schemas import Detection, ReflexAlert
 
@@ -24,7 +22,7 @@ def reflex_gate(
     detection: Detection,
     frame_height: float,
     frame_width: float,
-) -> Optional[ReflexAlert]:
+) -> ReflexAlert | None:
     """고위험 클래스이고 프레임 하단에 근접하면 alert_id + 방향을 반환한다."""
     if detection.class_name not in HIGH_RISK_CLASSES:
         return None

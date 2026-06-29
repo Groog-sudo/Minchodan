@@ -158,6 +158,7 @@ tmp/
 outputs/
 results/
 generated/
+reports/
 
 # ==========================================
 # Cache
@@ -232,6 +233,3 @@ langgraph_checkpoints/
 # 단 .master_agents/ 와 .contexty/ 는 제외
 **/.master_agents/
 .contexty/
-
-
-

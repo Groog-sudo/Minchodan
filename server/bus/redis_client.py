@@ -1,13 +1,11 @@
-# -*- coding: utf-8 -*-
-import json
 import logging
 import sys
-from typing import Any, Dict, Optional
+from typing import Any
 
 from dotenv import load_dotenv
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import os
 
@@ -26,7 +24,7 @@ class RedisBus:
 
     def __init__(self, url: str = DEFAULT_REDIS_URL):
         self.url = url
-        self._redis: Optional[Redis] = None
+        self._redis: Redis | None = None
 
     async def connect(self) -> bool:
         try:
@@ -48,7 +46,7 @@ class RedisBus:
             finally:
                 self._redis = None
 
-    async def publish_event(self, stream: str, payload: Dict[str, Any]) -> Optional[str]:
+    async def publish_event(self, stream: str, payload: dict[str, Any]) -> str | None:
         if self._redis is None:
             return None
         try:
@@ -61,7 +59,7 @@ class RedisBus:
     async def set_track_context(
         self,
         track_id: str,
-        mapping: Dict[str, str],
+        mapping: dict[str, str],
         ttl: int = DEFAULT_TRACK_TTL,
     ) -> bool:
         if self._redis is None:
@@ -75,7 +73,7 @@ class RedisBus:
             logger.warning(f"[RedisBus] ctx 업데이트 실패({track_id}): {e}")
             return False
 
-    async def get_track_context(self, track_id: str) -> Dict[str, str]:
+    async def get_track_context(self, track_id: str) -> dict[str, str]:
         if self._redis is None:
             return {}
         try:

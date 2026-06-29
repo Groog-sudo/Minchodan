@@ -1,0 +1,78 @@
+# Minchodan Docker Compose
+# Redis + Ollama + FastAPI 3컨테이너 구성
+# 상세 명세: docs/deployment_guide.md 7절
+
+services:
+  fastapi:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: minchodan-server:latest
+    container_name: minchodan-fastapi
+    ports:
+      - "${WS_PORT:-8000}:8000"
+    volumes:
+      - ../server:/app/server
+      - ../data:/app/data
+      - ../scripts:/app/scripts
+      - ../tests:/app/tests
+      - ../.env:/app/.env:ro
+      - ../requirements.txt:/app/requirements.txt:ro
+    env_file:
+      - ../.env
+    environment:
+      # Docker Compose 환경에서는 컨테이너 서비스 이름 기반으로 재설정
+      - REDIS_URL=redis://redis:6379
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - redis
+      - ollama
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+    # GPU 접근 (NVIDIA Container Toolkit 필요)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  redis:
+    image: redis:7-alpine
+    container_name: minchodan-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: minchodan-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+    # Ollama GPU 접근 (NVIDIA Container Toolkit 필요)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  redis_data:
+  ollama_data:
+
+networks:
+  minchodan-net:
+    driver: bridge
