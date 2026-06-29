@@ -2960,6 +2960,26 @@ graph LR
 | 비동기/SSE/WebSocket | 16        | `saramin_langChain_mnProject`, `web_yolov8n`   |
 | 공통 패턴            | 17        | 전체                                           |
 
+### 18.5 Ruff 룰 매핑 (Minchodan 코드 품질 검증)
+
+> **기준 문서**: [`docs/code_quality_guide.md`](code_quality_guide.md) (코드 품질 검증 단일 명세)
+> **적용 범위**: Minchodan 프로젝트 (`server/`, `scripts/`, `tests/`). 본 가이드의 코딩 패턴이 Ruff/Bandit의 어느 룰로 자동 검증되는지 교차 참조합니다.
+
+| 본 가이드 항목 | 규칙 내용 | 검증 도구 | 룰 ID |
+| -------------- | --------- | --------- | ----- |
+| 3.1 파일 헤더 인코딩 | UTF-8 선언 + `sys.stdout.reconfigure` | Ruff | `RUF100` (보조) |
+| 3.2 임포트 순서 | stdlib -> 외부 -> 로컬 | Ruff | `I001` |
+| 3.3 경로 처리 | `__file__` 기반 경로, 하드코딩 금지 | Ruff | `RUF100` (커스텀 룰 필요) |
+| 3.4 .env 로드 | `load_dotenv()` + `os.getenv(..., default)` | Ruff | `S105` (hardcoded password) |
+| 17.1 계층 분리 | Router -> Service -> Repository | 코드 리뷰 | - |
+| 17.2 None 가드레일 | `None` 체크 후 접근 | mypy + Ruff | `B006`, `B008` + mypy `None` 검사 |
+| 17.2 API 키 검증 | 빈 문자열 검사 | Bandit | `B105` (hardcoded password) |
+| 17.2 Mock 폴백 | 예외 시 Mock 반환 | Ruff | `B904` (raise from) |
+| 17.2 예외 후 루프 유지 | `try/except/continue` | Ruff | `B902` + `SIM` |
+| 17.2 방어적 dict 접근 | `.get(key, default)` | Ruff | `SIM401` |
+
+> **이중 경로 분리 강제**: Minchodan 특화 규칙. 반사 경로(`server/detection/gates/`)에서 오케스트레이션/RAG/TTS 모듈 임포트 금지. 현재 코드 리뷰로 강제, 후속 커스텀 Ruff 룰로 자동 탐지 예정. [`AGENTS.md`](../AGENTS.md) Dual Path Discipline 참조.
+
 ---
 
 > **문서 종료**: 본 문서는 2026-06-24 기준으로 작성되었습니다. 코드베이스 변경 시 본 문서도 함께 업데이트해야 합니다.

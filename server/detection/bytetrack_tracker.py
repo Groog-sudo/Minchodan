@@ -1,12 +1,10 @@
-# -*- coding: utf-8 -*-
 import json
 import logging
 import sys
 import time
-from typing import List, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from server.bus.redis_client import RedisBus
 from server.detection.schemas import BBox, Detection
@@ -25,10 +23,10 @@ class ByteTrackTracker:
 
     async def update(
         self,
-        detections: List[Detection],
+        detections: list[Detection],
         redis_bus: RedisBus,
-    ) -> List[Detection]:
-        updated: List[Detection] = []
+    ) -> list[Detection]:
+        updated: list[Detection] = []
         for det in detections:
             try:
                 if det.track_id is None:
@@ -55,7 +53,7 @@ class ByteTrackTracker:
         return updated
 
     @staticmethod
-    def _compute_motion(prev: dict, bbox: BBox) -> Tuple[float, str]:
+    def _compute_motion(prev: dict, bbox: BBox) -> tuple[float, str]:
         if not prev or "last_pos" not in prev:
             return 0.0, "unknown"
 

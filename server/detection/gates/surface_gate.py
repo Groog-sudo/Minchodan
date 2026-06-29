@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 import sys
-from typing import Optional
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from server.detection.schemas import ReflexAlert, SurfaceResult
 
@@ -19,7 +17,7 @@ P0_SURFACE_CLASSES = {
 def surface_gate(
     surface_result: SurfaceResult,
     frame_height: float,
-) -> Optional[ReflexAlert]:
+) -> ReflexAlert | None:
     """P0 노면 클래스가 프레임 하단에 검출되면 alert_id를 반환한다."""
     if surface_result.class_name not in P0_SURFACE_CLASSES:
         return None

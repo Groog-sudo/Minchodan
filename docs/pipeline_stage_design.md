@@ -114,7 +114,7 @@ graph LR
 
 - `StateGraph(OrchState)`:
   - L1: 룰 기반 위험도 분류 (mid/low만 진입)
-  - L2: ChatOllama(Gemma2) `ainvoke` (20자/방향)
+  - L2: ChatOllama(gemma4-e4b) `ainvoke` (20자/방향)
   - L3: 검증 + RETRY(최대 1회)
   - Fallback: gpt-4o-mini 핫스왑 또는 고정 문장
 
@@ -131,7 +131,7 @@ graph LR
 | 추상화     | 기본                               | 대안                 | 위치                                         |
 | ---------- | ---------------------------------- | -------------------- | -------------------------------------------- |
 | Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
-| LLM Client | ChatOllama(Gemma2)                 | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
+| LLM Client | ChatOllama(gemma4-e4b)             | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
 | Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상)        |
 | TTS        | Kokoro/Coqui                       | OpenAI TTS           | `server/tts/tts_service.py`                  |
 

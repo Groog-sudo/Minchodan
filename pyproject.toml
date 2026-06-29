@@ -1,0 +1,157 @@
+# Minchodan - Python 프로젝트 설정 (Ruff + mypy + bandit)
+# 기준 문서: docs/code_quality_guide.md
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minchodan"
+version = "0.1.0"
+description = "Minchodan - 시각장애인 보행 보조 스마트 가이드독 AI 플랫폼"
+requires-python = ">=3.13"
+
+[tool.setuptools]
+packages = ["server"]
+
+# ==========================================
+# Ruff (Linter + Formatter)
+# 기준: docs/course_codebase_guide.md 3.2/3.3/17.2
+# ==========================================
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = [
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    "data",
+    "models",
+    "client",
+    "console",
+    "training",
+]
+
+[tool.ruff.lint]
+select = [
+    "I",     # isort: 임포트 순서 (guide 3.2)
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes: 미사용 import/변수
+    "UP",    # pyupgrade: Python 3.13 모던화
+    "S",     # bandit 호환 보안 룰 (1차 필터)
+    "B",     # bugbear: 방어적 코딩 관련 (guide 17.2)
+    "SIM",   # simplify: 간결화 (AGENTS.md Conciseness)
+    "C4",    # comprehensions: 컴프리헨션 권장
+    "RUF",   # Ruff 자체 룰
+    "PT",    # pytest 스타일 (기존 tests/와 일치)
+]
+ignore = [
+    "E501",  # line too long (formatter가 처리, 린트에서는 무시)
+    "S101",  # assert 사용 (tests/에서 pytest assert 허용, per-file에서 제어)
+    "S104",  # 0.0.0.0 바인딩 (FastAPI 개발 서버에서 허용)
+    "B008",  # 함수 호출 기본값 (FastAPI Depends() 패턴 허용)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",  # assert 허용 (pytest)
+    "S106",  # 하드코딩 비밀번호 (테스트 fixture)
+    "S108",  # /tmp 경로 (테스트 임시 파일)
+    "E402",  # sys.path 조작 후 로컬 import (guide 3.3 패턴)
+    "PT011", # raises ValueError too broad
+    "S110",  # try-except-pass
+    "SIM105", # try-except-pass (suppress)
+    "SIM117", # nested with
+]
+"scripts/**/*.py" = [
+    "S404",  # subprocess import 허용 (모델 다운로드)
+    "S603",  # subprocess.run 허용
+    "S607",  # partial path subprocess 허용
+    "S310",  # urllib URL open 허용 (모델 다운로드)
+    "E402",  # sys.path 조작 후 로컬 import (guide 3.3 패턴)
+]
+"server/mcp/**/*.py" = [
+    "S108",  # 임시 경로 (Mock GPU 메트릭)
+]
+"server/main.py" = [
+    "E402",  # sys.path 조작 후 로컬 import (guide 3.3 패턴)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["server"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ==========================================
+# mypy (정적 타입 검사 - 점진적 적용)
+# 기준: docs/code_quality_guide.md 5.3
+# ==========================================
+[tool.mypy]
+python_version = "3.13"
+# 점진적 적용: 기존 36개 파일은 타입 annotation 누락 허용, 신규 코드부터 점진적 보완
+disallow_untyped_defs = false
+warn_return_any = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+explicit_package_bases = true
+namespace_packages = true
+# 파일 헤더 sys.stdout.reconfigure 패턴 (guide 3.1) 및 기존 코드 타입 오류 무시
+# 점진적 마이그레이션: 파일 수정 시마다 개별 해제 권장
+disable_error_code = [
+    "union-attr",       # 파일 헤더 reconfigure 패턴 (guide 3.1)
+    "assignment",       # None -> Task/Client 타입 할당 (기존 코드)
+    "attr-defined",     # ultralytics Boxes stub 부재
+    "type-var",         # LangGraph StateGraph 타입 변수
+    "return-value",     # 기존 함수 반환 타입 불일치
+    "arg-type",         # Redis 인자 타입 불일치
+    "no-any-return",    # Any 반환 (기존 코드)
+    "var-annotated",    # 타입 미추론 변수 (기존 코드)
+]
+exclude = [
+    "data/",
+    "models/",
+    "client/",
+    "console/",
+    "training/",
+    ".venv/",
+]
+
+# stub 부재 라이브러리 (타입 정보 없음)
+[[tool.mypy.overrides]]
+module = [
+    "ultralytics.*",
+    "chromadb.*",
+    "ollama.*",
+    "cv2.*",
+    "redis.*",
+    "pytest_asyncio.*",
+]
+ignore_missing_imports = true
+
+# 신규 모듈은 strict 적용 권장 (점진적 확대)
+# [[tool.mypy.overrides]]
+# module = "server.new_module.*"
+# disallow_untyped_defs = true
+# warn_return_any = true
+
+# ==========================================
+# bandit (보안 심층 스캔)
+# 기준: docs/code_quality_guide.md 5.2
+# ==========================================
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "data", "models", "client", "console", "training"]
+skips = ["B101"]  # assert_used: tests/에서 pytest assert 사용
+recursive = true
+
+# ==========================================
+# pytest
+# ==========================================
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
