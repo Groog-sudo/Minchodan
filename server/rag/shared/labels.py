@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
 import sys
-if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
-import os
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
@@ -18,15 +18,7 @@ MANHOLE = "manhole"
 GRATING = "grating"
 
 # 전체 표준 클래스 리스트 정의
-ALL_CLASSES = [
-    KICKBOARD,
-    BOLLARD,
-    BRAILLE_DAMAGED,
-    STAIRS,
-    CROSSWALK,
-    MANHOLE,
-    GRATING
-]
+ALL_CLASSES = [KICKBOARD, BOLLARD, BRAILLE_DAMAGED, STAIRS, CROSSWALK, MANHOLE, GRATING]
 
 if __name__ == "__main__":
     print("Minchodan RAG 라벨 SSOT 로딩 테스트 완료")
