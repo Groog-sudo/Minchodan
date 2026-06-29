@@ -19,6 +19,7 @@
 | 파이프라인 단계 설계 | [pipeline_stage_design.md](pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
 | **환경 변수 명세서** | [environment_variables.md](environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류**             |
 | **배포 가이드**      | [deployment_guide.md](deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
+| **LLM 협업 작업 분담 가이드** | [llm_collaboration_workflow.md](llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | 2단계 캡처 설계서     | [stage2_capture_design.md](stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 | 3단계 탐지 설계서     | [stage3_detection_design.md](stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
 | 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
@@ -47,12 +48,13 @@ Cursor·Claude 등에 작업을 지시할 때 `[ai_prompt_context.md](ai_prompt_
 7. [`api_specification.md`](api_specification.md) - WebSocket API 계약
 8. [`environment_variables.md`](environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
 9. [`deployment_guide.md`](deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
-10. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
-11. [`behavior_and_risk_insight.md`](behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
-12. [`stage2_capture_design.md`](stage2_capture_design.md) - 2단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-13. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-14. [`stage6_orchestration_design.md`](stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
-15. [`test_specification.md`](test_specification.md) - 검증 기준
+10. [`llm_collaboration_workflow.md`](llm_collaboration_workflow.md) - **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준**
+11. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
+12. [`behavior_and_risk_insight.md`](behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
+13. [`stage2_capture_design.md`](stage2_capture_design.md) - 2단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+14. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+15. [`stage6_orchestration_design.md`](stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
+16. [`test_specification.md`](test_specification.md) - 검증 기준
 
 ---
 
