@@ -213,18 +213,6 @@ langgraph_checkpoints/
 *.old
 
 # ==========================================
-# Repository structure placeholders
-# ==========================================
-
-# Keep scaffold directories that otherwise match generated-data rules.
-!server/rag/build/
-!server/rag/build/.gitkeep
-!data/chroma_db/
-!data/chroma_db/.gitkeep
-!training/datasets/detection/images/.gitkeep
-!training/datasets/segmentation/images/.gitkeep
-
-# ==========================================
 # 기타 등등...
 # ==========================================
 
