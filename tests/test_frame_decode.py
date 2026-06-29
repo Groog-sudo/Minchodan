@@ -316,9 +316,9 @@ class TestDualPathDiscipline:
             "ChatOllama",
         ]
         for pattern in forbidden_patterns:
-            assert (
-                pattern not in module_source
-            ), f"금지된 모듈 참조 발견: '{pattern}' in stream_splitter.py"
+            assert pattern not in module_source, (
+                f"금지된 모듈 참조 발견: '{pattern}' in stream_splitter.py"
+            )
 
     def test_valid_streams_constant(self):
         """VALID_STREAMS 상수가 reflex/cognitive만 포함하는지 확인."""
