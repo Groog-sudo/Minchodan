@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 import sys
 from abc import ABC, abstractmethod
-from typing import List
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from server.detection.schemas import Detection, SurfaceResult
 
@@ -17,7 +15,7 @@ class DetectorInterface(ABC):
         """모델 가중치를 로드하고 성공 여부를 반환한다."""
 
     @abstractmethod
-    def predict(self, frame) -> List[Detection]:
+    def predict(self, frame) -> list[Detection]:
         """프레임에서 객체를 탐지해 Detection 리스트를 반환한다."""
 
 
@@ -29,5 +27,5 @@ class SegmentorInterface(ABC):
         """모델 가중치를 로드하고 성공 여부를 반환한다."""
 
     @abstractmethod
-    def predict(self, frame) -> List[SurfaceResult]:
+    def predict(self, frame) -> list[SurfaceResult]:
         """프레임에서 노면을 분할해 SurfaceResult 리스트를 반환한다."""

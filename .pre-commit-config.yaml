@@ -1,0 +1,56 @@
+# Minchodan pre-commit 훅 설정
+# 기준: docs/code_quality_guide.md 7절 (실행 흐름)
+# 실행 시점 분리:
+#   pre-commit (빠름): Ruff format + Ruff check + Bandit
+#   pre-push   (느림): CI 전용 (GitHub Actions에서 실행)
+#
+# 무거운 검사(mypy/jscpd/pip-audit)는 로컬 가상환경 의존성 문제로
+# pre-push 훅에서 제거하고 GitHub Actions(.github/workflows/lint.yml)에서만 실행합니다.
+# 로컬에서 수동 실행하려면 .venv 활성화 후 아래 명령 사용:
+#   mypy server/ ; jscpd ; pip-audit -r requirements.txt
+
+repos:
+  # ==========================================
+  # pre-commit stage (빠른 검사, 커밋 시 실행)
+  # ==========================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff-format
+        name: Ruff Format
+        stages: [pre-commit]
+      - id: ruff
+        name: Ruff Lint
+        args: [--fix, --exit-non-zero-on-fix]
+        stages: [pre-commit]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        name: Bandit Security Scan
+        args: ["-c", "pyproject.toml", "-r", "server/", "scripts/"]
+        stages: [pre-commit]
+        pass_filenames: false
+
+  # ==========================================
+  # 공통 (모든 단계)
+  # ==========================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        name: Fix End of Files
+        stages: [pre-commit]
+      - id: check-yaml
+        name: Check YAML
+        stages: [pre-commit]
+      - id: check-toml
+        name: Check TOML
+        stages: [pre-commit]
+      - id: check-merge-conflict
+        name: Check Merge Conflict
+        stages: [pre-commit]

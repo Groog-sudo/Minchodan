@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 import logging
 import sys
-from typing import List
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import numpy as np
 from ultralytics import YOLO
@@ -34,7 +32,7 @@ class YoloSegmentor(SegmentorInterface):
             self.model = None
             return False
 
-    def predict(self, frame: np.ndarray) -> List[SurfaceResult]:
+    def predict(self, frame: np.ndarray) -> list[SurfaceResult]:
         if self.model is None:
             logger.warning("[YoloSegmentor] 모델이 로드되지 않았습니다.")
             return []
@@ -58,7 +56,7 @@ class YoloSegmentor(SegmentorInterface):
             return []
 
         result = results[0]
-        surfaces: List[SurfaceResult] = []
+        surfaces: list[SurfaceResult] = []
         if result.masks is None or len(result.masks) == 0:
             return surfaces
 
@@ -77,7 +75,7 @@ class YoloSegmentor(SegmentorInterface):
         return surfaces
 
     @staticmethod
-    def _compute_centroid(mask_xy) -> List[float]:
+    def _compute_centroid(mask_xy) -> list[float]:
         try:
             pts = np.concatenate(mask_xy, axis=0)
             cx = float(np.mean(pts[:, 0]))
