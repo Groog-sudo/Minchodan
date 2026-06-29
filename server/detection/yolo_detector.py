@@ -16,10 +16,17 @@ logger = logging.getLogger(__name__)
 class YoloDetector(DetectorInterface):
     """Yolo 26N - Object Detection 래퍼."""
 
-    def __init__(self, weights_path: str, conf: float = 0.35, device: str = "cpu"):
+    def __init__(
+        self,
+        weights_path: str,
+        conf: float = 0.35,
+        device: str = "cpu",
+        enable_tracking: bool = True,
+    ):
         self.weights_path = weights_path
         self.conf = conf
         self.device = device
+        self.enable_tracking = enable_tracking
         self.model: YOLO | None = None
 
     def load(self) -> bool:
@@ -37,6 +44,9 @@ class YoloDetector(DetectorInterface):
             logger.warning("[YoloDetector] 모델이 로드되지 않았습니다.")
             return []
 
+        if not self.enable_tracking:
+            return self._predict_without_tracking(frame)
+
         try:
             results = self.model.track(
                 source=frame,
@@ -48,16 +58,51 @@ class YoloDetector(DetectorInterface):
             )
         except RuntimeError as e:
             if "out of memory" in str(e).lower() and self.device != "cpu":
-                logger.warning("[YoloDetector] CUDA OOM, CPU로 평백")
+                logger.warning("[YoloDetector] CUDA OOM, CPU로 폴백")
                 self.device = "cpu"
                 return self.predict(frame)
             logger.error(f"[YoloDetector] 추론 오류: {e}")
             return []
         except Exception as e:
-            logger.error(f"[YoloDetector] 추론 오류: {e}")
-            return []
+            if "lap" in str(e).lower():
+                logger.warning("[YoloDetector] ByteTrack 의존성 없음, predict()로 폴백")
+                results = self.model.predict(
+                    source=frame,
+                    conf=self.conf,
+                    device=self.device,
+                    verbose=False,
+                )
+            else:
+                logger.error(f"[YoloDetector] 추론 오류: {e}")
+                return []
 
         result = results[0]
+        return self._parse_result(result)
+
+    def _predict_without_tracking(self, frame: np.ndarray) -> list[Detection]:
+        if self.model is None:
+            return []
+        try:
+            results = self.model.predict(
+                source=frame,
+                conf=self.conf,
+                device=self.device,
+                verbose=False,
+            )
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower() and self.device != "cpu":
+                logger.warning("[YoloDetector] CUDA OOM, CPU로 폴백")
+                self.device = "cpu"
+                return self._predict_without_tracking(frame)
+            logger.error(f"[YoloDetector] 추론 오류: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"[YoloDetector] 추론 오류: {e}")
+            return []
+        return self._parse_result(results[0])
+
+    @staticmethod
+    def _parse_result(result) -> list[Detection]:
         detections: list[Detection] = []
         if result.boxes is None or len(result.boxes) == 0:
             return detections
