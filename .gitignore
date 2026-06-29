@@ -233,3 +233,10 @@ langgraph_checkpoints/
 # 단 .master_agents/ 와 .contexty/ 는 제외
 **/.master_agents/
 .contexty/
+
+# Temporary Smoke Test Outputs
+temp_smoke_*
+
+
+
+
