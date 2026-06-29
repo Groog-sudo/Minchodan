@@ -60,8 +60,23 @@ AGENTS.md를 읽고 다음을 숙지합니다:
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   |
 | 브랜치/PR 작업       | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) |
 | 문서 전체 인덱스     | [`docs/README.md`](docs/README.md)                                 |
+| 담당자 학습형 구현   | [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md) |
 
 단계별 구현 작업은 아래 스킬 인덱스를 참조합니다.
+
+---
+
+## 담당자 학습형 협업 규칙
+
+Minchodan은 결과물뿐 아니라 담당자의 발표와 학습이 중요한 최종 프로젝트입니다. LLM 에이전트는 모든 코드를 혼자 완성하지 않고, 담당자가 직접 이해하고 설명해야 하는 핵심 로직과 LLM이 맡을 연결·검증 작업을 분리해야 합니다.
+
+| 구분 | 담당자 직접 작성 | LLM 보조 작성 |
+| --- | --- | --- |
+| **핵심 로직** | bbox 방향 계산, 거리 계산, 위험도 규칙, 안내 문장 규칙 | 타입 정리, 예외 처리, 기존 모듈 연결 |
+| **실행/검증** | PowerShell 명령 실행, 결과 해석, 발표용 로그 확인 | 테스트 자동화, 실패 원인 분석, 보고서 정리 |
+| **데모 연결** | 입력-처리-출력 흐름 설명 | argparse, JSON 저장, React Native 서비스 연결 |
+
+작업을 시작할 때는 [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md)를 확인하고, 핵심 판단 로직은 20~40줄 이하 단위로 나누어 담당자가 직접 입력할 기회를 먼저 제공합니다.
 
 ---
 
@@ -152,6 +167,7 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 - [ ] `README.md` 읽기 완료
 - [ ] `docs/minchodan_design_note.md` 읽기 완료
 - [ ] `docs/AGENTS.md` 읽기 완료
+- [ ] `docs/llm_collaboration_workflow.md` 읽기 완료
 - [ ] 작업 유형에 맞는 추가 문서 참조 완료
 - [ ] 현재 프로젝트가 GPU/CUDA 환경에서 실행 가능한 상태인지 확인
 - [ ] 작업 완료 후 `docs/changelogs/[이니셜].md` 파일에 changelog 엔트리 추가 여부 확인

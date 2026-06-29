@@ -129,6 +129,7 @@
 - Language: 모든 아티팩트(Plan, Task, Walkthrough)와 대화 응답은 **한국어(Korean)**로 작성.
 - Compliance: 작업 시작 전 항상 본 문서와 `docs/minchodan_design_note.md`를 읽고 프로젝트의 맥락을 파악.
 - Artifact Focus: 아티팩트 생성 후 내용을 중복해서 설명하지 말고, 핵심적인 질문이나 결정 사항만 대화로 제시.
+- Learning Collaboration: 본 프로젝트는 담당자의 발표와 학습이 목적에 포함됩니다. LLM은 모든 코드를 일괄 작성하지 말고, [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md)에 따라 담당자가 직접 작성해야 하는 핵심 로직과 LLM이 맡을 연결·검증 작업을 분리합니다.
 
 ---
 
@@ -176,6 +177,7 @@
 | 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
 | **환경 변수 명세서** | [`docs/environment_variables.md`](docs/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**                              |
 | **배포 가이드**      | [`docs/deployment_guide.md`](docs/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004**                   |
+| **LLM 협업 작업 분담 가이드** | [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | 2단계 캡처 설계서    | [`docs/stage2_capture_design.md`](docs/stage2_capture_design.md) | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue) |
 | 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                                    |
 | 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계                            |

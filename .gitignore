@@ -191,6 +191,25 @@ vector_store/
 vectordb/
 
 # ==========================================
+# AI Hub Raw Samples / Model Weights
+# ==========================================
+
+# Demo/sample images are copied locally only. Do not commit raw AI Hub data.
+data/raw/aihub_walk_sample/*.jpg
+data/raw/aihub_walk_sample/*.jpeg
+data/raw/aihub_walk_sample/*.png
+
+# Custom training weights and exported engines stay local.
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Keep agreed baseline pretrained weights trackable.
+!server/models/yolo26n/object_detection.pt
+!server/models/yolo26n/segmentation.pt
+
+# ==========================================
 # LangChain / LangGraph
 # ==========================================
 
