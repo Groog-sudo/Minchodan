@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
 import logging
 import sys
 import time
-from typing import List, Optional, Union
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import numpy as np
 
@@ -41,11 +39,11 @@ class DetectionPipeline:
 
     async def run(
         self,
-        frame: Optional[np.ndarray],
+        frame: np.ndarray | None,
         stream: str,
         event_id: str,
         device_id: str,
-    ) -> Union[DetectionResult, ReflexAlert]:
+    ) -> DetectionResult | ReflexAlert:
         start_ts = time.time()
 
         if frame is None:
@@ -104,10 +102,10 @@ class DetectionPipeline:
 
     @staticmethod
     def _evaluate_reflex(
-        detections: List[Detection],
+        detections: list[Detection],
         frame_height: float,
         frame_width: float,
-    ) -> Optional[ReflexAlert]:
+    ) -> ReflexAlert | None:
         for det in detections:
             alert = reflex_gate(det, frame_height, frame_width)
             if alert is not None:
@@ -116,9 +114,9 @@ class DetectionPipeline:
 
     @staticmethod
     def _evaluate_surface(
-        surfaces: List[SurfaceResult],
+        surfaces: list[SurfaceResult],
         frame_height: float,
-    ) -> Optional[ReflexAlert]:
+    ) -> ReflexAlert | None:
         for surf in surfaces:
             alert = surface_gate(surf, frame_height)
             if alert is not None:
@@ -126,7 +124,7 @@ class DetectionPipeline:
         return None
 
     @staticmethod
-    def _classify_risk(detections: List[Detection], surfaces: List[SurfaceResult]) -> str:
+    def _classify_risk(detections: list[Detection], surfaces: list[SurfaceResult]) -> str:
         if not detections and not surfaces:
             return "none"
         for det in detections:
@@ -140,7 +138,7 @@ class DetectionPipeline:
     async def _publish_cognitive(
         self,
         event_id: str,
-        detections: List[Detection],
+        detections: list[Detection],
         risk_hint: str,
     ):
         for det in detections:

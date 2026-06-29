@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
-import asyncio
 import sys
 from unittest.mock import AsyncMock
 
 if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import numpy as np
 import pytest

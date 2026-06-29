@@ -1,0 +1,9 @@
+ruff>=0.6.0
+mypy>=1.11.0
+bandit>=1.7.0
+pip-audit>=2.7.0
+pre-commit>=3.8.0
+# jscpd는 Node.js 기반 도구입니다. npm으로 설치:
+#   npm install -g jscpd
+# 또는 프로젝트 로컬 설치:
+#   npm install --save-dev jscpd
