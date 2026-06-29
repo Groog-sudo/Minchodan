@@ -1,0 +1,64 @@
+# Minchodan .dockerignore
+# 상세 명세: docs/deployment_guide.md 8절
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 가상환경 (컨테이너 내 별도 설치)
+.venv/
+venv/
+env/
+ENV/
+
+# 환경 변수 (볼륨 마운트로 전달, 보안)
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# 테스트 캐시
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE 설정
+.vscode/
+.idea/
+
+# 문서 (컨테이너에 불필요)
+docs/
+
+# OS 파일
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 로그
+*.log
+logs/
+
+# 백업
+*.bak
+*.backup
+*.old
+
+# 빌드 산출물
+build/
+dist/
+*.egg-info/
+
+# Docker 자체 (재귀 빌드 방지)
+docker/
+
+# 클라이언트·콘솔 (서버 컨테이너에 불필요)
+client/
+console/
+
+# 학습 데이터 (오프라인)
+training/
