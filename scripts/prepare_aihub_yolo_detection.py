@@ -14,27 +14,27 @@ from typing import Any
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-
-DEFAULT_CLASSES = [
-    "barricade",
-    "bench",
-    "bicycle",
-    "bollard",
-    "bus",
-    "car",
-    "carrier",
-    "chair",
-    "motorcycle",
-    "movable_signage",
-    "person",
-    "pole",
-    "potted_plant",
-    "stop",
-    "traffic_light",
-    "traffic_sign",
-    "tree_trunk",
-    "truck",
-]
+# 참고용 기준 후보입니다. 실제 학습 class는 XML 라벨에서 자동 수집합니다.
+# DEFAULT_CLASSES = [
+#     "barricade",
+#     "bench",
+#     "bicycle",
+#     "bollard",
+#     "bus",
+#     "car",
+#     "carrier",
+#     "chair",
+#     "motorcycle",
+#     "movable_signage",
+#     "person",
+#     "pole",
+#     "potted_plant",
+#     "stop",
+#     "traffic_light",
+#     "traffic_sign",
+#     "tree_trunk",
+#     "truck",
+# ]
 
 
 @dataclass
@@ -118,6 +118,17 @@ def parse_xml(xml_path: Path) -> list[ImageItem]:
         )
     return items
 
+def collect_class_names(items: list[ImageItem]) -> list[str]:
+    """XML에 실제 등장한 bbox 라벨을 전부 모아 class 목록을 만든다."""
+    labels = set()
+
+
+    for item in items:
+        for box in item.boxes:
+            if box.label:
+                labels.add(box.label)
+
+    return sorted(labels)
 
 def yolo_line(box: Box, width: int, height: int, class_id: int) -> str | None:
     if width <= 0 or height <= 0:
@@ -160,7 +171,8 @@ def write_dataset(
     seed: int,
     limit: int,
 ) -> dict[str, Any]:
-    class_to_id = {label: index for index, label in enumerate(DEFAULT_CLASSES)}
+    class_names = collect_class_names(items)
+    class_to_id = {label: index for index, label in enumerate(class_names)}
     image_dir = xml_path.parent
     valid_items = [
         item
