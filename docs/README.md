@@ -7,6 +7,7 @@
 
 | 문서                 | 파일                                                   | 설명                                                              |
 | -------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| **AI 프롬프트 컨텍스트** | [ai_prompt_context.md](ai_prompt_context.md)           | **AI 에이전트에 붙여 넣는 프롬프트 템플릿·마스터 컨텍스트**        |
 | 설계 노트 (원본)     | [minchodan_design_note.md](minchodan_design_note.md)   | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영                      |
 | **코딩 패턴 기준**   | [course_codebase_guide.md](course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | **코드 품질 검증 가이드** | [code_quality_guide.md](code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증 (코딩 전 필수 참조)** |
@@ -28,6 +29,12 @@
 | Changelog 템플릿     | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md)       | 신규 changelog 작성 양식                                           |
 | 디렉토리 구조        | [../Directory_Structure.md](../Directory_Structure.md) | 계획된 물리적 폴더 구조                                           |
 | 에이전트 스킬        | [../SKILLS.md](../SKILLS.md)                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
+
+---
+
+## AI 프롬프트 사용
+
+Cursor·Claude 등에 작업을 지시할 때 `[ai_prompt_context.md](ai_prompt_context.md)` **섹션 2(마스터 시스템 프롬프트)** 를 첫 메시지에 붙여 넣고, 단계별 작업은 **섹션 4** 블록을 추가합니다.
 
 ---
 
