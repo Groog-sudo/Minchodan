@@ -89,10 +89,10 @@ def bbox_xyxy(detection) -> list[float]:
 
 
 def detection_to_record(detection, frame_width: int, frame_height: int) -> dict[str, Any]:
-    direction = estimate_direction(detection.bbox, frame_width)
-    distance = estimate_distance(detection.bbox, frame_width, frame_height)
+    distance = estimate_distance(detection.bbox, frame_width, frame_height, detection.class_name)
+    direction = estimate_direction(detection.bbox, frame_width, distance)
     risk_level = estimate_risk_level(detection.class_name, direction, distance)
-    message_hint = build_message_hint(detection, direction, risk_level)
+    message_hint = build_message_hint(detection, direction, distance, risk_level)
     return {
         "class_name": detection.class_name,
         "confidence": round(float(detection.confidence), 4),

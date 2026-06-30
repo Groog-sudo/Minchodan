@@ -92,11 +92,36 @@ CLASS_TEXT = {
 def build_message_hint(
     detection: Detection,
     direction: str,
+    distance: str,
     risk_level: str,
-) -> MessageHint:
+) -> MessageHint | None:
     """기존 Detection 위에 단말 TTS용 message_hint 계약을 얹는다."""
     hint_id = _hint_id_for_class(detection.class_name)
     hint_type: MessageHintType = _hint_type_for_risk(detection.class_name, risk_level)
+    
+    # Reflex Path 규칙: 측면이거나 멀리 있는 객체는 Reflex 침묵 (Cognitive 위임)
+    if hint_type == "REFLEX":
+        if distance == "far" or direction != "front":
+            return None
+            
+        if distance == "near" and direction == "front":
+            text = "정지, 전방 장애물"
+            if hint_id == "STAIR_DOWN":
+                text = "정지, 전방 계단"
+            elif hint_id == "ROAD":
+                text = "정지, 전방 차도"
+            elif hint_id == "RED_LIGHT":
+                text = "정지, 빨간불"
+            elif hint_id == "CURB":
+                text = "정지, 전방 연석"
+            return {"id": "STOP", "type": "REFLEX", "text": text}
+            
+        if distance in ("near", "medium") and direction == "front":
+            text = build_message_text(detection.class_name, direction, hint_id)
+            return {"id": hint_id, "type": "REFLEX", "text": text}
+            
+        return None
+
     text = build_message_text(detection.class_name, direction, hint_id)
     return {"id": hint_id, "type": hint_type, "text": text}
 
@@ -104,9 +129,12 @@ def build_message_hint(
 def estimate_risk_level(class_name: str, direction: str, distance: str) -> RiskLevel:
     """데모용 문장 생성 전에 사용할 결정적 위험도 규칙."""
     normalized = class_name.strip().lower()
+    
+    # 측면 객체는 Reflex 발동을 막기 위해 위험도 하향
+    if direction != "front":
+        return "low"
+        
     if distance == "near" and normalized in DANGER_CLASSES:
-        return "high"
-    if direction == "front" and normalized in {"obstacle", "bollard", "pole", "stairs", "stair"}:
         return "high"
     if distance == "medium" and normalized in DANGER_CLASSES:
         return "medium"
