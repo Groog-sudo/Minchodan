@@ -25,6 +25,7 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 from server.api.monitor import router as monitor_router
+from server.api.ws_router import router as ws_router
 from server.mcp.manager import mcp_manager
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,9 @@ app.add_middleware(
 
 # 모니터링 라우터 마운트
 app.include_router(monitor_router, prefix="/api/v1")
+
+# WebSocket 게이트웨이 라우터 마운트
+app.include_router(ws_router, prefix="")
 
 
 @app.get("/health")

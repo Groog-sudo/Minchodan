@@ -1,8 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.2.1 (2026-06-30 1+2단계 구현 완료 반영)
 > **설계 기준**: `docs/minchodan_design_note.md` 1·2·7단계 인터페이스
+> **구현 상태**: 1+2단계 Phase A~D 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답 양측 정합 확인. `alert_reflex`/`guide`는 3·6·7단계 범위로 미구현(설계상 정상).
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---

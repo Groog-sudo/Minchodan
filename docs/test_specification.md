@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.0 (2026-06-28 2단계 캡처 테스트 ID/상태 정합 완료)
+> **버전**: v0.5.0 (2026-06-30 1+2단계 Phase A~D 구현 완료, TC-WS/TC-CAP 상태 업데이트)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -91,12 +91,14 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 | ID        | 검증 항목                  | 기준                                     | 상태 |
 | --------- | -------------------------- | ---------------------------------------- | ---- |
-| TC-WS-001 | WS 연결 성립               | `ws.accept()` 후 welcome 송신            | 대기 |
-| TC-WS-002 | hello/welcome 핸드셰이크   | `device_token` 검증 후 `session_id` 발급 | 대기 |
-| TC-WS-003 | 양방향 echo 왕복           | echo 요청응답 정상                       | 대기 |
-| TC-WS-004 | RTT 측정                   | **RTT < 100ms**                          | 대기 |
-| TC-WS-005 | 5초 ping/pong 하트비트     | ping/pong 루프 정상                      | 대기 |
-| TC-WS-006 | `WebSocketDisconnect` 정리 | 소켓 close + 리소스 해제                 | 대기 |
+| TC-WS-001 | WS 연결 성립               | `ws.accept()` 후 welcome 송신            | 코드 작성 완료 |
+| TC-WS-002 | hello/welcome 핸드셰이크   | `device_token` 검증 후 `session_id` 발급 | 코드 작성 완료 |
+| TC-WS-003 | 양방향 echo 왕복           | echo 요청응답 정상                       | 코드 작성 완료 |
+| TC-WS-004 | RTT 측정                   | **RTT < 100ms**                          | 코드 작성 완료 |
+| TC-WS-005 | 5초 ping/pong 하트비트     | ping/pong 루프 정상                      | 코드 작성 완료 |
+| TC-WS-006 | `WebSocketDisconnect` 정리 | 소켓 close + 리소스 해제                 | 코드 작성 완료 |
+
+> **1단계 비고 (2026-06-30)**: `tests/test_ws_echo.py` 6개 케이스 작성 완료. 서버 기동 후 통합 테스트 실행 예정.
 
 ### 5.2 2단계 - 카메라 화면 전송
 
@@ -110,8 +112,8 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | **TC-CAP-004** | 이중 스트림 분기 | `StreamSplitter`가 reflex/cognitive로 큐 분기 | 완료 |
 | **TC-CAP-005** | Redis 메타데이터 발행 | 프레임 제외 메타데이터만 `risk.events` 발행 | 완료 |
 | **TC-CAP-006** | 백프레셔 큐 제한 | Queue 크기 100 초과 시 오래된 프레임 drop | 완료 |
-| **TC-CAP-007** | 권한 거부 가드 | 단말 `NotAllowedError` 안내 처리 | 대기 |
-| **TC-CAP-008** | 소켓 유실 타이머 해제 | 단말 `clearInterval` 자원 해제 | 대기 |
+| **TC-CAP-007** | 권한 거부 가드 | 단말 `NotAllowedError` 안내 처리 | 코드 작성 완료 |
+| **TC-CAP-008** | 소켓 유실 타이머 해제 | 단말 `clearInterval` 자원 해제 | 코드 작성 완료 |
 | **TC-CAP-009** | 예외 안전 복구 | 디코딩/Redis 실패 시에도 큐 push 유지 | 완료 |
 | **TC-PATH-006** | 반사 경로 임포트 격리 | `stream_splitter.py`에 LLM/RAG/TTS 임포트 없음 | 완료 |
 | **TC-PATH-007** | 인지 경로 임포트 격리 | `stream_splitter.py`에 LLM/RAG/TTS 임포트 없음 | 완료 |

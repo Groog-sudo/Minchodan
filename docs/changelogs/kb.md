@@ -264,3 +264,79 @@
   - 우리 프로젝트의 20자 이내 짧은 한국어 가이드 및 RAG 입력 패턴 하에서, Google AI Studio의 무료 티어(Free Tier)를 통해 실제 지출 비용을 $0.00으로 수렴시킬 수 있고 첫 토큰 지연 시간(TTFT)이 대폭 상향된 **Gemini 3.1 Flash-Lite** 모델을 최적의 최소 비용 폴백 모델로 선정 및 구현 구조(SimpleGeminiClient) 제안.
 - **관련 파일**: `docs/gemini_fallback_feasibility.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 문서 규칙(이모지 금지, 한국어, GFM 표 사용, 볼드강조, 인용 블록 메타데이터) 준수 완료.
+
+---
+
+### 2026-06-30 | 1+2단계 | 온디바이스 모바일 앱 구현 계획서 신규 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `docs/mobile_app_implementation_plan.md` 신규 작성: 온디바이스 모바일 클라이언트(React Native) 1+2단계 구현 계획서. 14개 섹션(개요, 현재 상태 분석, 구현 범위, 전체 아키텍처, Phase A~E 상세, 작업 순서, 산출물, 위험, 다음 패스, 참고 자료).
+  - 확정 결정 사항 반영: Expo Dev Client 워크플로우, 로컬 빌드 우선(macOS iOS/Android, Windows Android), 1+2단계 범위(WS+카메라), 서버 WS 라우터 동시 구현, MVP 하드코딩 디바이스 인증, API 명세서 v0.2.0 필드 정합 기준.
+  - Phase A(서버 WS 라우터 6개 신규 + main.py 수정 + 테스트 1개), Phase B(Expo 초기화), Phase C(WS 훅 3개), Phase D(카메라 캡처 4개), Phase E(통합 실기기 테스트) 순차 의존성 정의.
+  - 기존 구현 모듈 재사용 지점 명시: `server/capture/frame_decoder.py`의 `decode_frame()`, `server/capture/stream_splitter.py`의 `get_default_splitter()` 싱글턴, `server/bus/redis_client.py`의 `redis_bus`.
+  - 필드 정합 이슈 해결: 스킬 문서(`timestamp`/`frame_data`/`ping`-`pong`)와 API 명세서 v0.2.0(`ts` epoch ms/`thumbnail_jpeg_b64`/`heartbeat`-`heartbeat_ack`/`frame_id`) 불일치를 API 명세서 기준으로 통일.
+  - 검증 매트릭스 15항목 정의 (RTT < 100ms, 캡처수신 < 50ms 포함), 위험 6종 및 완화 대책, Mermaid 아키텍처/시퀀스/시나리오 다이어그램 4종 포함.
+- **관련 파일**: `docs/mobile_app_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 규칙(이모지 금지, 한국어 존댓말, 표 우선, 핵심 굵게, 인용 블록 메타데이터, Mermaid 큰따옴표·`<br/>`) 준수 확인.
+- **비고**: 본 작업은 구현 계획서 작성만 수행. 실제 구현(Phase A~E)은 후속 작업에서 순차 진행. 브랜치 `kb`에서 진행, PR 기반 `dev` 병합 예정.
+
+---
+
+### 2026-06-30 | 1+2단계 | 모바일 앱 구현 설계서 플랫폼별 분리 (iOS/Android)
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `docs/mobile_ios_implementation_plan.md` 신규 작성: iOS 클라이언트 구현 설계서 (12개 섹션). iOS 담당자(`kb`)가 서버 Phase A(WS 라우터) 전담 + 공통 TypeScript 코드 주도 작성 + iOS 네이티브 빌드/권한/테스트 담당. iOS 특화 제약(시뮬레이터 카메라 미지원, ATS, NSCameraUsageDescription, Apple Developer 계정) 및 완화 대책 명시.
+  - `docs/mobile_android_implementation_plan.md` 신규 작성: Android 클라이언트 구현 설계서 (12개 섹션). Android 담당자가 공통 TS 코드 검토 + Android 네이티브 빌드/권한/테스트 담당. Android 특화 설정(CAMERA/INTERNET 권한, usesCleartextTraffic, 에뮬레이터 카메라 지원, Windows 빌드 가능) 및 iOS 비교 표 명시.
+  - `docs/mobile_app_implementation_plan.md` 수정: 버전 v0.1.0 → v0.2.0. 상단에 플랫폼별 분리 안내(admonition) 추가, 두 개의 분리된 설계서 링크 및 담당자 매트릭스 명시. 본문은 분담 구조 개요와 공통 아키텍처 참조용으로 유지.
+  - 분담 구조 확정: 주도-지원 분담 (iOS 담당자 주도, Android 담당자 지원), 서버 Phase A는 iOS 담당자 겸임, 공통 TS 코드는 iOS 담당자 주도 작성 후 Android 담당자 검토.
+  - 플랫폼별 차이점 명시: iOS(실기기 필수, macOS만 빌드, 시뮬레이터 카메라 미지원) vs Android(에뮬레이터 카메라 지원, macOS/Windows 빌드, 실기기 권장但 필수 아님).
+- **관련 파일**: `docs/mobile_ios_implementation_plan.md`, `docs/mobile_android_implementation_plan.md`, `docs/mobile_app_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 규칙(이모지 금지, 한국어 존댓말, 표 우선, 핵심 굵게, 인용 블록 메타데이터, Mermaid 큰따옴표·`<br/>`) 준수 확인. 두 설계서 간 역할 분담·의존성·참조 관계 정합성 확인.
+- **비고**: 두 명의 담당자가 각각 독립적으로 읽을 수 있도록 플랫폼별 설계서로 분리. 공통 TS 코드는 iOS 설계서에 상세 기술, Android 설계서에서는 검토/검증 관점으로 요약. Android 담당자 이니셜은 `dg`로 확정.
+
+---
+
+### 2026-06-30 | 1+2단계 | Phase A~D 구현 완료 (서버 WS 라우터 + 클라이언트 WS/카메라 이중 캡처)
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+
+  **Phase A - 서버 WS 라우터 (7개 파일 신규 + main.py 마운트)**:
+  - `server/api/ws_router.py`: `@router.websocket("/ws/detect")` 엔드포인트. 핸드셰이크(accept → welcome → hello → `verify_device()` → auth_ok → heartbeat 태스크), detection(`decode_frame()` → `splitter.route_frame()` → ack), `WebSocketDisconnect`/`JSONDecodeError`/`Exception` 예외 처리 + `finally` 정리 (165줄).
+  - `server/api/auth.py`: `verify_device(device_id, token) -> bool`. MVP 하드코딩 `REGISTERED_DEVICES = {"dev-001": "token-abc-001", "dev-002": "token-abc-002"}` (41줄).
+  - `server/api/config.py`: `Settings(BaseSettings)` - `WS_PORT=8000`, `HEARTBEAT_INTERVAL=5`, `HEARTBEAT_TIMEOUT=5`, `MAX_RECONNECT_ATTEMPTS=3`. `__file__` 기반 경로, `load_dotenv()` (39줄).
+  - `server/api/heartbeat.py`: `HeartbeatManager` 클래스 - 5초 `heartbeat` 송신, `record_ack()`, 타임아웃 시 `ws.close(code=1001)` (76줄).
+  - `server/api/schemas.py`: Pydantic 모델 7종 (`WSMessage`, `WelcomeMessage`, `AuthOkMessage`, `AckMessage`, `ErrorMessage`, `HeartbeatMessage`, `HeartbeatAckMessage`) (84줄).
+  - `server/api/session_manager.py`: `SessionManager` 싱글턴 - `connect()`/`disconnect()`/`send_json()`/`is_connected()` (53줄).
+  - `server/main.py`: `ws_router` 임포트 및 `app.include_router(ws_router, prefix="")` 마운트 (+2줄).
+
+  **Phase B~D - 클라이언트 (React Native + Expo 56)**:
+  - `client/App.tsx`: 엔트리 포인트. `SafeAreaView` → `CameraView` 렌더링 (23줄).
+  - `client/app.json`: Expo 설정. iOS `NSCameraUsageDescription`/`NSMicrophoneUsageDescription`/ATS, Android `CAMERA`/`INTERNET`/`RECORD_AUDIO` 권한 + `usesCleartextTraffic`, `plugins: ["react-native-vision-camera"]` (38줄).
+  - `client/package.json`: 의존성 `expo ~56.0.12`, `react-native 0.85.3`, `react 19.2.3`, `react-native-vision-camera ^4.7.3`, `expo-haptics`, `expo-file-system`, `expo-splash-screen`, `expo-status-bar`.
+  - `client/src/components/CameraView.tsx`: 카메라+WS 연동 게이트. `status === "connected"` 시 `startCapture`, 연결 끊김 시 `stopCapture`. 권한/디바이스 부재 가드레일, `accessibilityLabel` 접근성 (93줄).
+  - `client/src/components/ConnectionStatus.tsx`: WS 상태 시각화. connecting(황)/connected(녹)/disconnected(적)/fallback(회) (54줄).
+  - `client/src/hooks/useCamera.ts`: **이중 캡처 타이머 핵심**. `useCameraDevice("back")` (fallback front), `setInterval(1000/reflexFps)` + `setInterval(1000/cognitiveFps)` 분리. `takePhoto()` → `expo-file-system` base64 변환 (`file://` scheme 보정). `cameraRef.current` null 가드 (136줄).
+  - `client/src/hooks/useWebSocket.ts`: WS 생명주기. `ws://...?device_id=` 연결 → `hello` 송신 → `welcome` 수신 시 `connected` → 5초 heartbeat → 재연결 3회 후 `fallback` (121줄).
+  - `client/src/services/frameCapture.ts`: `buildDetectionEvent()` / `sendFrame()`. API 명세서 v0.2.0 정합 (`event_id`, `ts` epoch ms, `frame_id`, `stream`, `thumbnail_jpeg_b64`) (51줄).
+  - `client/src/types/detection.ts`: `WSStatus`, `StreamType`, `MessageType` 10종, `DetectionEvent`, `AckPayload` 등 타입 정의 (68줄).
+  - `client/src/config/index.ts`: `WS_URL = ws://10.0.2.2:8000/ws/detect` (Android 에뮬레이터), `REFLEX_FPS = 10`, `COGNITIVE_FPS = 2` (16줄).
+  - `client/src/utils/haptics.ts`: `triggerHaptic()` (expo-haptics 래퍼) + `announce()` stub (28줄).
+
+  **테스트 코드**:
+  - `tests/test_ws_echo.py`: 6개 케이스. `test_handshake_welcome_and_auth`, `test_echo_rtt_under_100ms` (RTT < 100ms), `test_heartbeat_response`, `test_auth_failure`, `test_detection_ack` (빈 프레임 가드레일), `test_disconnect_cleanup`. TC-WS-001~006 커버 (183줄).
+
+  **Android 에뮬레이터 디버깅 및 수정 사항**:
+  - `expo-splash-screen` 의존성 추가: `ClassNotFoundException: expo.modules.splashscreen.SplashScreenManager` 해결.
+  - `expo-dev-client` 의존성 제거: DevLauncherActivity의 mDNS 서비스 디스커버리 실패로 Metro 번들 로드 불가 이슈 해결. adb reverse + 표준 RN dev server 연결로 대체.
+  - Gradle 9.3.1 → 8.13 다운그레이드: RN gradle plugin의 `JvmVendorSpec.IBM_SEMERU` 호환성 확보.
+  - `useCamera.ts` base64 변환 경로 보정: `photo.path`에 `file://` scheme prefix 추가.
+
+- **관련 파일**: `server/api/` (7개), `server/main.py`, `client/` (16개), `tests/test_ws_echo.py`
+- **검증 결과**:
+  - Android 에뮬레이터(cold boot, back+front 카메라 emulated)에서 Metro 번들 로드 성공, `CameraView` 렌더링, `[Camera] 이중 루프 시작: 반사 10fps / 인지 2fps` 로그 확인.
+  - 캡처 성공(`CameraView.takePhoto: Successfully captured 1856 x 1392 photo!`), base64 인코딩 → 프레임 전송(`[Frame] stream=reflex, frame_id=68, size≈59KB`) 정상 동작 확인.
+  - 서버-클라이언트 API 명세서 v0.2.0 정합: 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답 필드 완전 일치.
+- **비고**: TC-WS-001~006 테스트 코드 작성 완료, 실행은 서버 기동 후 통합 테스트로 진행 예정. TC-CAP-007/008(단말 권한/타이머 해제)은 실기기 검증 대기. `expo-dev-client` 제거는 에뮬레이터 DevLauncher 이슈 회피를 위한 조치이며, 실기기 빌드 시 재검토 필요.
