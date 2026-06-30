@@ -205,6 +205,10 @@ data/raw/aihub_walk_sample/*.png
 *.onnx
 *.engine
 
+# Generated local training datasets/configs must not be committed.
+training/datasets/detection/aihub_*/
+training/configs/aihub_yolo_detection.yaml
+
 # Keep agreed baseline pretrained weights trackable.
 !server/models/yolo26n/object_detection.pt
 !server/models/yolo26n/segmentation.pt
