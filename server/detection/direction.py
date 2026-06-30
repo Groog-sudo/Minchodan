@@ -22,8 +22,11 @@ def estimate_direction(bbox: BBoxLike, frame_width: float) -> Direction:
     """bbox 중심점 기준으로 좌/정면/우 방향을 계산한다."""
     if frame_width <= 0:
         return "front"
+    
+    bbox_center_x = bbox.x + bbox.w / 2.0
+    center_x_ratio = bbox_center_x / frame_width
+    # center_x_ratio = (bbox.x + bbox.w / 2.0) / frame_width # 변수명 bbox_center_x ,center_x_ratio 이중관리리
 
-    center_x_ratio = (bbox.x + bbox.w / 2.0) / frame_width
     if center_x_ratio < 0.33:
         return "front-left"
     if center_x_ratio > 0.66:
