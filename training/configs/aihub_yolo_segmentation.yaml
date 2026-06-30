@@ -1,0 +1,9 @@
+path: ./training/datasets/segmentation/aihub_0820_26
+train: images/train
+val: images/val
+
+names:
+  0: sidewalk_normal
+  1: caution
+  2: roadway
+  3: braille_normal

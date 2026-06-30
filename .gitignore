@@ -207,6 +207,7 @@ data/raw/aihub_walk_sample/*.png
 
 # Generated local training datasets/configs must not be committed.
 training/datasets/detection/aihub_*/
+training/datasets/segmentation/aihub_*/
 training/configs/aihub_yolo_detection.yaml
 
 # Keep agreed baseline pretrained weights trackable.
@@ -263,3 +264,7 @@ temp_smoke_*
 
 
 
+
+# Node.js
+node_modules/
+.expo/
