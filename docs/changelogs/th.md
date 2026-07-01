@@ -154,3 +154,18 @@
   - 기존 레포지토리에 구현된 서버 측 프레임 디코더(`frame_decoder.py`) 및 스트림 분기 라우터(`stream_splitter.py`) 연동.
 - **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/services/frameCapture.ts`
 - **검증 결과**: `python -m pytest tests/test_frame_decode.py -v` (21개 서버 테스트 모두 통과)
+
+---
+
+### 2026-07-02 | 3단계 | YOLO 대규모 풀 학습 파이프라인 리팩토링 및 5090 세그멘테이션 학습 완료
+
+- **커밋**: `refactor: YOLO 학습 파이프라인 리팩토링 및 train_common AttributeError 해결`
+- **변경 내용**:
+  - `scripts/run_desktop_full_training.py` 의 `run_detection` / `run_segmentation` `NameError` 버그를 정의 순서 조정을 통해 해결했습니다.
+  - `training/train_common.py` 에서 YOLO 모델 학습 후 결과 경로 반환 시 발생하던 `AttributeError: 'YOLO' object has no attribute 'path'` 에러를 수정했습니다. 존재하지 않는 YOLO 인스턴스의 `.path` 속성에 접근하는 대신, 파라미터로 제공된 `project_path` 변수를 활용하여 `best.pt` 경로를 정확히 반환하도록 우회 구현했습니다.
+  - `training/train_detection.py` 와 `training/train_segmentation.py` 내부의 수십 줄에 달하는 명시적 파라미터 인자 매핑을 제거하고, `**vars(args)` 딕셔너리 언패킹 방식을 적용하여 단 한 줄의 코드로 통일하였습니다.
+  - `training/train_common.py`에 학습 경로 혹은 데이터셋 경로에 `segmentation`이 포함될 경우, 데스크탑 RTX 5090 VRAM 32GB 투트랙 최적화(가속)를 위한 `amp=True`, `cache='disk'`가 자동 업데이트되도록 방어 로직을 주입했습니다.
+  - `.env` 파일 맨 앞에 유니코드 쓰기 작업 시 인코딩 오류로 붙었던 BOM(Byte Order Mark) 특수문자(`\xef\xbb\xbf`)를 제거하여, `python-dotenv` 라이브러리가 데이터셋 경로(`AIHUB_WALK_DATASET_ROOT`)를 인식하지 못하던 경로 파싱 실패 오류를 원천 차단했습니다.
+  - 데스크탑에서 35만 장 기반 `Segmentation` 100 Epoch 풀 학습이 정상 완료되고 `best.pt` 및 `last.pt` 가중치 파일(약 6.5MB)이 `training/runs/seg_exp1/weights/` 디렉토리에 이상 없이 저장되었음을 최종 검증했습니다.
+- **관련 파일**: `scripts/run_desktop_full_training.py`, `training/train_common.py`, `training/train_detection.py`, `training/train_segmentation.py`, `.env` (git-ignored), `training/configs/aihub_yolo_segmentation.yaml`
+- **검증 결과**: `py_compile` 문법 검사 통과 및 학습 완료 결과물(`best.pt`) 물리 파일 존재 여부 확인 완료

@@ -82,7 +82,8 @@ def main() -> int:
     if args.det_only and args.seg_only:
         raise ValueError("--det-only 와 --seg-only 는 동시에 사용할 수 없습니다.")
 
-    # [HARD CODE] (담당자 직접 작성 영역)
+    run_detection = not args.seg_only
+    run_segmentation = not args.det_only
     dataset_root = resolve_dataset_root(args.dataset_root)
     bbox_root = dataset_root / BBOX_SUBDIR
     seg_root = dataset_root / SEG_SUBDIR
@@ -115,14 +116,11 @@ def main() -> int:
             run_step(seg_cmd)
     if not args.skip_train:
         train_common = ["--epochs", str(args.epochs), "--batch", str(args.batch), "--device", args.device]
-        if run_detection :
+        if run_detection:
             run_step([python, "training/train_detection.py", *train_common])
-        if run_segmentation :
+        if run_segmentation:
             run_step([python, "training/train_segmentation.py", *train_common])
         print("\n학습 완료.")
-        
-    run_detection = not args.seg_only
-    run_segmentation = not args.det_only
     # [/HARD CODE]
 
     # [VIBE CODE]

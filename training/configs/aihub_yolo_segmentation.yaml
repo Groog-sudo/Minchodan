@@ -1,7 +1,6 @@
-path: ./training/datasets/segmentation/aihub_0820_26
+path: C:/Dev_task/workspace/Project/finally_project/AI_GilDang/Minchodan/training/datasets/segmentation/aihub_0820_26
 train: images/train
 val: images/val
-
 names:
   0: sidewalk_normal
   1: caution

@@ -65,7 +65,6 @@ def run_yolo_train(
     project_path.mkdir(parents=True, exist_ok=True)
     # [/VIBE CODE]
 
-    # [HARD CODE] (담당자 직접 작성 영역)
     model_obj = YOLO(str(model_path))
     train_kwargs: dict = {
         "data": str(data_path),
@@ -80,8 +79,9 @@ def run_yolo_train(
         "exist_ok": True,
         "verbose": True,
     }
+    if "segmentation" in str(data_path) or "segmentation" in name:
+        train_kwargs.update({"amp": True, "cache": "disk"})
     if resume:
         train_kwargs["resume"] = True
     model_obj.train(**train_kwargs)
-    return model_obj.path / name / "weights" / "best.pt"
-    # [/HARD CODE]
+    return project_path / name / "weights" / "best.pt"

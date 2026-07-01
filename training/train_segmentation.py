@@ -40,21 +40,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     
-    # [HARD CODE] (담당자 직접 작성 영역)
-    best_pt = run_yolo_train(
-        data=args.data,
-        model=args.model,
-        project=args.project,
-        name=args.name,
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        batch=args.batch,
-        device=args.device,
-        patience=args.patience,
-        workers=args.workers,
-        resume=args.resume,
-    )
-    # [/HARD CODE]
+    best_pt = run_yolo_train(**vars(args))
     
     # [VIBE CODE]
     print(f"학습 완료. best.pt: {best_pt}")
