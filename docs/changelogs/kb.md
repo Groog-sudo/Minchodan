@@ -149,7 +149,7 @@
   - `docs/code_quality_guide.md` 신규 작성: 코드 품질 검증 파이프라인 단일 명세. 12개 섹션(목적, 도구 매트릭스, 사전 준비, 설치, 도구별 상세 가이드, 코딩 패턴 매핑, 로컬 실행 흐름, CI, FAQ 10패턴, 치트시트, 트러블슈팅, 관련 파일 인덱스).
   - 도구 조합 확정: Ruff(린트+포맷+보안 1차) + Bandit(보안 심층 2차) + mypy(타입 점진적) + jscpd(중복 전용) + pip-audit(의존성 CVE).
   - 실행 시점 분리: pre-commit(Ruff+Bandit, 빠름) / pre-push(mypy+jscpd+pip-audit, 느림) / GitHub Actions(PR 게이트).
-  - [`course_codebase_guide.md`](course_codebase_guide.md) 3.2(임포트 순서)·3.3(경로 처리)·17.2(방어적 코딩) 항목과 Ruff 룰 ID 매핑 표 작성.
+  - [`course_codebase_guide.md`](../course_codebase_guide.md) 3.2(임포트 순서)·3.3(경로 처리)·17.2(방어적 코딩) 항목과 Ruff 룰 ID 매핑 표 작성.
   - 처음 사용하는 팀원용 FAQ 10패턴 (임포트 순서, 미사용 import, 하드코딩 secret, raise from, None 접근, mutable default, dict get, f-string, subprocess 화이트리스트, 이중 경로 분리 위반).
   - `docs/README.md` 수정: 문서 목록에 code_quality_guide.md 추가, 권장 독해 순서에 삽입.
   - `AGENTS.md` 수정: 섹션 5 AI Coding Rules에 린트·검증 명령 항목 추가.
@@ -345,7 +345,7 @@
 
 ### 2026-07-01 | 2단계+Post-MVP | 온디바이스 TFLite 추론 구조 구축, 햅틱/비프 입체 경고 도입 및 78개 테스트 통과
 
-- **커밋**: (대기 중)
+- **커밋**: `feat(2단계+Post-MVP): 온디바이스 TFLite 추론 구조 구축, 햅틱/비프 입체 경고 도입 및 78개 테스트 통과`
 - **변경 내용**:
   - `docs/reflex_audio_specification.md` 신규 작성: 시각장애인 긴급 회피 반응 시간을 최소화하기 위한 방향성 입체 비프음(Stereo Panning Beep), 주차센서식 거리 반비례 비프음 가속 구조(beep_interval_ms), 햅틱 피드백 등 기술 사양 확정.
   - `docs/post_mvp_ondevice_feasibility.md` 신규 작성: YOLO26n CoreML 익스포트 한계 규명 및 TFLite/ONNX 온디바이스 타당성 분석(1-Thread 가상 CPU 시뮬레이션 지연 22.89ms 확보) 수록.
@@ -360,3 +360,15 @@
   - 로컬 Ollama nomic-embed-text 모델 pull 다운로드 완료 및 uvicorn 테스트 서버 가동 하에 **78개 전체 테스트 케이스 100% 통과(Passed)** 확인 완료.
   - JDK 17 및 Android SDK 환경 변수를 매핑하여 Gradle 클린 빌드 기반으로 온디바이스 추론 및 햅틱/비프 가속 엔진이 빌드된 배포용 **[app-release.apk](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/android/app/build/outputs/apk/release/app-release.apk)** 최종 성공 추출 완료.
 - **비고**: YOLO26n 및 YOLO26n-seg 모델이 엣지 컴퓨팅에 최적화된 핵심 자산임을 반영하여, 타사 대안 모델 우회안을 배제하고 TFLite/ONNX 모바일 런타임을 통해 원본 모델을 단말에 강제 이식하는 배포 구조로 단일화 및 최종 확정하였습니다.
+
+---
+
+### 2026-07-01 | 공통 | 문서 링크 정합성 확보 및 API 명세 불일치 해소
+
+- **커밋**: `docs: 문서 링크 및 API 불일치 수정 및 verify_gpu.py 스크립트 추가`
+- **변경 내용**:
+  - `scripts/verify_gpu.py` 신규 작성: GPU 드라이버 가용성 및 sm_120 최적화(Blackwell) 환경 적합성을 검증하는 헬퍼 스크립트 구축(deployment_guide.md 및 여러 문서 내 깨진 링크 완전 해소).
+  - 마크다운 깨진 링크 수정: `docs/changelogs/kb.md` 내 `course_codebase_guide.md` 상대 경로 및 `docs/changelogs/README.md` 내 삭제된 3단계 개별 보고서 링크를 kb.md 앵커로 정정.
+  - `docs/api_specification.md` 불일치 정합: 반사 경보 type명을 실제 구현체와 맞추어 `alert_reflex`에서 `reflex_alert`로 수정하고, 방향성 입체 음향/진동 가속 매개변수 필드(`panning`, `distance`, `beep_interval_ms`, `haptic_pattern`) 상세 명세 보충.
+- **관련 파일**: `scripts/verify_gpu.py`, `docs/changelogs/kb.md`, `docs/changelogs/README.md`, `docs/api_specification.md`
+- **검증 결과**: `check_links.py` 검증 스크립트 실행 결과 전체 문서 내 깨진 링크가 0건임을 확인. `verify_gpu.py`의 로컬 예외 가드레일 동작을 정상 수행 및 통과.
