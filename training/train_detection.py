@@ -41,20 +41,8 @@ def main() -> int:
     args = parse_args()
     
     # [HARD CODE] (담당자 직접 작성 영역)
-    # TODO: args 객체를 이용해 run_yolo_train 함수를 호출하고 best_pt 변수에 결과를 저장해주세요.
-    best_pt = run_yolo_train(
-        data=args.data,
-        model=args.model,
-        project=args.project,
-        name=args.name,
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        batch=args.batch,
-        device=args.device,
-        patience=args.patience,
-        workers=args.workers,
-        resume=args.resume,
-    )
+    best_pt = run_yolo_train(**vars(args))
+    
     # [/HARD CODE]
     
     # [VIBE CODE]
