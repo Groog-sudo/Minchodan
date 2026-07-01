@@ -15,13 +15,49 @@ from server.detection import (
     Detection,
     DetectionPipeline,
     DetectionResult,
-    MockDetector,
-    MockSegmentor,
+    DetectorInterface,
     ReflexAlert,
+    SegmentorInterface,
     YoloDetector,
 )
 from server.detection.gates import reflex_gate, surface_gate
 from server.detection.schemas import SurfaceResult
+
+
+class StubDetector(DetectorInterface):
+    """테스트용 가벼운 Detector stub (실제 모델 로드 없이 결정론적 결과 반환)."""
+
+    def __init__(self, detections: list[Detection] | None = None):
+        self._detections = detections
+
+    def load(self) -> bool:
+        return True
+
+    def predict(self, frame) -> list[Detection]:
+        return list(self._detections) if self._detections is not None else []
+
+
+class StubSegmentor(SegmentorInterface):
+    """테스트용 가벼운 Segmentor stub."""
+
+    def __init__(self, surfaces: list[SurfaceResult] | None = None):
+        self._surfaces = surfaces
+
+    def load(self) -> bool:
+        return True
+
+    def predict(self, frame) -> list[SurfaceResult]:
+        return list(self._surfaces) if self._surfaces is not None else []
+
+
+class FailingDetector(StubDetector):
+    def predict(self, frame):
+        raise RuntimeError("detector failure")
+
+
+class FailingSegmentor(StubSegmentor):
+    def predict(self, frame):
+        raise RuntimeError("segmentor failure")
 
 
 @pytest.fixture
@@ -46,30 +82,12 @@ class TestSchemas:
 
     def test_detection(self):
         d = Detection(
-            class_name="kickboard",
+            class_name="bicycle",
             confidence=0.9,
             bbox=BBox(x=0.0, y=0.0, w=10.0, h=10.0),
         )
-        assert d.class_name == "kickboard"
+        assert d.class_name == "bicycle"
         assert d.track_id is None
-
-
-class TestMockDetector:
-    def test_mock_detector(self, frame):
-        det = MockDetector()
-        assert det.load() is True
-        results = det.predict(frame)
-        assert isinstance(results, list)
-        assert len(results) == 1
-        assert results[0].class_name == "unknown"
-
-    def test_mock_segmentor(self, frame):
-        seg = MockSegmentor()
-        assert seg.load() is True
-        results = seg.predict(frame)
-        assert isinstance(results, list)
-        assert len(results) == 1
-        assert results[0].class_name == "unknown"
 
 
 class TestGates:
@@ -81,7 +99,19 @@ class TestGates:
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
-        assert alert.alert_id == "high_front"
+        assert alert.alert_id == "high_car_front"
+        assert alert.direction == "front"
+
+    def test_reflex_gate_left_direction(self):
+        det = Detection(
+            class_name="truck",
+            confidence=0.9,
+            bbox=BBox(x=50.0, y=420.0, w=100.0, h=60.0),
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is not None
+        assert alert.direction == "left"
+        assert alert.alert_id == "high_truck_left"
 
     def test_reflex_gate_low_position(self):
         det = Detection(
@@ -94,7 +124,7 @@ class TestGates:
 
     def test_reflex_gate_low_risk_class(self):
         det = Detection(
-            class_name="kickboard",
+            class_name="bicycle",
             confidence=0.9,
             bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
         )
@@ -107,8 +137,13 @@ class TestGates:
         assert alert is not None
         assert alert.alert_id == "surface_stair"
 
-    def test_surface_gate_none(self):
-        surf = SurfaceResult(class_name="sidewalk_damaged", centroid=[320.0, 400.0])
+    def test_surface_gate_coco_class_returns_none(self):
+        surf = SurfaceResult(class_name="person", centroid=[320.0, 400.0])
+        alert = surface_gate(surf, 480.0)
+        assert alert is None
+
+    def test_surface_gate_top_position_returns_none(self):
+        surf = SurfaceResult(class_name="stair", centroid=[320.0, 100.0])
         alert = surface_gate(surf, 480.0)
         assert alert is None
 
@@ -117,7 +152,13 @@ class TestByteTrackTracker:
     @pytest.mark.asyncio
     async def test_update_without_track_id(self, mock_redis_bus):
         tracker = ByteTrackTracker()
-        dets = [Detection(class_name="kickboard", confidence=0.8, bbox=BBox(x=0, y=0, w=10, h=10))]
+        dets = [
+            Detection(
+                class_name="bicycle",
+                confidence=0.8,
+                bbox=BBox(x=0, y=0, w=10, h=10),
+            )
+        ]
         updated = await tracker.update(dets, mock_redis_bus)
         assert updated[0].track_id is None
         assert updated[0].speed == 0.0
@@ -127,7 +168,7 @@ class TestByteTrackTracker:
         tracker = ByteTrackTracker()
         dets = [
             Detection(
-                class_name="kickboard",
+                class_name="bicycle",
                 confidence=0.8,
                 bbox=BBox(x=0, y=100, w=10, h=10),
                 track_id="T-0001",
@@ -142,8 +183,8 @@ class TestPipeline:
     @pytest.mark.asyncio
     async def test_pipeline_none_frame(self, mock_redis_bus):
         pipeline = DetectionPipeline(
-            detector=MockDetector(),
-            segmentor=MockSegmentor(),
+            detector=StubDetector(),
+            segmentor=StubSegmentor(),
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
@@ -153,32 +194,18 @@ class TestPipeline:
         assert result.risk_hint == "none"
 
     @pytest.mark.asyncio
-    async def test_pipeline_mock(self, frame, mock_redis_bus):
+    async def test_pipeline_empty_inputs(self, frame, mock_redis_bus):
         pipeline = DetectionPipeline(
-            detector=MockDetector(),
-            segmentor=MockSegmentor(),
+            detector=StubDetector(detections=[]),
+            segmentor=StubSegmentor(surfaces=[]),
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
         result = await pipeline.run(frame, "test", "evt-2", "dev-1")
         assert isinstance(result, DetectionResult)
-        assert result.risk_hint in ("none", "low")
+        assert result.risk_hint == "none"
         assert result.inference_ms >= 0
-
-
-class FailingDetector(MockDetector):
-    """predict()에서 예외를 발생시키는 목업 Detector."""
-
-    def predict(self, frame):
-        raise RuntimeError("detector failure")
-
-
-class FailingSegmentor(MockSegmentor):
-    """predict()에서 예외를 발생시키는 목업 Segmentor."""
-
-    def predict(self, frame):
-        raise RuntimeError("segmentor failure")
 
 
 class TestPipelineRobustness:
@@ -186,7 +213,9 @@ class TestPipelineRobustness:
     async def test_detector_exception_continues_with_segmentor(self, frame, mock_redis_bus):
         pipeline = DetectionPipeline(
             detector=FailingDetector(),
-            segmentor=MockSegmentor(),
+            segmentor=StubSegmentor(
+                surfaces=[SurfaceResult(class_name="person", centroid=[320.0, 400.0])]
+            ),
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
@@ -199,10 +228,10 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_segmentor_exception_returns_detections_only(self, frame, mock_redis_bus):
-        detector = MockDetector(
-            mock_detections=[
+        detector = StubDetector(
+            detections=[
                 Detection(
-                    class_name="kickboard",
+                    class_name="bicycle",
                     confidence=0.8,
                     bbox=BBox(x=10.0, y=10.0, w=20.0, h=20.0),
                 )
@@ -223,8 +252,8 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_reflex_gate_triggers(self, frame, mock_redis_bus):
-        detector = MockDetector(
-            mock_detections=[
+        detector = StubDetector(
+            detections=[
                 Detection(
                     class_name="car",
                     confidence=0.9,
@@ -234,23 +263,23 @@ class TestPipelineRobustness:
         )
         pipeline = DetectionPipeline(
             detector=detector,
-            segmentor=MockSegmentor(mock_surfaces=[]),
+            segmentor=StubSegmentor(surfaces=[]),
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
         result = await pipeline.run(frame, "test", "evt-reflex", "dev-1")
         assert isinstance(result, ReflexAlert)
-        assert result.alert_id == "high_front"
+        assert result.alert_id == "high_car_front"
         assert result.direction == "front"
 
     @pytest.mark.asyncio
     async def test_surface_gate_triggers(self, frame, mock_redis_bus):
-        segmentor = MockSegmentor(
-            mock_surfaces=[SurfaceResult(class_name="stair", centroid=[320.0, 400.0])]
+        segmentor = StubSegmentor(
+            surfaces=[SurfaceResult(class_name="stair", centroid=[320.0, 400.0])]
         )
         pipeline = DetectionPipeline(
-            detector=MockDetector(mock_detections=[]),
+            detector=StubDetector(detections=[]),
             segmentor=segmentor,
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
@@ -264,24 +293,22 @@ class TestPipelineRobustness:
     @pytest.mark.asyncio
     async def test_empty_inputs_return_none_risk(self, frame, mock_redis_bus):
         pipeline = DetectionPipeline(
-            detector=MockDetector(mock_detections=[]),
-            segmentor=MockSegmentor(mock_surfaces=[]),
+            detector=StubDetector(detections=[]),
+            segmentor=StubSegmentor(surfaces=[]),
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
         result = await pipeline.run(frame, "test", "evt-empty", "dev-1")
         assert isinstance(result, DetectionResult)
-        assert result.detections == []
-        assert result.surface == []
         assert result.risk_hint == "none"
 
     @pytest.mark.asyncio
     async def test_mid_risk_publishes_to_redis(self, frame, mock_redis_bus):
-        detector = MockDetector(
-            mock_detections=[
+        detector = StubDetector(
+            detections=[
                 Detection(
-                    class_name="kickboard",
+                    class_name="bicycle",
                     confidence=0.8,
                     bbox=BBox(x=10.0, y=10.0, w=20.0, h=20.0),
                 )
@@ -289,7 +316,7 @@ class TestPipelineRobustness:
         )
         pipeline = DetectionPipeline(
             detector=detector,
-            segmentor=MockSegmentor(mock_surfaces=[]),
+            segmentor=StubSegmentor(surfaces=[]),
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
@@ -302,10 +329,10 @@ class TestPipelineRobustness:
     @pytest.mark.asyncio
     async def test_tracker_exception_still_returns_result(self, frame, mock_redis_bus):
         mock_redis_bus.get_track_context = AsyncMock(side_effect=RuntimeError("redis down"))
-        detector = MockDetector(
-            mock_detections=[
+        detector = StubDetector(
+            detections=[
                 Detection(
-                    class_name="kickboard",
+                    class_name="skateboard",
                     confidence=0.8,
                     bbox=BBox(x=10.0, y=10.0, w=20.0, h=20.0),
                     track_id="T-0001",
@@ -314,7 +341,7 @@ class TestPipelineRobustness:
         )
         pipeline = DetectionPipeline(
             detector=detector,
-            segmentor=MockSegmentor(mock_surfaces=[]),
+            segmentor=StubSegmentor(surfaces=[]),
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,

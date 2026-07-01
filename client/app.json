@@ -20,7 +20,11 @@
     },
     "android": {
       "package": "com.minchodan.app",
-      "permissions": ["CAMERA", "INTERNET", "RECORD_AUDIO"],
+      "permissions": [
+        "CAMERA",
+        "INTERNET",
+        "RECORD_AUDIO"
+      ],
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -30,7 +34,10 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "plugins": ["react-native-vision-camera"],
+    "plugins": [
+      "react-native-vision-camera",
+      "react-native-fast-tflite"
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     }

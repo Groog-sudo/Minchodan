@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.0 (2026-06-28 2단계 캡처 백엔드 설계서 추가)
+> **버전**: v0.7.0 (2026-07-01 Post-MVP 하이브리드 온디바이스 로드맵 설계서 추가)
 
 ## 문서 목록
 
@@ -21,6 +21,7 @@
 | 2단계 캡처 설계서     | [stage2_capture_design.md](stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 | 3단계 탐지 설계서     | [stage3_detection_design.md](stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
 | 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
+| **Post-MVP 하이브리드 로드맵** | [post_mvp_hybrid_roadmap.md](post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
 | 보행이론 인사이트 보고서 | [behavior_and_risk_insight.md](behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
 | Changelog 템플릿     | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md)       | 신규 changelog 작성 양식                                           |
@@ -46,6 +47,7 @@
 13. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
 14. [`stage6_orchestration_design.md`](stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
 15. [`test_specification.md`](test_specification.md) - 검증 기준
+16. [`post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) - **Post-MVP 하이브리드 온디바이스 로드맵 (MVP 완성 후 착수)**
 
 ---
 

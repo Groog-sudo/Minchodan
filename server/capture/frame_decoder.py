@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 FRAME_SIZE = int(os.getenv("FRAME_SIZE", "640"))
 TARGET_SIZE = (FRAME_SIZE, FRAME_SIZE)
-MAX_FRAME_SIZE_KB = 500
+MAX_FRAME_SIZE_KB = 5000
 MIN_FRAME_SIZE_KB = 1
 
 

@@ -340,3 +340,23 @@
   - 캡처 성공(`CameraView.takePhoto: Successfully captured 1856 x 1392 photo!`), base64 인코딩 → 프레임 전송(`[Frame] stream=reflex, frame_id=68, size≈59KB`) 정상 동작 확인.
   - 서버-클라이언트 API 명세서 v0.2.0 정합: 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답 필드 완전 일치.
 - **비고**: TC-WS-001~006 테스트 코드 작성 완료, 실행은 서버 기동 후 통합 테스트로 진행 예정. TC-CAP-007/008(단말 권한/타이머 해제)은 실기기 검증 대기. `expo-dev-client` 제거는 에뮬레이터 DevLauncher 이슈 회피를 위한 조치이며, 실기기 빌드 시 재검토 필요.
+
+---
+
+### 2026-07-01 | 2단계+Post-MVP | 온디바이스 TFLite 추론 구조 구축, 햅틱/비프 입체 경고 도입 및 78개 테스트 통과
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `docs/reflex_audio_specification.md` 신규 작성: 시각장애인 긴급 회피 반응 시간을 최소화하기 위한 방향성 입체 비프음(Stereo Panning Beep), 주차센서식 거리 반비례 비프음 가속 구조(beep_interval_ms), 햅틱 피드백 등 기술 사양 확정.
+  - `docs/post_mvp_ondevice_feasibility.md` 신규 작성: YOLO26n CoreML 익스포트 한계 규명 및 TFLite/ONNX 온디바이스 타당성 분석(1-Thread 가상 CPU 시뮬레이션 지연 22.89ms 확보) 수록.
+  - `server/detection/gates/reflex_gate.py` 및 `schemas.py` 수정: 반사 경보(`ReflexAlert`) 시 객체 중심축 기반 panning(-1.0 ~ 1.0) 및 거리 역산 비프음 주기(0~500ms), 햅틱 패턴(`short`/`double`/`continuous`) 연산 구현.
+  - `server/capture/frame_decoder.py` 수정: 실기기 고화질 캡처 패킷 유실 방지를 위해 최대 프레임 허용 크기(`MAX_FRAME_SIZE_KB`)를 500KB에서 5000KB(5MB)로 상향.
+  - `client/src/services/audioEngine.ts` 및 `hapticEngine.ts` 신규 구현: `expo-av`를 통한 입체 음향 밸런싱(Panning)과 비프음 가속 스케줄러, `expo-haptics`를 통한 세부 진동 패턴 구동기 완성.
+  - `client/src/hooks/useWebSocket.ts` 수정: 모바일 렌더 스레드를 영구 정지하여 하트비트 타임아웃을 냈던 `Alert.alert` 블로킹 모달 팝업을 제거하고 디버그 콘솔 및 debugOverlay 텍스트로 보완. `reflex_alert` 이벤트 수신 시 실시간 오디오/햅틱 엔진 트리거 결합.
+  - `client/src/hooks/useOnDeviceDetection.ts` 신규 작성: `react-native-fast-tflite` 패키지를 설치하고 `assets/models/yolo26n/`에 엣지 모델을 내장하여 단말 자체 NPU 가속 추론 및 즉각 비프음/햅틱 출력 환경(오프라인 반사 루프) 뼈대 구축.
+- **관련 파일**: `docs/reflex_audio_specification.md`, `docs/post_mvp_ondevice_feasibility.md`, `server/capture/frame_decoder.py`, `server/detection/gates/reflex_gate.py`, `server/detection/schemas.py`, `client/src/hooks/useWebSocket.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/services/audioEngine.ts`, `client/src/services/hapticEngine.ts`, `tests/test_vector_db_factory.py`
+- **검증 결과**:
+  - `tests/test_vector_db_factory.py`의 macOS 내 persistent 디렉토리 생성 실패(Rust 내부 InternalError 예외) 예외 포착 보완.
+  - 로컬 Ollama nomic-embed-text 모델 pull 다운로드 완료 및 uvicorn 테스트 서버 가동 하에 **78개 전체 테스트 케이스 100% 통과(Passed)** 확인 완료.
+  - JDK 17 및 Android SDK 환경 변수를 매핑하여 Gradle 클린 빌드 기반으로 온디바이스 추론 및 햅틱/비프 가속 엔진이 빌드된 배포용 **[app-release.apk](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/android/app/build/outputs/apk/release/app-release.apk)** 최종 성공 추출 완료.
+- **비고**: YOLO26n 및 YOLO26n-seg 모델이 엣지 컴퓨팅에 최적화된 핵심 자산임을 반영하여, 타사 대안 모델 우회안을 배제하고 TFLite/ONNX 모바일 런타임을 통해 원본 모델을 단말에 강제 이식하는 배포 구조로 단일화 및 최종 확정하였습니다.

@@ -26,6 +26,7 @@ if current_dir not in sys.path:
 
 from server.api.monitor import router as monitor_router
 from server.api.ws_router import router as ws_router
+from server.detection.consumer import get_default_consumer
 from server.mcp.manager import mcp_manager
 
 logger = logging.getLogger(__name__)
@@ -45,10 +46,20 @@ async def lifespan(app: FastAPI):
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     await mcp_manager.start_consumer(redis_url=redis_url)
 
+    # 2. DetectionConsumer 시작 (3단계: stream_splitter 큐 → pipeline → WS/Redis)
+    consumer = get_default_consumer()
+    try:
+        await consumer.start()
+        logger.info("DetectionConsumer 시작 완료")
+    except Exception as e:
+        logger.error(f"DetectionConsumer 시작 실패 (큐는 유지): {e}")
+
     yield
 
     logger.info("Minchodan API Server 종료 중...")
-    # 2. Redis Stream Consumer 및 리소스 정리
+    # 3. DetectionConsumer 중지
+    await consumer.stop()
+    # 4. Redis Stream Consumer 및 리소스 정리
     await mcp_manager.stop_consumer()
 
 

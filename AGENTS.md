@@ -180,4 +180,5 @@
 | 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                                    |
 | 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계                            |
 | 보행이론 인사이트    | [`docs/behavior_and_risk_insight.md`](docs/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의         |
+| **Post-MVP 하이브리드 로드맵** | [`docs/post_mvp_hybrid_roadmap.md`](docs/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
 | 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |

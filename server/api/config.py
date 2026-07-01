@@ -32,8 +32,7 @@ class Settings(BaseSettings):
     MAX_RECONNECT_ATTEMPTS: int = int(os.getenv("MAX_RECONNECT_ATTEMPTS", "3"))
     CORS_ORIGINS: list[str] = ["*"]
 
-    class Config:
-        env_file = ".env"
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

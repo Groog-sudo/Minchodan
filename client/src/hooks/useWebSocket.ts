@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert } from "react-native";
 
 import {
   DEVICE_ID,
@@ -14,6 +15,8 @@ import {
   TOKEN,
   WS_URL,
 } from "../config";
+import { audioEngine } from "../services/audioEngine";
+import { hapticEngine } from "../services/hapticEngine";
 import type { WSMessage, WSStatus } from "../types/detection";
 
 export interface UseWebSocketReturn {
@@ -44,6 +47,7 @@ export function useWebSocket(
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     const wsUrl = `${WS_URL}?device_id=${deviceId}`;
+    console.log(`[WS] 연결 시도 주소: ${wsUrl}`);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     setStatus("connecting");
@@ -69,10 +73,20 @@ export function useWebSocket(
 
         if (data.type === "welcome") {
           setStatus("connected");
+          console.log(`[WS] 연결 성공, 세션 ID: ${data.session_id}`);
         } else if (data.type === "heartbeat") {
           ws.send(
             JSON.stringify({ type: "heartbeat_ack", ts: Date.now() }),
           );
+        } else if (data.type === "reflex_alert") {
+          // 입체 비프음 및 햅틱 연동 실행 (docs/reflex_audio_specification.md 준수)
+          const panning = typeof data.panning === "number" ? data.panning : 0.0;
+          const beepInterval = typeof data.beep_interval_ms === "number" ? data.beep_interval_ms : 250;
+          const hapticPattern = typeof data.haptic_pattern === "string" ? data.haptic_pattern : "double";
+
+          console.log(`[WS] 반사 알림 수신: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}`);
+          audioEngine.playBeep(panning, beepInterval);
+          hapticEngine.trigger(hapticPattern);
         }
       } catch (err) {
         console.error("[WS] 메시지 파싱 오류:", err);
@@ -82,12 +96,18 @@ export function useWebSocket(
     ws.onclose = () => {
       setStatus("disconnected");
       clearHeartbeat();
+      console.log("[WS] 연결 종료");
+
+      // 오디오 및 진동 피드백 즉각 종료
+      audioEngine.stopBeep();
+      hapticEngine.stopContinuous();
 
       if (reconnectCount.current < MAX_RECONNECT) {
         reconnectCount.current += 1;
         reconnectTimer.current = setTimeout(() => connect(), RECONNECT_DELAY);
       } else {
         setStatus("fallback");
+        console.warn(`[WS] 재연결 시도(${MAX_RECONNECT}회) 실패로 중단.`);
       }
     };
 
@@ -95,6 +115,8 @@ export function useWebSocket(
       console.error("[WS] 오류:", error);
     };
   }, [deviceId, token, clearHeartbeat]);
+
+
 
   const send = useCallback((data: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -109,6 +131,11 @@ export function useWebSocket(
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
       }
+
+      // 오디오 및 진동 피드백 완전 종료
+      audioEngine.stopBeep();
+      hapticEngine.stopContinuous();
+
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();

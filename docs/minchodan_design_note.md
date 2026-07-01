@@ -202,6 +202,8 @@
 | TTS            | Kokoro/Coqui      | OpenAI TTS            |
 | RDB            | (미정)            | MariaDB/PostgreSQL    |
 
+> **On-device 추론 Post-MVP 상세 설계서**: [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0) — 하이브리드 엣지-클라우드 이중 루프, `yolo26n` CoreML/TFLite 포팅, `Frame Processor` 병행 구조, 점진적 전환 4단계(포스트 A~D) 청사진.
+
 ### C. 학습 환경 전제 (v1.1 C3)
 
 3·4단계 모델 학습은 **RTX 5090 / 5070 Ti(Blackwell sm_120)** **CUDA 12.8 + cu128 PyTorch 휠 필수**. 11.8/12.1 휠은 silent CPU 폴백. 학습 전 `verify_gpu.py`로 `device_capability ≥ (12,0)` 및 GPU 연산 1 step 검증. TensorRT 엔진은 데모 머신에서 재빌드(세대 간 전송 불가).

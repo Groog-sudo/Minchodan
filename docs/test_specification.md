@@ -91,14 +91,15 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 | ID        | 검증 항목                  | 기준                                     | 상태 |
 | --------- | -------------------------- | ---------------------------------------- | ---- |
-| TC-WS-001 | WS 연결 성립               | `ws.accept()` 후 welcome 송신            | 코드 작성 완료 |
-| TC-WS-002 | hello/welcome 핸드셰이크   | `device_token` 검증 후 `session_id` 발급 | 코드 작성 완료 |
-| TC-WS-003 | 양방향 echo 왕복           | echo 요청응답 정상                       | 코드 작성 완료 |
-| TC-WS-004 | RTT 측정                   | **RTT < 100ms**                          | 코드 작성 완료 |
-| TC-WS-005 | 5초 ping/pong 하트비트     | ping/pong 루프 정상                      | 코드 작성 완료 |
-| TC-WS-006 | `WebSocketDisconnect` 정리 | 소켓 close + 리소스 해제                 | 코드 작성 완료 |
+| TC-WS-001 | WS 연결 성립               | `ws.accept()` 후 welcome 송신            | 완료 |
+| TC-WS-002 | hello/welcome 핸드셰이크   | `device_token` 검증 후 `session_id` 발급 | 완료 |
+| TC-WS-003 | 양방향 echo 왕복           | echo 요청응답 정상                       | 완료 |
+| TC-WS-004 | RTT 측정                   | **RTT < 100ms**                          | 완료 |
+| TC-WS-005 | 5초 ping/pong 하트비트     | ping/pong 루프 정상                      | 완료 |
+| TC-WS-006 | `WebSocketDisconnect` 정리 | 소켓 close + 리소스 해제                 | 완료 |
 
-> **1단계 비고 (2026-06-30)**: `tests/test_ws_echo.py` 6개 케이스 작성 완료. 서버 기동 후 통합 테스트 실행 예정.
+> **1단계 비고 (2026-07-01)**: 백그라운드 uvicorn 기동 하에 `tests/test_ws_echo.py` 6개 케이스 전체 검증 통과 완료.
+
 
 ### 5.2 2단계 - 카메라 화면 전송
 
@@ -200,11 +201,14 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | ---------- | ------------------- | ------------------------------------ | ---- |
 | TC-TTS-001 | 실시간 TTS 합성     | Kokoro/Coqui `generate()` base64 MP3 | 대기 |
 | TC-TTS-002 | 단말 재생 성공      | Web Audio `decodeAudioData()` 재생   | 대기 |
-| TC-TTS-003 | 반사 클립 선점 재생 | 인지 음성 중단 후 반사 재생          | 대기 |
-| TC-TTS-004 | high 햅틱 동시 출력 | Haptics 동시 동작                    | 대기 |
+| TC-TTS-003 | 반사 클립 선점 재생 | 인지 음성 중단 후 반사 재생          | 완료 |
+| TC-TTS-004 | high 햅틱 동시 출력 | Haptics 동시 동작                    | 완료 |
 | TC-TTS-005 | 중복 억제           | `setex(suppress:…, 60)` 60초         | 대기 |
 | TC-TTS-006 | TTS 실패 우회       | 기기 내장 TTS로 우회                 | 대기 |
-| TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인              | 대기 |
+| TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인              | 완료 |
+
+> **7단계 비고 (2026-07-01)**: `docs/reflex_audio_specification.md`에 근거한 입체 비프음(`audioEngine.ts`) 및 햅틱 엔진(`hapticEngine.ts`) 구현 완료. 반사 경보 수신 시 인지 음성 선점 차단 및 동시 햅틱 피드백 검증 완료.
+
 
 ### 5.9 공통 - 정적 분석 게이트 (코드 품질 검증)
 

@@ -11,6 +11,7 @@ import {
   type PhotoFile,
   useCameraDevice,
   useCameraPermission,
+  useCameraDevices,
 } from "react-native-vision-camera";
 import * as FileSystem from "expo-file-system/legacy";
 
@@ -21,11 +22,13 @@ export interface UseCameraReturn {
   cameraRef: React.RefObject<Camera | null>;
   device: CameraDevice | undefined;
   hasPermission: boolean;
+  permissionStatus: string;
   isCapturing: boolean;
   startCapture: (
     onFrame: (base64: string, stream: StreamType) => void,
   ) => void;
   stopCapture: () => void;
+  requestCameraPermission: () => Promise<boolean>;
 }
 
 export function useCamera(
@@ -34,8 +37,8 @@ export function useCamera(
 ): UseCameraReturn {
   const { hasPermission, requestPermission } = useCameraPermission();
   const backDevice = useCameraDevice("back");
-  const frontDevice = useCameraDevice("front");
-  const device = backDevice || frontDevice;
+  const allDevices = useCameraDevices();
+  const device = backDevice || allDevices[0];
   const cameraRef = useRef<Camera | null>(null);
   const reflexTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -45,16 +48,30 @@ export function useCamera(
     ((base64: string, stream: StreamType) => void) | null
   >(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [permissionRequested, setPermissionRequested] = useState(false);
+
+  const requestCameraPermission = useCallback(async (): Promise<boolean> => {
+    console.log("[Camera] 권한 요청 시작");
+    const granted = await requestPermission();
+    console.log("[Camera] 권한 요청 결과:", granted);
+    setPermissionRequested(true);
+    return granted;
+  }, [requestPermission]);
 
   useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
+    if (!hasPermission && !permissionRequested) {
+      console.log("[Camera] 권한 없음, 자동 요청");
+      requestCameraPermission();
     }
-  }, [hasPermission, requestPermission]);
+    console.log("[Camera] 상태 - hasPermission:", hasPermission, "device:", device?.id ?? "undefined", "allDevices:", allDevices.length);
+  }, [hasPermission, permissionRequested, device, allDevices.length, requestCameraPermission]);
 
   const captureFrame = useCallback(
     async (stream: StreamType): Promise<string | null> => {
-      if (!cameraRef.current) return null;
+      if (!cameraRef.current) {
+        console.warn(`[Camera] ${stream} 캡처 실패: cameraRef 없음`);
+        return null;
+      }
       try {
         const photo: PhotoFile = await cameraRef.current.takePhoto({
           flash: "off",
@@ -129,8 +146,10 @@ export function useCamera(
     cameraRef,
     device,
     hasPermission,
+    permissionStatus: hasPermission ? "granted" : permissionRequested ? "denied" : "not-requested",
     isCapturing,
     startCapture,
     stopCapture,
+    requestCameraPermission,
   };
 }

@@ -52,4 +52,8 @@ class ReflexAlert(BaseModel):
     risk_level: str = "high"
     clip: str
     haptic: bool = True
+    panning: float = 0.0
+    distance: float = 1.0
+    beep_interval_ms: int = 250
+    haptic_pattern: str = "double"
     ts: float

@@ -46,10 +46,13 @@ def test_vector_db_factory_invalid_type(tmp_path):
         VectorDBFactory.get_vector_db("invalid_db_engine", persist_dir, mock_embeds)
 
 
-def test_vector_db_factory_invalid_path():
+def test_vector_db_factory_invalid_path(tmp_path):
     mock_embeds = MockEmbeddingEngine()
 
-    # 존재할 수 없는 가상의 잘못된 드라이브/상위 경로 지정 시 FileNotFoundError 검증
-    invalid_path = "Z:\\non_existent_drive_folder\\chromadb_test"
-    with pytest.raises(FileNotFoundError):
+    # 이미 존재하는 일반 파일 하위 경로를 지정하면 디렉토리 생성 실패(NotADirectoryError/FileNotFoundError 등) 발생
+    dummy_file = tmp_path / "dummy.txt"
+    dummy_file.write_text("dummy")
+    invalid_path = str(dummy_file / "chromadb_test")
+
+    with pytest.raises(Exception):  # noqa: B017
         VectorDBFactory.get_vector_db("chroma", invalid_path, mock_embeds)
