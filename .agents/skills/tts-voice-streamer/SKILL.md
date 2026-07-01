@@ -32,13 +32,13 @@ description: |
 
 ```
 [6단계 LangGraph]  guidance_text
-        
+
 [7-인지] 로컬 TTS(Kokoro/Coqui) generate()  base64 MP3  WS 스트리밍  단말 Web Audio 재생
 
 [3단계 Gate]  alert_id
-        
+
 [7-반사] 단말 사전합성 고정 클립 즉시 재생 (선점, 실시간 TTS 미경유)
-        
+
 중복 억제: setex(suppress:alert_id, 60)
 햡틱: Haptics + announceForAccessibility
 ```
@@ -152,7 +152,7 @@ async def send_reflex_clip(websocket, device_id, alert_id: str, direction: str, 
         return
 
     message = {
-        "type": "alert_reflex",
+        "type": "reflex_alert",
         "event_id": f"reflex-{device_id}-{alert_id}",
         "alert_id": alert_id,
         "direction": direction,
@@ -300,7 +300,7 @@ export function announceForAccessibility(text: string) {
 ## 선점 규칙 (비협상)
 
 - 반사 음성은 인지 음성을 **중단시키고 재생**합니다.
-- WS에서 반사 이벤트는 **별도 고우선 타입**(`alert_reflex`)으로 전송합니다.
+- WS에서 반사 이벤트는 **별도 고우선 타입**(`reflex_alert`)으로 전송합니다.
 - 반사 음성은 **실시간 TTS 합성을 금지**하며 사전합성 고정 클립만 사용합니다.
 
 ## 데이터 인터페이스
