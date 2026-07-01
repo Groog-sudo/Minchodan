@@ -19,19 +19,19 @@ if hasattr(sys.stdout, "reconfigure"):
 
 def parse_args() -> argparse.Namespace:
     # [VIBE CODE] 단순 CLI 인자 설정
-    parser = argparse.ArgumentParser(description="YOLO detection 모델 커스텀 학습을 실행합니다.")
+    parser = argparse.ArgumentParser(description="YOLO segmentation 모델 커스텀 학습을 실행합니다.")
     parser.add_argument(
         "--data",
-        default="training/configs/aihub_yolo_detection.yaml",
+        default="training/configs/aihub_yolo_segmentation.yaml",
         help="Ultralytics dataset yaml 경로입니다.",
     )
     parser.add_argument(
         "--model",
-        default="server/models/yolo26n/object_detection.pt",
+        default="server/models/yolo26n/segmentation.pt",
         help="학습 시작 weight 경로입니다.",
     )
-    parser.add_argument("--project", default="outputs/yolo_train")
-    parser.add_argument("--name", default="aihub_det_v1")
+    parser.add_argument("--project", default="training/runs")
+    parser.add_argument("--name", default="seg_exp1")
     add_common_train_args(parser)
     return parser.parse_args()
     # [/VIBE CODE]
@@ -41,7 +41,6 @@ def main() -> int:
     args = parse_args()
     
     # [HARD CODE] (담당자 직접 작성 영역)
-    # TODO: args 객체를 이용해 run_yolo_train 함수를 호출하고 best_pt 변수에 결과를 저장해주세요.
     best_pt = run_yolo_train(
         data=args.data,
         model=args.model,

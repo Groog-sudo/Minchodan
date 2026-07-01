@@ -209,6 +209,7 @@ data/raw/aihub_walk_sample/*.png
 training/datasets/detection/aihub_*/
 training/datasets/segmentation/aihub_*/
 training/configs/aihub_yolo_detection.yaml
+training/runs/
 
 # Keep agreed baseline pretrained weights trackable.
 !server/models/yolo26n/object_detection.pt

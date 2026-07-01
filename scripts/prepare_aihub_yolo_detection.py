@@ -14,28 +14,6 @@ from typing import Any
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-# 참고용 기준 후보입니다. 실제 학습 class는 XML 라벨에서 자동 수집합니다.
-# DEFAULT_CLASSES = [
-#     "barricade",
-#     "bench",
-#     "bicycle",
-#     "bollard",
-#     "bus",
-#     "car",
-#     "carrier",
-#     "chair",
-#     "motorcycle",
-#     "movable_signage",
-#     "person",
-#     "pole",
-#     "potted_plant",
-#     "stop",
-#     "traffic_light",
-#     "traffic_sign",
-#     "tree_trunk",
-#     "truck",
-# ]
-
 
 @dataclass
 class Box:
@@ -54,14 +32,26 @@ class ImageItem:
     boxes: list[Box]
 
 
+@dataclass
+class ResolvedImage:
+    source_image: Path
+    output_name: str
+    item: ImageItem
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="AI Hub CVAT XML을 YOLO detection 학습 데이터셋으로 변환합니다."
     )
-    parser.add_argument("--xml-path", required=True, help="CVAT XML 파일 경로입니다.")
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument("--xml-path", help="단일 CVAT XML 파일 경로입니다.")
+    source_group.add_argument(
+        "--input-dir",
+        help="바운딩박스 루트 폴더입니다. 하위 모든 *.xml을 변환합니다.",
+    )
     parser.add_argument(
         "--output-dir",
-        default="training/datasets/detection/aihub_0820_26",
+        default="training/datasets/detection/aihub_full",
         help="YOLO 데이터셋 출력 폴더입니다.",
     )
     parser.add_argument(
@@ -118,17 +108,50 @@ def parse_xml(xml_path: Path) -> list[ImageItem]:
         )
     return items
 
-def collect_class_names(items: list[ImageItem]) -> list[str]:
-    """XML에 실제 등장한 bbox 라벨을 전부 모아 class 목록을 만든다."""
-    labels = set()
 
-
-    for item in items:
-        for box in item.boxes:
+def collect_class_names(resolved_images: list[ResolvedImage]) -> list[str]:
+    labels: set[str] = set()
+    for resolved in resolved_images:
+        for box in resolved.item.boxes:
             if box.label:
                 labels.add(box.label)
-
     return sorted(labels)
+
+
+def collect_from_xml(xml_path: Path) -> list[ResolvedImage]:
+    image_dir = xml_path.parent
+    resolved: list[ResolvedImage] = []
+    for item in parse_xml(xml_path):
+        source_image = image_dir / item.name
+        if item.name and source_image.is_file() and item.boxes:
+            resolved.append(
+                ResolvedImage(
+                    source_image=source_image,
+                    output_name=item.name,
+                    item=item,
+                )
+            )
+    return resolved
+
+
+def collect_from_input_dir(input_dir: Path) -> list[ResolvedImage]:
+    resolved: list[ResolvedImage] = []
+    used_names: set[str] = set()
+    for xml_path in sorted(input_dir.rglob("*.xml")):
+        for entry in collect_from_xml(xml_path):
+            output_name = entry.output_name
+            if output_name in used_names:
+                output_name = f"{xml_path.parent.name}_{entry.output_name}"
+            used_names.add(output_name)
+            resolved.append(
+                ResolvedImage(
+                    source_image=entry.source_image,
+                    output_name=output_name,
+                    item=entry.item,
+                )
+            )
+    return resolved
+
 
 def yolo_line(box: Box, width: int, height: int, class_id: int) -> str | None:
     if width <= 0 or height <= 0:
@@ -162,61 +185,11 @@ def clear_generated_dataset(output_dir: Path) -> None:
             target.mkdir(parents=True, exist_ok=True)
 
 
-def write_dataset(
-    xml_path: Path,
-    items: list[ImageItem],
+def write_dataset_yaml(
     output_dir: Path,
     yaml_path: Path,
-    val_ratio: float,
-    seed: int,
-    limit: int,
-) -> dict[str, Any]:
-    class_names = collect_class_names(items)
-    class_to_id = {label: index for index, label in enumerate(class_names)}
-    image_dir = xml_path.parent
-    valid_items = [
-        item
-        for item in items
-        if item.name and (image_dir / item.name).is_file() and item.boxes
-    ]
-
-    rng = random.Random(seed)
-    rng.shuffle(valid_items)
-    if limit > 0:
-        valid_items = valid_items[:limit]
-
-    val_count = max(1, round(len(valid_items) * val_ratio)) if len(valid_items) > 1 else 0
-    val_names = {item.name for item in valid_items[:val_count]}
-    clear_generated_dataset(output_dir)
-
-    split_counts = {"train": 0, "val": 0}
-    box_counts = {"train": 0, "val": 0}
-    skipped_labels: dict[str, int] = {}
-
-    for item in valid_items:
-        split = "val" if item.name in val_names else "train"
-        source_image = image_dir / item.name
-        target_image = output_dir / "images" / split / item.name
-        target_label = output_dir / "labels" / split / f"{Path(item.name).stem}.txt"
-
-        lines: list[str] = []
-        for box in item.boxes:
-            class_id = class_to_id.get(box.label)
-            if class_id is None:
-                skipped_labels[box.label] = skipped_labels.get(box.label, 0) + 1
-                continue
-            line = yolo_line(box, item.width, item.height, class_id)
-            if line:
-                lines.append(line)
-
-        if not lines:
-            continue
-
-        shutil.copy2(source_image, target_image)
-        target_label.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-        split_counts[split] += 1
-        box_counts[split] += len(lines)
-
+    class_to_id: dict[str, int],
+) -> None:
     yaml_path.parent.mkdir(parents=True, exist_ok=True)
     yaml_path.write_text(
         "\n".join(
@@ -236,10 +209,67 @@ def write_dataset(
         newline="\n",
     )
 
+
+def write_dataset(
+    resolved_images: list[ResolvedImage],
+    output_dir: Path,
+    yaml_path: Path,
+    val_ratio: float,
+    seed: int,
+    limit: int,
+    source_hint: str,
+) -> dict[str, Any]:
+    if not resolved_images:
+        raise ValueError("변환할 이미지가 없습니다. XML 경로와 이미지 폴더를 확인하세요.")
+
+    if limit > 0:
+        resolved_images = resolved_images[:limit]
+
+    class_names = collect_class_names(resolved_images)
+    class_to_id = {label: index for index, label in enumerate(class_names)}
+
+    rng = random.Random(seed)
+    shuffled = list(resolved_images)
+    rng.shuffle(shuffled)
+
+    val_count = max(1, round(len(shuffled) * val_ratio)) if len(shuffled) > 1 else 0
+    val_names = {entry.output_name for entry in shuffled[:val_count]}
+    clear_generated_dataset(output_dir)
+
+    split_counts = {"train": 0, "val": 0}
+    box_counts = {"train": 0, "val": 0}
+    skipped_labels: dict[str, int] = {}
+
+    for entry in shuffled:
+        split = "val" if entry.output_name in val_names else "train"
+        target_image = output_dir / "images" / split / entry.output_name
+        target_label = output_dir / "labels" / split / f"{Path(entry.output_name).stem}.txt"
+
+        lines: list[str] = []
+        for box in entry.item.boxes:
+            class_id = class_to_id.get(box.label)
+            if class_id is None:
+                skipped_labels[box.label] = skipped_labels.get(box.label, 0) + 1
+                continue
+            line = yolo_line(box, entry.item.width, entry.item.height, class_id)
+            if line:
+                lines.append(line)
+
+        if not lines:
+            continue
+
+        shutil.copy2(entry.source_image, target_image)
+        target_label.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+        split_counts[split] += 1
+        box_counts[split] += len(lines)
+
+    write_dataset_yaml(output_dir, yaml_path, class_to_id)
+
     return {
-        "xml_path": str(xml_path),
-        "output_dir": str(output_dir),
-        "yaml_path": str(yaml_path),
+        "source": source_hint,
+        "output_dir": str(output_dir.resolve()),
+        "yaml_path": str(yaml_path.resolve()),
+        "class_names": class_names,
         "split_counts": split_counts,
         "box_counts": box_counts,
         "skipped_labels": skipped_labels,
@@ -248,18 +278,30 @@ def write_dataset(
 
 def main() -> int:
     args = parse_args()
-    xml_path = Path(args.xml_path).expanduser().resolve()
-    if not xml_path.is_file():
-        raise FileNotFoundError(f"XML 파일을 찾을 수 없습니다: {xml_path}")
+    output_dir = Path(args.output_dir)
+    yaml_path = Path(args.yaml_path)
+
+    if args.xml_path:
+        xml_path = Path(args.xml_path).expanduser().resolve()
+        if not xml_path.is_file():
+            raise FileNotFoundError(f"XML 파일을 찾을 수 없습니다: {xml_path}")
+        resolved_images = collect_from_xml(xml_path)
+        source_hint = str(xml_path)
+    else:
+        input_dir = Path(args.input_dir).expanduser().resolve()
+        if not input_dir.is_dir():
+            raise FileNotFoundError(f"입력 폴더를 찾을 수 없습니다: {input_dir}")
+        resolved_images = collect_from_input_dir(input_dir)
+        source_hint = str(input_dir)
 
     summary = write_dataset(
-        xml_path=xml_path,
-        items=parse_xml(xml_path),
-        output_dir=Path(args.output_dir),
-        yaml_path=Path(args.yaml_path),
+        resolved_images=resolved_images,
+        output_dir=output_dir,
+        yaml_path=yaml_path,
         val_ratio=args.val_ratio,
         seed=args.seed,
         limit=args.limit,
+        source_hint=source_hint,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
