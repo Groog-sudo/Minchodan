@@ -9,13 +9,16 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "expo": "^57.0.1",
+    "expo-av": "^16.0.8",
     "react": "18.2.0",
     "react-native": "0.72.6",
-    "react-native-vision-camera": "^4.0.0",
-    "react-native-tts": "^1.4.0"
+    "react-native-tts": "^1.4.0",
+    "react-native-vision-camera": "^4.0.0"
   },
   "devDependencies": {
     "@tsconfig/react-native": "^3.0.0",
+    "@types/node": "^26.1.0",
     "@types/react": "^18.2.6",
     "@types/react-native": "^0.72.2",
     "typescript": "^5.1.3"
