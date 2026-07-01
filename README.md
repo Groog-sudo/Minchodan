@@ -252,7 +252,7 @@ bash scripts/build_chroma.sh
 | `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
-| `CHROMA_COLLECTION` | ChromaDB 컬렉션명                         | `bidding_kb`             |
+| `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `minchodan_kb`           |
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |

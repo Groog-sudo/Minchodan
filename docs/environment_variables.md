@@ -1,7 +1,7 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **버전**: v0.1.0
+> **버전**: v0.2.0 (2026-07-01 교차 검증 수정: CHROMA_COLLECTION 정합, YOLO_CONF 중복 행 삭제, DETECTOR_TYPE·GOOGLE_API_KEY 추가)
 > **기준 파일**: [`.env.example`](../.env.example) (단일 기준)
 > **설계 기준**: [`docs/architecture.md`](architecture.md) 10절·13.4절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.4(.env 로드)
@@ -23,7 +23,8 @@
 | **`LLM_PROVIDER`** | string | 필수 | `ollama` | LLM 공급자 (`ollama` 또는 `openai`). GPU 부하 시 `LLMClientFactory`가 자동 핫스왑 | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
 | **`OLLAMA_BASE_URL`** | string | 필수 | `http://localhost:11434` | Ollama 서버 주소 | [`architecture.md`](architecture.md) 10절 |
 | **`GEMMA_MODEL`** | string | 필수 | `gemma4-e4b` | L2 가이드 생성 모델 (로컬) | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
-| **`LLAVA_MODEL`** | string | 필수 | `llava` | 4단계 캡셔닝 모델 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
+| **`LLAVA_MODEL`** | string | 선택 | `llava` | 4단계 오프라인 캡셔닝 모델 (Ollama 로컬 경로 사용 시). Gemini 캡셔닝 선택 시 미사용 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
+| **`GOOGLE_API_KEY`** | string | 선택 | (미설정) | 4단계 캡셔닝 모델을 Gemini API(`gemini-2.5-flash-lite`)로 사용하는 경우 필수. 미설정 시 `ValueError` 가드 발동 후 Llava 로컬 폴백 | [`stage4_5_rag_design.md`](stage4_5_rag_design.md) 2.1절 |
 | **`EMBEDDING_MODEL`** | string | 필수 | `nomic-embed-text` | 임베딩 모델 (768차원) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`OPENAI_API_KEY`** | string | 선택 | (미설정) | OpenAI 핫스왑 시 필요. 미설정 시 OpenAI 클라이언트 초기화에서 `ValueError` 발생 후 Ollama로 폴백 | [`architecture.md`](architecture.md) 13.4절 |
 
@@ -32,7 +33,7 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`CHROMA_PATH`** | path | 필수 | `data/chroma_db` | ChromaDB persist 디렉토리 (로컬 파일 기반) | [`architecture.md`](architecture.md) 2절 |
-| **`CHROMA_COLLECTION`** | string | 필수 | `bidding_kb` | ChromaDB 컬렉션명 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.5절 |
+| **`CHROMA_COLLECTION`** | string | 필수 | `minchodan_kb` | ChromaDB 컬렉션명 (보행 수칙 지식베이스) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.5절 |
 
 ### 2.3 Redis (이벤트 버스·MCP 메트릭)
 
@@ -52,7 +53,7 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - Object Detection 신뢰도 임계값 | [`stage3_detection_design.md`](stage3_detection_design.md) 5절 |
-| **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - Object Detection 신뢰도 임계값 | [`stage3_detection_design.md`](stage3_detection_design.md) 5절 |
+| **`DETECTOR_TYPE`** | string | 선택 | `mock` | 탐지 파이프라인 구동 모드 (`mock`: Mock 폴백 / `yolo`: 실제 모델 추론). 개발 환경 및 테스트에서 `mock` 사용 권장 | [`architecture.md`](architecture.md) 10절 |
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
@@ -72,7 +73,7 @@
 | **`DATA_RAW`** | path | 필수 | `data/raw` | AI Hub 보행자 데이터셋 원본 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_FRAMES`** | path | 필수 | `data/frames` | 1fps 추출 프레임 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_DEDUPED`** | path | 필수 | `data/deduped` | pHash 중복 제거 후 프레임 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
-| **`DATA_CAPTIONS`** | path | 필수 | `data/captions` | Llava 캡셔닝 결과 JSON | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
+| **`DATA_CAPTIONS`** | path | 필수 | `data/captions` | 캡셔닝 결과 JSON (Llava 또는 Gemini API 사용에 따라 동일 경로에 저장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_REFLEX_CLIPS`** | path | 필수 | `data/reflex_clips` | 사전합성 반사 음성 클립 (alert_id별 MP3) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.7절 |
 
 ### 2.8 Slack Integration (공통 경보)

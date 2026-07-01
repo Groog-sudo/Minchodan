@@ -372,3 +372,17 @@
   - `docs/api_specification.md` 불일치 정합: 반사 경보 type명을 실제 구현체와 맞추어 `alert_reflex`에서 `reflex_alert`로 수정하고, 방향성 입체 음향/진동 가속 매개변수 필드(`panning`, `distance`, `beep_interval_ms`, `haptic_pattern`) 상세 명세 보충.
 - **관련 파일**: `scripts/verify_gpu.py`, `docs/changelogs/kb.md`, `docs/changelogs/README.md`, `docs/api_specification.md`
 - **검증 결과**: `check_links.py` 검증 스크립트 실행 결과 전체 문서 내 깨진 링크가 0건임을 확인. `verify_gpu.py`의 로컬 예외 가드레일 동작을 정상 수행 및 통과.
+
+---
+
+### 2026-07-01 | 공통 | 30개 문서 교차 검증 및 불일치 일괄 수정
+
+- **커밋**: `docs: 30개 문서 교차 검증 기반 불일치 일괄 수정`
+- **변경 내용**:
+  - `CHROMA_COLLECTION` 기본값 오염 문자열 수정: 과거 입찰 프로젝트 잔재인 `bidding_kb`를 프로젝트 의미에 부합하는 `minchodan_kb`로 전 문서(`.env.example`, `architecture.md`, `README.md`, `environment_variables.md`, `stage4_5_data_replacement_guide.md`) 일괄 교체.
+  - `environment_variables.md` v0.2.0 갱신: `YOLO_CONF` 중복 행 삭제, `DETECTOR_TYPE` 항목 실제 추가, `GOOGLE_API_KEY` 신규 항목 추가(4단계 Gemini 캡셔닝 시 필수), `LLAVA_MODEL` 설명을 선택 항목으로 보정, `DATA_CAPTIONS` 설명을 Llava/Gemini 양쪽 지원으로 수정.
+  - `architecture.md` 파일 목록 수정: `server/rag/build/llava_captioner.py` → `gemini_captioner.py` (Llava 폴백 지원 명시).
+  - `test_specification.md` 수정: 섹션 번호 역전(5.6 → 5.8 → 5.7) 교정(5.7=MCP, 5.8=7단계 TTS로 올바른 순서 복원), TC-RAG-003 캡셔닝 모델 설명을 Gemini/Llava 양쪽 허용 표현으로 갱신.
+  - `post_mvp_hybrid_roadmap.md` 수정: §7.2 macOS 개인 절대경로를 프로젝트 루트 기준 상대경로로 교체, §11 검증 기준에서 실패 확정된 CoreML 항목을 ONNX/TFLite 실제 검증 기준으로 교체.
+- **관련 파일**: `.env.example`, `architecture.md`, `README.md`, `docs/environment_variables.md`, `docs/stage4_5_data_replacement_guide.md`, `docs/test_specification.md`, `docs/post_mvp_hybrid_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 30개 설계/아키텍처/구현 문서 및 소스코드 교차 검증 수행. 이중 경로 물리 분리 원칙은 검토된 모든 문서에서 위반 없이 일관 준수 확인.

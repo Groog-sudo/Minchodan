@@ -144,7 +144,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | ---------- | ----------------- | ------------------------------------------- | ---- |
 | TC-RAG-001 | 1fps 프레임 추출  | 영상 프레임 정상 추출                       | 대기 |
 | TC-RAG-002 | pHash 중복 제거   | 유사 프레임 제거                            | 대기 |
-| TC-RAG-003 | Llava 한글 캡셔닝 | 캡션 JSON 생성                              | 대기 |
+| TC-RAG-003 | 캡셔닝 VLM 한글 캡션 생성 | 코드 내 설정에 따라 Gemini API 또는 Llava 로컬 캡션 JSON 생성 | 대기 |
 | TC-RAG-004 | 임베딩 768d       | nomic-embed-text 벡터 차원                  | 대기 |
 | TC-RAG-005 | ChromaDB persist  | 디렉토리 정상 생성                          | 대기 |
 | TC-RAG-006 | collection 건수   | **≥ 100** (MVP 10~15)                       | 대기 |
@@ -180,7 +180,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-LG-008 | API 장애 디폴트     | Rate Limit 시 디폴트 수칙 반환            | 완료 |
 | TC-LG-009 | GPU Monitor 핫스왑  | GPU 리소스 임계치 돌파 시 OpenAI 핫스왑   | 완료 |
 
-### 5.8 공통 - MCP 및 실시간 관제 스트림
+### 5.7 공통 - MCP 및 실시간 관제 스트림
 
 **테스트 파일:** `tests/test_mcp_integration.py`, `tests/test_mcp_gpu.py`
 
@@ -193,7 +193,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-MCP-003 | LLMClientFactory 핫스왑 라이프사이클 | 부하 95% 시 Ollama->OpenAI 전환, 복구 10% 시 Ollama 복귀              | 완료 |
 
 
-### 5.7 7단계 - 음성 안내 출력
+### 5.8 7단계 - 음성 안내 출력
 
 **테스트 파일:** `tests/test_tts_reflex.py`
 

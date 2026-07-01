@@ -160,7 +160,7 @@ graph TD
 | `server/detection/schemas.py`                 | `DetectionResult`, `SurfaceResult`, `RiskEvent` 타입                       | 3    |
 | `server/rag/build/frame_extractor.py`         | 영상 1fps 프레임 추출                                                      | 4    |
 | `server/rag/build/dedup_phash.py`             | pHash 중복 제거                                                            | 4    |
-| `server/rag/build/llava_captioner.py`         | Ollama(Llava) 한글 캡셔닝                                                  | 4    |
+| `server/rag/build/gemini_captioner.py`         | Gemini API 관드 한글 캡셔닝 (Llava 로컬 폴백 지원)                  | 4    |
 | `server/rag/build/db_builder.py`              | `Chroma.from_documents(persist_directory)`                                 | 4    |
 | `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)`                                        | 5    |
 | `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열                                     | 5    |
@@ -376,7 +376,7 @@ sequenceDiagram
 | `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
-| `CHROMA_COLLECTION` | ChromaDB 컬렉션명                         | `bidding_kb`             |
+| `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `minchodan_kb`           |
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
