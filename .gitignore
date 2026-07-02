@@ -237,6 +237,8 @@ langgraph_checkpoints/
 # Temporary Smoke Test Outputs
 temp_smoke_*
 
-
-
-
+# ==========================================
+# Custom Trained Model Weights (git-ignore)
+# ==========================================
+server/models/yolo26n/segbest.pt
+server/models/yolo26n/segbest.tflite
