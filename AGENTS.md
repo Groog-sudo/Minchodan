@@ -11,9 +11,9 @@
 
 > **작성일**: 2026-06-24
 > **버전**: v0.3.0 (2026-06-27 코드 품질 검증 가이드 연동)
-> **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
-> **코드 품질 검증 기준**: [`docs/code_quality_guide.md`](docs/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
+> **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
+> **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+> **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
 
 ---
 
@@ -127,9 +127,8 @@
 ## 6. AI Communication Rules
 
 - Language: 모든 아티팩트(Plan, Task, Walkthrough)와 대화 응답은 **한국어(Korean)**로 작성.
-- Compliance: 작업 시작 전 항상 본 문서와 `docs/minchodan_design_note.md`를 읽고 프로젝트의 맥락을 파악.
+- Compliance: 작업 시작 전 항상 본 문서와 `docs/design/minchodan_design_note.md`를 읽고 프로젝트의 맥락을 파악.
 - Artifact Focus: 아티팩트 생성 후 내용을 중복해서 설명하지 말고, 핵심적인 질문이나 결정 사항만 대화로 제시.
-- Learning Collaboration: 본 프로젝트는 담당자의 발표와 학습이 목적에 포함됩니다. LLM은 모든 코드를 일괄 작성하지 말고, [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md)에 따라 담당자가 직접 작성해야 하는 핵심 로직과 LLM이 맡을 연결·검증 작업을 분리합니다.
 
 ---
 
@@ -140,7 +139,7 @@
   - `master` 또는 `main`: 운영 기준선. 직접 push 금지.
   - `dev`: 통합 개발 및 머지 브랜치. 직접 push 금지.
   - `dg`, `jh`, `jy`, `kb`, `th`: 개별 개발 브랜치.
-- Compliance: 상세 내용은 [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md)를 참조하고, 모든 작업은 PR(Pull Request) 기반으로 진행.
+- Compliance: 상세 내용은 [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md)를 참조하고, 모든 작업은 PR(Pull Request) 기반으로 진행.
 
 ---
 
@@ -164,23 +163,24 @@
 
 ## 9. 문서 인덱스
 
-| 문서                 | 파일                                                               | 설명                                                              |
-| -------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                                        |
-| **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
-| **코드 품질 검증 가이드** | [`docs/code_quality_guide.md`](docs/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증** |
-| 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                                       |
-| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동              |
-| API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입                          |
-| 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스                                  |
-| Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                                      |
-| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
-| **환경 변수 명세서** | [`docs/environment_variables.md`](docs/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**                              |
-| **배포 가이드**      | [`docs/deployment_guide.md`](docs/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004**                   |
-| **LLM 협업 작업 분담 가이드** | [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
-| 2단계 캡처 설계서    | [`docs/stage2_capture_design.md`](docs/stage2_capture_design.md) | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue) |
-| 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                                    |
-| 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계                            |
-| 보행이론 인사이트    | [`docs/behavior_and_risk_insight.md`](docs/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의         |
-| **Post-MVP 하이브리드 로드맵** | [`docs/post_mvp_hybrid_roadmap.md`](docs/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
-| 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |
+> 문서 전체 목록은 [`docs/README.md`](docs/README.md)를 참조하십시오. 하단은 AI 에이전트 작업 시 빈번하게 참조하는 핵심 문서만 간추린 목록입니다.
+
+| 문서 | 파일 | 설명 |
+| :--- | :--- | :--- |
+| 설계 노트 (원본) | [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md) | 7단계 골격, 비전 v1.1 반영 |
+| **코딩 패턴 기준** | [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| **코드 품질 검증 가이드** | [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증** |
+| 문서 인덱스 | [`docs/README.md`](docs/README.md) | 문서 목록 및 권장 독해 순서 |
+| 시스템 아키텍처 | [`docs/design/architecture.md`](docs/design/architecture.md) | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동 |
+| API 명세서 | [`docs/design/api_specification.md`](docs/design/api_specification.md) | WebSocket `/ws/detect` 계약, 이벤트 타입 |
+| 테스트 명세서 | [`docs/ops/test_specification.md`](docs/ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스 |
+| Git 브랜칭 전략 | [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙 |
+| 파이프라인 단계 설계 | [`docs/design/pipeline_stage_design.md`](docs/design/pipeline_stage_design.md) | 7단계 run mode, 종단 지연 목표 |
+| **환경 변수 명세서** | [`docs/ops/environment_variables.md`](docs/ops/environment_variables.md) | **환경 변수 단일 명세 (3원화 해소)** |
+| **배포 가이드** | [`docs/ops/deployment_guide.md`](docs/ops/deployment_guide.md) | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004** |
+| 2단계 캡처 설계서 | [`docs/stage-guides/stage2_capture_design.md`](docs/stage-guides/stage2_capture_design.md) | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue) |
+| 3단계 탐지 설계서 | [`docs/stage-guides/stage3_detection_design.md`](docs/stage-guides/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 |
+| 6단계 오케스트레이션 설계서 | [`docs/stage-guides/stage6_orchestration_design.md`](docs/stage-guides/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 |
+| 보행이론 인사이트 | [`docs/design/behavior_and_risk_insight.md`](docs/design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
+| **Post-MVP 하이브리드 로드맵** | [`docs/research/post_mvp_hybrid_roadmap.md`](docs/research/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP)** |
+| 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md) | 시작 시퀀스, 문서 규칙, 금지 행위 |

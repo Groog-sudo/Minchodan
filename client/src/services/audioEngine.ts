@@ -10,8 +10,8 @@ class AudioEngine {
   private currentBeepInterval: number = -1;
   private currentPanning: number = 0.0;
 
-  // 공개된 짧은 비프음 리소스를 디폴트로 참조 (로컬 파일 준비 시 핫스왑 가능)
-  private readonly DEFAULT_BEEP_URL = "https://www.soundjay.com/buttons/sounds/button-37a.mp3";
+  // 로컬 번들 800Hz 비프 에셋 (reflex_audio_specification.md 준수, 오프라인 안정)
+  private readonly BEEP_SRC: number = require("../../assets/sounds/beep.wav");
 
   /**
    * 입체 비프음 재생 및 가속을 기동합니다.
@@ -32,14 +32,15 @@ class AudioEngine {
       // 2. 사운드 인스턴스 초기 로드 및 속성 갱신
       if (!this.soundInstance) {
         const { sound } = await Audio.Sound.createAsync(
-          { uri: this.DEFAULT_BEEP_URL },
+          this.BEEP_SRC,
           { shouldPlay: false }
         );
         this.soundInstance = sound;
       }
 
       // 스테레오 Panning(좌우 지향) 적용 및 볼륨 극대화
-      await this.soundInstance.setVolumeAsync(1.0, panning);
+      await this.soundInstance.setVolumeAsync(1.0);
+      await (this.soundInstance as any).setStatusAsync({ stereoPan: panning });
 
       // 3. 주기별 재생 스케줄링
       if (intervalMs === 0) {

@@ -1,17 +1,35 @@
 import * as Haptics from "expo-haptics";
 
+import { MOCK_HAPTIC } from "../config/mock";
+
+export type HapticMockHandler = (pattern: string) => void;
+
 /**
  * 시각장애인 긴급 회피용 햅틱(진동) 피드백 서비스.
  * docs/reflex_audio_specification.md 규격을 준수합니다.
+ *
+ * MOCK_HAPTIC=true(시뮬레이터)에서는 진동 대신 콘솔 로그 + 등록된 시각 핸들러 호출.
  */
 class HapticEngine {
   private continuousTimer: ReturnType<typeof setInterval> | null = null;
+  private mockHandler: HapticMockHandler | null = null;
+
+  /** Mock 모드 시각 피드백 핸들러 등록 (CameraView 오버레이). */
+  public setMockHandler(handler: HapticMockHandler | null): void {
+    this.mockHandler = handler;
+  }
 
   /**
    * 지정된 패턴으로 진동 피드백을 트리거합니다.
    * @param pattern 'short' | 'double' | 'continuous'
    */
   public async trigger(pattern: string): Promise<void> {
+    if (MOCK_HAPTIC) {
+      console.log(`[Mock Haptics] 진동 패턴: ${pattern}`);
+      this.mockHandler?.(pattern);
+      return;
+    }
+
     this.stopContinuous();
 
     try {
