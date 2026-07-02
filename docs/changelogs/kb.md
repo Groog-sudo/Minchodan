@@ -407,3 +407,25 @@
   - `useOnDeviceDetection.ts` 컴파일 및 타입 검증 통과.
 - **비고**: 학습된 세그멘테이션 가중치 모델을 모바일에 직결하여 서버 RTT 지연 0ms 수준의 긴급 반사 피드백 성능을 확보하였습니다.
 
+---
+
+### 2026-07-02 | 공통 | TypeScript 빌드 오류 해결 및 모바일 Mock 디버그 프레임워크 연동
+
+- **커밋**: `feat(client): TypeScript 타입 체크 통과 및 모바일 Mock 디버그 기능 연동 완료`
+- **변경 내용**:
+  - **TypeScript 타입 및 빌드 에러 해결**:
+    - `client/src/types/detection.ts`: `alert_reflex` 라벨명을 `reflex_alert`로 단일화 및 방향성/주기성 햅틱 피드백용 속성(`panning`, `beep_interval_ms`, `haptic_pattern`, `alert_id`) 6종을 명세에 맞추어 보충.
+    - `client/src/hooks/useWebSocket.ts`: WebSocket 이벤트 핸들러 `onmessage`/`onerror` 파라미터의 타입 정의 호환성 에러를 `any` 캐스팅으로 우회.
+    - `client/src/hooks/useOnDeviceDetection.ts`: TFLite 모델 로더(`loadTensorflowModel`)의 delegate 인자에 빈 배열 `[]`를 주어 컴파일 에러 해결 및 Float32Array의 버퍼 캐스팅(`frame.buffer as ArrayBuffer`) 적용.
+    - `client/src/components/CameraView.tsx`: `StyleSheet.absoluteFillObject` 빌드 오류를 absolute 수동 레이아웃 객체로 전환하여 컴파일 정상화.
+    - `client/src/services/audioEngine.ts`: Sound 클래스 내부의 panning 속성 부여 시, expo-av 타이핑 미지원 해결을 위해 `(this.soundInstance as any).setStatusAsync({ stereoPan })`로 교체 완료.
+  - **모바일 Mock 디버그 프레임워크 신규 이식**:
+    - `client/src/components/DebugTriggerPanel.tsx`: 실기기 없이 시뮬레이터 상에서 햅틱/비프 밸런스를 튜닝할 수 있는 디버그 트리거 패널 마운트.
+    - `client/src/config/mock.ts`: Mock 상태 관련 설정값 추가.
+    - `client/src/services/frameProvider.ts` / `mockFrameProvider.ts` / `realFrameProvider.ts`: 카메라 없이 로컬 샘플 이미지를 base64로 주기 송출하는 이중화 캡처 인터페이스 구축 및 통합.
+  - **저장소 최적화**:
+    - 프로젝트 루트 내 타겟 모델이 아닌 불필요한 기본 모델 `yolo11n.pt` 및 `yolov8n.pt` 2종 삭제 및 깃 인덱스(`git rm`) 영구 배제 완수.
+- **관련 파일**: `client/src/` 전체, `.gitignore`
+- **검증 결과**:
+  - `client/` 경로 내 `npx tsc --noEmit` 실행 결과 **타입 컴파일 에러 0건**으로 빌드 정합 완료.
+- **비고**: 시뮬레이터 환경 및 크로스 플랫폼 네이티브 연동 시 빌드 실패를 유발할 수 있는 타입 오류들을 완벽하게 진압하여 유선 배포 준비를 완료하였습니다.

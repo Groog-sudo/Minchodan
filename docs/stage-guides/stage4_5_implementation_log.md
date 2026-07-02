@@ -50,7 +50,7 @@
 #### **db_builder.py**
 * **행동**: 신규 생성 및 리팩토링
 * **설명**: 프레임 추출 -> 중복제거 -> Mock/VLM 캡션 생성 -> ChromaDB 적재의 파이프라인 흐름 오케스트레이션.
-* **수정 내역**: 
+* **수정 내역**:
   * `course_codebase_guide.md` 17.5절 표준 헤더 일치화 완료.
   * `course_codebase_guide.md` 13.3절에 명시된 **코사인 유사도 방식** (`collection_metadata={"hnsw:space": "cosine"}`)을 `Chroma.from_documents` 호출 시점에 강제 설정하도록 추가 리팩토링 완료.
 

@@ -116,7 +116,7 @@ classDiagram
         -vector_db VectorStore
         +search(detect_info: dict, k: int) str
     }
-    
+
     EmbeddingEngineFactory ..> VectorDBFactory : "Embeddings 주입"
     VectorDBFactory ..> Retriever : "VectorStore 주입"
 ```
@@ -146,15 +146,15 @@ sys.stdout.reconfigure(encoding="utf-8")
 def extract_frames(video_path: str, output_dir: str, fps: int = 1) -> list:
     """
     비디오 파일에서 지정된 fps 간격으로 프레임을 추출하여 디스크에 저장합니다.
-    
+
     Args:
         video_path: 입력 비디오 파일 경로
         output_dir: 프레임 저장 디렉토리 경로
         fps: 초당 프레임 수
-        
+
     Returns:
         추출된 프레임 이미지 파일 경로 리스트
-        
+
     Raises:
         FileNotFoundError: 비디오 파일이 없을 경우 발생
         ValueError: 비디오 디코딩 실패 시 발생 (비협상 가드)
@@ -176,11 +176,11 @@ sys.stdout.reconfigure(encoding="utf-8")
 def filter_duplicates(image_paths: list, threshold: int = 5) -> list:
     """
     pHash (Perceptual Hash) 값을 비교하여 중복되거나 매우 유사한 프레임을 필터링합니다.
-    
+
     Args:
         image_paths: 프레임 파일 경로 리스트
         threshold: 해밍 거리 임계값 (이 값 이하로 가까우면 중복으로 판단)
-        
+
     Returns:
         중복이 제거된 고유 프레임 이미지 파일 경로 리스트
     """
@@ -200,13 +200,13 @@ sys.stdout.reconfigure(encoding="utf-8")
 def generate_caption(image_path: str) -> str:
     """
     Gemini 2.5 Flash Lite VLM을 사용하여 보행 환경 이미지의 한글 상황 묘사 캡션을 생성합니다.
-    
+
     Args:
         image_path: 캡셔닝할 이미지 파일 경로
-        
+
     Returns:
         한글 상황 묘사 캡션 문자열
-        
+
     Raises:
         ValueError: GOOGLE_API_KEY 미설정 시 명확한 에러 메시지와 함께 발생 (비협상 가드)
         RuntimeError: API 호출 실패 및 네트워크 오류 발생 시 발생
@@ -234,15 +234,15 @@ class VectorDBFactory:
     def get_vector_db(db_type: str, persist_directory: str, embeddings: Embeddings):
         """
         요구되는 DB 타입에 적합한 VectorStore 객체를 생성하여 반환합니다.
-        
+
         Args:
             db_type: "chroma" | "qdrant"
             persist_directory: 데이터 영구 저장 경로
             embeddings: 주입받을 외부 임베딩 엔진 객체 (직접 생성 금지)
-            
+
         Returns:
             VectorStore 구현 인스턴스
-            
+
         Raises:
             FileNotFoundError: 저장 경로가 존재하지 않거나 쓰기 권한이 없을 경우 발생 (비협상 가드)
             ValueError: 지원하지 않는 db_type 지정 시 발생
@@ -266,16 +266,16 @@ sys.stdout.reconfigure(encoding="utf-8")
 class Retriever:
     def __init__(self, vector_db: VectorStore):
         self.vector_db = vector_db
-        
+
     def search_guidance(self, detect_info: dict, k: int = 5) -> str:
         """
         실시간 탐지 정보를 바탕으로 Vector DB에서 안전 대처 수칙을 검색합니다.
         검색 실패 혹은 타임아웃 발생 시, 시스템 중단을 막기 위해 빈 문자열을 반환하고 fallback으로 연결되도록 합니다.
-        
+
         Args:
             detect_info: 3단계 YOLO 결과 딕셔너리 (class_name 필수 포함)
             k: 검색할 유사 문서 개수
-            
+
         Returns:
             유사도가 매칭된 대처 수칙 내용 결합 텍스트 (실패 시 "")
         """
@@ -303,10 +303,10 @@ FALLBACK_RULES = {
 def get_fallback_guidance(class_name: str) -> str:
     """
     RAG 검색 실패 혹은 매칭 스코어가 현저히 낮을 경우 동작하는 룰 기반 대체 가이드를 반환합니다.
-    
+
     Args:
         class_name: 탐지된 사물 클래스 명칭 (labels.py 기준)
-        
+
     Returns:
         상황별 지정된 즉시 경보 가이드 문자열
     """
@@ -335,7 +335,7 @@ graph TD
     --> DBB["4. db_builder.py<br/>(ChromaDB 빌드 & persist)"]
     --> RET["5. retriever.py<br/>(nomic-embed-text로 쿼리 검색)"]
     --> Assert{"6. 수칙 매칭 검증<br/>(유효 문자열 여부)"}
-    
+
     Assert -->|성공| Pass["통과 (RAG 정상 동작)"]
     Assert -->|실패/미적중| FB["7. fallback.py 작동<br/>(룰 기반 가이드 획득)"]
 ```
