@@ -12,7 +12,7 @@ import {
   useCameraDevices,
   useCameraPermission,
 } from "react-native-vision-camera";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 import { COGNITIVE_FPS, REFLEX_FPS } from "../config";
 import type { StreamType } from "../types/detection";
