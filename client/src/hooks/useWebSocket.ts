@@ -66,7 +66,7 @@ export function useWebSocket(
       }, HEARTBEAT_INTERVAL);
     };
 
-    ws.onmessage = (event: WebSocketMessageEvent) => {
+    ws.onmessage = (event: any) => {
       try {
         const data: WSMessage = JSON.parse(event.data);
         setLastMessage(data);
@@ -111,7 +111,7 @@ export function useWebSocket(
       }
     };
 
-    ws.onerror = (error: Event) => {
+    ws.onerror = (error: any) => {
       console.error("[WS] 오류:", error);
     };
   }, [deviceId, token, clearHeartbeat]);

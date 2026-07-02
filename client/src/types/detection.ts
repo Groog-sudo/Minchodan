@@ -15,7 +15,7 @@ export type MessageType =
   | "heartbeat_ack"
   | "detection"
   | "ack"
-  | "alert_reflex"
+  | "reflex_alert"
   | "guide"
   | "error";
 
@@ -27,6 +27,12 @@ export interface WSMessage {
   server_time?: string;
   ts?: number;
   payload?: DetectionPayload | AckPayload | Record<string, unknown>;
+  panning?: number;
+  beep_interval_ms?: number;
+  haptic_pattern?: string;
+  alert_id?: string;
+  guidance_text?: string;
+  audio_mp3_b64?: string;
 }
 
 export interface DetectionPayload {

@@ -1,150 +1,218 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadTensorflowModel, type TensorflowModel } from "react-native-fast-tflite";
+import {
+  loadTensorflowModel,
+  type TensorflowModel,
+} from "react-native-fast-tflite";
 
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 
-// segbest.tflite 세그멘테이션 모델 규격 클래스 (4개)
-const CLASS_NAMES = [
+// segmentation.tflite (segbest.pt 변환) 노면 클래스 (4종)
+const SEG_CLASS_NAMES = [
   "sidewalk_normal",
   "caution",
   "roadway",
-  "braille_normal"
+  "braille_normal",
 ];
 
-// 보행자에게 주의/위험을 알릴 클래스 목록
-const HIGH_RISK_CLASSES = new Set(["caution", "roadway"]);
+// object_detection.tflite (COCO 80종) 중 보행 회피 의미 보유 클래스만 명시.
+// 인덱스는 COCO 표준 순서.
+const COCO_CLASS_NAMES = [
+  "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
+  "truck", "boat", "traffic light", "fire hydrant", "stop sign",
+  "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+  "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
+  "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
+  "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
+  "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana",
+  "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza",
+  "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table",
+  "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
+  "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock",
+  "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
+];
+
+// 노면 위험(주의/차도) 클래스 인덱스 (segmentation)
+const SEG_HAZARD = new Set<number>([1, 2]); // caution, roadway
+
+// 보행 충돌 위험 COCO 클래스 인덱스 (person, bicycle, car, motorcycle, bus, truck, skateboard)
+const DET_HAZARD = new Set<number>([0, 1, 2, 3, 5, 7, 36]);
+
+const FRAME_SIZE = 640;
+const NUM_BOXES = 300; // Ultralytics NMS 출력 max_det
+const CONF_THRESHOLD = 0.35;
+const PROXIMITY_Y = FRAME_SIZE * 0.85; // 하단 15% 진입 임계치
 
 export interface OnDeviceDetectionResult {
+  model: "segmentation" | "object_detection";
   className: string;
   confidence: number;
   bbox: { x: number; y: number; w: number; h: number };
 }
 
 /**
- * 온디바이스 YOLO26n 세그멘테이션 TFLite 모델 실시간 추론 훅.
- * 네이티브 NPU/GPU를 활용해 서버 연결 없이 단말 내에서 즉시 노면 상태 및 위험을 탐지합니다.
+ * 온디바이스 듀얼 비전 추론 훅.
+ * segmentation.tflite + object_detection.tflite 두 모델을 동시에 로드하여
+ * 단일 프레임(CHW float32)에 대해 추론하고 결과를 머지한다.
+ * 위험 클래스가 하단 근접 영역에 진입하면 Reflex Gate를 발동해 비프음/햅틱을 즉시 가동.
  */
 export function useOnDeviceDetection() {
-  const modelRef = useRef<TensorflowModel | null>(null);
-  const [isModelLoaded, setIsModelLoaded] = useState(false);
+  const segModelRef = useRef<TensorflowModel | null>(null);
+  const detModelRef = useRef<TensorflowModel | null>(null);
+  const [segLoaded, setSegLoaded] = useState(false);
+  const [detLoaded, setDetLoaded] = useState(false);
+  const isModelsLoaded = segLoaded && detLoaded;
 
-  // 1. 컴포넌트 마운트 시 세그멘테이션 TFLite 모델 탑재
   useEffect(() => {
-    async function initModel() {
+    let cancelled = false;
+
+    async function init() {
       try {
-        console.log("[OnDevice] YOLO26n Segmentation TFLite 모델 로딩 시작...");
-        // assets에서 빌드 시 포함된 tflite 모델 로드
-        const model = await loadTensorflowModel(
-          require("../../assets/models/yolo26n/segmentation.tflite")
+        console.log("[OnDevice] segmentation.tflite 로딩...");
+        const seg = await loadTensorflowModel(
+          require("../../assets/models/yolo26n/segmentation.tflite"),
+          []
         );
-        modelRef.current = model;
-        setIsModelLoaded(true);
-        console.log("[OnDevice] YOLO26n Segmentation TFLite 모델 로드 성공!");
+        if (cancelled) return;
+        segModelRef.current = seg;
+        setSegLoaded(true);
+        console.log("[OnDevice] segmentation 로드 완료");
       } catch (err) {
-        console.error("[OnDevice] TFLite 모델 로딩 실패:", err);
+        console.error("[OnDevice] segmentation 로드 실패:", err);
+      }
+      try {
+        console.log("[OnDevice] object_detection.tflite 로딩...");
+        const det = await loadTensorflowModel(
+          require("../../assets/models/yolo26n/object_detection.tflite"),
+          []
+        );
+        if (cancelled) return;
+        detModelRef.current = det;
+        setDetLoaded(true);
+        console.log("[OnDevice] object_detection 로드 완료");
+      } catch (err) {
+        console.error("[OnDevice] object_detection 로드 실패:", err);
       }
     }
-    initModel();
+    init();
 
     return () => {
-      if (modelRef.current) {
-        modelRef.current.dispose();
-        modelRef.current = null;
+      cancelled = true;
+      if (segModelRef.current) {
+        try {
+          segModelRef.current.dispose();
+        } catch {
+          // dispose 미지원 가능, 무시
+        }
+        segModelRef.current = null;
+      }
+      if (detModelRef.current) {
+        try {
+          detModelRef.current.dispose();
+        } catch {
+          // noop
+        }
+        detModelRef.current = null;
       }
     };
   }, []);
 
-  /**
-   * 단일 이미지 픽셀 어레이 버퍼(Float32Array, 640x640x3)를 받아 YOLO26n 추론 수행
-   * @param rgbBuffer Float32Array 형식의 정규화된(0~1) 픽셀 버퍼
-   */
-  const detectFrame = useCallback(async (rgbBuffer: Float32Array): Promise<OnDeviceDetectionResult[]> => {
-    if (!modelRef.current) {
-      console.warn("[OnDevice] 추론 실패: 모델이 아직 로드되지 않았습니다.");
-      return [];
-    }
-
-    try {
-      // TFLite 동적 컴파일 연산 기동 (출력 텐서: [(1, 300, 38), (1, 32, 160, 160)])
-      const output = await modelRef.current.run([rgbBuffer]);
-
-      // 첫 번째 출력 텐서 (300개 박스 검출 정보) 파싱
-      const outputData = output[0] as Float32Array;
-      const numClasses = 4;
-      const numBoxes = 300;
-      const attrsPerBox = 38; // 4 (bbox) + 4 (classes) + 32 (masks)
-
-      const detections: OnDeviceDetectionResult[] = [];
-      const confidenceThreshold = 0.35;
-      const proximityThresholdY = 640 * 0.85; // 하단 15% 진입 임계치 (y=544)
-
-      for (let i = 0; i < numBoxes; i++) {
-        const offset = i * attrsPerBox;
-        const xc = outputData[offset + 0];
-        const yc = outputData[offset + 1];
-        const w = outputData[offset + 2];
-        const h = outputData[offset + 3];
-
-        // 4개 클래스 중 최대 확률값 및 인덱스 탐색
-        let maxClassConf = 0;
-        let maxClassId = -1;
-        for (let c = 0; c < numClasses; c++) {
-          const conf = outputData[offset + 4 + c];
-          if (conf > maxClassConf) {
-            maxClassConf = conf;
-            maxClassId = c;
+  const runModel = useCallback(
+    async (
+      model: TensorflowModel | null,
+      attrsPerBox: number,
+      numClasses: number,
+      names: readonly string[],
+      label: OnDeviceDetectionResult["model"],
+      frame: Float32Array,
+    ): Promise<OnDeviceDetectionResult[]> => {
+      if (!model) return [];
+      try {
+        const outputs = await model.run([frame.buffer as ArrayBuffer]);
+        const out = new Float32Array(outputs[0]);
+        const results: OnDeviceDetectionResult[] = [];
+        for (let i = 0; i < NUM_BOXES; i++) {
+          const off = i * attrsPerBox;
+          const x1 = out[off];
+          const y1 = out[off + 1];
+          const x2 = out[off + 2];
+          const y2 = out[off + 3];
+          const score = out[off + 4];
+          const cls = Math.round(out[off + 5]);
+          if (score < CONF_THRESHOLD || cls < 0 || cls >= numClasses) {
+            continue;
           }
-        }
-
-        // 신뢰도가 임계치를 초과할 때만 객체로 확정
-        if (maxClassConf > confidenceThreshold && maxClassId !== -1) {
-          const className = CLASS_NAMES[maxClassId];
-          const x = xc - w / 2;
-          const y = yc - h / 2;
-
-          detections.push({
-            className,
-            confidence: maxClassConf,
-            bbox: { x, y, w, h }
+          results.push({
+            model: label,
+            className: names[cls] ?? `cls_${cls}`,
+            confidence: score,
+            bbox: { x: x1, y: y1, w: x2 - x1, h: y2 - y1 },
           });
         }
+        return results.sort((a, b) => b.confidence - a.confidence).slice(0, 10);
+      } catch (err) {
+        console.error(`[OnDevice] ${label} 추론 오류:`, err);
+        return [];
       }
+    },
+    [],
+  );
 
-      // 점수 기준 상위 필터링
-      const sortedDetections = detections
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 10);
+  /**
+   * 단일 프레임(CHW float32)에 대해 두 모델 추론 후 머지 + Reflex Gate 발동.
+   */
+  const detectFrame = useCallback(
+    async (
+      frame: Float32Array,
+    ): Promise<{ seg: OnDeviceDetectionResult[]; det: OnDeviceDetectionResult[] }> => {
+      const seg = await runModel(
+        segModelRef.current,
+        38,
+        SEG_CLASS_NAMES.length,
+        SEG_CLASS_NAMES,
+        "segmentation",
+        frame,
+      );
+      const det = await runModel(
+        detModelRef.current,
+        6,
+        COCO_CLASS_NAMES.length,
+        COCO_CLASS_NAMES,
+        "object_detection",
+        frame,
+      );
 
-      // 로컬 반사 게이트(Reflex Gate) 연산 가동 (caution / roadway 대상)
-      let highestRiskDetection: OnDeviceDetectionResult | null = null;
-      for (const det of sortedDetections) {
-        if (HIGH_RISK_CLASSES.has(det.className)) {
-          // 객체의 최하단 경계(y + h)가 프레임 하단 15% 임계치 아래로 내려왔는지 점검
-          const bottomY = det.bbox.y + det.bbox.h;
-          if (bottomY >= proximityThresholdY) {
-            highestRiskDetection = det;
-            break;
-          }
+      // 위험 클래스 + 하단 근접 박스 중 최상위 1개 선정
+      let highest: OnDeviceDetectionResult | null = null;
+      const all = [...seg, ...det];
+      for (const d of all) {
+        const isSegHazard =
+          d.model === "segmentation" &&
+          SEG_HAZARD.has(SEG_CLASS_NAMES.indexOf(d.className));
+        const isDetHazard =
+          d.model === "object_detection" &&
+          DET_HAZARD.has(COCO_CLASS_NAMES.indexOf(d.className));
+        if (!isSegHazard && !isDetHazard) continue;
+        const bottomY = d.bbox.y + d.bbox.h;
+        if (bottomY >= PROXIMITY_Y) {
+          highest = d;
+          break;
         }
       }
 
-      if (highestRiskDetection) {
-        // 로컬 햅틱/비프음 즉각 피드백 발동 (서버 네트워크 지연 0ms)
-        const bbox = highestRiskDetection.bbox;
-        const centerX = bbox.x + bbox.w / 2;
-
-        // 1. Panning 산출: -1.0(좌) ~ 1.0(우)
-        const panning = (centerX / 640) * 2 - 1.0;
-
-        // 2. Distance 산출 및 주기 매핑
-        const bottomY = bbox.y + bbox.h;
-        const ratio = (bottomY - proximityThresholdY) / (640 - proximityThresholdY);
-        const distance = 1.5 - (Math.max(0, Math.min(1.0, ratio)) * 1.1);
+      if (highest) {
+        const b = highest.bbox;
+        const centerX = b.x + b.w / 2;
+        const panning = Math.max(-1, Math.min(1, (centerX / FRAME_SIZE) * 2 - 1));
+        const bottomY = b.y + b.h;
+        const ratio = Math.max(
+          0,
+          Math.min(1, (bottomY - PROXIMITY_Y) / (FRAME_SIZE - PROXIMITY_Y)),
+        );
+        const distance = 1.5 - ratio * 1.1;
 
         let beepInterval = 250;
         let hapticPattern = "double";
-
         if (distance <= 0.5) {
           beepInterval = 0;
           hapticPattern = "continuous";
@@ -153,21 +221,20 @@ export function useOnDeviceDetection() {
           hapticPattern = "continuous";
         }
 
-        console.log(`[OnDevice Reflex] 객체 감지: ${highestRiskDetection.className}, 거리: ${distance.toFixed(2)}m, 방향: ${panning.toFixed(2)}`);
+        console.log(
+          `[OnDevice Reflex] ${highest.model}/${highest.className} 거리=${distance.toFixed(2)}m 패닝=${panning.toFixed(2)}`,
+        );
         audioEngine.playBeep(panning, beepInterval);
         hapticEngine.trigger(hapticPattern);
       } else {
-        // 위험 요소가 없으면 비프음 정지
         audioEngine.stopBeep();
         hapticEngine.stopContinuous();
       }
 
-      return sortedDetections;
-    } catch (err) {
-      console.error("[OnDevice] 추론 실패:", err);
-      return [];
-    }
-  }, []);
+      return { seg, det };
+    },
+    [runModel],
+  );
 
-  return { isModelLoaded, detectFrame };
+  return { isModelsLoaded, segLoaded, detLoaded, detectFrame };
 }
