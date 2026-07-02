@@ -127,11 +127,21 @@ class DetectionPipeline:
     def _classify_risk(detections: list[Detection], surfaces: list[SurfaceResult]) -> str:
         if not detections and not surfaces:
             return "none"
+        mid_risk_classes = {
+            "bicycle",
+            "skateboard",
+            "bench",
+            "fire hydrant",
+            "stop sign",
+            "parking meter",
+            "backpack",
+            "handbag",
+            "suitcase",
+            "umbrella",
+            "person",
+        }
         for det in detections:
-            if det.class_name in {"kickboard", "bollard"}:
-                return "mid"
-        for surf in surfaces:
-            if surf.class_name in {"sidewalk_damaged", "roadway"}:
+            if det.class_name in mid_risk_classes:
                 return "mid"
         return "low"
 

@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
@@ -14,4 +15,10 @@
     }
   },
   "include": ["src/**/*"]
+=======
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true
+  }
+>>>>>>> dev
 }
