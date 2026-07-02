@@ -36,7 +36,8 @@ export function useOnDeviceDetection() {
         console.log("[OnDevice] YOLO26n Segmentation TFLite 모델 로딩 시작...");
         // assets에서 빌드 시 포함된 tflite 모델 로드
         const model = await loadTensorflowModel(
-          require("../../assets/models/yolo26n/segmentation.tflite")
+          require("../../assets/models/yolo26n/segmentation.tflite"),
+          []
         );
         modelRef.current = model;
         setIsModelLoaded(true);
@@ -67,10 +68,18 @@ export function useOnDeviceDetection() {
 
     try {
       // TFLite 동적 컴파일 연산 기동 (출력 텐서: [(1, 300, 38), (1, 32, 160, 160)])
-      const output = await modelRef.current.run([rgbBuffer]);
+      const inputBuffer = new ArrayBuffer(rgbBuffer.byteLength);
+      new Float32Array(inputBuffer).set(rgbBuffer);
+      const output = await modelRef.current.run([inputBuffer]);
 
       // 첫 번째 출력 텐서 (300개 박스 검출 정보) 파싱
-      const outputData = output[0] as Float32Array;
+      const outputBuffer = output[0];
+      if (!outputBuffer) {
+        console.warn("[OnDevice] 추론 실패: 출력 텐서가 비어 있습니다.");
+        return [];
+      }
+
+      const outputData = new Float32Array(outputBuffer);
       const numClasses = 4;
       const numBoxes = 300;
       const attrsPerBox = 38; // 4 (bbox) + 4 (classes) + 32 (masks)

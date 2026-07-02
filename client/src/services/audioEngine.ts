@@ -38,9 +38,8 @@ class AudioEngine {
         this.soundInstance = sound;
       }
 
-      // 스테레오 Panning(좌우 치향) 적용 및 볼륨 극대화
-      await this.soundInstance.setVolumeAsync(1.0);
-      await this.soundInstance.setPanAsync(panning);
+      // 스테레오 Panning(좌우 지향) 적용 및 볼륨 극대화
+      await this.soundInstance.setVolumeAsync(1.0, panning);
 
       // 3. 주기별 재생 스케줄링
       if (intervalMs === 0) {

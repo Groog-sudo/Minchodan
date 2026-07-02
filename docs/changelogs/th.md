@@ -169,3 +169,16 @@
   - 데스크탑에서 35만 장 기반 `Segmentation` 100 Epoch 풀 학습이 정상 완료되고 `best.pt` 및 `last.pt` 가중치 파일(약 6.5MB)이 `training/runs/seg_exp1/weights/` 디렉토리에 이상 없이 저장되었음을 최종 검증했습니다.
 - **관련 파일**: `scripts/run_desktop_full_training.py`, `training/train_common.py`, `training/train_detection.py`, `training/train_segmentation.py`, `.env` (git-ignored), `training/configs/aihub_yolo_segmentation.yaml`
 - **검증 결과**: `py_compile` 문법 검사 통과 및 학습 완료 결과물(`best.pt`) 물리 파일 존재 여부 확인 완료
+
+---
+
+### 2026-07-02 | 2단계+7단계 | 모바일 클라이언트 의존성 설치 및 타입 정합 수정
+
+- **커밋**: `fix: 클라이언트 설치 의존성 타입 정합`
+- **변경 내용**:
+  - `client/`에서 누락된 Expo/React Native 의존성을 설치하고 `expo-file-system/legacy`, `expo-av`, `react-native-fast-tflite` 모듈 로딩 상태를 확인했습니다.
+  - `react-native-fast-tflite` v3 API에 맞춰 모델 로딩 시 delegate 배열을 전달하고, 입력/출력 텐서를 `ArrayBuffer` 기반으로 처리하도록 수정했습니다.
+  - 서버와 API 명세의 최신 계약에 맞춰 반사 경보 타입을 `reflex_alert`로 정리하고, `panning`, `beep_interval_ms`, `haptic_pattern` 필드를 클라이언트 타입에 반영했습니다.
+  - `expo-av` v16의 `setVolumeAsync(volume, audioPan)` 시그니처에 맞춰 반사 비프음 좌우 지향 설정을 수정했습니다.
+- **관련 파일**: `client/src/hooks/useOnDeviceDetection.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/services/audioEngine.ts`, `client/src/types/detection.ts`
+- **검증 결과**: `npm ls expo-file-system react-native-fast-tflite expo-av --depth=0`, `npx tsc --noEmit` 통과

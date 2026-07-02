@@ -5,7 +5,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert } from "react-native";
 
 import {
   DEVICE_ID,
