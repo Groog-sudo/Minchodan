@@ -43,41 +43,35 @@ def get_yolo_device() -> str:
 
 def get_detector():
     from server.detection.detector_interface import DetectorInterface
-    from server.detection.mock_detector import MockDetector
     from server.detection.yolo_detector import YoloDetector
 
     weights_path = resolve_path(YOLO26N_OBJECT_DET)
-    if os.path.exists(weights_path):
-        detector: DetectorInterface = YoloDetector(
-            weights_path=weights_path,
-            conf=YOLO_CONF,
-            device=get_yolo_device(),
-        )
-        if detector.load():
-            logger.info(f"[config] YoloDetector 로드 성공: {weights_path}")
-            return detector
-        logger.warning("[config] YoloDetector 로드 실패, MockDetector로 평백")
-    else:
-        logger.warning(f"[config] 가중치 없음: {weights_path}, MockDetector 사용")
-    return MockDetector()
+    if not os.path.exists(weights_path):
+        raise FileNotFoundError(f"Detector 가중치 없음: {weights_path}")
+    detector: DetectorInterface = YoloDetector(
+        weights_path=weights_path,
+        conf=YOLO_CONF,
+        device=get_yolo_device(),
+    )
+    if not detector.load():
+        raise RuntimeError(f"YoloDetector 로드 실패: {weights_path}")
+    logger.info(f"[config] YoloDetector 로드 성공: {weights_path}")
+    return detector
 
 
 def get_segmentor():
     from server.detection.detector_interface import SegmentorInterface
-    from server.detection.mock_detector import MockSegmentor
     from server.detection.yolo_segmentor import YoloSegmentor
 
     weights_path = resolve_path(YOLO26N_SEG)
-    if os.path.exists(weights_path):
-        segmentor: SegmentorInterface = YoloSegmentor(
-            weights_path=weights_path,
-            conf=YOLO_CONF,
-            device=get_yolo_device(),
-        )
-        if segmentor.load():
-            logger.info(f"[config] YoloSegmentor 로드 성공: {weights_path}")
-            return segmentor
-        logger.warning("[config] YoloSegmentor 로드 실패, MockSegmentor로 평백")
-    else:
-        logger.warning(f"[config] 가중치 없음: {weights_path}, MockSegmentor 사용")
-    return MockSegmentor()
+    if not os.path.exists(weights_path):
+        raise FileNotFoundError(f"Segmentor 가중치 없음: {weights_path}")
+    segmentor: SegmentorInterface = YoloSegmentor(
+        weights_path=weights_path,
+        conf=YOLO_CONF,
+        device=get_yolo_device(),
+    )
+    if not segmentor.load():
+        raise RuntimeError(f"YoloSegmentor 로드 실패: {weights_path}")
+    logger.info(f"[config] YoloSegmentor 로드 성공: {weights_path}")
+    return segmentor

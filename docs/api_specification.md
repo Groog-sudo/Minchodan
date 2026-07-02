@@ -1,8 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.2.1 (2026-06-30 1+2단계 구현 완료 반영)
 > **설계 기준**: `docs/minchodan_design_note.md` 1·2·7단계 인터페이스
+> **구현 상태**: 1+2단계 Phase A~D 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답 양측 정합 확인. `alert_reflex`/`guide`는 3·6·7단계 범위로 미구현(설계상 정상).
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
@@ -25,7 +26,7 @@
 
 | 필드        | 설명                                                                                |
 | ----------- | ----------------------------------------------------------------------------------- |
-| `type`      | 메시지 타입 (hello, welcome, detection, ack, alert_reflex, guide, heartbeat, error) |
+| `type`      | 메시지 타입 (hello, welcome, detection, ack, reflex_alert, guide, heartbeat, error) |
 | `event_id`  | 이벤트 추적 식별자 (UUID)                                                           |
 | `device_id` | 단말 식별자                                                                         |
 | `ts`        | 타임스탬프 (epoch ms)                                                               |
@@ -139,28 +140,36 @@
 
 반사 경로는 LLM/RAG/실시간 TTS를 경유하지 않으며, 사전합성 음성 클립을 즉시 재생합니다.
 
-### 4.1 alert_reflex (서버 단말, 고우선)
+### 4.1 reflex_alert (서버 단말, 고우선)
 
 ```json
 {
-  "type": "alert_reflex",
+  "type": "reflex_alert",
   "event_id": "uuid",
   "alert_id": "high_front",
   "direction": "front",
   "risk_level": "high",
   "clip": "reflex_clips/high_front.mp3",
   "haptic": true,
+  "panning": 0.0,
+  "distance": 1.0,
+  "beep_interval_ms": 250,
+  "haptic_pattern": "double",
   "ts": 1719216000000
 }
 ```
 
-| 필드         | 설명                                                                      |
-| ------------ | ------------------------------------------------------------------------- |
-| `alert_id`   | 사전합성 클립 식별자 (예: `high_front`, `high_left`, `surface_crosswalk`) |
-| `direction`  | 방향 (`front`, `left`, `right`, `stop`)                                   |
-| `risk_level` | `high` (반사 경로 전용)                                                   |
-| `clip`       | 단말 번들 사전합성 클립 경로                                              |
-| `haptic`     | 햅틱 동시 출력 여부                                                       |
+| 필드 | 설명 |
+| --- | --- |
+| `alert_id` | 사전합성 클립 식별자 (예: `high_front`, `high_left`, `surface_crosswalk`) |
+| `direction` | 방향 (`front`, `left`, `right`, `stop`) |
+| `risk_level` | `high` (반사 경로 전용) |
+| `clip` | 단말 번들 사전합성 클립 경로 |
+| `haptic` | 햅틱 동시 출력 여부 |
+| `panning` | 스테레오 사운드 좌우 지향 밸런스 값 (-1.0 ~ 1.0) |
+| `distance` | 역산된 장애물 거리 (0.4m ~ 1.5m) |
+| `beep_interval_ms` | 비프음 주기 (ms, 0은 연속 경고음) |
+| `haptic_pattern` | 진동 패턴 (`short` \| `double` \| `continuous` \| `light`) |
 
 선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. 중복 억제는 서버 `setex(suppress:{alert_id}, 60)`로 처리합니다.
 
