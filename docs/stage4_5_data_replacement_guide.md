@@ -58,10 +58,10 @@
    ```python
    # 변경 전
    embeddings = EmbeddingEngineFactory.get_embeddings(provider="mock")
-   
+
    # 변경 후 (Ollama 실서버 임베딩 사용)
    embeddings = EmbeddingEngineFactory.get_embeddings(
-       provider="ollama", 
+       provider="ollama",
        model_name="nomic-embed-text"
    )
    ```
@@ -70,7 +70,7 @@
 1. **환경변수 설정**: `.env` 파일에 ChromaDB 영구 보존 디렉토리를 바인딩합니다.
    ```env
    CHROMA_PATH=data/chroma_db
-   CHROMA_COLLECTION=bidding_kb
+   CHROMA_COLLECTION=minchodan_kb
    ```
 2. **DB 팩토리 로드**: `vector_db_factory.py` 및 `retriever.py`에서 DB 디렉토리를 로드할 때 상기 환경변수 경로를 활용하도록 코드를 작성해 런타임 추론이 가능하게 만듭니다.
 

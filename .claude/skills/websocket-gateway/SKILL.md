@@ -161,7 +161,7 @@ if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class WSMessage(BaseModel):
-    type: str                        # "hello" | "ping" | "pong" | "detection" | "welcome" | "ack" | "alert_reflex" | "guide"
+    type: str                        # "hello" | "ping" | "pong" | "detection" | "welcome" | "ack" | "reflex_alert" | "guide"
     device_id: Optional[str] = None
     token: Optional[str] = None
     session_id: Optional[str] = None
@@ -454,7 +454,7 @@ export function useWebSocket(deviceId: string, token: string) {
         case 'pong': break;
         case 'ping': ws.send(JSON.stringify({ type: 'pong', ts: Date.now() })); break;
         case 'ack': break;
-        case 'alert_reflex': handleAlertReflex(data); break;
+        case 'reflex_alert': handleAlertReflex(data); break;
         case 'guide': handleGuide(data); break;
       }
     };
@@ -500,7 +500,7 @@ export function useWebSocket(deviceId: string, token: string) {
 | Out (auth_ok) | `{type:"auth_ok", device_id}` |
 | In (detection) | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream, thumbnail_jpeg_b64}}` |
 | Out (ack) | `{type:"ack", event_id, received_at}` |
-| Out (alert_reflex) | `{type:"alert_reflex", event_id, alert_id, direction, risk_level, clip, haptic, ts}` |
+| Out (reflex_alert) | `{type:"reflex_alert", event_id, alert_id, direction, risk_level, clip, haptic, ts}` |
 | Out (guide) | `{type:"guide", event_id, risk_level, guidance_text, audio_mp3_b64, ts}` |
 
 ## 테스트 체크리스트
