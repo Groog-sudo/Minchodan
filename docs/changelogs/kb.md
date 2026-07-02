@@ -386,3 +386,24 @@
   - `post_mvp_hybrid_roadmap.md` 수정: §7.2 macOS 개인 절대경로를 프로젝트 루트 기준 상대경로로 교체, §11 검증 기준에서 실패 확정된 CoreML 항목을 ONNX/TFLite 실제 검증 기준으로 교체.
 - **관련 파일**: `.env.example`, `architecture.md`, `README.md`, `docs/environment_variables.md`, `docs/stage4_5_data_replacement_guide.md`, `docs/test_specification.md`, `docs/post_mvp_hybrid_roadmap.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 30개 설계/아키텍처/구현 문서 및 소스코드 교차 검증 수행. 이중 경로 물리 분리 원칙은 검토된 모든 문서에서 위반 없이 일관 준수 확인.
+
+---
+
+### 2026-07-02 | 3단계+Post-MVP | 세그멘테이션 모델 TFLite 변환 및 온디바이스 탐지 훅 연동 완료
+
+- **커밋**: `feat: 세그멘테이션 모델 TFLite 변환 스크립트 추가 및 온디바이스 탐지 훅 연동`
+- **변경 내용**:
+  - `scripts/export_tflite.py` 신규 작성: PyTorch 형식의 세그멘테이션 가중치 파일 `server/models/yolo26n/segbest.pt`를 모바일 엣지 구동을 위한 LiteRT/TFLite 포맷(`segbest.tflite`)으로 변환하는 자동화 스크립트 구축 및 변환 완수.
+  - TFLite 모델 배포: 변환된 모델을 모바일 프로젝트 에셋인 `client/assets/models/yolo26n/segmentation.tflite` 경로에 복사 및 통합 완료.
+  - `client/src/hooks/useOnDeviceDetection.ts` 수정:
+    - 엣지 모델을 `segmentation.tflite`로 교체 탑재.
+    - 클래스 정의를 신규 학습 사양(`sidewalk_normal`, `caution`, `roadway`, `braille_normal` 4종)으로 전면 교체.
+    - 세그멘테이션 출력 텐서 `(1, 300, 38)`의 구조(attrsPerBox=38)에 맞게 바운딩 박스 좌표 및 클래스별 확률 스코어를 파싱하는 로직으로 파서 최적화.
+    - `caution`(주의 영역) 및 `roadway`(차도 침범)에 한해 오프라인 반사 햅틱 및 3D 비프음 재생기가 작동하도록 위험 게이트 조건을 재매핑.
+  - iOS 빌드 환경 검증: Xcode 26.6, CocoaPods 1.16.2 설치 상태와 `Podfile.lock` 정합성을 검사하여, USB 유선 연결 기기를 통한 핫 리로드 디버깅(`npx expo run:ios`) 준비 완료 확인.
+- **관련 파일**: `scripts/export_tflite.py`, `client/assets/models/yolo26n/segmentation.tflite`, `client/src/hooks/useOnDeviceDetection.ts`
+- **검증 결과**:
+  - `export_tflite.py` 실행 완료: YOLO26n-seg 모델 export 성공 (10.7 MB).
+  - `useOnDeviceDetection.ts` 컴파일 및 타입 검증 통과.
+- **비고**: 학습된 세그멘테이션 가중치 모델을 모바일에 직결하여 서버 RTT 지연 0ms 수준의 긴급 반사 피드백 성능을 확보하였습니다.
+
