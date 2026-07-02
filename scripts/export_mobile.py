@@ -3,7 +3,7 @@
 Post-MVP 포스트 A: 모바일 추론용 모델 익스포트 스크립트.
 
 학습된 yolo26n.pt (server/models/yolo26n/)를 CoreML/TFLite 포맷으로 변환한다.
-변환된 파일은 client/src/assets/models/ 에 적재되어 단말 NPU 추론에 사용된다.
+변환된 파일은 client/assets/models/yolo26n/ 에 적재되어 단말 NPU 추론에 사용된다.
 
 Post-MVP 하이브리드 온디바이스 로드맵 (docs/post_mvp_hybrid_roadmap.md) 7.2절 참조.
 
@@ -22,6 +22,7 @@ Post-MVP 하이브리드 온디바이스 로드맵 (docs/post_mvp_hybrid_roadmap
 
 import argparse
 import os
+import shutil
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -45,9 +46,26 @@ MODELS = {
     "segmentation": os.path.join(project_root, "server", "models", "yolo26n", "segmentation.pt"),
 }
 
-OUTPUT_DIR = os.path.join(project_root, "client", "src", "assets", "models")
+OUTPUT_DIR = os.path.join(project_root, "client", "assets", "models", "yolo26n")
 
 SUPPORTED_FORMATS = ("coreml", "tflite", "onnx", "openvino")
+
+
+def replace_path(src: str, dst: str) -> None:
+    """기존 대상 파일 또는 디렉터리를 제거하고 src를 dst로 이동한다."""
+    if os.path.isdir(dst):
+        shutil.rmtree(dst)
+    elif os.path.exists(dst):
+        os.remove(dst)
+    shutil.move(src, dst)
+
+
+def target_path_for(model_key: str, fmt: str, export_path: str, output_dir: str) -> str:
+    """모바일 에셋 디렉터리에 저장할 표준 파일명을 계산한다."""
+    if fmt == "coreml":
+        return os.path.join(output_dir, f"{model_key}.mlpackage")
+    ext = os.path.splitext(export_path)[1] or f".{fmt}"
+    return os.path.join(output_dir, f"{model_key}{ext}")
 
 
 def export_model(model_key: str, fmt: str, output_dir: str) -> str | None:
@@ -82,9 +100,11 @@ def export_model(model_key: str, fmt: str, output_dir: str) -> str | None:
 
     try:
         model = YOLO(weights_path)
-        export_path = model.export(format=fmt)
-        print(f"[INFO] 익스포트 성공: {export_path}")
-        return str(export_path)
+        export_path = str(model.export(format=fmt))
+        target_path = target_path_for(model_key, fmt, export_path, output_dir)
+        replace_path(export_path, target_path)
+        print(f"[INFO] 익스포트 성공: {target_path}")
+        return target_path
     except Exception as e:
         print(f"[ERROR] 익스포트 실패 ({model_key} -> {fmt}): {e}")
         return None

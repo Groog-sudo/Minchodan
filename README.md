@@ -69,7 +69,7 @@
 - React Native (iOS/Android 동시 대응)
 - react-native-vision-camera (후면 카메라, 이중 캡처 타이머)
 - Web Audio API (인지 음성 재생)
-- react-native-tts (예비 TTS)
+- expo-av + expo-haptics (반사 비프음/햅틱)
 - Haptics + announceForAccessibility (접근성)
 
 ### 운영 콘솔

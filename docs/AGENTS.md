@@ -38,7 +38,7 @@
 
 - Framework: React Native (iOS/Android)
 - Camera: react-native-vision-camera
-- Audio: Web Audio API, react-native-tts (예비)
+- Audio: Web Audio API, expo-av, expo-haptics
 - Accessibility: Haptics, announceForAccessibility
 
 ### 운영 콘솔

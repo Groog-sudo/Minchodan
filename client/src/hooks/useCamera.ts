@@ -1,7 +1,6 @@
 /**
  * 이중 캡처 타이머 훅.
- * 후면 카메라에서 반사(10fps)/인지(2fps) 스트림을 분리 캡처.
- * react-native-vision-camera v4 API 사용 (takePhoto + expo-file-system base64).
+ * 후면 카메라에서 반사(10fps)/인지(2fps) 스트림을 분리 캡처합니다.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -10,8 +9,8 @@ import {
   type CameraDevice,
   type PhotoFile,
   useCameraDevice,
-  useCameraPermission,
   useCameraDevices,
+  useCameraPermission,
 } from "react-native-vision-camera";
 import * as FileSystem from "expo-file-system/legacy";
 
@@ -24,9 +23,7 @@ export interface UseCameraReturn {
   hasPermission: boolean;
   permissionStatus: string;
   isCapturing: boolean;
-  startCapture: (
-    onFrame: (base64: string, stream: StreamType) => void,
-  ) => void;
+  startCapture: (onFrame: (base64: string, stream: StreamType) => void) => void;
   stopCapture: () => void;
   requestCameraPermission: () => Promise<boolean>;
 }
@@ -41,58 +38,43 @@ export function useCamera(
   const device = backDevice || allDevices[0];
   const cameraRef = useRef<Camera | null>(null);
   const reflexTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
-  const onFrameRef = useRef<
-    ((base64: string, stream: StreamType) => void) | null
-  >(null);
+  const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onFrameRef = useRef<((base64: string, stream: StreamType) => void) | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
 
   const requestCameraPermission = useCallback(async (): Promise<boolean> => {
-    console.log("[Camera] 권한 요청 시작");
     const granted = await requestPermission();
-    console.log("[Camera] 권한 요청 결과:", granted);
     setPermissionRequested(true);
     return granted;
   }, [requestPermission]);
 
   useEffect(() => {
     if (!hasPermission && !permissionRequested) {
-      console.log("[Camera] 권한 없음, 자동 요청");
       requestCameraPermission();
     }
-    console.log("[Camera] 상태 - hasPermission:", hasPermission, "device:", device?.id ?? "undefined", "allDevices:", allDevices.length);
-  }, [hasPermission, permissionRequested, device, allDevices.length, requestCameraPermission]);
+  }, [hasPermission, permissionRequested, requestCameraPermission]);
 
-  const captureFrame = useCallback(
-    async (stream: StreamType): Promise<string | null> => {
-      if (!cameraRef.current) {
-        console.warn(`[Camera] ${stream} 캡처 실패: cameraRef 없음`);
-        return null;
-      }
-      try {
-        const photo: PhotoFile = await cameraRef.current.takePhoto({
-          flash: "off",
-          enableShutterSound: false,
-        });
+  const captureFrame = useCallback(async (stream: StreamType): Promise<string | null> => {
+    if (!cameraRef.current) {
+      console.warn(`[Camera] ${stream} 캡처 실패: cameraRef 없음`);
+      return null;
+    }
 
-        const path = photo.path.startsWith("file://")
-          ? photo.path
-          : `file://${photo.path}`;
-        const base64 = await FileSystem.readAsStringAsync(path, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        return base64;
-      } catch (err) {
-        console.error(`[Camera] ${stream} 캡처 오류:`, err);
-        return null;
-      }
-    },
-    [],
-  );
+    try {
+      const photo: PhotoFile = await cameraRef.current.takePhoto({
+        enableShutterSound: false,
+        flash: "off",
+      });
+      const path = photo.path.startsWith("file://") ? photo.path : `file://${photo.path}`;
+      return await FileSystem.readAsStringAsync(path, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } catch (err) {
+      console.error(`[Camera] ${stream} 캡처 오류:`, err);
+      return null;
+    }
+  }, []);
 
   const startCapture = useCallback(
     (onFrame: (base64: string, stream: StreamType) => void) => {

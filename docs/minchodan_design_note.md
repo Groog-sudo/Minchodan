@@ -170,7 +170,7 @@
 - **목표·목적:** 최종 가이드를 한글 음성으로 변환·재생. 화면을 못 보는 사용자에게 귀로 전달.
 - **선택 이유:** 서버 합성으로 단말 부담·배터리 절감. 로컬 TTS로 클라우드 요금 제거, 로컬망에서도 끊김 없음.
 - **핵심 절차:** **(인지)** 로컬 TTS(Kokoro/Coqui) `generate(guidance_text, voice="ko")` base64 MP3 WS 스트리밍 단말 Web Audio 재생. **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생. 중복 억제 `setex(suppress:…, 60)`. 햅틱·접근성(`announceForAccessibility`) 연동.
-- **활용 스택·핵심 함수:** Kokoro-82M/Coqui(서버), react-native-tts(예비), Web Audio, Haptics / `local_tts.generate()`, `decodeAudioData()` — _TTSService 추상화, 출력은 MP3/WAV로 규격 통일_
+- **활용 스택·핵심 함수:** Kokoro-82M/Coqui(서버), Web Audio, expo-av, expo-haptics / `local_tts.generate()`, `decodeAudioData()` — _TTSService 추상화, 출력은 MP3/WAV로 규격 통일_
 - **데이터 인터페이스:** In 가이드 문장(String) / `alert_id`(반사) Out 오디오 bytes(ArrayBuffer)
 - **의존성·예외:** 선행=6단계(인지) / 3단계 게이트(반사). 파이프라인 종착. **필수 가드:** TTS 호출 실패/타임아웃 시 기기 내장 TTS로 우회(시스템 중단 금지).
 - **분업:** 모바일 1명이 수신·재생, 전체 지연 측정.

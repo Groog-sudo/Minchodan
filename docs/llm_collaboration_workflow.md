@@ -43,7 +43,7 @@
 | 1 | `server/detection/direction.py` | `estimate_direction`, `estimate_distance` | bbox 중심점과 면적 비율로 방향과 거리를 계산합니다. |
 | 2 | `server/detection/risk_rules.py` | `estimate_risk_level`, `build_message_text` | 객체 종류, 방향, 거리로 위험도와 안내 문장을 결정합니다. |
 | 3 | `scripts/run_yolo_tts_demo.py` | 입력 이미지, YOLO 결과, JSON 출력 흐름 | 이미지 입력부터 TTS 문장까지의 데모 파이프라인을 설명합니다. |
-| 4 | `client/src/services/ttsPlayer.ts` | `speak(hint)`의 REFLEX 선점 처리 | 서버가 만든 `message_hint.text`를 단말 TTS가 읽습니다. |
+| 4 | `client/src/services/audioEngine.ts`, `client/src/services/hapticEngine.ts` | REFLEX 비프음/햅틱 선점 처리 | 서버가 만든 `reflex_alert`를 단말 비프음과 햅틱으로 즉시 출력합니다. |
 | 5 | PowerShell 명령어 | pytest, 데모 실행, 결과 파일 확인 | 검증을 직접 수행했다는 증거를 제시합니다. |
 
 ---
@@ -163,5 +163,5 @@ bbox 면적 비율로 가까움 정도를 near, medium, far로 나눕니다.
 | 1 | `server/detection/direction.py`의 방향/거리 계산 직접 이해 및 필요 시 수정 |
 | 2 | `server/detection/risk_rules.py`의 위험도 규칙 직접 수정 |
 | 3 | `scripts/run_yolo_tts_demo.py` 실행 결과를 담당자가 직접 재현 |
-| 4 | React Native `ttsPlayer.ts`가 `message_hint.text`를 읽는 흐름 확인 |
+| 4 | React Native `audioEngine.ts`와 `hapticEngine.ts`가 `reflex_alert`를 처리하는 흐름 확인 |
 | 5 | 테스트와 changelog 정리 |

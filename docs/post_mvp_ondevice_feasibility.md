@@ -50,8 +50,8 @@ ERROR ❌ CoreML: export failure 9.7s: only 0-dimensional arrays can be converte
 CoreML 익스포트가 실패하더라도, 크로스 플랫폼 호환 런타임(ONNX/TFLite)을 통해 YOLO26n 및 YOLO26n-seg 모델을 온디바이스에서 반드시 직접 구동한다.
 
 ### 4.1 YOLO26n & YOLO26n-seg TFLite/ONNX 컴파일 성공
-- **ONNX 변환**: `onnxslim` 최적화를 거친 [object_detection.onnx](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/models/yolo26n/object_detection.onnx) (9.5 MB) 및 [segmentation.onnx](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/models/yolo26n/segmentation.onnx) (10.7 MB) 생성 성공.
-- **TFLite 변환**: Google LiteRT 규격을 충족하는 [object_detection.tflite](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/models/yolo26n/object_detection.tflite) (9.8 MB) 및 [segmentation.tflite](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/models/yolo26n/segmentation.tflite) (11.1 MB) 생성 성공.
+- **ONNX 변환**: `onnxslim` 최적화를 거친 `object_detection.onnx`, `segmentation.onnx` 생성 검증 성공. 변환 중간 산출물은 Git 추적 대상에서 제외합니다.
+- **TFLite 변환**: Google LiteRT 규격을 충족하는 [object_detection.tflite](../client/assets/models/yolo26n/object_detection.tflite) 및 [segmentation.tflite](../client/assets/models/yolo26n/segmentation.tflite) 생성 성공. 모바일 번들용 산출물만 `client/assets/models/yolo26n/`에서 추적합니다.
 
 ### 4.2 런타임 아키텍처 및 구현 방향
 - **iOS/Android 공통 런타임**: React Native 프로젝트 내에 `react-native-fast-tflite` 또는 `onnxruntime-react-native` 모듈을 연동한다.
