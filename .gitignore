@@ -262,18 +262,12 @@ langgraph_checkpoints/
 # Temporary Smoke Test Outputs
 temp_smoke_*
 
-<<<<<<< HEAD
-
-
-
-
 # Node.js
 node_modules/
 .expo/
-=======
+
 # ==========================================
 # Custom Trained Model Weights (git-ignore)
 # ==========================================
 server/models/yolo26n/segbest.pt
 server/models/yolo26n/segbest.tflite
->>>>>>> dev
