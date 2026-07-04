@@ -91,12 +91,14 @@ class AudioEngine {
     }
   }
 
-  /** 처음부터 다시 재생 (seekTo(0) + play). */
-  private async replay(): Promise<void> {
-    if (!this.player) return;
+  /** 처음부터 다시 재생. 짧은 비프 클립은 play() 만으로 처음부터 재생됨. */
+  private replay(): void {
+    const player = this.player;
+    if (!player) return;
     try {
-      await this.player.seekTo(0);
-      this.player.play();
+      // expo-audio: 이미 재생 중이어도 play() 재호출 시 처음부터 재생.
+      // seekTo(0) 는 일부 플랫폼에서 실패하므로 사용하지 않음.
+      player.play();
     } catch (err) {
       console.warn("[AudioEngine] replay 오류:", err);
     }
