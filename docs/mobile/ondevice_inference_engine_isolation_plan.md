@@ -1,7 +1,7 @@
 # 온디바이스 추론 엔진 플랫폼 격리 하이브리드 설계서
 
 > **작성일**: 2026-07-04
-> **버전**: v0.1.1
+> **버전**: v1.0.0 (CoreML 완전 가속 이식 및 Xcode 컴파일 타겟 등록 완료)
 > **설계 기준**: [`docs/research/post_mvp_hybrid_roadmap.md`](../research/post_mvp_hybrid_roadmap.md) §2·§4 (하이브리드 아키텍처 청사진), [`docs/research/post_mvp_ondevice_feasibility.md`](../research/post_mvp_ondevice_feasibility.md) §3·§4 (CoreML 익스포트 이슈 및 우회 전략)
 > **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](mobile_ios_implementation_plan.md), [`docs/mobile/mobile_android_implementation_plan.md`](mobile_android_implementation_plan.md)
 > **스킬 참조**: [`.agents/skills/yolo-obstacle-detection/SKILL.md`](../.agents/skills/yolo-obstacle-detection/SKILL.md), [`.agents/skills/camera-frame-capture/SKILL.md`](../.agents/skills/camera-frame-capture/SKILL.md)
@@ -57,8 +57,8 @@
 | --- | --- | --- |
 | `.ios.ts` / `.android.ts` 확장자 분기 | **설정 완료** | 플랫폼 확장자를 통한 온디바이스 추론 분기 적용 |
 | iOS CoreML Delegate 활성화 | **설정 완료** | `ios/Podfile`에 `$EnableCoreMLDelegate=true` 적용 완료 |
-| iOS CoreML 네이티브 모듈 | **부재 (미사용)** | TFLite + CoreML Delegate 폴백 전략을 채택하여 Swift/ObjC 브릿지 불필요 |
-| CoreML 모델 에셋 (`.mlpackage`) | **미보유 (미사용)** | `.mlpackage` 또는 `.modelc`로 변환된 번들 빌드가 아니며, TFLite 런타임이 CoreML Delegate로 iOS ANE 백엔드를 호출하는 폴백 전략 적용 |
+| iOS CoreML 네이티브 모듈 | **구현 및 연동 완료** | `CoreMLInferenceBridge`를 통해 Swift 네이티브 및 React Native 브릿지 연동 완료 |
+| CoreML 모델 에셋 (`.mlpackage`) | **보유 및 번들링 완료** | `object_detection.mlpackage` 및 `segmentation.mlpackage` 리소스를 Xcode 프로젝트에 연동 완료 (Sources 빌드 단계를 Resources로 안전하게 이전하여 실기기 ANE 완전 가속 검증) |
 | TFLite 모델 에셋 | **보유** | `client/assets/models/yolo26n/object_detection.tflite` (10.3MB), `segmentation.tflite` (11.2MB) |
 | `react-native-fast-tflite` | **설치됨** (`^3.0.1`) | 양 플랫폼 TFLite 런타임으로 사용 및 iOS에서 CoreML Delegate 호출 가능 |
 
@@ -199,12 +199,14 @@ graph TD
 
 ### 4.4 의사결정 흐름
 
-현재 빌드는 CoreML(`.mlpackage`/`.modelc`) 번들 빌드가 아니며, TFLite 모델을 기반으로 CoreML Delegate를 활성화하는 **폴백 전략을 단일 노선(기본 가속 노선)으로 채택**하였다.
+현재는 `object_detection`과 `segmentation` 두 개의 CoreML `.mlpackage` 번들 컴파일이 모두 정상 완료되어, **완전 CoreML 가속 모드(`det=CoreML ANE / seg=CoreML ANE`)를 기본 연동 전략으로 채택**하였습니다. (만약 모델이 누락되거나 로드 실패할 경우 TFLite+CoreML Delegate 하이브리드 또는 CPU 전용 모드로 폴백하도록 방어 처리되었습니다.)
 
 | 조건 | 선택 | 동작 |
 | --- | --- | --- |
-| TFLite 모델 에셋 존재 + CoreML Delegate 활성화 | **기본 가속 전략 (폴백 전략)** | `TFLiteDetector` 인스턴스 생성 (`["core-ml"]` delegate) |
-| TFLite CoreML Delegate 로드 실패 | **CPU 폴백** | `TFLiteDetector` 인스턴스 생성 (`[]` delegate, CPU 전용) |
+| `object_detection` 및 `segmentation` CoreML 로드 완료 | **기본 가속 전략 (완전 가속)** | `CoreMLInferenceBridge` 호출을 통한 양방향 ANE 직접 추론 |
+| CoreML 세그멘테이션 로드 실패 (미번들 등) | **하이브리드 모드 (일부 폴백)** | 디텍션은 CoreML, 세그멘테이션은 TFLite(CoreML Delegate) 병렬 구동 |
+| CoreML 전체 로드 실패 | **완전 TFLite 폴백** | TFLite 런타임으로 전체 폴백 (`["core-ml"]` delegate) |
+| TFLite CoreML Delegate 로드 실패 | **CPU 폴백** | TFLite 런타임 CPU 단독 연산 (`[]` delegate) |
 
 ---
 
@@ -382,8 +384,8 @@ client/src/
 | --- | --- | --- | --- |
 | `object_detection.tflite` | `client/assets/models/yolo26n/` | Android 주 / iOS 폴백 | 보유 (10.3MB) |
 | `segmentation.tflite` | `client/assets/models/yolo26n/` | Android 주 / iOS 폴백 | 보유 (11.2MB) |
-| `object_detection.mlpackage` | `client/assets/models/yolo26n/` | iOS 주 전략 | **미보유** — CoreML 익스포트 성공 시 배치 |
-| `segmentation.mlpackage` | `client/assets/models/yolo26n/` | iOS 주 전략 | **미보유** — CoreML 익스포트 성공 시 배치 |
+| `object_detection.mlpackage` | `client/assets/models/yolo26n/` | iOS 주 전략 | **보유 (번들링 완료)** — Xcode Resources 등록 |
+| `segmentation.mlpackage` | `client/assets/models/yolo26n/` | iOS 주 전략 | **보유 (번들링 완료)** — Xcode Resources 등록 |
 
 > **Metro 설정**: 현행 `metro.config.js`의 `assetExts.push('tflite')` 설정에 더해 `.mlpackage` 확장자 등록을 검토한다. 단, `.mlpackage`는 디렉토리 형태(번들 리소스)이므로 Xcode 타겟 멤버십으로 관리하는 것이 Metro 에셋보다 안정적이다.
 

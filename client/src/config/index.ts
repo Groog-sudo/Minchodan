@@ -4,9 +4,9 @@
  * 실기기: 서버 LAN IP로 변경 필요
  */
 
-const LAN_IP = "192.168.0.209";
+const LAN_IP = "192.168.0.11";
 
-export const WS_URL = `ws://${LAN_IP}:8000/ws/detect`;
+export const WS_URL = "wss://partake-primer-surround.ngrok-free.dev/ws/detect";
 export const DEVICE_ID = "dev-001";
 export const TOKEN = "token-abc-001";
 export const REFLEX_FPS = 10;

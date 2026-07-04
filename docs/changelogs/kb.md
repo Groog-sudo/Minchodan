@@ -493,3 +493,52 @@
 - **관련 파일**: `docs/mobile/ondevice_inference_engine_isolation_plan.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 문서의 링크 정합성 및 마크다운 규칙(한국어 존댓말, 이모지 금지, 표 사용, 굵게 강조) 준수 확인.
 - **비고**: CoreML 포맷 변환 실패 한계에 대응하여 TFLite CoreML Delegate 호출 폴백 전략을 메인으로 통합 완료하여 iOS/Android의 모델 파일 포맷 단일화를 유지하면서 가속 성능을 보장하는 최선의 구조를 확정하였습니다.
+
+---
+
+### 2026-07-04 | 온디바이스 추론 | CoreML 완전 가속 모드 도입 및 세그멘테이션(seg) CoreML 포맷 지원 리팩토링
+
+- **커밋**: `feat(ios): CoreML 세그멘테이션 모델 지원 및 완전 가속 기동 구조 구현`
+- **변경 내용**:
+  - `client/ios/CoreMLInferenceBridge.swift` 리팩토링:
+    - 4개 세그멘테이션 클래스(`sidewalk_normal`, `caution`, `roadway`, `braille_normal`)를 매핑하기 위한 `segClassNames` 정의 추가.
+    - `loadModels`의 반환 형태를 Boolean에서 Dictionary(`[String: Any]`) 형태로 변경하여 detection과 segmentation 모델의 탑재 여부(`det`, `seg`)를 각각 React Native에 응답하도록 보완.
+    - `runDetection` 및 `parseYoloOutput` 함수가 6개 채널(detection) 뿐만 아니라 38개 채널(segmentation) 형태의 YOLO end2end raw tensor 출력을 모두 디코딩할 수 있도록 수정.
+    - 추론 결과를 신뢰도(`confidence`) 기준 역순으로 정렬하여 반환하게 보완.
+  - `client/src/inference/localDetectorSelect.ios.ts` 수정:
+    - `load` 단계에서 `CoreMLInferenceBridge.loadModels`가 리턴하는 딕셔너리를 파싱하여 `isSegLoaded` 여부를 체크.
+    - CoreML에 segmentation 모델이 적재된 경우 TFLite 폴백 모듈(`segFallback`)을 로드하지 않고 완전 CoreML 가속 모드(`segLoaded=true`)로 구동하도록 구현.
+    - `detect` 호출 시 TFLite 폴백이 없는 환경에서는 `CoreMLInferenceBridge.detectFrame` 하나만으로 detection과 segmentation 추론 결과를 일괄 획득하여 반환하고, 폴백이 활성화되어 있을 때만 기존 하이브리드(det=CoreML, seg=TFLite) 병렬 처리를 타도록 동적 분기 로직 적용.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - TypeScript 빌드 검증: `client/` 에서 `npx tsc --noEmit` 검사 시 에러 없이 통과.
+- **비고**: 기존의 TFLite 기반 세그멘테이션 파싱 로직 및 useOnDeviceDetection과의 정합성을 완벽하게 유지하면서, iOS 단말에서 단일 CoreML 브릿지 호출만으로 detection과 segmentation ANE 하드웨어 완전 가속 추론이 가능하도록 온디바이스 추론 성능 극대화 구조를 완성하였습니다.
+
+---
+
+### 2026-07-04 | 외부 통신 연동 | 야외 도로 테스트용 Ngrok 터널링 구축 및 LTE 셀룰러 접속 검증
+
+- **커밋**: `feat(net): 야외 도로 테스트용 ngrok 터널링 환경 구축 및 LTE 연동`
+- **변경 내용**:
+  - `ngrok` 무료 연동 및 Homebrew 설치 자동화: `brew install ngrok/ngrok/ngrok`으로 로컬 설치를 완료하고 사용자가 발급해 준 토큰을 `ngrok config add-authtoken`를 통해 등록 완료.
+  - `.env` 기밀 데이터 저장: 발급받은 `NGROK_AUTHTOKEN` 값을 프로젝트 보안 명세에 맞춰 `.env`에 보존 및 백업.
+  - 퍼블릭 wss 도메인 연동: 로컬 개발 서버 포트(`8000`)를 외부 인터넷으로 노출하는 터널을 기동하여 `wss://partake-primer-surround.ngrok-free.dev` 주소를 확보.
+  - 클라이언트 환경설정 반영: [client/src/config/index.ts](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/src/config/index.ts) 내의 `WS_URL`을 확보된 wss 주소로 변경 및 메트로 빌드 연동 처리.
+- **관련 파일**: `.env`, `client/src/config/index.ts`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - 외부 LTE 통신망(`125.128.144.75`)을 거쳐 들어온 아이폰 기기의 WebSocket handshake 연결 및 커넥션 오픈 로그 정상 검증 완료.
+- **비고**: 외부망을 통한 실기기 연동이 확인되었으므로, 유선 케이블을 배제한 채 실제 야외 보행 도로 테스트를 진행할 수 있는 원격 추론 환경을 성공적으로 확보하였습니다.
+
+---
+
+### 2026-07-04 | 온디바이스 추론 | 세그멘테이션 CoreML 모델 리소스 배치 보완 및 완전 가속 리빌드 성공
+
+- **커밋**: `fix(ios): segmentation.mlpackage 빌드 타겟 변경 및 CoreML 완전 가속 모드 점화`
+- **변경 내용**:
+  - `client/ios/Minchodan.xcodeproj/project.pbxproj` 파일 보완: Xcode 드롭 단계에서 세그멘테이션 모델(`segmentation.mlpackage`)이 소스코드 빌드 단계(`PBXSourcesBuildPhase`)로 오분류되어 배치되었던 점을 식별하고, 이를 번들 리소스 빌드 단계(`PBXResourcesBuildPhase`)로 이전되도록 pbxproj 포맷에 맞춰 정적 재배치 및 무결성 수정 완료.
+  - 앱 패키지 번들링 연동: 이로써 복사된 세그멘테이션 모델이 앱 리소스로 정식 탑재되어 Xcode 빌드 시 `.mlmodelc` 포맷으로 자동 컴파일되어 Bundle.main에 포함되도록 기저 환경 정합.
+- **관련 파일**: `client/ios/Minchodan.xcodeproj/project.pbxproj`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - "고태현의 iPhone" 실기기 리빌드 성공 및 컴파일 에러 0건 확인.
+  - 리로드 실기기 로그 상에서 세그멘테이션 폴백 TFLite 구동이 완벽하게 생략되고, **`LOG [CoreMLDetector] det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료`**의 정상 기동이 검증 완료됨.
+- **비고**: iOS 플랫폼에서 디텍션(Object Detection)과 세그멘테이션(Segmentation) 두 개의 모델이 모두 Apple Neural Engine(ANE) 상에서 직접 하드웨어 완전 가속 연산을 하도록 보완하여, 목표 레이턴시를 충족하는 극강의 온디바이스 추론 최적화를 최종 완수하였습니다.

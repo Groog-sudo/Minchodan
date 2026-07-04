@@ -1,7 +1,7 @@
 # Minchodan 환경 변수 명세서
 
-> **작성일**: 2026-06-27
-> **버전**: v0.2.0 (2026-07-01 교차 검증 수정: CHROMA_COLLECTION 정합, YOLO_CONF 중복 행 삭제, DETECTOR_TYPE·GOOGLE_API_KEY 추가)
+> **작성일**: 2026-07-04
+> **버전**: v0.3.0 (2026-07-04 야외 도로 테스트용 NGROK_AUTHTOKEN 추가)
 > **기준 파일**: [`.env.example`](../.env.example) (단일 기준)
 > **설계 기준**: [`docs/architecture.md`](architecture.md) 10절·13.4절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.4(.env 로드)
@@ -101,6 +101,12 @@
 | **`MOCK_GPU_MEM_USED_MB`** | float | 선택 | `2048.0` | Mock GPU 메모리 사용량 (MB). CUDA 미감지 환경에서 핫스왑 트리거 테스트용 | [`server/mcp/gpu_monitor.py`](../server/mcp/gpu_monitor.py) |
 
 > **개발 전용**: 이 변수들은 CUDA GPU가 감지되지 않은 개발·CI 환경에서 `GPUMonitorMCP`의 Mock 폴백 동작을 제어합니다. 프로덕션 환경에서는 무시됩니다.
+
+### 2.11 외부 터널링 (Ngrok) (야외 도로 테스트용)
+
+| 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`NGROK_AUTHTOKEN`** | string | 선택 | (미설정) | 야외 도로 테스트용 ngrok 터널 보안 인증 토큰. 무료 계정 터널 외부 노출 시 필요 | [`docs/changelogs/kb.md`](../changelogs/kb.md) |
 
 ---
 

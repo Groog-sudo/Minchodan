@@ -36,6 +36,14 @@ class CoreMLInferenceBridge: NSObject {
     78: "hair drier", 79: "toothbrush"
   ]
 
+  // Segmentation 4 클래스 라벨 (segmentation.pt 기준)
+  private let segClassNames: [Int: String] = [
+    0: "sidewalk_normal",
+    1: "caution",
+    2: "roadway",
+    3: "braille_normal"
+  ]
+
   @objc
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
@@ -60,7 +68,10 @@ class CoreMLInferenceBridge: NSObject {
       }
 
       print("[CoreMLBridge] object_detection 모델 로드 완료 (Neural Engine 활성화)")
-      resolve(true)
+      resolve([
+        "det": true,
+        "seg": self.segModel != nil
+      ] as [String : Any])
     } catch {
       reject("LOAD_ERROR", "CoreML 모델 로드 실패: \(error.localizedDescription)", error)
     }
@@ -83,12 +94,12 @@ class CoreMLInferenceBridge: NSObject {
     // 메인 UI 스레드 블로킹 방지를 위한 백그라운드 실시간 처리
     DispatchQueue.global(qos: .userInteractive).async {
       do {
-        let detResults = try self.runDetection(model: detModel, cgImage: cgImage)
+        let detResults = try self.runDetection(model: detModel, cgImage: cgImage, modelType: "object_detection")
         var segResults: [[String: Any]] = []
 
-        // segmentation 모델이 로드된 경우에만 실행 (현재는 nil로 스킵)
+        // segmentation 모델이 로드된 경우에만 실행
         if let segModel = self.segModel {
-          segResults = try self.runDetection(model: segModel, cgImage: cgImage)
+          segResults = try self.runDetection(model: segModel, cgImage: cgImage, modelType: "segmentation")
         }
 
         DispatchQueue.main.async {
@@ -105,8 +116,8 @@ class CoreMLInferenceBridge: NSObject {
     }
   }
 
-  // end2end YOLO 모델 추론 및 raw tensor [1, 300, 6] 파싱
-  private func runDetection(model: MLModel, cgImage: CGImage) throws -> [[String: Any]] {
+  // end2end YOLO 모델 추론 및 raw tensor [1, 300, attrsPerBox] 파싱
+  private func runDetection(model: MLModel, cgImage: CGImage, modelType: String) throws -> [[String: Any]] {
     // 입력 이미지 640x640 리사이즈 (CoreML ImageType 자동 처리)
     let inputFeature = try prepareInput(cgImage: cgImage, expectedSize: 640)
     let prediction = try model.prediction(from: inputFeature)
@@ -118,7 +129,7 @@ class CoreMLInferenceBridge: NSObject {
       return []
     }
 
-    return parseYoloOutput(multiArray: outputMultiArray)
+    return parseYoloOutput(multiArray: outputMultiArray, modelType: modelType)
   }
 
   // CGImage -> CVPixelBuffer (640x640 RGB) 변환
@@ -163,13 +174,18 @@ class CoreMLInferenceBridge: NSObject {
     return try MLDictionaryFeatureProvider(dictionary: [inputName: featureValue])
   }
 
-  // YOLO end2end raw tensor [1, 300, 6] 파싱
-  // 각 행: (cx, cy, w, h, confidence, class_id) - 0~1 정규화
-  private func parseYoloOutput(multiArray: MLMultiArray) -> [[String: Any]] {
-    // shape 검증: [1, 300, 6]
+  // YOLO end2end raw tensor [1, 300, attrsPerBox] 파싱
+  // 각 행: (cx, cy, w, h, confidence, class_id, ...)
+  private func parseYoloOutput(multiArray: MLMultiArray, modelType: String) -> [[String: Any]] {
     let shape = multiArray.shape.map { $0.intValue }
-    guard shape.count == 3, shape[2] == 6 else {
-      print("[CoreMLBridge] 예상치 못한 출력 shape: \(shape)")
+    guard shape.count == 3 else {
+      print("[CoreMLBridge] 예상치 못한 출력 shape 차원: \(shape)")
+      return []
+    }
+
+    let attrsPerBox = shape[2]
+    guard attrsPerBox == 6 || attrsPerBox == 38 else {
+      print("[CoreMLBridge] 예상치 못한 출력 attrsPerBox: \(attrsPerBox)")
       return []
     }
 
@@ -179,8 +195,11 @@ class CoreMLInferenceBridge: NSObject {
 
     var results: [[String: Any]] = []
 
+    let activeClassNames = (modelType == "segmentation") ? segClassNames : classNames
+    let numClasses = activeClassNames.count
+
     for i in 0..<numBoxes {
-      // [1, i, col] 인덱스 계산 (strides[0]은 보통 300*6)
+      // [1, i, col] 인덱스 계산 (strides[0]은 보통 300*attrsPerBox)
       let baseOffset = i * strides[1]
       let cx = Double(ptr[baseOffset + 0 * strides[2]])
       let cy = Double(ptr[baseOffset + 1 * strides[2]])
@@ -191,6 +210,7 @@ class CoreMLInferenceBridge: NSObject {
 
       // confidence 임계값 필터링 (패딩 박스 제거)
       if confidence < confThreshold { continue }
+      if classId < 0 || classId >= numClasses { continue }
 
       // YOLO26n end2end 산출물은 픽셀 단위(0~640) 좌표 -> 0~1 정규화
       // 이후 cx,cy,w,h -> x,y,w,h (RN 좌표계, origin=좌상단)
@@ -201,10 +221,10 @@ class CoreMLInferenceBridge: NSObject {
       let nh = h / imgSize
       let x = nx - nw / 2.0
       let y = ny - nh / 2.0
-      let className = classNames[classId] ?? "unknown"
+      let className = activeClassNames[classId] ?? "unknown"
 
       results.append([
-        "model": "object_detection",
+        "model": modelType,
         "className": className,
         "confidence": confidence,
         "bbox": [
@@ -214,6 +234,13 @@ class CoreMLInferenceBridge: NSObject {
           "h": h
         ]
       ])
+    }
+
+    // 신뢰도 기준 역순 정렬
+    results.sort { (a, b) -> Bool in
+      let confA = a["confidence"] as? Double ?? 0.0
+      let confB = b["confidence"] as? Double ?? 0.0
+      return confA > confB
     }
 
     return results

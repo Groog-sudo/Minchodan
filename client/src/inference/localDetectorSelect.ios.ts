@@ -29,20 +29,30 @@ class CoreMLDetector implements LocalDetector {
 
     try {
       console.log("[CoreMLDetector] CoreML 모델 ANE 적재 시도...");
-      const success = await CoreMLInferenceBridge.loadModels();
-      if (success) {
+      const result = await CoreMLInferenceBridge.loadModels();
+
+      // 결과가 Dictionary 형태 { det: boolean, seg: boolean } 로 리턴되거나, 구버전에서는 boolean일 수 있음
+      const isDetLoaded = typeof result === "object" ? !!result.det : !!result;
+      const isSegLoaded = typeof result === "object" ? !!result.seg : false;
+
+      if (isDetLoaded) {
         this.isLoaded = true;
         this.detLoaded = true;
         this.detShapeLog = "CoreML ANE Engine";
 
-        // segmentation.mlmodelc가 번들에 없으면 seg 전용 TFLite 로드
-        // (CoreMLInferenceBridge.loadModels 내부에서 seg 누락 시에도 resolve(true) 반환)
-        console.log("[CoreMLDetector] seg 전용 TFLite 폴백 적재 (segmentation.mlmodelc 미번들)");
-        this.segFallback = new TFLiteDetector();
-        const segOk = await this.segFallback.load();
-        // seg 모델만 로드되면 충분 (det는 CoreML 경로 사용)
-        this.segLoaded = segOk && this.segFallback.segLoaded;
-        console.log("[CoreMLDetector] det=CoreML ANE / seg=TFLite 하이브리드 기동 완료");
+        if (isSegLoaded) {
+          this.segLoaded = true;
+          this.segFallback = null;
+          console.log("[CoreMLDetector] det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료");
+        } else {
+          // segmentation.mlmodelc가 번들에 없으면 seg 전용 TFLite 로드
+          console.log("[CoreMLDetector] seg 전용 TFLite 폴백 적재 (segmentation.mlmodelc 미번들)");
+          this.segFallback = new TFLiteDetector();
+          const segOk = await this.segFallback.load();
+          // seg 모델만 로드되면 충분 (det는 CoreML 경로 사용)
+          this.segLoaded = segOk && this.segFallback.segLoaded;
+          console.log("[CoreMLDetector] det=CoreML ANE / seg=TFLite 하이브리드 기동 완료");
+        }
         return true;
       }
     } catch (e) {
@@ -72,27 +82,35 @@ class CoreMLDetector implements LocalDetector {
       return await this.fullFallback.detect(frame, base64);
     }
 
-    // 하이브리드 모드: det=CoreML / seg=TFLite 병렬 수행
+    // 하이브리드 모드 또는 풀 CoreML 모드
     try {
-      // seg는 TFLite (frame buffer 사용)
+      // seg가 TFLiteFallback 모드일 경우에만 TFLite 추론 실행
       const segPromise = this.segFallback
         ? this.segFallback.detect(frame, base64)
         : Promise.resolve({ seg: [], det: [] } as DualDetectionResult);
 
-      // det는 CoreML (base64 사용)
-      let detResults: { seg: any[]; det: any[] } = { seg: [], det: [] };
+      // det 및 CoreML 세그멘테이션 (base64 사용)
+      let coremlResults: { seg: any[]; det: any[] } = { seg: [], det: [] };
       if (base64) {
-        const coremlResult = await CoreMLInferenceBridge.detectFrame(base64);
-        detResults = coremlResult as DualDetectionResult;
+        const bridgeResult = await CoreMLInferenceBridge.detectFrame(base64);
+        coremlResults = bridgeResult as DualDetectionResult;
       } else {
         console.warn("[CoreMLDetector] CoreML은 base64 이미지 입력을 필요로 합니다.");
       }
 
-      const segResults = await segPromise;
-      return {
-        det: detResults.det,
-        seg: segResults.seg,
-      };
+      if (this.segFallback) {
+        const segResults = await segPromise;
+        return {
+          det: coremlResults.det,
+          seg: segResults.seg,
+        };
+      } else {
+        // 완전 CoreML 가속 모드
+        return {
+          det: coremlResults.det,
+          seg: coremlResults.seg || [],
+        };
+      }
     } catch (e) {
       console.error("[CoreMLDetector] 추론 중 에러 발생:", e);
       return { seg: [], det: [] };
