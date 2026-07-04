@@ -479,3 +479,65 @@ client/src/
 | 테스트 명세서 | [`docs/ops/test_specification.md`](../ops/test_specification.md) | TC-ID 체계, 검증 매트릭스 |
 | YOLO 탐지 스킬 | [`.agents/skills/yolo-obstacle-detection/SKILL.md`](../.agents/skills/yolo-obstacle-detection/SKILL.md) | 듀얼헤드 파이프라인, 이중 게이트 |
 | 카메라 캡처 스킬 | [`.agents/skills/camera-frame-capture/SKILL.md`](../.agents/skills/camera-frame-capture/SKILL.md) | 이중 캡처, base64 전송 |
+
+---
+
+## 12. 개발 환경 구축 및 ANE 가속/터널링 연동 가이드
+
+팀원들이 동일한 야외 도로 테스트망 및 CoreML 직접 가속 환경을 구축하기 위한 의존성 설치 및 셋업 절차입니다.
+
+### 12.1 야외 도로 테스트용 ngrok 터널링 구축
+
+1. **ngrok 패키지 설치**
+   * macOS 환경에서 Homebrew를 통해 외부망 터널링 툴을 설치합니다.
+     ```bash
+     brew install ngrok/ngrok/ngrok
+     ```
+2. **보안 인증 토큰 등록**
+   * 사용자 계정의 ngrok Authtoken을 로컬 설정 및 `.env` 파일에 보관합니다.
+     ```bash
+     # 시스템 설정 등록
+     ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
+     ```
+     * 프로젝트 루트 `.env` 파일에 `NGROK_AUTHTOKEN=<TOKEN>` 값을 기록하여 팀 내 기밀 명세를 동기화합니다.
+3. **터널 기동 및 클라이언트 바인딩**
+   * GPU 로컬 uvicorn 서버(8000포트)를 켠 상태에서, 외부 노출 터널을 기동합니다.
+     ```bash
+     ngrok http 8000
+     ```
+   * 터널 기동 시 출력되는 퍼블릭 도메인(예: `partake-primer-surround.ngrok-free.dev`)을 복사한 뒤, 클라이언트 소스코드 [client/src/config/index.ts](../client/src/config/index.ts) 내의 `WS_URL` 값을 수정합니다.
+     ```typescript
+     export const WS_URL = "wss://partake-primer-surround.ngrok-free.dev/ws/detect";
+     ```
+   * 실기기를 케이블에서 단절한 후 LTE 셀룰러 망 상태에서 앱을 실행하면 퍼블릭 wss 주소로 원격 GPU 서버와 실시간 통신망이 수립됩니다.
+
+### 12.2 iOS CoreML 직접 가속(.mlpackage) 셋업 절차
+
+1. **PyTorch 가중치를 CoreML 포맷으로 변환**
+   * `server/models/yolo26n/` 디렉토리에 원본 PyTorch 가중치(`object_detection.pt`, `segmentation.pt`)를 배치합니다.
+   * 변환 자동화 파이썬 스크립트를 사용하여 CoreML 포맷(`*.mlpackage`)을 익스포트합니다.
+     ```bash
+     # 1) 객체 탐지 모델 변환 (NMS 내장)
+     python scripts/convert_yolo_to_coreml.py --model object_detection
+
+     # 2) 세그멘테이션 모델 변환 (NMS 미적용)
+     python scripts/convert_yolo_to_coreml.py --model segmentation --no-nms
+     ```
+   * 변환된 산출물은 `client/assets/models/yolo26n/ios/` 하위에 저장됩니다.
+2. **Xcode 프로젝트 리소스 번들링 등록**
+   * `open client/ios/Minchodan.xcworkspace`로 Xcode를 엽니다.
+   * Finder에서 생성된 `object_detection.mlpackage` 및 `segmentation.mlpackage` 폴더를 잡고 Xcode 좌측 파일 탐색기의 `Minchodan` 그룹 하위로 드래그 앤 드롭합니다.
+   * **다이얼로그 설정 중요**:
+     * `Copy items if needed` 체크박스는 **해제**하여 물리 경로 중복을 방지합니다.
+     * `Added folders`는 `Create groups`를 권장합니다.
+     * `Add to targets` 목록에서 **`Minchodan`** 체크박스를 반드시 체크합니다.
+3. **Xcode 빌드 타겟 무결성 더블체크**
+   * Xcode 프로젝트 타겟 설정의 **`Build Phases`** 탭을 엽니다.
+   * **`Copy Bundle Resources`** 목록에 두 `.mlpackage` 파일이 포함되어 있는지 확인합니다.
+   * **`Compile Sources`** 목록에 두 `.mlpackage` 파일이 실수로 들어가지 않았는지 반드시 확인하고, 만약 들어있다면 목록에서 제거해 줍니다. (Sources에 들어가면 컴파일 에러가 발생하거나 런타임 번들 미적재 현상이 일어납니다.)
+4. **빌드 배포 및 검증**
+   * 실기기를 유선 연결한 뒤 다음 Expo 명령어로 클라이언트를 리빌드합니다.
+     ```bash
+     npx expo run:ios --device "<YOUR_IPHONE_UDID>"
+     ```
+   * 앱 실행 후 단말 콘솔에 `LOG [CoreMLDetector] det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료`가 보이면 최적화 셋업이 완전히 성공한 것입니다.
