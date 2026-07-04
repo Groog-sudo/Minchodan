@@ -429,3 +429,54 @@
 - **검증 결과**:
   - `client/` 경로 내 `npx tsc --noEmit` 실행 결과 **타입 컴파일 에러 0건**으로 빌드 정합 완료.
 - **비고**: 시뮬레이터 환경 및 크로스 플랫폼 네이티브 연동 시 빌드 실패를 유발할 수 있는 타입 오류들을 완벽하게 진압하여 유선 배포 준비를 완료하였습니다.
+
+---
+
+### 2026-07-04 | 2·3단계+Post-MVP | 온디바이스 추론 파이프라인 안정화, expo-audio 마이그레이션, 단일 캡처 타이머 구조 개선 및 COCO 탐지 결함 수정
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+
+  **A. 단일 캡처 타이머 + 스트림 분할 구조로 개선 (`useCamera.ts`)**:
+  - 초기 "독립 두 타이머" 설계(`setInterval(1000/reflexFps)` + `setInterval(1000/cognitiveFps)`)를 **단일 타이머 단일 캡처 + 프레임 분할** 구조로 개선. 실기기에서 두 `takePhoto` 호출이 직렬 대기하며 하드웨어 경합을 유발해 반사 경로 지연이 목표(캡처수신 < 50ms)를 초과하는 문제 해결.
+  - 반사 fps 기준 단일 `setInterval`로 `takePhoto` 1회 호출 후 reflex 전달, 매 `floor(reflexFps/cognitiveFps)` 번째 프레임을 동일 프레임을 `stream:'cognitive'`로 추가 전달 (재캡처 비용 0).
+  - `isCapturingRealFrame` ref 가드레일로 중복 캡처 방지(drop). `decodeBase64JpegToChw()`로 base64 → CHW float32 텐서 변환을 훅 내에서 수행하여 온디바이스 추론 직결.
+  - 이중 경로 분리 원칙(`stream` 필드로 reflex/cognitive 분기)은 유지되어 서버 `stream_splitter` 계약과 무관하게 동작.
+
+  **B. expo-av → expo-audio 마이그레이션 (`audioEngine.ts`, `app.json`, `package.json`)**:
+  - `expo-av`(`Audio.Sound.createAsync`)를 Expo SDK 56+ 차세대 API인 **`expo-audio`**(`createAudioPlayer`)로 전면 교체. 동기 프로퍼티 할당(`volume=`, `loop=`, `play()`) 기반으로 전환.
+  - iOS 오디오 세션 초기화(`setAudioModeAsync({playsInSilentMode:true})`) 추가로 무음 모드에서도 비프음 재생 보장 (시각장애인 보조 필수).
+  - `expo-audio`는 스테레오 패닝(`pan`) 미지원 → 패닝 값은 햅틱/거리 계산에만 활용하고 오디오는 모노 풀볼륨 재생으로 명시.
+  - `app.json` 플러그인에 `expo-audio`/`expo-splash-screen` 추가, `package.json` 의존성 버전 동기화(expo ~56.0.13, expo-audio ~56.0.12, expo-splash-screen ~56.0.11).
+  - iOS `bundleIdentifier`를 `com.minchodan.app` → `com.minchodan.app.kwanbum`으로 변경(개인 개발 빌드 식별용), `minimumVersion` 제거, Android `usesCleartextTraffic` 제거.
+
+  **C. 온디바이스 추론 훅 고도화 (`useOnDeviceDetection.ts`, `CameraView.tsx`)**:
+  - 플랫폼별 하드웨어 가속 delegate(iOS CoreML / Android NNAPI) 적용 및 `loadModelWithFallback()`로 delegate 실패 시 CPU 자동 폴백 구조 추가.
+  - NMS 내장 포맷 디코더 개선: 출력 텐서가 여러 개일 수 있는 경우(segmentation `[1,300,38]` + mask `[1,32,160,160]`)를 `attrsPerBox`로 나누어떨어지는 NMS 텐서 자동 선택. 좌표 min/max 보정, 음수/영역 박스 필터, `maxScore` 로깅 추가.
+  - `detShapeLog` 상태로 object_detection 출력 shape을 디버그 오버레이에 표시. BBox 오버레이, 위험 클래스 색상 구분(보행 충돌 위험 빨강/노면 위험 주황/기타 초록) 추가.
+
+  **D. COCO 80종 객체 탐지 불가 원인 진단 및 결함 수정 (Python 교차 검증)**:
+  - **원인 진단**: `object_detection.tflite` 입출력 텐서 shape(`[1,3,640,640]`→`[1,300,6]`)은 코드 가정과 일치하고 모델/변환은 정상(bus.jpg `/255` 추론 시 bus 0.924 / person 0.91 = PT와 일치). 탐지 불가의 원인은 (1) 프레임 정규화가 `/5`로 잘못됨(bus.jpg에서 person 1개 0.49만 탐지), (2) 기존 샘플 5종에 COCO 클래스 객체가 아예 없음(PT로 conf=0.01에서도 0개)으로 분리 확정.
+  - **정규화 결함 수정**: `realFrameProvider.ts`/`mockFrameProvider.ts`의 `/5` → `/255`(Ultralytics YOLO 표준)로 수정. export 스크립트(`scripts/export_tflite.py`)는 `int8=False` float32 표준 변환이며 비표준 스케일 인자가 없어 `/5`는 근거 없는 결함값임을 확인.
+  - **샘플 교체**: `client/assets/samples/frame_01~05.jpg` 5종을 COCO 보행 회피 위험 클래스(person, bicycle, bus)가 포함된 실사 이미지 5종(Ultralytics 공개 데모 bus/zidane + Unsplash 보행 시점)로 전면 교체. 기존 명명 규칙(clear/center far·near/left·right near) 유지.
+  - `useOnDeviceDetection.ts`의 `CONF_THRESHOLD` 주석 오기("0~255 raw 입력 기반")를 "NMS 출력은 이미 0~1 정규화 confidence"로 정정.
+
+  **E. Mock 모드 실기기 전환**:
+  - `client/src/config/mock.ts`: `MOCK_CAMERA`/`MOCK_HAPTIC`를 `true` → `false`로 전환하여 실기기 카메라/햅틱 구동 활성화.
+
+  **F. 모델 파일 갱신**:
+  - `server/models/yolo26n/object_detection.{onnx,tflite}`, `segmentation.tflite` 재갱신(재 export).
+
+  **G. 프로젝트 문서 정합 (구현체 기준 동기화)**:
+  - `.agents/skills/camera-frame-capture/SKILL.md`: 단계 2-1 useCamera 코드 예시를 단일 타이머 + 스트림 분할 구현체에 맞게 전면 재작성, 구현 개선 노트(`2026-07-04`) 및 디렉토리 주석·데이터 흐름 표 정정.
+  - `docs/mobile/mobile_{app,ios,android}_implementation_plan.md`: Phase D useCamera 섹션(역할/타이머/가드레일/캡처) 및 검증 매트릭스(반사 캡처/인지 분할), 산출물 표를 단일 캡처 타이머 + 스트림 분할 기준으로 업데이트. 이중 경로 분리 원칙 유지 명시.
+  - `.agents/skills/tts-voice-streamer/SKILL.md`: 단계 7-6 반사 클립 플레이어 예시를 `expo-av` → `expo-audio` API로 정합.
+  - `README.md`, `AGENTS.md`: 클라이언트 기술 스택 표기에 `expo-audio`(단말 재생 계층), `react-native-fast-tflite`(온디바이스 추론) 보완 및 "이중 캡처 타이머" → "단일 캡처 타이머 + 스트림 분할"로 정정.
+- **관련 파일**:
+  - 코드: `client/src/hooks/{useCamera,useOnDeviceDetection}.ts`, `client/src/services/{audioEngine,frameProvider,mockFrameProvider,realFrameProvider}.ts`, `client/src/components/CameraView.tsx`, `client/src/config/mock.ts`, `client/{app.json,package.json,package-lock.json}`, `client/metro.config.js`, `server/models/yolo26n/*`, `client/assets/samples/frame_01~05.jpg`
+  - 문서: `.agents/skills/{camera-frame-capture,tts-voice-streamer}/SKILL.md`, `docs/mobile/mobile_{app,ios,android}_implementation_plan.md`, `README.md`, `AGENTS.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - Python 회귀 검증: 교체된 5개 샘플을 `/255` 정규화 TFLite 추론 시 **5/5 ALL PASS** (frame_01 person 0.93, frame_02 bus 0.92+person 0.91, frame_03 person 0.88, frame_04 person 0.85+bicycle 0.66, frame_05 person 0.75 외 12개).
+  - TypeScript 타입 체크: `npx tsc --noEmit` 컴파일 에러 0건 통과.
+  - 문서 규칙(이모지 금지, 한국어 존댓말, 표 우선, 핵심 굵게, 인용 블록 메타데이터) 준수 확인.
+- **비고**: 정규화 결함(`/5`)과 샘플 부재가 결합하여 COCO 탐지가 전혀 되지 않았던 현상을 두 축으로 분리 진단 후 수정하여, 실기기 카메라(realFrameProvider)와 시뮬레이터(mockFrameProvider) 양쪽에서 COCO 80종 탐지 가능 상태로 복구. 단일 캡처 타이머 구조 개선은 이중 경로 물리 분리 원칙(비협상)을 위반하지 않으면서 하드웨어 경합을 제거해 반사 경로 지연 목표를 달성. 미해결: `yolo11n.pt`(루트) 미사용 파일로 확인되어 추후 정리 대상.

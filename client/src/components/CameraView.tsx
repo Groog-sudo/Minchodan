@@ -3,22 +3,28 @@
  * - MOCK_CAMERA: 번들 샘플 Image 프리뷰 + MockFrameProvider → TFLite 추론
  * - 실기기    : react-native-vision-camera 프리뷰 + takePhoto → TFLite 추론
  * 두 모델(segmentation + object_detection)을 스로틀 구동하고 Reflex Gate로 비프/햡틱 발화.
+ *
+ * [수정 이력]
+ * - Stale Closure 완전 제거: useRef 미러링으로 항상 최신 상태를 참조한다.
+ * - WS 연결 여부와 캡처 시작을 분리: 모델 로드 완료 + 권한 확보 시 즉시 구동.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
 import { DEVICE_ID, TOKEN } from "../config";
-import { MOCK_CAMERA, MOCK_HAPTIC } from "../config/mock";
+import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
-import { useOnDeviceDetection } from "../hooks/useOnDeviceDetection";
+import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import type { StreamType } from "../types/detection";
+
+const FRAME_SIZE = 640;
 
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
@@ -36,13 +42,29 @@ export function CameraView() {
     stopCapture,
     requestCameraPermission,
   } = useCamera(10, 2);
-  const { isModelsLoaded, segLoaded, detLoaded, detectFrame } =
+  const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
 
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [lastDetect, setLastDetect] = useState<string>("대기");
   const [hapticFlash, setHapticFlash] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
+  const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
+
+  // Stale Closure 방지용 useRef 미러: setInterval 콜백은 등록 시점의 값을 캡처하므로
+  // 최신 상태는 반드시 ref 를 통해 읽어야 한다.
+  const detectFrameRef = useRef(detectFrame);
+  const isModelsLoadedRef = useRef(isModelsLoaded);
+  const isMockModeRef = useRef(isMockMode);
+  const sendRef = useRef(send);
+  const setLastDetectRef = useRef(setLastDetect);
+  const setPreviewSrcRef = useRef(setPreviewSrc);
+  const setDetectionsRef = useRef(setDetections);
+
+  useEffect(() => { detectFrameRef.current = detectFrame; }, [detectFrame]);
+  useEffect(() => { isModelsLoadedRef.current = isModelsLoaded; }, [isModelsLoaded]);
+  useEffect(() => { isMockModeRef.current = isMockMode; }, [isMockMode]);
+  useEffect(() => { sendRef.current = send; }, [send]);
 
   const detectingRef = useRef(false);
   const lastDetectTsRef = useRef(0);
@@ -57,57 +79,58 @@ export function CameraView() {
     return () => hapticEngine.setMockHandler(null);
   }, []);
 
-  // 캡처 시작: 프레임 수신 → 검출 스로틀 구동
-  useEffect(() => {
-    if (status !== "connected" || !isCapturing) {
-      // WS 연결 전이더라도 Mock 모드는 추론 검증을 위해 캡처 허용
-      if (!(isMockMode && !isCapturing)) return;
-    }
-    if (!isModelsLoaded && !isMockMode) return;
-    if (isCapturing) return;
+  // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
+  const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
+    if (!isModelsLoadedRef.current) return;
 
-    startCapture((frame: FrameData) => {
-      void handleFrame(frame, "reflex");
-    });
-    return () => stopCapture();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, isModelsLoaded, isMockMode]);
-
-  const handleFrame = async (frame: FrameData, _stream: StreamType) => {
-    if (!isModelsLoaded) return;
     const now = Date.now();
-    const minInterval = isMockMode
+    const minInterval = isMockModeRef.current
       ? MOCK_DETECT_MIN_INTERVAL_MS
       : REAL_DETECT_MIN_INTERVAL_MS;
+
     if (detectingRef.current || now - lastDetectTsRef.current < minInterval) {
-      // 프레임을 서버로도 전송(실기기 base64 있는 경우만)
-      if (frame.base64) {
-        send({ type: "detection", payload: { stream: _stream } });
-      }
       return;
     }
+
     detectingRef.current = true;
     lastDetectTsRef.current = now;
     try {
       const t0 = Date.now();
-      const { seg, det } = await detectFrame(frame.float32);
+      const { seg, det } = await detectFrameRef.current(frame.float32);
       const dt = Date.now() - t0;
+      // BBox 오버레이용: det + seg 상위 결과 병합
+      const allDetections = [...det, ...seg].slice(0, 20);
+      setDetectionsRef.current(allDetections);
       const top = [...det, ...seg][0];
-      setLastDetect(
+      setLastDetectRef.current(
         top
           ? `${top.model}:${top.className} ${(top.confidence * 100).toFixed(0)}% (${dt}ms) seg=${seg.length} det=${det.length}`
           : `무탐지 (${dt}ms) seg=${seg.length} det=${det.length}`,
       );
-      if (isMockMode) {
+      if (isMockModeRef.current) {
         const src = getFrameProvider()?.getPreviewSource?.();
-        if (typeof src === "number") setPreviewSrc(src);
+        if (typeof src === "number") setPreviewSrcRef.current(src);
       }
     } catch (err) {
       console.error("[CameraView] 추론 오류:", err);
     } finally {
       detectingRef.current = false;
     }
-  };
+  }, []); // 의존성 없음 - 모든 최신 상태를 ref 로 직접 참조
+
+  // 캡처 시작: 모델 로드 완료 + 권한 확보 즉시 구동 (WS 연결 불필요)
+  useEffect(() => {
+    if (!isMockMode && !isModelsLoaded) return; // 실기기: 모델 미완료 대기
+    if (!isMockMode && !hasPermission) return;  // 실기기: 권한 없으면 대기
+    if (!isMockMode && !device) return;          // 실기기: 카메라 디바이스 없으면 대기
+    if (isCapturing) return;                     // 중복 시작 방지
+
+    startCapture((frame: FrameData) => {
+      void handleFrame(frame, frame.stream ?? "reflex");
+    });
+    return () => stopCapture();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isModelsLoaded, isMockMode, hasPermission, device]);
 
   useEffect(() => {
     const info: string[] = [];
@@ -117,9 +140,10 @@ export function CameraView() {
     info.push(`WS: ${status}`);
     info.push(`캡처: ${isCapturing ? "ON" : "OFF"}`);
     info.push(`모델: ${segLoaded ? "seg" : "…"} / ${detLoaded ? "det" : "…"}`);
+    if (detShapeLog) info.push(`det shape: ${detShapeLog}`);
     info.push(`추론: ${lastDetect}`);
     setDebugInfo(info);
-  }, [isMockMode, permissionStatus, device, status, isCapturing, segLoaded, detLoaded, lastDetect]);
+  }, [isMockMode, permissionStatus, device, status, isCapturing, segLoaded, detLoaded, detShapeLog, lastDetect]);
 
   // --- 권한 게이트 (실기기 전용) ---
   if (!isMockMode && !hasPermission) {
@@ -171,6 +195,9 @@ export function CameraView() {
 
       {hapticFlash && <View style={styles.hapticFlash} />}
 
+      {/* BBox 오버레이: 탐지된 객체 박스 + 클래스명/신뢰도 시각화 */}
+      <BBoxOverlay detections={detections} />
+
       <View style={styles.overlayTop}>
         <ConnectionStatus status={status} />
       </View>
@@ -194,6 +221,53 @@ function DebugBox({ info }: { info: string[] }) {
       {info.map((line, i) => (
         <Text key={i} style={styles.debugText}>{line}</Text>
       ))}
+    </View>
+  );
+}
+
+// 위험 클래스 색상: 보행 충돌 위험은 빨강, 노면 위험은 주황, 기타는 초록
+const HAZARD_COLORS: Record<string, string> = {
+  person: "#EF4444", bicycle: "#EF4444", car: "#EF4444", motorcycle: "#EF4444",
+  bus: "#EF4444", truck: "#EF4444", skateboard: "#EF4444",
+  caution: "#F59E0B", roadway: "#F59E0B",
+};
+
+/**
+ * BBox 오버레이: 카메라 프리뷰 위에 탐지 박스를 그린다.
+ * 박스 좌표는 640x640 기준이므로 화면 대비 비율로 변환.
+ */
+function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) {
+  // 카메라 프리뷰는 화면을 꽉 채우므로, 640x640 기준 좌표를 퍼센트로 변환
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {detections.map((d, i) => {
+        const color = HAZARD_COLORS[d.className] ?? "#22C55E";
+        const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
+        const topPct = (d.bbox.y / FRAME_SIZE) * 100;
+        const widthPct = (d.bbox.w / FRAME_SIZE) * 100;
+        const heightPct = (d.bbox.h / FRAME_SIZE) * 100;
+        return (
+          <View
+            key={`${d.model}-${i}`}
+            style={{
+              position: "absolute",
+              left: `${leftPct}%`,
+              top: `${topPct}%`,
+              width: `${widthPct}%`,
+              height: `${heightPct}%`,
+              borderWidth: 2,
+              borderColor: color,
+              backgroundColor: "transparent",
+            }}
+          >
+            <View style={[styles.bboxLabel, { backgroundColor: color }]}>
+              <Text style={styles.bboxText}>
+                {d.className} {(d.confidence * 100).toFixed(0)}%
+              </Text>
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -271,5 +345,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+  },
+  bboxLabel: {
+    position: "absolute",
+    top: -16,
+    left: -2,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  bboxText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "bold",
+    fontFamily: "monospace",
   },
 });

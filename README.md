@@ -67,8 +67,9 @@
 ### 클라이언트 (단말)
 
 - React Native (iOS/Android 동시 대응)
-- react-native-vision-camera (후면 카메라, 이중 캡처 타이머)
-- Web Audio API (인지 음성 재생)
+- react-native-vision-camera (후면 카메라, 단일 캡처 타이머 + 스트림 분할)
+- react-native-fast-tflite (온디바이스 YOLO 추론)
+- expo-audio (단말 오디오 재생 계층), Web Audio API (개념 규격)
 - react-native-tts (예비 TTS)
 - Haptics + announceForAccessibility (접근성)
 

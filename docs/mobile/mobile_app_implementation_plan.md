@@ -265,7 +265,7 @@ client/
 │   │   └── detection.ts          # WSMessage, DetectionEvent, AckMessage 타입
 │   ├── hooks/
 │   │   ├── useWebSocket.ts       # 1단계 WS 연결/하트비트/재연결
-│   │   └── useCamera.ts          # 2단계 이중 캡처 타이머
+│   │   └── useCamera.ts          # 2단계 단일 캡처 타이머 + 스트림 분할
 │   ├── services/
 │   │   └── frameCapture.ts       # takePhoto → base64 → send
 │   ├── components/
@@ -359,18 +359,20 @@ sequenceDiagram
 
 ### 8.1 신규 파일 (4개)
 
-#### `src/hooks/useCamera.ts` — 이중 캡처 타이머
+#### `src/hooks/useCamera.ts` — 단일 캡처 타이머 + 스트림 분할
+
+> **구현 개선 (2026-07-04)**: 초기 "독립 두 타이머" 설계(`setInterval(1000/reflexFps)` + `setInterval(1000/cognitiveFps)`)는 실기기에서 두 `takePhoto` 호출이 직렬 대기하며 하드웨어 경합을 유발해 반사 경로 지연이 목표(< 50ms)를 초과했다. 이에 **단일 타이머 단일 캡처 + 프레임 분할** 구조로 개선되었다. 이중 경로 분리 원칙(`stream` 필드로 reflex/cognitive 분기)은 그대로 유지된다. 상세는 `camera-frame-capture` 스킬 단계 2-1 참조.
 
 | 항목 | 내용 |
 | --- | --- |
-| 역할 | 후면 카메라 이중 타이머 캡처 |
+| 역할 | 후면 카메라 단일 타이머 캡처 + 스트림 분할 |
 | 입력 | `reflexFps=10`, `cognitiveFps=2` |
 | 반환 | `{ cameraRef, device, hasPermission, isCapturing, startCapture, stopCapture, captureFrame }` |
 | 권한 | `useCameraPermission()`, 거부 시 안내 |
 | 디바이스 | `useCameraDevice('back')` |
-| 캡처 | `cameraRef.current.takePhoto({qualityPrioritization:'speed', flash:'off', enableShutterSound:false})` → `photo.toBase64()` |
-| 타이머 | `setInterval(1000/reflexFps)`, `setInterval(1000/cognitiveFps)` 별도 관리 |
-| 가드레일 | `cameraRef.current` null 체크, `takePhoto` 예외 시 `null` 반환 (에러 없이 스킵) |
+| 캡처 | `cameraRef.current.takePhoto({qualityPrioritization:'speed', flash:'off', enableShutterSound:false})` → `photo.toBase64()` → `decodeBase64JpegToChw()` (온디바이스 추론용 CHW 텐서) |
+| 타이머 | `setInterval(1000/reflexFps)` **단일 타이머**. 매 `floor(reflexFps/cognitiveFps)` 번째 프레임을 동일 프레임을 `stream:'cognitive'`로 추가 전달 (재캡처 비용 0) |
+| 가드레일 | `cameraRef.current` null 체크, `isCapturingRealFrame` ref 중복 캡처 방지, `takePhoto` 예외 시 `null` 반환 (에러 없이 스킵) |
 | 정리 | 언마운트 시 `clearInterval` 즉시 해제 (자원 누수 방지) |
 
 #### `src/services/frameCapture.ts` — 프레임 전송 서비스
@@ -443,8 +445,8 @@ sequenceDiagram
 | WebSocketDisconnect | 소켓 close + 리소스 해제 | 예외 없이 정리 | 1 |
 | 카메라 권한 요청 | 승인 다이얼로그 | iOS/Android 모두 | 2 |
 | 후면 카메라 활성화 | `isActive=true` | `device !== null` | 2 |
-| 반사 캡처 10fps | setInterval 주기 | ±100ms 오차 | 2 |
-| 인지 캡처 2fps | setInterval 주기 | ±100ms 오차 | 2 |
+| 반사 캡처 10fps | 단일 setInterval 주기 | ±100ms 오차 | 2 |
+| 인지 분할 2fps | 매 5번째 프레임 cognitive 마킹 | 분할비 1:5 | 2 |
 | base64 변환 | JPEG base64 문자열 | 30~50KB 범위 | 2 |
 | 서버 프레임 수신 | 디코딩 성공 | 640×640, 30~50KB | 2 |
 | **캡처수신 지연** | 전체 파이프라인 | **< 50ms** | 2 |
@@ -530,7 +532,7 @@ graph LR
 | `client/src/config/index.ts` | 신규 | WS_URL, 디바이스, FPS 설정 |
 | `client/src/types/detection.ts` | 신규 | 타입 정의 |
 | `client/src/hooks/useWebSocket.ts` | 신규 | WS 연결/하트비트/재연결 |
-| `client/src/hooks/useCamera.ts` | 신규 | 이중 캡처 타이머 |
+| `client/src/hooks/useCamera.ts` | 신규 | 단일 캡처 타이머 + 스트림 분할 |
 | `client/src/services/frameCapture.ts` | 신규 | 프레임 전송 서비스 |
 | `client/src/components/CameraView.tsx` | 신규 | 카메라 + WS 연동 |
 | `client/src/components/ConnectionStatus.tsx` | 신규 | 접속 상태 표시 |

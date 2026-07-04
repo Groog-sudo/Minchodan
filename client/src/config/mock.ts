@@ -9,5 +9,5 @@
  * 실기기 도착 시 아래 두 값을 false로 변경하면 즉시 실제 모드로 전환된다.
  */
 
-export const MOCK_CAMERA: boolean = true;
-export const MOCK_HAPTIC: boolean = true;
+export const MOCK_CAMERA: boolean = false;
+export const MOCK_HAPTIC: boolean = false;

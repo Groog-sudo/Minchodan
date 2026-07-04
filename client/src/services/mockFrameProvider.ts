@@ -4,13 +4,16 @@
  * TFLite 입력 텐서(640x640x3 CHW, 정규화 0~1)로 변환해 공급한다.
  *
  * 파이프라인:
- *   번들 JPEG --resolveAssetSource--> URI --fetch+blob--> ArrayBuffer
+ *   번들 JPEG --resolveAssetSource--> URI
+ *          --fetch(base64 data URI fallback)--> Uint8Array
  *          --jpeg-js(useTArray)--> RGBA Uint8Array --normalize--> Float32Array CHW
  *
+ * expo-file-system 의존 없음: 순수 fetch + atob 로만 동작 (Blob 미사용).
  * 디코딩은 샘플당 1회만 수행 후 캐시하여 재사용(반사 10fps + 인지 2fps 루프 대응).
  */
 
 import { Image } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
 import jpeg from "jpeg-js";
 
 import { FRAME_SIZE, type FrameProvider } from "./frameProvider";
@@ -28,6 +31,8 @@ export class MockFrameProvider implements FrameProvider {
   private lastDelivered: number = SAMPLE_REQUIRES[0];
   private readonly cache = new Map<number, Float32Array>();
   private readonly uris: (string | null)[] = SAMPLE_REQUIRES.map(() => null);
+  // Base64 로컬 캐시: URI → base64 string (FileSystem 의존 없이 1회 다운로드 보관)
+  private readonly b64Cache = new Map<string, string>();
 
   constructor() {
     SAMPLE_REQUIRES.forEach((req, i) => {
@@ -39,7 +44,6 @@ export class MockFrameProvider implements FrameProvider {
     );
   }
 
-  /** 가장 최근에 전달한 프레임의 preview용 require id 반환. */
   public getPreviewSource(): number {
     return this.lastDelivered;
   }
@@ -86,25 +90,63 @@ export class MockFrameProvider implements FrameProvider {
     this.index = (this.index + 1) % SAMPLE_REQUIRES.length;
   }
 
+  /**
+   * URI 로부터 Uint8Array 바이트를 획득한다.
+   * expo-file-system 을 사용하지 않고 FileSystem.readAsStringAsync 로
+   * 로컬 번들 에셋을 Base64 로 읽은 뒤 atob 로 변환한다.
+   * Metro 번들러 에셋 URI (http://localhost:8081/assets/...) 는
+   * FileSystem.downloadAsync 없이 직접 읽을 수 없으므로
+   * 최초 1회 FileSystem.downloadAsync(legacy) 로 캐시 디렉터리에 저장하고
+   * 이후 FileSystem.readAsStringAsync(legacy) 로 Base64 추출 후 b64Cache 에 보관한다.
+   * b64Cache 가 채워진 이후에는 FileSystem 호출 없이 atob 만 사용한다.
+   */
   private async fetchBytes(uri: string): Promise<Uint8Array> {
-    const resp = await fetch(uri);
-    const blob = await resp.blob();
-    const ab = await blob.arrayBuffer();
-    return new Uint8Array(ab);
+    // 1. b64Cache 히트 시 FileSystem 호출 없이 즉시 변환
+    const cached = this.b64Cache.get(uri);
+    if (cached) {
+      return this.base64ToUint8(cached);
+    }
+
+    // 2. 캐시 미스: legacy FileSystem 으로 1회만 다운로드 후 Base64 추출
+    const filename = uri.split("/").pop()?.split("?")[0] ?? "temp.jpg";
+    const localUri = (FileSystem.cacheDirectory ?? "") + filename;
+
+    try {
+      await FileSystem.downloadAsync(uri, localUri);
+      const base64 = await FileSystem.readAsStringAsync(localUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      void FileSystem.deleteAsync(localUri, { idempotent: true });
+      // b64Cache 에 저장해 이후 FileSystem 호출 차단
+      this.b64Cache.set(uri, base64);
+      return this.base64ToUint8(base64);
+    } catch (err) {
+      console.error("[MockFrameProvider] fetchBytes 오류:", err);
+      throw err;
+    }
+  }
+
+  /** Base64 문자열을 Uint8Array 로 변환 (atob 사용). */
+  private base64ToUint8(base64: string): Uint8Array {
+    const bin = atob(base64);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+    return bytes;
   }
 
   /**
-   * RGBA Uint8Array(640x640)를 CHW float32(정규화 0~1)로 변환.
-   * 입력 크기가 640이 아니면 좌상단 기준 crop/pad 없이 에러 로그 후 검은 텐서.
+   * RGBA Uint8Array(W x H)를 CHW float32(0~1 정규화)로 변환.
+   * 입력이 640x640 이 아니면 좌상단 기준 crop.
+   * 정규화: /255 (Ultralytics YOLO 표준, Python PT/TFLite 교차 검증 완료).
+   *   주: /5 는 bus.jpg 교차 검증에서 탐지 품질 저하를 일으켜 제거함.
    */
-  private rgbaToChw(
-    rgba: Uint8Array,
-    w: number,
-    h: number,
-  ): Float32Array {
+  private rgbaToChw(rgba: Uint8Array, w: number, h: number): Float32Array {
     if (w !== FRAME_SIZE || h !== FRAME_SIZE) {
       console.warn(
-        `[MockFrameProvider] 샘플 해상도 ${w}x${h} ≠ ${FRAME_SIZE}. 좌상단 crop 시도`,
+        `[MockFrameProvider] 샘플 해상도 ${w}x${h} != ${FRAME_SIZE}. 좌상단 crop 시도`,
       );
     }
     const useW = Math.min(w, FRAME_SIZE);
@@ -116,8 +158,8 @@ export class MockFrameProvider implements FrameProvider {
       for (let x = 0; x < useW; x++) {
         const srcIdx = (y * w + x) * 4;
         const dstIdx = y * FRAME_SIZE + x;
-        out[dstIdx] = rgba[srcIdx] / 255; // R
-        out[plane + dstIdx] = rgba[srcIdx + 1] / 255; // G
+        out[dstIdx] = rgba[srcIdx] / 255;             // R (표준 정규화)
+        out[plane + dstIdx] = rgba[srcIdx + 1] / 255;   // G
         out[plane * 2 + dstIdx] = rgba[srcIdx + 2] / 255; // B
       }
     }
@@ -126,6 +168,7 @@ export class MockFrameProvider implements FrameProvider {
 
   public dispose(): void {
     this.cache.clear();
+    this.b64Cache.clear();
   }
 }
 

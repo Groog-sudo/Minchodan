@@ -186,7 +186,7 @@ client/
 │   │   └── detection.ts          # WSMessage, DetectionEvent, AckMessage 타입
 │   ├── hooks/
 │   │   ├── useWebSocket.ts       # 1단계 WS 연결/하트비트/재연결
-│   │   └── useCamera.ts          # 2단계 이중 캡처 타이머
+│   │   └── useCamera.ts          # 2단계 단일 캡처 타이머 + 스트림 분할
 │   ├── services/
 │   │   └── frameCapture.ts       # takePhoto → base64 → send
 │   ├── components/
@@ -267,7 +267,7 @@ sequenceDiagram
 
 | 파일 | 역할 | 상세 참조 |
 | --- | --- | --- |
-| `src/hooks/useCamera.ts` | 이중 캡처 타이머 (반사 10fps/인지 2fps) | iOS 설계서 §6.1 |
+| `src/hooks/useCamera.ts` | 단일 캡처 타이머 + 스트림 분할 (반사 10fps/인지 2fps) | iOS 설계서 §6.1 |
 | `src/services/frameCapture.ts` | 프레임 전송 서비스 (base64 → WS) | iOS 설계서 §6.1 |
 | `src/components/CameraView.tsx` | 카메라 + WS 연동 | iOS 설계서 §6.1 |
 | `src/utils/haptics.ts` | 햅틱/접근성 stub (7단계 준비) | iOS 설계서 §6.1 |
@@ -394,7 +394,7 @@ graph LR
 | `tests/test_ws_echo.py` | 신규 | RTT < 100ms echo 검증 | iOS 담당 (참조) |
 | `client/src/types/detection.ts` | 신규 | 타입 정의 | iOS 주도 (검토) |
 | `client/src/hooks/useWebSocket.ts` | 신규 | WS 연결/하트비트/재연결 | iOS 주도 (검토) |
-| `client/src/hooks/useCamera.ts` | 신규 | 이중 캡처 타이머 | iOS 주도 (검토) |
+| `client/src/hooks/useCamera.ts` | 신규 | 단일 캡처 타이머 + 스트림 분할 | iOS 주도 (검토) |
 | `client/src/services/frameCapture.ts` | 신규 | 프레임 전송 서비스 | iOS 주도 (검토) |
 | `client/src/components/CameraView.tsx` | 신규 | 카메라 + WS 연동 | iOS 주도 (검토) |
 | `client/src/components/ConnectionStatus.tsx` | 신규 | 접속 상태 표시 | iOS 주도 (검토) |

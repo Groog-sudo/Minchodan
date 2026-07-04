@@ -61,6 +61,7 @@ export function useCamera(
   const reflexTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
+  const isCapturingRealFrame = useRef(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
 
@@ -118,6 +119,11 @@ export function useCamera(
         console.warn(`[Camera/Real] ${stream} 캡처 실패: cameraRef 없음`);
         return null;
       }
+      if (isCapturingRealFrame.current) {
+        // 이미 캡처가 진행 중이면 중복 방지를 위해 즉시 무시 (drop)
+        return null;
+      }
+      isCapturingRealFrame.current = true;
       try {
         const photo: PhotoFile = await cameraRef.current.takePhoto({
           flash: "off",
@@ -130,14 +136,18 @@ export function useCamera(
           encoding: FileSystem.EncodingType.Base64,
         });
         const float32 = decodeBase64JpegToChw(base64);
+        console.log(`[Camera/Real] ${stream} 프레임 획득 base64len=${base64.length} float32len=${float32.length}`);
         return { float32, stream, base64 };
       } catch (err) {
         console.error(`[Camera/Real] ${stream} 캡처 오류:`, err);
         return null;
+      } finally {
+        isCapturingRealFrame.current = false;
       }
     },
     [],
   );
+
 
   const captureFrame = isMockMode ? captureMockFrame : captureRealFrame;
 
@@ -150,22 +160,30 @@ export function useCamera(
       setIsCapturing(true);
 
       const reflexInterval = Math.floor(1000 / reflexFps);
-      const cognitiveInterval = Math.floor(1000 / cognitiveFps);
+      const frameCounter = { current: 0 };
 
-      const emit = async (stream: StreamType) => {
-        const frame = await captureFrame(stream);
-        if (frame && onFrameRef.current) onFrameRef.current(frame);
-      };
+      reflexTimerRef.current = setInterval(async () => {
+        frameCounter.current++;
 
-      reflexTimerRef.current = setInterval(() => {
-        void emit("reflex");
+        // 단일 프레임 캡처 (하드웨어 호출 1회로 통일)
+        const frame = await captureFrame("reflex");
+        if (!frame || !onFrameRef.current) return;
+
+        // 반사 경로로 즉시 전달
+        onFrameRef.current(frame);
+
+        // 매 N번째 프레임마다 동일 프레임을 인지 경로로 전달 (중복 캡처 제거)
+        const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
+        if (frameCounter.current % ratio === 0) {
+          onFrameRef.current({
+            ...frame,
+            stream: "cognitive",
+          });
+        }
       }, reflexInterval);
-      cognitiveTimerRef.current = setInterval(() => {
-        void emit("cognitive");
-      }, cognitiveInterval);
 
       console.log(
-        `[Camera] ${isMockMode ? "Mock" : "Real"} 이중 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`,
+        `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`,
       );
     },
     [reflexFps, cognitiveFps, isCapturing, isMockMode, captureFrame],

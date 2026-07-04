@@ -249,24 +249,25 @@ export class AudioPlayer {
 
 ### 단계 7-6. 반사 경로: 사전합성 클립 선점 재생
 
+> **오디오 API (2026-07-04)**: 클라이언트 오디오 재생 계층은 `expo-av` 대신 **`expo-audio`**(Expo SDK 56+ 차세대 API)로 통일되었다. `createAudioPlayer()` 동기 팩토리 + `player` 프로퍼티(`volume`, `pan`, `loop`) 기반. 현재 반사 비프음은 `client/src/services/audioEngine.ts`에 이미 expo-audio로 구현되어 있다.
+
 ```typescript
 // client/src/services/reflexClipPlayer.ts
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 
 export class ReflexClipPlayer {
-  private currentSound: Audio.Sound | null = null;
+  private currentPlayer: AudioPlayer | null = null;
 
   async playPreempt(alertId: string, clipPath: string) {
     // 선점: 현재 재생 중인 인지 음성 중단
-    if (this.currentSound) {
-      await this.currentSound.stopAsync();
-      await this.currentSound.unloadAsync();
-      this.currentSound = null;
+    if (this.currentPlayer) {
+      this.currentPlayer.stop();
+      this.currentPlayer.release?.();
+      this.currentPlayer = null;
     }
     // 사전합성 클립 즉시 재생 (실시간 TTS 미경유)
-    const { sound } = await Audio.Sound.createAsync({ uri: clipPath });
-    this.currentSound = sound;
-    await sound.playAsync();
+    this.currentPlayer = createAudioPlayer({ uri: clipPath });
+    this.currentPlayer.play();
   }
 }
 ```

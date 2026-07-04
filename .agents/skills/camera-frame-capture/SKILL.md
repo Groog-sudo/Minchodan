@@ -81,7 +81,7 @@ client/src/
 │   └── CameraView.tsx          # 카메라 컴포넌트 (UI)
 ├── hooks/
 │   ├── useWebSocket.ts         # 1단계에서 구현한 WS 훅
-│   ├── useCamera.ts            # 이중 캡처 타이머 훅
+│   ├── useCamera.ts            # 단일 캡처 타이머 + 스트림 분할 훅
 ├── services/
 │   └── frameCapture.ts         # takePhoto  base64  send
 ├── utils/
@@ -106,7 +106,14 @@ server/capture/
 
 ## 핵심 구현 절차 (React Native 앱 측)
 
-### 단계 2-1. useCamera.ts — 이중 캡처 타이머
+### 단계 2-1. useCamera.ts — 단일 캡처 타이머 + 스트림 분할
+
+> **구현 개선 (2026-07-04)**: 초기 설계는 반사·인지 **독립 두 타이머**(`setInterval(1000/reflexFps)` + `setInterval(1000/cognitiveFps)`)를 가정했으나, 실기기 검증 결과 **두 `takePhoto` 호출이 직렬 대기하며 하드웨어 경합**을 유발해 반사 경로 지연이 목표(캡처수신 < 50ms)를 초과하는 문제가 확인되었다. 이에 **단일 타이머 단일 캡처 + 프레임 분할** 구조로 개선되었다.
+>
+> 핵심 차이:
+> - **캡처 호출**: 반사 fps 기준 **단일 `setInterval`** 로 `takePhoto` 1회만 호출 (하드웨어 경합 제거).
+> - **스트림 분할**: 매 `floor(reflexFps / cognitiveFps)` 번째 프레임을 **동일 프레임**을 `stream: 'cognitive'` 로 마킹하여 추가 전달 (재캡처 비용 0).
+> - **이중 경로 분리 원칙 유지**: `stream` 필드로 reflex/cognitive를 여전히 분기하므로 서버 `stream_splitter` 계약과 이중 경로 물리 분리 원칙은 그대로 준수된다.
 
 ```typescript
 // client/src/hooks/useCamera.ts
@@ -118,15 +125,18 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
   const device = useCameraDevice('back');
   const cameraRef = useRef<Camera>(null);
   const reflexTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const cognitiveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isCapturingRealFrame = useRef(false); // 중복 캡처 방지 가드레일
+  const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
-  const captureFrame = useCallback(async (stream: 'reflex' | 'cognitive'): Promise<string | null> => {
+  const captureFrame = useCallback(async (stream: StreamType): Promise<FrameData | null> => {
     if (!cameraRef.current) return null;
+    if (isCapturingRealFrame.current) return null; // 진행 중 캡처는 drop
+    isCapturingRealFrame.current = true;
     try {
       const photo: PhotoFile = await cameraRef.current.takePhoto({
         qualityPrioritization: 'speed',
@@ -134,36 +144,44 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
         enableShutterSound: false,
       });
       const base64 = await photo.toBase64();
-      return base64;
+      const float32 = decodeBase64JpegToChw(base64); // 온디바이스 추론용 CHW 텐서
+      return { float32, stream, base64 };
     } catch (error) {
       console.error(`[캡처] ${stream} 프레임 오류:`, error);
       return null;
+    } finally {
+      isCapturingRealFrame.current = false;
     }
   }, []);
 
-  const startCapture = useCallback(() => {
+  const startCapture = useCallback((onFrame: (frame: FrameData) => void) => {
     if (isCapturing) return;
+    onFrameRef.current = onFrame;
     setIsCapturing(true);
 
     const reflexInterval = Math.floor(1000 / reflexFps);
-    const cognitiveInterval = Math.floor(1000 / cognitiveFps);
+    const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
+    const frameCounter = { current: 0 };
 
+    // 단일 타이머: 반사 fps로 1회 캡처 후 reflex 전달, 매 ratio번째 프레임을 cognitive 로도 전달
     reflexTimerRef.current = setInterval(async () => {
+      frameCounter.current++;
       const frame = await captureFrame('reflex');
-      if (frame) sendFrame(frame, 'reflex');
+      if (!frame || !onFrameRef.current) return;
+
+      onFrameRef.current(frame); // 반사 경로 즉시 전달
+
+      if (frameCounter.current % ratio === 0) {
+        // 동일 프레임을 인지 경로로 추가 전달 (재캡처 없음)
+        onFrameRef.current({ ...frame, stream: 'cognitive' });
+      }
     }, reflexInterval);
 
-    cognitiveTimerRef.current = setInterval(async () => {
-      const frame = await captureFrame('cognitive');
-      if (frame) sendFrame(frame, 'cognitive');
-    }, cognitiveInterval);
-
-    console.log(`[캡처] 이중 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`);
+    console.log(`[캡처] 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (분할비 1:${ratio})`);
   }, [reflexFps, cognitiveFps, isCapturing, captureFrame]);
 
   const stopCapture = useCallback(() => {
     if (reflexTimerRef.current) { clearInterval(reflexTimerRef.current); reflexTimerRef.current = null; }
-    if (cognitiveTimerRef.current) { clearInterval(cognitiveTimerRef.current); cognitiveTimerRef.current = null; }
     setIsCapturing(false);
     console.log('[캡처] 루프 중지');
   }, []);
@@ -360,7 +378,7 @@ async def route_frame(processed: ProcessedFrame):
 
 | 방향 | 페이로드 |
 | --- | --- |
-| In | 비디오 프레임 (이중 타이머 캡처) |
+| In | 비디오 프레임 (단일 타이머 캡처 + 스트림 분할) |
 | Out | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream:"reflex"\|"cognitive", thumbnail_jpeg_b64}}` |
 
 ## 의존성·예외

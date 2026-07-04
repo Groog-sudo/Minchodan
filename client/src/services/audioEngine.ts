@@ -1,17 +1,47 @@
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 
 /**
  * 시각장애인 긴급 회피용 입체 비프음 오디오 엔진.
  * docs/reflex_audio_specification.md 규격을 준수합니다.
+ *
+ * expo-audio (Expo SDK 51+ 차세대 API) 기반:
+ * - 비동기 setter(setVolumeAsync 등) 대신 동기 프로퍼티 할당(volume=, pan=, loop=)
+ * - createAudioPlayer()로 즉시 인스턴스 생성 (createAsync 대기 불필요)
+ * - player.pan 프로퍼티로 스테레오 패닝 (stereoPan 방어 코드 불필요)
  */
 class AudioEngine {
-  private soundInstance: Audio.Sound | null = null;
+  private player: AudioPlayer | null = null;
   private beepTimer: ReturnType<typeof setInterval> | null = null;
   private currentBeepInterval: number = -1;
   private currentPanning: number = 0.0;
+  private sessionInitialized = false;
 
   // 로컬 번들 800Hz 비프 에셋 (reflex_audio_specification.md 준수, 오프라인 안정)
   private readonly BEEP_SRC: number = require("../../assets/sounds/beep.wav");
+
+  /** iOS 오디오 세션 초기화 - 무음 모드에서도 소리 재생 활성화. */
+  private async ensureSession(): Promise<void> {
+    if (this.sessionInitialized) return;
+    try {
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,    // 무음 스위치 무시 (시각장애인 보조 필수)
+        shouldPlayInBackground: false,
+        interruptionMode: "duckOthers",
+      });
+      this.sessionInitialized = true;
+      console.log("[AudioEngine] 오디오 세션 활성화 완료");
+    } catch (err) {
+      console.error("[AudioEngine] 오디오 세션 초기화 실패:", err);
+    }
+  }
+
+  /** 사운드 플레이어 지연 초기화 (최초 재생 시 1회 생성). */
+  private ensurePlayer(): void {
+    if (this.player) return;
+    this.player = createAudioPlayer(this.BEEP_SRC);
+    this.player.volume = 1.0;
+  }
 
   /**
    * 입체 비프음 재생 및 가속을 기동합니다.
@@ -28,36 +58,47 @@ class AudioEngine {
     this.currentBeepInterval = intervalMs;
     this.currentPanning = panning;
 
+    // 2. iOS 오디오 세션 초기화 (최초 1회)
+    await this.ensureSession();
+
     try {
-      // 2. 사운드 인스턴스 초기 로드 및 속성 갱신
-      if (!this.soundInstance) {
-        const { sound } = await Audio.Sound.createAsync(
-          this.BEEP_SRC,
-          { shouldPlay: false }
-        );
-        this.soundInstance = sound;
+      // 3. 플레이어 보장 및 속성 갱신 (동기 프로퍼티 할당)
+      this.ensurePlayer();
+      if (!this.player) {
+        console.warn("[AudioEngine] 플레이어 생성 실패");
+        return;
       }
 
-      // 스테레오 Panning(좌우 지향) 적용 및 볼륨 극대화
-      await this.soundInstance.setVolumeAsync(1.0);
-      await (this.soundInstance as any).setStatusAsync({ stereoPan: panning });
+      this.player.volume = 1.0;
+      // 주: expo-audio는 스테레오 패닝(pan) 미지원.
+      // panning 값은 햅틱/거리 계산에만 활용되며, 오디오는 모노 풀볼륨 재생.
 
-      // 3. 주기별 재생 스케줄링
+      // 4. 주기별 재생 스케줄링
       if (intervalMs === 0) {
-        // 정지 단계: 끊김 없는 연속 반복음 설정
-        await this.soundInstance.setIsLoopingAsync(true);
-        await this.soundInstance.playAsync();
+        // 정지 단계: 끊김 없는 연속 반복음
+        this.player.loop = true;
+        this.player.play();
       } else {
-        // 그 외 단계: intervalMs 주기로 점멸 재생
-        await this.soundInstance.setIsLoopingAsync(false);
-        this.beepTimer = setInterval(async () => {
-          if (this.soundInstance) {
-            await this.soundInstance.replayAsync();
-          }
+        // 점멸 단계: intervalMs 주기로 재생
+        this.player.loop = false;
+        void this.replay();
+        this.beepTimer = setInterval(() => {
+          void this.replay();
         }, intervalMs);
       }
     } catch (err) {
       console.error("[AudioEngine] 비프음 재생 실패:", err);
+    }
+  }
+
+  /** 처음부터 다시 재생 (seekTo(0) + play). */
+  private async replay(): Promise<void> {
+    if (!this.player) return;
+    try {
+      await this.player.seekTo(0);
+      this.player.play();
+    } catch (err) {
+      console.warn("[AudioEngine] replay 오류:", err);
     }
   }
 
@@ -80,10 +121,10 @@ class AudioEngine {
     this.currentPanning = 0.0;
 
     try {
-      if (this.soundInstance) {
-        await this.soundInstance.stopAsync();
-        await this.soundInstance.unloadAsync();
-        this.soundInstance = null;
+      if (this.player) {
+        this.player.pause();
+        this.player.release();
+        this.player = null;
       }
     } catch (err) {
       console.error("[AudioEngine] 정지 오류:", err);
