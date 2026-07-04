@@ -230,3 +230,7 @@ temp_smoke_*
 # ==========================================
 server/models/yolo26n/segbest.pt
 server/models/yolo26n/segbest.tflite
+
+# Unused alternative model weights (post-MVP 배제 안)
+yolo11n.pt
+yolov8n.pt
