@@ -61,6 +61,7 @@ docs/
 | 모바일 공통 계획서 | [mobile_app_implementation_plan.md](mobile/mobile_app_implementation_plan.md) | 플랫폼 공통 1+2단계 구현 계획 (iOS/Android 담당자 기준) |
 | iOS 구현 설계서 | [mobile_ios_implementation_plan.md](mobile/mobile_ios_implementation_plan.md) | iOS 전용 1+2단계 구현 설계 (Mac mini 환경 기준) |
 | Android 구현 설계서 | [mobile_android_implementation_plan.md](mobile/mobile_android_implementation_plan.md) | Android 전용 1+2단계 구현 설계 |
+| 온디바이스 추론 엔진 격리 설계서 | [ondevice_inference_engine_isolation_plan.md](mobile/ondevice_inference_engine_isolation_plan.md) | YOLO26n + CoreML 이중 전략 기반 플랫폼별 추론 엔진 격리 (Post-MVP) |
 
 ---
 

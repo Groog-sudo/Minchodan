@@ -480,3 +480,16 @@
   - TypeScript 타입 체크: `npx tsc --noEmit` 컴파일 에러 0건 통과.
   - 문서 규칙(이모지 금지, 한국어 존댓말, 표 우선, 핵심 굵게, 인용 블록 메타데이터) 준수 확인.
 - **비고**: 정규화 결함(`/5`)과 샘플 부재가 결합하여 COCO 탐지가 전혀 되지 않았던 현상을 두 축으로 분리 진단 후 수정하여, 실기기 카메라(realFrameProvider)와 시뮬레이터(mockFrameProvider) 양쪽에서 COCO 80종 탐지 가능 상태로 복구. 단일 캡처 타이머 구조 개선은 이중 경로 물리 분리 원칙(비협상)을 위반하지 않으면서 하드웨어 경합을 제거해 반사 경로 지연 목표를 달성. 미해결: `yolo11n.pt`(루트) 미사용 파일로 확인되어 추후 정리 대상.
+
+---
+
+### 2026-07-04 | 온디바이스 추론 | 온디바이스 추론 엔진 격리 설계서 CoreML 가속 방식 현행화
+
+- **커밋**: `docs: 온디바이스 추론 엔진 플랫폼 격리 설계서 내 CoreML 가속 상태 및 의사결정 흐름 최신화`
+- **변경 내용**:
+  - `docs/mobile/ondevice_inference_engine_isolation_plan.md` 내 iOS CoreML 가속 현황을 실제 구현 상태에 맞추어 현행화.
+  - 현재 실제 빌드가 CoreML `.mlpackage`/`.modelc`를 번들링하여 직접 구동하는 것이 아니라, `client/assets/models/yolo26n/*.tflite` 모델 파일을 사용하되 TFLite 런타임(`react-native-fast-tflite`)이 iOS의 CoreML 백엔드를 delegate로 호출(`$EnableCoreMLDelegate=true` 및 `["core-ml"]` delegate)하여 ANE 가속을 획득하는 폴백(간접 가속) 전략임을 명시.
+  - "1.2 현행 MVP와의 관계", "2.2 플랫폼 분기 및 CoreML 인프라 현황"의 표 및 "4.4 의사결정 흐름" 섹션을 수정하여 이중 전략 우회 시도 상태에서 TFLite + CoreML Delegate 폴백 전략을 단일 노선(기본 가속 노선)으로 채택한 상태로 반영 완료.
+- **관련 파일**: `docs/mobile/ondevice_inference_engine_isolation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서의 링크 정합성 및 마크다운 규칙(한국어 존댓말, 이모지 금지, 표 사용, 굵게 강조) 준수 확인.
+- **비고**: CoreML 포맷 변환 실패 한계에 대응하여 TFLite CoreML Delegate 호출 폴백 전략을 메인으로 통합 완료하여 iOS/Android의 모델 파일 포맷 단일화를 유지하면서 가속 성능을 보장하는 최선의 구조를 확정하였습니다.

@@ -96,7 +96,7 @@ export function CameraView() {
     lastDetectTsRef.current = now;
     try {
       const t0 = Date.now();
-      const { seg, det } = await detectFrameRef.current(frame.float32);
+      const { seg, det } = await detectFrameRef.current(frame.float32, frame.base64);
       const dt = Date.now() - t0;
       // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
