@@ -222,15 +222,48 @@ def write_dataset(
     if not resolved_images:
         raise ValueError("변환할 이미지가 없습니다. XML 경로와 이미지 폴더를 확인하세요.")
 
-    if limit > 0:
-        resolved_images = resolved_images[:limit]
-
-    class_names = collect_class_names(resolved_images)
-    class_to_id = {label: index for index, label in enumerate(class_names)}
-
+    # 시각장애인 보행 보조 핵심 사물 클래스 목록
+    target_labels = {"bollard", "person", "scooter", "motorcycle", "bicycle", "stroller", "wheelchair", "traffic_light", "tree_trunk", "movable_signage", "kiosk", "fire_hydrant"}
+    
+    # 클래스 균형 추출을 위해 전체를 먼저 무작위 셔플
     rng = random.Random(seed)
-    shuffled = list(resolved_images)
-    rng.shuffle(shuffled)
+    all_shuffled = list(resolved_images)
+    rng.shuffle(all_shuffled)
+    
+    # 클래스별로 수집된 이미지 장수 카운트
+    class_limits = limit if limit > 0 else 2000
+    class_collected_counts = {label: 0 for label in target_labels}
+    
+    balanced_images = []
+    for entry in all_shuffled:
+        # 가로세로 32픽셀 이상의 확실하고 선명한 바운딩박스만 필터링
+        reliable_boxes = [box for box in entry.item.boxes if abs(box.xbr - box.xtl) >= 32 and abs(box.ybr - box.ytl) >= 32]
+        
+        # 확실한 사물이 최소 1개 이상 들어있는 경우만 처리
+        if len(reliable_boxes) >= 1:
+            labels_in_image = {box.label.strip().lower().replace("-", "_") for box in reliable_boxes}
+            
+            # 아직 목표 수량을 못 채운 사물이 포함되어 있는지 확인
+            has_needed_class = False
+            for label in labels_in_image.intersection(target_labels):
+                if class_collected_counts[label] < class_limits:
+                    has_needed_class = True
+                    break
+            
+            if has_needed_class:
+                balanced_images.append(entry)
+                # 이 이미지에 포함된 모든 핵심 클래스의 수집 카운트 누적 갱신
+                for label in labels_in_image.intersection(target_labels):
+                    class_collected_counts[label] += 1
+                    
+    print(f"\n>>> 확실한 크기(>=32px) 및 클래스별 최대 {class_limits}장 타겟 균형 필터링 완료. 수집된 최종 이미지 장수: {len(balanced_images)}")
+    print(">>> 확실한 사물 수집 상세 현황:")
+    for label, count in sorted(class_collected_counts.items()):
+        print(f"    - {label}: {count}장")
+        
+    shuffled = balanced_images
+    class_names = collect_class_names(shuffled)
+    class_to_id = {label: index for index, label in enumerate(class_names)}
 
     val_count = max(1, round(len(shuffled) * val_ratio)) if len(shuffled) > 1 else 0
     val_names = {entry.output_name for entry in shuffled[:val_count]}

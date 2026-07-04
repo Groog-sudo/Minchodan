@@ -204,8 +204,6 @@ data/raw/aihub_walk_sample/*.png
 *.pth
 *.onnx
 *.engine
-*.tflite
-*.mlpackage/
 
 # Generated local training datasets/configs must not be committed.
 training/datasets/detection/aihub_*/
@@ -216,7 +214,6 @@ training/runs/
 # Keep agreed baseline pretrained weights trackable.
 !server/models/yolo26n/object_detection.pt
 !server/models/yolo26n/segmentation.pt
-!client/assets/models/yolo26n/*.tflite
 
 # ==========================================
 # LangChain / LangGraph
@@ -242,6 +239,18 @@ langgraph_checkpoints/
 *.old
 
 # ==========================================
+# Repository structure placeholders
+# ==========================================
+
+# Keep scaffold directories that otherwise match generated-data rules.
+!server/rag/build/
+!server/rag/build/.gitkeep
+!data/chroma_db/
+!data/chroma_db/.gitkeep
+!training/datasets/detection/images/.gitkeep
+!training/datasets/segmentation/images/.gitkeep
+
+# ==========================================
 # 기타 등등...
 # ==========================================
 
@@ -253,10 +262,12 @@ langgraph_checkpoints/
 # Temporary Smoke Test Outputs
 temp_smoke_*
 
-
-
-
-
 # Node.js
 node_modules/
 .expo/
+
+# ==========================================
+# Custom Trained Model Weights (git-ignore)
+# ==========================================
+server/models/yolo26n/segbest.pt
+server/models/yolo26n/segbest.tflite

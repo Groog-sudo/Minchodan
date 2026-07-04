@@ -4,6 +4,7 @@ from __future__ import annotations
 # [VIBE CODE] 표준 라이브러리 및 경로 설정
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -31,7 +32,8 @@ def parse_args() -> argparse.Namespace:
         help="학습 시작 weight 경로입니다.",
     )
     parser.add_argument("--project", default="outputs/yolo_train")
-    parser.add_argument("--name", default="aihub_det_v1")
+    current_time = datetime.now().strftime("%Y%m%d")
+    parser.add_argument("--name", default=f"aihub_det_v1_{current_time}")
     add_common_train_args(parser)
     return parser.parse_args()
     # [/VIBE CODE]

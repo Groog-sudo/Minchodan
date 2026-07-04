@@ -75,12 +75,13 @@ def run_yolo_train(
         "project": str(project_path),
         "name": name,
         "patience": patience,
-        "workers": workers,
+        "workers": 8,
+        "val": False,
         "exist_ok": True,
         "verbose": True,
     }
-    if "segmentation" in str(data_path) or "segmentation" in name:
-        train_kwargs.update({"amp": True, "cache": "disk"})
+    # 대규모 35만 장 학습 시 디스크 I/O 병목 방지 및 AMP 가속 적용 (공통, 64GB RAM 캐싱 가속화 적용)
+    train_kwargs.update({"amp": True, "cache": True})
     if resume:
         train_kwargs["resume"] = True
     model_obj.train(**train_kwargs)
