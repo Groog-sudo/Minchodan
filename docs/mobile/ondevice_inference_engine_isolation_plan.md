@@ -541,3 +541,32 @@ client/src/
      npx expo run:ios --device "<YOUR_IPHONE_UDID>"
      ```
    * 앱 실행 후 단말 콘솔에 `LOG [CoreMLDetector] det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료`가 보이면 최적화 셋업이 완전히 성공한 것입니다.
+
+### 12.3 Windows 환경 팀원을 위한 제약 및 가이드
+
+윈도우(Windows) 운영체제 기반의 개발 PC를 사용하는 팀원들은 macOS 고유의 iOS 빌드 프레임워크 제약으로 인해 다음과 같은 점을 숙지하고 환경을 구축해야 합니다.
+
+1. **Windows ngrok 설치 및 실행**
+   * 패키지 매니저를 통해 명령어로 간편히 설치할 수 있습니다.
+     ```powershell
+     # Chocolatey 사용 시
+     choco install ngrok
+     # 또는 winget 사용 시
+     winget install ngrok
+     ```
+   * 수동 설치 시에는 ngrok 공식 다운로드 페이지에서 Windows용 zip 압축 파일을 해제하고, 실행 폴더 경로를 시스템 환경 변수 `Path`에 등록하여 사용합니다.
+   * 토큰 인증 및 터널 구동 명령어는 PowerShell 또는 CMD에서 동일하게 실행 가능합니다:
+     ```powershell
+     ngrok config add-authtoken <TOKEN>
+     ngrok http 8000
+     ```
+2. **iOS 빌드 및 CoreML 변환 불가 제약**
+   * **iOS 실기기 빌드 불가**: Windows 환경에서는 Xcode 및 iOS SDK 툴체인이 지원되지 않으므로 `npx expo run:ios` 빌드가 불가합니다.
+   * **CoreML 변환 오류**: `coremltools` 파이썬 패키지는 macOS 컴파일 엔진에 의존하므로, 윈도우 환경에서 `convert_yolo_to_coreml.py` 변환 스크립트 실행 시 플랫폼 에러가 발생합니다.
+   * **협업 지침**: 윈도우 개발자는 직접 CoreML 모델 변환이나 iOS 리소스 매핑을 수행할 필요가 없으며, **macOS 작업자가 변환하여 Git에 강제 추적 커밋한 `client/assets/models/yolo26n/ios/` 하위의 mlpackage 파일들을 단순히 Git pull 받아 보존만 유지**하면 됩니다.
+3. **Windows 기반 Android/서버 환경 구축 및 검증**
+   * 윈도우 팀원은 **FastAPI Docker 컨테이너(Redis, Ollama) 기동** 및 **Android 실기기 빌드 검증**을 중점으로 개발 환경을 구축합니다.
+   * Android Studio 및 Android SDK 설정을 마친 후, 실기기(USB 디버깅 허용)를 연동하여 다음 명령으로 TFLite + NNAPI 가속 기반 클라이언트를 리빌드합니다:
+     ```powershell
+     npx expo run:android --device
+     ```
