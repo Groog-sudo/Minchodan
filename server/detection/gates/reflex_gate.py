@@ -44,11 +44,6 @@ def reflex_gate(
     
     return None
 
-<<<<<<< HEAD
-    # =========================================================================
-    # 👨‍💻 담당자 직접 코딩 영역 끝 👨‍💻
-    # =========================================================================
-=======
     bottom_y = detection.bbox.y + detection.bbox.h
     if bottom_y <= frame_height * (1 - PROXIMITY_THRESHOLD):
         return None
@@ -98,4 +93,3 @@ def reflex_gate(
         haptic_pattern=haptic_pattern,
         ts=0.0,
     )
->>>>>>> dev

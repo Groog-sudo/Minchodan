@@ -1,25 +1,3 @@
-<<<<<<< HEAD
-# -*- coding: utf-8 -*-
-# server/api/schemas.py
-import sys
-from datetime import datetime
-from typing import Any, Optional
-from pydantic import BaseModel
-
-if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
-
-class WSMessage(BaseModel):
-    type: str                        # "hello" | "ping" | "pong" | "detection" | "welcome" | "ack" | "alert_reflex" | "guide"
-    device_id: Optional[str] = None
-    token: Optional[str] = None
-    session_id: Optional[str] = None
-    server_time: Optional[str] = None
-    ts: Optional[float] = None
-    payload: Optional[dict[str, Any]] = None
-
-class WelcomeMessage(BaseModel):
-=======
 """
 WebSocket 메시지 Pydantic 스키마.
 API 명세서 v0.2.0 기준 메시지 타입별 스키마를 정의합니다.
@@ -52,17 +30,10 @@ class WSMessage(BaseModel):
 class WelcomeMessage(BaseModel):
     """서버 -> 단말 welcome 메시지 (핸드셰이크)."""
 
->>>>>>> dev
     type: str = "welcome"
     session_id: str
     server_time: str
 
-<<<<<<< HEAD
-class AckMessage(BaseModel):
-    type: str = "ack"
-    event_id: str
-    received_at: str
-=======
 
 class AuthOkMessage(BaseModel):
     """서버 -> 단말 인증 성공 메시지."""
@@ -111,4 +82,3 @@ def now_iso() -> str:
 def now_ts() -> float:
     """현재 시각을 epoch ms로 반환."""
     return float(datetime.now().timestamp() * 1000)
->>>>>>> dev
