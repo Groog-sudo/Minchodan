@@ -33,11 +33,6 @@ class YoloDetector(DetectorInterface):
         try:
             self.model = YOLO(self.weights_path)
             logger.info(f"[YoloDetector] 모델 로드 성공: {self.weights_path}")
-
-    def load(self) -> bool:
-        try:
-            self.model = YOLO(self.weights_path)
-            logger.info(f"[YoloDetector] 모델 로드 성공: {self.weights_path}")
             return True
         except Exception as e:
             logger.error(f"[YoloDetector] 모델 로드 실패: {e}")
@@ -126,14 +121,29 @@ class YoloDetector(DetectorInterface):
             return detections
 
         names = result.names
+        
+        # 담당자님, 여기에 for box in result.boxes: 로 시작하는 루프를 직접 타이핑해주세요!
+        # (box.cls, box.conf, box.xyxy, box.id 를 파싱하여 Detection 객체로 append 하시면 됩니다.)
+        
+        return detections
+
         for box in result.boxes:
+            # 1. 클래스 ID 와 이름 파싱 (Tensor -> int)
             cls_id = int(box.cls[0])
             class_name = names.get(cls_id, str(cls_id))
+
+            # 2. 신뢰도(Confidence) 파싱
             confidence = float(box.conf[0])
+
+            # 3. Bounding Box 좌표 파싱 (x1, y1, x2, y2)
             x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].tolist())
+
+            # 4. ByteTrack 추적 ID mapping (T-0001 포맷)
             track_id = None
             if box.id is not None:
                 track_id = f"T-{int(box.id[0]):04d}"
+
+            # 5. DTO(Detection Objects)로 변환하여 리스트에 추가
             detections.append(
                 Detection(
                     class_name=class_name,
@@ -142,7 +152,6 @@ class YoloDetector(DetectorInterface):
                     track_id=track_id,
                     speed=None,
                     direction=None,
-                    risk=None,
+                    risk=None
                 )
             )
-        return detections

@@ -182,3 +182,16 @@
   - `expo-av` v16의 `setVolumeAsync(volume, audioPan)` 시그니처에 맞춰 반사 비프음 좌우 지향 설정을 수정했습니다.
 - **관련 파일**: `client/src/hooks/useOnDeviceDetection.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/services/audioEngine.ts`, `client/src/types/detection.ts`
 - **검증 결과**: `npm ls expo-file-system react-native-fast-tflite expo-av --depth=0`, `npx tsc --noEmit` 통과
+
+---
+
+### 2026-07-05 | 3단계 | YOLO 탐지 및 반사 경로 게이트 하드코딩 구현 완료
+
+- **커밋**: eat: YOLO 탐지 및 Reflex Gate 하드코딩 구현 완성
+- **변경 내용**:
+  - server/detection/gates/reflex_gate.py 파일에 시각장애인에게 치명적인 5대 돌발/동적 장애물(car, 	ruck, us, motorcycle, scooter)을 식별하는 하드코딩 로직을 추가했습니다. 면접 대비용 주석(💡 [면접 대비 주석])을 통해 Panning 및 Distance 결정 로직의 배경을 꼼꼼하게 문서화했습니다.
+  - server/detection/yolo_detector.py에 불필요하게 중복 선언되어 있던 load() 메서드를 정리하고, BBox 파싱과 관련하여 발생했던 Python 문법적 오류(제너레이터 표현식 오류, f-string 포맷팅 괄호 등)를 수정했습니다.
+  - scripts/run_desktop_full_training.py의 subprocess.run 파싱 오류를 리스트 확장(extend) 방식으로 교정했습니다.
+  - 담당자가 직접 작성한 반사 게이트 로직 및 탐지 결과 파서를 기반으로 전체 파이프라인 검증용 유닛 테스트 21개를 100% Passed로 완벽히 통과했습니다.
+- **관련 파일**: server/detection/gates/reflex_gate.py, server/detection/yolo_detector.py, scripts/run_desktop_full_training.py
+- **검증 결과**: python -m pytest tests/test_detection.py -v 21개 통과 완료

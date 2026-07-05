@@ -100,7 +100,7 @@ def main() -> int:
                 "--output-dir", str(DET_OUTPUT_DIR),
                 "--yaml-path", str(DET_YAML),
             ]
-            if args.det_limit > 0: det_cmd.append(f"--limit {args.det_limit}")
+            if args.det_limit > 0: det_cmd.extend(["--limit", str(args.det_limit)])
             run_step(det_cmd)
 
         if run_segmentation:
@@ -112,7 +112,7 @@ def main() -> int:
                 "--output-dir", str(SEG_OUTPUT_DIR),
                 "--yaml-path", str(SEG_YAML),
             ]
-            if args.seg_max_images > 0: seg_cmd.append(f"--max-images {args.seg_max_images}")
+            if args.seg_max_images > 0: seg_cmd.extend(["--max-images", str(args.seg_max_images)])
             run_step(seg_cmd)
     if not args.skip_train:
         train_common = ["--epochs", str(args.epochs), "--batch", str(args.batch), "--device", args.device]
