@@ -65,6 +65,11 @@ def run_yolo_train(
     project_path.mkdir(parents=True, exist_ok=True)
     # [/VIBE CODE]
 
+    # [HARD CODE]
+    # 💡 [면접 대비 주석]
+    # Ultralytics YOLO 학습 파이프라인 커스텀 로직입니다.
+    # 1. AMP(Automatic Mixed Precision) 가속: 'amp=True'를 통해 FP16 연산으로 RTX 5090 등 최신 GPU의 텐서 코어 활용을 극대화하여 학습 속도를 대폭 향상시켰습니다.
+    # 2. RAM 캐싱 최적화: 'cache=True'를 적용해 35만 장 수준의 대규모 이미지 데이터 로드 시 발생할 수 있는 스토리지 I/O 병목 현상을 원천 차단했습니다.
     model_obj = YOLO(str(model_path))
     train_kwargs: dict = {
         "data": str(data_path),
@@ -80,9 +85,10 @@ def run_yolo_train(
         "exist_ok": True,
         "verbose": True,
     }
-    # 대규모 35만 장 학습 시 디스크 I/O 병목 방지 및 AMP 가속 적용 (공통, 64GB RAM 캐싱 가속화 적용)
     train_kwargs.update({"amp": True, "cache": True})
     if resume:
         train_kwargs["resume"] = True
     model_obj.train(**train_kwargs)
+    
     return project_path / name / "weights" / "best.pt"
+    # [/HARD CODE]
