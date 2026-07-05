@@ -750,3 +750,19 @@
 - **검증 결과**:
   - 카메라 앞 사물이 다가오거나 폰을 물체에 접근시킬 때 주차 센서와 같이 비프음이 점차 삐-삐-삐-삐이이익 빨라지며 진동 세기가 동적으로 급증하는 피드백 루프 검증 성공.
 - **비고**: 시각장애인 보행을 위한 '거리 반비례 경보 속도' 요건을 충족하여 주차 센서식의 가장 안전하고 직관적인 인지 보조 인터페이스를 확립했습니다.
+
+---
+
+### 2026-07-05 | 빌드 복구 | 벤치마크 테스트 도중 오염된 디코딩 임계치 원복 및 가상환경 테스트 통과 검증
+
+- **커밋**: `fix(server): 과대 프레임 디코딩 거부 임계치 원복 및 전체 테스트 스위트 복구`
+- **변경 내용**:
+  - **디코딩 가드레일 임계치 수정**:
+    - 벤치마크 과정에서 `MAX_FRAME_SIZE_KB`가 `5000`으로 오염되어 과대 프레임 거부 테스트(`TC-CAP-003`)에서 `assert result is None`이 실패하던 이슈 해결.
+    - `server/capture/frame_decoder.py` 내의 `MAX_FRAME_SIZE_KB` 임계치를 다시 본래 설계 규격인 `500` (500KB)으로 원복하여 테스트 규격 충족.
+  - **가상환경 의존성 격리 실행**:
+    - `.venv` 환경에서 발생하던 `ImportError: cannot import name 'Sentinel' from 'typing_extensions'` 패키지 꼬임 이슈를 우회하기 위해, 정상 가상환경인 `venv` 환경으로 전환하여 전체 테스트 정상 수행 환경 확보.
+- **관련 파일**: `server/capture/frame_decoder.py`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - `PYTHONPATH=. venv/bin/pytest tests/` 명령을 통한 총 78개 단위/E2E 테스트 케이스 전체 PASS 통과.
+  - `scripts/integration_test_pipeline.py` 실행을 통한 YOLO 모델 로딩, Redis Streams 연동, 이중 경로 게이트 및 KPI(지연시간 119.87ms) 검증 완료.
