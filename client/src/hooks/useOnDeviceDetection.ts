@@ -119,37 +119,7 @@ export function useOnDeviceDetection() {
         console.log(`[Reflex] 전체 탐지: ${all.map(d => `${d.className}(${d.confidence.toFixed(2)})`).join(", ")}`);
       }
 
-      if (highest) {
-        const b = highest.bbox;
-        const centerX = b.x + b.w / 2;
-        const panning = Math.max(-1, Math.min(1, (centerX / FRAME_SIZE) * 2 - 1));
-        const bottomY = b.y + b.h;
-        const ratio = Math.max(
-          0,
-          Math.min(1, (bottomY - PROXIMITY_Y) / (FRAME_SIZE - PROXIMITY_Y))
-        );
-        const distance = 1.5 - ratio * 1.1;
-
-        let beepInterval = 250;
-        let hapticPattern = "double";
-        if (distance <= 0.5) {
-          beepInterval = 0;
-          hapticPattern = "continuous";
-        } else if (distance <= 1.0) {
-          beepInterval = 100;
-          hapticPattern = "continuous";
-        }
-
-        console.log(
-          `[OnDevice Reflex] ${highest.model}/${highest.className} 거리=${distance.toFixed(2)}m 패닝=${panning.toFixed(2)}`
-        );
-        audioEngine.playBeep(panning, beepInterval);
-        hapticEngine.trigger(hapticPattern);
-      } else {
-        audioEngine.stopBeep();
-        hapticEngine.stopContinuous();
-      }
-
+      // 중복 피드백 제어를 제거하여 상위 CameraView.tsx 단일 오케스트레이션으로 일원화합니다.
       return { seg, det };
     },
     []
