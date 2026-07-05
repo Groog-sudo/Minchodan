@@ -236,6 +236,11 @@ export function CameraView() {
     );
   }
 
+  const activeDetections = detections.filter(d => d.confidence > 0.40);
+  const detectedClassesStr = activeDetections.length > 0
+    ? activeDetections.map(d => `${d.className} (${(d.confidence * 100).toFixed(0)}%)`).join(", ")
+    : "없음";
+
   return (
     <View
       style={styles.container}
@@ -273,6 +278,11 @@ export function CameraView() {
         {debugInfo.map((line, i) => (
           <Text key={i} style={styles.debugText}>{line}</Text>
         ))}
+      </View>
+
+      <View style={styles.detectionListOverlay}>
+        <Text style={styles.detectionListTitle}>[실시간 감지]</Text>
+        <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
       </View>
 
       <View style={styles.panelWrap}>
@@ -422,6 +432,30 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     borderRadius: 8,
   },
+  detectionListOverlay: {
+    position: "absolute",
+    top: 250,
+    left: 16,
+    right: 16,
+    padding: 10,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#555555",
+  },
+  detectionListTitle: {
+    color: "#F59E0B",
+    fontSize: 12,
+    fontWeight: "bold",
+    fontFamily: "monospace",
+    marginBottom: 4,
+  },
+  detectionListText: {
+    color: "#10B981",
+    fontSize: 15,
+    fontWeight: "bold",
+    fontFamily: "monospace",
+  },
   panelWrap: {
     position: "absolute",
     bottom: 0,
@@ -430,11 +464,10 @@ const styles = StyleSheet.create({
   },
   bboxLabel: {
     position: "absolute",
-    top: -16,
-    left: -2,
+    top: 0,
+    left: 0,
     paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
+    paddingVertical: 2,
   },
   bboxText: {
     color: "#FFFFFF",
