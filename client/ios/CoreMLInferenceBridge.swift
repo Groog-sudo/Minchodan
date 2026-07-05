@@ -94,18 +94,33 @@ class CoreMLInferenceBridge: NSObject {
     // 메인 UI 스레드 블로킹 방지를 위한 백그라운드 실시간 처리
     DispatchQueue.global(qos: .userInteractive).async {
       do {
+        let startTime = CFAbsoluteTimeGetCurrent()
         let detResults = try self.runDetection(model: detModel, cgImage: cgImage, modelType: "object_detection")
+        let detTime = CFAbsoluteTimeGetCurrent()
+        let detLatency = (detTime - startTime) * 1000.0
+
         var segResults: [[String: Any]] = []
+        var segLatency = 0.0
 
         // segmentation 모델이 로드된 경우에만 실행
         if let segModel = self.segModel {
+          let segStartTime = CFAbsoluteTimeGetCurrent()
           segResults = try self.runDetection(model: segModel, cgImage: cgImage, modelType: "segmentation")
+          segLatency = (CFAbsoluteTimeGetCurrent() - segStartTime) * 1000.0
         }
+
+        let totalLatency = detLatency + segLatency
+        print("[CoreMLBridge] 벤치마크 - 탐지(det): \(String(format: "%.2f", detLatency))ms | 분할(seg): \(String(format: "%.2f", segLatency))ms | 총추론: \(String(format: "%.2f", totalLatency))ms")
 
         DispatchQueue.main.async {
           resolve([
             "seg": segResults,
-            "det": detResults
+            "det": detResults,
+            "benchmark": [
+              "det_ms": detLatency,
+              "seg_ms": segLatency,
+              "total_ms": totalLatency
+            ]
           ])
         }
       } catch {

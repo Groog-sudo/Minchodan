@@ -655,3 +655,20 @@
 - **검증 결과**:
   - 실기기 빌드 명령어 및 디렉토리 접근 매뉴얼 정합성 검토 완료.
 - **비고**: 이로써 깃허브에서 내려받은 직후 의존성 선언 파일(`package.json`, `Podfile`)을 통해 한 줄의 명령어로 네이티브 빌드 환경을 즉시 복원하고 가동하는 완성형 배포 안내 프로세스를 확립하였습니다.
+
+---
+
+### 2026-07-05 | 개발 반영 | iOS CoreML 추론 지연 시간(Latency) 실시간 측정 및 벤치마크 로그 탑재
+
+- **커밋**: `feat(ios): Swift 네이티브 브릿지 내 CFAbsoluteTimeGetCurrent 기반 추론 벤치마크 로그 생성`
+- **변경 내용**:
+  - 실기기 탑재 CoreML 모델이 Apple Neural Engine(ANE) 가속 성능을 성공적으로 뽑아내고 있는지 터미널 상에서 직접 계측 검증할 수 있도록 벤치마크 기능 주입.
+  - `client/ios/CoreMLInferenceBridge.swift`:
+    - `detectFrame` 호출 시 `CFAbsoluteTimeGetCurrent()`를 사용하여 탐지(det) 및 분할(seg) 모델의 순수 컴파일/추론 경과 시간(ms)을 개별 측정.
+    - 추론 완료 시 소수점 둘째 자리 포맷의 벤치마크 요약 로그 출력 (`[CoreMLBridge] 벤치마크 - 탐지(det): 12.30ms...`).
+    - 측정된 벤치마크 통계를 JSON 딕셔너리로 묶어 React Native 자바스크립트 영역에 동적 리턴(`benchmark.total_ms`).
+  - `client/ios/Minchodan/CoreMLInferenceBridge.swift`: Vision Framework의 `perform` 동기 추론 전후 지연 측정을 수행하는 동일 로깅 기능 주입.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/ios/Minchodan/CoreMLInferenceBridge.swift`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - CFAbsoluteTime 패키지 바인딩 및 iOS 빌드 통과 성공 검증 완료.
+- **비고**: 본 벤치마크 계측기를 빌드에 수록함으로써, 가속 지연 시간(정상 ANE 작동 시 10~20ms, 가속 실패 시 100ms 이상)을 로컬 서버 터미널과 Xcode 디버거 상에서 실시간으로 대조 검증하고, 최적화 완성도를 객관적 통계로 입증할 수 있게 되었습니다.

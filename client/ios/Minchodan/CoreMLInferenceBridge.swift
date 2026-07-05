@@ -79,9 +79,13 @@ class CoreMLInferenceBridge: NSObject {
     group.enter()
 
     // 메인 UI 스레드 블로킹 방지를 위한 백그라운드 실시간 처리
+    var totalLatency = 0.0
     DispatchQueue.global(qos: .userInteractive).async {
       do {
+        let startTime = CFAbsoluteTimeGetCurrent()
         try handler.perform([segRequest, detRequest])
+        totalLatency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0
+        print("[CoreMLBridge] 벤치마크 (Vision) - 총추론: \(String(format: "%.2f", totalLatency))ms")
       } catch {
         reject("EXEC_ERROR", "추론 실행 오류: \(error.localizedDescription)", error)
       }
@@ -90,7 +94,10 @@ class CoreMLInferenceBridge: NSObject {
     group.notify(queue: .main) {
       resolve([
         "seg": segResults,
-        "det": detResults
+        "det": detResults,
+        "benchmark": [
+          "total_ms": totalLatency
+        ]
       ])
     }
   }
