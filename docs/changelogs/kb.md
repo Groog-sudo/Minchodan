@@ -608,3 +608,19 @@
 - **검증 결과**:
   - 배치파일 문법 및 파라미터 바인딩 검증 완료.
 - **비고**: macOS뿐 아니라 다양한 Windows 기기(GPU 탑재 데스크톱 및 CPU 온보드 노트북 등)를 소지한 내일의 테스터 팀원들 모두가 터미널 1클릭으로 장애 없이 추론 서버를 가동할 수 있도록 크로스 플랫폼 적합성을 완비하였습니다.
+
+---
+
+### 2026-07-05 | 설계 반영 | iOS 구현 설계서 내 하이브리드(React Native vs Swift/CoreML) 아키텍처 기술 명세 추가
+
+- **커밋**: `docs(mobile): mobile_ios_implementation_plan.md 내 하이브리드 역할 분담 및 설계 배경 추가`
+- **변경 내용**:
+  - React Native(TypeScript / JS)의 전체 시스템 및 디바이스 피드백 제어 역할과 iOS Native(Swift / CoreML)의 Neural Engine 연계 딥러닝 고속 추론 역할을 정의하고, 이들의 협업 구조에 대한 가치 및 설계 배경을 문서에 추가.
+  - `docs/mobile/mobile_ios_implementation_plan.md` 1.5절 신설:
+    - React Native와 iOS Native 간의 역할 분담표 작성.
+    - JavaScript 싱글스레드 성능 제약 극복 방안 및 ANE 하드웨어 직접 제어의 설계 결정 배경 기술.
+    - `CameraView` ─▶ `CoreMLInferenceBridge.swift` ─▶ `BBoxOverlay` 간의 실시간 브릿지 이미지 데이터 송수신 메커니즘 구체화.
+- **관련 파일**: `docs/mobile/mobile_ios_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - 마크다운 인덱스 정합성 및 위계 검증 완료.
+- **비고**: 팀원들이 모바일 클라이언트 단의 자바스크립트 제어 영역과 Swift 네이티브 가속 영역 간의 상호작용 방식 및 아키텍처 설계 명분을 명확하게 파악하고 개발할 수 있도록 설계 문서를 최신화하였습니다.

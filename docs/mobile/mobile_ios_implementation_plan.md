@@ -57,6 +57,20 @@ React Native는 단일 TypeScript 코드베이스를 공유하므로, 플랫폼�
 | 디바이스 인증 | **MVP 하드코딩** | `REGISTERED_DEVICES` dict, 추후 `.env`/DB 확장 |
 | 필드 정합 기준 | **API 명세서 v0.2.0** | `ts`(epoch ms), `thumbnail_jpeg_b64`, `frame_id`, `heartbeat`/`heartbeat_ack` |
 
+### 1.5 하이브리드 아키텍처 및 역할 분담 (React Native vs iOS Native)
+
+본 앱은 온디바이스 실시간 딥러닝 연산의 극단적인 성능 극대화와 유연한 화면 및 오디오 인터페이스 제어를 동시에 충족하기 위해 **React Native(TypeScript)와 iOS Native(Swift/CoreML)의 하이브리드 협력 구조**로 설계되었습니다.
+
+| 영역 (Framework) | 주요 담당 역할 | 비유 |
+| :--- | :--- | :--- |
+| **React Native**<br/>(TypeScript / JS) | - 전체 UI 화면 구성 및 디버그 패널 렌더링<br/>- 외부 추론 서버(FastAPI)와의 **실시간 WebSocket 통신 및 데이터 전송**<br/>- 카메라 모듈 제어 및 캡처 스로틀(10fps / 2fps) 타이머 구동<br/>- 피드백용 오디오 비프음 엔진 제어 및 햅틱 오케스트레이션 | **두뇌 및 제어 센터** |
+| **iOS Native**<br/>(Swift / CoreML) | - 자바스크립트 영역에서 받아서 넘겨준 이미지 픽셀 해독<br/>- **Apple Neural Engine(ANE) 하드웨어를 직접 흔들어** YOLOv8 디텍션 및 노면 세그멘테이션의 실시간 추론 연산만 수행 | **고속 연산 전용 엔진** |
+
+#### 설계 결정 배경
+1. **JavaScript의 성능 제약 우회**: 자바스크립트/타입스크립트 런타임 자체의 싱글스레드 및 속도 제약으로 인해, 초당 10장 이상의 고해상도 카메라 프레임을 로컬에서 직접 추론하면 화면 렌더링이 멈추거나 지연(Latency)이 초당 수 초 단위로 급증합니다.
+2. **ANE(Apple Neural Engine) 하드웨어 직접 제어**: 애플 실리콘 칩셋의 전용 AI 가속 유닛인 ANE를 구동하여 추론 성능을 100% 발휘하기 위해서는 기저의 Swift 네이티브 코드가 필수적입니다.
+3. **상호작용 메커니즘**: React Native가 카메라 컴포넌트(`CameraView`) 및 캡처 스케줄을 총괄하고, 획득한 base64 버퍼를 네이티브 브릿지(`CoreMLInferenceBridge.swift`)로 바이패스하면, 백그라운드 스레드에서 CoreML이 추론 결과를 신속하게 리턴받아 다시 React Native 영역으로 돌려보내 화면 박스(`BBoxOverlay`)를 업데이트합니다.
+
 ---
 
 ## 2. iOS 플랫폼 제약 및 환경
