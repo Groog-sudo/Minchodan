@@ -238,7 +238,11 @@ export function CameraView() {
 
   const activeDetections = detections.filter(d => d.confidence > 0.40);
   const detectedClassesStr = activeDetections.length > 0
-    ? activeDetections.map(d => `${d.className} (${(d.confidence * 100).toFixed(0)}%)`).join(", ")
+    ? activeDetections.map(d => {
+        const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
+        const dist = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
+        return `${d.className} ${dist.toFixed(1)}m (${(d.confidence * 100).toFixed(0)}%)`;
+      }).join(", ")
     : "없음";
 
   return (
@@ -339,6 +343,8 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
         const topPct = (d.bbox.y / FRAME_SIZE) * 100;
         const widthPct = (d.bbox.w / FRAME_SIZE) * 100;
         const heightPct = (d.bbox.h / FRAME_SIZE) * 100;
+        const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
+        const distance = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
         return (
           <View
             key={`${d.model}-${i}`}
@@ -355,7 +361,7 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
           >
             <View style={[styles.bboxLabel, { backgroundColor: color }]}>
               <Text style={styles.bboxText}>
-                {d.className} {(d.confidence * 100).toFixed(0)}%
+                {d.className} {distance.toFixed(1)}m ({(d.confidence * 100).toFixed(0)}%)
               </Text>
             </View>
           </View>
