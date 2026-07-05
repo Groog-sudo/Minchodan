@@ -14,16 +14,10 @@ class AudioEngine {
   // 로컬 번들 800Hz 비프 에셋 (reflex_audio_specification.md 준수, 오프라인 안정)
   private readonly BEEP_SRC: number = require("../../assets/sounds/beep.wav");
 
-  constructor() {
-    // 앱 기동 즉시 오디오 세션과 플레이어를 백그라운드에서 사전 로딩하여 유실 및 레이턴시 원천 차단
-    void this.ensureSession();
-    this.ensurePlayer();
-  }
-
   /** iOS 오디오 세션 초기화 - 무음 모드에서도 소리 재생 활성화. */
   private async ensureSession(): Promise<void> {
     if (this.sessionInitialized) return;
-    this.sessionInitialized = true; // 최초 1회 즉시 플래그 잠금
+    this.sessionInitialized = true; // 진입 즉시 락을 걸어 중복 충돌을 방지
     try {
       await setAudioModeAsync({
         allowsRecording: false,
@@ -37,13 +31,13 @@ class AudioEngine {
     }
   }
 
-  /** 사운드 플레이어 지연 초기화 (앱 기동 시 또는 필요시 1회 생성). */
+  /** 사운드 플레이어 지연 초기화 (최초 1회 런타임에 안전하게 생성). */
   private ensurePlayer(): void {
     if (this.player) return;
     try {
       this.player = createAudioPlayer(this.BEEP_SRC);
       this.player.volume = 1.0;
-      console.log("[AudioEngine] 오디오 플레이어 로딩 완료");
+      console.log("[AudioEngine] 오디오 플레이어 지연 적재 완료");
     } catch (err) {
       console.error("[AudioEngine] 오디오 플레이어 생성 실패:", err);
     }
@@ -55,7 +49,7 @@ class AudioEngine {
    * @param intervalMs 비프음 주기 (ms, 0은 연속 경고음)
    */
   public async playBeep(panning: number, intervalMs: number): Promise<void> {
-    // 1. 이미 동일한 주기로 울리고 있다면 무시 (패닝 흔들림으로 인한 재생성 차단)
+    // 1. 이미 동일한 주기로 울리고 있다면 무시
     if (this.currentBeepInterval === intervalMs) {
       return;
     }
@@ -64,7 +58,7 @@ class AudioEngine {
     this.currentBeepInterval = intervalMs;
     this.currentPanning = panning;
 
-    // 2. iOS 오디오 세션 및 플레이어 보장
+    // 2. iOS 오디오 세션 및 플레이어 보장 (네이티브 모듈 로딩 완료 후 안전하게 런타임 확보)
     await this.ensureSession();
     this.ensurePlayer();
 
@@ -127,7 +121,7 @@ class AudioEngine {
     try {
       if (this.player) {
         this.player.pause();
-        // 메모리에 플레이어 인스턴스를 유지(release/null 처리 생략)
+        // 메모리에 플레이어 인스턴스를 유지(release/null 처리 생략하여 레이스 방지)
       }
     } catch (err) {
       console.error("[AudioEngine] 정지 오류:", err);
