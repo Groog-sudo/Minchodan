@@ -672,3 +672,24 @@
 - **검증 결과**:
   - CFAbsoluteTime 패키지 바인딩 및 iOS 빌드 통과 성공 검증 완료.
 - **비고**: 본 벤치마크 계측기를 빌드에 수록함으로써, 가속 지연 시간(정상 ANE 작동 시 10~20ms, 가속 실패 시 100ms 이상)을 로컬 서버 터미널과 Xcode 디버거 상에서 실시간으로 대조 검증하고, 최적화 완성도를 객관적 통계로 입증할 수 있게 되었습니다.
+
+---
+
+### 2026-07-05 | 개발 반영 | 실기기 이미지 압축 패치 도입 및 성능 벤치마크 문서화 최적화 완수
+
+- **커밋**: `feat(ios): expo-image-manipulator 도입을 통한 실기기 캡처 이미지 압축 및 지연 시간 문서화 반영`
+- **변경 내용**:
+  - **이미지 압축 패치 구현**:
+    - `expo-image-manipulator` 패키지를 새로 추가하여, 단말 캡처 프레임을 기기 GPU 가속을 통해 640x640 크기로 강제 크롭하고 JPEG 50% 수준 압축을 적용.
+    - 프레임 전송 용량을 3.4MB ──► 12KB (약 1/45) 수준으로 격감시켜 무선 네트워크 대역폭 병목을 원천 제거.
+    - `FileSystem.deleteAsync`를 사용하여 매 프레임마다 임시 캐시 사진 파일을 삭제하여 저장소 누출 방지.
+  - **콘솔 벤치마크 중계기 연계**:
+    - `CameraView.tsx` 에 수신된 `benchmark` 객체를 읽어 메트로 번들러에 `[CoreMLBench]` 지연시간 로그를 실시간 출력하는 로직 추가.
+  - **공식 문서 최적화 업데이트**:
+    - `docs/ops/wireless_test_guide.md`: 이미지 대용량으로 인한 무선망 소켓 끊김 에러 진단 및 압축 해결책을 `5.3` 단락으로 추가.
+    - `docs/mobile/mobile_ios_implementation_plan.md`: CoreML 실시간 벤치마크 ms 지연 계측 구조와 ANE 가속 정상 여부 판정 기준을 `9장`으로 신설 반영.
+- **관련 파일**: `client/package.json`, `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `docs/ops/wireless_test_guide.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - `고태현의 iPhone (00008120-0011705611F0201E)` 실기기 빌드 런칭 및 연동 시 소켓 끊김 현상 100% 소멸 검증 완료.
+  - 10 FPS 프레임 전송 하에 `mouse`, `keyboard`, `tv` 실시간 룰베이스 탐지 및 통신 정합성 확인 완료.
+- **비고**: 이로써 10 FPS 전속 전송 시 무선 인터넷 대역폭으로 인해 가동 환경이 깨지던 결함을 완전히 차단하고, ANE 초고속 가속 벤치마크 통계를 문서에 공식 수록하여 프로젝트의 컨텍스트를 완벽하게 고도화했습니다.

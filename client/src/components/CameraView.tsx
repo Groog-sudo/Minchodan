@@ -110,8 +110,11 @@ export function CameraView() {
     lastDetectTsRef.current = now;
     try {
       const t0 = Date.now();
-      const { seg, det } = await detectFrameRef.current(frame.float32, frame.base64);
+      const { seg, det, benchmark } = await detectFrameRef.current(frame.float32, frame.base64) as any;
       const dt = Date.now() - t0;
+      if (benchmark) {
+        console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
+      }
       // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
       setDetectionsRef.current(allDetections);

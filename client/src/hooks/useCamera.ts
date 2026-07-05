@@ -20,6 +20,7 @@ import {
   useCameraPermission,
 } from "react-native-vision-camera";
 import * as FileSystem from "expo-file-system/legacy";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
 import { COGNITIVE_FPS, REFLEX_FPS } from "../config";
 import { MOCK_CAMERA } from "../config/mock";
@@ -132,11 +133,23 @@ export function useCamera(
         const path = photo.path.startsWith("file://")
           ? photo.path
           : `file://${photo.path}`;
-        const base64 = await FileSystem.readAsStringAsync(path, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+
+        // expo-image-manipulator 기기 네이티브 GPU 가속 리사이징/압축 기동
+        const manipResult = await manipulateAsync(
+          path,
+          [{ resize: { width: 640, height: 640 } }],
+          { compress: 0.5, format: SaveFormat.JPEG, base64: true },
+        );
+
+        const base64 = manipResult.base64 ?? "";
         const float32 = decodeBase64JpegToChw(base64);
-        console.log(`[Camera/Real] ${stream} 프레임 획득 base64len=${base64.length} float32len=${float32.length}`);
+
+        console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> 압축 base64len=${base64.length} float32len=${float32.length}`);
+
+        // 디바이스 임시 스토리지 고갈 방지를 위해 촬영된 원본 및 리사이징 임시 파일 청소
+        void FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
+        void FileSystem.deleteAsync(manipResult.uri, { idempotent: true }).catch(() => {});
+
         return { float32, stream, base64 };
       } catch (err) {
         console.error(`[Camera/Real] ${stream} 캡처 오류:`, err);
