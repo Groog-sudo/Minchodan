@@ -93,6 +93,11 @@ class CoreMLDetector implements LocalDetector {
       let coremlResults: { seg: any[]; det: any[] } = { seg: [], det: [] };
       if (base64) {
         const bridgeResult = await CoreMLInferenceBridge.detectFrame(base64);
+        // 벤치마크 로그 출력 (Swift 네이티브 측정값)
+        if (bridgeResult.benchmark) {
+          const b = bridgeResult.benchmark;
+          console.log(`[CoreMLBenchmark] det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`);
+        }
         coremlResults = bridgeResult as DualDetectionResult;
       } else {
         console.warn("[CoreMLDetector] CoreML은 base64 이미지 입력을 필요로 합니다.");

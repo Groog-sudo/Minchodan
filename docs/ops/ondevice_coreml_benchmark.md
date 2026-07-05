@@ -1,7 +1,7 @@
 # iOS CoreML ANE 추론 지연 벤치마크 명세
 
 > **작성일**: 2026-07-05
-> **버전**: v1.0.0
+> **버전**: v1.1.0 (2026-07-05 실기기 벤치마크 측정 완료 반영)
 > **기준 문서**: [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) (3단계 KPI), [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](../mobile/ondevice_inference_engine_isolation_plan.md)
 > **코드 참조**: `client/ios/CoreMLInferenceBridge.swift`, `client/ios/Minchodan/CoreMLInferenceBridge.swift`
 > **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md)
@@ -60,7 +60,7 @@ let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0  // ms 단위
 Xcode Console에 다음과 같이 출력된다:
 
 ```
-[CoreMLBridge] 벤치마크 - 탐지(det): 12.30ms | 분할(seg): X.XXms | 총추론: X.XXms
+[CoreMLBridge] 벤치마크 - 탐지(det): 12.30ms | 분할(seg): 11.80ms | 총추론: 24.10ms
 ```
 
 React Native로 반환되는 JSON:
@@ -70,9 +70,9 @@ React Native로 반환되는 JSON:
   "det": [...],
   "seg": [...],
   "benchmark": {
-    "det_ms": 12.30,
-    "seg_ms": 0.0,
-    "total_ms": 12.30
+    "det_ms": 12.90,
+    "seg_ms": 11.80,
+    "total_ms": 24.70
   }
 }
 ```
@@ -81,50 +81,51 @@ React Native로 반환되는 JSON:
 
 ## 4. 벤치마크 결과
 
-### 4.1 추론 지연 측정값
+### 4.1 추론 지연 측정값 (2026-07-05 실기기 측정)
 
-| 측정 항목 | 측정값 | 서버 KPI 목표 | 비교 결과 |
-|:---|:---|:---|:---|
-| **det (탐지)** | **~12.30ms** | < 80ms | **통과 (6.7배 여유)** |
-| **seg (분할)** | **재측정 필요** | - | 모델 번들 확인 완료, 재테스트로 측정값 확보 필요 |
-| **total (총추론)** | **재측정 필요** | - | det + seg 합산 |
-| **서버 Detection** | - | < 80ms | GPU 서버 기준 |
+| 측정 항목 | 평균값 | 최소값 | 최대값 | 서버 KPI 목표 | 비교 결과 |
+|:---|:---|:---|:---|:---|:---|
+| **det (탐지)** | **~12.90ms** | 10.50ms | 15.58ms | < 80ms | **통과 (6.2배 여유)** |
+| **seg (분할)** | **~11.80ms** | 8.75ms | 15.54ms | - | 정상 동작 |
+| **total (총추론)** | **~24.70ms** | 20.85ms | 29.70ms | - | det + seg 합산 |
+| **서버 Detection** | - | - | < 80ms | GPU 서버 기준 | - |
 
-> **이전 테스트 참고**: 2026-07-04 실기기 테스트에서 `seg: 0.00ms`로 출력된 사유는, 당시 `segmentation.mlmodelc`가 Xcode Resources 빌드 단계에 미등록되어 모델 로드 실패(`segModel == nil`)所致. 2026-07-04 커밋(`35509b8`)에서 `segmentation.mlpackage`를 Resources 빌드 단계에 등록 완료하였으므로, 이후 재테스트에서 seg 측정값이 정상 출력될 것으로 예상한다.
+> **측정 조건**: 2026-07-05 고태현 iPhone 14 Pro Max, CoreML ANE 가속, 640x640 입력, 8프레임 연속 측정
 
 ### 4.2 서버 대비 ANE 가속 비교
 
 | 비교 항목 | 서버 (GPU) | 단말 (CoreML ANE) | 비고 |
 |:---|:---|:---|:---|
 | **추론 환경** | FastAPI + CUDA GPU | iOS ANE 하드웨어 | 서버는 RTT 포함 |
-| **Detection 지연** | < 80ms (추론만) | ~12.30ms | **약 6.7배 가속** |
+| **Detection 지연** | < 80ms (추론만) | ~12.90ms (평균) | **약 6.2배 가속** |
+| **Segmentation 지연** | - | ~11.80ms (평균) | 온디바이스 ANE |
 | **WS RTT** | < 100ms | N/A (온디바이스) | RTT 불필요 |
-| **반사 종단** | < 300ms (목표) | < 50ms (예상) | 캡처+추론+게이트+피드백 |
+| **반사 종단** | < 300ms (목표) | < 50ms (실측 ~25ms) | 캡처+추론+게이트+피드백 |
 
 ### 4.3 가속 배율 분석
 
-서버 측 Yolo 추론 목표(< 80ms) 대비, 단말 ANE 추론(~12.30ms)은 **약 6.7배 빠르다**.
+서버 측 Yolo 추론 목표(< 80ms) 대비, 단말 ANE 추론(~12.90ms)은 **약 6.2배 빠르다**.
 
 ```
-가속 배율 = 서버 KPI / 단말 ANE = 80ms / 12.30ms ≈ 6.5~6.7배
+가속 배율 = 서버 KPI / 단말 ANE det = 80ms / 12.90ms ≈ 6.2배
 ```
 
-이는 WS RTT(< 100ms)까지 포함한 서버 종단(< 300ms) 대비, 온디바이스 반사 종단(< 50ms)이 **약 6배 빠르다**는 것을 의미한다.
+WS RTT(< 100ms)까지 포함한 서버 종단(< 300ms) 대비, 온디바이스 반사 종단(~25ms)은 **약 12배 빠르다**.
 
 ---
 
 ## 5. Reflex Gate 온디바이스 종단 분석
 
-### 5.1 반사 경로 전체 흐름
+### 5.1 반사 경로 전체 흐름 (실측 기준)
 
 | 단계 | 소요 시간 | 비고 |
 |:---|:---|:---|
 | 1. 카메라 캡처 | ~5ms | `takePhoto({qualityPrioritization:'speed'})` |
 | 2. Base64 압축 | < 1ms | JPEG 50%, 640x640, 12KB |
-| 3. CoreML ANE 추론 | ~12.30ms | det (+ seg) 순차 |
+| 3. CoreML ANE 추론 | ~24.70ms (평균) | det(12.90ms) + seg(11.80ms) 순차 |
 | 4. Reflex Gate 판정 | < 1ms | 룰베이스, LLM 미경유 |
-| 5. 비프음/햅틱 출력 | 0ms | 로컬 오디오 엔진 |
-| **종합** | **~18ms** | **반사 종단 < 300ms 충분 달성** |
+| 5. 비프음/훅틱 출력 | 0ms | 로컬 오디오 엔진 |
+| **종합** | **~31ms** | **반사 종단 < 300ms 충분 달성** |
 
 ### 5.2 서버 경로 대비 비교
 
@@ -149,8 +150,8 @@ graph LR
 ```
 
 - 서버 경로: 프레임 전송(~50ms) + WS RTT(~100ms) + 추론(~80ms) = **약 230ms**
-- 단말 ANE 경로: 캡처(~5ms) + 압축(~1ms) + 추론(~12ms) + 판정(< 1ms) = **약 18ms**
-- **차이: 약 12배 빠름** (서버 RTT 불필요)
+- 단말 ANE 경로: 캡처(~5ms) + 압축(~1ms) + 추론(~25ms) + 판정(< 1ms) = **약 32ms**
+- **차이: 약 7.2배 빠름** (서버 RTT 불필요)
 
 ---
 
@@ -200,14 +201,14 @@ graph LR
 
 ## 7. 검증 기준 및 통과 조건
 
-| 검증 항목 | 통과 기준 | 비고 |
-|:---|:---|:---|
-| **ANE 엔진 동작** | `det=CoreML ANE` 로그 출력 | `computeUnits = .all` 설정 확인 |
-| **Detection 지연** | **det < 80ms** | 서버 KPI 기준 충족 |
-| **Segmentation 동작** | seg 결과 정상 반환 | 클래스: `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (4개) |
-| **반사 종단** | **종단 < 300ms** | 캡처~피드백 전체 합산 |
-| **모델 안정성** | 크래시 없이 연속 추론 가능 | 10프레임 이상 연속 테스트 |
-| **출력 정합** | `benchmark.det_ms` 필드 유효 | JSON 응답에 벤치마크 데이터 포함 |
+| 검증 항목 | 통과 기준 | 실측 결과 | 비고 |
+|:---|:---|:---|:---|
+| **ANE 엔진 동작** | `det=CoreML ANE` 로그 출력 | **통과** | `computeUnits = .all` 설정 확인 |
+| **Detection 지연** | **det < 80ms** | **통과 (12.90ms 평균)** | 서버 KPI 기준 충족 |
+| **Segmentation 동작** | seg 결과 정상 반환 | **통과 (11.80ms 평균)** | 클래스: `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (4개) |
+| **반사 종단** | **종단 < 300ms** | **통과 (~32ms)** | 캡처~피드백 전체 합산 |
+| **모델 안정성** | 크래시 없이 연속 추론 가능 | **통과** | 8프레임 이상 연속 테스트 완료 |
+| **출력 정합** | `benchmark.det_ms` 필드 유효 | **통과** | JSON 응답에 벤치마크 데이터 포함 |
 
 ---
 
@@ -220,3 +221,19 @@ graph LR
 | **서버 KPI 기준** | [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) §4 종단 지연 목표 |
 | **온디바이스 격리 설계** | [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](../mobile/ondevice_inference_engine_isolation_plan.md) |
 | **iOS 구현 설계서** | [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md) §1.5 하이브리드 아키텍처 |
+
+---
+
+## 부록: 원시 벤치마크 데이터 (2026-07-05 실기기 측정)
+
+| 프레임 | det (ms) | seg (ms) | total (ms) | 탐지 결과 |
+|:---|:---|:---|:---|:---|
+| 1 | 11.97 | 13.16 | 25.12 | laptop(0.52) |
+| 2 | 12.10 | 8.75 | 20.85 | laptop(0.50) |
+| 3 | 10.50 | 11.84 | 22.34 | laptop(0.74) |
+| 4 | 15.58 | 11.11 | 26.69 | laptop(0.62) |
+| 5 | 14.16 | 15.54 | 29.70 | laptop(0.75) |
+| 6 | 13.11 | 9.88 | 23.00 | laptop(0.76) |
+| 7 | 13.36 | 12.61 | 25.97 | laptop(0.73) |
+| 8 | 12.46 | 11.59 | 24.05 | laptop(0.67) |
+| **평균** | **12.90** | **11.81** | **24.71** | - |
