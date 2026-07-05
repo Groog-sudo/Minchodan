@@ -222,8 +222,8 @@ def write_dataset(
     if not resolved_images:
         raise ValueError("변환할 이미지가 없습니다. XML 경로와 이미지 폴더를 확인하세요.")
 
-    # 시각장애인 보행 보조 핵심 사물 클래스 목록
-    target_labels = {"bollard", "person", "scooter", "motorcycle", "bicycle", "stroller", "wheelchair", "traffic_light", "tree_trunk", "movable_signage", "kiosk", "fire_hydrant"}
+    # 시각장애인 보행 보조 핵심 사물 클래스 목록 (골목길 차량 위협 포함 15종)
+    target_labels = {"bollard", "person", "scooter", "motorcycle", "bicycle", "stroller", "wheelchair", "traffic_light", "tree_trunk", "movable_signage", "kiosk", "fire_hydrant", "car", "truck", "bus"}
     
     # 클래스 균형 추출을 위해 전체를 먼저 무작위 셔플
     rng = random.Random(seed)
