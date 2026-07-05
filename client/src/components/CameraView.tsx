@@ -22,6 +22,7 @@ import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/use
 import { useWebSocket } from "../hooks/useWebSocket";
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
+import { audioEngine } from "../services/audioEngine";
 import type { StreamType } from "../types/detection";
 
 const FRAME_SIZE = 640;
@@ -118,6 +119,24 @@ export function CameraView() {
       // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
       setDetectionsRef.current(allDetections);
+
+      // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate)
+      if (allDetections.length > 0) {
+        const highHazards = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "skateboard", "pothole", "caution"];
+        const hasHigh = allDetections.some(d => highHazards.includes(d.className) && d.confidence > 0.45);
+
+        if (hasHigh) {
+          void hapticEngine.trigger("double");
+          void audioEngine.playBeep(0.0, 300); // 긴급 충돌 위험: 300ms 빠른 경보음
+        } else {
+          void hapticEngine.trigger("short");
+          void audioEngine.playBeep(0.0, 800); // 일반 장애물: 800ms 느린 경보음
+        }
+      } else {
+        hapticEngine.stopContinuous();
+        void audioEngine.stopBeep();
+      }
+
       const top = [...det, ...seg][0];
       setLastDetectRef.current(
         top
