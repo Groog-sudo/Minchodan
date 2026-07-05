@@ -200,7 +200,7 @@
 | On-device 추론 | 없음(thin client) | 반사 레이어(post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis | WebRTC/gRPC 등        |
 | TTS            | Kokoro/Coqui      | OpenAI TTS            |
-| RDB            | (미정)            | MariaDB/PostgreSQL    |
+| RDB            | 비동기 SQLAlchemy | MariaDB/PostgreSQL    |
 
 > **On-device 추론 Post-MVP 상세 설계서**: [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0) — 하이브리드 엣지-클라우드 이중 루프, `yolo26n` CoreML/TFLite 포팅, `Frame Processor` 병행 구조, 점진적 전환 4단계(포스트 A~D) 청사진.
 

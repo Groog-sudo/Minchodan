@@ -23,6 +23,7 @@
 | **YOLO/TTS MVP 다음 작업 계획** | [yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
 | **백엔드 DB 아키텍처** | [backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
 | 2단계 캡처 설계서     | [stage2_capture_design.md](stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
+
 | 3단계 탐지 설계서     | [stage3_detection_design.md](stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
 | 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
 | **Post-MVP 하이브리드 로드맵** | [post_mvp_hybrid_roadmap.md](post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
@@ -89,4 +90,4 @@ Cursor·Claude 등에 작업을 지시할 때 `[ai_prompt_context.md](ai_prompt_
 | On-device 추론 | 없음 (thin client) | 반사 레이어 (post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis  | WebRTC/gRPC 등         |
 | TTS            | Kokoro/Coqui       | OpenAI TTS             |
-| RDB            | (미정)             | MariaDB/PostgreSQL     |
+| RDB            | 비동기 SQLAlchemy  | MariaDB/PostgreSQL     |
