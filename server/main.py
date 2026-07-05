@@ -63,11 +63,45 @@ async def lifespan(app: FastAPI):
     await mcp_manager.stop_consumer()
 
 
+# OpenAPI 태그 메타데이터 정의 (Swagger UI 섹션 안내)
+openapi_tags = [
+    {
+        "name": "WebSocket Gateway",
+        "description": (
+            "**WebSocket** `ws://{host}/ws/detect?device_id={id}` — "
+            "단말(React Native) ↔ GPU 서버 간 실시간 양방향 통신 채널.\n\n"
+            "WebSocket은 OAS 3.1 자동 렌더링 미지원이므로 Swagger UI에 개별 항목으로 표시되지 않습니다. "
+            "전체 프로토콜 명세는 `docs/design/api_specification.md` 를 참조하십시오.\n\n"
+            "**핸드셰이크 순서**: `accept` → `welcome` → `hello` → `auth_ok` → heartbeat 루프\n\n"
+            "**수신 메시지 타입**: `hello` · `detection` · `heartbeat_ack`\n\n"
+            "**송신 메시지 타입**: `welcome` · `auth_ok` · `ack` · `reflex_alert` · `guide` · `heartbeat` · `error`"
+        ),
+    },
+    {
+        "name": "Monitor",
+        "description": (
+            "운영자 관제 콘솔용 **SSE(Server-Sent Events)** 실시간 스트리밍 API.\n\n"
+            "MCP 메트릭 및 탐지 이벤트를 콘솔 프론트엔드로 브로드캐스트합니다."
+        ),
+    },
+    {
+        "name": "default",
+        "description": "헬스체크 및 기타 관리 API.",
+    },
+]
+
 # FastAPI App 인스턴스 생성
 app = FastAPI(
     title="Minchodan GPU Inference Server",
-    description="시각장애인 보행 보조 스마트 가이드독 AI 플랫폼 GPU 추론 및 관제 API 서버",
+    description=(
+        "시각장애인 보행 보조 스마트 가이드독 AI 플랫폼 GPU 추론 및 관제 API 서버.\n\n"
+        "- **WebSocket** `/ws/detect`: 단말 실시간 프레임 수신 및 반사/인지 경보 송신\n"
+        "- **SSE** `/api/v1/monitor/stream`: 관제 콘솔 실시간 메트릭 스트리밍\n"
+        "- **REST** `/health`: 서버 헬스체크\n\n"
+        "> WebSocket 전체 명세: `docs/design/api_specification.md` v0.3.0"
+    ),
     version="v1.0.0",
+    openapi_tags=openapi_tags,
     lifespan=lifespan,
 )
 
