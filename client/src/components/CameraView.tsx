@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -25,6 +25,7 @@ import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
 import type { StreamType } from "../types/detection";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const FRAME_SIZE = 640;
 
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
@@ -210,28 +211,29 @@ export function CameraView() {
       style={styles.container}
       accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}`}
     >
-      {isMockMode && previewSrc !== null ? (
-        <Image
-          source={previewSrc}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
-      ) : (
-        !isMockMode && (
-          <Camera
-            ref={cameraRef}
-            device={device!}
-            isActive={true}
-            photo={true}
+      {/* 1:1 카메라 스크린 기하학적 정합 프레임 */}
+      <View style={styles.cameraContainer}>
+        {isMockMode && previewSrc !== null ? (
+          <Image
+            source={previewSrc}
             style={StyleSheet.absoluteFill}
+            resizeMode="cover"
           />
-        )
-      )}
-
-      {hapticFlash && <View style={styles.hapticFlash} />}
-
-      {/* BBox 오버레이: 탐지된 객체 박스 + 클래스명/신뢰도 시각화 */}
-      <BBoxOverlay detections={detections} />
+        ) : (
+          !isMockMode && (
+            <Camera
+              ref={cameraRef}
+              device={device!}
+              isActive={true}
+              photo={true}
+              style={StyleSheet.absoluteFill}
+            />
+          )
+        )}
+        {hapticFlash && <View style={styles.hapticFlash} />}
+        {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합 */}
+        <BBoxOverlay detections={detections} />
+      </View>
 
       <View style={styles.overlayTop}>
         <ConnectionStatus status={status} />
@@ -260,23 +262,38 @@ function DebugBox({ info }: { info: string[] }) {
   );
 }
 
-// 위험 클래스 색상: 보행 충돌 위험은 빨강, 노면 위험은 주황, 기타는 초록
-const HAZARD_COLORS: Record<string, string> = {
-  person: "#EF4444", bicycle: "#EF4444", car: "#EF4444", motorcycle: "#EF4444",
-  bus: "#EF4444", truck: "#EF4444", skateboard: "#EF4444",
-  caution: "#F59E0B", roadway: "#F59E0B",
-};
+// 간단한 스트링 해시를 통해 고유 HSL 색상 생성 (시각장애인 보행 시인성 확보)
+function getClassColor(className: string): string {
+  // 긴급 충돌 위험군은 빨간색 강제 고정
+  const highHazards = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "skateboard", "pothole", "caution"];
+  if (highHazards.includes(className)) {
+    return "#EF4444";
+  }
+
+  // 지면 관련 위험은 주황색 강제 고정
+  const groundHazards = ["roadway"];
+  if (groundHazards.includes(className)) {
+    return "#F59E0B";
+  }
+
+  // 그 외 일반 장애물은 고유 해시 기반 HSL 컬러 매핑 (선명도 85%, 밝기 55%)
+  let hash = 0;
+  for (let i = 0; i < className.length; i++) {
+    hash = className.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash % 360);
+  return `hsl(${hue}, 85%, 55%)`;
+}
 
 /**
  * BBox 오버레이: 카메라 프리뷰 위에 탐지 박스를 그린다.
  * 박스 좌표는 640x640 기준이므로 화면 대비 비율로 변환.
  */
 function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) {
-  // 카메라 프리뷰는 화면을 꽉 채우므로, 640x640 기준 좌표를 퍼센트로 변환
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {detections.map((d, i) => {
-        const color = HAZARD_COLORS[d.className] ?? "#22C55E";
+        const color = getClassColor(d.className);
         const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
         const topPct = (d.bbox.y / FRAME_SIZE) * 100;
         const widthPct = (d.bbox.w / FRAME_SIZE) * 100;
@@ -394,5 +411,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "bold",
     fontFamily: "monospace",
+  },
+  cameraContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_WIDTH,
+    overflow: "hidden",
+    position: "relative",
+    backgroundColor: "#111111",
   },
 });
