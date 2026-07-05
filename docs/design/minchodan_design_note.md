@@ -104,7 +104,8 @@
 - **데이터 인터페이스:** In 이미지 bytes Out `{event_id, detections:[{class_name, confidence, bbox, track_id}], surface:[{class_name, mask|centroid}], risk_hint, inference_ms}`
 - **의존성·예외:** 선행=2단계. 출력=4·5·6단계. **필수 가드:** 빈 버퍼/디코딩 실패(None) 가드레일; 무탐지 시 에러 없이 빈 리스트 반환(파이프라인 영속성).
 - **분업:** CV/PyTorch 경험자 1~2명. Colab 검증 서버 이식. 탐지 결과는 전원 검증.
-- **MVP 스코프:** 탐지 클래스 우선 3~5개로 시작. 사전학습+커스텀 fine-tuning은 여유 시.
+- **MVP 스코프:** 탐지 클래스 우선 3~5개로 시작. 
+  - **효율적 커스텀 학습 (YOLO)**: 전체 데이터 풀 학습 대신, 모델별 오탐 비중이 가장 낮은 이미지를 선별(클래스당 2,000장 수준)하여 효율적으로 커스텀 학습을 수행. 학습 결과 파일명에 날짜를 명시(예: `aihub_det_v1_20260704/weights/best.pt`)하여 버전 관리 혼선 방지.
 - **완료 기준:** 킥보드 추론 `conf≈0.87, track_id` 출력, **Detection 추론 < 80ms**; 30초 후 Redis ctx 키 자동 삭제(TTL 동작).
 - ** v1.1 반영:**
   - 모델: YOLOv8에서 **Yolo 26N - Object Detection**(NMS-free, sm_120, 소형객체 최적화) + **Yolo 26N - Segmentation**으로 전환. RT-DETR은 occlusion 백로그.

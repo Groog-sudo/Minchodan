@@ -20,6 +20,7 @@
 | **YOLO 샘플 추론** | 완료 | 샘플 3장 추론 및 TTS 문장 생성 확인 |
 | **단위 테스트** | 완료 | `tests/test_detection.py` 21개 통과 |
 | **단말 TTS 계약** | 완료 | `message_hint = {id, type, text}` 계약 고정 |
+| **YOLO 커스텀 학습** | 완료 | 풀 학습 대신 효율성 극대화를 위해 모델별 오탐 비중이 가장 낮은 2,000장 이미지만 선별하여 학습 진행. 결과 경로: `outputs/yolo_train/aihub_det_v1_20260704/weights/best.pt` (버전 및 날짜 표기) |
 
 ---
 
