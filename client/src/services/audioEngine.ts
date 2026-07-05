@@ -1,4 +1,5 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
+import { Asset } from "expo-asset";
 
 /**
  * 시각장애인 긴급 회피용 입체 비프음 오디오 엔진.
@@ -14,28 +15,29 @@ class AudioEngine {
   // 로컬 번들 800Hz 비프 에셋 (reflex_audio_specification.md 준수, 오프라인 안정)
   private readonly BEEP_SRC: number = require("../../assets/sounds/beep.wav");
 
-  /** iOS 오디오 세션 초기화 - 무음 모드에서도 소리 재생 활성화. */
+  /** iOS 오디오 세션 초기화 - 충돌 방지를 위해 기본 세션 유지 및 바이패스. */
   private async ensureSession(): Promise<void> {
     if (this.sessionInitialized) return;
-    this.sessionInitialized = true; // 진입 즉시 락을 걸어 중복 충돌을 방지
-    try {
-      await setAudioModeAsync({
-        allowsRecording: false,
-        playsInSilentMode: true,    // 무음 스위치 무시 (시각장애인 보조 필수)
-        shouldPlayInBackground: false,
-        interruptionMode: "duckOthers",
-      });
-      console.log("[AudioEngine] 오디오 세션 활성화 완료");
-    } catch (err) {
-      console.warn("[AudioEngine] 오디오 세션 초기화 실패 (재생 바이패스):", err);
-    }
+    this.sessionInitialized = true;
+    console.log("[AudioEngine] 기본 오디오 세션 바이패스 완료");
   }
 
-  /** 사운드 플레이어 지연 초기화 (최초 1회 런타임에 안전하게 생성). */
-  private ensurePlayer(): void {
+  /** 사운드 플레이어 지연 초기화 (최초 1회 런타임에 안전하게 로컬 URI로 생성). */
+  private async ensurePlayer(): Promise<void> {
     if (this.player) return;
     try {
-      this.player = createAudioPlayer(this.BEEP_SRC);
+      // 1. expo-asset을 통해 require 리소스의 실제 물리 URI 추출
+      const asset = Asset.fromModule(this.BEEP_SRC);
+      if (!asset.localUri) {
+        await asset.downloadAsync(); // 로컬 다운로드 및 적재
+      }
+      const sourceUri = asset.localUri || asset.uri;
+      if (!sourceUri) {
+        throw new Error("로컬 오디오 에셋 URI 생성 실패");
+      }
+
+      console.log("[AudioEngine] 오디오 에셋 다운로드 완료 URI:", sourceUri);
+      this.player = createAudioPlayer(sourceUri);
       this.player.volume = 1.0;
       console.log("[AudioEngine] 오디오 플레이어 지연 적재 완료");
     } catch (err) {
@@ -60,7 +62,7 @@ class AudioEngine {
 
     // 2. iOS 오디오 세션 및 플레이어 보장 (네이티브 모듈 로딩 완료 후 안전하게 런타임 확보)
     await this.ensureSession();
-    this.ensurePlayer();
+    await this.ensurePlayer(); // 비동기 다운로드를 대기하기 위해 await 추가
 
     try {
       if (!this.player) {
