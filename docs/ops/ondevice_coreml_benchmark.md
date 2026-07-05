@@ -26,6 +26,7 @@
 | **ANE 바인딩** | `config.computeUnits = .all` → ANE 우선, CPU/GPU 폴백 |
 | **모델 포맷** | `.mlmodelc` (Xcode 컴파일 완료 바이너리) |
 | **모델 파일** | `object_detection.mlmodelc` (80 클래스 COCO), `segmentation.mlmodelc` (4 클래스 노면) |
+| **번들 상태** | `object_detection.mlpackage` + `segmentation.mlpackage` Xcode Resources 빌드 단계 등록 완료 |
 | **입력 해상도** | 640x640 RGB (`CVPixelBuffer`, `kCVPixelFormatType_32BGRA`) |
 | **프레임 압축** | JPEG 50% 품질, base64 인코딩 (원본 3.4MB → 12KB, 1/45 압축) |
 | **스레드 모델** | `DispatchQueue.global(qos: .userInteractive)` 백그라운드 처리 |
@@ -85,11 +86,11 @@ React Native로 반환되는 JSON:
 | 측정 항목 | 측정값 | 서버 KPI 목표 | 비교 결과 |
 |:---|:---|:---|:---|
 | **det (탐지)** | **~12.30ms** | < 80ms | **통과 (6.7배 여유)** |
-| **seg (분할)** | 측정 필요 | - | 실기기 로그 확인 후 기입 |
-| **total (총추론)** | 측정 필요 | - | det + seg 합산 |
+| **seg (분할)** | **재측정 필요** | - | 모델 번들 확인 완료, 재테스트로 측정값 확보 필요 |
+| **total (총추론)** | **재측정 필요** | - | det + seg 합산 |
 | **서버 Detection** | - | < 80ms | GPU 서버 기준 |
 
-> **참고**: `seg` 측정값은 실기기 로그(`[CoreMLBridge] 벤치마크 - 탐지(det): Xms | 분할(seg): Xms | 총추론: Xms`)에서 확인하여 기입한다. 현재 레거시 빌드에서는 `segmentation.mlmodelc` 미번들로 seg가 비활성화될 수 있다.
+> **이전 테스트 참고**: 2026-07-04 실기기 테스트에서 `seg: 0.00ms`로 출력된 사유는, 당시 `segmentation.mlmodelc`가 Xcode Resources 빌드 단계에 미등록되어 모델 로드 실패(`segModel == nil`)所致. 2026-07-04 커밋(`35509b8`)에서 `segmentation.mlpackage`를 Resources 빌드 단계에 등록 완료하였으므로, 이후 재테스트에서 seg 측정값이 정상 출력될 것으로 예상한다.
 
 ### 4.2 서버 대비 ANE 가속 비교
 
@@ -192,6 +193,8 @@ graph LR
 [CoreMLBridge] object_detection 모델 로드 완료 (Neural Engine 활성화)
 [CoreMLBridge] segmentation.mlmodelc 미번들 - det-only 모드로 기동
 ```
+
+> **현황**: `segmentation.mlpackage`는 Xcode Resources 빌드 단계에 등록 완료되어 있으므로, 정상적인 빌드에서는 `segmentation 모델 로드 완료` 로그가 출력되어야 한다. `미번들` 로그가 출력되면 Xcode 프로젝트 설정을 확인한다.
 
 ---
 
