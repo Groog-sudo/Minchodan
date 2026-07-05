@@ -33,6 +33,11 @@ class YoloDetector(DetectorInterface):
         try:
             self.model = YOLO(self.weights_path)
             logger.info(f"[YoloDetector] 모델 로드 성공: {self.weights_path}")
+
+    def load(self) -> bool:
+        try:
+            self.model = YOLO(self.weights_path)
+            logger.info(f"[YoloDetector] 모델 로드 성공: {self.weights_path}")
             return True
         except Exception as e:
             logger.error(f"[YoloDetector] 모델 로드 실패: {e}")
@@ -40,6 +45,11 @@ class YoloDetector(DetectorInterface):
             return False
 
     def predict(self, frame: np.ndarray) -> list[Detection]:
+        # =========================================================================
+        # 🤖 VIBE CODE 영역 (안전 폴백 및 예외 처리) 🤖
+        # 💡 [설계 의도] GPU OOM(Out of Memory)이나 ByteTrack 의존성 에러 시
+        # 서버가 죽지 않고 CPU나 기본 predict 모드로 폴백하도록 방어적 코딩을 적용했습니다.
+        # =========================================================================
         if self.model is None:
             logger.warning("[YoloDetector] 모델이 로드되지 않았습니다.")
             return []
@@ -103,6 +113,14 @@ class YoloDetector(DetectorInterface):
 
     @staticmethod
     def _parse_result(result) -> list[Detection]:
+        # =========================================================================
+        # 👨‍💻 HARD CODE 영역 시작 (핵심 파싱 및 BBox 매핑) 👨‍💻
+        # 💡 [면접 대비 주석]
+        # 질문: YOLO 모델의 텐서 출력을 시스템 내부 포맷(Detection)으로 직접 파싱한 이유는?
+        # 답변: 1. 텐서 값을 Python 기본 타입(float, int)으로 완전 캐스팅하여 JSON 직렬화 에러를 방지했습니다.
+        #       2. ByteTrack이 반환하는 식별자를 'T-0001' 포맷으로 통일하여, 하위 파이프라인(위험도 게이트)에서 
+        #          동일 객체를 끊김 없이 추적하고 중복 알림을 억제할 수 있도록 식별 체계를 구축했습니다.
+        # =========================================================================
         detections: list[Detection] = []
         if result.boxes is None or len(result.boxes) == 0:
             return detections

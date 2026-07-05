@@ -68,12 +68,12 @@
 
 ### 2.3 heartbeat
 
-서버가 5초 간격으로 ping을 송신하고 단말은 pong으로 응답합니다. ping/pong은 WebSocket 제어 프레임 또는 JSON `{type:"heartbeat"}` 메시지를 사용합니다.
+서버가 5초 간격으로 ping을 송신하고 단말은 pong으로 응답합니다. ping/pong은 WebSocket 제어 프레임 또는 JSON `{type:"ping"}` / `{type:"heartbeat"}` 메시지를 사용합니다.
 
 | 방향      | 메시지                                                  |
 | --------- | ------------------------------------------------------- |
-| 서버 단말 | WebSocket ping 프레임 또는 `{type:"heartbeat", ts}`     |
-| 단말 서버 | WebSocket pong 프레임 또는 `{type:"heartbeat_ack", ts}` |
+| 서버 단말 | WebSocket ping 프레임 또는 `{type:"ping", ts}` 또는 `{type:"heartbeat", ts}` |
+| 단말 서버 | WebSocket pong 프레임 또는 `{type:"pong", ts}` 또는 `{type:"heartbeat_ack", ts}` |
 
 ### 2.4 error (서버 단말)
 

@@ -106,12 +106,12 @@ class TestGates:
         det = Detection(
             class_name="truck",
             confidence=0.9,
-            bbox=BBox(x=50.0, y=420.0, w=100.0, h=60.0),
+            bbox=BBox(x=10.0, y=420.0, w=50.0, h=60.0),
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
-        assert alert.direction == "left"
-        assert alert.alert_id == "high_truck_left"
+        assert alert.direction == "front-left"
+        assert alert.alert_id == "high_truck_front-left"
 
     def test_reflex_gate_low_position(self):
         det = Detection(

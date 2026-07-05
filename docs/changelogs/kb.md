@@ -429,3 +429,16 @@
 - **검증 결과**:
   - `client/` 경로 내 `npx tsc --noEmit` 실행 결과 **타입 컴파일 에러 0건**으로 빌드 정합 완료.
 - **비고**: 시뮬레이터 환경 및 크로스 플랫폼 네이티브 연동 시 빌드 실패를 유발할 수 있는 타입 오류들을 완벽하게 진압하여 유선 배포 준비를 완료하였습니다.
+
+---
+
+### 2026-07-05 | 3단계 | YOLO 데이터셋 29종 선별 추출 및 핑퐁 명세 동기화
+
+- **Commit**: stage3: YOLO 데이터셋 29종 선별 추출 스크립트 수정 및 핑퐁 통신 문서 동기화
+- **Changes**:
+  - prepare_aihub_yolo_detection.py: AI Hub 29종 전체 클래스 대상 2000장 균형 추출, 면적 1~80% 및 정중앙(10~90%) 필터 적용
+  - yolo_detector.py, yolo_segmentor.py: HARD CODE / VIBE CODE 주석 및 면접 대비 주석 추가
+  - pi_specification.md: JSON ping/pong WebSocket 하트비트 메시지 포맷 명세 반영
+  - minchodan_design_note.md: 3단계 커스텀 학습 대상 29종 2000장 추출 전략 명세 갱신
+- **Files**: scripts/prepare_aihub_yolo_detection.py, server/detection/yolo_detector.py, server/detection/yolo_segmentor.py, docs/design/api_specification.md, docs/design/minchodan_design_note.md
+- **Verification**: 핑퐁 및 YOLO 파이프라인 정합성 문서 교차 검증 완료

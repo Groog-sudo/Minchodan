@@ -66,20 +66,20 @@ async def test_echo_rtt_under_100ms():
         )
         await asyncio.wait_for(ws.recv(), timeout=3.0)
 
-        test_msg = {"type": "heartbeat", "ts": 0}
+        test_msg = {"type": "ping", "ts": 0}
         start = asyncio.get_event_loop().time()
         await ws.send(json.dumps(test_msg))
         raw = await asyncio.wait_for(ws.recv(), timeout=3.0)
         elapsed_ms = (asyncio.get_event_loop().time() - start) * 1000
 
         response = json.loads(raw)
-        assert response["type"] == "heartbeat_ack"
+        assert response["type"] == "pong"
         assert elapsed_ms < RTT_THRESHOLD_MS, f"RTT {elapsed_ms:.1f}ms >= {RTT_THRESHOLD_MS}ms"
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_response():
-    """클라이언트 heartbeat에 대한 heartbeat_ack 응답 검증."""
+async def test_ping_response():
+    """클라이언트 ping에 대한 pong 응답 검증."""
     async with websockets.connect(f"{SERVER_URL}?device_id={DEVICE_ID}") as ws:
         await asyncio.wait_for(ws.recv(), timeout=3.0)
         await ws.send(
@@ -93,10 +93,10 @@ async def test_heartbeat_response():
         )
         await asyncio.wait_for(ws.recv(), timeout=3.0)
 
-        await ws.send(json.dumps({"type": "heartbeat", "ts": 12345}))
+        await ws.send(json.dumps({"type": "ping", "ts": 12345}))
         raw = await asyncio.wait_for(ws.recv(), timeout=3.0)
         response = json.loads(raw)
-        assert response["type"] == "heartbeat_ack"
+        assert response["type"] == "pong"
         assert "ts" in response
 
 

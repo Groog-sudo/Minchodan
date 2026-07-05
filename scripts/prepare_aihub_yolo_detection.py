@@ -222,8 +222,9 @@ def write_dataset(
     if not resolved_images:
         raise ValueError("변환할 이미지가 없습니다. XML 경로와 이미지 폴더를 확인하세요.")
 
-    # 시각장애인 보행 보조 핵심 사물 클래스 목록 (골목길 차량 위협 포함 15종)
-    target_labels = {"bollard", "person", "scooter", "motorcycle", "bicycle", "stroller", "wheelchair", "traffic_light", "tree_trunk", "movable_signage", "kiosk", "fire_hydrant", "car", "truck", "bus"}
+    # 전체 가능한 클래스 자동 수집 (AI Hub 전체 클래스)
+    all_possible_labels = set(collect_class_names(resolved_images))
+    target_labels = all_possible_labels
     
     # 클래스 균형 추출을 위해 전체를 먼저 무작위 셔플
     rng = random.Random(seed)
@@ -236,8 +237,32 @@ def write_dataset(
     
     balanced_images = []
     for entry in all_shuffled:
-        # 가로세로 32픽셀 이상의 확실하고 선명한 바운딩박스만 필터링
-        reliable_boxes = [box for box in entry.item.boxes if abs(box.xbr - box.xtl) >= 32 and abs(box.ybr - box.ytl) >= 32]
+        image_w = entry.item.width
+        image_h = entry.item.height
+        image_area = image_w * image_h
+        if image_area <= 0:
+            continue
+            
+        reliable_boxes = []
+        for box in entry.item.boxes:
+            box_w = abs(box.xbr - box.xtl)
+            box_h = abs(box.ybr - box.ytl)
+            box_area = box_w * box_h
+            
+            # 1. 적정 면적 비율 (1% ~ 80%) - 너무 작거나(노이즈 오탐 방지) 꽉 찬 객체 제외
+            area_ratio = box_area / image_area
+            if not (0.01 <= area_ratio <= 0.80):
+                continue
+                
+            # 2. 정중앙 기준 (가운데 10% ~ 90% 영역 내에 중심점 존재) - 가장자리 잘린 객체 오탐 방지
+            center_x = (box.xtl + box.xbr) / 2
+            center_y = (box.ytl + box.ybr) / 2
+            if not (0.1 * image_w <= center_x <= 0.9 * image_w):
+                continue
+            if not (0.1 * image_h <= center_y <= 0.9 * image_h):
+                continue
+                
+            reliable_boxes.append(box)
         
         # 확실한 사물이 최소 1개 이상 들어있는 경우만 처리
         if len(reliable_boxes) >= 1:
@@ -256,7 +281,8 @@ def write_dataset(
                 for label in labels_in_image.intersection(target_labels):
                     class_collected_counts[label] += 1
                     
-    print(f"\n>>> 확실한 크기(>=32px) 및 클래스별 최대 {class_limits}장 타겟 균형 필터링 완료. 수집된 최종 이미지 장수: {len(balanced_images)}")
+    print(f"\n>>> 확실한 크기(1~80% 면적) 및 정중앙 타겟 클래스별 최대 {class_limits}장 타겟 균형 필터링 완료.")
+    print(f">>> 수집된 최종 이미지 장수: {len(balanced_images)}")
     print(">>> 확실한 사물 수집 상세 현황:")
     for label, count in sorted(class_collected_counts.items()):
         print(f"    - {label}: {count}장")
