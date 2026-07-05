@@ -22,6 +22,7 @@ class AudioEngine {
   /** iOS 오디오 세션 초기화 - 무음 모드에서도 소리 재생 활성화. */
   private async ensureSession(): Promise<void> {
     if (this.sessionInitialized) return;
+    this.sessionInitialized = true; // 최초 1회 진입 즉시 락을 걸어 반복적인 활성화 충돌 차단
     try {
       await setAudioModeAsync({
         allowsRecording: false,
@@ -29,10 +30,9 @@ class AudioEngine {
         shouldPlayInBackground: false,
         interruptionMode: "duckOthers",
       });
-      this.sessionInitialized = true;
       console.log("[AudioEngine] 오디오 세션 활성화 완료");
     } catch (err) {
-      console.error("[AudioEngine] 오디오 세션 초기화 실패:", err);
+      console.warn("[AudioEngine] 오디오 세션 초기화 실패 (재생 바이패스):", err);
     }
   }
 
