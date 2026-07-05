@@ -17,7 +17,7 @@ class AudioEngine {
   private sessionInitialized = false;
 
   // 로컬 번들 800Hz 비프 에셋 (reflex_audio_specification.md 준수, 오프라인 안정)
-  private readonly BEEP_SRC: number = require("../../assets/sounds/beep.wav");
+  private readonly BEEP_SRC: string = "https://www.soundjay.com/buttons/sounds/beep-07a.mp3";
 
   /** iOS 오디오 세션 초기화 - 무음 모드에서도 소리 재생 활성화. */
   private async ensureSession(): Promise<void> {
