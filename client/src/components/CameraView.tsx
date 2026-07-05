@@ -121,19 +121,49 @@ export function CameraView() {
       const allDetections = [...det, ...seg].slice(0, 20);
       setDetectionsRef.current(allDetections);
 
-      // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate)
-      if (allDetections.length > 0) {
-        const highHazards = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "skateboard", "pothole", "caution"];
-        const hasHigh = allDetections.some(d => highHazards.includes(d.className) && d.confidence > 0.45);
+      // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
+      const validDetections = allDetections.filter(d => d.confidence > 0.40);
+      if (validDetections.length > 0) {
+        let maxAreaRatio = 0;
+        let mostCriticalClass = "";
 
-        if (hasHigh) {
+        validDetections.forEach(d => {
+          const area = d.bbox.w * d.bbox.h;
+          const ratio = area / (FRAME_SIZE * FRAME_SIZE);
+          if (ratio > maxAreaRatio) {
+            maxAreaRatio = ratio;
+            mostCriticalClass = d.className;
+          }
+        });
+
+        // 긴급 회피 클래스 목록
+        const highHazards = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "skateboard", "pothole", "caution"];
+        const isHighClass = highHazards.includes(mostCriticalClass);
+
+        // 주차센서식 거리 반비례 4단계 피드백 캘리브레이션
+        if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
+          // 1단계: 초접근 (연속음 + 강한 진동)
+          void hapticEngine.trigger("continuous");
+          void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
+          console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
+        } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
+          // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
           void hapticEngine.trigger("double");
-          void audioEngine.playBeep(0.0, 300); // 긴급 충돌 위험: 300ms 빠른 경보음
-        } else {
+          void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
+          console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
+        } else if (maxAreaRatio > 0.03) {
+          // 3단계: 중거리 (일반 점멸 + 단발 진동)
           void hapticEngine.trigger("short");
-          void audioEngine.playBeep(0.0, 800); // 일반 장애물: 800ms 느린 경보음
+          void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
+          console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
+        } else {
+          // 4단계: 원거리 (매우 느린 점멸 + 무진동)
+          hapticEngine.stopContinuous();
+          void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
+          console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
         }
       } else {
+        // 안전 상황: 햅틱 및 비프음 끔
         hapticEngine.stopContinuous();
         void audioEngine.stopBeep();
       }
