@@ -261,6 +261,7 @@ export function CameraView() {
               device={device!}
               isActive={true}
               photo={true}
+              audio={false}
               style={StyleSheet.absoluteFill}
             />
           )
