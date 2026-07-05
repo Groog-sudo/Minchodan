@@ -624,3 +624,17 @@
 - **검증 결과**:
   - 마크다운 인덱스 정합성 및 위계 검증 완료.
 - **비고**: 팀원들이 모바일 클라이언트 단의 자바스크립트 제어 영역과 Swift 네이티브 가속 영역 간의 상호작용 방식 및 아키텍처 설계 명분을 명확하게 파악하고 개발할 수 있도록 설계 문서를 최신화하였습니다.
+
+---
+
+### 2026-07-05 | 리팩토링 | iOS Swift 파일 내 영문 주석의 한글 번역 및 최신화
+
+- **커밋**: `refactor(ios): iOS Swift 파일 내 보일러플레이트 및 기능 설명 주석의 한국어 번역 완료`
+- **변경 내용**:
+  - 내일부터 진행될 외부 연동 현장 테스트에서 팀원들의 iOS 네이티브 코드 분석 편의성을 높이기 위해 프로젝트 내의 주요 `.swift` 파일 내 영문 주석들을 100% 한국어로 일제히 번역 교정.
+  - `client/ios/Minchodan/AppDelegate.swift`: Expo config-plugins용 네이티브 확장 지점, Metro 번들 URL 로드 목적, Universal Links 및 Deep Linking 등 보일러플레이트 API 주석을 한국어로 전면 변경.
+  - `client/ios/Minchodan/CoreMLInferenceBridge.swift` & `client/ios/CoreMLInferenceBridge.swift`: bounding box 0~1 정규화 텐서 파싱 공식, 이미지 해상도 스케일러(prepareInput), 좌표계 변환 원리 등 영문으로 혼용되던 모든 텍스트 주석을 명확한 한국어로 수정.
+- **관련 파일**: `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/CoreMLInferenceBridge.swift`, `client/ios/CoreMLInferenceBridge.swift`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - UTF-8 인코딩 확인 및 Swift 컴파일러 빌드 무결성 확인 완료.
+- **비고**: 기계 번역된 구글 보일러플레이트 영문 주석을 모두 직관적인 실무 한국어 주석으로 대체함으로써, iOS 내부 네이티브 파이프라인(ANE 가속 적재, GCD 백그라운드 스레딩, 픽셀 변환)에 대한 팀원들의 코드 리딩 오버헤드를 극적으로 낮추었습니다.

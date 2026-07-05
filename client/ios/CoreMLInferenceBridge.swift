@@ -175,7 +175,7 @@ class CoreMLInferenceBridge: NSObject {
   }
 
   // YOLO end2end raw tensor [1, 300, attrsPerBox] 파싱
-  // 각 행: (cx, cy, w, h, confidence, class_id, ...)
+  // 각 행의 구조: (중앙x, 중앙y, 너비, 높이, 신뢰도, 클래스ID)
   private func parseYoloOutput(multiArray: MLMultiArray, modelType: String) -> [[String: Any]] {
     let shape = multiArray.shape.map { $0.intValue }
     guard shape.count == 3 else {
@@ -199,7 +199,7 @@ class CoreMLInferenceBridge: NSObject {
     let numClasses = activeClassNames.count
 
     for i in 0..<numBoxes {
-      // [1, i, col] 인덱스 계산 (strides[0]은 보통 300*attrsPerBox)
+      // [1, i, col] 인덱스 계산 (strides[0]은 텐서의 바운딩 박스 단위 이동폭)
       let baseOffset = i * strides[1]
       let cx = Double(ptr[baseOffset + 0 * strides[2]])
       let cy = Double(ptr[baseOffset + 1 * strides[2]])
@@ -212,8 +212,8 @@ class CoreMLInferenceBridge: NSObject {
       if confidence < confThreshold { continue }
       if classId < 0 || classId >= numClasses { continue }
 
-      // YOLO26n end2end 산출물은 픽셀 단위(0~640) 좌표 -> 0~1 정규화
-      // 이후 cx,cy,w,h -> x,y,w,h (RN 좌표계, origin=좌상단)
+      // YOLO26n end2end 모델의 산출물은 픽셀 단위(0~640) 좌표이므로 0~1 정규화값으로 변환
+      // (cx, cy, w, h) 포맷을 React Native 좌표계의 기준점(origin=좌상단)인 (x, y, w, h) 포맷으로 변환
       let imgSize = 640.0 // 입력 이미지 640x640 고정
       let nx = cx / imgSize
       let ny = cy / imgSize
