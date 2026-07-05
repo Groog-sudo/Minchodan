@@ -50,7 +50,8 @@ class AudioEngine {
    */
   public async playBeep(panning: number, intervalMs: number): Promise<void> {
     // 1. 이미 동일한 주기와 Panning으로 울리고 있다면 무시
-    if (this.currentBeepInterval === intervalMs && Math.abs(this.currentPanning - panning) < 0.1) {
+    // panning의 미세한 변화로 인해 플레이어가 매번 release & recreate 되어 재생이 락업되는 현상을 방지합니다.
+    if (this.currentBeepInterval === intervalMs) {
       return;
     }
 
