@@ -29,7 +29,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const FRAME_SIZE = 640;
 
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
-const REAL_DETECT_MIN_INTERVAL_MS = 350;
+const REAL_DETECT_MIN_INTERVAL_MS = 120;
 
 export function CameraView() {
   const { status, send } = useWebSocket(DEVICE_ID, TOKEN);
