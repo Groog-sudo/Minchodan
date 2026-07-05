@@ -15,7 +15,7 @@ import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
-import { DEVICE_ID, TOKEN } from "../config";
+import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS } from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
@@ -43,7 +43,7 @@ export function CameraView() {
     startCapture,
     stopCapture,
     requestCameraPermission,
-  } = useCamera(10, 2);
+  } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
 
