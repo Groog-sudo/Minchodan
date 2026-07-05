@@ -102,3 +102,60 @@ graph TD
 - **현상**: `requirements: Ultralytics requirement ['lap>=0.5.12'] not found` 로그가 출력되는 경우.
 - **원인**: YOLOv8 객체 추적기(ByteTrack) 구동을 위한 선형 할당(Linear Assignment) 패키지가 Docker 이미지에 누락되어 있기 때문입니다.
 - **해결**: 컨테이너가 자동으로 pip AutoUpdate를 통해 `lap`을 수집하므로, 성공 메시지 확인 후 `docker restart minchodan-fastapi` 명령어로 컨테이너를 가볍게 1회 재기동해주면 정상 바인딩됩니다.
+
+---
+
+## 6. 모바일 클라이언트 개발 환경 구축 및 의존성 복원
+
+모바일 클라이언트(React Native / Expo)의 소스코드와 네이티브 설정이 깃허브에 정식 추적 대상(Tracked)으로 등재됨에 따라, 팀원들은 본인의 로컬 개발 환경(macOS/Windows)에 아래의 툴체인 및 패키지를 구성하여 즉시 빌드 및 가동할 수 있습니다.
+
+### 6.1 필수 설치 툴체인 요건
+
+| 플랫폼 | 필수 도구 및 라이브러리 | 권장 버전 / 설명 |
+| :--- | :--- | :--- |
+| **공통** | **Node.js** | **v18.x 또는 v20.x (LTS)** 권장<br/>자바스크립트/타입스크립트 실행 환경 |
+| **공통** | **Yarn** 또는 **npm** | 패키지 매니저 (`npm` 기본 탑재 활용 가능) |
+| **iOS 빌드 (macOS 전용)** | **Xcode** | **v15.0+** 및 **Command Line Tools** 필수 설치 |
+| **iOS 빌드 (macOS 전용)** | **CocoaPods** | iOS 네이티브 라이브러리 매니저 (`pod` 명령어)<br/>설치: `sudo gem install cocoapods` 또는 Homebrew 사용 |
+| **Android 빌드** | **Android Studio** | Android SDK 34(API 34) 이상 및 Build Tools 필수 설정 |
+| **Android 빌드** | **JDK (Java SDK)** | **JDK 17** 설치 및 `JAVA_HOME` 환경변수 세팅 |
+
+### 6.2 의존성 복원 및 실기기 빌드 실행 순서
+
+프로젝트 루트 디렉토리(`./Minchodan`)에서 `client` 폴더로 이동한 뒤 순서대로 실행합니다.
+
+#### 1단계. Node 패키지 의존성 복원
+```bash
+cd client
+npm install
+```
+*`package.json`에 정의된 `react-native-vision-camera`, `expo-audio`, `expo-haptics` 등의 플러그인이 로컬에 설치됩니다.*
+
+#### 2단계. 네이티브 프로젝트 동기화 (Prebuild)
+```bash
+npx expo prebuild
+```
+*로컬 환경에 맞춰 `ios/` 및 `android/` 폴더 내의 네이티브 프로젝트 파일을 최신화하고 플랫폼별 종속성을 생성합니다.*
+
+#### 3단계. iOS 네이티브 라이브러리 설치 (macOS 전용)
+```bash
+cd ios
+pod install
+cd ..
+```
+*`Podfile`에 등록된 CoreMLInferenceBridge 네이티브 모듈 및 외부 라이브러리들을 Xcode 프로젝트에 링크시킵니다.*
+
+#### 4단계. 실기기 컴파일 및 런칭
+
+*   **iOS 실기기 빌드 (iPhone을 Mac에 케이블 연결 필수)**:
+    ```bash
+    npx expo run:ios --device
+    ```
+*   **Android 실기기/에뮬레이터 빌드 (Windows 및 macOS 공통)**:
+    ```bash
+    npx expo run:android
+    ```
+
+> [!IMPORTANT]
+> **iOS 실기기 컴파일 최초 실행 시 주의사항**:
+> 최초 빌드 시 Apple Developer 개인용 무료 계정의 팀 프로비저닝 서명이 필요합니다. Xcode(`client/ios/Minchodan.xcworkspace`)를 실행한 뒤 **Signing & Capabilities** 탭에서 본인의 Apple ID를 추가하고 개발자 팀을 선택한 후 빌드를 통과시켜야 합니다. 상세 단계는 [xcode-build-management 스킬 문서](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/.agents/skills/xcode-build-management/SKILL.md)를 참조하십시오.
