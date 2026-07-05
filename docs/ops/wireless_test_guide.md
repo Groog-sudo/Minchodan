@@ -40,7 +40,12 @@ graph TD
 
 ## 2. Docker 컨테이너 구성 및 역할
 
-로컬 개발 환경에서는 macOS CPU Fallback을 고려하여 최적화된 [docker-compose.macos.yml](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/docker/docker-compose.macos.yml) 설정에 따라 총 3개의 컨테이너가 긴밀하게 맞물려 구동됩니다.
+로컬 개발 환경에서는 macOS CPU Fallback 및 Windows PC 환경(GPU 유무에 따른 분기)을 고려하여 컨테이너들을 띄웁니다.
+- **NVIDIA GPU 탑재 PC (Windows/WSL2/Linux)**: [docker-compose.yml](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/docker/docker-compose.yml)을 참조하여 GPU 가속을 활용해 추론을 수행합니다.
+- **GPU 미탑재 PC 및 macOS**: [docker-compose.macos.yml](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/docker/docker-compose.macos.yml)을 참조하여 CPU Fallback 모드로 추론을 수행합니다.
+- **윈도우 실행 배치 스크립트**: [windows_docker_start.bat](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/docker/windows_docker_start.bat) 실행 시 터미널창에서 `[1] GPU Mode` 와 `[2] CPU Only Mode` 중 하드웨어에 맞게 선택하여 자동으로 기동할 수 있습니다.
+
+설정에 따라 총 3개의 컨테이너가 긴밀하게 맞물려 구동됩니다.
 
 | 컨테이너 이름 | 이미지 / 포트 | 주요 기능 및 역할 | 데이터 볼륨 마운트 |
 | :--- | :--- | :--- | :--- |

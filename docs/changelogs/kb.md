@@ -591,3 +591,20 @@
 - **검증 결과**:
   - 마크다운 문법 준수 및 링크 이동 기능 확인 완료.
 - **비고**: 본 가이드를 배포함으로써, 팀원들이 도커 인프라의 내부 상호작용 및 외부 이동통신망을 통한 터널링 구조를 명확히 이해하고, 에러 상황 시 신속하게 대응할 수 있도록 환경을 체계화하였습니다.
+
+---
+
+### 2026-07-05 | 개발 환경 | Windows 환경 연동성 강화를 위한 배치파일 및 가이드 보완
+
+- **커밋**: `refactor(docker): windows_docker_start.bat 내 GPU/CPU 하드웨어 모드 분기 및 가이드 보완`
+- **변경 내용**:
+  - 윈도우 환경을 사용하는 팀원들의 상이한 하드웨어 사양(NVIDIA 외장 GPU 소유 여부)을 지원하기 위해 `windows_docker_start.bat` 스크립트 고도화.
+  - 시작 시 `[1] GPU Mode` 와 `[2] CPU Only Mode` 메뉴 선택지를 입력받도록 수정:
+    - 1번 선택 시 기존의 GPU 하드웨어 가속용 `docker-compose.yml` 실행.
+    - 2번 선택 시 macOS용으로 검증된 CPU Fallback 전용 `docker-compose.macos.yml` 을 자동 호출하여 기동하도록 윈도우 스크립트 분기 완료.
+    - 스크립트 내부의 Ollama pull 및 로그 조회 명령어들에 사용되던 `gemma2:9b` 명칭을 `gemma4:e4b` 정식 명칭에 맞게 교정.
+  - `docs/ops/wireless_test_guide.md` 보완: 윈도우 팀원들이 겪을 수 있는 환경별(GPU vs CPU) Compose 및 배치 스크립트 분기 기동 지침 수록 완료.
+- **관련 파일**: `docker/windows_docker_start.bat`, `docs/ops/wireless_test_guide.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - 배치파일 문법 및 파라미터 바인딩 검증 완료.
+- **비고**: macOS뿐 아니라 다양한 Windows 기기(GPU 탑재 데스크톱 및 CPU 온보드 노트북 등)를 소지한 내일의 테스터 팀원들 모두가 터미널 1클릭으로 장애 없이 추론 서버를 가동할 수 있도록 크로스 플랫폼 적합성을 완비하였습니다.

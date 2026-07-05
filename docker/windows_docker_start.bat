@@ -37,22 +37,38 @@ if not exist ".env" (
     exit /b 1
 )
 
-rem 3. docker compose 설정 유효성 검사
+rem 3. 실행 모드 선택 (GPU vs CPU Only)
+echo ========================================
+echo Choose Hardware Execution Mode:
+echo   [1] GPU Mode (NVIDIA GPU + CUDA/WSL2 required)
+echo   [2] CPU Only Mode (macOS / Windows without NVIDIA GPU)
+echo ========================================
+set /p MODE="Enter choice (1 or 2, default is 1): "
+if "%MODE%"=="" set MODE=1
+
+set COMPOSE_FILE=docker\docker-compose.yml
+if "%MODE%"=="2" (
+    set COMPOSE_FILE=docker\docker-compose.macos.yml
+)
+echo Using config: %COMPOSE_FILE%
+echo.
+
+rem 4. docker compose 설정 유효성 검사
 echo [1/4] Checking Docker Compose config...
-docker compose -f docker\docker-compose.yml config --quiet
+docker compose -f %COMPOSE_FILE% config --quiet
 if errorlevel 1 (
     echo.
-    echo [ERROR] docker-compose.yml or .env has a configuration problem.
+    echo [ERROR] %COMPOSE_FILE% or .env has a configuration problem.
     echo Please check the error message above.
     echo.
     pause
     exit /b 1
 )
 
-rem 4. Docker 이미지 빌드
+rem 5. Docker 이미지 빌드
 echo.
 echo [2/4] Building Docker images (FastAPI)...
-docker compose -f docker\docker-compose.yml build fastapi
+docker compose -f %COMPOSE_FILE% build fastapi
 if errorlevel 1 (
     echo.
     echo [ERROR] Docker image build failed.
@@ -61,10 +77,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem 5. 컨테이너 시작
+rem 6. 컨테이너 시작
 echo.
 echo [3/4] Starting containers (Redis + Ollama + FastAPI)...
-docker compose -f docker\docker-compose.yml up -d
+docker compose -f %COMPOSE_FILE% up -d
 if errorlevel 1 (
     echo.
     echo [ERROR] Failed to start containers.
@@ -73,7 +89,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem 6. FastAPI 포트 대기 (최대 60초)
+rem 7. FastAPI 포트 대기 (최대 60초)
 echo.
 echo [4/4] Waiting for FastAPI server (port 8000)...
 set WS_PORT=8000
@@ -101,15 +117,15 @@ echo Ollama URL:
 echo http://127.0.0.1:11434/api/tags
 echo.
 echo Next steps (first run only):
-echo   docker exec -it minchodan-ollama ollama pull gemma2:9b
+echo   docker exec -it minchodan-ollama ollama pull gemma4:e4b
 echo   docker exec -it minchodan-ollama ollama pull llava
 echo   docker exec -it minchodan-ollama ollama pull nomic-embed-text
 echo.
 echo Logs:
-echo   docker compose -f docker\docker-compose.yml logs -f fastapi
+echo   docker compose -f %COMPOSE_FILE% logs -f fastapi
 echo.
 echo Stop:
-echo   docker compose -f docker\docker-compose.yml down
+echo   docker compose -f %COMPOSE_FILE% down
 echo.
 
 pause
