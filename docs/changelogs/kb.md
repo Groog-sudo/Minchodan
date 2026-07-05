@@ -542,3 +542,52 @@
   - "고태현의 iPhone" 실기기 리빌드 성공 및 컴파일 에러 0건 확인.
   - 리로드 실기기 로그 상에서 세그멘테이션 폴백 TFLite 구동이 완벽하게 생략되고, **`LOG [CoreMLDetector] det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료`**의 정상 기동이 검증 완료됨.
 - **비고**: iOS 플랫폼에서 디텍션(Object Detection)과 세그멘테이션(Segmentation) 두 개의 모델이 모두 Apple Neural Engine(ANE) 상에서 직접 하드웨어 완전 가속 연산을 하도록 보완하여, 목표 레이턴시를 충족하는 극강의 온디바이스 추론 최적화를 최종 완수하였습니다.
+
+---
+
+### 2026-07-05 | 에이전트 스킬 | iOS Xcode 빌드, 조작 및 디버깅 자동화를 위한 xcode-build-management 스킬 생성
+
+- **커밋**: `feat(skills): iOS Xcode 빌드, 시뮬레이터 관리 및 디버깅을 위한 xcode-build-management 스킬 생성`
+- **변경 내용**:
+  - `xcode-build-skill` 및 `patrickserrano/skills` 레포지토리를 상세히 분석하여, 우리 프로젝트의 React Native iOS 개발 환경에 특화된 Xcode 빌드/디버그 자동화 에이전트 스킬을 신규 추가.
+  - `.agents/skills/xcode-build-management/SKILL.md` 신규 생성: `xcodebuild` 및 `xcrun simctl` 기반의 프로젝트 정보 수집, 시뮬레이터 부팅, 앱 빌드 및 설치, 디버깅 로그 수집 워크플로우 정의. Swift/SwiftUI 리팩토링 및 뷰 배치, Swift Concurrency 사용 표준 수립.
+  - `.agents/skills/xcode-build-management/references/implementation_detail.md` 신규 생성: Apple Silicon 빌드 최적화, DerivedData 캐시 관리, Xcode 스크립트 샌드박스 오류 대처, XCUITest UI 자동화 테스트 가이드, `CoreMLInferenceBridge.swift` 리팩토링 예제 제공.
+  - `SKILLS.md` 수정: 에이전트 시작 규칙에 따른 전역 스킬 인덱스 표에 새롭게 추가한 `xcode-build-management` 스킬 항목 등록 완료.
+- **관련 파일**: `SKILLS.md`, `.agents/skills/xcode-build-management/SKILL.md`, `.agents/skills/xcode-build-management/references/implementation_detail.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - 스킬 파일들의 마크다운 인덱스 및 위계 정합성 확인 완료.
+  - 프로젝트 공통 룰(이모지 사용 금지, 한국어 경어체 작성) 완벽 준수 검증 완료.
+- **비고**: Xcode 빌드와 수정, 시뮬레이터 기동 및 디버깅 로그 파싱 등 복잡한 iOS 네이티브 관련 빌드/디버그 문제 해결 과정을 에이전트가 주도적으로 수행할 수 있는 기반 스킬 셋을 성공적으로 구축하였습니다.
+
+---
+
+### 2026-07-05 | 환경 설정 | Ollama Gemma 4세대 정식 모델(gemma4:e4b) 통합 연동 및 명세 보완
+
+- **커밋**: `refactor(llm): gemma4-e4b 명세를 정식 허브 모델명 gemma4:e4b로 교정 및 관련 문서 일괄 수정`
+- **변경 내용**:
+  - Ollama의 Gemma 4세대 Edge 최적화 모델의 정식 라이브러리 명칭이 `gemma4:e4b`로 제공됨에 따라, 이전의 하이픈(-) 오타 명세 `gemma4-e4b`를 일제히 교정.
+  - `.env` 및 `.env.example`: `GEMMA_MODEL=gemma4:e4b` 값으로 명세 교정 및 저장.
+  - `server/orchestration/llm_client_factory.py`: `os.getenv("GEMMA_MODEL", "gemma4:e4b")` 기본값 fallback 코드 및 로그 출력을 정식 명칭에 맞게 변경.
+  - `docs/ops/deployment_guide.md` 및 `docs/ops/environment_variables.md`: Docker exec pull 지침, 환경변수 상세 및 디스크 가이드에 적힌 오타를 정식 모델명 `gemma4:e4b` 및 실제 다운로드 용량(약 9.6GB)에 맞게 일괄 업데이트 완수.
+- **관련 파일**: `.env`, `.env.example`, `server/orchestration/llm_client_factory.py`, `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - `docker exec minchodan-ollama ollama pull gemma4:e4b` 실행 시 Ollama 허브로부터 정상적으로 manifest 수집 및 다운로드 수신 동작 확인 완료.
+- **비고**: 4세대 Edge 최적화 모델 명세 정합을 마침으로써, 오프라인 인지 경로 상세 회피 안내 문장 생성 품질 향상을 위한 LLM 엔진 기저 통신 무결성을 최종 확보하였습니다.
+
+---
+
+### 2026-07-05 | 문서 작성 | 실기기 무선 연동 테스트 및 Docker 환경 공유 가이드 문서 신설
+
+- **커밋**: `docs(ops): 외부 LTE망 연동 및 Docker 컨테이너 구조 명세를 위한 wireless_test_guide.md 작성`
+- **변경 내용**:
+  - 내일 실외 LTE/5G 환경에서 연동을 시작할 새로운 팀원들을 위해, 현재 로컬 도커에 기동되어 맞물려 돌아가는 컨테이너의 역할과 네트워크 흐름을 종합한 가이드라인 신설.
+  - `docs/ops/wireless_test_guide.md` 신규 생성:
+    - 3대 Docker 컨테이너(`fastapi`, `redis`, `ollama`) 구성 및 기능 정의.
+    - Ngrok 외부 wss 터널링 프록시 아키텍처 및 포트 포워딩 연결 흐름 구조화.
+    - WebSocket 실기기 핸드셰이크 프로토콜 규격 및 실시간 base64 이미지 디코딩 ─► YOLO 추론 파이프라인 흐름 구체화.
+    - `base64 데이터 없음` 오타 오류 및 `lap` 의존성 누락 문제 해결법 등 실제 겪은 주요 문제 해결법(트러블슈팅) 기재.
+  - `docs/README.md` 수정: 운영 카테고리 인덱스 표에 신설된 가이드 문서(`wireless_test_guide.md`) 링크 등록 완료.
+- **관련 파일**: `docs/ops/wireless_test_guide.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - 마크다운 문법 준수 및 링크 이동 기능 확인 완료.
+- **비고**: 본 가이드를 배포함으로써, 팀원들이 도커 인프라의 내부 상호작용 및 외부 이동통신망을 통한 터널링 구조를 명확히 이해하고, 에러 상황 시 신속하게 대응할 수 있도록 환경을 체계화하였습니다.

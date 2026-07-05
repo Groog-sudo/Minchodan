@@ -63,11 +63,17 @@ async def ws_detect(
                 "server_time": now_iso(),
             }
         )
+        logger.info(f"[WS] welcome 송신 완료 - device_id: {device_id}")
+        print(f"[DEBUG_WS] welcome 송신 완료 - device_id: {device_id}", flush=True)
 
         raw_hello = await ws.receive_text()
+        logger.info(f"[WS] hello 수신 - raw: {raw_hello}")
+        print(f"[DEBUG_WS] hello 수신 - raw: {raw_hello}", flush=True)
         hello_data = json.loads(raw_hello)
 
         if hello_data.get("type") != "hello":
+            logger.warning(f"[WS] expected hello, but got: {hello_data.get('type')}")
+            print(f"[DEBUG_WS] expected hello, but got: {hello_data.get('type')}", flush=True)
             await ws.send_json(
                 {
                     "type": "error",
@@ -81,6 +87,11 @@ async def ws_detect(
         token = hello_data.get("token", "")
         is_valid = await verify_device(device_id, token)
         if not is_valid:
+            logger.warning(f"[WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token: {token}")
+            print(
+                f"[DEBUG_WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token: {token}",
+                flush=True,
+            )
             await ws.send_json(
                 {
                     "type": "error",
@@ -91,6 +102,8 @@ async def ws_detect(
             await ws.close(code=1008, reason="authentication failed")
             return
 
+        logger.info(f"[WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}")
+        print(f"[DEBUG_WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}", flush=True)
         await ws.send_json({"type": "auth_ok", "device_id": device_id})
         await redis_bus.connect()
 
@@ -129,6 +142,14 @@ async def ws_detect(
                 decode_start = time.perf_counter()
                 processed = await decode_frame(payload)
                 decode_ms = (time.perf_counter() - decode_start) * 1000
+
+                logger.info(
+                    f"[WS] detection 수신 - event_id: {event_id}, frame_id: {frame_id}, decode_ms: {decode_ms:.2f}ms"
+                )
+                print(
+                    f"[DEBUG_WS] detection 수신 - event_id: {event_id}, frame_id: {frame_id}, decode_ms: {decode_ms:.2f}ms",
+                    flush=True,
+                )
 
                 if processed is not None:
                     with contextlib.suppress(Exception):

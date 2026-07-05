@@ -135,7 +135,7 @@ class LLMClientFactory:
     def get_ollama(cls) -> SimpleOllamaClient:
         if cls._ollama is None:
             base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            model_name = os.getenv("GEMMA_MODEL", "gemma4-e4b")
+            model_name = os.getenv("GEMMA_MODEL", "gemma4:e4b")
             cls._ollama = SimpleOllamaClient(model_name=model_name, base_url=base_url)
         return cls._ollama
 

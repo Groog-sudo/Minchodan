@@ -81,9 +81,23 @@ export function CameraView() {
 
   // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
   const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
+    const now = Date.now();
+
+    // 로컬 추론 엔진 적재 여부와 관계없이 서버로 base64 프레임 전송 수행 (WebSocket)
+    if (frame.base64 && sendRef.current) {
+      sendRef.current({
+        type: "detection",
+        payload: {
+          event_id: `event-${now}`,
+          frame_id: now,
+          thumbnail_jpeg_b64: frame.base64,
+          stream: frame.stream ?? "reflex",
+        }
+      });
+    }
+
     if (!isModelsLoadedRef.current) return;
 
-    const now = Date.now();
     const minInterval = isMockModeRef.current
       ? MOCK_DETECT_MIN_INTERVAL_MS
       : REAL_DETECT_MIN_INTERVAL_MS;
@@ -118,9 +132,8 @@ export function CameraView() {
     }
   }, []); // 의존성 없음 - 모든 최신 상태를 ref 로 직접 참조
 
-  // 캡처 시작: 모델 로드 완료 + 권한 확보 즉시 구동 (WS 연결 불필요)
+  // 캡처 시작: 권한 확보 즉시 구동 (로컬 모델 로딩 여부와 관계없이 서버 추론 전송을 위해 즉시 캡처 기동)
   useEffect(() => {
-    if (!isMockMode && !isModelsLoaded) return; // 실기기: 모델 미완료 대기
     if (!isMockMode && !hasPermission) return;  // 실기기: 권한 없으면 대기
     if (!isMockMode && !device) return;          // 실기기: 카메라 디바이스 없으면 대기
     if (isCapturing) return;                     // 중복 시작 방지
@@ -130,7 +143,7 @@ export function CameraView() {
     });
     return () => stopCapture();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isModelsLoaded, isMockMode, hasPermission, device]);
+  }, [isMockMode, hasPermission, device]);
 
   useEffect(() => {
     const info: string[] = [];

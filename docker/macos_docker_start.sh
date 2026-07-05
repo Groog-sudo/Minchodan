@@ -17,7 +17,7 @@ PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT" || exit 1
 
 ENV_FILE=".env"
-COMPOSE_FILE="docker/docker-compose.yml"
+COMPOSE_FILE="docker/docker-compose.macos.yml"
 DEFAULT_WS_PORT="8000"
 
 print_header() {
