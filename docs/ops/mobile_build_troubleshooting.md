@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.0.0
+> **버전**: v1.1.0
 > **설계 기준**: docs/ops/wireless_test_guide.md (v1.1.0)
 
 # Minchodan 모바일 네이티브 빌드 트러블슈팅 가이드
@@ -82,3 +82,74 @@
   2. JDK 17로 자바 런타임을 변경한 후 환경변수를 주입합니다.
      - **macOS**: `export JAVA_HOME=$(/usr/libexec/java_home -v 17)`
      - **Windows**: 제어판 -> 시스템 환경 변수에서 `JAVA_HOME` 경로를 JDK 17 설치 폴더로 정정합니다.
+
+---
+
+## 3. iOS 오디오 및 햅틱 런타임 트러블슈팅 (실기기 및 에뮬레이터)
+
+실기기 런타임 환경에서 카메라 영상 스트리밍과 실시간 반사 경로(Reflex Gate) 비프음 및 진동 출력이 맞물릴 때 일어나는 하드웨어 잠금 현상과 해결 시나리오의 요약입니다.
+
+| 장애 현상 | 원인 | 해결책 |
+| :--- | :--- | :--- |
+| **오디오 세션 활성화 실패**<br/>(UnexpectedException) | 카메라 촬영 루프와 런타임 오디오 세션 셋업(`setAudioModeAsync`)의 동시 점유 마찰 | 앱 최상단 진입점(`App.tsx`)에서 오디오 카테고리를 **선제 등록**하고 런타임 루프에서는 중복 호출을 제거함 |
+| **비프 경보 드롭 및 무음**<br/>(비동기 레이스 컨디션) | 리소스 로딩이 완료되기 전 `play()`가 호출되어 유실된 후, 중복 방지 가드레일에 의해 재생 루프 차단 | 플레이어 인스턴스를 매번 소멸시키지 않고 메모리에 **싱글톤으로 영속 유지**하며 `pause()`/`play()`로만 제어 |
+| **이중 신호 난사로 드라이버 마비**<br/>(오버랩 충돌) | 로컬 추론 훅과 상위 UI 컴포넌트 양측에서 햅틱/오디오 끔과 켬 명령을 거의 0ms 간격으로 교차 수행 | 피드백 제어 로직을 UI 오케스트레이터인 **`CameraView.tsx` 단 한 곳으로 통합 및 일원화**하여 교통정리 |
+| **로컬 require 에셋 로드 실패** | `require()`는 컴파일 후 정수 리소스 ID를 리턴하므로 네이티브 플레이어가 경로를 인지하지 못함 | `expo-asset`의 **`Asset.fromModule`**을 사용하여 샌드박스 내부의 물리 로컬 URI(`file://...`)로 변환 후 로드 |
+| **유선 분리 시 비프음 정지** | 디버그 빌드가 컴퓨터의 Metro 개발 서버로부터 번들을 동적으로 로드하여 케이블 차단 시 렉 유실 | **`--configuration Release`** 옵션으로 빌드하여 모든 번들과 사운드 에셋을 기기에 **100% 내장 배포** |
+
+### 3.1 AVAudioSession Activation Failed (카메라 세션과의 우선권 마찰)
+
+- **원인**: `react-native-vision-camera`가 구동되어 카메라 하드웨어를 선점한 뒤, 런타임 검출 루프 내부에서 `setAudioModeAsync`를 임의로 재호출하여 오디오 카테고리 정책을 교정하려고 할 때 iOS AVFoundation 드라이버 레벨에서 세션 잠금이 걸려 실패를 뱉고 사운드 파이프가 먹통이 되는 현상입니다.
+- **해결책**:
+  - `CameraView`가 기동되기 전, 앱의 최상단 엔트리 포인트인 **`App.tsx`** 마운트(`useEffect`) 시점에 세션 설정을 단 1회 선제 호출하여 등록합니다:
+    ```typescript
+    useEffect(() => {
+      void setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true, // 무음 스위치를 무시하고 출력하는 세션 정책 선등록
+        shouldPlayInBackground: false,
+        interruptionMode: "duckOthers",
+      });
+    }, []);
+    ```
+  - 런타임 `audioEngine.ts` 내부의 비프음 구동 루프에서는 `setAudioModeAsync`를 절대 중복 실행하지 않도록 차단합니다.
+
+### 3.2 비동기 생성 레이스 컨디션에 따른 사운드 유실 및 무음 루프
+
+- **원인**: `createAudioPlayer`는 비동기로 사운드 버퍼를 RAM에 적재합니다. 파일 로딩이 완료되기 전 찰나(수 ms)에 `play()`를 호출하면 명령이 묵살되며, 이후 등속 경보 필터(`currentBeepInterval === intervalMs`)에 막혀 더 이상의 플레이 명령이 주입되지 않아 평생 묵음이 되는 버그입니다.
+- **해결책**:
+  - 오디오 정지 신호가 수신될 때 플레이어 인스턴스를 `release()`하여 소멸시키는 정책을 버리고, **단순 `pause()` 만 수행하여 메모리에 싱글톤으로 유지**합니다.
+  - 최초 1회만 lazy-load된 이후에는 메모리에 적재 완료된 플레이어 인스턴스가 `play()`/`pause()` 명령에 0ms 반응성으로 즉시 연동됩니다.
+
+### 3.3 로컬 `require()` 번들 에셋 로딩 렉 및 파일 유실
+
+- **원인**: 자바스크립트의 `require('./path.wav')` 구문은 React Native 번들러 빌드 완료 시 물리 경로가 아닌 **정수 리소스 식별자(Resource ID)**를 반환합니다. `expo-audio`의 플레이어 소스 인자에 이를 다이렉트로 대입하면 네이티브 단에서 에셋 파일을 찾지 못해 로딩에 실패합니다.
+- **해결책**:
+  - `expo-asset` 라이브러리를 경유하여 정수 ID를 기기 내부의 절대 물리 경로로 다운로드 및 정합하여 로드합니다:
+    ```typescript
+    import { Asset } from "expo-asset";
+    ...
+    const asset = Asset.fromModule(require("../../assets/sounds/beep.wav"));
+    if (!asset.localUri) {
+      await asset.downloadAsync();
+    }
+    const sourceUri = asset.localUri || asset.uri;
+    this.player = createAudioPlayer(sourceUri); // 물리 URI 명시 전달
+    ```
+
+### 3.4 이중 피드백 트리거 간섭에 의한 오디오 세션 크래시
+
+- **원인**: 하위 연산 계층인 `useOnDeviceDetection.ts`와 최상단 화면 계층인 `CameraView.tsx` 두 곳에서 각각 탐지 객체 리스트를 가공하여 오디오와 햅틱 명령을 독립적으로 전송할 경우, 한쪽에서 끄고 한쪽에서 켜는 명령이 0ms 간격으로 교차 입력되어 디바이스 드라이버 오동작을 초래합니다.
+- **해결책**:
+  - `useOnDeviceDetection.ts` 내부의 피드백 발화 코드를 완전히 배제하고 순수 연산 데이터만 리턴하게 분리합니다.
+  - 최상위 **`CameraView.tsx` 한 곳에서만 비프/햅틱 규칙을 통합 계산하고 독점 제어**하도록 통제권을 일원화합니다.
+
+### 3.5 Development Client와 독립 실행의 번들 로드 병목
+
+- **원인**: USB 유선 케이블을 뽑았을 때 앱이 켜지지 않거나 소리가 안 나는 현상은, 개발용 디버그 빌드가 컴퓨터의 Metro 개발 서버로부터 번들과 에셋 데이터를 실시간 스트리밍하기 때문입니다. 케이블이 뽑혀 연결 대역이 상실되면 번들 소스가 차단되어 앱 내부 기능이 마비됩니다.
+- **해결책**:
+  - 모든 JS 코드와 리소스 파일(`beep.wav`)을 앱 바이너리 파일 내에 압축 내장시키는 **Release(프로덕션) 구성으로 컴파일하여 기기에 고정 주입**해야 합니다:
+    ```bash
+    npx expo run:ios --device "장치UDID" --configuration Release
+    ```
+  - 반드시 최초 1회는 유선을 결선하여 릴리즈 설치가 100% 마칠 때까지 유지하고, 이후에는 케이블을 완전히 분리하여도 단독 구동이 보장됩니다.
