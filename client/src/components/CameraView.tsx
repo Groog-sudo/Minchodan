@@ -413,8 +413,8 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   cameraContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_WIDTH,
+    width: "100%",
+    aspectRatio: 3 / 4,
     overflow: "hidden",
     position: "relative",
     backgroundColor: "#111111",
