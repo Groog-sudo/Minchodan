@@ -93,6 +93,7 @@ docs/
 | **Redis Streams 데이터 스키마 명세** | [redis_streams_schema.md](ops/redis_streams_schema.md) | **risk.events 스트림 페이로드 필드 정의 및 중복 알림 TTL 캐시 명세** |
 | **모바일 빌드 트러블슈팅 가이드** | [mobile_build_troubleshooting.md](ops/mobile_build_troubleshooting.md) | **iOS 샌드박싱/Rosetta ffi 및 Android SDK/JDK 버전 충돌 해결 핸드북** |
 | **코드 품질 검증 가이드** | [code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 검증 파이프라인** |
+| **iOS CoreML ANE 벤치마크** | [ondevice_coreml_benchmark.md](ops/ondevice_coreml_benchmark.md) | **CoreML ANE 온디바이스 추론 지연 벤치마크 및 서버 KPI 비교** |
 | Git 브랜칭 전략 | [git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조 (`main` / `dev` / 개인), PR 작업 규칙 |
 | 테스트 명세서 | [test_specification.md](ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
 
