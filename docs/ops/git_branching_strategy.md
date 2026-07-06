@@ -27,7 +27,7 @@ master 또는 main (운영 기준선, 직접 커밋 금지)
 | 브랜치                       | 용도                                 | 보호 수준               | 병합 방식                  |
 | ---------------------------- | ------------------------------------ | ----------------------- | -------------------------- |
 | `master` 또는 `main`         | 운영 기준선. 배포 가능한 상태만 유지 | 보호됨 (직접 push 금지) | `dev`에서 병합             |
-| `dev`                        | 통합 개발. 모든 기능이 모이는 곳     | 보호됨 (직접 push 금지) | 개인 브랜치 변경 사항 병합 |
+| `dev`                        | 통합 개발. 모든 기능이 모이는 곳     | 직접 push 허용 (로컬 병합) | 개인 브랜치 직접 병합 후 push |
 | `dg`, `jh`, `jy`, `kb`, `th` | 개인 작업 브랜치                     | 자유 push               | 자유 커밋                  |
 
 ---
@@ -65,10 +65,9 @@ master 또는 main (운영 기준선, 직접 커밋 금지)
 ```text
 1. 개인 브랜치에서 작업 시작
 2. 로컬에서 커밋 및 테스트
-3. 개인 브랜치 변경 사항을 dev에 반영
-4. 코드 리뷰 후 dev에 병합
-5. dev 안정성 확인 후 master 또는 main에 반영
-6. master 또는 main에 병합 (릴리스)
+3. 개인 브랜치 변경 사항을 dev에 직접 병합 및 push
+4. dev 안정성 확인 후 master 또는 main에 반영
+5. master 또는 main에 병합 (릴리스)
 ```
 
 ### 4.2 처음 브랜치 생성 (최초 1회, Windows PowerShell / macOS / Linux 공통)
@@ -101,8 +100,11 @@ git add .
 git commit -m "3단계: Yolo 26N - Object Detection 래퍼 추가"
 git push origin dg
 
-# dev에 병합 (PR 기반)
-gh pr create --base dev --head dg --title "3단계 Yolo 26N - Object Detection 래퍼"
+# dev에 직접 병합 및 push
+git checkout dev
+git pull origin dev
+git merge dg
+git push origin dev
 ```
 
 ---
@@ -126,18 +128,16 @@ gh pr create --base dev --head dg --title "3단계 Yolo 26N - Object Detection �
 
 ---
 
-## 6. PR 규칙
+## 6. 병합 및 Push 규칙
 
-- 모든 `dev` 병합은 PR(Pull Request) 기반으로 진행합니다.
-- PR 제목은 작업 단계와 핵심 내용을 포함합니다.
-- PR 설명에 변경 파일과 검증 결과를 기재합니다.
-- `master` 또는 `main` 병합은 `dev` 안정성 확인 후 별도 PR로 진행합니다.
+- 모든 개인 브랜치의 `dev` 반영은 로컬에서 직접 머지(`git merge`) 후 `dev` 브랜치에 push하여 반영합니다.
+- `master` 또는 `main` 병합은 `dev` 브랜치 안정성이 완벽히 확인된 후 병합합니다.
 
 ---
 
 ## 7. 주의 사항
 
-- 기본 브랜치(`master` 또는 `main`)와 `dev`에 직접 push하지 않습니다.
+- 기본 브랜치(`master` 또는 `main`)에 직접 push하지 않습니다. (dev 브랜치는 로컬 직접 병합 및 push 허용)
 - 이모지는 커밋 메시지·코드·문서 어디에도 사용하지 않습니다.
 - 작업 완료 후 [`docs/changelogs/[이니셜].md`](changelogs/) 파일에 changelog 엔트리를 추가합니다. 양식은 [`docs/changelogs/TEMPLATE.md`](changelogs/TEMPLATE.md)를 참조합니다.
 - 모든 OS에서 LF 줄바꿈을 유지합니다. Windows 로컬 Git은 `core.autocrlf=false`, `core.eol=lf`를 권장하며, macOS/Linux도 프로젝트 단위 설정이 필요하면 동일한 값을 사용합니다.

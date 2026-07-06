@@ -779,3 +779,15 @@
     - `docs/ops/wireless_test_guide.md`: docker 컨테이너 역할 설명 및 ByteTrack 트러블슈팅 단락의 `YOLOv8`을 `YOLO26n`으로 수정.
 - **관련 파일**: `docs/design/api_specification.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/ops/wireless_test_guide.md`, `docs/changelogs/kb.md`
 - **비고**: 프로젝트에서 실제로 사용하는 메인 YOLO 추론 모델인 YOLO26n에 맞춰 개발/설계 문서의 표기적 혼선을 모두 일괄 정비하여 일관성을 확보했습니다.
+
+---
+
+### 2026-07-06 | 문서 개선 | Git dev 브랜치에 대한 PR(Pull Request) 의무 규정 제거 및 로컬 직접 병합 push 허용 반영
+
+- **커밋**: `docs: Git dev 브랜치 직접 push 허용 및 PR 의무화 관련 가이드 일괄 삭제`
+- **변경 내용**:
+  - **Git 브랜칭 가이드 및 AGENTS.md 수정**:
+    - `docs/ops/git_branching_strategy.md`: `dev` 브랜치의 보호 수준을 "직접 push 금지"에서 "직접 push 허용"으로 변경하고, 병합 예시를 `gh pr`에서 로컬 `git merge` 및 `git push`로 수정. 기존 "6. PR 규칙" 섹션을 삭제하고 "6. 병합 및 Push 규칙"으로 대체.
+    - `AGENTS.md`, `docs/AGENTS.md`, `CLAUDE.md`: 브랜치 3계층 설명 내 `dev` 브랜치 직접 push 금지 문구를 직접 병합 후 push 허용으로 교체하고, PR(Pull Request) 기반 작업 문구를 직접 병합 및 push 기반으로 수정.
+- **관련 파일**: `docs/ops/git_branching_strategy.md`, `AGENTS.md`, `docs/AGENTS.md`, `CLAUDE.md`, `docs/changelogs/kb.md`
+- **비고**: 개발 생산성 향상과 샌드박스 CLI 환경에서의 원활한 병합을 위해 `dev` 브랜치에 대한 PR 기반 협업 규칙을 제거하고 직접 병합 후 푸시하는 방식으로 가이드를 최신화했습니다.

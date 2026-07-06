@@ -137,9 +137,9 @@
 - Branches: 3계층 구조 (`master` 또는 `main` / `dev` / `[이니셜]`)를 엄격히 준수.
 - Roles:
   - `master` 또는 `main`: 운영 기준선. 직접 push 금지.
-  - `dev`: 통합 개발 및 머지 브랜치. 직접 push 금지.
+  - `dev`: 통합 개발 및 머지 브랜치. 로컬 직접 병합 후 push 허용.
   - `dg`, `jh`, `jy`, `kb`, `th`: 개별 개발 브랜치.
-- Compliance: 상세 내용은 [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md)를 참조하고, 모든 작업은 PR(Pull Request) 기반으로 진행.
+- Compliance: 상세 내용은 [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md)를 참조하고, 모든 작업은 직접 병합 및 push 기반으로 진행.
 
 ---
 
