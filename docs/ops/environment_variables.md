@@ -1,10 +1,11 @@
 # Minchodan 환경 변수 명세서
 
-> **작성일**: 2026-07-04
-> **버전**: v0.3.0 (2026-07-04 야외 도로 테스트용 NGROK_AUTHTOKEN 추가)
-> **기준 파일**: [`.env.example`](../.env.example) (단일 기준)
-> **설계 기준**: [`docs/architecture.md`](architecture.md) 10절·13.4절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md)
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.4(.env 로드)
+> **작성일**: 2026-06-27
+> **수정일**: 2026-07-06
+> **버전**: v0.4.0 (2026-07-06 교차 검증 수정: NGROK_AUTHTOKEN 및 DB 환경 변수 정합)
+> **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
+> **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
+> **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
 
 ---
 
@@ -108,6 +109,17 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`NGROK_AUTHTOKEN`** | string | 선택 | (미설정) | 야외 도로 테스트용 ngrok 터널 보안 인증 토큰. 무료 계정 터널 외부 노출 시 필요 | [`docs/changelogs/kb.md`](../changelogs/kb.md) |
 
+### 2.12 데이터베이스 (MariaDB)
+
+| 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`DB_TYPE`** | string | 선택 | `mariadb` | RDB 연결 유형. 현재 세션 SQL은 MariaDB 기준이며, ORM 검증용 DDL은 SQLite 파일로 별도 제공합니다. | [`Minchodan DB.session.sql`](../../Minchodan%20DB.session.sql), [`server/db/schema.sql`](../../server/db/schema.sql) |
+| **`DB_HOST`** | string | 필수 | `[IP_ADDRESS]` | MariaDB 서버 호스트 또는 IP 주소 | [`Minchodan DB.session.sql`](../../Minchodan%20DB.session.sql) |
+| **`DB_PORT`** | int | 필수 | `3306` | MariaDB 서버 포트 | [`Minchodan DB.session.sql`](../../Minchodan%20DB.session.sql) |
+| **`DB_NAME`** | string | 필수 | `minchodan_db` | 현재 확정된 대상 데이터베이스명. 과거 초안의 `minchodan_tmp`, `minchodan_app` 대신 이 값을 사용합니다. | [`Minchodan DB.session.sql`](../../Minchodan%20DB.session.sql) |
+| **`DB_USER`** | string | 필수 | `minchodan_team` | 애플리케이션 또는 DBeaver 세션에서 사용할 DB 계정명 | [`.env.example`](../../.env.example) |
+| **`DB_PASSWORD`** | string | 필수 | `[your_password]` | DB 계정 비밀번호. 실제 값은 `.env`에만 저장합니다. | [`.env.example`](../../.env.example) |
+
 ---
 
 ## 3. 환경 변수 로드 패턴
@@ -154,6 +166,8 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 4 | **`DATA_*` 경로 누락** | `.env.example`에만 존재 (5종) | 본 명세서 2.7절에 통합 |
 | 5 | **`MOCK_GPU_*` 누락** | 어디에도 문서화되지 않음 (코드에만 존재) | 본 명세서 2.10절에 신규 명세 |
 | 6 | **`LANGCHAIN_*` 누락** | `architecture.md` 13.4절에만 산재 | 본 명세서 2.9절에 통합 |
+| 7 | **`NGROK_AUTHTOKEN` 누락** | 야외 도로 테스트용 터널 인증 변수가 `.env.example`에만 존재 | 본 명세서 2.11절에 통합 |
+| 8 | **DB 환경 변수 누락** | `.env.example`에는 `DB_*` 6종이 있으나 본 명세서에는 누락 | 본 명세서 2.12절에 통합하고 `DB_NAME=minchodan_db` 기준으로 정합 |
 
 ---
 
@@ -165,6 +179,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | **`OPENAI_API_KEY`** | OpenAI API Platform에서 발급. 키 유출 시 즉시 회전하십시오. |
 | **`SLACK_WEBHOOK_URL`** | Slack App Console > Incoming Webhooks에서 발급. 채널별로 URL이 고유합니다. |
 | **`LANGCHAIN_API_KEY`** | LangSmith Platform에서 발급. 선택적 변수이므로 미설정해도 동작에 영향 없습니다. |
+| **`DB_PASSWORD`** | 실제 DB 비밀번호는 `.env`에만 저장하고 문서, 커밋, 채팅 로그에 노출하지 않습니다. |
 
 ---
 
@@ -180,3 +195,4 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 4 | Ollama 연결 | `curl $OLLAMA_BASE_URL/api/tags` | 모델 목록 JSON |
 | 5 | 가중치 파일 존재 | `Test-Path server/models/yolo26n/object_detection.pt` | `True` |
 | 6 | ChromaDB 경로 존재 | `Test-Path data/chroma_db` | `True` (4단계 빌드 후) |
+| 7 | DB 대상명 확인 | `python -c "from dotenv import load_dotenv; load_dotenv(); import os; print(os.getenv('DB_NAME'))"` | `minchodan_db` |

@@ -23,7 +23,7 @@
 
 ---
 
-### 2026-07-03 | DB | `back_sql` 스키마 SQL 및 설명서 시트 기준 갱신
+### 2026-07-03 | DB | DBeaver 세션 SQL 및 DB명 시트 기준 갱신
 
 - **커밋**: 미커밋
 - **변경 내용**:
@@ -31,7 +31,7 @@
   - `admin_accounts`, `admin_login_audits`, `app_users`, `user_devices` 4개 테이블의 컬럼, 인덱스, FK 정책을 시트 기준과 맞췄습니다.
   - 기존 `minchodan_tmp`, 확장 컬럼, `ON DELETE CASCADE` 중심 설명을 제거하고 `ON DELETE RESTRICT` 및 사번 기반 감사 로그 구조를 문서화했습니다.
   - DBeaver 세션 SQL과 환경 변수 예시의 DB명을 `minchodan_db` 기준으로 정리했습니다.
-- **관련 파일**: `back_sql/init_minchodan_tmp_schema.sql`, `back_sql/init_minchodan_tmp_schema_explanation.md`, `Minchodan DB.session.sql`, `.env.example`
+- **관련 파일**: `Minchodan DB.session.sql`, `.env.example`
 - **검증 결과**:
   - Google Sheets 메타데이터와 대상 탭 범위 확인 완료
   - SQL 본문에서 이전 DB명 및 제거 대상 컬럼 잔존 여부 검색 완료
@@ -54,3 +54,19 @@
   - SQLite 메모리 DB에서 `server/db/schema.sql` 실행 및 4개 테이블 생성 확인
   - `app_users` 삭제 시 연결된 `user_devices`가 있으면 `ON DELETE RESTRICT`로 차단되는지 확인
   - 현재 셸에 `ruff`, `sqlalchemy`, `pydantic` 런타임 의존성이 없어 린트 및 import 검증은 미실행
+
+---
+
+### 2026-07-06 | 문서 | DB 반영 내용 교차 검증 및 정합성 업데이트
+
+- **커밋**: 미커밋
+- **변경 내용**:
+  - `server/db/` 신규 DB 계층을 `README.md`, `AGENTS.md`, `docs/AGENTS.md`의 서버 구조 설명에 반영했습니다.
+  - `docs/ops/environment_variables.md`에 `.env.example`의 DB 환경 변수 6종을 추가하고 `DB_NAME=minchodan_db` 기준을 명시했습니다.
+  - `Minchodan DB.session.sql` 상단 기준 설명에서 존재하지 않는 `back_sql` 참조를 제거하고 현재 기준 파일을 명시했습니다.
+  - `.vscode` 로컬 DB 스키마 문서를 현재 4테이블 구조와 `ON DELETE RESTRICT` 기준으로 재정리했습니다.
+- **관련 파일**: `README.md`, `AGENTS.md`, `docs/AGENTS.md`, `docs/ops/environment_variables.md`, `Minchodan DB.session.sql`, `.vscode/mariadb_admin_user_schema.md`, `.vscode/PROJECT_TECH_STACK_DATA_WORKFLOW.md`
+- **검증 결과**:
+  - `minchodan_app`, `ON DELETE CASCADE`, `disability_grade`, `login_id`, `ws_token_hash` 등 과거 초안 키워드 잔존 여부 검색 완료
+  - `minchodan_db`, `DB_*`, `server/db`, `ON DELETE RESTRICT` 기준 반영 여부 검색 완료
+  - `git diff --check` 통과
