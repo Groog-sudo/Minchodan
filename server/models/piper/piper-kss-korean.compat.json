@@ -1,0 +1,34 @@
+﻿{
+    "request_id":  "ccd4fe899ead47fab83e95a2afacb2e5",
+    "initial_stage_time":  "2026-07-05T11:20:41",
+    "output_time":  "2026-07-05T11:20:49",
+    "preprocess":  {
+                       "source_type":  "webm",
+                       "noise_suppression":  true,
+                       "vad_enabled":  true,
+                       "note":  "React 痢?留덉씠???낅젰?먯꽌 noiseSuppression/VAD瑜?遺숈씪 ?먮━. ?꾩옱??援ъ“ ?뚯뒪?몄슜 硫뷀? ?뺣낫留?諛섑솚."
+                   },
+    "stt":  {
+                "model_name":  "faster-whisper-small",
+                "text":  "?????щ낫?몄슂",
+                "language":  "ko",
+                "duration":  3.72
+            },
+    "llm":  {
+                "provider":  "langchain-placeholder",
+                "mode":  "rag-agent-skeleton",
+                "prompt_preview":  "?ъ슜???뚯꽦 ?낅젰??遺꾩꽍?댁꽌 ?먯뿰?ㅻ윭???쒓뎅???묐떟???앹꽦?댁쨾: ?????щ낫?몄슂",
+                "answer":  "?낅젰 ?댁슜??湲곗??쇰줈 ?꾪뿕 ?붿냼瑜?遺꾩꽍?섍퀬, ?덉쟾???대룞 諛⑺뼢???덈궡?섍쿋?듬땲??"
+            },
+    "tts":  {
+                "provider":  "pyttsx3-fallback-tone",
+                "voice_name":  "kss",
+                "mime_type":  "audio/wav",
+                "audio_url":  "http://127.0.0.1:8000/static/tts/tts_9e74eab1703f48cb894f77c9ff77fdb9.wav",
+                "text":  "?낅젰 ?댁슜??湲곗??쇰줈 ?꾪뿕 ?붿냼瑜?遺꾩꽍?섍퀬, ?덉쟾???대룞 諛⑺뼢???덈궡?섍쿋?듬땲??"
+            },
+    "notes":  [
+                  "[諛붿씠釉?肄붾뵫 遺遺? ?꾩껜 ?뚯씠?꾨씪???곌껐 怨④꺽? ?숈옉?⑸땲??",
+                  "[?섎뱶 肄붾뵫 遺遺? LangChain RAG/Agent, ?ㅼ젣 TTS ?앹꽦, ?뚯씪/濡쒓렇 ????뺤콉??梨꾩썙 ?ｌ쑝?몄슂."
+              ]
+}
