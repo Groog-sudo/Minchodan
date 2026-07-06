@@ -116,6 +116,8 @@
 - LF Policy: 추적되는 텍스트 파일은 LF 줄바꿈을 기준으로 유지합니다. Windows 로컬 Git은 `core.autocrlf=false`, `core.eol=lf`를 권장하며, macOS/Linux도 프로젝트 단위 설정이 필요하면 동일한 값을 사용합니다.
 - Defensive Coding: 프레임 버퍼/디코딩 결과가 `None`인 경우 반드시 가드레일 처리. 무탐지 시 에러 없이 빈 리스트 반환(파이프라인 영속성).
 - Dual Path Discipline: **반사 경로에는 LLM/RAG/실시간 TTS를 절대 경유시키지 않습니다.** 반사 음성은 사전합성 고정 클립만 사용합니다.
+- Document Synchronization & Cross-Validation: 구현 과정에서 아키텍처/오픈소스 버전이 변경될 경우, Git 커밋/푸시 전에 반드시 관련 문서들을 최신화합니다. 이때 한 문서만 수정하지 않고, 관련된 모든 문서들과 내용이 모순되지 않는지 전체적으로 교차 검증(Cross-validation)하여 누락 없이 일괄 업데이트합니다.
+- Educational Vibecoding (Hard/Vibe Split): 3단계 YOLO 탐지, 분할(Segmentation) 등 핵심 로직 구현 시, 담당자가 직접 타이핑하며 체화할 "하드코딩(Hardcode) 영역"과 에이전트가 완성할 "바이브코딩(Vibecode) 영역"을 명확히 분리합니다. 하드코딩 영역에는 발표/면접 방어를 위한 기술적 의도나 파이프라인 설계 이유를 `# 💡 [면접 대비 주석]` 형태로 반드시 첨부해야 합니다.
 - Mermaid & Markdown Standards:
   - `mermaid` 노드 텍스트는 반드시 큰따옴표(`" "`)로 감싸야 하며, 줄바꿈은 `<br/>`를 사용한다. (`htmlLabels: true` 환경)
   - 모든 구조화된 데이터는 목록 대신 Markdown 표(Table)를 사용하고, 핵심 키워드는 굵게 표시한다.

@@ -7,6 +7,12 @@ export type WSStatus = "connecting" | "connected" | "disconnected" | "fallback";
 
 export type StreamType = "reflex" | "cognitive";
 
+export type Direction = "front" | "left" | "right" | "stop";
+
+export type RiskLevel = "high" | "mid" | "low";
+
+export type HapticPattern = "short" | "double" | "continuous" | "light";
+
 export type MessageType =
   | "hello"
   | "welcome"
@@ -27,10 +33,16 @@ export interface WSMessage {
   server_time?: string;
   ts?: number;
   payload?: DetectionPayload | AckPayload | Record<string, unknown>;
-  panning?: number;
-  beep_interval_ms?: number;
-  haptic_pattern?: string;
+  event_id?: string;
   alert_id?: string;
+  direction?: Direction;
+  risk_level?: RiskLevel;
+  clip?: string;
+  haptic?: boolean;
+  panning?: number;
+  distance?: number;
+  beep_interval_ms?: number;
+  haptic_pattern?: HapticPattern | string;
   guidance_text?: string;
   audio_mp3_b64?: string;
 }
@@ -58,10 +70,14 @@ export interface DetectionEvent {
 export interface AlertReflexPayload {
   event_id: string;
   alert_id: string;
-  direction: "front" | "left" | "right" | "stop";
+  direction: Direction;
   risk_level: "high";
   clip: string;
   haptic: boolean;
+  panning?: number;
+  distance?: number;
+  beep_interval_ms?: number;
+  haptic_pattern?: HapticPattern | string;
   ts: number;
 }
 

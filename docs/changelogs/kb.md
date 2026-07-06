@@ -804,3 +804,14 @@
     - Apple 인증서(`.p12`) 및 프로비저닝 프로파일(`.mobileprovision`)을 획득하는 수동 과정 수록.
 - **관련 파일**: `docs/ops/mobile_build_troubleshooting.md`, `docs/changelogs/kb.md`
 - **비고**: 깃 이그노어된 파일들로 인해 신규 진입 팀원이 겪을 수 있는 환경 빌드 꼬임 에러를 방지하고 동일한 iOS 빌드 상태를 즉각 구성할 수 있도록 이식용 매뉴얼을 수록했습니다.
+
+### 2026-07-05 | 3단계 | YOLO 데이터셋 29종 선별 추출 및 핑퐁 명세 동기화
+
+- **Commit**: stage3: YOLO 데이터셋 29종 선별 추출 스크립트 수정 및 핑퐁 통신 문서 동기화
+- **Changes**:
+  - prepare_aihub_yolo_detection.py: AI Hub 29종 전체 클래스 대상 2000장 균형 추출, 면적 1~80% 및 정중앙(10~90%) 필터 적용
+  - yolo_detector.py, yolo_segmentor.py: HARD CODE / VIBE CODE 주석 및 면접 대비 주석 추가
+  - pi_specification.md: JSON ping/pong WebSocket 하트비트 메시지 포맷 명세 반영
+  - minchodan_design_note.md: 3단계 커스텀 학습 대상 29종 2000장 추출 전략 명세 갱신
+- **Files**: scripts/prepare_aihub_yolo_detection.py, server/detection/yolo_detector.py, server/detection/yolo_segmentor.py, docs/design/api_specification.md, docs/design/minchodan_design_note.md
+- **Verification**: 핑퐁 및 YOLO 파이프라인 정합성 문서 교차 검증 완료

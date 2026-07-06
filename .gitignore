@@ -191,6 +191,31 @@ vector_store/
 vectordb/
 
 # ==========================================
+# AI Hub Raw Samples / Model Weights
+# ==========================================
+
+# Demo/sample images are copied locally only. Do not commit raw AI Hub data.
+data/raw/aihub_walk_sample/*.jpg
+data/raw/aihub_walk_sample/*.jpeg
+data/raw/aihub_walk_sample/*.png
+
+# Custom training weights and exported engines stay local.
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Generated local training datasets/configs must not be committed.
+training/datasets/detection/aihub_*/
+training/datasets/segmentation/aihub_*/
+training/configs/aihub_yolo_detection.yaml
+training/runs/
+
+# Keep agreed baseline pretrained weights trackable.
+!server/models/yolo26n/object_detection.pt
+!server/models/yolo26n/segmentation.pt
+
+# ==========================================
 # LangChain / LangGraph
 # ==========================================
 
@@ -214,6 +239,16 @@ langgraph_checkpoints/
 *.old
 
 # ==========================================
+# Repository structure placeholders
+# ==========================================
+
+# Keep scaffold directories that otherwise match generated-data rules.
+!server/rag/build/
+!server/rag/build/.gitkeep
+!data/chroma_db/
+!data/chroma_db/.gitkeep
+!training/datasets/detection/images/.gitkeep
+!training/datasets/segmentation/images/.gitkeep
 # 기타 등등...
 # ==========================================
 
@@ -224,6 +259,10 @@ langgraph_checkpoints/
 
 # Temporary Smoke Test Outputs
 temp_smoke_*
+
+# Node.js
+node_modules/
+.expo/
 
 # ==========================================
 # Custom Trained Model Weights (git-ignore)

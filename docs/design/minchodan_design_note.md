@@ -104,7 +104,8 @@
 - **데이터 인터페이스:** In 이미지 bytes Out `{event_id, detections:[{class_name, confidence, bbox, track_id}], surface:[{class_name, mask|centroid}], risk_hint, inference_ms}`
 - **의존성·예외:** 선행=2단계. 출력=4·5·6단계. **필수 가드:** 빈 버퍼/디코딩 실패(None) 가드레일; 무탐지 시 에러 없이 빈 리스트 반환(파이프라인 영속성).
 - **분업:** CV/PyTorch 경험자 1~2명. Colab 검증 서버 이식. 탐지 결과는 전원 검증.
-- **MVP 스코프:** 탐지 클래스 우선 3~5개로 시작. 사전학습+커스텀 fine-tuning은 여유 시.
+- **MVP 스코프:** 
+  - **효율적 커스텀 학습 (YOLO)**: AI Hub 29종 전체 클래스를 대상으로, 면적 비율(1~80%) 및 정중앙(10~90%) 필터를 통과한 확실하고 선명한 이미지만 클래스당 최대 2,000장씩 선별 추출하여 베이스라인 커스텀 학습을 수행. 학습 결과 파일명에 날짜를 명시(예: `aihub_det_v1_20260704/weights/best.pt`)하여 버전 관리 혼선 방지.
 - **완료 기준:** 킥보드 추론 `conf≈0.87, track_id` 출력, **Detection 추론 < 80ms**; 30초 후 Redis ctx 키 자동 삭제(TTL 동작).
 - ** v1.1 반영:**
   - 모델: YOLOv8에서 **Yolo 26N - Object Detection**(NMS-free, sm_120, 소형객체 최적화) + **Yolo 26N - Segmentation**으로 전환. RT-DETR은 occlusion 백로그.
@@ -170,7 +171,7 @@
 - **목표·목적:** 최종 가이드를 한글 음성으로 변환·재생. 화면을 못 보는 사용자에게 귀로 전달.
 - **선택 이유:** 서버 합성으로 단말 부담·배터리 절감. 로컬 TTS로 클라우드 요금 제거, 로컬망에서도 끊김 없음.
 - **핵심 절차:** **(인지)** 로컬 TTS(Kokoro/Coqui) `generate(guidance_text, voice="ko")` base64 MP3 WS 스트리밍 단말 Web Audio 재생. **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생. 중복 억제 `setex(suppress:…, 60)`. 햅틱·접근성(`announceForAccessibility`) 연동.
-- **활용 스택·핵심 함수:** Kokoro-82M/Coqui(서버), react-native-tts(예비), Web Audio, Haptics / `local_tts.generate()`, `decodeAudioData()` — _TTSService 추상화, 출력은 MP3/WAV로 규격 통일_
+- **활용 스택·핵심 함수:** Kokoro-82M/Coqui(서버), Web Audio, expo-av, expo-haptics / `local_tts.generate()`, `decodeAudioData()` — _TTSService 추상화, 출력은 MP3/WAV로 규격 통일_
 - **데이터 인터페이스:** In 가이드 문장(String) / `alert_id`(반사) Out 오디오 bytes(ArrayBuffer)
 - **의존성·예외:** 선행=6단계(인지) / 3단계 게이트(반사). 파이프라인 종착. **필수 가드:** TTS 호출 실패/타임아웃 시 기기 내장 TTS로 우회(시스템 중단 금지).
 - **분업:** 모바일 1명이 수신·재생, 전체 지연 측정.
@@ -200,7 +201,7 @@
 | On-device 추론 | 없음(thin client) | 반사 레이어(post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis | WebRTC/gRPC 등        |
 | TTS            | Kokoro/Coqui      | OpenAI TTS            |
-| RDB            | (미정)            | MariaDB/PostgreSQL    |
+| RDB            | 비동기 SQLAlchemy | MariaDB/PostgreSQL    |
 
 > **On-device 추론 Post-MVP 상세 설계서**: [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0) — 하이브리드 엣지-클라우드 이중 루프, `yolo26n` CoreML/TFLite 포팅, `Frame Processor` 병행 구조, 점진적 전환 4단계(포스트 A~D) 청사진.
 

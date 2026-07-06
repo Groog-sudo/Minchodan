@@ -396,13 +396,13 @@ sequenceDiagram
 | 디바이스 없음 | "카메라를 찾을 수 없습니다." 안내 |
 | 접근성 | `accessibilityLabel`로 연결·캡처 상태 전달 |
 
-#### `src/utils/haptics.ts` — 햅틱/접근성 (7단계 준비 stub)
+#### `src/services/hapticEngine.ts` — 햅틱 피드백 서비스
 
 | 항목 | 내용 |
 | --- | --- |
-| 역할 | 햅틱 + `announceForAccessibility` 래퍼 (본 패스에서는 stub) |
-| 함수 | `triggerHaptic()`, `announce(message)` |
-| 구현 | `expo-haptics` 호출 래퍼, 7단계 반사/인지 음성 재생 시 본격 활용 |
+| 역할 | 반사 경보 햅틱 패턴 실행 및 지속 진동 정리 |
+| 함수 | `hapticEngine.trigger(pattern)`, `hapticEngine.stopContinuous()` |
+| 구현 | `expo-haptics` 호출 래퍼, 반사 비프음과 함께 즉시 실행 |
 
 ### 8.2 detection 페이로드 (API 명세서 v0.2.0 준수)
 
@@ -536,7 +536,7 @@ graph LR
 | `client/src/services/frameCapture.ts` | 신규 | 프레임 전송 서비스 |
 | `client/src/components/CameraView.tsx` | 신규 | 카메라 + WS 연동 |
 | `client/src/components/ConnectionStatus.tsx` | 신규 | 접속 상태 표시 |
-| `client/src/utils/haptics.ts` | 신규 | 햅틱/접근성 stub |
+| `client/src/services/hapticEngine.ts` | 신규 | 햅틱 피드백 서비스 |
 
 ---
 

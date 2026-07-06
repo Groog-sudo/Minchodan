@@ -71,6 +71,7 @@
 - react-native-fast-tflite (온디바이스 YOLO 추론)
 - expo-audio (단말 오디오 재생 계층), Web Audio API (개념 규격)
 - react-native-tts (예비 TTS)
+- expo-haptics (반사 햅틱)
 - Haptics + announceForAccessibility (접근성)
 
 ### 운영 콘솔
@@ -262,6 +263,7 @@ bash scripts/build_chroma.sh
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
+| `RDB`               | 비동기 SQLAlchemy                         | MariaDB/PostgreSQL       |
 | `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
 | `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
 
@@ -293,6 +295,7 @@ bash scripts/build_chroma.sh
 | **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                    |
 | 에이전트 가이드      | [`AGENTS.md`](AGENTS.md)                                           | 코딩·커뮤니케이션 규칙, 기술 스택, 문서 인덱스 |
+| 백엔드 DB 설계 원칙 | [`docs/design/backend_db_architecture.md`](docs/design/backend_db_architecture.md) | 백엔드 코어 비동기 SQLAlchemy 기반 3계층 아키텍처 및 에러 방어 로직 설계 |
 | 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동 |
 | API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입       |
 | 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스               |

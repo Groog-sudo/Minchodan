@@ -1,0 +1,3389 @@
+{
+  "generated_at": "2026-06-30T00:28:06",
+  "project_root": "C:\\Dev_task\\workspace\\Project\\finally_project\\AI_GilDang\\Minchodan",
+  "counts": {
+    "total_files": 177,
+    "document_files": 68,
+    "python_files": 59
+  },
+  "folder_tree": [
+    "Minchodan/",
+    "├── .agents/",
+    "│   └── skills/",
+    "│       ├── camera-frame-capture/",
+    "│       ├── llm-guidance-orchestrator/",
+    "│       ├── rag-knowledge-builder/",
+    "│       ├── rag-realtime-search/",
+    "│       ├── tts-voice-streamer/",
+    "│       ├── websocket-gateway/",
+    "│       └── yolo-obstacle-detection/",
+    "├── .claude/",
+    "│   └── skills/",
+    "│       ├── camera-frame-capture/",
+    "│       ├── llm-guidance-orchestrator/",
+    "│       ├── rag-knowledge-builder/",
+    "│       ├── rag-realtime-search/",
+    "│       ├── tts-voice-streamer/",
+    "│       ├── websocket-gateway/",
+    "│       └── yolo-obstacle-detection/",
+    "├── .github/",
+    "│   └── workflows/",
+    "│       └── lint.yml",
+    "├── client/",
+    "│   ├── assets/",
+    "│   │   └── reflex_clips/",
+    "│   └── src/",
+    "│       ├── components/",
+    "│       ├── hooks/",
+    "│       ├── services/",
+    "│       └── utils/",
+    "├── console/",
+    "│   └── src/",
+    "│       ├── components/",
+    "│       └── hooks/",
+    "├── data/",
+    "│   ├── captions/",
+    "│   │   └── .gitkeep",
+    "│   ├── chroma_db/",
+    "│   │   └── .gitkeep",
+    "│   ├── deduped/",
+    "│   │   └── .gitkeep",
+    "│   ├── frames/",
+    "│   │   └── .gitkeep",
+    "│   ├── raw/",
+    "│   │   └── .gitkeep",
+    "│   └── reflex_clips/",
+    "│       └── .gitkeep",
+    "├── docker/",
+    "│   ├── .dockerignore",
+    "│   ├── .gitkeep",
+    "│   ├── docker-compose.yml",
+    "│   ├── Dockerfile",
+    "│   ├── linux_docker_start.sh",
+    "│   ├── macos_docker_start.sh",
+    "│   └── windows_docker_start.bat",
+    "├── docs/",
+    "│   ├── changelogs/",
+    "│   │   ├── dg.md",
+    "│   │   ├── jh.md",
+    "│   │   ├── jy.md",
+    "│   │   ├── kb.md",
+    "│   │   ├── README.md",
+    "│   │   ├── TEMPLATE.md",
+    "│   │   └── th.md",
+    "│   ├── AGENTS.md",
+    "│   ├── antigravity_agent_prompt__4_5_final.md",
+    "│   ├── api_specification.md",
+    "│   ├── architecture.md",
+    "│   ├── behavior_and_risk_insight.md",
+    "│   ├── code_quality_guide.md",
+    "│   ├── course_codebase_guide.md",
+    "│   ├── deployment_guide.md",
+    "│   ├── dual_gemma4_latency_analysis.md",
+    "│   ├── environment_variables.md",
+    "│   ├── gemini_fallback_feasibility.md",
+    "│   ├── git_branching_strategy.md",
+    "│   ├── latency_impact_analysis.md",
+    "│   ├── minchodan_design_note.md",
+    "│   ├── pipeline_stage_design.md",
+    "│   ├── README.md",
+    "│   ├── stage2_capture_design.md",
+    "│   ├── stage3_detection_design.md",
+    "│   ├── stage4_5_data_replacement_guide.md",
+    "│   ├── stage4_5_directory_guide.md",
+    "│   ├── stage4_5_implementation_log.md",
+    "│   ├── stage4_5_rag_design.md",
+    "│   ├── stage4_5_test_guide.md",
+    "│   ├── stage6_orchestration_design.md",
+    "│   └── test_specification.md",
+    "├── scripts/",
+    "│   ├── .gitkeep",
+    "│   ├── download_pretrained_weights.py",
+    "│   ├── integration_test_pipeline.py",
+    "│   ├── postwork.bat",
+    "│   ├── postwork.ps1",
+    "│   ├── postwork.sh",
+    "│   ├── prework.bat",
+    "│   ├── prework.ps1",
+    "│   ├── prework.sh",
+    "│   ├── project_scan.py",
+    "│   ├── slack_publisher.py",
+    "│   └── verify_pretrained_weights.py",
+    "├── server/",
+    "│   ├── api/",
+    "│   │   ├── .gitkeep",
+    "│   │   └── monitor.py",
+    "│   ├── bus/",
+    "│   │   ├── .gitkeep",
+    "│   │   ├── __init__.py",
+    "│   │   ├── producer.py",
+    "│   │   └── redis_client.py",
+    "│   ├── capture/",
+    "│   │   ├── .gitkeep",
+    "│   │   ├── __init__.py",
+    "│   │   ├── frame_decoder.py",
+    "│   │   └── stream_splitter.py",
+    "│   ├── detection/",
+    "│   │   ├── gates/",
+    "│   │   ├── __init__.py",
+    "│   │   ├── bytetrack_tracker.py",
+    "│   │   ├── config.py",
+    "│   │   ├── detection_pipeline.py",
+    "│   │   ├── detector_interface.py",
+    "│   │   ├── mock_detector.py",
+    "│   │   ├── schemas.py",
+    "│   │   ├── yolo_detector.py",
+    "│   │   └── yolo_segmentor.py",
+    "│   ├── mcp/",
+    "│   │   ├── gpu_monitor.py",
+    "│   │   └── manager.py",
+    "│   ├── models/",
+    "│   │   └── yolo26n/",
+    "│   ├── orchestration/",
+    "│   │   ├── nodes/",
+    "│   │   ├── __init__.py",
+    "│   │   ├── graph.py",
+    "│   │   ├── llm_client_factory.py",
+    "│   │   └── state.py",
+    "│   ├── rag/",
+    "│   │   ├── build/",
+    "│   │   ├── shared/",
+    "│   │   ├── embedding_engine_factory.py",
+    "│   │   ├── fallback.py",
+    "│   │   ├── retriever.py",
+    "│   │   └── vector_db_factory.py",
+    "│   ├── tts/",
+    "│   │   └── .gitkeep",
+    "│   └── main.py",
+    "├── tests/",
+    "│   ├── .gitkeep",
+    "│   ├── test_db_builder.py",
+    "│   ├── test_dedup_phash.py",
+    "│   ├── test_detection.py",
+    "│   ├── test_e2e_pipeline.py",
+    "│   ├── test_embedding_engine_factory.py",
+    "│   ├── test_fallback.py",
+    "│   ├── test_frame_decode.py",
+    "│   ├── test_frame_extractor.py",
+    "│   ├── test_gemini_captioner.py",
+    "│   ├── test_langgraph.py",
+    "│   ├── test_mcp_gpu.py",
+    "│   ├── test_mcp_integration.py",
+    "│   ├── test_retriever.py",
+    "│   └── test_vector_db_factory.py",
+    "├── training/",
+    "│   ├── configs/",
+    "│   │   └── .gitkeep",
+    "│   └── datasets/",
+    "│       ├── detection/",
+    "│       └── segmentation/",
+    "├── .env.example",
+    "├── .gitignore",
+    "├── .jscpd.json",
+    "├── .pre-commit-config.yaml",
+    "├── AGENTS.md",
+    "├── CLAUDE.md",
+    "├── Directory_Structure.md",
+    "├── opencode.json",
+    "├── pyproject.toml",
+    "├── README.md",
+    "├── requirements-dev.txt",
+    "├── requirements.txt",
+    "├── SCRIPT_GENERATION_PROMPT.md",
+    "└── SKILLS.md"
+  ],
+  "extension_counts": [
+    {
+      "extension": ".md",
+      "count": 66
+    },
+    {
+      "extension": ".py",
+      "count": 59
+    },
+    {
+      "extension": "(no extension)",
+      "count": 32
+    },
+    {
+      "extension": ".sh",
+      "count": 4
+    },
+    {
+      "extension": ".bat",
+      "count": 3
+    },
+    {
+      "extension": ".json",
+      "count": 2
+    },
+    {
+      "extension": ".ps1",
+      "count": 2
+    },
+    {
+      "extension": ".pt",
+      "count": 2
+    },
+    {
+      "extension": ".txt",
+      "count": 2
+    },
+    {
+      "extension": ".yml",
+      "count": 2
+    },
+    {
+      "extension": ".example",
+      "count": 1
+    },
+    {
+      "extension": ".toml",
+      "count": 1
+    },
+    {
+      "extension": ".yaml",
+      "count": 1
+    }
+  ],
+  "key_files": {
+    ".env.example": [
+      {
+        "path": ".env.example",
+        "size_bytes": 1980
+      }
+    ],
+    "README.md": [
+      {
+        "path": "README.md",
+        "size_bytes": 19064
+      },
+      {
+        "path": "docs/README.md",
+        "size_bytes": 7942
+      },
+      {
+        "path": "docs/changelogs/README.md",
+        "size_bytes": 2544
+      }
+    ],
+    "package.json": [],
+    "pyproject.toml": [
+      {
+        "path": "pyproject.toml",
+        "size_bytes": 5127
+      }
+    ],
+    "requirements.txt": [
+      {
+        "path": "requirements.txt",
+        "size_bytes": 395
+      }
+    ]
+  },
+  "document_files": [
+    {
+      "path": "AGENTS.md",
+      "size_bytes": 13958
+    },
+    {
+      "path": "CLAUDE.md",
+      "size_bytes": 11302
+    },
+    {
+      "path": "Directory_Structure.md",
+      "size_bytes": 9849
+    },
+    {
+      "path": "README.md",
+      "size_bytes": 19064
+    },
+    {
+      "path": "SCRIPT_GENERATION_PROMPT.md",
+      "size_bytes": 15727
+    },
+    {
+      "path": "SKILLS.md",
+      "size_bytes": 8679
+    },
+    {
+      "path": "requirements-dev.txt",
+      "size_bytes": 239
+    },
+    {
+      "path": "requirements.txt",
+      "size_bytes": 395
+    },
+    {
+      "path": ".agents/skills/camera-frame-capture/SKILL.md",
+      "size_bytes": 16513
+    },
+    {
+      "path": ".agents/skills/camera-frame-capture/references/implementation_detail.md",
+      "size_bytes": 31675
+    },
+    {
+      "path": ".agents/skills/llm-guidance-orchestrator/SKILL.md",
+      "size_bytes": 14456
+    },
+    {
+      "path": ".agents/skills/llm-guidance-orchestrator/references/implementation_detail.md",
+      "size_bytes": 20038
+    },
+    {
+      "path": ".agents/skills/rag-knowledge-builder/SKILL.md",
+      "size_bytes": 8974
+    },
+    {
+      "path": ".agents/skills/rag-knowledge-builder/references/implementation_detail.md",
+      "size_bytes": 7993
+    },
+    {
+      "path": ".agents/skills/rag-realtime-search/SKILL.md",
+      "size_bytes": 9705
+    },
+    {
+      "path": ".agents/skills/rag-realtime-search/references/implementation_detail.md",
+      "size_bytes": 12116
+    },
+    {
+      "path": ".agents/skills/tts-voice-streamer/SKILL.md",
+      "size_bytes": 12273
+    },
+    {
+      "path": ".agents/skills/tts-voice-streamer/references/implementation_detail.md",
+      "size_bytes": 7833
+    },
+    {
+      "path": ".agents/skills/websocket-gateway/SKILL.md",
+      "size_bytes": 19000
+    },
+    {
+      "path": ".agents/skills/websocket-gateway/references/implementation_detail.md",
+      "size_bytes": 15521
+    },
+    {
+      "path": ".agents/skills/yolo-obstacle-detection/SKILL.md",
+      "size_bytes": 12762
+    },
+    {
+      "path": ".agents/skills/yolo-obstacle-detection/references/implementation_detail.md",
+      "size_bytes": 30243
+    },
+    {
+      "path": ".claude/skills/camera-frame-capture/SKILL.md",
+      "size_bytes": 16513
+    },
+    {
+      "path": ".claude/skills/camera-frame-capture/references/implementation_detail.md",
+      "size_bytes": 31675
+    },
+    {
+      "path": ".claude/skills/llm-guidance-orchestrator/SKILL.md",
+      "size_bytes": 14456
+    },
+    {
+      "path": ".claude/skills/llm-guidance-orchestrator/references/implementation_detail.md",
+      "size_bytes": 20038
+    },
+    {
+      "path": ".claude/skills/rag-knowledge-builder/SKILL.md",
+      "size_bytes": 8974
+    },
+    {
+      "path": ".claude/skills/rag-knowledge-builder/references/implementation_detail.md",
+      "size_bytes": 7993
+    },
+    {
+      "path": ".claude/skills/rag-realtime-search/SKILL.md",
+      "size_bytes": 9705
+    },
+    {
+      "path": ".claude/skills/rag-realtime-search/references/implementation_detail.md",
+      "size_bytes": 12116
+    },
+    {
+      "path": ".claude/skills/tts-voice-streamer/SKILL.md",
+      "size_bytes": 12273
+    },
+    {
+      "path": ".claude/skills/tts-voice-streamer/references/implementation_detail.md",
+      "size_bytes": 7833
+    },
+    {
+      "path": ".claude/skills/websocket-gateway/SKILL.md",
+      "size_bytes": 19000
+    },
+    {
+      "path": ".claude/skills/websocket-gateway/references/implementation_detail.md",
+      "size_bytes": 15521
+    },
+    {
+      "path": ".claude/skills/yolo-obstacle-detection/SKILL.md",
+      "size_bytes": 12762
+    },
+    {
+      "path": ".claude/skills/yolo-obstacle-detection/references/implementation_detail.md",
+      "size_bytes": 30243
+    },
+    {
+      "path": "docs/AGENTS.md",
+      "size_bytes": 7636
+    },
+    {
+      "path": "docs/README.md",
+      "size_bytes": 7942
+    },
+    {
+      "path": "docs/antigravity_agent_prompt__4_5_final.md",
+      "size_bytes": 13777
+    },
+    {
+      "path": "docs/api_specification.md",
+      "size_bytes": 10352
+    },
+    {
+      "path": "docs/architecture.md",
+      "size_bytes": 34534
+    },
+    {
+      "path": "docs/behavior_and_risk_insight.md",
+      "size_bytes": 9026
+    },
+    {
+      "path": "docs/code_quality_guide.md",
+      "size_bytes": 20916
+    },
+    {
+      "path": "docs/course_codebase_guide.md",
+      "size_bytes": 111433
+    },
+    {
+      "path": "docs/deployment_guide.md",
+      "size_bytes": 13504
+    },
+    {
+      "path": "docs/dual_gemma4_latency_analysis.md",
+      "size_bytes": 5824
+    },
+    {
+      "path": "docs/environment_variables.md",
+      "size_bytes": 12101
+    },
+    {
+      "path": "docs/gemini_fallback_feasibility.md",
+      "size_bytes": 5076
+    },
+    {
+      "path": "docs/git_branching_strategy.md",
+      "size_bytes": 5820
+    },
+    {
+      "path": "docs/latency_impact_analysis.md",
+      "size_bytes": 6378
+    },
+    {
+      "path": "docs/minchodan_design_note.md",
+      "size_bytes": 18724
+    },
+    {
+      "path": "docs/pipeline_stage_design.md",
+      "size_bytes": 8566
+    },
+    {
+      "path": "docs/stage2_capture_design.md",
+      "size_bytes": 22326
+    },
+    {
+      "path": "docs/stage3_detection_design.md",
+      "size_bytes": 28119
+    },
+    {
+      "path": "docs/stage4_5_data_replacement_guide.md",
+      "size_bytes": 6694
+    },
+    {
+      "path": "docs/stage4_5_directory_guide.md",
+      "size_bytes": 7031
+    },
+    {
+      "path": "docs/stage4_5_implementation_log.md",
+      "size_bytes": 7400
+    },
+    {
+      "path": "docs/stage4_5_rag_design.md",
+      "size_bytes": 16629
+    },
+    {
+      "path": "docs/stage4_5_test_guide.md",
+      "size_bytes": 7291
+    },
+    {
+      "path": "docs/stage6_orchestration_design.md",
+      "size_bytes": 24372
+    },
+    {
+      "path": "docs/test_specification.md",
+      "size_bytes": 17846
+    },
+    {
+      "path": "docs/changelogs/README.md",
+      "size_bytes": 2544
+    },
+    {
+      "path": "docs/changelogs/TEMPLATE.md",
+      "size_bytes": 772
+    },
+    {
+      "path": "docs/changelogs/dg.md",
+      "size_bytes": 2148
+    },
+    {
+      "path": "docs/changelogs/jh.md",
+      "size_bytes": 172
+    },
+    {
+      "path": "docs/changelogs/jy.md",
+      "size_bytes": 2304
+    },
+    {
+      "path": "docs/changelogs/kb.md",
+      "size_bytes": 28576
+    },
+    {
+      "path": "docs/changelogs/th.md",
+      "size_bytes": 822
+    }
+  ],
+  "python_files": [
+    {
+      "path": "scripts/download_pretrained_weights.py",
+      "size_bytes": 1753
+    },
+    {
+      "path": "scripts/integration_test_pipeline.py",
+      "size_bytes": 6668
+    },
+    {
+      "path": "scripts/project_scan.py",
+      "size_bytes": 14242
+    },
+    {
+      "path": "scripts/slack_publisher.py",
+      "size_bytes": 8200
+    },
+    {
+      "path": "scripts/verify_pretrained_weights.py",
+      "size_bytes": 2495
+    },
+    {
+      "path": "server/main.py",
+      "size_bytes": 2525
+    },
+    {
+      "path": "server/api/monitor.py",
+      "size_bytes": 2480
+    },
+    {
+      "path": "server/bus/__init__.py",
+      "size_bytes": 168
+    },
+    {
+      "path": "server/bus/producer.py",
+      "size_bytes": 1982
+    },
+    {
+      "path": "server/bus/redis_client.py",
+      "size_bytes": 2597
+    },
+    {
+      "path": "server/capture/__init__.py",
+      "size_bytes": 266
+    },
+    {
+      "path": "server/capture/frame_decoder.py",
+      "size_bytes": 3973
+    },
+    {
+      "path": "server/capture/stream_splitter.py",
+      "size_bytes": 4364
+    },
+    {
+      "path": "server/detection/__init__.py",
+      "size_bytes": 842
+    },
+    {
+      "path": "server/detection/bytetrack_tracker.py",
+      "size_bytes": 2837
+    },
+    {
+      "path": "server/detection/config.py",
+      "size_bytes": 2850
+    },
+    {
+      "path": "server/detection/detection_pipeline.py",
+      "size_bytes": 4894
+    },
+    {
+      "path": "server/detection/detector_interface.py",
+      "size_bytes": 963
+    },
+    {
+      "path": "server/detection/mock_detector.py",
+      "size_bytes": 1809
+    },
+    {
+      "path": "server/detection/schemas.py",
+      "size_bytes": 1201
+    },
+    {
+      "path": "server/detection/yolo_detector.py",
+      "size_bytes": 2946
+    },
+    {
+      "path": "server/detection/yolo_segmentor.py",
+      "size_bytes": 2900
+    },
+    {
+      "path": "server/detection/gates/__init__.py",
+      "size_bytes": 167
+    },
+    {
+      "path": "server/detection/gates/reflex_gate.py",
+      "size_bytes": 1239
+    },
+    {
+      "path": "server/detection/gates/surface_gate.py",
+      "size_bytes": 932
+    },
+    {
+      "path": "server/mcp/gpu_monitor.py",
+      "size_bytes": 3762
+    },
+    {
+      "path": "server/mcp/manager.py",
+      "size_bytes": 5812
+    },
+    {
+      "path": "server/orchestration/__init__.py",
+      "size_bytes": 243
+    },
+    {
+      "path": "server/orchestration/graph.py",
+      "size_bytes": 3159
+    },
+    {
+      "path": "server/orchestration/llm_client_factory.py",
+      "size_bytes": 8304
+    },
+    {
+      "path": "server/orchestration/state.py",
+      "size_bytes": 1088
+    },
+    {
+      "path": "server/orchestration/nodes/__init__.py",
+      "size_bytes": 421
+    },
+    {
+      "path": "server/orchestration/nodes/fallback_node.py",
+      "size_bytes": 896
+    },
+    {
+      "path": "server/orchestration/nodes/l1_classifier.py",
+      "size_bytes": 1711
+    },
+    {
+      "path": "server/orchestration/nodes/l2_generator.py",
+      "size_bytes": 4334
+    },
+    {
+      "path": "server/orchestration/nodes/l3_validator.py",
+      "size_bytes": 2417
+    },
+    {
+      "path": "server/rag/embedding_engine_factory.py",
+      "size_bytes": 4914
+    },
+    {
+      "path": "server/rag/fallback.py",
+      "size_bytes": 3167
+    },
+    {
+      "path": "server/rag/retriever.py",
+      "size_bytes": 5665
+    },
+    {
+      "path": "server/rag/vector_db_factory.py",
+      "size_bytes": 3989
+    },
+    {
+      "path": "server/rag/build/db_builder.py",
+      "size_bytes": 9347
+    },
+    {
+      "path": "server/rag/build/dedup_phash.py",
+      "size_bytes": 2950
+    },
+    {
+      "path": "server/rag/build/frame_extractor.py",
+      "size_bytes": 3446
+    },
+    {
+      "path": "server/rag/build/gemini_captioner.py",
+      "size_bytes": 4031
+    },
+    {
+      "path": "server/rag/shared/labels.py",
+      "size_bytes": 723
+    },
+    {
+      "path": "tests/test_db_builder.py",
+      "size_bytes": 2134
+    },
+    {
+      "path": "tests/test_dedup_phash.py",
+      "size_bytes": 1768
+    },
+    {
+      "path": "tests/test_detection.py",
+      "size_bytes": 11852
+    },
+    {
+      "path": "tests/test_e2e_pipeline.py",
+      "size_bytes": 3604
+    },
+    {
+      "path": "tests/test_embedding_engine_factory.py",
+      "size_bytes": 1737
+    },
+    {
+      "path": "tests/test_fallback.py",
+      "size_bytes": 1288
+    },
+    {
+      "path": "tests/test_frame_decode.py",
+      "size_bytes": 12789
+    },
+    {
+      "path": "tests/test_frame_extractor.py",
+      "size_bytes": 1726
+    },
+    {
+      "path": "tests/test_gemini_captioner.py",
+      "size_bytes": 2048
+    },
+    {
+      "path": "tests/test_langgraph.py",
+      "size_bytes": 8030
+    },
+    {
+      "path": "tests/test_mcp_gpu.py",
+      "size_bytes": 2556
+    },
+    {
+      "path": "tests/test_mcp_integration.py",
+      "size_bytes": 2340
+    },
+    {
+      "path": "tests/test_retriever.py",
+      "size_bytes": 3068
+    },
+    {
+      "path": "tests/test_vector_db_factory.py",
+      "size_bytes": 1614
+    }
+  ],
+  "keyword_hits": {
+    "yolo": [
+      {
+        "path": ".env.example",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 66
+      },
+      {
+        "path": ".gitignore",
+        "matched_keywords": [
+          "detect",
+          "train"
+        ],
+        "line_count": 243
+      },
+      {
+        "path": "AGENTS.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "train"
+        ],
+        "line_count": 184
+      },
+      {
+        "path": "CLAUDE.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "train"
+        ],
+        "line_count": 170
+      },
+      {
+        "path": "Directory_Structure.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "predict",
+          "train"
+        ],
+        "line_count": 149
+      },
+      {
+        "path": "README.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "train"
+        ],
+        "line_count": 355
+      },
+      {
+        "path": "SCRIPT_GENERATION_PROMPT.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 381
+      },
+      {
+        "path": "SKILLS.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "train"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "pyproject.toml",
+        "matched_keywords": [
+          "ultralytics",
+          "train"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "requirements.txt",
+        "matched_keywords": [
+          "ultralytics"
+        ],
+        "line_count": 21
+      },
+      {
+        "path": "docs/AGENTS.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "train"
+        ],
+        "line_count": 138
+      },
+      {
+        "path": "docs/README.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 78
+      },
+      {
+        "path": "docs/antigravity_agent_prompt__4_5_final.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 188
+      },
+      {
+        "path": "docs/api_specification.md",
+        "matched_keywords": [
+          "detect",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 283
+      },
+      {
+        "path": "docs/architecture.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "train",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 512
+      },
+      {
+        "path": "docs/behavior_and_risk_insight.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "bbox"
+        ],
+        "line_count": 91
+      },
+      {
+        "path": "docs/code_quality_guide.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect"
+        ],
+        "line_count": 654
+      },
+      {
+        "path": "docs/course_codebase_guide.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "train",
+          "bbox",
+          "class_id",
+          "confidence"
+        ],
+        "line_count": 2986
+      },
+      {
+        "path": "docs/deployment_guide.md",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 328
+      },
+      {
+        "path": "docs/dual_gemma4_latency_analysis.md",
+        "matched_keywords": [
+          "yolo",
+          "predict"
+        ],
+        "line_count": 86
+      },
+      {
+        "path": "docs/environment_variables.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/git_branching_strategy.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 144
+      },
+      {
+        "path": "docs/latency_impact_analysis.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 106
+      },
+      {
+        "path": "docs/minchodan_design_note.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 212
+      },
+      {
+        "path": "docs/pipeline_stage_design.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "predict"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/stage2_capture_design.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 447
+      },
+      {
+        "path": "docs/stage3_detection_design.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 578
+      },
+      {
+        "path": "docs/stage4_5_directory_guide.md",
+        "matched_keywords": [
+          "yolo"
+        ],
+        "line_count": 60
+      },
+      {
+        "path": "docs/stage4_5_implementation_log.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 93
+      },
+      {
+        "path": "docs/stage4_5_rag_design.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 342
+      },
+      {
+        "path": "docs/stage4_5_test_guide.md",
+        "matched_keywords": [
+          "yolo"
+        ],
+        "line_count": 88
+      },
+      {
+        "path": "docs/stage6_orchestration_design.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 514
+      },
+      {
+        "path": "docs/test_specification.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 330
+      },
+      {
+        "path": "scripts/download_pretrained_weights.py",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect"
+        ],
+        "line_count": 52
+      },
+      {
+        "path": "scripts/integration_test_pipeline.py",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 151
+      },
+      {
+        "path": "scripts/postwork.bat",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 338
+      },
+      {
+        "path": "scripts/postwork.ps1",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 285
+      },
+      {
+        "path": "scripts/postwork.sh",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 301
+      },
+      {
+        "path": "scripts/prework.bat",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 247
+      },
+      {
+        "path": "scripts/prework.ps1",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 209
+      },
+      {
+        "path": "scripts/prework.sh",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 222
+      },
+      {
+        "path": "scripts/project_scan.py",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "train",
+          "bbox",
+          "class_id",
+          "confidence"
+        ],
+        "line_count": 468
+      },
+      {
+        "path": "scripts/verify_pretrained_weights.py",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "predict"
+        ],
+        "line_count": 69
+      },
+      {
+        "path": "tests/test_detection.py",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": "tests/test_e2e_pipeline.py",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 98
+      },
+      {
+        "path": "tests/test_langgraph.py",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 202
+      },
+      {
+        "path": "tests/test_retriever.py",
+        "matched_keywords": [
+          "detect",
+          "confidence"
+        ],
+        "line_count": 85
+      },
+      {
+        "path": "docs/changelogs/README.md",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 69
+      },
+      {
+        "path": "docs/changelogs/kb.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "train",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 267
+      },
+      {
+        "path": "server/bus/producer.py",
+        "matched_keywords": [
+          "detect",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 66
+      },
+      {
+        "path": "server/detection/__init__.py",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "bbox"
+        ],
+        "line_count": 30
+      },
+      {
+        "path": "server/detection/bytetrack_tracker.py",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "bbox"
+        ],
+        "line_count": 78
+      },
+      {
+        "path": "server/detection/config.py",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 84
+      },
+      {
+        "path": "server/detection/detection_pipeline.py",
+        "matched_keywords": [
+          "detect",
+          "predict"
+        ],
+        "line_count": 149
+      },
+      {
+        "path": "server/detection/detector_interface.py",
+        "matched_keywords": [
+          "detect",
+          "predict"
+        ],
+        "line_count": 32
+      },
+      {
+        "path": "server/detection/mock_detector.py",
+        "matched_keywords": [
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 61
+      },
+      {
+        "path": "server/detection/schemas.py",
+        "matched_keywords": [
+          "detect",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 56
+      },
+      {
+        "path": "server/detection/yolo_detector.py",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 86
+      },
+      {
+        "path": "server/detection/yolo_segmentor.py",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict"
+        ],
+        "line_count": 86
+      },
+      {
+        "path": "server/orchestration/llm_client_factory.py",
+        "matched_keywords": [
+          "predict"
+        ],
+        "line_count": 207
+      },
+      {
+        "path": "server/orchestration/state.py",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 35
+      },
+      {
+        "path": "server/rag/fallback.py",
+        "matched_keywords": [
+          "yolo"
+        ],
+        "line_count": 73
+      },
+      {
+        "path": "server/rag/retriever.py",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 145
+      },
+      {
+        "path": ".agents/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".agents/skills/llm-guidance-orchestrator/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "predict"
+        ],
+        "line_count": 359
+      },
+      {
+        "path": ".agents/skills/rag-knowledge-builder/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 241
+      },
+      {
+        "path": ".agents/skills/rag-realtime-search/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 257
+      },
+      {
+        "path": ".agents/skills/websocket-gateway/SKILL.md",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 534
+      },
+      {
+        "path": ".agents/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": ".claude/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".claude/skills/llm-guidance-orchestrator/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect",
+          "predict"
+        ],
+        "line_count": 359
+      },
+      {
+        "path": ".claude/skills/rag-knowledge-builder/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 241
+      },
+      {
+        "path": ".claude/skills/rag-realtime-search/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "detect"
+        ],
+        "line_count": 257
+      },
+      {
+        "path": ".claude/skills/websocket-gateway/SKILL.md",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 534
+      },
+      {
+        "path": ".claude/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "yolo",
+          "ultralytics",
+          "detect",
+          "predict",
+          "bbox",
+          "confidence"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": "server/detection/gates/__init__.py",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 5
+      },
+      {
+        "path": "server/detection/gates/reflex_gate.py",
+        "matched_keywords": [
+          "detect",
+          "bbox"
+        ],
+        "line_count": 44
+      },
+      {
+        "path": "server/detection/gates/surface_gate.py",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 38
+      },
+      {
+        "path": "server/orchestration/nodes/l1_classifier.py",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 45
+      },
+      {
+        "path": "server/orchestration/nodes/l2_generator.py",
+        "matched_keywords": [
+          "detect"
+        ],
+        "line_count": 113
+      }
+    ],
+    "langchain": [
+      {
+        "path": ".env.example",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 66
+      },
+      {
+        "path": ".gitignore",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain"
+        ],
+        "line_count": 243
+      },
+      {
+        "path": "AGENTS.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain"
+        ],
+        "line_count": 184
+      },
+      {
+        "path": "CLAUDE.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain"
+        ],
+        "line_count": 170
+      },
+      {
+        "path": "Directory_Structure.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 149
+      },
+      {
+        "path": "README.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain"
+        ],
+        "line_count": 355
+      },
+      {
+        "path": "SCRIPT_GENERATION_PROMPT.md",
+        "matched_keywords": [
+          "langgraph",
+          "agent",
+          "Runnable"
+        ],
+        "line_count": 381
+      },
+      {
+        "path": "SKILLS.md",
+        "matched_keywords": [
+          "langgraph",
+          "agent"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "pyproject.toml",
+        "matched_keywords": [
+          "langgraph",
+          "agent",
+          "tool"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "requirements.txt",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 21
+      },
+      {
+        "path": "docker/docker-compose.yml",
+        "matched_keywords": [
+          "tool"
+        ],
+        "line_count": 79
+      },
+      {
+        "path": "docs/AGENTS.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain"
+        ],
+        "line_count": 138
+      },
+      {
+        "path": "docs/README.md",
+        "matched_keywords": [
+          "langgraph",
+          "agent"
+        ],
+        "line_count": 78
+      },
+      {
+        "path": "docs/antigravity_agent_prompt__4_5_final.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 188
+      },
+      {
+        "path": "docs/api_specification.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 283
+      },
+      {
+        "path": "docs/architecture.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 512
+      },
+      {
+        "path": "docs/behavior_and_risk_insight.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 91
+      },
+      {
+        "path": "docs/code_quality_guide.md",
+        "matched_keywords": [
+          "langchain",
+          "agent",
+          "tool",
+          "chain",
+          "ChatOpenAI"
+        ],
+        "line_count": 654
+      },
+      {
+        "path": "docs/course_codebase_guide.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "tool",
+          "chain",
+          "Runnable",
+          "ChatOpenAI"
+        ],
+        "line_count": 2986
+      },
+      {
+        "path": "docs/deployment_guide.md",
+        "matched_keywords": [
+          "langchain",
+          "tool",
+          "chain"
+        ],
+        "line_count": 328
+      },
+      {
+        "path": "docs/dual_gemma4_latency_analysis.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 86
+      },
+      {
+        "path": "docs/environment_variables.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/git_branching_strategy.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 144
+      },
+      {
+        "path": "docs/latency_impact_analysis.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 106
+      },
+      {
+        "path": "docs/minchodan_design_note.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 212
+      },
+      {
+        "path": "docs/pipeline_stage_design.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/stage2_capture_design.md",
+        "matched_keywords": [
+          "langgraph",
+          "agent"
+        ],
+        "line_count": 447
+      },
+      {
+        "path": "docs/stage3_detection_design.md",
+        "matched_keywords": [
+          "langgraph",
+          "agent"
+        ],
+        "line_count": 578
+      },
+      {
+        "path": "docs/stage4_5_implementation_log.md",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 93
+      },
+      {
+        "path": "docs/stage4_5_rag_design.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain"
+        ],
+        "line_count": 342
+      },
+      {
+        "path": "docs/stage4_5_test_guide.md",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 88
+      },
+      {
+        "path": "docs/stage6_orchestration_design.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain",
+          "ChatOpenAI"
+        ],
+        "line_count": 514
+      },
+      {
+        "path": "docs/test_specification.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 330
+      },
+      {
+        "path": "scripts/postwork.bat",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 338
+      },
+      {
+        "path": "scripts/postwork.ps1",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 285
+      },
+      {
+        "path": "scripts/postwork.sh",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 301
+      },
+      {
+        "path": "scripts/prework.bat",
+        "matched_keywords": [
+          "langgraph",
+          "agent"
+        ],
+        "line_count": 247
+      },
+      {
+        "path": "scripts/prework.ps1",
+        "matched_keywords": [
+          "langgraph",
+          "agent"
+        ],
+        "line_count": 209
+      },
+      {
+        "path": "scripts/prework.sh",
+        "matched_keywords": [
+          "langgraph",
+          "agent"
+        ],
+        "line_count": 222
+      },
+      {
+        "path": "scripts/project_scan.py",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "tool",
+          "chain",
+          "Runnable",
+          "ChatOpenAI"
+        ],
+        "line_count": 468
+      },
+      {
+        "path": "scripts/slack_publisher.py",
+        "matched_keywords": [
+          "tool"
+        ],
+        "line_count": 223
+      },
+      {
+        "path": "tests/test_frame_decode.py",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 348
+      },
+      {
+        "path": "tests/test_langgraph.py",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 202
+      },
+      {
+        "path": "tests/test_retriever.py",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 85
+      },
+      {
+        "path": "docs/changelogs/kb.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "agent",
+          "chain"
+        ],
+        "line_count": 267
+      },
+      {
+        "path": "server/orchestration/graph.py",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 98
+      },
+      {
+        "path": "server/orchestration/llm_client_factory.py",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 207
+      },
+      {
+        "path": "server/orchestration/state.py",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 35
+      },
+      {
+        "path": "server/rag/embedding_engine_factory.py",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 133
+      },
+      {
+        "path": "server/rag/retriever.py",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 145
+      },
+      {
+        "path": "server/rag/vector_db_factory.py",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 101
+      },
+      {
+        "path": ".agents/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".agents/skills/llm-guidance-orchestrator/SKILL.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain",
+          "ChatOpenAI"
+        ],
+        "line_count": 359
+      },
+      {
+        "path": ".agents/skills/rag-knowledge-builder/SKILL.md",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 241
+      },
+      {
+        "path": ".agents/skills/rag-realtime-search/SKILL.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 257
+      },
+      {
+        "path": ".agents/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": ".agents/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": ".claude/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".claude/skills/llm-guidance-orchestrator/SKILL.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain",
+          "ChatOpenAI"
+        ],
+        "line_count": 359
+      },
+      {
+        "path": ".claude/skills/rag-knowledge-builder/SKILL.md",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 241
+      },
+      {
+        "path": ".claude/skills/rag-realtime-search/SKILL.md",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 257
+      },
+      {
+        "path": ".claude/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": ".claude/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": "server/orchestration/nodes/fallback_node.py",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 29
+      },
+      {
+        "path": "server/orchestration/nodes/l1_classifier.py",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 45
+      },
+      {
+        "path": "server/orchestration/nodes/l2_generator.py",
+        "matched_keywords": [
+          "langchain",
+          "langgraph",
+          "chain"
+        ],
+        "line_count": 113
+      },
+      {
+        "path": "server/orchestration/nodes/l3_validator.py",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 73
+      },
+      {
+        "path": "server/rag/build/db_builder.py",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 221
+      },
+      {
+        "path": "server/rag/build/gemini_captioner.py",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 102
+      },
+      {
+        "path": ".agents/skills/llm-guidance-orchestrator/references/implementation_detail.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 561
+      },
+      {
+        "path": ".agents/skills/rag-knowledge-builder/references/implementation_detail.md",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 216
+      },
+      {
+        "path": ".agents/skills/rag-realtime-search/references/implementation_detail.md",
+        "matched_keywords": [
+          "langgraph",
+          "tool"
+        ],
+        "line_count": 358
+      },
+      {
+        "path": ".agents/skills/websocket-gateway/references/implementation_detail.md",
+        "matched_keywords": [
+          "agent"
+        ],
+        "line_count": 449
+      },
+      {
+        "path": ".claude/skills/llm-guidance-orchestrator/references/implementation_detail.md",
+        "matched_keywords": [
+          "langgraph"
+        ],
+        "line_count": 561
+      },
+      {
+        "path": ".claude/skills/rag-knowledge-builder/references/implementation_detail.md",
+        "matched_keywords": [
+          "langchain",
+          "chain"
+        ],
+        "line_count": 216
+      },
+      {
+        "path": ".claude/skills/rag-realtime-search/references/implementation_detail.md",
+        "matched_keywords": [
+          "langgraph",
+          "tool"
+        ],
+        "line_count": 358
+      },
+      {
+        "path": ".claude/skills/websocket-gateway/references/implementation_detail.md",
+        "matched_keywords": [
+          "agent"
+        ],
+        "line_count": 449
+      }
+    ],
+    "fastapi": [
+      {
+        "path": ".gitignore",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 243
+      },
+      {
+        "path": "AGENTS.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 184
+      },
+      {
+        "path": "CLAUDE.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 170
+      },
+      {
+        "path": "Directory_Structure.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter"
+        ],
+        "line_count": 149
+      },
+      {
+        "path": "README.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 355
+      },
+      {
+        "path": "SCRIPT_GENERATION_PROMPT.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 381
+      },
+      {
+        "path": "SKILLS.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "pyproject.toml",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "requirements.txt",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 21
+      },
+      {
+        "path": "docker/Dockerfile",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 26
+      },
+      {
+        "path": "docker/docker-compose.yml",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 79
+      },
+      {
+        "path": "docker/linux_docker_start.sh",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 205
+      },
+      {
+        "path": "docker/macos_docker_start.sh",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 214
+      },
+      {
+        "path": "docker/windows_docker_start.bat",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 117
+      },
+      {
+        "path": "docs/AGENTS.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 138
+      },
+      {
+        "path": "docs/README.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 78
+      },
+      {
+        "path": "docs/architecture.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter",
+          "uvicorn"
+        ],
+        "line_count": 512
+      },
+      {
+        "path": "docs/course_codebase_guide.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter",
+          "uvicorn",
+          "BaseModel",
+          "HTTPException"
+        ],
+        "line_count": 2986
+      },
+      {
+        "path": "docs/deployment_guide.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 328
+      },
+      {
+        "path": "docs/minchodan_design_note.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter",
+          "uvicorn"
+        ],
+        "line_count": 212
+      },
+      {
+        "path": "docs/pipeline_stage_design.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/stage2_capture_design.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 447
+      },
+      {
+        "path": "docs/stage3_detection_design.md",
+        "matched_keywords": [
+          "fastapi",
+          "BaseModel"
+        ],
+        "line_count": 578
+      },
+      {
+        "path": "docs/test_specification.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 330
+      },
+      {
+        "path": "scripts/postwork.bat",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 338
+      },
+      {
+        "path": "scripts/postwork.ps1",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 285
+      },
+      {
+        "path": "scripts/postwork.sh",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 301
+      },
+      {
+        "path": "scripts/project_scan.py",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter",
+          "uvicorn",
+          "BaseModel",
+          "HTTPException"
+        ],
+        "line_count": 468
+      },
+      {
+        "path": "server/main.py",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 81
+      },
+      {
+        "path": "tests/test_mcp_integration.py",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 64
+      },
+      {
+        "path": "docs/changelogs/kb.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 267
+      },
+      {
+        "path": "server/api/monitor.py",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter"
+        ],
+        "line_count": 65
+      },
+      {
+        "path": "server/detection/schemas.py",
+        "matched_keywords": [
+          "BaseModel"
+        ],
+        "line_count": 56
+      },
+      {
+        "path": "server/mcp/manager.py",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 144
+      },
+      {
+        "path": ".agents/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".agents/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": ".agents/skills/websocket-gateway/SKILL.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter",
+          "uvicorn",
+          "BaseModel"
+        ],
+        "line_count": 534
+      },
+      {
+        "path": ".agents/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "BaseModel"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": ".claude/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".claude/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "fastapi",
+          "uvicorn"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": ".claude/skills/websocket-gateway/SKILL.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter",
+          "uvicorn",
+          "BaseModel"
+        ],
+        "line_count": 534
+      },
+      {
+        "path": ".claude/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "BaseModel"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": ".agents/skills/camera-frame-capture/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 785
+      },
+      {
+        "path": ".agents/skills/llm-guidance-orchestrator/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter"
+        ],
+        "line_count": 561
+      },
+      {
+        "path": ".agents/skills/rag-realtime-search/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 358
+      },
+      {
+        "path": ".agents/skills/websocket-gateway/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 449
+      },
+      {
+        "path": ".agents/skills/yolo-obstacle-detection/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi",
+          "BaseModel"
+        ],
+        "line_count": 930
+      },
+      {
+        "path": ".claude/skills/camera-frame-capture/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 785
+      },
+      {
+        "path": ".claude/skills/llm-guidance-orchestrator/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi",
+          "APIRouter"
+        ],
+        "line_count": 561
+      },
+      {
+        "path": ".claude/skills/rag-realtime-search/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 358
+      },
+      {
+        "path": ".claude/skills/websocket-gateway/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi"
+        ],
+        "line_count": 449
+      },
+      {
+        "path": ".claude/skills/yolo-obstacle-detection/references/implementation_detail.md",
+        "matched_keywords": [
+          "fastapi",
+          "BaseModel"
+        ],
+        "line_count": 930
+      }
+    ],
+    "openai": [
+      {
+        "path": ".env.example",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 66
+      },
+      {
+        "path": ".gitignore",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 243
+      },
+      {
+        "path": "README.md",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 355
+      },
+      {
+        "path": "docs/README.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 78
+      },
+      {
+        "path": "docs/architecture.md",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 512
+      },
+      {
+        "path": "docs/code_quality_guide.md",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 654
+      },
+      {
+        "path": "docs/course_codebase_guide.md",
+        "matched_keywords": [
+          "OpenAI",
+          "AsyncOpenAI",
+          "OPENAI_API_KEY",
+          "chat.completions",
+          "responses"
+        ],
+        "line_count": 2986
+      },
+      {
+        "path": "docs/environment_variables.md",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/gemini_fallback_feasibility.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 80
+      },
+      {
+        "path": "docs/minchodan_design_note.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 212
+      },
+      {
+        "path": "docs/pipeline_stage_design.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/stage4_5_data_replacement_guide.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 92
+      },
+      {
+        "path": "docs/stage4_5_rag_design.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 342
+      },
+      {
+        "path": "docs/stage6_orchestration_design.md",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 514
+      },
+      {
+        "path": "docs/test_specification.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 330
+      },
+      {
+        "path": "scripts/project_scan.py",
+        "matched_keywords": [
+          "OpenAI",
+          "AsyncOpenAI",
+          "OPENAI_API_KEY",
+          "chat.completions",
+          "responses"
+        ],
+        "line_count": 468
+      },
+      {
+        "path": "tests/test_mcp_gpu.py",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 78
+      },
+      {
+        "path": "docs/changelogs/kb.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 267
+      },
+      {
+        "path": "server/api/monitor.py",
+        "matched_keywords": [
+          "responses"
+        ],
+        "line_count": 65
+      },
+      {
+        "path": "server/bus/redis_client.py",
+        "matched_keywords": [
+          "responses"
+        ],
+        "line_count": 88
+      },
+      {
+        "path": "server/mcp/gpu_monitor.py",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 92
+      },
+      {
+        "path": "server/mcp/manager.py",
+        "matched_keywords": [
+          "responses"
+        ],
+        "line_count": 144
+      },
+      {
+        "path": "server/orchestration/llm_client_factory.py",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 207
+      },
+      {
+        "path": "server/rag/embedding_engine_factory.py",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 133
+      },
+      {
+        "path": ".agents/skills/llm-guidance-orchestrator/SKILL.md",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 359
+      },
+      {
+        "path": ".agents/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": ".claude/skills/llm-guidance-orchestrator/SKILL.md",
+        "matched_keywords": [
+          "OpenAI",
+          "OPENAI_API_KEY"
+        ],
+        "line_count": 359
+      },
+      {
+        "path": ".claude/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": "server/orchestration/nodes/l2_generator.py",
+        "matched_keywords": [
+          "OpenAI"
+        ],
+        "line_count": 113
+      },
+      {
+        "path": ".agents/skills/yolo-obstacle-detection/references/implementation_detail.md",
+        "matched_keywords": [
+          "responses"
+        ],
+        "line_count": 930
+      },
+      {
+        "path": ".claude/skills/yolo-obstacle-detection/references/implementation_detail.md",
+        "matched_keywords": [
+          "responses"
+        ],
+        "line_count": 930
+      }
+    ],
+    "dataset": [
+      {
+        "path": ".env.example",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 66
+      },
+      {
+        "path": ".gitignore",
+        "matched_keywords": [
+          "dataset",
+          "images",
+          "json"
+        ],
+        "line_count": 243
+      },
+      {
+        "path": "AGENTS.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 184
+      },
+      {
+        "path": "CLAUDE.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 170
+      },
+      {
+        "path": "Directory_Structure.md",
+        "matched_keywords": [
+          "dataset",
+          "images",
+          "labels",
+          "json",
+          "frame"
+        ],
+        "line_count": 149
+      },
+      {
+        "path": "README.md",
+        "matched_keywords": [
+          "dataset",
+          "json",
+          "frame"
+        ],
+        "line_count": 355
+      },
+      {
+        "path": "SCRIPT_GENERATION_PROMPT.md",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 381
+      },
+      {
+        "path": "SKILLS.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "opencode.json",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 10
+      },
+      {
+        "path": "pyproject.toml",
+        "matched_keywords": [
+          "annotation"
+        ],
+        "line_count": 158
+      },
+      {
+        "path": "docker/windows_docker_start.bat",
+        "matched_keywords": [
+          "images"
+        ],
+        "line_count": 117
+      },
+      {
+        "path": "docs/AGENTS.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 138
+      },
+      {
+        "path": "docs/antigravity_agent_prompt__4_5_final.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 188
+      },
+      {
+        "path": "docs/api_specification.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 283
+      },
+      {
+        "path": "docs/architecture.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 512
+      },
+      {
+        "path": "docs/behavior_and_risk_insight.md",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 91
+      },
+      {
+        "path": "docs/code_quality_guide.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 654
+      },
+      {
+        "path": "docs/course_codebase_guide.md",
+        "matched_keywords": [
+          "dataset",
+          "images",
+          "labels",
+          "json",
+          "frame"
+        ],
+        "line_count": 2986
+      },
+      {
+        "path": "docs/deployment_guide.md",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 328
+      },
+      {
+        "path": "docs/environment_variables.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 176
+      },
+      {
+        "path": "docs/latency_impact_analysis.md",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 106
+      },
+      {
+        "path": "docs/minchodan_design_note.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 212
+      },
+      {
+        "path": "docs/stage2_capture_design.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 447
+      },
+      {
+        "path": "docs/stage3_detection_design.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 578
+      },
+      {
+        "path": "docs/stage4_5_data_replacement_guide.md",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 92
+      },
+      {
+        "path": "docs/stage4_5_directory_guide.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 60
+      },
+      {
+        "path": "docs/stage4_5_implementation_log.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 93
+      },
+      {
+        "path": "docs/stage4_5_rag_design.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 342
+      },
+      {
+        "path": "docs/stage4_5_test_guide.md",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 88
+      },
+      {
+        "path": "docs/stage6_orchestration_design.md",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 514
+      },
+      {
+        "path": "docs/test_specification.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 330
+      },
+      {
+        "path": "scripts/integration_test_pipeline.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 151
+      },
+      {
+        "path": "scripts/postwork.bat",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 338
+      },
+      {
+        "path": "scripts/postwork.ps1",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 285
+      },
+      {
+        "path": "scripts/postwork.sh",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 301
+      },
+      {
+        "path": "scripts/prework.bat",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 247
+      },
+      {
+        "path": "scripts/prework.ps1",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 209
+      },
+      {
+        "path": "scripts/prework.sh",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 222
+      },
+      {
+        "path": "scripts/project_scan.py",
+        "matched_keywords": [
+          "dataset",
+          "data.yaml",
+          "images",
+          "labels",
+          "json",
+          "annotation",
+          "frame"
+        ],
+        "line_count": 468
+      },
+      {
+        "path": "scripts/slack_publisher.py",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 223
+      },
+      {
+        "path": "scripts/verify_pretrained_weights.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 69
+      },
+      {
+        "path": "tests/test_db_builder.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 69
+      },
+      {
+        "path": "tests/test_detection.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": "tests/test_e2e_pipeline.py",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 98
+      },
+      {
+        "path": "tests/test_fallback.py",
+        "matched_keywords": [
+          "labels"
+        ],
+        "line_count": 41
+      },
+      {
+        "path": "tests/test_frame_decode.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 348
+      },
+      {
+        "path": "tests/test_frame_extractor.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 55
+      },
+      {
+        "path": "tests/test_mcp_integration.py",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 64
+      },
+      {
+        "path": "tests/test_retriever.py",
+        "matched_keywords": [
+          "labels",
+          "json"
+        ],
+        "line_count": 85
+      },
+      {
+        "path": "docs/changelogs/dg.md",
+        "matched_keywords": [
+          "labels",
+          "frame"
+        ],
+        "line_count": 20
+      },
+      {
+        "path": "docs/changelogs/kb.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 267
+      },
+      {
+        "path": "docs/changelogs/th.md",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 16
+      },
+      {
+        "path": "server/api/monitor.py",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 65
+      },
+      {
+        "path": "server/bus/producer.py",
+        "matched_keywords": [
+          "json",
+          "annotation"
+        ],
+        "line_count": 66
+      },
+      {
+        "path": "server/capture/__init__.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 10
+      },
+      {
+        "path": "server/capture/frame_decoder.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 123
+      },
+      {
+        "path": "server/capture/stream_splitter.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 114
+      },
+      {
+        "path": "server/detection/bytetrack_tracker.py",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 78
+      },
+      {
+        "path": "server/detection/config.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 84
+      },
+      {
+        "path": "server/detection/detection_pipeline.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 149
+      },
+      {
+        "path": "server/detection/detector_interface.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 32
+      },
+      {
+        "path": "server/detection/mock_detector.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 61
+      },
+      {
+        "path": "server/detection/yolo_detector.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 86
+      },
+      {
+        "path": "server/detection/yolo_segmentor.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 86
+      },
+      {
+        "path": "server/mcp/manager.py",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 144
+      },
+      {
+        "path": "server/orchestration/llm_client_factory.py",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 207
+      },
+      {
+        "path": "server/rag/fallback.py",
+        "matched_keywords": [
+          "labels"
+        ],
+        "line_count": 73
+      },
+      {
+        "path": "server/rag/retriever.py",
+        "matched_keywords": [
+          "labels",
+          "json"
+        ],
+        "line_count": 145
+      },
+      {
+        "path": ".agents/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".agents/skills/rag-knowledge-builder/SKILL.md",
+        "matched_keywords": [
+          "images",
+          "json",
+          "frame"
+        ],
+        "line_count": 241
+      },
+      {
+        "path": ".agents/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": ".agents/skills/websocket-gateway/SKILL.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 534
+      },
+      {
+        "path": ".agents/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": ".claude/skills/camera-frame-capture/SKILL.md",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 391
+      },
+      {
+        "path": ".claude/skills/rag-knowledge-builder/SKILL.md",
+        "matched_keywords": [
+          "images",
+          "json",
+          "frame"
+        ],
+        "line_count": 241
+      },
+      {
+        "path": ".claude/skills/tts-voice-streamer/SKILL.md",
+        "matched_keywords": [
+          "json"
+        ],
+        "line_count": 337
+      },
+      {
+        "path": ".claude/skills/websocket-gateway/SKILL.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 534
+      },
+      {
+        "path": ".claude/skills/yolo-obstacle-detection/SKILL.md",
+        "matched_keywords": [
+          "json",
+          "frame"
+        ],
+        "line_count": 332
+      },
+      {
+        "path": "server/detection/gates/reflex_gate.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 44
+      },
+      {
+        "path": "server/detection/gates/surface_gate.py",
+        "matched_keywords": [
+          "frame"
+        ],
+        "line_count": 38
+      }
+    ]
+  }
+}

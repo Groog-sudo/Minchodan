@@ -140,7 +140,7 @@ client/src/
 - 10fps 로컬 YOLO26n 추론 엔진 훅
 - `Frame Processor` 콜백에서 호출되어 네이티브 단(CoreML/TFLite) 모델 구동
 - 추론 결과(`detections`, `surface`)를 `reflexEdgeRef`에 저장
-- `confidence > 0.6` && 화면 하단(보행자 직전 거리) 위치 조건 충족 시 `triggerHaptic()` 즉시 호출
+- `confidence > 0.6` && 화면 하단(보행자 직전 거리) 위치 조건 충족 시 `hapticEngine.trigger()` 즉시 호출
 
 #### FrameProcessor.cpp
 
@@ -153,7 +153,7 @@ client/src/
 - CoreML / TFLite 로컬 추론 결과 파싱
 - **NMS-Free 처리**: YOLO26n은 후처리 NMS가 불필요하므로, 출력 배열을 루프 돌며 `confidence > 0.6` 이상 객체만 필터링
 - 화면 하단(보행자 직전 거리) 위치 체크 단순 수학 공식
-- 서버를 거치지 않고 단말기 세션에서 직접 `triggerHaptic()` 호출
+- 서버를 거치지 않고 단말기 세션에서 직접 `hapticEngine.trigger()` 호출
 
 ---
 
@@ -192,7 +192,7 @@ function parseLocalDetections(rawOutput: Float32Array, frameHeight: number): Loc
 // 조건 충족 시 즉시 단말기 세션에서 햅틱 호출 (서버 미경유)
 function triggerReflexHaptic(detections: LocalDetection[]): void {
   if (detections.length > 0) {
-    triggerHaptic("warning");  // 강한 햅틱 패턴
+    hapticEngine.trigger("continuous");  // 강한 햅틱 패턴
   }
 }
 ```
@@ -274,7 +274,7 @@ MVP 3~7단계 완성 후 포스트 A~D 순서로 진행한다. 각 단계는 선
 - **검증 결과 요약**:
   - **CoreML (YOLO26n)**: 실패 (Attention 레이어 `10/m/0/attn/520` 내부 dynamic int 캐스팅 오류)
   - **CoreML (YOLOv8n/11n)**: 성공 (대안 모델 YOLO11n CoreML 10.2 MB 확보)
-  - **ONNX / TFLite (YOLO26n)**: 성공 ([server/models/yolo26n/object_detection.onnx](../server/models/yolo26n/object_detection.onnx) / [server/models/yolo26n/object_detection.tflite](../server/models/yolo26n/object_detection.tflite) 9.8 MB)
+  - **ONNX / TFLite (YOLO26n)**: 변환 검증 성공. Git 추적 산출물은 모바일 번들용 [client/assets/models/yolo26n/object_detection.tflite](../client/assets/models/yolo26n/object_detection.tflite) 기준으로 관리한다.
   - **ONNX Runtime 레이턴시 시뮬레이션**: 1-Thread CPU 환경 평균 **22.89 ms** 달성 (NPU 가속 시 10~30ms 도달 가능성 입증)
 - **배포 가이드라인**: React Native 내 TFLite/ONNX 런타임 구동을 통해 YOLO26n 및 YOLO26n-seg 모델을 직접 배포하는 것으로 설계를 단일화한다. 대안 모델(YOLO11n 등) 대체 배포 안을 완전히 배제하며, 변환 성공이 검증된 TFLite/ONNX 포맷을 사용하여 원본 모델 가동을 의무화한다. 상세는 [`docs/post_mvp_ondevice_feasibility.md`](post_mvp_ondevice_feasibility.md) 참조.
 
@@ -318,7 +318,7 @@ MVP 3~7단계 완성 후 포스트 A~D 순서로 진행한다. 각 단계는 선
 | ------ | ---- | ------ | ---- |
 | **YOLO26n 모바일 포팅** | Yolo 26N은 **sm_120(Blackwell GPU) 최적화**가 핵심 전제. CoreML/TFLite 익스포트 시 NPU 친화 연산 보장 불확실. NMS-Free 설계가 모바일 추론기에서 동일 작동 여부 별도 검증 필요. | **높음** | 포스트 A에서 벤치마크 우선 검증. 타당성 미확보 시 `yolo11n`/`yolov8n` 모바일 변종 병행 검토. |
 | **비전 카메라 패러다임 전환** | 현행 `setInterval + takePhoto`(스냅샷) → `Frame Processor`(30fps+ 동기 콜백, C++ 브릿지). `useCamera.ts` 변경 범위 확대 위험. | **높음** | 두 패러다임 병행 구조 채택 (포스트 C). `Frame Processor`는 로컬 추론 전용, `setInterval`은 서버 전송 유지로 변경 최소화. |
-| **모델 이중 관리** | 서버용(`yolo26n` sm_120)과 모바일용(CoreML/TFLite) **다른 가중치 파일** 2종 관리·정합 필요. | **중간** | `server/models/yolo26n/`(서버용) + `client/src/assets/models/`(모바일용) 분리 관리. 익스포트 스크립트(`scripts/export_mobile.py`)로 단일 소스 추적. |
+| **모델 이중 관리** | 서버용(`yolo26n` sm_120)과 모바일용(CoreML/TFLite) **다른 가중치 파일** 2종 관리·정합 필요. | **중간** | `server/models/yolo26n/`(서버용 `.pt`) + `client/assets/models/yolo26n/`(모바일용 `.tflite`) 분리 관리. 익스포트 스크립트(`scripts/export_mobile.py`)로 단일 소스 추적. |
 | **MVP 일정 지연** | 온디바이스를 3단계와 병렬 진행 시 서버 3~7단계 완성이 후순위로 밀릴 위험. | **높음** | 도입 시기 결정: **서버 MVP 3~7단계 먼저 완성** (채택됨). |
 | **이중 추론 정합성** | 단말이 "맨홀 감지 → 햅틱"을 내리고, 서버가 350ms 뒤 다르게 평가할 위험. 알림 중복·충동 조정 로직 미설계. | **중간** | 포스트 D에서 dedupe/debounce/우선순위 머지 로직 설계. |
 | **단말 리소스** | 비전 카메라 + 로컬 YOLO 상시 구동 시 배터리·발열. 시각장애인 보행 보조기에서 화면 켜짐·발열은 핵심 가용성 지표. | **중간** | 포스트 C에서 1시간 연속 구동 배터리·발열 프로파일링. 허용 범위 초과 시 추론 주기 조정(10fps → 8fps). |
@@ -361,7 +361,7 @@ Post-MVP 착수 시 `docs/environment_variables.md`에 추가될 환경 변수�
 
 | 단계 | 검증 항목 | 합격 기준 |
 | ---- | -------- | -------- |
-| **포스트 A** | ONNX/TFLite 변환 성공 (실패한 CoreML 제외) | `object_detection.onnx` + `object_detection.tflite` 파일 생성 확인 |
+| **포스트 A** | ONNX/TFLite 변환 성공 (실패한 CoreML 제외) | `client/assets/models/yolo26n/object_detection.tflite` 파일 생성 확인 |
 | **포스트 A** | ONNX Runtime 레이턴시 | CPU 1-Thread 환경 평균 **< 30 ms** |
 | **포스트 A** | NMS-Free 정합성 | 서버 대비 탐지 결과 일치율 ≥ 90% |
 | **포스트 A** | 탐지 정확도 손실 | mAP 손실 ≤ 5% (서버 대비) |

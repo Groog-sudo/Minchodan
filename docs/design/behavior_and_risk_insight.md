@@ -87,4 +87,4 @@
 본 분석 결과를 바탕으로 아래 모듈의 코드를 고도화합니다:
 - **`server/detection/gates/` (3단계 게이트)**: Bounding Box의 크기와 Y축 좌표, 노면 분할 클래스를 조합하여 고위험(Reflex) 분류 가이드를 확립합니다.
 - **`server/orchestration/nodes/` (6단계 LLM)**: 자기중심 준거 틀(Egocentric Frame)과 클록 포지션을 기반으로 문장 템플릿의 가이드라인을 강제화합니다.
-- **`client/src/utils/haptics.ts` (7단계 햅틱)**: 보행이론 촉각 반응 모델에 입각한 진동 피드백 패턴을 구현합니다.
+- **`client/src/services/hapticEngine.ts` (7단계 햅틱)**: 보행이론 촉각 반응 모델에 입각한 진동 피드백 패턴을 구현합니다.

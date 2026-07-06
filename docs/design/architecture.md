@@ -191,8 +191,8 @@ graph TD
 | `client/src/hooks/useCamera.ts`               | `useCameraDevice('back')` + 이중 타이머                                    | 2    |
 | `client/src/services/frameCapture.ts`         | `takePhoto({qualityPrioritization:'speed'})` base64                        | 2    |
 | `client/src/services/audioPlayer.ts`          | `decodeAudioData()` Web Audio 재생                                         | 7    |
-| `client/src/services/reflexClipPlayer.ts`     | 반사 클립 즉시 재생 (선점 로직)                                            | 7    |
-| `client/src/utils/haptics.ts`                 | Haptics + `announceForAccessibility`                                       | 7    |
+| `client/src/services/audioEngine.ts`          | 반사 비프음 즉시 재생 및 선점 정지                                         | 7    |
+| `client/src/services/hapticEngine.ts`         | Haptics 패턴 실행 및 지속 진동 정리                                        | 7    |
 | `console/src/`                                | 운영자 모니터링 (DetectionFeed, RiskEventLog, SessionStatus)               | -    |
 
 ---

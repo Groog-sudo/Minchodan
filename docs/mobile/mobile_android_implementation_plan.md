@@ -270,7 +270,7 @@ sequenceDiagram
 | `src/hooks/useCamera.ts` | 단일 캡처 타이머 + 스트림 분할 (반사 10fps/인지 2fps) | iOS 설계서 §6.1 |
 | `src/services/frameCapture.ts` | 프레임 전송 서비스 (base64 → WS) | iOS 설계서 §6.1 |
 | `src/components/CameraView.tsx` | 카메라 + WS 연동 | iOS 설계서 §6.1 |
-| `src/utils/haptics.ts` | 햅틱/접근성 stub (7단계 준비) | iOS 설계서 §6.1 |
+| `src/services/hapticEngine.ts` | 햅틱 피드백 서비스 | iOS 설계서 §6.1 |
 
 ### 6.2 Android 검증 포인트
 
@@ -398,7 +398,7 @@ graph LR
 | `client/src/services/frameCapture.ts` | 신규 | 프레임 전송 서비스 | iOS 주도 (검토) |
 | `client/src/components/CameraView.tsx` | 신규 | 카메라 + WS 연동 | iOS 주도 (검토) |
 | `client/src/components/ConnectionStatus.tsx` | 신규 | 접속 상태 표시 | iOS 주도 (검토) |
-| `client/src/utils/haptics.ts` | 신규 | 햅틱/접근성 stub | iOS 주도 (검토) |
+| `client/src/services/hapticEngine.ts` | 신규 | 햅틱 피드백 서비스 | iOS 주도 (검토) |
 
 ---
 

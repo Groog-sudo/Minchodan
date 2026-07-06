@@ -122,9 +122,17 @@ async def ws_detect(
             data = json.loads(raw)
             msg_type = data.get("type")
 
-            if msg_type == "heartbeat_ack":
+            if msg_type in ("heartbeat_ack", "pong"):
                 if heartbeat:
                     heartbeat.record_ack()
+
+            elif msg_type == "ping":
+                await ws.send_json(
+                    {
+                        "type": "pong",
+                        "ts": now_ts(),
+                    }
+                )
 
             elif msg_type == "heartbeat":
                 await ws.send_json(
