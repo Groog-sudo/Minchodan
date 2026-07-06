@@ -206,3 +206,14 @@
   - scripts/run_desktop_full_training.py의 결과 요약 출력부에서도 갱신된 날짜 포함 파일명을 .env에 설정하도록 가이드를 개선했습니다.
   - 서버 재부팅 직전까지 완료되었던 3단계 탐지/세그멘테이션 풀 학습의 est.pt 가중치 결과물을 물리적으로 복사하여 성공적으로 보존했습니다.
 - **관련 파일**: 	raining/train_common.py, scripts/run_desktop_full_training.py
+
+---
+
+### 2026-07-06 | 프로젝트 종합 평가 및 최신 dev 병합 동기화
+
+- **커밋**: chore: dev 브랜치 병합 동기화 및 프로젝트 스캔 보고서 갱신
+- **변경 내용**:
+  - dev 브랜치에 반영된 170여 개 이상의 최신 팀원 작업물(React Native iOS/Android 클라이언트 연동, CoreML/TFLite 추론 구조, TTS 실시간 오디오 서비스 등)을 	h 브랜치로 병합(Merge)하여 동기화 완료했습니다.
+  - 최신 코드를 기반으로 scripts/project_scan.py를 실행하여 전체 파일 통계 및 핵심 기술 스택(yolo, langchain, fastapi) 사용 현황을 종합한 project_scan_report.md와 project_scan_summary.json을 갱신 및 커밋했습니다.
+  - 해당 스캔 결과와 병합된 server/tts/tts_service.py 코드를 바탕으로 전체 MVP 7단계 중 1~3단계 완성도 평가 및 방어적 코딩(I/O 예외처리 보강) 관점의 코드 리뷰를 수행했습니다.
+- **관련 파일**: project_scan_report.md, project_scan_summary.json, docs/changelogs/th.md
