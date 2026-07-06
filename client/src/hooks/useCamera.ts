@@ -142,7 +142,9 @@ export function useCamera(
         );
 
         const base64 = manipResult.base64 ?? "";
-        const float32 = decodeBase64JpegToChw(base64);
+        // 실기기 실행 시 JS CPU 100% 점유로 인한 iOS Watchdog SIGKILL (code 9) 차단을 위해 온디바이스 디코딩 루프 생략
+        // (실기기에서는 서버로 base64만 전송하여 GPU 추론 서버에서 디코딩 및 검출을 전담 처리함)
+        const float32 = new Float32Array(0);
 
         console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> 압축 base64len=${base64.length} float32len=${float32.length}`);
 

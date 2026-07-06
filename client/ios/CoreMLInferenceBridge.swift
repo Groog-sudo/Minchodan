@@ -14,26 +14,15 @@ class CoreMLInferenceBridge: NSObject {
 
   // confidence 임계값 (패딩 박스 및 노이즈 필터링)
   private let confThreshold: Double = 0.25
-  // COCO 80 클래스 라벨 (object_detection.pt 기준)
+  // Object Detection 29 커스텀 클래스 라벨 (det_best_20260705.mlpackage 기준)
   private let classNames: [Int: String] = [
-    0: "person", 1: "bicycle", 2: "car", 3: "motorcycle", 4: "airplane",
-    5: "bus", 6: "train", 7: "truck", 8: "boat", 9: "traffic light",
-    10: "fire hydrant", 11: "stop sign", 12: "parking meter", 13: "bench",
-    14: "bird", 15: "cat", 16: "dog", 17: "horse", 18: "sheep", 19: "cow",
-    20: "elephant", 21: "bear", 22: "zebra", 23: "giraffe", 24: "backpack",
-    25: "umbrella", 26: "handbag", 27: "tie", 28: "suitcase", 29: "frisbee",
-    30: "skis", 31: "snowboard", 32: "sports ball", 33: "kite",
-    34: "baseball bat", 35: "baseball glove", 36: "skateboard",
-    37: "surfboard", 38: "tennis racket", 39: "bottle", 40: "wine glass",
-    41: "cup", 42: "fork", 43: "knife", 44: "spoon", 45: "bowl",
-    46: "banana", 47: "apple", 48: "sandwich", 49: "orange",
-    50: "broccoli", 51: "carrot", 52: "hot dog", 53: "pizza", 54: "donut",
-    55: "cake", 56: "chair", 57: "couch", 58: "potted plant", 59: "bed",
-    60: "dining table", 61: "toilet", 62: "tv", 63: "laptop", 64: "mouse",
-    65: "remote", 66: "keyboard", 67: "cell phone", 68: "microwave",
-    69: "oven", 70: "toaster", 71: "sink", 72: "refrigerator", 73: "book",
-    74: "clock", 75: "vase", 76: "scissors", 77: "teddy bear",
-    78: "hair drier", 79: "toothbrush"
+    0: "barricade", 1: "bench", 2: "bicycle", 3: "bollard", 4: "bus",
+    5: "car", 6: "carrier", 7: "cat", 8: "chair", 9: "dog",
+    10: "fire_hydrant", 11: "kiosk", 12: "motorcycle", 13: "movable_signage",
+    14: "parking_meter", 15: "person", 16: "pole", 17: "potted_plant",
+    18: "power_controller", 19: "scooter", 20: "stop", 21: "stroller",
+    22: "table", 23: "traffic_light", 24: "traffic_light_controller",
+    25: "traffic_sign", 26: "tree_trunk", 27: "truck", 28: "wheelchair"
   ]
 
   // Segmentation 4 클래스 라벨 (segmentation.pt 기준)
@@ -48,8 +37,8 @@ class CoreMLInferenceBridge: NSObject {
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
       let config = MLModelConfiguration()
-      // ANE(Apple Neural Engine) 하드웨어 가속 바인딩 (시뮬레이터는 CPU/GPU 폴백)
-      config.computeUnits = .all
+      // ANE 가속 에러(MLIR pass manager failed) 우회를 위해 CPU 및 GPU 가속으로 정책 완화
+      config.computeUnits = .cpuAndGPU
 
       // object_detection (필수) - end2end raw tensor 모델
       guard let detURL = Bundle.main.url(forResource: "object_detection", withExtension: "mlmodelc") else {
@@ -67,13 +56,14 @@ class CoreMLInferenceBridge: NSObject {
         print("[CoreMLBridge] segmentation.mlmodelc 미번들 - det-only 모드로 기동")
       }
 
-      print("[CoreMLBridge] object_detection 모델 로드 완료 (Neural Engine 활성화)")
-      resolve([
+      print("[CoreMLBridge] object_detection 모델 로드 완료 (CPU/GPU 가속 모드)")
+      let statusDict: [String: Any] = [
         "det": true,
         "seg": self.segModel != nil
-      ] as [String : Any])
+      ]
+      resolve(statusDict as NSDictionary)
     } catch {
-      reject("LOAD_ERROR", "CoreML 모델 로드 실패: \(error.localizedDescription)", error)
+      reject("LOAD_ERROR", "CoreML 모델 로드 실패: \(error.localizedDescription)", error as NSError)
     }
   }
 
@@ -113,19 +103,21 @@ class CoreMLInferenceBridge: NSObject {
         print("[CoreMLBridge] 벤치마크 - 탐지(det): \(String(format: "%.2f", detLatency))ms | 분할(seg): \(String(format: "%.2f", segLatency))ms | 총추론: \(String(format: "%.2f", totalLatency))ms")
 
         DispatchQueue.main.async {
-          resolve([
-            "seg": segResults,
-            "det": detResults,
-            "benchmark": [
-              "det_ms": detLatency,
-              "seg_ms": segLatency,
-              "total_ms": totalLatency
-            ]
-          ])
+          let benchmarkDict: [String: Any] = [
+            "det_ms": detLatency,
+            "seg_ms": segLatency,
+            "total_ms": totalLatency
+          ]
+          let responseDict: [String: Any] = [
+            "seg": segResults as NSArray,
+            "det": detResults as NSArray,
+            "benchmark": benchmarkDict as NSDictionary
+          ]
+          resolve(responseDict as NSDictionary)
         }
       } catch {
         DispatchQueue.main.async {
-          reject("EXEC_ERROR", "추론 실행 오류: \(error.localizedDescription)", error)
+          reject("EXEC_ERROR", "추론 실행 오류: \(error.localizedDescription)", error as NSError)
         }
       }
     }

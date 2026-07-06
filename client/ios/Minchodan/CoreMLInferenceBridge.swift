@@ -13,27 +13,27 @@ class CoreMLInferenceBridge: NSObject {
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
       // Xcode 빌드 시 컴파일되어 포함될 modelc 경로 확인
-      guard let segURL = Bundle.main.url(forResource: "segmentation", withExtension: "modelc") else {
-        reject("FILE_NOT_FOUND", "segmentation.modelc 에셋을 Bundle에서 찾을 수 없습니다.", nil)
+      guard let segURL = Bundle.main.url(forResource: "segmentation", withExtension: "mlmodelc") else {
+        reject("FILE_NOT_FOUND", "segmentation.mlmodelc 에셋을 Bundle에서 찾을 수 없습니다.", nil)
         return
       }
-      guard let detURL = Bundle.main.url(forResource: "object_detection", withExtension: "modelc") else {
-        reject("FILE_NOT_FOUND", "object_detection.modelc 에셋을 Bundle에서 찾을 수 없습니다.", nil)
+      guard let detURL = Bundle.main.url(forResource: "object_detection", withExtension: "mlmodelc") else {
+        reject("FILE_NOT_FOUND", "object_detection.mlmodelc 에셋을 Bundle에서 찾을 수 없습니다.", nil)
         return
       }
 
       let config = MLModelConfiguration()
-      // ANE(Apple Neural Engine) 하드웨어 가속 강제 바인딩
-      config.computeUnits = .all
+      // ANE 가속 에러(MLIR pass manager failed) 우회를 위해 CPU 및 GPU 가속으로 정책 완화
+      config.computeUnits = .cpuAndGPU
 
       let compiledSeg = try MLModel(contentsOf: segURL, configuration: config)
       let compiledDet = try MLModel(contentsOf: detURL, configuration: config)
 
       self.segModel = try VNCoreMLModel(for: compiledSeg)
       self.detModel = try VNCoreMLModel(for: compiledDet)
-      resolve(true)
+      resolve(true as NSNumber)
     } catch {
-      reject("LOAD_ERROR", "CoreML 모델 로드 실패: \(error.localizedDescription)", error)
+      reject("LOAD_ERROR", "CoreML 모델 로드 실패: \(error.localizedDescription)", error as NSError)
     }
   }
 
@@ -51,8 +51,8 @@ class CoreMLInferenceBridge: NSObject {
       return
     }
 
-    var segResults: [[String: Any]] = []
-    var detResults: [[String: Any]] = []
+    var segResults: [NSDictionary] = []
+    var detResults: [NSDictionary] = []
     let group = DispatchGroup()
 
     // 1. 노면 Segmentation 분석 리퀘스트
@@ -87,36 +87,42 @@ class CoreMLInferenceBridge: NSObject {
         totalLatency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0
         print("[CoreMLBridge] 벤치마크 (Vision) - 총추론: \(String(format: "%.2f", totalLatency))ms")
       } catch {
-        reject("EXEC_ERROR", "추론 실행 오류: \(error.localizedDescription)", error)
+        reject("EXEC_ERROR", "추론 실행 오류: \(error.localizedDescription)", error as NSError)
       }
     }
 
     group.notify(queue: .main) {
-      resolve([
-        "seg": segResults,
-        "det": detResults,
-        "benchmark": [
-          "total_ms": totalLatency
-        ]
-      ])
+      let benchmarkDict: [String: Any] = [
+        "total_ms": totalLatency
+      ]
+      let responseDict: [String: Any] = [
+        "seg": segResults as NSArray,
+        "det": detResults as NSArray,
+        "benchmark": benchmarkDict as NSDictionary
+      ]
+      resolve(responseDict as NSDictionary)
     }
   }
 
-  private func parseObservation(_ observation: VNRecognizedObjectObservation, modelName: String) -> [String: Any] {
+  private func parseObservation(_ observation: VNRecognizedObjectObservation, modelName: String) -> NSDictionary {
     let label = observation.labels.first?.identifier ?? "unknown"
     let confidence = observation.labels.first?.confidence ?? 0.0
     let bounds = observation.boundingBox // 0.0 ~ 1.0 정규화된 경계 박스 좌표
 
-    return [
+    let bboxDict: [String: Any] = [
+      "x": Double(bounds.origin.x),
+      "y": Double(1.0 - bounds.origin.y - bounds.size.height), // iOS 뷰 좌표계(origin=좌하단) -> React Native 좌표계(origin=좌상단) 일치화
+      "w": Double(bounds.size.width),
+      "h": Double(bounds.size.height)
+    ]
+
+    let resultDict: [String: Any] = [
       "model": modelName,
       "className": label,
       "confidence": Double(confidence),
-      "bbox": [
-        "x": Double(bounds.origin.x),
-        "y": Double(1.0 - bounds.origin.y - bounds.size.height), // iOS 뷰 좌표계(origin=좌하단) -> React Native 좌표계(origin=좌상단) 일치화
-        "w": Double(bounds.size.width),
-        "h": Double(bounds.size.height)
-      ]
+      "bbox": bboxDict as NSDictionary
     ]
+
+    return resultDict as NSDictionary
   }
 }

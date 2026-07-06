@@ -162,6 +162,13 @@ async def ws_detect(
                 if processed is not None:
                     with contextlib.suppress(Exception):
                         await splitter.route_frame(processed)
+                else:
+                    b64_val = payload.get("thumbnail_jpeg_b64")
+                    b64_len = len(b64_val) if b64_val else 0
+                    print(
+                        f"[DEBUG_WS] 디코딩 실패! event_id={event_id}, base64길이={b64_len}",
+                        flush=True,
+                    )
 
                 await ws.send_json(
                     {

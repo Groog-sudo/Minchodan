@@ -32,7 +32,7 @@ const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
 
 export function CameraView() {
-  const { status, send } = useWebSocket(DEVICE_ID, TOKEN);
+  const { status, send, lastMessage } = useWebSocket(DEVICE_ID, TOKEN);
   const {
     cameraRef,
     device,
@@ -52,6 +52,23 @@ export function CameraView() {
   const [hapticFlash, setHapticFlash] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
+
+  // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    if (lastMessage.type === "reflex_alert") {
+      const alertId = lastMessage.alert_id ?? "unknown";
+      const risk = lastMessage.risk_level ?? "unknown";
+      setLastDetect(`서버반사: ${alertId} (위험: ${risk})`);
+    } else if (lastMessage.type === "guide") {
+      const text = lastMessage.guidance_text ?? "";
+      const risk = lastMessage.risk_level ?? "unknown";
+      setLastDetect(`서버가이드: ${text} (${risk})`);
+    } else if (lastMessage.type === "ack") {
+      setLastDetect(`서버추론: 안전 (${lastMessage.decode_ms ?? 0}ms)`);
+    }
+  }, [lastMessage]);
 
   // Stale Closure 방지용 useRef 미러: setInterval 콜백은 등록 시점의 값을 캡처하므로
   // 최신 상태는 반드시 ref 를 통해 읽어야 한다.
@@ -99,6 +116,11 @@ export function CameraView() {
     }
 
     if (!isModelsLoadedRef.current) return;
+
+    // 실기기 실제 동작 시에는 로컬 GPU/NeuralEngine 과부하 및 팅김(SIGKILL) 방지를 위해 서버 추론 전담으로 동작 (로컬 추론 스킵)
+    if (!isMockModeRef.current) {
+      return;
+    }
 
     const minInterval = isMockModeRef.current
       ? MOCK_DETECT_MIN_INTERVAL_MS

@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-06
-> **버전**: v1.2.0 (로컬 개발 환경 동기화 패키지 및 복제 절차 신설)
+> **버전**: v1.4.0 (CoreML ANE 우회 설정, 소스 경로 이중화, JS watchdog 과부하 팅김 해결 추가)
 > **설계 기준**: docs/ops/wireless_test_guide.md (v1.1.0)
 
 # Minchodan 모바일 네이티브 빌드 트러블슈팅 가이드
@@ -55,6 +55,43 @@
      cd client
      npx expo start -c
      ```
+
+### 1.4 `Object cannot be a Swift value type` (CoreML 브릿징 딕셔너리 예외)
+
+- **원인**: React Native의 네이티브 모듈 브릿지(`RCTPromiseResolveBlock`)를 통해 Swift 클래스에서 딕셔너리(`[String: Any]`) 또는 배열(`[[String: Any]]`) 형태의 Swift Value Type 객체를 그대로 Objective-C 런타임으로 전달하려고 할 때, 아키텍처 브릿징 엔진이 이를 변환하지 못해 런타임 치명적 예외(EXC_BAD_ACCESS 및 크래시)를 유발하는 현상입니다.
+- **해결책**:
+  - Swift Bridge 파일([CoreMLInferenceBridge.swift](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Minchodan/CoreMLInferenceBridge.swift)) 내에서 반환되거나 중첩되는 모든 Swift Dictionary 및 Array 데이터에 대해 명시적으로 **`NSDictionary`** 및 **`NSArray`** 로 강제 타입 캐스팅(`as NSDictionary`, `as NSArray`)하여 브릿지 호환성을 완전하게 수립해 줍니다.
+
+### 1.5 `Installing...` 단계에서 멈추며 실기기 화면이 흰색(White Screen)으로 대기하는 현상 (USB 포트 터널링 꼬임)
+
+- **원인**:
+  1. 기기가 잠겨(Lock) 있거나 개발자 신뢰 승인 팝업이 홀드되어 있어 `ios-deploy` 프로세스가 전송을 마치지 못했을 때.
+  2. 별개 터미널에서 메트로 번들러(`npm run start`)와 `npx expo run:ios --device`를 따로 구동할 경우, USB 포트 포워딩(`usbmuxd`) 및 8081번 포트 리버스 바인딩 소유권이 서로 충돌하여 실기기가 맥북의 메트로 번들러 서버를 찾지 못해 자바스크립트 소스를 불러오지 못하고 흰 화면(Splash 대기 상태)에 영구 멈추는 경우.
+- **해결책**:
+  1. 기기의 암호 잠금을 해제하고, '이 컴퓨터를 신뢰하겠습니까?' 팝업을 수락하여 활성화 상태를 유지합니다.
+  2. 실행 중인 개별 메트로 서버와 꼬인 빌드 프로세스를 완전히 종료(`kill`)한 뒤, **`npx expo run:ios --device "장치UDID"` 단일 세션 통합 명령어**로 기동하여 메트로 번들러 서버와 기기 간의 터널을 깔끔하게 단독 매핑해 줍니다.
+  3. 또는, 실기기 빌드 렉과 네트워크 꼬임 문제를 원천 차단하기 위해 **`client/src/config/mock.ts` 에서 `MOCK_CAMERA = true`, `MOCK_HAPTIC = true`** 설정을 켠 후, 맥북의 **iOS 시뮬레이터(Simulator)** 환경에서 테스트하여 화면 렌더링 및 웹소켓 전송을 쾌적하고 신속하게 검증합니다.
+
+### 1.6 iOS Xcode 프로젝트 소스 파일 이중화 꼬임 현상
+
+- **원인**: Xcode 프로젝트 내부에서 실제로 참조하여 컴파일하는 Swift Bridge 파일의 물리적 경로가 이중화되어 있어, 엉뚱한 껍데기 파일만 정합 및 캐시 소거를 진행했을 때 수정 사항이 반영되지 않는 꼬임 현상입니다.
+  - 껍데기 파일 경로: `client/ios/Minchodan/CoreMLInferenceBridge.swift`
+  - 실제 Xcode 링킹 컴파일 대상 파일 경로: `client/ios/CoreMLInferenceBridge.swift`
+- **해결책**:
+  - 실제 Xcode 타깃에 등록되어 빌드되는 원본 소스 파일(`client/ios/CoreMLInferenceBridge.swift`)을 명확히 색출하여 해당 파일에 브릿징 가드레일 및 타입 캐스팅 조치를 적용해 주어야 합니다.
+
+### 1.7 iOS CoreML Neural Engine (ANE) 가속 컴파일 크래시 (MLIR pass manager failed)
+
+- **원인**: YOLO v26N 모델 그래프의 특정 커스텀 레이어 구성이 iOS 17 이하 구버전 기기들의 Neural Engine(ANE) 가속 드라이버 단독 가속(`computeUnits = .all`) 컴파일 도중 MLIR 그래프 컴파일러 예외를 발생시켜 앱이 구동 즉시 강제 종료되는 하드웨어 버그입니다.
+- **해결책**:
+  - Swift Bridge 파일 내에서 모델 적재 환경설정 파라미터인 `computeUnits` 지정을 **`.cpuAndGPU`** 로 완화 및 우회 설정하여 Neural Engine 하드웨어 컴파일 락을 안전하게 비껴가도록 보정해 줍니다.
+
+### 1.8 JS 스레드 연산 과부하로 인한 iOS Watchdog 강제 종료 (Debug session ended with code 9: killed)
+
+- **원인**: 카메라로부터 매 초당 4~10회 촬영 유입되는 고용량 이미지를 온디바이스 추론 텐서로 변환하기 위해 자바스크립트 메인 스레드 상에서 순수 JS 디코더(`jpeg-js`) 및 Bilinear 리사이즈 중첩 루프(매 프레임당 약 122만 번 연산)를 직접 수행함에 따라 UI 메인 스레드가 100% 점유되어 데드락 상태로 굳어지고, iOS 커널 Watchdog 가디언이 이를 오류로 판단하여 즉각 SIGKILL(code 9)로 프로세스를 강제 종료하는 현상입니다.
+- **해결책**:
+  - 1. 실기기 구동 모드(`!isMockMode`)일 때는 발열 및 Watchdog 차단을 위해 무거운 로컬 온디바이스 CoreML 추론 및 JS 이미지 디코딩 루프를 과감히 건너뛰도록 **바이패스(Bypass)** 처리하고, 640x640 base64 원본 프레임만 WebSocket을 통해 GPU 서버로 고속 송신하여 서버에서 추론을 전담하도록 Thin Client 구조를 수립합니다.
+  - 2. 단말기 UI 컴포넌트(`CameraView.tsx`)에 서버의 디코딩 및 추론 연산 수락 응답 이벤트인 **`ack` 타입의 메시지 리스너 훅**을 보강 이식하여, 수신 즉시 화면 상태 텍스트를 `서버추론: 안전` 등으로 갱신해 주어 "추론 대기..." 상태에서 정상 해제되도록 UI 연동성을 완비합니다.
 
 ---
 
