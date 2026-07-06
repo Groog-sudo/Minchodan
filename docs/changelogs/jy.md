@@ -59,7 +59,7 @@
 
 ### 2026-07-06 | 문서 | DB 반영 내용 교차 검증 및 정합성 업데이트
 
-- **커밋**: 미커밋
+- **커밋**: a1b2c3d (본인의 실제 커밋 해시 입력)
 - **변경 내용**:
   - `server/db/` 신규 DB 계층을 `README.md`, `AGENTS.md`, `docs/AGENTS.md`의 서버 구조 설명에 반영했습니다.
   - `docs/ops/environment_variables.md`에 `.env.example`의 DB 환경 변수 6종을 추가하고 `DB_NAME=minchodan_db` 기준을 명시했습니다.
