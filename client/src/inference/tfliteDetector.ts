@@ -127,27 +127,46 @@ export class TFLiteDetector implements LocalDetector {
         out = new Float32Array(outputs[0]);
       }
       const numBoxes = Math.floor(out.length / attrsPerBox);
+      const shape = model.outputs?.[0]?.shape || [];
+      const isTransposed = shape.length >= 3 && shape[1] === attrsPerBox; // e.g. [1, 33, 8400]
 
       const results: DetectionResult[] = [];
       for (let i = 0; i < numBoxes; i++) {
-        const off = i * attrsPerBox;
         let xc, yc, w, h, maxScore = 0, clsId = -1;
 
         if (label === "object_detection" && attrsPerBox >= 33) {
-          // Yolo 26N Format: [x_center, y_center, w, h, cls0, cls1, ..., cls28]
-          xc = out[off];
-          yc = out[off + 1];
-          w = out[off + 2];
-          h = out[off + 3];
-          for (let c = 0; c < numClasses; c++) {
-            const score = out[off + 4 + c];
-            if (score > maxScore) {
-              maxScore = score;
-              clsId = c;
+          // Yolo 26N Format
+          if (isTransposed) {
+            // Memory layout: [1, attrsPerBox, numBoxes] -> out[attr * numBoxes + i]
+            xc = out[0 * numBoxes + i];
+            yc = out[1 * numBoxes + i];
+            w  = out[2 * numBoxes + i];
+            h  = out[3 * numBoxes + i];
+            for (let c = 0; c < numClasses; c++) {
+              const score = out[(4 + c) * numBoxes + i];
+              if (score > maxScore) {
+                maxScore = score;
+                clsId = c;
+              }
+            }
+          } else {
+            // Memory layout: [1, numBoxes, attrsPerBox] -> out[i * attrsPerBox + attr]
+            const off = i * attrsPerBox;
+            xc = out[off];
+            yc = out[off + 1];
+            w  = out[off + 2];
+            h  = out[off + 3];
+            for (let c = 0; c < numClasses; c++) {
+              const score = out[off + 4 + c];
+              if (score > maxScore) {
+                maxScore = score;
+                clsId = c;
+              }
             }
           }
         } else {
           // Legacy/Fallback Format
+          const off = i * attrsPerBox;
           const x1 = Math.min(out[off], out[off + 2]);
           const y1 = Math.min(out[off + 1], out[off + 3]);
           const x2 = Math.max(out[off], out[off + 2]);
