@@ -20,3 +20,37 @@
 - **검증 결과**:
   - `prework.ps1`, `postwork.ps1` 및 `prework.sh`, `postwork.sh` 스크립트 대화형 안내 및 유효성 검사 흐름 터미널 작동 확인 완료
   - 각 문서 내 구 레퍼런스(`2026-06-24_initial_baseline.md`)에 대한 정합성 일괄 교체 및 삭제 검증 완료
+
+---
+
+### 2026-07-03 | DB | `back_sql` 스키마 SQL 및 설명서 시트 기준 갱신
+
+- **커밋**: 미커밋
+- **변경 내용**:
+  - Google Sheets `테이블_명세서`, `스키마_설계` 기준으로 `minchodan_db` 초기화 SQL을 재정리했습니다.
+  - `admin_accounts`, `admin_login_audits`, `app_users`, `user_devices` 4개 테이블의 컬럼, 인덱스, FK 정책을 시트 기준과 맞췄습니다.
+  - 기존 `minchodan_tmp`, 확장 컬럼, `ON DELETE CASCADE` 중심 설명을 제거하고 `ON DELETE RESTRICT` 및 사번 기반 감사 로그 구조를 문서화했습니다.
+  - DBeaver 세션 SQL과 환경 변수 예시의 DB명을 `minchodan_db` 기준으로 정리했습니다.
+- **관련 파일**: `back_sql/init_minchodan_tmp_schema.sql`, `back_sql/init_minchodan_tmp_schema_explanation.md`, `Minchodan DB.session.sql`, `.env.example`
+- **검증 결과**:
+  - Google Sheets 메타데이터와 대상 탭 범위 확인 완료
+  - SQL 본문에서 이전 DB명 및 제거 대상 컬럼 잔존 여부 검색 완료
+  - 대상 SQL/Markdown 파일의 trailing whitespace 검색 완료
+
+---
+
+### 2026-07-03 | DB | SQLAlchemy ORM 모델 및 Pydantic DTO 추가
+
+- **커밋**: 미커밋
+- **변경 내용**:
+  - 최종 4개 테이블 명세 기준으로 `server/db/models.py`에 SQLAlchemy 2.0 ORM 모델을 추가했습니다.
+  - `app_users`와 `user_devices` 간 1:N 관계 및 `ON DELETE RESTRICT` 외래키 정책을 반영했습니다.
+  - `server/db/schemas.py`에 생성용 DTO와 ORM 응답용 Pydantic V2 스키마를 분리해 추가했습니다.
+  - SQLite 실행용 `server/db/schema.sql` DDL을 추가하고 ORM 핵심 관계 설명 주석을 보강했습니다.
+  - 발표 방어 및 직접 하드코딩 학습을 위해 `models.py` 핵심 ORM 매핑 주석을 보강했습니다.
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/schema.sql`
+- **검증 결과**:
+  - `compile()` 기반 순수 문법 검사 완료
+  - SQLite 메모리 DB에서 `server/db/schema.sql` 실행 및 4개 테이블 생성 확인
+  - `app_users` 삭제 시 연결된 `user_devices`가 있으면 `ON DELETE RESTRICT`로 차단되는지 확인
+  - 현재 셸에 `ruff`, `sqlalchemy`, `pydantic` 런타임 의존성이 없어 린트 및 import 검증은 미실행
