@@ -25,6 +25,8 @@ from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.schemas import DetectionResult, ReflexAlert
+from server.orchestration import run_orchestrator
+from server.tts.realtime_tts import realtime_tts
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +132,8 @@ class DetectionConsumer:
         if isinstance(result, ReflexAlert):
             await self._send_reflex_alert(processed.device_id, result)
         elif isinstance(result, DetectionResult):
+            if result.risk_hint in ("mid", "low"):
+                await self._send_cognitive_guide(processed.device_id, result)
             logger.debug(
                 f"[DetectionConsumer] 인지 결과: event_id={result.event_id}, "
                 f"risk={result.risk_hint}, inference_ms={result.inference_ms:.1f}"
@@ -147,6 +151,10 @@ class DetectionConsumer:
             "risk_level": alert.risk_level,
             "clip": alert.clip,
             "haptic": alert.haptic,
+            "panning": alert.panning,
+            "distance": alert.distance,
+            "beep_interval_ms": alert.beep_interval_ms,
+            "haptic_pattern": alert.haptic_pattern,
             "ts": alert.ts or now_ts(),
         }
         try:
@@ -157,6 +165,61 @@ class DetectionConsumer:
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
+
+    async def _send_cognitive_guide(self, device_id: str, result: DetectionResult) -> None:
+        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
+        if not result.detections:
+            return
+
+        orch_input = {
+            "event": {
+                "event_id": result.event_id,
+                "risk_hint": result.risk_hint,
+                "detections": [
+                    {
+                        "class_name": det.class_name,
+                        "confidence": det.confidence,
+                        "direction": det.direction,
+                    }
+                    for det in result.detections
+                ],
+            },
+            "detected_classes": [det.class_name for det in result.detections],
+            "positions": [det.direction or "" for det in result.detections],
+            "risk_level": result.risk_hint,
+            "retry_count": 0,
+            "verified": False,
+            "validation_errors": [],
+        }
+
+        try:
+            orch_result = await run_orchestrator(orch_input)
+            guidance_text = orch_result.get("guidance_text", "")
+            if not guidance_text:
+                logger.warning(
+                    f"[DetectionConsumer] guidance_text 없음: event_id={result.event_id}"
+                )
+                return
+
+            audio_b64 = await realtime_tts.synthesize_from_llm(orch_result)
+
+            payload = {
+                "type": "guide",
+                "event_id": result.event_id,
+                "risk_level": result.risk_hint,
+                "guidance_text": guidance_text,
+                "audio_mp3_b64": audio_b64 or "",
+                "audio_codec": "wav",
+                "ts": now_ts(),
+            }
+            await manager.send_json(device_id, payload)
+            logger.info(
+                f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[DetectionConsumer] guide 생성/전송 실패: device_id={device_id}, event_id={result.event_id}, {e}"
+            )
 
 
 _default_consumer: DetectionConsumer | None = None
