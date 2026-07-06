@@ -125,11 +125,15 @@ def main() -> int:
 
     # [VIBE CODE]
     print("\n데스크탑 커스텀 학습 파이프라인이 완료되었습니다.")
+    
+    import datetime
+    today_str = datetime.datetime.now().strftime("%Y%m%d")
+    
     if run_detection:
-        print(f"Detection best.pt: outputs/yolo_train/aihub_det_v1/weights/best.pt")
+        print(f"Detection best_{today_str}.pt: outputs/yolo_train/aihub_det_v1/weights/best_{today_str}.pt")
     if run_segmentation:
-        print(f"Segmentation best.pt: training/runs/seg_exp1/weights/best.pt")
-    print("학습 후 .env 에 best.pt 경로를 지정하세요.")
+        print(f"Segmentation best_{today_str}.pt: training/runs/seg_exp1/weights/best_{today_str}.pt")
+    print(f"학습 후 .env 에 best_{today_str}.pt 경로를 지정하세요.")
     return 0
     # [/VIBE CODE]
 

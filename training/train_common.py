@@ -90,5 +90,16 @@ def run_yolo_train(
         train_kwargs["resume"] = True
     model_obj.train(**train_kwargs)
     
-    return project_path / name / "weights" / "best.pt"
+    best_pt = project_path / name / "weights" / "best.pt"
+    
+    import datetime
+    today_str = datetime.datetime.now().strftime("%Y%m%d")
+    dated_pt = project_path / name / "weights" / f"best_{today_str}.pt"
+    
+    if best_pt.exists():
+        import shutil
+        shutil.copy2(best_pt, dated_pt)
+        return dated_pt
+        
+    return best_pt
     # [/HARD CODE]

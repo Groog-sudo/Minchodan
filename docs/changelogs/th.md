@@ -195,3 +195,14 @@
   - 담당자가 직접 작성한 반사 게이트 로직 및 탐지 결과 파서를 기반으로 전체 파이프라인 검증용 유닛 테스트 21개를 100% Passed로 완벽히 통과했습니다.
 - **관련 파일**: server/detection/gates/reflex_gate.py, server/detection/yolo_detector.py, scripts/run_desktop_full_training.py
 - **검증 결과**: python -m pytest tests/test_detection.py -v 21개 통과 완료
+
+---
+
+### 2026-07-06 | 3단계 | YOLO 학습 결과물 자동 네이밍 최적화
+
+- **커밋**: eat: YOLO 학습 파이프라인 가중치 자동 네이밍 최적화
+- **변경 내용**:
+  - 	raining/train_common.py에 학습 완료 후 생성되는 est.pt 가중치 파일을 자동으로 복사하여 당일 날짜(YYYYMMDD)가 포함된 형태(예: est_20260706.pt)로 백업하도록 후처리 로직을 추가했습니다.
+  - scripts/run_desktop_full_training.py의 결과 요약 출력부에서도 갱신된 날짜 포함 파일명을 .env에 설정하도록 가이드를 개선했습니다.
+  - 서버 재부팅 직전까지 완료되었던 3단계 탐지/세그멘테이션 풀 학습의 est.pt 가중치 결과물을 물리적으로 복사하여 성공적으로 보존했습니다.
+- **관련 파일**: 	raining/train_common.py, scripts/run_desktop_full_training.py
