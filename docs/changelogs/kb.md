@@ -791,3 +791,16 @@
     - `AGENTS.md`, `docs/AGENTS.md`, `CLAUDE.md`: 브랜치 3계층 설명 내 `dev` 브랜치 직접 push 금지 문구를 직접 병합 후 push 허용으로 교체하고, PR(Pull Request) 기반 작업 문구를 직접 병합 및 push 기반으로 수정.
 - **관련 파일**: `docs/ops/git_branching_strategy.md`, `AGENTS.md`, `docs/AGENTS.md`, `CLAUDE.md`, `docs/changelogs/kb.md`
 - **비고**: 개발 생산성 향상과 샌드박스 CLI 환경에서의 원활한 병합을 위해 `dev` 브랜치에 대한 PR 기반 협업 규칙을 제거하고 직접 병합 후 푸시하는 방식으로 가이드를 최신화했습니다.
+
+---
+
+### 2026-07-06 | 가이드 보완 | 팀원 간 로컬 개발 환경 복제 가이드 추가 및 ios_env_setup.zip 패키징 수록
+
+- **커밋**: `docs: 모바일 네이티브 빌드 트러블슈팅 가이드에 로컬 환경 동기화 절차 추가`
+- **변경 내용**:
+  - **개발 환경 복제 가이드 신설**:
+    - `docs/ops/mobile_build_troubleshooting.md` 에 "4. 팀원 간 로컬 개발 환경 동기화 및 복제 가이드" 단락을 추가.
+    - 공유해야 하는 핵심 환경 파일 및 빌드 오류 방지를 위해 제외해야 하는 컴파일 캐시 폴더 목록을 명시.
+    - Apple 인증서(`.p12`) 및 프로비저닝 프로파일(`.mobileprovision`)을 획득하는 수동 과정 수록.
+- **관련 파일**: `docs/ops/mobile_build_troubleshooting.md`, `docs/changelogs/kb.md`
+- **비고**: 깃 이그노어된 파일들로 인해 신규 진입 팀원이 겪을 수 있는 환경 빌드 꼬임 에러를 방지하고 동일한 iOS 빌드 상태를 즉각 구성할 수 있도록 이식용 매뉴얼을 수록했습니다.
