@@ -766,3 +766,16 @@
 - **검증 결과**:
   - `PYTHONPATH=. venv/bin/pytest tests/` 명령을 통한 총 78개 단위/E2E 테스트 케이스 전체 PASS 통과.
   - `scripts/integration_test_pipeline.py` 실행을 통한 YOLO 모델 로딩, Redis Streams 연동, 이중 경로 게이트 및 KPI(지연시간 119.87ms) 검증 완료.
+
+---
+
+### 2026-07-06 | 문서 개선 | 프로젝트 문서 내 구버전 YOLO 모델 명칭(YOLOv8, YOLO11n)의 YOLO26n 일괄 수정 및 동기화
+
+- **커밋**: `docs: 프로젝트 문서 내 구버전 YOLOv8/11 모델 명칭 오기 수정 및 YOLO26n 일괄 동기화`
+- **변경 내용**:
+  - **공식 문서 오기 수정**:
+    - `docs/design/api_specification.md`: 이미지 압축 규격 내 `YOLOv8(640x640)` 표기를 프로젝트 공식 모델인 `YOLO26n(640x640)`으로 수정.
+    - `docs/mobile/mobile_ios_implementation_plan.md`: 하이브리드 아키텍처 iOS Native 역할 부분의 `YOLOv8`을 `YOLO26n`으로 동기화.
+    - `docs/ops/wireless_test_guide.md`: docker 컨테이너 역할 설명 및 ByteTrack 트러블슈팅 단락의 `YOLOv8`을 `YOLO26n`으로 수정.
+- **관련 파일**: `docs/design/api_specification.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/ops/wireless_test_guide.md`, `docs/changelogs/kb.md`
+- **비고**: 프로젝트에서 실제로 사용하는 메인 YOLO 추론 모델인 YOLO26n에 맞춰 개발/설계 문서의 표기적 혼선을 모두 일괄 정비하여 일관성을 확보했습니다.

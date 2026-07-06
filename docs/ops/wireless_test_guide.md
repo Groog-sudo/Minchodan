@@ -49,7 +49,7 @@ graph TD
 
 | 컨테이너 이름 | 이미지 / 포트 | 주요 기능 및 역할 | 데이터 볼륨 마운트 |
 | :--- | :--- | :--- | :--- |
-| **`minchodan-fastapi`** | `minchodan-server:latest`<br/>**`8000:8000`** | **WebSocket Gateway** (/ws/detect)<br/>**YOLOv8 Detection / Segmentation** 추론<br/>ByteTrack 객체 추적기 탑재<br/>Kokoro-82M TTS 한글 음성 합성 | `./server:/app/server`<br/>`./data:/app/data`<br/>`./.env:/app/.env` |
+| **`minchodan-fastapi`** | `minchodan-server:latest`<br/>**`8000:8000`** | **WebSocket Gateway** (/ws/detect)<br/>**YOLO26n Detection / Segmentation** 추론<br/>ByteTrack 객체 추적기 탑재<br/>Kokoro-82M TTS 한글 음성 합성 | `./server:/app/server`<br/>`./data:/app/data`<br/>`./.env:/app/.env` |
 | **`minchodan-redis`** | `redis:7-alpine`<br/>**`6379:6379`** | **메시지 버스** (Redis Streams) 중계 계층<br/>`risk.events` 스트림 발행 및 컨텍스트 보존<br/>위험도 햅틱/비프 연산 TTL 세션 스토리지 | `redis_data:/data` |
 | **`minchodan-ollama`** | `ollama/ollama:latest`<br/>**`11434:11434`** | **로컬 LLM 및 임베딩 추론 엔진**<br/>gemma4:e4b (L2 안내 문장 생성)<br/>llava (4단계 오프라인 이미지 캡셔닝)<br/>nomic-embed-text (RAG용 768차원 임베딩) | `ollama_data:/root/.ollama` |
 
@@ -100,7 +100,7 @@ graph TD
 
 ### 5.2 lap 트래킹 라이브러리 부재 에러
 - **현상**: `requirements: Ultralytics requirement ['lap>=0.5.12'] not found` 로그가 출력되는 경우.
-- **원인**: YOLOv8 객체 추적기(ByteTrack) 구동을 위한 선형 할당(Linear Assignment) 패키지가 Docker 이미지에 누락되어 있기 때문입니다.
+- **원인**: YOLO26n 객체 추적기(ByteTrack) 구동을 위한 선형 할당(Linear Assignment) 패키지가 Docker 이미지에 누락되어 있기 때문입니다.
 - **해결**: 컨테이너가 자동으로 pip AutoUpdate를 통해 `lap`을 수집하므로, 성공 메시지 확인 후 `docker restart minchodan-fastapi` 명령어로 컨테이너를 가볍게 1회 재기동해주면 정상 바인딩됩니다.
 
 ### 5.3 이미지 대용량으로 인한 무선 네트워크 병목 및 소켓 끊김 현상
