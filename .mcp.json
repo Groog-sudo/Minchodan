@@ -5,9 +5,12 @@
       "command": "npx",
       "args": [
         "-y",
-        "xcodebuildmcp@latest"
+        "xcodebuildmcp@latest",
+        "mcp"
       ],
-      "env": {}
+      "env": {
+        "XCODEBUILDMCP_ENABLED_WORKFLOWS": "simulator,device,macos,debugging,ui-automation"
+      }
     }
   }
 }
