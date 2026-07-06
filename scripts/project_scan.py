@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import argparse
 import json
 import os
@@ -237,11 +236,7 @@ def scan_keywords(files: list[Path], root: Path) -> dict[str, list[dict[str, Any
         lowered_text = text.lower()
 
         for category, keywords in KEYWORDS.items():
-            matched = [
-                keyword
-                for keyword in keywords
-                if keyword.lower() in lowered_text
-            ]
+            matched = [keyword for keyword in keywords if keyword.lower() in lowered_text]
             if not matched:
                 continue
             keyword_report[category].append(
@@ -323,10 +318,7 @@ def collect_summary(root: Path, max_tree_depth: int) -> dict[str, Any]:
         },
         "folder_tree": build_tree_lines(root, max_tree_depth),
         "extension_counts": summarize_extensions(files),
-        "key_files": {
-            name: records_to_json(records)
-            for name, records in key_files.items()
-        },
+        "key_files": {name: records_to_json(records) for name, records in key_files.items()},
         "document_files": top_records(doc_records),
         "python_files": top_records(python_records),
         "keyword_hits": scan_keywords(files, root),
@@ -373,8 +365,7 @@ def render_keyword_section(summary: dict[str, Any]) -> str:
 
 def render_report(summary: dict[str, Any]) -> str:
     extension_rows = [
-        [item["extension"], item["count"]]
-        for item in summary["extension_counts"][:30]
+        [item["extension"], item["count"]] for item in summary["extension_counts"][:30]
     ]
     key_file_rows = [
         [name, ", ".join(record["path"] for record in records) or "없음"]
@@ -388,51 +379,63 @@ def render_report(summary: dict[str, Any]) -> str:
         ]
     )
 
-    return "\n\n".join(
-        [
-            "# 프로젝트 스캔 보고서",
-            metadata,
-            "---",
-            "## 1. 요약",
-            markdown_table(
-                ["항목", "값"],
-                [
-                    ["전체 파일 수", summary["counts"]["total_files"]],
-                    ["문서 파일 수", summary["counts"]["document_files"]],
-                    ["Python 파일 수", summary["counts"]["python_files"]],
-                ],
-            ),
-            "---",
-            "## 2. 폴더 트리",
-            "```text\n" + "\n".join(summary["folder_tree"]) + "\n```",
-            "---",
-            "## 3. 핵심 파일",
-            markdown_table(["파일명", "발견 경로"], key_file_rows),
-            "---",
-            "## 4. 확장자 통계",
-            markdown_table(["확장자", "파일 수"], extension_rows),
-            "---",
-            "## 5. 문서 파일",
-            render_record_table(summary["document_files"], "문서 파일을 찾지 못했습니다."),
-            "---",
-            "## 6. Python 파일",
-            render_record_table(summary["python_files"], "Python 파일을 찾지 못했습니다."),
-            "---",
-            "## 7. 키워드 기반 관련 파일",
-            render_keyword_section(summary),
-            "---",
-            "## 8. 다음 작업 제안",
-            markdown_table(
-                ["순서", "작업"],
-                [
-                    [1, "YOLO 관련 파일을 열어 실제 탐지/추론 구조와 모델 경로를 확인합니다."],
-                    [2, "LangChain/LangGraph 관련 파일을 열어 탐지 JSON이 연결될 입력 스키마를 확인합니다."],
-                    [3, "데이터셋 원본 폴더를 별도 스캔하여 라벨 형식과 YOLO 변환 가능성을 판단합니다."],
-                    [4, "확인된 라벨 형식 기준으로 class_mapping.json과 변환 계획을 작성합니다."],
-                ],
-            ),
-        ]
-    ) + "\n"
+    return (
+        "\n\n".join(
+            [
+                "# 프로젝트 스캔 보고서",
+                metadata,
+                "---",
+                "## 1. 요약",
+                markdown_table(
+                    ["항목", "값"],
+                    [
+                        ["전체 파일 수", summary["counts"]["total_files"]],
+                        ["문서 파일 수", summary["counts"]["document_files"]],
+                        ["Python 파일 수", summary["counts"]["python_files"]],
+                    ],
+                ),
+                "---",
+                "## 2. 폴더 트리",
+                "```text\n" + "\n".join(summary["folder_tree"]) + "\n```",
+                "---",
+                "## 3. 핵심 파일",
+                markdown_table(["파일명", "발견 경로"], key_file_rows),
+                "---",
+                "## 4. 확장자 통계",
+                markdown_table(["확장자", "파일 수"], extension_rows),
+                "---",
+                "## 5. 문서 파일",
+                render_record_table(summary["document_files"], "문서 파일을 찾지 못했습니다."),
+                "---",
+                "## 6. Python 파일",
+                render_record_table(summary["python_files"], "Python 파일을 찾지 못했습니다."),
+                "---",
+                "## 7. 키워드 기반 관련 파일",
+                render_keyword_section(summary),
+                "---",
+                "## 8. 다음 작업 제안",
+                markdown_table(
+                    ["순서", "작업"],
+                    [
+                        [1, "YOLO 관련 파일을 열어 실제 탐지/추론 구조와 모델 경로를 확인합니다."],
+                        [
+                            2,
+                            "LangChain/LangGraph 관련 파일을 열어 탐지 JSON이 연결될 입력 스키마를 확인합니다.",
+                        ],
+                        [
+                            3,
+                            "데이터셋 원본 폴더를 별도 스캔하여 라벨 형식과 YOLO 변환 가능성을 판단합니다.",
+                        ],
+                        [
+                            4,
+                            "확인된 라벨 형식 기준으로 class_mapping.json과 변환 계획을 작성합니다.",
+                        ],
+                    ],
+                ),
+            ]
+        )
+        + "\n"
+    )
 
 
 def write_outputs(summary: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:

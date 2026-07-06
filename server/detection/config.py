@@ -43,12 +43,14 @@ def get_yolo_device() -> str:
 
 def get_detector():
     from server.detection.detector_interface import DetectorInterface
-    from server.detection.yolo_detector import YoloDetector
     from server.detection.mock_detector import MockDetector
+    from server.detection.yolo_detector import YoloDetector
 
     weights_path = resolve_path(YOLO26N_OBJECT_DET)
     if not os.path.exists(weights_path):
-        logger.warning(f"[config] Detector 가중치 없음: {weights_path}. 폴백으로 MockDetector를 로드합니다.")
+        logger.warning(
+            f"[config] Detector 가중치 없음: {weights_path}. 폴백으로 MockDetector를 로드합니다."
+        )
         return MockDetector()
     detector: DetectorInterface = YoloDetector(
         weights_path=weights_path,
@@ -56,7 +58,9 @@ def get_detector():
         device=get_yolo_device(),
     )
     if not detector.load():
-        logger.warning(f"[config] YoloDetector 로드 실패: {weights_path}. 폴백으로 MockDetector를 로드합니다.")
+        logger.warning(
+            f"[config] YoloDetector 로드 실패: {weights_path}. 폴백으로 MockDetector를 로드합니다."
+        )
         return MockDetector()
     logger.info(f"[config] YoloDetector 로드 성공: {weights_path}")
     return detector
@@ -64,12 +68,14 @@ def get_detector():
 
 def get_segmentor():
     from server.detection.detector_interface import SegmentorInterface
-    from server.detection.yolo_segmentor import YoloSegmentor
     from server.detection.mock_detector import MockSegmentor
+    from server.detection.yolo_segmentor import YoloSegmentor
 
     weights_path = resolve_path(YOLO26N_SEG)
     if not os.path.exists(weights_path):
-        logger.warning(f"[config] Segmentor 가중치 없음: {weights_path}. 폴백으로 MockSegmentor를 로드합니다.")
+        logger.warning(
+            f"[config] Segmentor 가중치 없음: {weights_path}. 폴백으로 MockSegmentor를 로드합니다."
+        )
         return MockSegmentor()
     segmentor: SegmentorInterface = YoloSegmentor(
         weights_path=weights_path,
@@ -77,7 +83,9 @@ def get_segmentor():
         device=get_yolo_device(),
     )
     if not segmentor.load():
-        logger.warning(f"[config] YoloSegmentor 로드 실패: {weights_path}. 폴백으로 MockSegmentor를 로드합니다.")
+        logger.warning(
+            f"[config] YoloSegmentor 로드 실패: {weights_path}. 폴백으로 MockSegmentor를 로드합니다."
+        )
         return MockSegmentor()
     logger.info(f"[config] YoloSegmentor 로드 성공: {weights_path}")
     return segmentor

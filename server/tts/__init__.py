@@ -4,7 +4,7 @@
 """
 
 from server.tts.realtime_tts import RealtimeTTS, realtime_tts
-from server.tts.suppressor import AlertSuppressor, Alert_suppressor
+from server.tts.suppressor import Alert_suppressor, AlertSuppressor
 from server.tts.tts_service import (
     NullTTSService,
     PiperTTSService,

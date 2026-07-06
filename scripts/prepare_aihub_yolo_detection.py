@@ -229,7 +229,7 @@ def write_dataset(
 
     # 클래스별로 수집된 이미지 장수 카운트
     class_limits = limit if limit > 0 else 2000
-    class_collected_counts = {label: 0 for label in target_labels}
+    class_collected_counts = dict.fromkeys(target_labels, 0)
 
     balanced_images = []
     for entry in all_shuffled:

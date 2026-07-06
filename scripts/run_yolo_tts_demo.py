@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import argparse
 import json
 import sys
@@ -22,7 +21,6 @@ from server.detection.direction import (
 )
 from server.detection.risk_rules import build_message_hint, estimate_risk_level
 from server.detection.yolo_detector import YoloDetector
-
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 DEFAULT_INPUT = Path("data") / "raw" / "aihub_walk_sample"
@@ -138,8 +136,7 @@ def run_image(detector: YoloDetector, image_path: Path, frame_index: int) -> dic
     detections = detector.predict(frame)
     inference_ms = (time.perf_counter() - started) * 1000
     records = [
-        detection_to_record(detection, frame_width, frame_height)
-        for detection in detections
+        detection_to_record(detection, frame_width, frame_height) for detection in detections
     ]
     tts_record = choose_tts_record(records)
     message_hint = tts_record["message_hint"] if tts_record else None
@@ -193,8 +190,7 @@ def main() -> None:
         raise RuntimeError(f"YOLO 모델 로드 실패: {model_path}")
 
     results = [
-        run_image(detector, image_path, index + 1)
-        for index, image_path in enumerate(image_paths)
+        run_image(detector, image_path, index + 1) for index, image_path in enumerate(image_paths)
     ]
     output_path = write_outputs(results, output_dir)
 

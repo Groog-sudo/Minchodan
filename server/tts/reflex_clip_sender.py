@@ -1,12 +1,10 @@
 import logging
-import sys
 import time
-from typing import Optional
 
 from server.api.session_manager import manager
 from server.tts.suppressor import Alert_suppressor
 
-logger = logging.getLogger(__name__) # logger 객체 생성
+logger = logging.getLogger(__name__)  # logger 객체 생성
 
 # ============================================================
 # 모듈 레벨 상수 (기본 틀)
@@ -28,7 +26,7 @@ REFLEX_CLIP_MAP = {
 DEFAULT_REFLEX_CLIP = "reflex_clips/pingpong_default.mp3"
 
 
-def _resolve_reflex_clip(alert_id: str, clip: Optional[str]) -> str:
+def _resolve_reflex_clip(alert_id: str, clip: str | None) -> str:
     """alert_id에 맞는 사전합성 경보음 경로를 선택한다."""
     if clip:
         return clip
@@ -37,8 +35,8 @@ def _resolve_reflex_clip(alert_id: str, clip: Optional[str]) -> str:
 
 def _resolve_beep_profile(
     distance: float,
-    beep_interval_ms: Optional[int],
-    haptic_pattern: Optional[str],
+    beep_interval_ms: int | None,
+    haptic_pattern: str | None,
 ) -> tuple[int, str]:
     """거리 기준 기본 비프 주기와 햅틱 패턴을 보정한다."""
     if beep_interval_ms is not None and haptic_pattern:
@@ -60,6 +58,7 @@ def _resolve_beep_profile(
 # - 절대 real-time TTS 호출 금지 (반사 경로는 사전합성만)
 # ============================================================
 
+
 async def send_reflex_clip(
     device_id: str,
     alert_id: str,
@@ -68,9 +67,9 @@ async def send_reflex_clip(
     haptic: bool = True,
     panning: float = 0.0,
     distance: float = 1.0,
-    beep_interval_ms: Optional[int] = None,
-    haptic_pattern: Optional[str] = None,
-    clip: Optional[str] = None,
+    beep_interval_ms: int | None = None,
+    haptic_pattern: str | None = None,
+    clip: str | None = None,
 ) -> bool:
     """
     반사 경로 사전합성 경보음을 클라이언트로 고우선 전송한다.
@@ -96,7 +95,7 @@ async def send_reflex_clip(
     # - 이미 최근에 보냈다면 전송하지 않음
     # - 사용자(당신)가 실제 구현할 핵심 부분
     # ============================================================
-    if await Alert_suppressor.should_supperss(device_id, alert_id):
+    if await Alert_suppressor.should_suppress(device_id, alert_id):
         logger.info(f"[ReflexClipSender] 중복 억제: device_id={device_id}, alert_id={alert_id}")
         return False
 

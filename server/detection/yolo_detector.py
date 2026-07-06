@@ -113,7 +113,7 @@ class YoloDetector(DetectorInterface):
         # 💡 [면접 대비 주석]
         # 질문: YOLO 모델의 텐서 출력을 시스템 내부 포맷(Detection)으로 직접 파싱한 이유는?
         # 답변: 1. 텐서 값을 Python 기본 타입(float, int)으로 완전 캐스팅하여 JSON 직렬화 에러를 방지했습니다.
-        #       2. ByteTrack이 반환하는 식별자를 'T-0001' 포맷으로 통일하여, 하위 파이프라인(위험도 게이트)에서 
+        #       2. ByteTrack이 반환하는 식별자를 'T-0001' 포맷으로 통일하여, 하위 파이프라인(위험도 게이트)에서
         #          동일 객체를 끊김 없이 추적하고 중복 알림을 억제할 수 있도록 식별 체계를 구축했습니다.
         # =========================================================================
         detections: list[Detection] = []
@@ -121,10 +121,10 @@ class YoloDetector(DetectorInterface):
             return detections
 
         names = result.names
-        
+
         # 담당자님, 여기에 for box in result.boxes: 로 시작하는 루프를 직접 타이핑해주세요!
         # (box.cls, box.conf, box.xyxy, box.id 를 파싱하여 Detection 객체로 append 하시면 됩니다.)
-        
+
         return detections
 
         for box in result.boxes:
@@ -152,6 +152,6 @@ class YoloDetector(DetectorInterface):
                     track_id=track_id,
                     speed=None,
                     direction=None,
-                    risk=None
+                    risk=None,
                 )
             )

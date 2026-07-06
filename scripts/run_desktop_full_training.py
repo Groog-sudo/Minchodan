@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 # [VIBE CODE] 라이브러리 로드 및 기본 설정
@@ -41,9 +40,7 @@ def load_env_value(key: str) -> str:
 def resolve_dataset_root(arg_root: str | None) -> Path:
     root_text = arg_root or load_env_value("AIHUB_WALK_DATASET_ROOT")
     if not root_text:
-        raise ValueError(
-            "--dataset-root 또는 .env의 AIHUB_WALK_DATASET_ROOT 값을 지정해야 합니다."
-        )
+        raise ValueError("--dataset-root 또는 .env의 AIHUB_WALK_DATASET_ROOT 값을 지정해야 합니다.")
     root = Path(root_text).expanduser().resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"데이터셋 루트 폴더를 찾을 수 없습니다: {root}")
@@ -64,16 +61,24 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="AI Hub 인도보행 영상 루트입니다. 기본값은 .env의 AIHUB_WALK_DATASET_ROOT 입니다.",
     )
-    parser.add_argument("--skip-convert", action="store_true", help="데이터 변환 단계를 건너뜁니다.")
+    parser.add_argument(
+        "--skip-convert", action="store_true", help="데이터 변환 단계를 건너뜁니다."
+    )
     parser.add_argument("--skip-train", action="store_true", help="학습 단계를 건너뜁니다.")
     parser.add_argument("--det-only", action="store_true", help="Detection만 실행합니다.")
     parser.add_argument("--seg-only", action="store_true", help="Segmentation만 실행합니다.")
     parser.add_argument("--device", default="0")
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch", type=int, default=-1)
-    parser.add_argument("--det-limit", type=int, default=0, help="Detection 변환/학습용 이미지 제한입니다.")
-    parser.add_argument("--seg-max-images", type=int, default=0, help="Segmentation 변환 이미지 제한입니다.")
+    parser.add_argument(
+        "--det-limit", type=int, default=0, help="Detection 변환/학습용 이미지 제한입니다."
+    )
+    parser.add_argument(
+        "--seg-max-images", type=int, default=0, help="Segmentation 변환 이미지 제한입니다."
+    )
     return parser.parse_args()
+
+
 # [/VIBE CODE]
 
 
@@ -93,29 +98,46 @@ def main() -> int:
         if run_detection:
             if not bbox_root.is_dir():
                 raise FileNotFoundError(f"바운딩박스 데이터셋 폴더를 찾을 수 없습니다: {bbox_root}")
-            
+
             det_cmd = [
-                python, "scripts/prepare_aihub_yolo_detection.py",
-                "--input-dir", str(bbox_root),
-                "--output-dir", str(DET_OUTPUT_DIR),
-                "--yaml-path", str(DET_YAML),
+                python,
+                "scripts/prepare_aihub_yolo_detection.py",
+                "--input-dir",
+                str(bbox_root),
+                "--output-dir",
+                str(DET_OUTPUT_DIR),
+                "--yaml-path",
+                str(DET_YAML),
             ]
-            if args.det_limit > 0: det_cmd.extend(["--limit", str(args.det_limit)])
+            if args.det_limit > 0:
+                det_cmd.extend(["--limit", str(args.det_limit)])
             run_step(det_cmd)
 
         if run_segmentation:
             if not seg_root.is_dir():
                 raise FileNotFoundError(f"서피스마스킹 폴더를 찾을 수 없습니다.! {seg_root}")
             seg_cmd = [
-                python, "scripts/convert_aihub_seg_to_yolo.py",
-                "--input-dir", str(seg_root),
-                "--output-dir", str(SEG_OUTPUT_DIR),
-                "--yaml-path", str(SEG_YAML),
+                python,
+                "scripts/convert_aihub_seg_to_yolo.py",
+                "--input-dir",
+                str(seg_root),
+                "--output-dir",
+                str(SEG_OUTPUT_DIR),
+                "--yaml-path",
+                str(SEG_YAML),
             ]
-            if args.seg_max_images > 0: seg_cmd.extend(["--max-images", str(args.seg_max_images)])
+            if args.seg_max_images > 0:
+                seg_cmd.extend(["--max-images", str(args.seg_max_images)])
             run_step(seg_cmd)
     if not args.skip_train:
-        train_common = ["--epochs", str(args.epochs), "--batch", str(args.batch), "--device", args.device]
+        train_common = [
+            "--epochs",
+            str(args.epochs),
+            "--batch",
+            str(args.batch),
+            "--device",
+            args.device,
+        ]
         if run_detection:
             run_step([python, "training/train_detection.py", *train_common])
         if run_segmentation:
@@ -125,14 +147,19 @@ def main() -> int:
 
     # [VIBE CODE]
     print("\n데스크탑 커스텀 학습 파이프라인이 완료되었습니다.")
-    
+
     import datetime
+
     today_str = datetime.datetime.now().strftime("%Y%m%d")
-    
+
     if run_detection:
-        print(f"Detection best_{today_str}.pt: outputs/yolo_train/aihub_det_v1/weights/best_{today_str}.pt")
+        print(
+            f"Detection best_{today_str}.pt: outputs/yolo_train/aihub_det_v1/weights/best_{today_str}.pt"
+        )
     if run_segmentation:
-        print(f"Segmentation best_{today_str}.pt: training/runs/seg_exp1/weights/best_{today_str}.pt")
+        print(
+            f"Segmentation best_{today_str}.pt: training/runs/seg_exp1/weights/best_{today_str}.pt"
+        )
     print(f"학습 후 .env 에 best_{today_str}.pt 경로를 지정하세요.")
     return 0
     # [/VIBE CODE]

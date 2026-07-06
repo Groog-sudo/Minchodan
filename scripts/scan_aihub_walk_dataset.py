@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import argparse
 import json
 import os
@@ -81,9 +80,7 @@ def resolve_dataset_root(arg_root: str | None) -> Path:
     root_text = arg_root or os.getenv("AIHUB_WALK_DATASET_ROOT", "")
     root_text = root_text or load_env_value("AIHUB_WALK_DATASET_ROOT")
     if not root_text:
-        raise ValueError(
-            "--dataset-root 또는 .env의 AIHUB_WALK_DATASET_ROOT 값을 지정해야 합니다."
-        )
+        raise ValueError("--dataset-root 또는 .env의 AIHUB_WALK_DATASET_ROOT 값을 지정해야 합니다.")
 
     root = Path(root_text).expanduser().resolve()
     if not root.exists() or not root.is_dir():
@@ -124,9 +121,7 @@ def iter_dataset_files(root: Path) -> list[Path]:
     for current_root, dir_names, file_names in os.walk(root):
         current_path = Path(current_root)
         dir_names[:] = [
-            dir_name
-            for dir_name in sorted(dir_names)
-            if dir_name not in IGNORED_DIR_NAMES
+            dir_name for dir_name in sorted(dir_names) if dir_name not in IGNORED_DIR_NAMES
         ]
         for file_name in sorted(file_names):
             files.append(current_path / file_name)
@@ -146,9 +141,7 @@ def build_tree_lines(root: Path, max_depth: int) -> list[str]:
             return
         try:
             children = [
-                child
-                for child in directory.iterdir()
-                if child.name not in IGNORED_DIR_NAMES
+                child for child in directory.iterdir() if child.name not in IGNORED_DIR_NAMES
             ]
         except OSError:
             return
@@ -218,10 +211,7 @@ def summarize_files(files: list[Path], root: Path) -> dict[str, Any]:
             for folder, counts in sorted(top_level_counts.items())
         ],
         "samples": {
-            category: [
-                {"path": item.path, "size_bytes": item.size_bytes}
-                for item in samples
-            ]
+            category: [{"path": item.path, "size_bytes": item.size_bytes} for item in samples]
             for category, samples in sorted(category_samples.items())
         },
     }
@@ -245,10 +235,7 @@ def render_samples(samples: dict[str, list[dict[str, Any]]]) -> str:
     sections: list[str] = []
     for category, records in samples.items():
         sections.append(f"### {category}")
-        rows = [
-            [record["path"], format_mb(record["size_bytes"])]
-            for record in records
-        ]
+        rows = [[record["path"], format_mb(record["size_bytes"])] for record in records]
         sections.append(markdown_table(["샘플 파일", "크기"], rows))
     return "\n\n".join(sections) if sections else "샘플 파일을 찾지 못했습니다."
 
@@ -268,10 +255,7 @@ def render_report(summary: dict[str, Any]) -> str:
         ]
         for item in counts["top_level_summary"]
     ]
-    ext_rows = [
-        [extension, count]
-        for extension, count in counts["extension_counts"].items()
-    ]
+    ext_rows = [[extension, count] for extension, count in counts["extension_counts"].items()]
 
     metadata = "\n".join(
         [
@@ -281,60 +265,63 @@ def render_report(summary: dict[str, Any]) -> str:
         ]
     )
 
-    return "\n\n".join(
-        [
-            "# AI Hub 인도보행 데이터셋 스캔 보고서",
-            metadata,
-            "---",
-            "## 1. 전체 요약",
-            markdown_table(
-                ["항목", "값"],
-                [
-                    ["전체 파일 수", counts["total_files"]],
-                    ["전체 용량", format_mb(counts["total_size_bytes"])],
-                    ["이미지 파일 수", counts["category_counts"].get("image", 0)],
-                    ["영상 파일 수", counts["category_counts"].get("video", 0)],
-                    ["라벨 후보 파일 수", counts["category_counts"].get("label", 0)],
-                    ["뎁스 후보 파일 수", counts["category_counts"].get("depth", 0)],
-                ],
-            ),
-            "---",
-            "## 2. 폴더 트리",
-            "```text\n" + "\n".join(summary["folder_tree"]) + "\n```",
-            "---",
-            "## 3. 상위 폴더별 통계",
-            markdown_table(
-                [
-                    "폴더",
-                    "전체",
-                    "이미지",
-                    "영상",
-                    "라벨 후보",
-                    "뎁스 후보",
-                    "기타",
-                    "용량",
-                ],
-                top_rows,
-            ),
-            "---",
-            "## 4. 확장자 통계",
-            markdown_table(["확장자", "파일 수"], ext_rows),
-            "---",
-            "## 5. 샘플 파일",
-            render_samples(counts["samples"]),
-            "---",
-            "## 6. 다음 작업",
-            markdown_table(
-                ["순서", "작업"],
-                [
-                    [1, "바운딩박스 폴더의 라벨 확장자와 샘플 JSON/XML 구조를 확인합니다."],
-                    [2, "영상 또는 이미지 샘플 1~3개만 데모 입력으로 선별합니다."],
-                    [3, "YOLO 추론 입력으로 쓸 샘플 경로를 run_yolo_tts_demo.py에 연결합니다."],
-                    [4, "원천데이터 전체는 Git에 올리지 않고 .env 경로로만 참조합니다."],
-                ],
-            ),
-        ]
-    ) + "\n"
+    return (
+        "\n\n".join(
+            [
+                "# AI Hub 인도보행 데이터셋 스캔 보고서",
+                metadata,
+                "---",
+                "## 1. 전체 요약",
+                markdown_table(
+                    ["항목", "값"],
+                    [
+                        ["전체 파일 수", counts["total_files"]],
+                        ["전체 용량", format_mb(counts["total_size_bytes"])],
+                        ["이미지 파일 수", counts["category_counts"].get("image", 0)],
+                        ["영상 파일 수", counts["category_counts"].get("video", 0)],
+                        ["라벨 후보 파일 수", counts["category_counts"].get("label", 0)],
+                        ["뎁스 후보 파일 수", counts["category_counts"].get("depth", 0)],
+                    ],
+                ),
+                "---",
+                "## 2. 폴더 트리",
+                "```text\n" + "\n".join(summary["folder_tree"]) + "\n```",
+                "---",
+                "## 3. 상위 폴더별 통계",
+                markdown_table(
+                    [
+                        "폴더",
+                        "전체",
+                        "이미지",
+                        "영상",
+                        "라벨 후보",
+                        "뎁스 후보",
+                        "기타",
+                        "용량",
+                    ],
+                    top_rows,
+                ),
+                "---",
+                "## 4. 확장자 통계",
+                markdown_table(["확장자", "파일 수"], ext_rows),
+                "---",
+                "## 5. 샘플 파일",
+                render_samples(counts["samples"]),
+                "---",
+                "## 6. 다음 작업",
+                markdown_table(
+                    ["순서", "작업"],
+                    [
+                        [1, "바운딩박스 폴더의 라벨 확장자와 샘플 JSON/XML 구조를 확인합니다."],
+                        [2, "영상 또는 이미지 샘플 1~3개만 데모 입력으로 선별합니다."],
+                        [3, "YOLO 추론 입력으로 쓸 샘플 경로를 run_yolo_tts_demo.py에 연결합니다."],
+                        [4, "원천데이터 전체는 Git에 올리지 않고 .env 경로로만 참조합니다."],
+                    ],
+                ),
+            ]
+        )
+        + "\n"
+    )
 
 
 def write_outputs(summary: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:

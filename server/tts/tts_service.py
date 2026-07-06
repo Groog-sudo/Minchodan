@@ -1,13 +1,12 @@
+import asyncio
+import json
 import logging
 import os
+import subprocess  # nosec B404
 import sys
-import json
-import asyncio
-import subprocess
 import tempfile
-from pathlib import Path
 from abc import ABC, abstractmethod
-from typing import Optional
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -51,6 +50,7 @@ if os.path.exists(env_path):
 # - 추상화를 통해 나중에 다른 TTS 엔진으로 교체 가능 (핫스왑 대비)
 # ============================================================
 
+
 class TTSService(ABC):
     """
     음성 합성 기능을 추상화한 기본 클래스.
@@ -59,7 +59,7 @@ class TTSService(ABC):
     """
 
     @abstractmethod
-    async def generate(self, text: str, voice: str, speed: float = 1.0) -> Optional[bytes]:
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
         """
         텍스트를 받아서 음성 데이터로 만들어 반환한다.
 
@@ -78,7 +78,7 @@ class TTSService(ABC):
 class NullTTSService(TTSService):
     """외부 TTS 구현이 없을 때 사용하는 안전한 폴백 서비스."""
 
-    async def generate(self, text: str, voice: str, speed: float = 1.0) -> Optional[bytes]:
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
         logger.warning("[TTS] 사용 가능한 TTS 엔진이 없어 합성을 건너뜁니다.")
         return None
 
@@ -103,7 +103,7 @@ class PiperTTSService(TTSService):
         self.binary_path = os.getenv("PIPER_BINARY_PATH", "piper").strip()
         self.length_scale_min = float(os.getenv("PIPER_LENGTH_SCALE_MIN", "0.5"))
         self.length_scale_max = float(os.getenv("PIPER_LENGTH_SCALE_MAX", "2.0"))
-        self._compat_config_path: Optional[Path] = None
+        self._compat_config_path: Path | None = None
 
     def _build_compat_config(self) -> Path:
         """pygoruut 표기를 piper 런타임 호환 포맷으로 보정한다."""
@@ -131,10 +131,10 @@ class PiperTTSService(TTSService):
             return self.binary_path
         return self.binary_path
 
-    def _run_piper_sync(self, text: str, length_scale: float, compat_config: Path) -> Optional[bytes]:
+    def _run_piper_sync(self, text: str, length_scale: float, compat_config: Path) -> bytes | None:
         """블로킹 Piper 프로세스 실행을 동기 함수로 분리한다."""
         binary = self._resolve_binary()
-        output_path: Optional[Path] = None
+        output_path: Path | None = None
 
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
@@ -152,7 +152,7 @@ class PiperTTSService(TTSService):
                 str(length_scale),
             ]
 
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 # noqa: S603
                 command,
                 input=text,
                 text=True,
@@ -175,7 +175,7 @@ class PiperTTSService(TTSService):
             if output_path is not None and output_path.exists():
                 output_path.unlink(missing_ok=True)
 
-    async def generate(self, text: str, voice: str, speed: float = 1.0) -> Optional[bytes]:
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
         if not text or not text.strip():
             logger.warning("[PiperTTS] 빈 텍스트는 합성하지 않습니다.")
             return None
@@ -208,6 +208,7 @@ class PiperTTSService(TTSService):
 #   (단, 이 경우 실제 audio bytes 생성은 클라이언트가 담당)
 # ============================================================
 
+
 def get_tts_service() -> TTSService:
     """
     현재 설정에 맞는 음성 합성 서비스 객체를 만들어서 돌려준다.
@@ -223,9 +224,7 @@ def get_tts_service() -> TTSService:
     engine = os.getenv("TTS_ENGINE", "piper").lower().strip()
 
     if engine not in {"", "default", "piper"}:
-        logger.warning(
-            f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(piper) 사용."
-        )
+        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(piper) 사용.")
 
     try:
         return PiperTTSService()

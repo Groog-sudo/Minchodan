@@ -87,7 +87,7 @@ class YoloSegmentor(SegmentorInterface):
         # 질문: Segmentation 결과인 폴리곤 면적(Mask)을 SurfaceResult(점 데이터)로 단순화한 이유는?
         # 답변: 보도블럭이나 계단 등 노면 상태의 전체 폴리곤 좌표를 하위 시스템으로 넘기면 통신/직렬화 오버헤드가 큽니다.
         # 따라서 Numpy의 mean() 연산을 통해 다각형의 무게중심(Centroid) '단일 점 좌표(cx, cy)'로 압축 치환했습니다.
-        # 이를 통해 2단계 게이트(Surface Gate)에서 점이 안전선(Threshold) 아래에 있는지만 
+        # 이를 통해 2단계 게이트(Surface Gate)에서 점이 안전선(Threshold) 아래에 있는지만
         # O(1)에 가깝게 비교할 수 있어 극단적인 Low Latency를 달성했습니다.
         # =========================================================================
         try:
