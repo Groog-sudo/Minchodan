@@ -21,11 +21,11 @@ const SEG_CLASS_NAMES = [
 ];
 
 const AIHUB_CLASS_NAMES = [
-  "bicycle", "bus", "car", "carrier", "cat", "dog", "motorcycle", "movable_signage",
-  "person", "scooter", "stroller", "truck", "wheelchair", "barricade", "bench",
-  "bollard", "chair", "fire_hydrant", "kiosk", "parking_meter", "pole",
-  "potted_plant", "power_controller", "stop_light", "table", "traffic_light",
-  "traffic_light_controller", "traffic_sign", "tree_trunk"
+  "barricade", "bench", "bicycle", "bollard", "bus", "car", "carrier", "cat",
+  "chair", "dog", "fire_hydrant", "kiosk", "motorcycle", "movable_signage",
+  "parking_meter", "person", "pole", "potted_plant", "power_controller",
+  "scooter", "stop", "stroller", "table", "traffic_light", "traffic_light_controller",
+  "traffic_sign", "tree_trunk", "truck", "wheelchair"
 ];
 
 const CONF_THRESHOLD = 0.50; // 오탐 방지를 위해 0.25에서 0.50으로 상향
