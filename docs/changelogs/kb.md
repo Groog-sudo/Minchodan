@@ -879,3 +879,16 @@
 - **관련 파일**: `pyproject.toml`, `client/src/types/detection.ts`, `.gitignore`, `docs/changelogs/kb.md`
 - **검증 결과**: `ruff check server/ scripts/ tests/` All checks passed. `npx tsc --noEmit` 오류 0건. `pytest tests/ --ignore=tests/test_ws_echo.py` 74건 전체 통과 (`test_ws_echo.py`는 로컬 서버 기동이 필요한 통합 테스트라 서버 중지 상태에서는 연결 거부로 실패하는 것이 정상). Bandit 통과. LangGraph retry 흐름(L1 초기화 → L3 증가 → retry_count>1 시 fallback) 무한루프 없음 확인.
 - **비고**: `requirements.txt`의 `tokenizers==0.23.1` 핀이 전이 의존성 transformers 5.12.1의 요구(`tokenizers<=0.23.0`)와 충돌한다는 pip resolver 경고가 있음 (동작에는 지장 없으나 향후 requirements 정리 시 검토 필요 — requirements.txt 변경은 사전 허가 대상이라 이번에 수정하지 않음). `server/api/config.py:27`의 `# nosec B104` 주석은 현재 Bandit 기준 불필요(stale)하다는 경고가 있으나 무해하여 보존함.
+
+---
+
+### 2026-07-07 | 2단계 | 온디바이스 추론 지연 기반 동적 반사(reflex) FPS 조절 추가
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `client/src/hooks/useCamera.ts`: 반사 캡처 루프를 `setInterval` 고정 주기에서 재귀 `setTimeout` 방식으로 교체하여, 매 tick마다 최신 간격값을 반영할 수 있도록 재구성.
+  - `reportInferenceLatency(latencyMs)` 신규 API 추가: 온디바이스 CoreML 추론 지연이 현재 캡처 간격의 90%를 넘으면(따라가지 못하는 상태) 간격을 50ms씩 늘려 fps를 낮추고(최저 1fps까지), 지연이 간격의 50% 미만으로 안정되면 20ms씩 기본 간격까지 서서히 복구한다.
+  - `client/src/components/CameraView.tsx`: `detectFrameRef.current(...)` 호출 후 얻은 `benchmark.total_ms`(또는 `dt` 폴백)를 `reportInferenceLatencyRef.current(...)`로 매 추론마다 피드백. 디버그 오버레이에 `현재 반사 fps`를 표시(`currentReflexFps`).
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 신규 에러 없음.
+- **비고**: 조절 기준을 "온디바이스 추론 지연" 단독으로 채택함(사용자 확인). WS 연결 상태(fallback 등) 기준은 이번 범위에 포함하지 않음 — 필요 시 후속 작업으로 별도 추가. 반사 경로(Reflex Path)는 여전히 LLM/RAG/실시간 TTS를 경유하지 않으며, 이번 변경은 캡처 주기 조절에 한정된다(비협상 원칙 위반 없음).

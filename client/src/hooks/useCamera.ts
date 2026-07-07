@@ -37,6 +37,15 @@ export interface FrameData {
   base64: string | null;
 }
 
+// 동적 FPS 조절 파라미터 (온디바이스 추론 지연 기준)
+// - 지연이 현재 간격의 90%를 넘으면(따라잡지 못함) 간격을 늘려 fps를 낮춘다.
+// - 지연이 현재 간격의 50% 미만으로 안정되면 기본 간격까지 서서히 되돌린다.
+const OVERLOAD_LATENCY_RATIO = 0.9;
+const RECOVERY_LATENCY_RATIO = 0.5;
+const INTERVAL_INCREASE_STEP_MS = 50;
+const INTERVAL_DECREASE_STEP_MS = 20;
+const MAX_REFLEX_INTERVAL_MS = 1000; // 최저 1fps 보장 (반사 경로 완전 정지 방지)
+
 export interface UseCameraReturn {
   cameraRef: React.RefObject<Camera | null>;
   device: CameraDevice | undefined;
@@ -44,9 +53,12 @@ export interface UseCameraReturn {
   permissionStatus: string;
   isCapturing: boolean;
   isMockMode: boolean;
+  currentReflexFps: number;
   startCapture: (onFrame: (frame: FrameData) => void) => void;
   stopCapture: () => void;
   requestCameraPermission: () => Promise<boolean>;
+  /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
+  reportInferenceLatency: (latencyMs: number) => void;
 }
 
 export function useCamera(
@@ -59,12 +71,41 @@ export function useCamera(
   const allDevices = useCameraDevices();
   const device = backDevice || allDevices[0];
   const cameraRef = useRef<Camera | null>(null);
-  const reflexTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reflexTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
   const isCapturingRealFrame = useRef(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
+
+  // 동적 FPS 상태: baseIntervalRef는 설정된 기본값(가장 빠른 허용치),
+  // currentIntervalRef는 추론 지연 피드백에 따라 조절되는 실제 반사 루프 간격
+  const baseIntervalRef = useRef(Math.floor(1000 / reflexFps));
+  const currentIntervalRef = useRef(baseIntervalRef.current);
+  const [currentReflexFps, setCurrentReflexFps] = useState(reflexFps);
+
+  const reportInferenceLatency = useCallback((latencyMs: number) => {
+    if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+    const base = baseIntervalRef.current;
+    const cur = currentIntervalRef.current;
+    let next = cur;
+
+    if (latencyMs > cur * OVERLOAD_LATENCY_RATIO) {
+      // 추론이 캡처 간격을 따라가지 못함 - fps를 낮춰 부하 경감 (SIGKILL 재발 방지)
+      next = Math.min(MAX_REFLEX_INTERVAL_MS, cur + INTERVAL_INCREASE_STEP_MS);
+    } else if (latencyMs < cur * RECOVERY_LATENCY_RATIO && cur > base) {
+      // 여유가 충분하면 기본 fps까지 서서히 복구
+      next = Math.max(base, cur - INTERVAL_DECREASE_STEP_MS);
+    }
+
+    if (next !== cur) {
+      currentIntervalRef.current = next;
+      setCurrentReflexFps(Math.round(1000 / next));
+      console.log(
+        `[Camera] 동적 FPS 조절: 반사 간격 ${cur}ms -> ${next}ms (추론 지연=${latencyMs.toFixed(1)}ms)`,
+      );
+    }
+  }, []);
 
   const effectivePermission = isMockMode ? true : hasPermission;
 
@@ -197,31 +238,42 @@ export function useCamera(
       onFrameRef.current = onFrame;
       setIsCapturing(true);
 
-      const reflexInterval = Math.floor(1000 / reflexFps);
+      baseIntervalRef.current = Math.floor(1000 / reflexFps);
+      currentIntervalRef.current = baseIntervalRef.current;
+      setCurrentReflexFps(reflexFps);
       const frameCounter = { current: 0 };
 
-      reflexTimerRef.current = setInterval(async () => {
+      // setInterval 대신 재귀 setTimeout을 사용: 매 tick마다 currentIntervalRef의
+      // 최신값을 다시 읽어와야 reportInferenceLatency()의 동적 fps 조절이 반영된다.
+      const tick = async () => {
         frameCounter.current++;
 
         // 단일 프레임 캡처 (하드웨어 호출 1회로 통일)
         const frame = await captureFrame("reflex");
-        if (!frame || !onFrameRef.current) return;
+        if (frame && onFrameRef.current) {
+          // 반사 경로로 즉시 전달
+          onFrameRef.current(frame);
 
-        // 반사 경로로 즉시 전달
-        onFrameRef.current(frame);
-
-        // 매 N번째 프레임마다 동일 프레임을 인지 경로로 전달 (중복 캡처 제거)
-        const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
-        if (frameCounter.current % ratio === 0) {
-          onFrameRef.current({
-            ...frame,
-            stream: "cognitive",
-          });
+          // 매 N번째 프레임마다 동일 프레임을 인지 경로로 전달 (중복 캡처 제거)
+          const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
+          if (frameCounter.current % ratio === 0) {
+            onFrameRef.current({
+              ...frame,
+              stream: "cognitive",
+            });
+          }
         }
-      }, reflexInterval);
+
+        // stopCapture()가 이미 호출되어 null이 됐다면 재예약하지 않는다.
+        if (reflexTimerRef.current !== null) {
+          reflexTimerRef.current = setTimeout(tick, currentIntervalRef.current);
+        }
+      };
+
+      reflexTimerRef.current = setTimeout(tick, currentIntervalRef.current);
 
       console.log(
-        `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`,
+        `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성)`,
       );
     },
     [reflexFps, cognitiveFps, isCapturing, isMockMode, captureFrame],
@@ -229,7 +281,7 @@ export function useCamera(
 
   const stopCapture = useCallback(() => {
     if (reflexTimerRef.current) {
-      clearInterval(reflexTimerRef.current);
+      clearTimeout(reflexTimerRef.current);
       reflexTimerRef.current = null;
     }
     if (cognitiveTimerRef.current) {
@@ -258,9 +310,11 @@ export function useCamera(
           : "not-requested",
     isCapturing,
     isMockMode,
+    currentReflexFps,
     startCapture,
     stopCapture,
     requestCameraPermission,
+    reportInferenceLatency,
   };
 }
 

@@ -45,9 +45,11 @@ export function CameraView() {
     permissionStatus,
     isCapturing,
     isMockMode,
+    currentReflexFps,
     startCapture,
     stopCapture,
     requestCameraPermission,
+    reportInferenceLatency,
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
@@ -86,12 +88,14 @@ export function CameraView() {
   const setPreviewSrcRef = useRef(setPreviewSrc);
   const setDetectionsRef = useRef(setDetections);
   const confThresholdRef = useRef(confThreshold);
+  const reportInferenceLatencyRef = useRef(reportInferenceLatency);
 
   useEffect(() => { detectFrameRef.current = detectFrame; }, [detectFrame]);
   useEffect(() => { isModelsLoadedRef.current = isModelsLoaded; }, [isModelsLoaded]);
   useEffect(() => { isMockModeRef.current = isMockMode; }, [isMockMode]);
   useEffect(() => { sendRef.current = send; }, [send]);
   useEffect(() => { confThresholdRef.current = confThreshold; }, [confThreshold]);
+  useEffect(() => { reportInferenceLatencyRef.current = reportInferenceLatency; }, [reportInferenceLatency]);
 
   const detectingRef = useRef(false);
   const lastDetectTsRef = useRef(0);
@@ -145,6 +149,9 @@ export function CameraView() {
       if (benchmark) {
         console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
       }
+      // 온디바이스 추론 지연을 캡처 루프에 피드백하여 반사 fps를 동적으로 조절
+      // (추론이 캡처 간격을 못 따라가면 fps를 낮춰 과부하로 인한 크래시 재발을 방지)
+      reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
       // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
       setDetectionsRef.current(allDetections);
@@ -231,12 +238,12 @@ export function CameraView() {
     info.push(`권한: ${permissionStatus}`);
     if (!isMockMode) info.push(`카메라: ${device ? device.id : "없음"}`);
     info.push(`WS: ${status}`);
-    info.push(`캡처: ${isCapturing ? "ON" : "OFF"}`);
+    info.push(`캡처: ${isCapturing ? "ON" : "OFF"} (반사 ${currentReflexFps}fps 동적)`);
     info.push(`모델: ${segLoaded ? "seg" : "…"} / ${detLoaded ? "det" : "…"}`);
     if (detShapeLog) info.push(`det shape: ${detShapeLog}`);
     info.push(`추론: ${lastDetect}`);
     setDebugInfo(info);
-  }, [isMockMode, permissionStatus, device, status, isCapturing, segLoaded, detLoaded, detShapeLog, lastDetect]);
+  }, [isMockMode, permissionStatus, device, status, isCapturing, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
 
   // --- 권한 게이트 (실기기 전용) ---
   if (!isMockMode && !hasPermission) {
