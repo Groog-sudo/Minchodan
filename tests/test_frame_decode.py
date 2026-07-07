@@ -11,16 +11,27 @@ import numpy as np
 import pytest
 
 from server.bus.redis_client import RedisBus
-from server.capture import ProcessedFrame, StreamSplitter, decode_frame, get_default_splitter
+from server.capture import (
+    ProcessedFrame,
+    StreamSplitter,
+    decode_frame,
+    decode_frame_binary,
+    get_default_splitter,
+)
 from server.capture.stream_splitter import VALID_STREAMS
+
+
+def make_jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
+    """테스트용 raw JPEG 바이트 생성."""
+    frame = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    assert ok, "JPEG 인코딩 실패"
+    return buf.tobytes()
 
 
 def make_jpeg_b64(width: int = 640, height: int = 480) -> str:
     """테스트용 JPEG base64 문자열 생성."""
-    frame = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    assert ok, "JPEG 인코딩 실패"
-    return base64.b64encode(buf.tobytes()).decode("ascii")
+    return base64.b64encode(make_jpeg_bytes(width, height)).decode("ascii")
 
 
 def make_oversized_jpeg_b64() -> str:
@@ -50,6 +61,23 @@ def make_payload(
         "frame_id": 1,
         "stream": stream,
         "thumbnail_jpeg_b64": b64,
+    }
+
+
+def make_meta(
+    stream: str = "cognitive",
+    event_id: str = "evt-test",
+    device_id: str = "dev-test",
+    ts: int = 1719216000000,
+) -> dict:
+    """바이너리 전송 경로의 메타데이터 (thumbnail_jpeg_b64 없음, transport=binary)."""
+    return {
+        "event_id": event_id,
+        "device_id": device_id,
+        "ts": ts,
+        "frame_id": 1,
+        "stream": stream,
+        "transport": "binary",
     }
 
 
@@ -160,6 +188,75 @@ class TestDecodeFrame:
         result = await decode_frame(payload)
         assert result is not None
         assert result.stream == "unknown"
+
+
+class TestDecodeFrameBinary:
+    """바이너리 WS 프레임(raw JPEG 바이트, base64 미경유) 디코딩 경로 검증.
+
+    decode_frame(base64 경로)과 동일한 가드레일/출력을 공유하는지 확인한다
+    (server/capture/frame_decoder.py의 _build_processed_frame 공통 로직).
+    """
+
+    @pytest.mark.asyncio
+    async def test_valid_frame(self):
+        """유효 raw JPEG 바이트 디코딩 - base64 경로와 동일한 결과 형태."""
+        jpeg_bytes = make_jpeg_bytes()
+        meta = make_meta()
+        result = await decode_frame_binary(jpeg_bytes, meta)
+        assert result is not None
+        assert result.frame.shape == (640, 640, 3)
+        assert result.event_id == "evt-test"
+        assert result.device_id == "dev-test"
+        assert result.stream == "cognitive"
+        assert result.ts == 1719216000000
+        assert result.original_size == (480, 640)
+
+    @pytest.mark.asyncio
+    async def test_empty_bytes(self):
+        """빈 바이트 처리 -> None."""
+        result = await decode_frame_binary(b"", make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_oversized_frame(self):
+        """500KB 초과 -> None (base64 경로와 동일 임계치)."""
+        jpeg_bytes = make_jpeg_bytes(width=2000, height=2000)
+        result = await decode_frame_binary(jpeg_bytes, make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_undersized_frame(self):
+        """1KB 미만 -> None."""
+        result = await decode_frame_binary(b"\x00" * 512, make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_corrupt_bytes_returns_none(self):
+        """JPEG가 아닌 임의 바이트(1KB 이상) -> cv2.imdecode 실패로 None."""
+        result = await decode_frame_binary(b"\xff" * 2048, make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_reflex_stream_passthrough(self):
+        """stream 필드가 ProcessedFrame에 그대로 전달되는지 확인."""
+        result = await decode_frame_binary(make_jpeg_bytes(), make_meta(stream="reflex"))
+        assert result is not None
+        assert result.stream == "reflex"
+
+    @pytest.mark.asyncio
+    async def test_binary_and_base64_paths_agree(self):
+        """동일 원본 프레임을 base64 경로와 바이너리 경로로 각각 디코딩했을 때 shape/size 일치."""
+        jpeg_bytes = make_jpeg_bytes()
+        b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+
+        via_binary = await decode_frame_binary(jpeg_bytes, make_meta(event_id="evt-bin"))
+        via_b64 = await decode_frame(make_payload(b64, event_id="evt-b64"))
+
+        assert via_binary is not None
+        assert via_b64 is not None
+        assert via_binary.frame.shape == via_b64.frame.shape
+        assert via_binary.original_size == via_b64.original_size
+        assert abs(via_binary.size_kb - via_b64.size_kb) < 0.01
 
 
 class TestStreamSplitter:
@@ -316,9 +413,9 @@ class TestDualPathDiscipline:
             "ChatOllama",
         ]
         for pattern in forbidden_patterns:
-            assert pattern not in module_source, (
-                f"금지된 모듈 참조 발견: '{pattern}' in stream_splitter.py"
-            )
+            assert (
+                pattern not in module_source
+            ), f"금지된 모듈 참조 발견: '{pattern}' in stream_splitter.py"
 
     def test_valid_streams_constant(self):
         """VALID_STREAMS 상수가 reflex/cognitive만 포함하는지 확인."""

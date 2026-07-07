@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-07-05 1~3단계 구현 완료 + 단말 Reflex Gate 피드백 규격 신설)
+> **버전**: v0.4.0 (2026-07-07 detection 프레임 바이너리 전송 프로토콜 추가, base64는 구버전 호환 경로로 격하)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1+2+3단계 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드(640x640 압축 이미지), ack 응답, 단말 측 Reflex Gate 4단계 피드백(주차센서식 거리 반비례 햅틱/비프음) 정합 확인. `reflex_alert`/`guide`는 6·7단계 범위로 미구현(설계상 정상).
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -121,7 +121,37 @@
 
 ## 3. 프레임 전송 (2단계)
 
-### 3.1 detection (단말 → 서버)
+### 3.1 detection - 바이너리 전송 (기본, 2026-07-07 신설)
+
+실기기 클라이언트는 **base64를 경유하지 않고** JSON 메타데이터 메시지와 raw JPEG 바이트 바이너리 프레임을 순차 전송한다. 단일 WS 연결에서 프레임 전송 순서는 보장되므로, 서버는 `transport: "binary"` 메타를 받은 직후 도착하는 바이너리 프레임을 해당 이벤트로 짝짓는다.
+
+```json
+{
+  "type": "detection",
+  "payload": {
+    "event_id": "uuid",
+    "device_id": "dev-001",
+    "ts": 1719216000000,
+    "frame_id": 42,
+    "stream": "reflex",
+    "transport": "binary"
+  }
+}
+```
+
+위 텍스트 메시지 직후, 별도의 WS **바이너리 프레임**으로 raw JPEG 바이트(640x640, JPEG 50% 압축)를 전송한다(JSON 필드 아님, base64 인코딩 없음).
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `payload.stream` | `reflex` (8~10fps) 또는 `cognitive` (1~2fps) |
+| `payload.frame_id` | 프레임 일련 번호 |
+| `payload.transport` | `"binary"` 고정 - 서버가 다음 바이너리 프레임을 이 메타와 짝지어야 함을 표시 |
+
+> **바이너리 전송 도입 사유 (2026-07-07)**: base64 인코딩은 페이로드 크기를 약 33% 증가시키고 JS/서버 양쪽에 인코딩·디코딩 CPU 오버헤드를 유발한다. 클라이언트는 `expo-file-system`의 `File(uri).bytes()`로 raw JPEG `Uint8Array`를 직접 얻어 `WebSocket.send(bytes)`로 전송하고, 서버(`server/api/ws_router.py`)는 `ws.receive()`로 텍스트/바이너리 프레임을 구분해 `decode_frame_binary()`(`server/capture/frame_decoder.py`)로 base64 디코딩 단계 없이 바로 `cv2.imdecode`한다.
+
+### 3.2 detection - base64 전송 (구버전 호환)
+
+바이너리 전송을 지원하지 않는 클라이언트(Mock 모드 등)를 위해 기존 단일 JSON 메시지 방식도 계속 지원한다.
 
 ```json
 {
@@ -139,12 +169,10 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `payload.stream` | `reflex` (8~10fps) 또는 `cognitive` (1~2fps) |
-| `payload.frame_id` | 프레임 일련 번호 |
-| `payload.thumbnail_jpeg_b64` | **640x640 JPEG 압축 base64 프레임** (expo-image-manipulator 50% compress) |
+| `payload.thumbnail_jpeg_b64` | **640x640 JPEG 압축 base64 프레임** (expo-image-manipulator 50% compress). `payload.transport`가 없으면 이 필드가 필수 |
 
 > **이미지 압축 규격 (2026-07-05 신설)**:
-> 단말 클라이언트는 `expo-image-manipulator`의 네이티브 GPU 가속을 통해 원본 캡처 이미지를 640x640 픽셀로 크롭하고 JPEG 50% 수준으로 압축하여 전송합니다. 장당 전송 크기는 약 12~92KB이며, 이는 원본(약 3.4MB) 대비 약 1/40 수준입니다. YOLO26n(640x640) 및 Llava(336x336) 추론 품질에 손실 없음이 검증되었습니다.
+> 단말 클라이언트는 `expo-image-manipulator`의 네이티브 GPU 가속을 통해 원본 캡처 이미지를 640x640 픽셀로 크롭하고 JPEG 50% 수준으로 압축하여 전송합니다. 장당 전송 크기는 약 12~92KB이며, 이는 원본(약 3.4MB) 대비 약 1/40 수준입니다. YOLO26n(640x640) 및 Llava(336x336) 추론 품질에 손실 없음이 검증되었습니다. (바이너리 전송 시에는 이 크기에서 base64의 33% 증가분이 추가로 빠진다.)
 
 ### 3.2 ack (서버 → 단말)
 

@@ -21,6 +21,8 @@ import type { WSMessage, WSStatus } from "../types/detection";
 export interface UseWebSocketReturn {
   status: WSStatus;
   send: (data: object) => void;
+  /** JPEG raw byte 프레임을 바이너리 WS 프레임으로 전송한다 (base64 미경유). */
+  sendBinary: (data: Uint8Array) => void;
   lastMessage: WSMessage | null;
 }
 
@@ -123,6 +125,14 @@ export function useWebSocket(
     }
   }, []);
 
+  const sendBinary = useCallback((data: Uint8Array) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // RN WebSocket은 ArrayBufferView(Uint8Array)를 바이너리 프레임으로 직접 전송한다.
+      // base64 인코딩을 경유하지 않아 33% 페이로드 증가와 JS 인코딩/서버 디코딩 오버헤드를 제거한다.
+      wsRef.current.send(data);
+    }
+  }, []);
+
   useEffect(() => {
     connect();
     return () => {
@@ -143,5 +153,5 @@ export function useWebSocket(
     };
   }, [connect, clearHeartbeat]);
 
-  return { status, send, lastMessage };
+  return { status, send, sendBinary, lastMessage };
 }

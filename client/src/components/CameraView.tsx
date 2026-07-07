@@ -37,7 +37,7 @@ const HIGH_HAZARDS = ["person", "bicycle", "car", "motorcycle", "bus", "truck", 
 const GROUND_HAZARDS = ["caution", "roadway"];
 
 export function CameraView() {
-  const { status, send, lastMessage } = useWebSocket(DEVICE_ID, TOKEN);
+  const { status, send, sendBinary, lastMessage } = useWebSocket(DEVICE_ID, TOKEN);
   const {
     cameraRef,
     device,
@@ -84,6 +84,7 @@ export function CameraView() {
   const isModelsLoadedRef = useRef(isModelsLoaded);
   const isMockModeRef = useRef(isMockMode);
   const sendRef = useRef(send);
+  const sendBinaryRef = useRef(sendBinary);
   const setLastDetectRef = useRef(setLastDetect);
   const setPreviewSrcRef = useRef(setPreviewSrc);
   const setDetectionsRef = useRef(setDetections);
@@ -94,6 +95,7 @@ export function CameraView() {
   useEffect(() => { isModelsLoadedRef.current = isModelsLoaded; }, [isModelsLoaded]);
   useEffect(() => { isMockModeRef.current = isMockMode; }, [isMockMode]);
   useEffect(() => { sendRef.current = send; }, [send]);
+  useEffect(() => { sendBinaryRef.current = sendBinary; }, [sendBinary]);
   useEffect(() => { confThresholdRef.current = confThreshold; }, [confThreshold]);
   useEffect(() => { reportInferenceLatencyRef.current = reportInferenceLatency; }, [reportInferenceLatency]);
 
@@ -114,8 +116,23 @@ export function CameraView() {
   const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
     const now = Date.now();
 
-    // 로컬 추론 엔진 적재 여부와 관계없이 서버로 base64 프레임 전송 수행 (WebSocket)
-    if (frame.base64 && sendRef.current) {
+    // 로컬 추론 엔진 적재 여부와 관계없이 서버로 프레임 전송 수행 (WebSocket)
+    // raw JPEG 바이트가 있으면(실기기) base64를 경유하지 않고 메타데이터(JSON) + 바이너리
+    // 프레임 2개를 순차 전송한다. 단일 WS 연결에서 프레임 순서는 보장되므로 서버는
+    // "transport: binary" 메타 수신 직후 오는 바이너리 프레임을 해당 이벤트로 매칭한다.
+    if (frame.jpegBytes && sendRef.current && sendBinaryRef.current) {
+      sendRef.current({
+        type: "detection",
+        payload: {
+          event_id: `event-${now}`,
+          frame_id: now,
+          stream: frame.stream ?? "reflex",
+          transport: "binary",
+        }
+      });
+      sendBinaryRef.current(frame.jpegBytes);
+    } else if (frame.base64 && sendRef.current) {
+      // 폴백(Mock 등 jpegBytes 미지원 경로): 기존 base64 방식 유지
       sendRef.current({
         type: "detection",
         payload: {

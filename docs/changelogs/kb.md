@@ -892,3 +892,20 @@
 - **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx tsc --noEmit` 신규 에러 없음.
 - **비고**: 조절 기준을 "온디바이스 추론 지연" 단독으로 채택함(사용자 확인). WS 연결 상태(fallback 등) 기준은 이번 범위에 포함하지 않음 — 필요 시 후속 작업으로 별도 추가. 반사 경로(Reflex Path)는 여전히 LLM/RAG/실시간 TTS를 경유하지 않으며, 이번 변경은 캡처 주기 조절에 한정된다(비협상 원칙 위반 없음).
+
+---
+
+### 2026-07-07 | 2단계 | detection 프레임 Base64 탈피 및 바이너리(raw JPEG) 전송 전환
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - **클라이언트 (`client/src/hooks/useCamera.ts`)**: `captureRealFrame`에서 `expo-file-system`의 신규 `File(uri).bytes()` API로 매니퓰레이션 완료된 JPEG 파일을 raw `Uint8Array`로 직접 읽어 `FrameData.jpegBytes`에 담아 반환. 기존 `base64` 필드는 CoreML 네이티브 브릿지 호출용(구 RN 브릿지가 JSON 직렬화 가능 타입만 인자로 받을 수 있어 불가피)으로만 유지하고, 서버 전송 용도로는 더 이상 사용하지 않음.
+  - **클라이언트 (`client/src/hooks/useWebSocket.ts`)**: `sendBinary(data: Uint8Array)` 신규 API 추가. RN `WebSocket.send()`가 `ArrayBufferView`를 바이너리 프레임으로 직접 전송하는 것을 활용.
+  - **클라이언트 (`client/src/components/CameraView.tsx`)**: `handleFrame`에서 `frame.jpegBytes`가 있으면 (1) `transport: "binary"` 메타만 담은 JSON 텍스트 메시지, (2) 곧바로 raw JPEG 바이트 바이너리 프레임을 순차 전송하도록 변경. `jpegBytes`가 없는 경로(Mock 등)는 기존 base64 방식으로 폴백.
+  - **서버 (`server/capture/frame_decoder.py`)**: `_parse_frame_meta`/`_build_processed_frame` 공통 헬퍼로 리팩터링하고, base64 미경유 `decode_frame_binary(jpeg_bytes, meta)`를 신규 추가. 기존 `decode_frame(payload)`(base64 경로)는 그대로 유지하여 하위 호환.
+  - **서버 (`server/api/ws_router.py`)**: 메인 수신 루프를 `ws.receive_text()` 고정에서 `ws.receive()` 제네릭 방식으로 교체해 텍스트/바이너리 프레임을 구분 처리. `transport: "binary"` 메타 수신 시 `pending_binary_meta`에 보관해뒀다가 곧바로 뒤따르는 바이너리 프레임과 짝지어 `decode_frame_binary`로 디코딩. route_frame+ack 로직은 `_finish_detection` 헬퍼로 공통화하여 base64/바이너리 두 경로가 공유.
+  - **문서 (`docs/design/api_specification.md`)**: v0.4.0으로 갱신. detection 프레임 전송 규격을 바이너리(기본, §3.1) / base64(구버전 호환, §3.2) 2단으로 재구성.
+  - **테스트**: `tests/test_frame_decode.py`에 `TestDecodeFrameBinary` 클래스 신규 추가(정상/빈바이트/과대/과소/손상 바이트/base64 경로와의 결과 일치 검증, 7건). `tests/test_api_ws.py`에 실제 `/ws/detect` 엔드포인트를 통한 바이너리 전송 e2e 테스트 2건 추가(정상 전송 ack 확인, 메타 없는 고아 바이너리 프레임 무시 확인).
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `server/capture/frame_decoder.py`, `server/capture/__init__.py`, `server/api/ws_router.py`, `docs/design/api_specification.md`, `tests/test_frame_decode.py`, `tests/test_api_ws.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `ruff check`/`ruff format --check`/`bandit` 전부 통과. `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(신규 9건 포함) — 특히 `test_websocket_detection_binary_transport`는 `TestClient.websocket_connect`로 실제 `/ws/detect` 라우터 코드 경로를 통해 JSON 메타 + `send_bytes()` 바이너리 프레임 → ack 왕복을 검증.
+- **비고**: 단일 WS 연결에서 프레임 전송 순서가 보장된다는 전제(RFC 6455 및 ASGI 스펙)로 메타-바이너리 짝짓기를 구현했다. 하트비트/핑퐁 등 제어 메시지는 여전히 JSON 텍스트로 유지(빈도가 낮고 페이로드가 작아 최적화 실익이 없음). Mock 모드는 여전히 base64 경로를 사용(시뮬레이터 프리뷰용 float32 디코딩과 결합되어 있어 이번 범위에서 제외).

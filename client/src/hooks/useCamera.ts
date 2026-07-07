@@ -7,7 +7,8 @@
  *  - MOCK_CAMERA=true : MockFrameProvider가 번들 샘플 → float32 (시뮬레이터)
  *  - MOCK_CAMERA=false: react-native-vision-camera takePhoto → base64 → decode → float32 (실기기)
  *
- * 실기기에서는 base64도 함께 전달하여 서버 전송 경로를 유지할 수 있다.
+ * 실기기에서는 서버 WS 전송용 raw JPEG 바이트(jpegBytes)와 CoreML 네이티브 브릿지 호출용
+ * base64 문자열을 함께 전달한다 (서버 전송은 jpegBytes를 바이너리 프레임으로 직접 사용).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,6 +21,7 @@ import {
   useCameraPermission,
 } from "react-native-vision-camera";
 import * as FileSystem from "expo-file-system/legacy";
+import { File } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
 import { COGNITIVE_FPS, REFLEX_FPS } from "../config";
@@ -34,7 +36,10 @@ import {
 export interface FrameData {
   float32: Float32Array;
   stream: StreamType;
+  // CoreML 네이티브 브릿지 호출용 (RN 브릿지는 JSON 직렬화 가능 타입만 인자로 받으므로 base64 유지 필요)
   base64: string | null;
+  // 서버 WS 전송용 raw JPEG 바이트 (base64 미경유, 바이너리 프레임으로 직접 전송)
+  jpegBytes: Uint8Array | null;
 }
 
 // 동적 FPS 조절 파라미터 (온디바이스 추론 지연 기준)
@@ -146,7 +151,7 @@ export function useCamera(
       if (!provider) return null;
       try {
         const float32 = await provider.getFrame();
-        return { float32, stream, base64: null };
+        return { float32, stream, base64: null, jpegBytes: null };
       } catch (err) {
         console.error(`[Camera/Mock] ${stream} 프레임 오류:`, err);
         return null;
@@ -207,16 +212,21 @@ export function useCamera(
 
         const base64 = manipResult.base64 ?? "";
         // 실기기 실행 시 JS CPU 100% 점유로 인한 iOS Watchdog SIGKILL (code 9) 차단을 위해 온디바이스 디코딩 루프 생략
-        // (실기기에서는 서버로 base64만 전송하여 GPU 추론 서버에서 디코딩 및 검출을 전담 처리함)
+        // (실기기에서는 서버로 raw JPEG 바이트만 전송하여 GPU 추론 서버에서 디코딩 및 검출을 전담 처리함)
         const float32 = new Float32Array(0);
 
-        console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> 압축 base64len=${base64.length} float32len=${float32.length}`);
+        // 서버 WS 전송용 raw JPEG 바이트 (base64 미경유). CoreML 네이티브 브릿지 호출은
+        // RN 구 브릿지가 JSON 직렬화 가능 타입만 인자로 받을 수 있어 base64 문자열이 불가피하지만,
+        // 서버로의 WS 전송은 이 바이트를 그대로 바이너리 프레임으로 보내 33% 오버헤드를 제거한다.
+        const jpegBytes = await new File(manipResult.uri).bytes();
+
+        console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> JPEG bytes=${jpegBytes.length} base64len(CoreML용)=${base64.length} float32len=${float32.length}`);
 
         // 디바이스 임시 스토리지 고갈 방지를 위해 촬영된 원본 및 리사이징 임시 파일 청소
         void FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
         void FileSystem.deleteAsync(manipResult.uri, { idempotent: true }).catch(() => {});
 
-        return { float32, stream, base64 };
+        return { float32, stream, base64, jpegBytes };
       } catch (err) {
         console.error(`[Camera/Real] ${stream} 캡처 오류:`, err);
         return null;
