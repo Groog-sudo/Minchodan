@@ -1064,3 +1064,16 @@
 - **관련 파일**: `.agents/skills/{camera-frame-capture,llm-guidance-orchestrator,rag-knowledge-builder,rag-realtime-search,tts-voice-streamer,yolo-obstacle-detection}/SKILL.md`, `.claude/skills/` 8개 스킬 전체(동기화), `SKILLS.md`, `CLAUDE.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 두 트리 diff 전수 검사로 8개 스킬 SKILL.md·references 완전 일치 확인. 정정 근거는 실제 코드(`yolo_detector.py`/`reflex_gate.py`/`surface_gate.py`/`tts_service.py`/`l1_classifier.py`/`labels.py`/`retriever.py`) 및 `docs/ops/model_class_validation_report.md`와 교차 확인. 문서 규칙(이모지 금지, 한국어, 표 우선, 인용 블록 메타데이터) 준수.
 - **비고**: 코드 레벨의 실제 버그성 불일치 2건(RAG `labels.py` 명칭이 탐지 taxonomy와 어긋남, Surface Gate 미발동)은 위험도/RAG 로직 담당자 판단 영역이라 스킬 문서에는 사실만 기록하고 코드는 직접 수정하지 않았다. 후속 담당자 검토 필요. references/implementation_detail.md의 라인 단위 전수 검증은 이번 범위에서 제외(SKILL.md 우선 정정), 향후 필요 시 별도 진행.
+
+---
+
+### 2026-07-07 | 문서 | 루트 문서(CLAUDE.md/README.md) 기술 스택 stale 항목 실측 정정
+
+- **커밋**: (대기 중)
+- **변경 내용**: 스킬 감사 중 발견한, 루트 권위 문서의 기술 스택·환경변수 stale 항목을 실제 코드 기준으로 정정(스킬 문서와 동일 기준으로 통일).
+  - `CLAUDE.md` §2: `Ollama (Gemma2:9b, Llava, ...)` → `gemma4:e4b, nomic-embed-text` + VLM 캡셔닝을 Gemini API(`gemini-2.5-flash-lite`)로 분리 명시. `TTS: Kokoro/Coqui` → `Piper`. LLM Orchestration에 raw SimpleOllamaClient/SimpleOpenAIClient(LangChain 래퍼 미사용) 명시. 클라이언트 `Audio: Web Audio API` → `expo-audio(createAudioPlayer)`, 온디바이스 추론(CoreML/TFLite) 항목 추가.
+  - `README.md`: 7단계 요약 표(stage3 킥보드→scooter·29/4클래스·온디바이스, stage4 Llava→Gemini, stage6 ChatOllama→SimpleOllamaClient·gemma4:e4b, stage7 Kokoro/Coqui→Piper·Web Audio→expo-audio) 및 기술 스택 리스트 정정. 환경변수 표 `GEMMA_MODEL` 기본값 `gemma4-e4b`→`gemma4:e4b` 정정, 미사용 `LLAVA_MODEL` 행에 "미사용(구 Llava 잔재)" 명시하고 실제 캡셔닝 키 `GOOGLE_API_KEY` 행 추가. RAG 빌드 파이프라인 주석의 Llava 캡셔닝→Gemini 캡셔닝 2건 정정.
+  - 두 문서 상단 버전 메타데이터 갱신(CLAUDE.md v0.3.2, README.md v0.2.1).
+- **관련 파일**: `CLAUDE.md`, `README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 정정값은 실제 코드(`llm_client_factory.py` `GEMMA_MODEL` 기본 `gemma4:e4b`, `gemini_captioner.py` `GOOGLE_API_KEY`, `tts_service.py` PiperTTSService, `audioEngine.ts` expo-audio) 및 `.env.example`과 교차 확인. `grep` 재검사로 정정 문맥 밖 잔여 stale 토큰 0건 확인.
+- **비고**: `docs/AGENTS.md`는 이미 상단에 "루트 문서가 최신 기준" deprecated 안내가 있는 stale 중복 사본이라 이번에도 수정 대상에서 제외했다(동일 stale 토큰이 남아있으나 문서 자체가 참고용). `.env.example`의 미사용 `LLAVA_MODEL` 변수 자체 제거는 `.env`/`.env.example` 정리 시 별도 검토.

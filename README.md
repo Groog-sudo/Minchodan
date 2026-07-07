@@ -6,7 +6,7 @@
 **Minchodan**은 시각장애인 보행 보조를 위한 스마트 가이드독 AI 플랫폼입니다. 스마트폰 카메라로 주변을 인식하고, GPU 서버에서 실시간으로 장애물·노면 상태를 탐지한 뒤, 음성과 햅틱으로 즉시 안내합니다. 안전 대응은 **반사 경로**(즉시 경보)와 **인지 경로**(상세 가이드) 두 갈래로 물리 분리하는 것이 핵심 원칙입니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0 (2026-07-07 문서 인덱스 링크를 실제 `docs/` 하위 구조 기준으로 정정, 존재하지 않는 `console/` 디렉토리 트리 제거, Llava→Gemini 캡셔닝 정정)
+> **버전**: v0.2.1 (2026-07-07 기술 스택·7단계 표·환경변수 stale 항목 실측 정정: Llava→Gemini 잔여, Kokoro/Coqui→Piper, Web Audio→expo-audio, gemma4-e4b→gemma4:e4b, 클래스 taxonomy)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
 
 ---
@@ -40,11 +40,11 @@
 | ---- | --------------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
 | 1    | 서버-앱 실시간 통신 (WebSocket)   | FastAPI, uvicorn, asyncio                                       | 양방향 echo, **RTT < 100ms**               |
 | 2    | 카메라 화면 전송 (이중 캡처)      | react-native-vision-camera, OpenCV                              | 640x640 수신, **캡처수신 < 50ms**          |
-| 3    | AI 장애물 실시간 인식 (듀얼헤드)  | Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack | 킥보드 conf≈0.87, **Detection < 80ms**     |
-| 4    | 위험 대처 수칙 DB 구축 (RAG 시드) | Ollama(Llava), ChromaDB, nomic-embed                            | collection ≥ 100, **Top-5 hit-rate ≥ 0.6** |
-| 5    | 실시간 대처 수칙 검색 (RAG)       | ChromaDB                                                        | kickboard 쿼리 정합, **검색 < 50ms**       |
-| 6    | 종합 회피 가이드 생성 (계층 LLM)  | LangGraph, ChatOllama(gemma4-e4b)                               | bollard 주입 시 20자 내·방향 포함          |
-| 7    | 음성 안내 출력 (이중 채널)        | Kokoro/Coqui, Web Audio, Haptics                                | 반사 클립 선점 재생, 햅틱 동시 출력        |
+| 3    | AI 장애물 실시간 인식 (듀얼헤드)  | Object Detection 29클래스, Segmentation 4클래스, ByteTrack (반사는 온디바이스) | scooter conf≈0.87, **Detection < 80ms**    |
+| 4    | 위험 대처 수칙 DB 구축 (RAG 시드) | Gemini 캡셔닝, ChromaDB, nomic-embed                            | collection ≥ 100, **Top-5 hit-rate ≥ 0.6** |
+| 5    | 실시간 대처 수칙 검색 (RAG)       | ChromaDB                                                        | 장애물 쿼리 정합, **검색 < 50ms**          |
+| 6    | 종합 회피 가이드 생성 (계층 LLM)  | LangGraph, SimpleOllamaClient(gemma4:e4b)                       | bollard 주입 시 20자 내·방향 포함          |
+| 7    | 음성 안내 출력 (이중 채널)        | Piper, expo-audio, Haptics                                     | 반사 클립 선점 재생, 햅틱 동시 출력        |
 
 상세 설계는 [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md)와 [`docs/design/architecture.md`](docs/design/architecture.md)를 참조합니다.
 
@@ -58,18 +58,19 @@
 - Ultralytics Yolo 26N - Object Detection, Yolo 26N - Segmentation
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + 컨텍스트 TTL)
-- LangGraph + LangChain (L1/L2/L3 오케스트레이션)
-- Ollama (Llava 캡셔닝, gemma4-e4b 가이드 생성, nomic-embed-text 임베딩)
+- LangGraph (L1/L2/L3 오케스트레이션, raw SimpleOllamaClient/SimpleOpenAIClient)
+- Ollama (gemma4:e4b 가이드 생성, nomic-embed-text 임베딩)
+- Gemini API (gemini-2.5-flash-lite, 오프라인 RAG 빌드 캡셔닝; 최초 계획 로컬 Llava에서 전환)
 - ChromaDB (로컬 벡터 저장소)
-- Kokoro-82M / Coqui (로컬 TTS)
+- Piper (로컬 TTS, piper-kss-korean.onnx)
 - OpenCV (프레임 디코딩)
 
 ### 클라이언트 (단말)
 
 - React Native (iOS/Android 동시 대응)
 - react-native-vision-camera (후면 카메라, 단일 캡처 타이머 + 스트림 분할)
-- react-native-fast-tflite (온디바이스 YOLO 추론)
-- expo-audio (단말 오디오 재생 계층), Web Audio API (개념 규격)
+- 온디바이스 추론: CoreML(iOS) / react-native-fast-tflite(Android)
+- expo-audio (단말 오디오 재생 계층, createAudioPlayer)
 - react-native-tts (예비 TTS)
 - expo-haptics (반사 햅틱)
 - Haptics + announceForAccessibility (접근성)
@@ -224,14 +225,14 @@ bash docker/linux_docker_start.sh
 
 ```powershell
 bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Llava 캡셔닝  임베딩  ChromaDB persist
+# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
 bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Llava 캡셔닝  임베딩  ChromaDB persist
+# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
 ```
 
 ---
@@ -244,8 +245,9 @@ bash scripts/build_chroma.sh
 | ------------------- | ----------------------------------------- | ------------------------ |
 | `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
 | `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
-| `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4-e4b`             |
-| `LLAVA_MODEL`       | 4단계 캡셔닝 모델                         | `llava`                  |
+| `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4:e4b`             |
+| `GOOGLE_API_KEY`    | 4단계 캡셔닝(Gemini) API 키               | (필수, 미설정 시 빌드 실패) |
+| `LLAVA_MODEL`       | (미사용, 구 로컬 Llava 계획 잔재)         | `llava`                  |
 | `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
