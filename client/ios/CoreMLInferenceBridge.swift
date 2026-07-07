@@ -43,8 +43,10 @@ class CoreMLInferenceBridge: NSObject {
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
       let config = MLModelConfiguration()
-      // GPU(Metal) 경로에서도 MLIR pass manager failed 크래시가 재현되어(Topk/GatherNd 등
-      // end2end NMS 연산의 Metal 컴파일 실패로 추정) CPU 전용으로 완전히 하향함.
+      // 2026-07-07 실기기(고태현 iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
+      // 뒤에도 .cpuAndGPU 설정 시 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료,
+      // PID 재기동 반복)가 동일하게 재현됨을 확인함. GPU(Metal) 경로의 MLIR pass manager
+      // failed 문제가 raw tensor 파싱과 무관하게 지속되는 것으로 판단, CPU 전용으로 재확정.
       config.computeUnits = .cpuOnly
 
       // object_detection (필수) - end2end raw tensor 모델
@@ -63,7 +65,7 @@ class CoreMLInferenceBridge: NSObject {
         print("[CoreMLBridge] segmentation.mlmodelc 미번들 - det-only 모드로 기동")
       }
 
-      print("[CoreMLBridge] object_detection 모델 로드 완료 (CPU/GPU 가속 모드)")
+      print("[CoreMLBridge] object_detection 모델 로드 완료 (CPU 전용 모드, GPU 크래시 회피)")
       let statusDict: [String: Any] = [
         "det": true,
         "seg": self.segModel != nil

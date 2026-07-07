@@ -845,3 +845,19 @@
 - **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/ios/Minchodan/CoreMLInferenceBridge.swift`, `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `.mcp.json`, `server/detection/yolo_detector.py`, `scripts/validate_class_samples.py`, `docs/ops/model_class_validation_report.md`, `docs/ops/ondevice_coreml_benchmark.md`, `docs/README.md`, `.claude/settings.json`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx tsc --noEmit` 신규 에러 없음 확인. `scripts/validate_class_samples.py` 실행 결과 Detection 29클래스 중 28개 클래스 최소 1장 이상 탐지 성공, Segmentation 4클래스 전부 탐지 성공. `stop` 클래스만 3장 전부 탐지 실패(conf 0.01까지 낮춰도 미탐지) 확인.
 - **비고**: `stop` 클래스 탐지 실패는 학습 데이터 부족 또는 `traffic_sign`과의 클래스 혼동 가능성으로 추정되며, 재학습 데이터 보강이 필요하다. `traffic_light_controller` 등 일부 클래스는 한국 실사 샘플을 끝내 확보하지 못해 해외 사진으로 대체됐다(상세는 검증 보고서 3.3절 참조). iOS raw tensor 파이프라인은 실기기 재빌드 후 벤치마크 재측정이 필요하며(`docs/ops/ondevice_coreml_benchmark.md` §4 부록 참조), `client/ios/Minchodan/CoreMLInferenceBridge.swift`는 여전히 빌드 미대상 사본이므로 향후 정리(삭제 또는 실제 연결) 필요.
+
+---
+
+### 2026-07-07 | iOS | GPU/ANE 가속 재검증(실기기 크래시 재현 확인) 및 미사용 사본 삭제
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `client/ios/CoreMLInferenceBridge.swift`의 `computeUnits`를 `.cpuOnly` → `.cpuAndGPU`로 재시도하여 raw tensor 파싱 아키텍처에서도 GPU 크래시가 재현되는지 실기기(고태현 iPhone, xcodebuildmcp `build_run_device`)로 직접 검증. 앱 재실행마다 CoreML 모델 로드(`det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료`)까지는 성공했으나, 반사 프레임 1장 처리 직후 화면이 흰 화면으로 전환되며 프로세스가 종료되는 크래시가 PID 1178→1210→1218로 3회 연속 재현됨을 `devicectl process signal` 생존 확인과 Metro 로그로 교차 검증. `computeUnits = .cpuOnly`로 재확정.
+  - 위 검증 과정에서 Metro 번들러가 기동되지 않아 실기기에 "No script URL" 오류가 발생하는 것을 확인하고 `npx expo start --dev-client`로 기동해 해결.
+  - `.cpuOnly` 복귀 재빌드 후 509프레임 연속 무크래시 동작 확인, Metro `[CoreMLBenchmark]` 로그를 집계하여 실측 벤치마크 갱신: det 평균 24.11ms(21.33~30.75ms), seg 평균 18.86ms(16.58~23.96ms), total 평균 42.97ms(38.47~51.67ms).
+  - `client/ios/Minchodan/CoreMLInferenceBridge.swift`(project.pbxproj 미연결 미사용 사본)를 삭제. pbxproj 분석 결과 `AppDelegate.swift`는 `path = Minchodan/AppDelegate.swift`로 명시된 반면 `CoreMLInferenceBridge.swift`는 `path = CoreMLInferenceBridge.swift`(그룹 자체에 `path` 없음)라 `client/ios/`로 resolve됨을 재확인하여 완전히 죽은 코드임을 확정.
+  - `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`의 로그/라벨 문구에서 "ANE"/"Neural Engine 활성화" 표기를 제거하고 "CoreML(CPU)"로 정정 (실제로는 CPU 전용 추론 중인데 ANE 가속인 것처럼 보이던 오정보 수정).
+  - `docs/ops/ondevice_coreml_benchmark.md`를 v1.3.0으로 갱신: §1 현황 안내 추가(ANE/GPU 미가속, CPU 전용 사유 명시), §4 벤치마크를 2026-07-07 `.cpuOnly` 실측치로 교체, 기존 2026-07-05 Vision+COCO 기준 수치는 부록 B로 이력 보존, §6.3/§7/§8 로그 문구 및 통과 기준 정정.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`, `docs/ops/ondevice_coreml_benchmark.md`, `docs/changelogs/kb.md` (삭제: `client/ios/Minchodan/CoreMLInferenceBridge.swift`)
+- **검증 결과**: xcodebuildmcp `build_run_device`로 실기기 빌드·설치·실행 성공. `.cpuAndGPU`에서 3회 연속 크래시 재현, `.cpuOnly`에서 509프레임 연속 무크래시 확인(devicectl `process signal 0` 생존 확인 + Metro 로그 `[CoreMLBenchmark]` 라인 509건 집계).
+- **비고**: ANE/GPU 가속은 raw tensor 파싱으로 전환한 뒤에도 동일한 `MLIR pass manager failed` 크래시가 재현되어, 현재로선 CPU 전용이 유일한 안정적 옵션으로 확정됨. 근본 원인(Metal 컴파일러의 end2end NMS 연산 미지원 추정)을 규명하기 전까지는 GPU/ANE 재도전을 보류할 것을 권고.
