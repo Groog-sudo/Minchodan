@@ -11,6 +11,9 @@
 > **담당 브랜치**: `dg`
 > **협업 대상**: iOS 담당자 (`kb`) — 서버 Phase A + 공통 TS 코드 주도 작성
 
+> [!IMPORTANT]
+> **2026-07-07 프로토콜 갱신**: 공통 TS 코드(`useCamera.ts`, `useWebSocket.ts`)의 프레임 전송 방식이 base64(`thumbnail_jpeg_b64`) 단일 메시지에서 **바이너리 전송(기본)** 으로 전환되었다(base64는 구버전 호환 경로로 유지). Android 빌드/검증 시에도 동일한 공통 코드를 사용하므로 이 변경이 그대로 적용된다. 최신 규격은 [`docs/design/api_specification.md`](../design/api_specification.md) §3.1/§3.2, 구현 상세는 [`docs/stage-guides/stage2_capture_design.md`](../stage-guides/stage2_capture_design.md) §6.4 참조.
+
 ---
 
 ## 1. 개요

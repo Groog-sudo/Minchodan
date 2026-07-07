@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.0.0
+> **버전**: v1.1.0 (2026-07-07 §4.2/§5.1 프레임 전송 방식을 바이너리 기본/base64 구버전 호환으로 갱신)
 > **설계 기준**: docs/design/minchodan_design_note.md (비전 설계서 v1.1)
 
 # 실기기 무선 연동 테스트 및 Docker 환경 가이드
@@ -79,10 +79,11 @@ graph TD
 4. **인증 통과**: 서버가 토큰 무결성을 대조 및 검증한 뒤, `auth_ok` 패킷을 전송하고 Redis 메시지 버스를 바인딩하여 메인 루프에 진입합니다.
 
 ### 4.2 실시간 추론 스트리밍 단계
-1. **프레임 캡처**: 단말의 카메라 모듈이 10fps 속도로 도로/실내 환경을 촬영하여 base64 JPEG 텍스트로 인코딩합니다.
+1. **프레임 캡처**: 단말의 카메라 모듈이 동적 fps(추론 지연에 따라 최대 반사 기본값~1fps 조절, `docs/changelogs/kb.md` 2026-07-07 참조)로 도로/실내 환경을 촬영하고, `expo-image-manipulator`로 JPEG 압축 후 `expo-file-system`의 `File(uri).bytes()`로 raw 바이트를 획득합니다(**2026-07-07부로 base64 인코딩 미경유**).
 2. **데이터 송신**: 단말이 서버로 `detection` 타입 패킷을 전송합니다:
-   - 필드 키: **`thumbnail_jpeg_b64`** 에 base64 텍스트를 적재하여 전송합니다.
-3. **디코딩 및 리사이즈**: 서버의 OpenCV 모듈이 base64 바이너리를 메모리 버퍼로 디코딩하고, YOLO 입력 포맷인 **`640x640`** 크기로 정규화 리사이즈를 단 수십 밀리초(ms) 내로 완료합니다.
+   - **바이너리 전송(기본)**: JSON 메타에 `transport: "binary"`만 담아 먼저 보내고, 곧바로 raw JPEG 바이트를 WS **바이너리 프레임**으로 전송합니다.
+   - **base64 전송(구버전 호환)**: 필드 키 **`thumbnail_jpeg_b64`** 에 base64 텍스트를 적재한 단일 JSON 메시지로 전송합니다(Mock 모드 등).
+3. **디코딩 및 리사이즈**: 서버가 바이너리 프레임은 `decode_frame_binary`(base64 디코딩 단계 없이 바로 처리)로, base64 메시지는 기존 `decode_frame`으로 처리합니다. 두 경로 모두 OpenCV로 메모리 버퍼 디코딩 후 YOLO 입력 포맷인 **`640x640`** 크기로 정규화 리사이즈를 단 수십 밀리초(ms) 내로 완료합니다.
 4. **듀얼헤드 YOLO 추론**:
    - **Object Detection**: 볼라드, 킥보드, 계단 등 시각장애인 위협 장애물을 바운딩 박스로 탐지합니다.
    - **Segmentation**: 보행 가능 안전 구역 및 점자블록 노면을 픽셀 단위로 분할 분석합니다.
@@ -93,10 +94,11 @@ graph TD
 
 ## 5. 장애 대응 및 핵심 트러블슈팅
 
-### 5.1 base64 데이터 없음 에러
+### 5.1 base64 데이터 없음 에러 (구버전 호환 경로 한정)
 - **현상**: 서버 로그에 `[FrameDecoder] base64 데이터 없음` 경고가 반복하여 발생하고 추론이 생략되는 경우.
 - **원인**: 단말 측에서 쏘는 JSON 페이로드의 이미지 데이터 필드 키가 서버가 요구하는 **`thumbnail_jpeg_b64`**가 아닌 `base64` 등의 다른 키로 매핑되어 전달되었기 때문입니다.
 - **해결**: [CameraView.tsx](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/src/components/CameraView.tsx)의 `sendRef.current` 호출 부 payload 키를 `thumbnail_jpeg_b64`로 명확하게 지정하여 재빌드 및 재배포해야 합니다.
+- **참고 (2026-07-07)**: 실기기 기본 전송 경로는 base64가 아닌 바이너리 프레임이므로, 이 에러는 `payload.transport`가 `"binary"`로 설정되지 않은 구버전 호환 경로(Mock 등)에서만 발생한다. 바이너리 경로 관련 이슈는 `[WS] 대기 중인 메타데이터 없이 바이너리 프레임 수신` 경고 로그를 확인한다(메타-바이너리 프레임 순서가 어긋난 경우).
 
 ### 5.2 lap 트래킹 라이브러리 부재 에러
 - **현상**: `requirements: Ultralytics requirement ['lap>=0.5.12'] not found` 로그가 출력되는 경우.

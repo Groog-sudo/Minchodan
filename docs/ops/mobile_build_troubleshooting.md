@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-06
-> **버전**: v1.4.0 (CoreML ANE 우회 설정, 소스 경로 이중화, JS watchdog 과부하 팅김 해결 추가)
+> **버전**: v1.5.0 (2026-07-07 §1.6/1.7/1.8 후속 업데이트 - 이중화 파일 삭제, CPU 전용 재확정, 온디바이스 추론 재활성화 및 바이너리 전송 전환)
 > **설계 기준**: docs/ops/wireless_test_guide.md (v1.1.0)
 
 # Minchodan 모바일 네이티브 빌드 트러블슈팅 가이드
@@ -80,11 +80,15 @@
 - **해결책**:
   - 실제 Xcode 타깃에 등록되어 빌드되는 원본 소스 파일(`client/ios/CoreMLInferenceBridge.swift`)을 명확히 색출하여 해당 파일에 브릿징 가드레일 및 타입 캐스팅 조치를 적용해 주어야 합니다.
 
+> **2026-07-07 후속 업데이트**: 임시 우회(원본 파일만 수정)에서 한 걸음 더 나아가, pbxproj를 직접 분석해 껍데기 파일이 프로젝트에 전혀 연결되어 있지 않음을 완전히 확정했다(`AppDelegate.swift`는 `path = Minchodan/AppDelegate.swift`로 명시된 반면 `CoreMLInferenceBridge.swift`는 그룹 자체에 `path` 속성이 없어 `client/ios/`로 resolve됨). 이에 따라 `client/ios/Minchodan/CoreMLInferenceBridge.swift`를 **완전히 삭제**하여 혼동 위험 자체를 제거했다. 이제 `client/ios/CoreMLInferenceBridge.swift`가 유일한 소스이므로 이 문제는 재발하지 않는다.
+
 ### 1.7 iOS CoreML Neural Engine (ANE) 가속 컴파일 크래시 (MLIR pass manager failed)
 
 - **원인**: YOLO v26N 모델 그래프의 특정 커스텀 레이어 구성이 iOS 17 이하 구버전 기기들의 Neural Engine(ANE) 가속 드라이버 단독 가속(`computeUnits = .all`) 컴파일 도중 MLIR 그래프 컴파일러 예외를 발생시켜 앱이 구동 즉시 강제 종료되는 하드웨어 버그입니다.
 - **해결책**:
   - Swift Bridge 파일 내에서 모델 적재 환경설정 파라미터인 `computeUnits` 지정을 **`.cpuAndGPU`** 로 완화 및 우회 설정하여 Neural Engine 하드웨어 컴파일 락을 안전하게 비껴가도록 보정해 줍니다.
+
+> **2026-07-07 후속 업데이트**: `.cpuAndGPU` 완화만으로는 충분하지 않음이 실기기 재검증에서 확인됐다. raw tensor 파싱 아키텍처로 전환한 뒤에도 `.cpuAndGPU`에서 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료)가 3회 연속 재현되어, 현재는 **`computeUnits = .cpuOnly`(CPU 전용)** 로 완전히 하향 고정했다. 509프레임 연속 무크래시를 확인했으며(평균 det 24.11ms, seg 18.86ms, total 42.97ms — 서버 KPI 80ms 대비 여전히 여유), ANE/GPU 재도전은 근본 원인(Metal 컴파일러의 end2end NMS 연산 미지원 추정) 규명 후의 별도 과제로 보류한다. 상세는 [`docs/ops/ondevice_coreml_benchmark.md`](ondevice_coreml_benchmark.md) 참조.
 
 ### 1.8 JS 스레드 연산 과부하로 인한 iOS Watchdog 강제 종료 (Debug session ended with code 9: killed)
 
@@ -92,6 +96,8 @@
 - **해결책**:
   - 1. 실기기 구동 모드(`!isMockMode`)일 때는 발열 및 Watchdog 차단을 위해 무거운 로컬 온디바이스 CoreML 추론 및 JS 이미지 디코딩 루프를 과감히 건너뛰도록 **바이패스(Bypass)** 처리하고, 640x640 base64 원본 프레임만 WebSocket을 통해 GPU 서버로 고속 송신하여 서버에서 추론을 전담하도록 Thin Client 구조를 수립합니다.
   - 2. 단말기 UI 컴포넌트(`CameraView.tsx`)에 서버의 디코딩 및 추론 연산 수락 응답 이벤트인 **`ack` 타입의 메시지 리스너 훅**을 보강 이식하여, 수신 즉시 화면 상태 텍스트를 `서버추론: 안전` 등으로 갱신해 주어 "추론 대기..." 상태에서 정상 해제되도록 UI 연동성을 완비합니다.
+
+> **2026-07-07 후속 업데이트**: 위 크래시의 진짜 원인이 (a) Vision Framework 기반 파싱과 커스텀 클래스 라벨 불일치, (b) `.cpuAndGPU`/`.all` GPU 컴파일 실패였음이 밝혀져 raw tensor 파싱 재구성 + `.cpuOnly` 고정으로 해결됨에 따라, **① 온디바이스 추론 바이패스를 제거**하고 실기기에서도 CoreML 추론을 재활성화했다(509프레임 연속 무크래시 확인). **② 서버 전송 방식도 base64에서 raw JPEG 바이트 바이너리 WS 프레임으로 전환**했다(`expo-file-system`의 `File(uri).bytes()` + `WebSocket.send(Uint8Array)`, 33% 페이로드 절감). 즉 "온디바이스 추론 스킵 + base64 서버 전송"이라는 이 절의 우회책은 더 이상 현재 코드 상태가 아니며, `docs/design/api_specification.md` §3.1(바이너리, 기본)/§3.2(base64, 구버전 호환)를 최신 기준으로 삼는다.
 
 ---
 

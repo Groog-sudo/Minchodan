@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.3.0 (2026-07-07 §6.3 2단계 인터페이스를 바이너리 전송 기준으로 갱신)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -282,7 +282,10 @@ graph TD
 | 방향 | 페이로드                                                                              |
 | ---- | ------------------------------------------------------------------------------------- |
 | In   | 비디오 프레임                                                                         |
-| Out  | `{type:"detection", payload:{event_id, device_id, ts, frame_id, thumbnail_jpeg_b64}}` |
+| Out (바이너리, 기본) | JSON 메타 `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream, transport:"binary"}}` + 뒤이은 raw JPEG 바이너리 WS 프레임 |
+| Out (base64, 구버전 호환) | `{type:"detection", payload:{event_id, device_id, ts, frame_id, thumbnail_jpeg_b64}}` |
+
+> 2026-07-07부터 실기기 기본 전송 방식은 base64 미경유 바이너리 프레임이다(페이로드 33% 절감). 상세는 [`api_specification.md`](api_specification.md) §3.1/§3.2 참조.
 
 ### 6.4 3단계 인터페이스
 

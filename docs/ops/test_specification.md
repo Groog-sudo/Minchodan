@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.5.0 (2026-06-30 1+2단계 Phase A~D 구현 완료, TC-WS/TC-CAP 상태 업데이트)
+> **버전**: v0.6.0 (2026-07-07 TC-WS-007/TC-CAP-010 바이너리 전송 프로토콜 검증 케이스 추가)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -97,8 +97,10 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-WS-004 | RTT 측정                   | **RTT < 100ms**                          | 완료 |
 | TC-WS-005 | 5초 ping/pong 하트비트     | ping/pong 루프 정상                      | 완료 |
 | TC-WS-006 | `WebSocketDisconnect` 정리 | 소켓 close + 리소스 해제                 | 완료 |
+| TC-WS-007 | detection 바이너리 전송 프로토콜 | JSON 메타(`transport:"binary"`) + `send_bytes()` 바이너리 프레임 → ack 정상 응답, 메타 없는 고아 바이너리 프레임 무시 | 완료 |
 
 > **1단계 비고 (2026-07-01)**: 백그라운드 uvicorn 기동 하에 `tests/test_ws_echo.py` 6개 케이스 전체 검증 통과 완료.
+> **1단계 비고 (2026-07-07)**: TC-WS-007은 `tests/test_api_ws.py`(`TestClient.websocket_connect`, 실기기/uvicorn 기동 불필요)에서 실제 `/ws/detect` 라우터 코드 경로를 통해 검증됨.
 
 
 ### 5.2 2단계 - 카메라 화면 전송
@@ -116,6 +118,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | **TC-CAP-007** | 권한 거부 가드 | 단말 `NotAllowedError` 안내 처리 | 코드 작성 완료 |
 | **TC-CAP-008** | 소켓 유실 타이머 해제 | 단말 `clearInterval` 자원 해제 | 코드 작성 완료 |
 | **TC-CAP-009** | 예외 안전 복구 | 디코딩/Redis 실패 시에도 큐 push 유지 | 완료 |
+| **TC-CAP-010** | 바이너리(raw JPEG) 디코딩 | `decode_frame_binary`가 base64 미경유로 `decode_frame`과 동일 결과(shape/size) 산출, 5종 가드레일 동일 적용 | 완료 (2026-07-07) |
 | **TC-PATH-006** | 반사 경로 임포트 격리 | `stream_splitter.py`에 LLM/RAG/TTS 임포트 없음 | 완료 |
 | **TC-PATH-007** | 인지 경로 임포트 격리 | `stream_splitter.py`에 LLM/RAG/TTS 임포트 없음 | 완료 |
 

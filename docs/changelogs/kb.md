@@ -909,3 +909,23 @@
 - **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `server/capture/frame_decoder.py`, `server/capture/__init__.py`, `server/api/ws_router.py`, `docs/design/api_specification.md`, `tests/test_frame_decode.py`, `tests/test_api_ws.py`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx tsc --noEmit` 오류 0건. `ruff check`/`ruff format --check`/`bandit` 전부 통과. `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(신규 9건 포함) — 특히 `test_websocket_detection_binary_transport`는 `TestClient.websocket_connect`로 실제 `/ws/detect` 라우터 코드 경로를 통해 JSON 메타 + `send_bytes()` 바이너리 프레임 → ack 왕복을 검증.
 - **비고**: 단일 WS 연결에서 프레임 전송 순서가 보장된다는 전제(RFC 6455 및 ASGI 스펙)로 메타-바이너리 짝짓기를 구현했다. 하트비트/핑퐁 등 제어 메시지는 여전히 JSON 텍스트로 유지(빈도가 낮고 페이로드가 작아 최적화 실익이 없음). Mock 모드는 여전히 base64 경로를 사용(시뮬레이터 프리뷰용 float32 디코딩과 결합되어 있어 이번 범위에서 제외).
+
+---
+
+### 2026-07-07 | 문서 | 이번 세션 구현 변경사항(바이너리 전송, iOS CoreML 재검증) 전반에 걸친 문서 동기화
+
+- **커밋**: (대기 중)
+- **변경 내용**: 오늘 세션에서 구현/변경된 내용(detection 프레임 바이너리 전송 전환, iOS CoreML raw tensor 재구성 및 GPU/ANE 재검증)이 아직 반영되지 않은 관련 설계·운영 문서를 전수 점검하여 갱신.
+  - `docs/design/api_specification.md`(직전 커밋에서 이미 v0.4.0 갱신 완료, 본 항목에서는 나머지 문서 동기화)
+  - `docs/design/architecture.md`: v0.3.0. §6.3 2단계 인터페이스를 바이너리(기본)/base64(구버전 호환) 2단으로 갱신.
+  - `docs/design/minchodan_design_note.md`: v0.2.1. 2단계 핵심 절차·데이터 인터페이스를 `File.bytes()` 기반 바이너리 전송 기준으로 갱신.
+  - `docs/stage-guides/stage1_websocket_design.md`: v1.1.0. §3.1을 바이너리(신설)/§3.1b base64(구버전 호환)로 재구성.
+  - `docs/stage-guides/stage2_capture_design.md`: v0.2.0. §6.4 바이너리 전송 디코딩 경로(`_parse_frame_meta`/`_build_processed_frame`/`decode_frame_binary`) 신설, §9.1 입력 인터페이스에 바이너리 예시 추가, §7.1에 신규 테스트 커버리지 각주 추가.
+  - `docs/ops/mobile_build_troubleshooting.md`: v1.5.0. §1.6(이중화 파일 삭제 완료), §1.7(`.cpuOnly` 재확정), §1.8(온디바이스 추론 재활성화 + 바이너리 전송 전환)에 2026-07-07 후속 업데이트 각주 추가.
+  - `docs/ops/wireless_test_guide.md`: v1.1.0. §4.2 프레임 캡처·전송 절차, §5.1 트러블슈팅 항목을 바이너리 기본/base64 구버전 호환 기준으로 갱신.
+  - `docs/ops/test_specification.md`: v0.6.0. TC-WS-007(바이너리 전송 프로토콜), TC-CAP-010(바이너리 디코딩) 신규 검증 케이스 추가.
+  - `docs/mobile/mobile_ios_implementation_plan.md`, `docs/mobile/mobile_android_implementation_plan.md`: 각 문서 상단에 2026-07-07 프로토콜 갱신 알림(`[!IMPORTANT]`) 추가 — 두 문서는 최초 계획 시점(v0.1.0, base64 전제) 원본이라 전면 재작성 대신 최신 규격 문서로의 안내 각주만 삽입.
+  - `docs/README.md`: v0.9.0으로 버전 갱신.
+- **관련 파일**: `docs/README.md`, `docs/design/architecture.md`, `docs/design/minchodan_design_note.md`, `docs/stage-guides/stage1_websocket_design.md`, `docs/stage-guides/stage2_capture_design.md`, `docs/ops/mobile_build_troubleshooting.md`, `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/mobile/mobile_android_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 전용 변경으로 코드 검증은 해당 없음. 각 파일의 마크다운 표/각주 형식이 기존 문서 스타일(인용 블록 메타데이터, 표 구조, `[!IMPORTANT]` 콜아웃)과 일치하는지 diff로 육안 확인.
+- **비고**: `docs/mobile/mobile_app_implementation_plan.md`(플랫폼 분리 이전 통합 원본, 문서 자체에 "분리된 설계서 사용" 안내가 이미 있음)와 `docs/mobile/ondevice_inference_engine_isolation_plan.md`(LocalDetector 추상화 계획 - 실제 구현은 더 단순한 직접 수정 경로를 택해 상당 부분 미실현 상태)는 이번 범위에서 제외했다. 후자는 향후 온디바이스 아키텍처 정리 시 별도로 현재 구현과의 정합 여부를 재검토할 필요가 있다.
