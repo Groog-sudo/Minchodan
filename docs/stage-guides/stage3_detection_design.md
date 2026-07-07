@@ -303,7 +303,9 @@ v1.1 설계에 따라 노면 클래스를 **독립 클래스로 분리**합니�
 
 > **참고**: `caution` 클래스는 stairs/manhole/grating을 포함하는 통합 클래스입니다. 팀원 학습 시 별도 클래스로 분리할지 통합할지는 학습 데이터에 따라 결정하며, 본 설계서는 SKILL.md 기준으로 `caution` 통합 클래스를 따릅니다.
 
-> **2026-07-07 실제 학습 결과 반영**: 위 7클래스는 최초 제안이었고, 실제로 파인튜닝 완료된 Segmentation 모델(`segbest.pt`)은 **4클래스만 채택**됐다 — `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (`braille_damaged`/`sidewalk_damaged`/`crosswalk` 별도 세분화는 데이터 미확보로 미채택, `docs/ops/model_class_validation_report.md` 참조). 그런데 `server/detection/gates/surface_gate.py`의 `P0_SURFACE_CLASSES`는 여전히 최초 제안 시절의 클래스명(`crosswalk`, `manhole`, `stair`, `stairs`, `grating`, `braille_damaged`)으로 남아 있어, 실제 모델이 내놓는 4개 클래스명(`sidewalk_normal`, `caution`, `roadway`, `braille_normal`) 중 **단 하나도 `P0_SURFACE_CLASSES`에 포함되지 않는다**. 즉 Surface Gate는 현재 코드 그대로는 절대 발동하지 않는다(`surface_gate.py` 자체 주석도 "MVP 범위: 학습된 가중치는 COCO 80클래스이므로... 향후 커스텀 노면 학습 시 자동 활성화"라고 밝혀 이 문제를 인지하고 있었으나, 실제로 커스텀 학습이 완료된 지금도 갱신되지 않은 상태다). `caution`/`braille_damaged`를 P0 목록에 반영할지는 위험도 규칙 담당자의 판단이 필요한 영역이라 이 문서 정정 범위에서는 코드를 직접 고치지 않고 사실관계만 기록한다.
+> **2026-07-07 실제 학습 결과 반영**: 위 7클래스는 최초 제안이었고, 실제로 파인튜닝 완료된 Segmentation 모델(`segbest.pt`)은 **4클래스만 채택**됐다 — `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (`braille_damaged`/`sidewalk_damaged`/`crosswalk` 별도 세분화는 데이터 미확보로 미채택, `docs/ops/model_class_validation_report.md` 참조).
+>
+> **버그 및 수정 (2026-07-07)**: `server/detection/gates/surface_gate.py`의 `P0_SURFACE_CLASSES`가 최초 제안 시절의 클래스명(`crosswalk`, `manhole`, `stair`, `stairs`, `grating`, `braille_damaged`)으로 남아 있어 실제 4클래스 모델 출력과 단 하나도 겹치지 않아 **Surface Gate가 한 번도 발동한 적이 없던 실제 코드 결함**이었다(계단·맨홀 등 노면 위험에 대한 <300ms 즉시 반사 경보가 전혀 작동하지 않음). `P0_SURFACE_CLASSES = {"caution"}`으로 정정하여 수정 완료했다. 같은 조사에서 `server/detection/detection_pipeline.py::_classify_risk`(COCO 잔재 클래스명 사용)와 `server/orchestration/nodes/l1_classifier.py::MID_RISK_CLASSES`(`kickboard`/`pothole`/`manhole`/`construction_cone` 등 실제 존재하지 않는 클래스명, `scooter`가 아닌 `kickboard`로 오기)도 함께 발견되어 실제 29클래스 기준으로 정정했다. `tests/test_langgraph.py::TestRiskClassifierConsistency`에 두 분류기 간 불일치 및 존재하지 않는 클래스명 사용을 막는 회귀 테스트를 추가했다.
 
 ---
 
