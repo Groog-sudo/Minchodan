@@ -96,6 +96,7 @@ class TestGates:
             class_name="car",
             confidence=0.9,
             bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
@@ -107,6 +108,7 @@ class TestGates:
             class_name="truck",
             confidence=0.9,
             bbox=BBox(x=10.0, y=420.0, w=50.0, h=60.0),
+            hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
@@ -118,6 +120,7 @@ class TestGates:
             class_name="car",
             confidence=0.9,
             bbox=BBox(x=0.0, y=0.0, w=10.0, h=10.0),
+            hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is None
@@ -127,6 +130,29 @@ class TestGates:
             class_name="bicycle",
             confidence=0.9,
             bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=3,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is None
+
+    def test_reflex_gate_low_confidence_rejected(self):
+        """실내 오탐 완화: 클래스별 최소 confidence 미달 시 발동하지 않는다."""
+        det = Detection(
+            class_name="car",
+            confidence=0.4,  # HIGH_RISK_CLASSES["car"] = 0.6 미달
+            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=3,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is None
+
+    def test_reflex_gate_insufficient_hit_count_rejected(self):
+        """실내 오탐 완화: 연속 프레임 수(hit_count)가 MIN_HIT_COUNT 미만이면 발동하지 않는다."""
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=1,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is None
@@ -178,6 +204,52 @@ class TestByteTrackTracker:
         updated = await tracker.update(dets, mock_redis_bus)
         assert updated[0].track_id == "T-0001"
         mock_redis_bus.set_track_context.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_new_track_hit_count_starts_at_one(self, mock_redis_bus):
+        """2026-07-07 추가: 신규 track(이전 컨텍스트 없음)은 hit_count=1로 시작한다."""
+        tracker = ByteTrackTracker()
+        dets = [
+            Detection(
+                class_name="car",
+                confidence=0.9,
+                bbox=BBox(x=0, y=100, w=10, h=10),
+                track_id="T-0001",
+            )
+        ]
+        updated = await tracker.update(dets, mock_redis_bus)
+        assert updated[0].hit_count == 1
+
+    @pytest.mark.asyncio
+    async def test_hit_count_increments_across_consecutive_frames(self, mock_redis_bus):
+        """2026-07-07 추가: 동일 track_id가 연속 프레임에 걸쳐 갱신되면 hit_count가 누적된다
+        (실내 오탐 완화용 reflex_gate MIN_HIT_COUNT 조건의 근간)."""
+        tracker = ByteTrackTracker()
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=0, y=100, w=10, h=10),
+            track_id="T-0001",
+        )
+
+        # 1프레임째: 컨텍스트 없음 -> hit_count=1
+        mock_redis_bus.get_track_context = AsyncMock(return_value={})
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].hit_count == 1
+
+        # 2프레임째: 직전 컨텍스트에 hit_count=1이 있었다고 가정 -> hit_count=2
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={"hit_count": "1", "last_pos": '{"x":0,"y":100,"w":10,"h":10}'}
+        )
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].hit_count == 2
+
+        # 3프레임째: 직전 컨텍스트에 hit_count=2 -> hit_count=3 (MIN_HIT_COUNT 도달)
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={"hit_count": "2", "last_pos": '{"x":0,"y":100,"w":10,"h":10}'}
+        )
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].hit_count == 3
 
 
 class TestPipeline:
@@ -253,12 +325,17 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_reflex_gate_triggers(self, frame, mock_redis_bus):
+        # 2026-07-07: 실내 오탐 완화를 위해 MIN_HIT_COUNT(3) 조건이 추가됨에 따라,
+        # track_id를 부여하고 직전 컨텍스트에 hit_count=2가 있었던 것으로 모킹하여
+        # 이번 프레임에서 hit_count=3(조건 충족)이 되도록 구성한다.
+        mock_redis_bus.get_track_context = AsyncMock(return_value={"hit_count": "2"})
         detector = StubDetector(
             detections=[
                 Detection(
                     class_name="car",
                     confidence=0.9,
                     bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+                    track_id="T-0001",
                 )
             ]
         )

@@ -36,6 +36,32 @@ const HIGH_HAZARDS = ["person", "bicycle", "car", "motorcycle", "bus", "truck", 
 // 노면 위험 구간 (segmentation 클래스, SEG_HAZARD 인덱스와 정합: caution, roadway)
 const GROUND_HAZARDS = ["caution", "roadway"];
 
+// 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
+// YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
+// 자체를 모른다. 실내에서만 나타날 리 없는(즉 실외 전용) 클래스들이 실내 오탐 시 자주
+// 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 40%)보다 더 높은 하한선을
+// 개별로 강제한다. 목록에 없는 클래스는 confThreshold를 그대로 사용한다.
+const CLASS_MIN_CONFIDENCE: Record<string, number> = {
+  car: 0.6,
+  bus: 0.6,
+  truck: 0.6,
+  motorcycle: 0.55,
+  scooter: 0.5,
+  fire_hydrant: 0.55,
+  parking_meter: 0.55,
+  traffic_light: 0.55,
+  traffic_light_controller: 0.55,
+  traffic_sign: 0.55,
+  stop: 0.55,
+  roadway: 0.55,
+};
+
+// 클래스별 최소 confidence와 사용자 슬라이더(confThreshold) 중 더 높은 값을 유효 임계값으로 사용
+function getEffectiveConfThreshold(className: string, baseThreshold: number): number {
+  const classMin = CLASS_MIN_CONFIDENCE[className];
+  return classMin !== undefined ? Math.max(classMin, baseThreshold) : baseThreshold;
+}
+
 export function CameraView() {
   const { status, send, sendBinary, lastMessage } = useWebSocket(DEVICE_ID, TOKEN);
   const {
@@ -174,7 +200,9 @@ export function CameraView() {
       setDetectionsRef.current(allDetections);
 
       // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
-      const validDetections = allDetections.filter(d => d.confidence > confThresholdRef.current);
+      const validDetections = allDetections.filter(
+        d => d.confidence > getEffectiveConfThreshold(d.className, confThresholdRef.current)
+      );
       if (validDetections.length > 0) {
         let maxAreaRatio = 0;
         let mostCriticalClass = "";
@@ -287,7 +315,9 @@ export function CameraView() {
     );
   }
 
-  const activeDetections = detections.filter(d => d.confidence > confThreshold);
+  const activeDetections = detections.filter(
+    d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
+  );
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
         const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);

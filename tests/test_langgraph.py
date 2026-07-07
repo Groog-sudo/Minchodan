@@ -249,8 +249,13 @@ class TestRiskClassifierConsistency:
         assert not unknown, f"실제 29클래스에 없는 MID_RISK_CLASSES 항목: {unknown}"
 
     def test_high_risk_classes_are_real_detection_classes(self):
-        unknown = HIGH_RISK_CLASSES - REAL_DETECTION_CLASSES
+        # HIGH_RISK_CLASSES는 2026-07-07부로 {class_name: min_confidence} 딕셔너리로 변경됨
+        unknown = set(HIGH_RISK_CLASSES) - REAL_DETECTION_CLASSES
         assert not unknown, f"실제 29클래스에 없는 HIGH_RISK_CLASSES 항목: {unknown}"
 
     def test_high_and_mid_risk_classes_do_not_overlap(self):
-        assert not (HIGH_RISK_CLASSES & MID_RISK_CLASSES)
+        assert not (set(HIGH_RISK_CLASSES) & MID_RISK_CLASSES)
+
+    def test_high_risk_confidence_thresholds_in_valid_range(self):
+        for class_name, min_conf in HIGH_RISK_CLASSES.items():
+            assert 0.0 < min_conf <= 1.0, f"{class_name}의 min_confidence가 유효 범위를 벗어남"

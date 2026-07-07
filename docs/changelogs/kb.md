@@ -971,3 +971,18 @@
 - **관련 파일**: `docs/stage-guides/stage6_orchestration_design.md`, `docs/stage-guides/stage7_tts_design.md`, `docs/ops/redis_streams_schema.md`, `docs/ops/environment_variables.md`, `docs/ops/ai_model_hardware_setup.md`, `docs/ops/code_quality_guide.md`, `docs/ops/deployment_guide.md`, `CLAUDE.md`, `README.md`, `docs/AGENTS.md`, `Directory_Structure.md`, `.agents/skills/rag-knowledge-builder/SKILL.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(회귀 없음, 이번 라운드는 문서 전용 변경).
 - **비고**: 6개 병렬 조사 에이전트가 이번 세션 내 `docs/`의 design/stage-guides/ops/root 전 영역(약 40개 문서)을 실제 코드와 전수 대조했다. 의도적으로 범위에서 제외한 것: (1) `docs/research/*.md`(6종, 시점 스냅샷 성격의 타당성 분석 문서라 "현재 상태"로 고쳐 쓰면 이력이 훼손됨), (2) `docs/dev-guides/신규_설계서_예시_2.md`(다른 프로젝트명("VIP Assistant AI")의 템플릿/예시 문서, Minchodan 서술 아님), (3) `docs/dev-guides/antigravity_agent_prompt__4_5_final.md`(이미 실행 완료된 1회성 에이전트 작업 지시서), (4) `docs/mobile/mobile_app_implementation_plan.md`(문서 자체에 이미 "분리된 설계서 사용" 안내 존재), (5) `docs/mobile/ondevice_inference_engine_isolation_plan.md`(LocalDetector 추상화 계획 - 실제 구현이 더 단순한 경로를 택해 상당 부분 미실현, 별도 검토 필요), (6) `.agents/skills/*/SKILL.md` 중 rag-knowledge-builder를 제외한 7개는 경로/클래스명 스팟체크만 수행(전수 라인 단위 검증은 아님).
+
+---
+
+### 2026-07-07 | 3단계 | 실내 오탐(도메인 시프트) 완화 - 클래스별 confidence 임계값 및 연속 프레임(hit_count) 검증 추가
+
+- **커밋**: (대기 중)
+- **변경 내용**: YOLO26n det/seg 모델이 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 실내 환경을 미학습 도메인(OOD)으로 취급, 실내에서 `car`/`bus` 등이 오탐되는 문제에 대한 완화책 2종을 구현.
+  - `server/detection/schemas.py`: `Detection`에 `hit_count: int = 0` 필드 추가 — 동일 `track_id`가 연속 몇 프레임 유지됐는지를 담는다.
+  - `server/detection/bytetrack_tracker.py`: `ByteTrackTracker.update()`가 Redis `ctx:{track_id}` 컨텍스트의 `hit_count`를 프레임마다 +1 누적하도록 `_compute_hit_count()` 추가. track_id가 없는 경우(Mock 등)와 새 track은 1부터 시작.
+  - `server/detection/gates/reflex_gate.py`: `HIGH_RISK_CLASSES`를 `set`에서 `{class_name: min_confidence}` 딕셔너리로 변경(car/truck/bus=0.6, motorcycle=0.55, scooter=0.5 — 실내 오탐이 잦은 차량류 위주로 상향). `MIN_HIT_COUNT=3` 신설: 클래스+위치 조건을 통과해도 confidence 미달 또는 hit_count가 3프레임 미만이면 반사 경보를 발동하지 않는다. 기존에는 게이트가 confidence를 아예 확인하지 않았고 단일 프레임만으로 즉시 발동했던 문제를 함께 해소.
+  - `client/src/components/CameraView.tsx`: `CLASS_MIN_CONFIDENCE` 맵 및 `getEffectiveConfThreshold()` 추가 — 사용자 조절 슬라이더(`confThreshold`, 기본 40%)와 클래스별 최소값 중 더 높은 쪽을 유효 임계값으로 사용(실외 전용 클래스인 car/bus/truck/motorcycle/scooter/fire_hydrant/parking_meter/traffic_light(_controller)/traffic_sign/stop/roadway 대상). 서버 `reflex_gate.py`와 동일한 완화 전략을 온디바이스 경로에도 반영.
+  - 테스트: 기존 reflex_gate/ByteTrackTracker 테스트에 `hit_count=3` 보강, 신규 회귀 테스트 추가 — confidence 미달 시 거부, hit_count 미달 시 거부, 신규 track hit_count=1 시작, 연속 3프레임에 걸친 hit_count 누적(1→2→3) 검증, `HIGH_RISK_CLASSES`(dict로 변경됨) 관련 일관성 테스트 시그니처 보정.
+- **관련 파일**: `server/detection/schemas.py`, `server/detection/bytetrack_tracker.py`, `server/detection/gates/reflex_gate.py`, `client/src/components/CameraView.tsx`, `tests/test_detection.py`, `tests/test_langgraph.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `pytest tests/ --ignore=tests/test_ws_echo.py` 93건 전체 통과(신규 8건 포함). `ruff format/check`, `bandit` 전부 통과.
+- **비고**: `direction.py::estimate_distance()`의 `small_objects` 집합에도 동일 패턴의 존재하지 않는 클래스명(`kickboard`, `planter`)이 남아 있음을 검토 중 발견했으나, 이 함수는 현재 어디서도 호출되지 않는 죽은 코드라 이번 수정 범위에서 제외했다(향후 연결 시 함께 정정 필요). MIN_HIT_COUNT=3, 클래스별 confidence 값은 초기 추정치이며 실기기/실외 재현 테스트를 통해 조정이 필요할 수 있다.
