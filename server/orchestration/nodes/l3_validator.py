@@ -62,11 +62,10 @@ async def l3_validator_node(state: dict) -> dict:
     if retry < MAX_RETRY:
         return {"verified": False, "retry_count": retry + 1, "validation_errors": errors}
     else:
-        # 최대 재시도 횟수 초과 시 정적 폴백 안전 가이드 강제 적용 (방어적 코딩)
+        # 최대 재시도 횟수 초과 시, 상태를 미검증(verified=False)으로 두고 retry_count를 2로 올림
+        # route_after_l3 조건부 엣지가 이 상태를 받아 fallback 노드로 보냅니다.
         return {
-            "verified": True,
-            "guidance_text": FALLBACK_MESSAGE,
-            "direction": "정지",
-            "used_static_fallback": True,
+            "verified": False,
+            "retry_count": retry + 1,
             "validation_errors": errors,
         }

@@ -278,7 +278,7 @@ graph TD
 | ---- | ---- |
 | 검증 통과 | `verified=True`, END로 라우팅 |
 | 검증 실패 + `retry < MAX_RETRY` | `retry_count += 1`, L2로 재진입 |
-| 검증 실패 + `retry = MAX_RETRY` | 고정 문장 `"전방 주의, 천천히 멈추세요"` 반환, `used_static_fallback=True` |
+| 검증 실패 + `retry >= MAX_RETRY` | `retry_count += 1`, `verified=False` 유지 및 fallback 노드로 분기 |
 
 > **코딩 패턴**: L3 검증은 LLM을 호출하지 않는 **순수 함수**입니다. `retry_count` 상태를 통해 무한 루프를 방지합니다 (guide 17.2 예외 후 루프 유지 패턴).
 
@@ -303,22 +303,27 @@ graph TD
 | `l1_classify` | `l1_classifier_node` | 엔트리포인트 |
 | `l2_generate` | `l2_generator_node` | LLM ainvoke |
 | `l3_validate` | `l3_validator_node` | 검증 + RETRY 제어 |
+| `fallback` | `fallback_node` | 최종 정적 폴백 |
 
 | 엣지 | from → to | 조건 |
 | ---- | --------- | ---- |
 | 엔트리 | `START` → `l1_classify` | 고정 |
 | 순차 | `l1_classify` → `l2_generate` | 고정 |
 | 순차 | `l2_generate` → `l3_validate` | 고정 |
-| 조건부 | `l3_validate` → `l2_generate` | `verified=False` (RETRY) |
+| 조건부 | `l3_validate` → `l2_generate` | `verified=False` 및 `retry_count <= 1` (RETRY) |
+| 조건부 | `l3_validate` → `fallback` | `verified=False` 및 `retry_count > 1` (최종 실패) |
 | 조건부 | `l3_validate` → `END` | `verified=True` |
+| 순차 | `fallback` → `END` | 고정 |
 
 ### 8.2 조건부 라우팅 함수
 
 ```python
 def route_after_l3(state: dict) -> str:
-    """L3 검증 결과에 따라 L2 재시도 또는 END로 라우팅."""
+    """L3 검증 결과에 따라 L2 재시도, fallback 또는 END로 라우팅."""
     if state.get("verified"):
         return "end"
+    if state.get("retry_count", 0) > 1:
+        return "fallback"
     return "l2_generate"
 ```
 

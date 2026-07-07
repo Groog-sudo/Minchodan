@@ -82,7 +82,7 @@ def test_l3_guidance_validation_rules():
 @pytest.mark.asyncio
 async def test_l3_validator_retry_logic():
     """
-    TC-LG-005 & TC-LG-006: L3 검증 실패 시 재시도(RETRY) 카운트 제어 및 최종 정적 폴백 검증.
+    TC-LG-005 & TC-LG-006: L3 검증 실패 시 재시도(RETRY) 카운트 제어 검증.
     """
     # 최초 실패 시 -> retry_count가 1로 증가하고 verified=False
     state_first_fail = {"guidance_text": "오류 가이드라인 (방향키워드없음)", "retry_count": 0}
@@ -91,16 +91,15 @@ async def test_l3_validator_retry_logic():
     assert res["retry_count"] == 1
     assert len(res["validation_errors"]) > 0
 
-    # 2차 실패 시 (retry_count == 1) -> 최종 고정 Fallback 메시지 주입 및 verified=True
+    # 2차 실패 시 (retry_count == 1) -> verified=False 및 retry_count가 2로 증가
     state_final_fail = {
         "guidance_text": "두번째 오류 가이드라인 (방향키워드없음)",
         "retry_count": 1,
     }
     res = await l3_validator_node(state_final_fail)
-    assert res["verified"] is True
-    assert res["guidance_text"] == "전방 주의, 천천히 멈추세요"
-    assert res["direction"] == "정지"
-    assert res["used_static_fallback"] is True
+    assert res["verified"] is False
+    assert res["retry_count"] == 2
+    assert len(res["validation_errors"]) > 0
 
 
 @pytest.mark.asyncio

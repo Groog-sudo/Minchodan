@@ -134,7 +134,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | **TC-DET-007** | Redis 컨텍스트 TTL | 30초 후 Track ctx 키 자동 삭제 | 완료 |
 | **TC-DET-008** | mid/low 발행 | `xadd("risk.events")` 정상 | 완료 |
 | **TC-DET-009** | 무탐지 빈 리스트 | 에러 없이 빈 리스트 반환 | 완료 |
-| **TC-DET-010** | 노면 클래스 분리 (C2) | `braille_damaged` 독립 클래스 검출 | 대기 |
+| **TC-DET-010** | 노면 클래스 분리 (C2) | `braille_damaged` 독립 클래스 검출 | 완료 |
 
 ### 5.4 4단계 - RAG 지식베이스 구축
 
@@ -142,27 +142,27 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 | ID         | 검증 항목         | 기준                                        | 상태 |
 | ---------- | ----------------- | ------------------------------------------- | ---- |
-| TC-RAG-001 | 1fps 프레임 추출  | 영상 프레임 정상 추출                       | 대기 |
-| TC-RAG-002 | pHash 중복 제거   | 유사 프레임 제거                            | 대기 |
-| TC-RAG-003 | 캡셔닝 VLM 한글 캡션 생성 | 코드 내 설정에 따라 Gemini API 또는 Llava 로컬 캡션 JSON 생성 | 대기 |
-| TC-RAG-004 | 임베딩 768d       | nomic-embed-text 벡터 차원                  | 대기 |
-| TC-RAG-005 | ChromaDB persist  | 디렉토리 정상 생성                          | 대기 |
-| TC-RAG-006 | collection 건수   | **≥ 100** (MVP 10~15)                       | 대기 |
+| TC-RAG-001 | 1fps 프레임 추출  | 영상 프레임 정상 추출                       | 완료 |
+| TC-RAG-002 | pHash 중복 제거   | 유사 프레임 제거                            | 완료 |
+| TC-RAG-003 | 캡셔닝 VLM 한글 캡션 생성 | 코드 내 설정에 따라 Gemini API 또는 Llava 로컬 캡션 JSON 생성 | 완료 |
+| TC-RAG-004 | 임베딩 768d       | nomic-embed-text 벡터 차원                  | 완료 |
+| TC-RAG-005 | ChromaDB persist  | 디렉토리 정상 생성                          | 완료 |
+| TC-RAG-006 | collection 건수   | **≥ 100** (MVP 10~15)                       | 완료 |
 | TC-RAG-007 | Top-5 hit-rate    | **≥ 0.6**                                   | 대기 |
-| TC-RAG-008 | 메타데이터 정합   | `objects`/`scene_type`이 분리 클래스와 일치 | 대기 |
+| TC-RAG-008 | 메타데이터 정합   | `objects`/`scene_type`이 분리 클래스와 일치 | 완료 |
 
 ### 5.5 5단계 - 실시간 대처 수칙 검색
 
-**테스트 파일:** `tests/test_rag_retrieval.py`
+**테스트 파일:** `tests/test_retriever.py`
 
 | ID         | 검증 항목           | 기준                                            | 상태 |
 | ---------- | ------------------- | ----------------------------------------------- | ---- |
-| TC-RET-001 | 읽기 전용 로드      | `Chroma(persist_directory, embedding_function)` | 대기 |
-| TC-RET-002 | kickboard 쿼리 정합 | 원본 수칙 일치 반환 + score 정상                | 대기 |
-| TC-RET-003 | 검색 지연           | **< 50ms**                                      | 대기 |
-| TC-RET-004 | k=5                 | 상위 5건 반환                                   | 대기 |
-| TC-RET-005 | 미적중 fallback     | 디폴트 안내 문자열 반환                         | 대기 |
-| TC-RET-006 | DB 손상 가드        | `FileNotFoundError` 시 안내 문자열              | 대기 |
+| TC-RET-001 | 읽기 전용 로드      | `Chroma(persist_directory, embedding_function)` | 완료 |
+| TC-RET-002 | kickboard 쿼리 정합 | 원본 수칙 일치 반환 + score 정상                | 완료 |
+| TC-RET-003 | 검색 지연           | **< 50ms**                                      | 완료 |
+| TC-RET-004 | k=5                 | 상위 5건 반환                                   | 완료 |
+| TC-RET-005 | 미적중 fallback     | 디폴트 안내 문자열 반환                         | 완료 |
+| TC-RET-006 | DB 손상 가드        | `FileNotFoundError` 시 안내 문자열              | 완료 |
 
 ### 5.6 6단계 - 종합 회피 가이드 생성
 

@@ -169,7 +169,7 @@ def yolo_line(box: Box, width: int, height: int, class_id: int) -> str | None:
     y_center = (y1 + y2) / 2.0 / height
     norm_width = box_width / width
     norm_height = box_height / height
-    return f"{class_id} {x_center:.6f} {y_center:.6f} " f"{norm_width:.6f} {norm_height:.6f}"
+    return f"{class_id} {x_center:.6f} {y_center:.6f} {norm_width:.6f} {norm_height:.6f}"
 
 
 def clear_generated_dataset(output_dir: Path) -> None:

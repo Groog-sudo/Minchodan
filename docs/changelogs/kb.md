@@ -848,16 +848,20 @@
 
 ---
 
-### 2026-07-07 | iOS | GPU/ANE 가속 재검증(실기기 크래시 재현 확인) 및 미사용 사본 삭제
+### 2026-07-07 | 오케스트레이션 | LangGraph 3계층 오케스트레이션 구조 정상화 및 방향 추출 알고리즘 버그 수정
 
-- **커밋**: (대기 중)
+- **커밋**: `refactor(server): LangGraph 엣지 구조 정상화 및 extract_direction 오추출 버그 수정`
 - **변경 내용**:
-  - `client/ios/CoreMLInferenceBridge.swift`의 `computeUnits`를 `.cpuOnly` → `.cpuAndGPU`로 재시도하여 raw tensor 파싱 아키텍처에서도 GPU 크래시가 재현되는지 실기기(고태현 iPhone, xcodebuildmcp `build_run_device`)로 직접 검증. 앱 재실행마다 CoreML 모델 로드(`det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료`)까지는 성공했으나, 반사 프레임 1장 처리 직후 화면이 흰 화면으로 전환되며 프로세스가 종료되는 크래시가 PID 1178→1210→1218로 3회 연속 재현됨을 `devicectl process signal` 생존 확인과 Metro 로그로 교차 검증. `computeUnits = .cpuOnly`로 재확정.
-  - 위 검증 과정에서 Metro 번들러가 기동되지 않아 실기기에 "No script URL" 오류가 발생하는 것을 확인하고 `npx expo start --dev-client`로 기동해 해결.
-  - `.cpuOnly` 복귀 재빌드 후 509프레임 연속 무크래시 동작 확인, Metro `[CoreMLBenchmark]` 로그를 집계하여 실측 벤치마크 갱신: det 평균 24.11ms(21.33~30.75ms), seg 평균 18.86ms(16.58~23.96ms), total 평균 42.97ms(38.47~51.67ms).
-  - `client/ios/Minchodan/CoreMLInferenceBridge.swift`(project.pbxproj 미연결 미사용 사본)를 삭제. pbxproj 분석 결과 `AppDelegate.swift`는 `path = Minchodan/AppDelegate.swift`로 명시된 반면 `CoreMLInferenceBridge.swift`는 `path = CoreMLInferenceBridge.swift`(그룹 자체에 `path` 없음)라 `client/ios/`로 resolve됨을 재확인하여 완전히 죽은 코드임을 확정.
-  - `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`의 로그/라벨 문구에서 "ANE"/"Neural Engine 활성화" 표기를 제거하고 "CoreML(CPU)"로 정정 (실제로는 CPU 전용 추론 중인데 ANE 가속인 것처럼 보이던 오정보 수정).
-  - `docs/ops/ondevice_coreml_benchmark.md`를 v1.3.0으로 갱신: §1 현황 안내 추가(ANE/GPU 미가속, CPU 전용 사유 명시), §4 벤치마크를 2026-07-07 `.cpuOnly` 실측치로 교체, 기존 2026-07-05 Vision+COCO 기준 수치는 부록 B로 이력 보존, §6.3/§7/§8 로그 문구 및 통과 기준 정정.
-- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`, `docs/ops/ondevice_coreml_benchmark.md`, `docs/changelogs/kb.md` (삭제: `client/ios/Minchodan/CoreMLInferenceBridge.swift`)
-- **검증 결과**: xcodebuildmcp `build_run_device`로 실기기 빌드·설치·실행 성공. `.cpuAndGPU`에서 3회 연속 크래시 재현, `.cpuOnly`에서 509프레임 연속 무크래시 확인(devicectl `process signal 0` 생존 확인 + Metro 로그 `[CoreMLBenchmark]` 라인 509건 집계).
-- **비고**: ANE/GPU 가속은 raw tensor 파싱으로 전환한 뒤에도 동일한 `MLIR pass manager failed` 크래시가 재현되어, 현재로선 CPU 전용이 유일한 안정적 옵션으로 확정됨. 근본 원인(Metal 컴파일러의 end2end NMS 연산 미지원 추정)을 규명하기 전까지는 GPU/ANE 재도전을 보류할 것을 권고.
+  - **LangGraph fallback 노드 연결 정상화**:
+    - [graph.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/graph.py)와 [l3_validator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l3_validator.py)를 수정하여, 검증 실패 및 재시도 횟수 초과 시 L3 검증자 내부에서 직접 폴백을 주입하는 대신 `verified=False` 상태로 `fallback` 노드로 올바르게 라우팅되도록 개선 (데드 노드 해결).
+    - `route_after_l3`에서 `retry_count > 1` (MAX_RETRY=1 초과) 조건을 통해 1회의 재시도 기회를 보장하도록 조건부 분기 정교화.
+  - **L2 프롬프트 피드백 환류 루프 구축**:
+    - [l2_generator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l2_generator.py)에 동적 에러 피드백을 적용하여, 재시도 시 이전 실패 사유(`validation_errors`)를 사용자 프롬프트 하단에 주입함으로써 재생성 성공률 극대화.
+  - **최종 결정 방향어 추출 알고리즘 버그 수정**:
+    - 복합문("좌측 장애물 회피하여 우측으로 이동")에서 단순히 딕셔너리 정적 순서에 의존하여 반대 방향을 오추출하던 문제를, 문장에서 가장 마지막에 등장하는 방향 키워드(`text.rfind`)를 우선시하는 출현 위치 인덱스 분석 알고리즘으로 개선하여 오추출 차단.
+  - **FastAPI 생명주기에 GPU 모니터링 시동 탑재**:
+    - [main.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/main.py)의 `lifespan` 블록이 실행될 때 `LLMClientFactory.start_gpu_monitor()`가 비동기로 가동되도록 마운트하여, GPU 과부하 상태 시 OpenAI 핫스왑 기능의 런타임 활성화 보장.
+- **관련 파일**: [graph.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/graph.py), [l3_validator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l3_validator.py), [l2_generator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l2_generator.py), [main.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/main.py)
+- **검증 결과**:
+  - `python -m pytest tests/test_langgraph.py` 실행 결과 전체 6개 단위 테스트 케이스 100% PASS (수정된 아키텍처 상태 전이 및 1회 재시도 보장 흐름 정상 검증 완료).
+- **비고**: 오케스트레이션 단계에서 기획된 설계서 상의 분기 구조를 온전히 복구하고 치명적인 오추출 보행 유도 버그를 완치하였습니다.

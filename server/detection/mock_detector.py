@@ -6,6 +6,7 @@ from server.detection.schemas import Detection, SurfaceResult
 
 class MockDetector(DetectorInterface):
     """테스트 및 안전 폴백용 Mock Detector"""
+
     def load(self) -> bool:
         return True
 
@@ -15,6 +16,7 @@ class MockDetector(DetectorInterface):
 
 class MockSegmentor(SegmentorInterface):
     """테스트 및 안전 폴백용 Mock Segmentor"""
+
     def load(self) -> bool:
         return True
 
