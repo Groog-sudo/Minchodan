@@ -217,3 +217,18 @@
   - 최신 코드를 기반으로 scripts/project_scan.py를 실행하여 전체 파일 통계 및 핵심 기술 스택(yolo, langchain, fastapi) 사용 현황을 종합한 project_scan_report.md와 project_scan_summary.json을 갱신 및 커밋했습니다.
   - 해당 스캔 결과와 병합된 server/tts/tts_service.py 코드를 바탕으로 전체 MVP 7단계 중 1~3단계 완성도 평가 및 방어적 코딩(I/O 예외처리 보강) 관점의 코드 리뷰를 수행했습니다.
 - **관련 파일**: project_scan_report.md, project_scan_summary.json, docs/changelogs/th.md
+
+---
+
+### 2026-07-07 | 운영자 콘솔 | React SSE 관제 콘솔 학습형 스캐폴드 추가
+
+- **커밋**: `feat: React SSE 운영자 콘솔 학습형 스캐폴드 추가`
+- **변경 내용**:
+  - `console/` 디렉토리에 Vite + React + TypeScript 기반 운영자 관제 콘솔 스캐폴드를 신규 구성했습니다.
+  - TH 하드코딩 비중을 80%로 높이기 위해 `useMonitorStream.ts`의 `EventSource` 연결, `event_type` 분기, 상태 갱신 로직은 직접 작성 영역으로 비워두었습니다.
+  - SystemMetrics, RiskEventLog, SessionStatus, DetectionFeed, AI Pipeline Monitor 컴포넌트는 최소 placeholder와 직접 구현 지시만 남겼습니다.
+  - AI는 프로젝트 설정, 폴더 구조, 빌드 가능한 최소 레이아웃까지만 보조하도록 범위를 축소했습니다.
+- **관련 파일**: `console/package.json`, `console/src/api/useMonitorStream.ts`, `console/src/App.tsx`, `console/src/components/*.tsx`, `console/src/types/monitor.ts`, `console/src/styles.css`, `console/README.md`
+- **검증 결과**:
+  - `npm install` 완료
+  - `npm run build` 통과
