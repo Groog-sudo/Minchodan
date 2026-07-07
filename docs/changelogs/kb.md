@@ -1077,3 +1077,15 @@
 - **관련 파일**: `CLAUDE.md`, `README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 정정값은 실제 코드(`llm_client_factory.py` `GEMMA_MODEL` 기본 `gemma4:e4b`, `gemini_captioner.py` `GOOGLE_API_KEY`, `tts_service.py` PiperTTSService, `audioEngine.ts` expo-audio) 및 `.env.example`과 교차 확인. `grep` 재검사로 정정 문맥 밖 잔여 stale 토큰 0건 확인.
 - **비고**: `docs/AGENTS.md`는 이미 상단에 "루트 문서가 최신 기준" deprecated 안내가 있는 stale 중복 사본이라 이번에도 수정 대상에서 제외했다(동일 stale 토큰이 남아있으나 문서 자체가 참고용). `.env.example`의 미사용 `LLAVA_MODEL` 변수 자체 제거는 `.env`/`.env.example` 정리 시 별도 검토.
+
+---
+
+### 2026-07-07 | 리서치 | STT 모델(Alibaba SenseVoice-Small) 도입 정당성 검토 보고서 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**: 사용자 요청으로 STT 경로용 SenseVoice-Small의 도입 타당성을 지연·로딩·한국어 정확도 관점에서 웹 리서치 기반으로 검토하고, `docs/research/`에 타당성 보고서로 정리했다.
+  - `docs/research/sensevoice_stt_feasibility.md` 신규 작성(6개 섹션): (1) 개요(STT가 현재 7단계 골격 범위 밖·음성 명령 경로임을 설계 문서로 확인), (2) SenseVoice-Small 실측 스펙 표(지연 70ms/10s·RTF 52~118×, 로딩 0.81초, 크기 827MB/RAM 700MB, 한국어 CER 8.28% vs Whisper-Large-V3 5.59%, 비스트리밍 오프라인, CPU 구동, FunASR MODEL_LICENSE 상업 허용), (3) 아키텍처 적합성(서버 배치=정합/온디바이스=자원 경합), (4) 대안 비교표(Whisper-Large-V3/faster-whisper/whisper.cpp/클라우드), (5) 결론·권고(서버+짧은 한국어 명령이면 정당, 3가지 단서), (6) 참고 자료.
+  - `docs/README.md`: research/ 섹션 문서 목록에 신규 보고서 인덱스 추가.
+- **관련 파일**: `docs/research/sensevoice_stt_feasibility.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 실측 수치는 웹 리서치(Hugging Face FunAudioLLM/SenseVoiceSmall, whispernotes CJK 벤치마크, FunASR MODEL_LICENSE, arXiv 2407.04051)로 교차 확인. 기존 `gemini_fallback_feasibility.md`와 동일한 보고서 형식(메타데이터 인용 블록, 섹션 번호, 표 우선, 이모지 금지) 준수.
+- **비고**: 결론은 "서버측 STT + 짧은 한국어 명령이면 지연·로딩 관점에서 채택 정당(강력 후보)"이며, 한국어 정확도 2.7%p 열위의 도메인 명령 셋 실측 검증, 온디바이스 요구 시 재평가, 라이선스 attribution 준수를 전제로 단다. STT 경로 정식 착수 시 본 보고서를 기준선으로 삼는다. 코드 변경은 없음(리서치 문서 전용).

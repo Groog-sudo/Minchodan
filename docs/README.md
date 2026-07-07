@@ -109,6 +109,7 @@ docs/
 | Gemini Fallback 검토 | [gemini_fallback_feasibility.md](research/gemini_fallback_feasibility.md) | Fallback LLM 대체 모델 비용 비교 및 최적 모델 선정 |
 | Post-MVP 온디바이스 타당성 | [post_mvp_ondevice_feasibility.md](research/post_mvp_ondevice_feasibility.md) | 엣지 TFLite 추론 가능성 검증서 |
 | Post-MVP 하이브리드 로드맵 | [post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | 하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP) |
+| SenseVoice-Small STT 검토 | [sensevoice_stt_feasibility.md](research/sensevoice_stt_feasibility.md) | 음성 명령(STT) 경로용 SenseVoice-Small 도입 정당성(지연·로딩·한국어 정확도) |
 
 ---
 
