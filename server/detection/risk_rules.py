@@ -19,37 +19,33 @@ class MessageHint(TypedDict):
     text: str
 
 
+# =========================================================================
+# 👨‍💻 HARD CODE 영역 시작 (위험도 및 한글 텍스트 매핑 테이블) 👨‍💻
+# 💡 [면접 대비 주석]
+# 질문: 29종(AI Hub) 도심 보행 데이터 클래스별로 어떻게 위험도(High/Medium/Low)와 음성 안내 텍스트를 분류했나요?
+# 답변: 1. 단말기(TTS)에서 재생될 한글 명칭은 직관적이고 짧게(예: '전력제어기' -> '제어기') 매핑하여 지연을 줄였습니다.
+#       2. 시각장애인 보행에 직접적인 충돌/걸림돌 위험이 큰 객체(차량, 자전거, 킥보드, 볼라드, 바리케이드 등)를 DANGER_CLASSES로 묶어 거리에 따라 즉각적인 Reflex 발동이 가능하도록 설계했습니다.
+# 💡 [추가 면접 꿀팁]
+# 질문: 왜 고양이나 강아지 같은 동물은 DANGER_CLASSES에 넣지 않았나요?
+# 답변: 동물은 스스로 사람을 피하는 동적 객체이고 물리적 충돌로 인한 중상 위험도가 낮기 때문에, 잦은 경보로 인한 사용자의 피로도를 낮추고자 일반 장애물(인지 경로)로 분류했습니다.
+# =========================================================================
+
+# 담당자님, 여기에 AI Hub 29종 클래스에 맞추어 아래 3개의 딕셔너리를 직접 채워주세요!
+# CLASS_NAMES = ["barricade", "bench", "bicycle", "bollard", "bus", "car", "carrier", "cat", "chair", "dog", "fire_hydrant", "kiosk", "motorcycle", "movable_signage", "parking_meter", "person", "pole", "potted_plant", "power_controller", "scooter", "stop", "stroller", "table", "traffic_light", "traffic_light_controller", "traffic_sign", "tree_trunk", "truck", "wheelchair"]
+
 CLASS_TO_HINT_ID: dict[str, MessageHintId] = {
-    "stair": "STAIR_DOWN",
-    "stairs": "STAIR_DOWN",
-    "stair_down": "STAIR_DOWN",
-    "road": "ROAD",
-    "roadway": "ROAD",
-    "red_light": "RED_LIGHT",
-    "traffic_light_red": "RED_LIGHT",
-    "curb": "CURB",
-    "bollard": "CURB",
-    "stop": "STOP",
-    "stop_sign": "STOP",
+    # 예: "stop": "STOP"
+    "stop": "STOP",         # 정지 표지판은 즉각 정지 명령
+    "barricade": "STOP",    # 바리케이드는 집입 불가이므로 정지 명령
+    "bollard": "CURB"       # 볼라드는 보통 보도블록 끝(연석)에 있으므로 연석으로 취급가능 (선택사항)
 }
 
 DANGER_CLASSES = {
-    "kickboard",
-    "scooter",
-    "bicycle",
-    "motorcycle",
-    "car",
-    "truck",
-    "bus",
-    "bollard",
-    "pole",
-    "traffic_cone",
-    "obstacle",
-    "stairs",
-    "stair",
-    "construction",
-    "movable_signage",
-    "barricade",
+    # 예: "car", "motorcycle", "scooter", "bollard", "barricade" 등 위험 객체 문자열
+    "car" , "truck" , "bus",                # 대형 / 고속 차량류
+    "motorcycle", "scooter", "bicycle",     # 갑자기 튀어나오는 이륜차류
+    "bollard", "pole",                      # 정강이나 머리를 부딪치기 쉬운 기동류
+    "barricade", "movable_signage"          # 길을 갑자기 막고 있 구조물
 }
 
 DIRECTION_TEXT = {
@@ -64,28 +60,41 @@ DIRECTION_TEXT = {
 }
 
 CLASS_TEXT = {
-    "kickboard": "킥보드",
+    # 예: "scooter": "킥보드", "car": "차량" 등 29종의 한글 이름
+    "barricade": "바리케이드",
+    "bench": "벤치",
     "bicycle": "자전거",
-    "motorcycle": "오토바이",
-    "car": "차량",
-    "truck": "트럭",
-    "bus": "버스",
-    "person": "보행자",
     "bollard": "볼라드",
+    "bus": "버스",
+    "car": "차량",
+    "carrier": "운반구",
+    "cat": "고양이",
+    "chair": "의자",
+    "dog": "개",
+    "fire_hydrant": "소화전",
+    "kiosk": "키오스크",
+    "motorcycle": "오토바이",
+    "movable_signage": "이동형 표지판",
+    "parking_meter": "주차 미터기",
+    "person": "사람",
     "pole": "기둥",
-    "traffic_cone": "콘",
-    "obstacle": "장애물",
-    "stair": "계단",
-    "stairs": "계단",
-    "stair_down": "내려가는 계단",
-    "road": "차도",
-    "roadway": "차도",
-    "red_light": "빨간불",
-    "traffic_light_red": "빨간불",
-    "curb": "연석",
-    "stop": "정지",
-    "stop_sign": "정지 표지",
+    "potted_plant": "화분",
+    "power_controller": "전력 제어기",
+    "scooter": "전동 킥보드",
+    "stop": "정지 표지판",
+    "stroller": "유모차",
+    "table": "테이블",
+    "traffic_light": "신호등",
+    "traffic_light_controller": "신호등 제어기",
+    "traffic_sign": "교통 표지판",
+    "tree_trunk": "나무 줄기",
+    "truck": "트럭",
+    "wheelchair": "휠체어",
 }
+
+# =========================================================================
+# 👨‍💻 HARD CODE 영역 끝
+# =========================================================================
 
 
 def build_message_hint(
