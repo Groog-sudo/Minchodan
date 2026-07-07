@@ -1,7 +1,7 @@
 # Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
 
 > **작성일**: 2026-07-01
-> **버전**: v0.1.0
+> **버전**: v0.2.0 (2026-07-07 TTS 엔진을 실제 구현체(Piper 단독, Kokoro/Coqui 미구현)로 정정, reflex_clip_sender.py 구현 완료 상태 반영, 오디오 포맷 WAV임을 명시)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 7단계, [`docs/architecture.md`](architecture.md) 5.7절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md) 5.7절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 3, 17.2
 > **스킬 참조**: [`.agents/skills/tts-voice-streamer/SKILL.md`](../.agents/skills/tts-voice-streamer/SKILL.md)
@@ -10,7 +10,7 @@
 
 ## 1. 개요
 
-7단계는 파이프라인의 최종 단계로, **이중 채널(반사 = 사전합성 클립 / 인지 = 실시간 TTS)** 음성 안내를 단말에 전달하는 역할을 담당한다. 
+7단계는 파이프라인의 최종 단계로, **이중 채널(반사 = 사전합성 클립 / 인지 = 실시간 TTS)** 음성 안내를 단말에 전달하는 역할을 담당한다.
 
 종단 사용자는 시각장애인이므로 음성·햅틱이 1순위이며, 서버는 얇은 클라이언트(React Native) 부담을 최소화하기 위해 실시간 합성을 수행한다.
 
@@ -28,8 +28,8 @@
 ## 2. 구현 목록
 
 - 반사 경로: alert_id 기반 사전합성 클립 즉시 재생 + 선점 + 중복 억제
-- 인지 경로: LangGraph L3 검증 통과 가이드 문장 → 서버 실시간 TTS(Kokoro/Coqui) → base64 MP3 WS 전송 → 단말 Web Audio 재생
-- TTSService 추상화 계층 (핫스왑 대비: Kokoro ↔ Coqui ↔ OpenAI TTS)
+- 인지 경로: LangGraph L3 검증 통과 가이드 문장 → 서버 실시간 TTS(Piper, `TTS_ENGINE=piper`) → base64 **WAV**(필드명은 `audio_mp3_b64`이나 실제 포맷은 WAV) WS 전송 → 단말 Web Audio 재생
+- TTSService 추상화 계층 (현재 구현: Piper만 지원. Kokoro/Coqui는 미구현 - 핫스왑 대비 설계만 존재)
 - 중복 억제 (Suppressor, Redis SETEX 60초)
 - 햅틱·접근성 연동 (Haptics + announceForAccessibility)
 - 클라이언트 번들 클립 관리 (data/reflex_clips/ → client/assets/reflex_clips/)
@@ -43,7 +43,7 @@
 - `server/tts/tts_service.py`: TTSService 추상 클래스 + `get_tts_service()` 팩토리 (TTS_ENGINE 기반)
 - `server/tts/realtime_tts.py`: RealtimeTTS (synthesize → base64 MP3)
 - `server/tts/suppressor.py`: AlertSuppressor (Redis 기반 중복 억제)
-- (예정) `server/tts/reflex_clip_sender.py`: 반사 경로 alert_id 클립 WS 고우선 전송 (현재 client 주도)
+- `server/tts/reflex_clip_sender.py`: 반사 경로 alert_id 클립 WS 고우선 전송 — **구현 완료**(`send_reflex_clip()`이 `REFLEX_CLIP_MAP` 조회 + `AlertSuppressor` 중복 억제 + `manager.send_json()`으로 서버 주도 전송, 2026-07-07 확인)
 
 ### 데이터
 - `data/reflex_clips/`: 사전합성 반사 음성 클립 (alert_id별 MP3)
@@ -55,7 +55,7 @@
 - `client/src/utils/haptics.ts`: Haptics + announceForAccessibility
 
 ### 환경 변수 (docs/environment_variables.md 참조)
-- `TTS_ENGINE`: kokoro (기본) | coqui (인지 경로 전용)
+- `TTS_ENGINE`: piper (기본, 유일하게 지원) — `kokoro`/`coqui` 지정 시 `tts_service.py`가 경고 로그를 남기고 piper로 강제 폴백
 - `DATA_REFLEX_CLIPS`: data/reflex_clips
 
 ### 테스트
@@ -68,8 +68,8 @@
 ## 4. 핵심 설계 결정
 
 - **이중 채널 강제 분리**: 반사 = 사전합성 (즉시, <300ms 목표), 인지 = 실시간 TTS (상세 가이드, 1~2Hz)
-- **서버 합성 원칙**: 클라이언트 thin client 유지. Kokoro-82M / Coqui 로컬 모델 사용 (클라우드 비용·지연 제거)
-- **TTSService 추상화**: Kokoro ↔ Coqui ↔ (미래) OpenAI TTS 핫스왑 대비 (architecture.md 추상화 표)
+- **서버 합성 원칙**: 클라이언트 thin client 유지. Piper(ONNX) 로컬 모델 사용 (클라우드 비용·지연 제거)
+- **TTSService 추상화**: 현재 Piper만 구현. Kokoro ↔ Coqui ↔ (미래) OpenAI TTS 핫스왑은 추상화 설계만 되어 있고 실제 구현체는 없음 (architecture.md 추상화 표)
 - **선점 규칙**: 반사 WS (alert_reflex) 수신 시 인지 재생 즉시 중단
 - **중복 억제**: alert_id 기준 Redis SETEX 60초 (Suppressor)
 - **출력 규격 통일**: MP3 (또는 WAV) bytes → base64 → WS → Web Audio
@@ -115,7 +115,7 @@
 
 | ID         | 검증 항목           | 기준                                      | 상태 |
 |------------|---------------------|-------------------------------------------|------|
-| TC-TTS-001 | 실시간 TTS 합성     | Kokoro/Coqui `generate()` → base64 MP3    | 대기 |
+| TC-TTS-001 | 실시간 TTS 합성     | Piper `generate()` → base64 WAV(필드명 `audio_mp3_b64`)    | 대기 |
 | TC-TTS-002 | 단말 재생 성공      | Web Audio `decodeAudioData()` 재생        | 대기 |
 | TC-TTS-003 | 반사 클립 선점 재생 | 인지 음성 중단 후 반사 재생               | 대기 |
 | TC-TTS-004 | high 햅틱 동시 출력 | Haptics 동시 동작                         | 대기 |
@@ -132,7 +132,7 @@
 - **파일 헤더**: UTF-8 reconfigure (course_codebase_guide.md 3.1)
 - **임포트 순서**: stdlib → 외부 → 로컬 (3.2)
 - **경로 처리**: `os.path.dirname(os.path.abspath(__file__))` (3.3)
-- **환경 변수**: `load_dotenv()` + `os.getenv("TTS_ENGINE", "kokoro")` (3.4)
+- **환경 변수**: `load_dotenv()` + `os.getenv("TTS_ENGINE", "piper")` (3.4, `tts_service.py:224` 실제 기본값)
 - **방어적 코딩**: None 가드, 예외 후 루프 유지, 방어적 dict 접근 (17.2)
 - **이중 경로 강제**: 반사 게이트(`server/detection/gates/`)에서 TTS 모듈 import 금지 (code_quality_guide.md, AGENTS.md Dual Path Discipline)
 - **추상화**: TTSService → 구체 구현 분리 (LLMClientFactory 패턴 준수)
@@ -159,7 +159,7 @@
 {
   "type": "guide",
   "guidance_text": "...",
-  "audio_mp3_b64": "SUQzBAAAA...",
+  "audio_mp3_b64": "UklGRiQAAABXQVZF...",  // 필드명과 달리 실제 포맷은 WAV (Piper 출력)
   "risk_level": "mid"
 }
 ```
@@ -192,8 +192,8 @@
 ## 12. 의존성 및 전제
 
 ### 서버
-- TTS_ENGINE = kokoro (기본) | coqui
-- Kokoro-82M / Coqui 로컬 설치
+- TTS_ENGINE = piper (기본, 유일 지원)
+- Piper ONNX 모델(`server/models/piper/`) 로컬 설치
 - DATA_REFLEX_CLIPS = data/reflex_clips
 
 ### 클라이언트

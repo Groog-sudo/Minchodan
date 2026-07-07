@@ -1,7 +1,7 @@
 # 6단계 설계서 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 > **작성일**: 2026-06-26
-> **버전**: v0.1.0
+> **버전**: v0.2.0 (2026-07-07 LLM 클라이언트를 실제 구현체(SimpleOllamaClient/SimpleOpenAIClient, LangChain ChatOllama/ChatOpenAI 미경유)로 정정, 핫스왑 트리거를 GPU 부하 기준으로 정정)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 6단계, [`docs/architecture.md`](architecture.md) 5.6절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 11, 12, 14, 17.2
 > **스킬 참조**: [`.agents/skills/llm-guidance-orchestrator/SKILL.md`](../.agents/skills/llm-guidance-orchestrator/SKILL.md)

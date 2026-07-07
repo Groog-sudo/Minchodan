@@ -1,9 +1,11 @@
 # Minchodan 코드 품질 검증 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.2.0 (2026-06-27 구현 완료, 설정 파일 작성 및 기존 코드 일괄 수정)
+> **버전**: v0.3.0 (2026-07-07 실제 `.pre-commit-config.yaml` 기준으로 pre-push 관련 서술 정정 - pre-push 훅은 존재하지 않으며 mypy/jscpd/pip-audit는 CI 전용)
 > **기준 문서**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.2(임포트 순서)·3.3(경로 처리)·17.2(방어적 코딩), [`docs/test_specification.md`](test_specification.md)
 > **적용 범위**: Python 서버 코드 (`server/`, `scripts/`, `tests/`). JS/TS(`client/`, `console/`)는 package.json 생성 시 본도 추가 예정.
+
+> **2026-07-07 현황 정정**: 실제 `.pre-commit-config.yaml`은 **pre-commit 단계에 ruff-format + ruff + bandit만** 등록되어 있다(모든 훅이 `stages: [pre-commit]`). **pre-push 훅은 존재하지 않는다** — mypy/jscpd/pip-audit는 로컬 가상환경 의존성 문제로 pre-push에서 완전히 제거되어 `.github/workflows/lint.yml`(CI)에서만 실행된다(`.pre-commit-config.yaml` 파일 상단 주석에 이 결정이 명시돼 있다). 아래 §4.3의 `pre-commit install --hook-type pre-push` 안내와 §7 다이어그램의 "pre-push 훅" 단계는 이 변경 이전의 서술이므로, 로컬에서는 pre-commit 훅만 동작하고 mypy/jscpd/pip-audit는 PR을 올려야 CI에서 실행됨을 유의한다.
 
 ---
 
@@ -77,9 +79,10 @@ ruff>=0.6.0
 mypy>=1.11.0
 bandit>=1.7.0
 pip-audit>=2.7.0
-jscpd>=3.0.0
 pre-commit>=3.8.0
 ```
+
+> **2026-07-07 정정**: 실제 `requirements-dev.txt`에는 `jscpd`가 없다. jscpd는 Node.js 기반 도구라 `npm install -g jscpd`(또는 `npm install --save-dev jscpd`)로 별도 설치하며, CI(`lint.yml`)도 `npx -y jscpd`로 실행한다.
 
 ### 4.2 설치 명령
 
@@ -160,11 +163,11 @@ bandit -r server/ -f html -o reports/bandit_report.html
 
 | 규칙 | 설명 | 제외 사유 |
 | :--- | :--- | :--- |
-| `B101` | assert_used | `tests/`에서 pytest assert 사용 중 |
-| `B404` | import_subprocess | `scripts/`에서 모델 다운로드 등 사용 중 |
-| `B603` | subprocess_without_shell_equals_true | `scripts/`에서 제한적 사용 |
+| `B101` | assert_used | Bandit 전역 `skips`(`pyproject.toml [tool.bandit] skips`)에 등록된 유일한 항목 |
+| `B404` | import_subprocess | Bandit `skips`가 아니라 **Ruff** `per-file-ignores`(`scripts/**/*.py`)로 처리됨 |
+| `B603` | subprocess_without_shell_equals_true | 위와 동일하게 Ruff `per-file-ignores`(`scripts/**/*.py`)로 처리됨 |
 
-> 개별 화이트리스트는 `# nosec` 주석으로 처리하고 `skips`는 최소화합니다.
+> **2026-07-07 정정**: B404/B603은 Bandit의 `skips`가 아니라 Ruff의 `per-file-ignores`(1차 필터, `pyproject.toml [tool.ruff.lint.per-file-ignores]`)로 예외 처리된다. Bandit 자체의 전역 `skips`는 `B101` 하나뿐이다. 개별 화이트리스트는 `# nosec` 주석으로 처리합니다.
 
 ### 5.3 mypy (정적 타입 검사)
 
