@@ -929,3 +929,22 @@
 - **관련 파일**: `docs/README.md`, `docs/design/architecture.md`, `docs/design/minchodan_design_note.md`, `docs/stage-guides/stage1_websocket_design.md`, `docs/stage-guides/stage2_capture_design.md`, `docs/ops/mobile_build_troubleshooting.md`, `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/mobile/mobile_android_implementation_plan.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 문서 전용 변경으로 코드 검증은 해당 없음. 각 파일의 마크다운 표/각주 형식이 기존 문서 스타일(인용 블록 메타데이터, 표 구조, `[!IMPORTANT]` 콜아웃)과 일치하는지 diff로 육안 확인.
 - **비고**: `docs/mobile/mobile_app_implementation_plan.md`(플랫폼 분리 이전 통합 원본, 문서 자체에 "분리된 설계서 사용" 안내가 이미 있음)와 `docs/mobile/ondevice_inference_engine_isolation_plan.md`(LocalDetector 추상화 계획 - 실제 구현은 더 단순한 직접 수정 경로를 택해 상당 부분 미실현 상태)는 이번 범위에서 제외했다. 후자는 향후 온디바이스 아키텍처 정리 시 별도로 현재 구현과의 정합 여부를 재검토할 필요가 있다.
+
+---
+
+### 2026-07-07 | 품질 | 전체 문서 정합성 감사 1차 - 설계 문서 4종 + 3/4/5단계 설계서 정정, 운영 설정 버그 수정
+
+- **커밋**: (대기 중)
+- **변경 내용**: 6개 병렬 조사 에이전트로 프로젝트 전체 문서(design/stage-guides/ops/root 40여개)를 실제 코드와 대조 감사. 이번 커밋은 그 중 design 4종 + stage3 + stage4_5 3종 + 발견된 실제 운영 버그를 반영한다 (나머지 stage6/7·ops·root는 후속 커밋).
+  - **`.env`/`.env.example` 운영 버그 수정 (문서 아닌 실제 설정)**: `YOLO26N_OBJECT_DET`/`YOLO26N_SEG`가 순정 COCO 80클래스 사전학습 체크포인트(`object_detection.pt`/`segmentation.pt`)를 가리키고 있어, 실제로는 검증 완료된 파인튜닝 모델(`det_best_20260705.pt` 29클래스/`segbest.pt` 4클래스, `docs/ops/model_class_validation_report.md` 참조)이 아니라 순정 COCO 모델로 추론하도록 설정되어 있었음을 `ultralytics.YOLO()`로 직접 로드해 클래스 수 확인 후 정정. `TTS_ENGINE=kokoro`(미구현, `tts_service.py`는 piper만 지원)도 `piper`로 정정.
+  - `docs/design/backend_db_architecture.md`: `async_session_factory`→`async_sessionmaker_factory` 함수명 정정.
+  - `docs/design/behavior_and_risk_insight.md`: §3.1 위험도 표를 실제 `reflex_gate.py`/`l1_classifier.py`/`surface_gate.py` 클래스 배정 기준으로 재작성(최초 제안은 킥보드=고위험/횡단보도=저위험이었으나 실제는 킥보드=중위험, 횡단보도=고위험 P0로 반대). §4.1 "Y축 상단 40% 격상" 로직이 미구현 상태임을 명시.
+  - `docs/design/pipeline_stage_design.md`: 캡셔닝 Llava→Gemini, 노면 7클래스→실제 4클래스, LLM 클라이언트 ChatOllama/ChatOpenAI→커스텀 SimpleOllamaClient/SimpleOpenAIClient, TTS Kokoro/Coqui→Piper, Embeddings 파일 경로 정정.
+  - `docs/design/reflex_audio_specification.md`: §2.1 direction/alert_id 실제 값(front-left/front/front-right, 클래스명 포함 동적 alert_id)으로 정정. §4 Web Audio API(OscillatorNode/GainNode/StereoPannerNode) 가상 파이프라인을 실제 구현(`expo-audio` 정적 WAV 루프 + 볼륨 스위칭)으로 전면 재작성하고, **`panning`(입체 음향)이 현재 미구현**임을 명시(저장만 되고 실제 좌우 밸런스에 적용되지 않음).
+  - `docs/stage-guides/stage3_detection_design.md`: `ByteTrackTracker`의 실제 역할(track_id 파싱은 `YoloDetector`가 담당, 본 클래스는 speed/direction만 계산) 정정. `ReflexAlert` 스키마에 누락 필드(panning/distance/beep_interval_ms/haptic_pattern) 추가, track_id 타입(`str`, `T-0001` 포맷)로 수정. `HIGH_RISK_CLASSES`에 `scooter` 추가(4→5종). direction/alert_id 실제 값 정정. **Surface Gate가 실제 4클래스 세그멘테이션 모델과 `P0_SURFACE_CLASSES` 불일치로 현재 전혀 발동하지 않는 문제**를 사실관계로 기록(위험도 규칙 담당자 판단 필요 영역이라 코드는 직접 수정하지 않음). 모델 가중치 경로를 실제 파인튜닝 완료 파일 기준으로 정정.
+  - `docs/stage-guides/stage4_5_rag_design.md`: 캡셔닝 VLM Llava→Gemini 2.5 Flash Lite, `Retriever.search()`→`search_guidance()`, import 경로 `rag.shared.labels`→`server.rag.shared.labels` 오탈자 수정.
+  - `docs/stage-guides/stage4_5_data_replacement_guide.md`: §2.4(env var 미연동), §3(`__main__` 블록이 실제로는 임시 데이터를 쓰고 삭제하는 스모크 테스트일 뿐 프로덕션 DB를 조작하지 않음) 현황 각주 추가.
+  - `docs/stage-guides/stage4_5_test_guide.md`: 스모크 테스트 예상 콘솔 출력 문자열을 실제 코드 기준으로 정정, 존재하지 않는 테스트 함수(`test_generate_caption_real_integration`) 참조 제거.
+- **관련 파일**: `.env.example`, `docs/design/backend_db_architecture.md`, `docs/design/behavior_and_risk_insight.md`, `docs/design/pipeline_stage_design.md`, `docs/design/reflex_audio_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage4_5_rag_design.md`, `docs/stage-guides/stage4_5_data_replacement_guide.md`, `docs/stage-guides/stage4_5_test_guide.md`, `docs/changelogs/kb.md` (`.env`도 동일하게 수정했으나 git-ignore 대상)
+- **검증 결과**: `.env` 모델 경로 수정 후 `server.detection.config` 재로드로 실제 경로 반영 확인(`det_best_20260705.pt`/`segbest.pt`, 파일 존재 확인). `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(회귀 없음).
+- **비고**: Surface Gate 미발동 문제와 `l1_classifier.py`의 `kickboard` 클래스명이 실제 탐지기 출력(`scooter`)과 어긋나는 문제는 위험도 판정 로직(핵심 로직, 담당자 직접 작성 영역)에 해당하여 이번 문서 정정 범위에서 코드를 직접 고치지 않고 사실관계만 기록했다. 후속 작업으로 담당자 검토가 필요하다. 나머지 문서(stage6/7, ops 6종, root 6종+skills)의 정정은 후속 커밋에서 이어간다.

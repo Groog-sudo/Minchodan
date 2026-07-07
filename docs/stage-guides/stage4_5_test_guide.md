@@ -1,7 +1,7 @@
 # Minchodan RAG 백엔드(4·5단계) 단위 테스트 실행 가이드북
 
 > **작성일**: 2026-06-26
-> **버전**: v1.1.0
+> **버전**: v1.2.0 (2026-07-07 §3 스모크 테스트 예상 출력 문자열을 실제 코드 기준으로 정정, §4.2 존재하지 않는 테스트 함수명 수정)
 > **설계 기준**: `docs/minchodan_design_note.md` 4·5단계
 > **코딩 패턴 기준**: `docs/course_codebase_guide.md`
 
@@ -52,9 +52,9 @@
 
 | 대상 모듈 | 실행 명령어 | 검증 기능 내용 및 예상 콘솔 출력 예시 |
 | :--- | :--- | :--- |
-| **4단계 프레임 추출** | `venv\Scripts\python -m server.rag.build.frame_extractor` | 임시 가짜 동영상 파일을 생성한 뒤 지정한 fps 간격으로 이미지가 정상 분리 저장되는지 검증합니다.<br/>*예상 출력: `가짜 비디오 생성 완료`, `프레임 추출 완료`* |
-| **4단계 pHash 중복제거** | `venv\Scripts\python -m server.rag.build.dedup_phash` | 픽셀 차이에 따른 이미지 해시 비교를 통해 동일 이미지 차단 및 고유 이미지 잔존 여부를 검증합니다.<br/>*예상 출력: `중복 필터링 테스트 성공`* |
-| **4단계 VLM 캡셔너** | `venv\Scripts\python -m server.rag.build.gemini_captioner` | API Key 미설정 및 API 네트워크 오류 시 예외 전파 가드레일 정상 작동 여부를 검증합니다.<br/>*예상 출력: `API Key 누락 예외 정상 검증 완료`* |
+| **4단계 프레임 추출** | `venv\Scripts\python -m server.rag.build.frame_extractor` | 임시 가짜 동영상 파일을 생성한 뒤 지정한 fps 간격으로 이미지가 정상 분리 저장되는지 검증합니다.<br/>*실제 출력(2026-07-07 확인): `frame_extractor.py 스모크 테스트 실행`, `추출 성공: N개 프레임 저장 완료.`* |
+| **4단계 pHash 중복제거** | `venv\Scripts\python -m server.rag.build.dedup_phash` | 픽셀 차이에 따른 이미지 해시 비교를 통해 동일 이미지 차단 및 고유 이미지 잔존 여부를 검증합니다.<br/>*실제 출력(2026-07-07 확인): `dedup_phash.py 스모크 테스트 실행`, `중복 제거 결과: X개 중 Y개 남음.`* |
+| **4단계 VLM 캡셔너** | `venv\Scripts\python -m server.rag.build.gemini_captioner` | API Key 미설정 및 API 네트워크 오류 시 예외 전파 가드레일 정상 작동 여부를 검증합니다.<br/>*실제 출력(2026-07-07 확인): `가드레일 정상 작동: {ValueError 메시지}`* |
 | **4단계 DB 전체 빌더** | `venv\Scripts\python -m server.rag.build.db_builder` | 프레임 분할부터 중복제거, Mock 캡셔닝을 거쳐 ChromaDB(코사인 유사도 공간) 생성 완료까지의 전 흐름을 검증합니다.<br/>*예상 출력: `빌드 성공 여부 확인: True`* |
 | **5단계 Retriever 검색** | `venv\Scripts\python -m server.rag.retriever` | 인덱싱된 임시 ChromaDB를 기반으로 사물 라벨과 1:1 매칭되는 행동 수칙 조회 결과 확인 및 라벨 불일치 가드를 검증합니다.<br/>*예상 출력: `RAG 매칭 검색 결과: 킥보드를 조심히 피해서 돌아가세요.`* |
 | **5단계 Fallback 안전망** | `venv\Scripts\python -m server.rag.fallback` | RAG 미적중 또는 예외 발생 시 사물 라벨 딕셔너리 안전 접근을 거쳐 즉시 하드코딩 룰 기반 안전 가이드가 출력되는지 검증합니다.<br/>*예상 출력: `[kickboard] 가이드: 전방에 방치된 전동 킥보드가 있습니다. ...`* |
@@ -80,8 +80,8 @@
    ```env
    GOOGLE_API_KEY=AIzaSy... (실제 본인의 Gemini API 키 입력)
    ```
-2. API 요금 및 쿼터 보존을 위해 기본 스킵 설정되어 있는 제미나이 통합 테스트 케이스를 명시적으로 지목하여 강제 실행합니다.
+2. `tests/test_gemini_captioner.py`의 기존 테스트(`test_generate_caption_success`, `test_generate_caption_missing_key`, `test_generate_caption_file_not_found`)는 모두 `unittest.mock`으로 Gemini API를 목킹하므로 실제 API를 호출하지 않는다. 실서버 통합 검증을 하려면 목킹 없이 직접 호출하는 별도 스크립트를 임시 작성하거나, 아래처럼 기존 테스트 파일을 pytest로 실행해 목 기반 가드레일만 우선 확인한다(실제 API 통합 테스트 함수는 2026-07-07 기준 존재하지 않는다).
    ```powershell
-   venv\Scripts\python -m pytest tests/test_gemini_captioner.py -k test_generate_caption_real_integration -v
+   venv\Scripts\python -m pytest tests/test_gemini_captioner.py -v
    ```
 3. 테스트 완료 후에는 커밋 방지를 위해 `.env` 파일의 API 키를 제거하거나 원상 복구합니다.

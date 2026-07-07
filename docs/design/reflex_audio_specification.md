@@ -1,8 +1,8 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.0.0
-> **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`
+> **버전**: v1.1.0 (2026-07-07 §2.1 direction/alert_id 예시, §4 재생 아키텍처를 실제 구현 기준으로 정정)
+> **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
 
@@ -72,8 +72,8 @@
 | 필드명               | 타입    | 필수 여부 | 설명                                                                                    |
 | :------------------- | :------ | :-------- | :-------------------------------------------------------------------------------------- |
 | **type**             | String  | **필수**  | 메시지 타입 식별자 (`reflex_alert` 고정)                                                |
-| **alert_id**         | String  | **필수**  | 경보 고유 식별자 (예: `high_kickboard_left`)                                            |
-| **direction**        | String  | **필수**  | 장애물 출현 방향 (`left`, `right`, `center`)                                            |
+| **alert_id**         | String  | **필수**  | 경보 고유 식별자 (`f"high_{class_name}_{direction}"` 형식, 예: `high_car_front-left`. `server/detection/gates/reflex_gate.py:55` 참조) |
+| **direction**        | String  | **필수**  | 장애물 출현 방향 (`front-left`, `front`, `front-right` — `server/detection/direction.py`의 `estimate_direction()` 산출값. `left`/`right`/`center`/`stop`은 사용하지 않음) |
 | **panning**          | Float   | **필수**  | 오디오 좌우 밸런스 편향값 (**-1.0**은 완전 왼쪽, **1.0**은 완전 오른쪽, **0.0**은 중앙) |
 | **distance**         | Float   | **필수**  | 탐지된 장애물과의 렌즈 기준 상대 거리 (단위: 미터)                                      |
 | **beep_interval_ms** | Integer | **필수**  | 비프음 반복 재생 주기 (단위: 밀리초, **0**은 무점멸 연속음)                             |
@@ -96,25 +96,26 @@
 
 ---
 
-## 4. 모바일 클라이언트 재생 아키텍처
+## 4. 모바일 클라이언트 재생 아키텍처 (2026-07-07 실제 구현 기준 정정)
 
-단말(React Native)은 Web Audio API 또는 네이티브 사운드 브릿지를 활용하여 실시간으로 입체 음향과 주기 타이머를 가동합니다.
+> 최초 설계는 Web Audio API(`AudioContext`/`OscillatorNode`/`GainNode`/`StereoPannerNode`)를 전제로 했으나, 실제 구현(`client/src/services/audioEngine.ts`)은 React Native 환경 제약(Web Audio API 노드 미지원, iOS Hearing Protection 우회 필요)에 맞춰 **`expo-audio`의 정적 음원 루프 + 볼륨 스위칭** 방식으로 대체되었다. 아래는 실제 코드 기준 서술이다.
 
-### 4.1 오디오 노드 파이프라인
+### 4.1 실제 재생 파이프라인
 
 ```mermaid
 graph TD
-    "AudioContext" --> "OscillatorNode<br/>(비프음 주파수 발생)"
-    "OscillatorNode<br/>(비프음 주파수 발생)" --> "GainNode<br/>(볼륨 제어)"
-    "GainNode<br/>(볼륨 제어)" --> "StereoPannerNode<br/>(좌우 밸런스 분배)"
-    "StereoPannerNode<br/>(좌우 밸런스 분배)" --> "Destination<br/>(스피커/이어폰 출력)"
+    "expo-asset Asset.fromModule<br/>(로컬 800Hz 비프 WAV 로드)" --> "expo-audio createAudioPlayer<br/>(loop=true 상시 재생 스트림)"
+    "expo-audio createAudioPlayer<br/>(loop=true 상시 재생 스트림)" --> "player.volume 스위칭<br/>(1.0 <-> 0.0, 120ms 펄스)"
+    "player.volume 스위칭<br/>(1.0 <-> 0.0, 120ms 펄스)" --> "Destination<br/>(스피커/이어폰 출력)"
 ```
 
-### 4.2 오디오 노드 명세
+### 4.2 실제 재생 로직 명세 (`client/src/services/audioEngine.ts`)
 
-- **OscillatorNode**: 기본 800Hz의 사인파(Sine Wave) 비프 주파수를 생성합니다.
-- **StereoPannerNode**: 패킷의 `panning` 수치(-1.0 ~ 1.0)를 노드의 `pan.value`에 동적 할당하여 방향성 사운드를 정위합니다.
-- **재생 타이머**: `beep_interval_ms`에 따라 `GainNode`를 켜고 끄는(On/Off) 루프를 돌려 비프 속도를 구현하며, 값이 `0`일 때는 상시 출력 상태를 유지합니다.
+- **음원**: `assets/sounds/beep.wav`(로컬 번들 정적 800Hz 비프 파일)를 `createAudioPlayer(sourceUri)`로 1회 생성하고, `player.loop = true`로 앱 전체 생명주기 동안 **끊김 없이 계속 재생**시켜 둔다(iOS가 재생 시작 시점마다 부여하는 Hearing Protection 볼륨 제한을 우회하기 위함).
+- **비프 표현**: 실제 오디오 신호를 켜고 끄는 대신, `player.volume`을 `1.0`(소리 남)과 `0.0`(무음)으로 스위칭하는 방식으로 "삐-" 펄스를 만든다. 각 펄스는 볼륨 `1.0` 설정 후 120ms 뒤 `0.0`으로 복귀한다.
+- **주기 제어**: `beep_interval_ms`가 `0`이면 볼륨을 `1.0`으로 고정해 끊김 없는 연속음을 낸다. `0`이 아니면 `setInterval(..., intervalMs)`로 위 펄스를 반복한다.
+- **`panning`(좌우 밸런스) 미적용**: WS로 수신한 `panning` 값은 `AudioEngine.currentPanning`에 저장만 되고(`audioEngine.ts:72`), 실제로 좌우 스피커 밸런스나 팬(pan)에 적용되는 코드 경로가 없다. 즉 **입체 음향(스테레오 패닝) 기능은 현재 미구현**이며, 볼륨 스위칭 기반 모노 비프음만 출력된다. 이는 §1의 "방향성 입체 비프음(Stereo Panning Beep)" 목표가 아직 완전히 실현되지 않았음을 의미하며, `panning` 필드를 실제 좌우 밸런스에 반영하는 것은 후속 작업 과제로 남는다.
+- **정지 규칙**: `stopBeep()`은 500~600ms 쿨다운 타이머 후 볼륨을 `0.0`으로 되돌리며(널뛰기 방지), `stopAllActiveAudio()`는 즉시 무음 처리한다.
 
 ---
 

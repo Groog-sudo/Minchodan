@@ -1,7 +1,7 @@
 # Minchodan 3단계 탐지·분할·게이트 백엔드 설계서
 
 > **작성일**: 2026-06-25
-> **버전**: v0.2.0
+> **버전**: v0.3.0 (2026-07-07 실제 코드 기준 대량 정정: ByteTrackTracker 역할, ReflexAlert 스키마, HIGH_RISK_CLASSES 5종, direction/alert_id 실제 값, 노면 4클래스, 모델 가중치 경로)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 3단계 (v1.1 듀얼헤드 + 이중 게이트)
 > **스킬 참조**: [`.agents/skills/yolo-obstacle-detection/SKILL.md`](../.agents/skills/yolo-obstacle-detection/SKILL.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md)
@@ -14,7 +14,7 @@
 
 ### 1.1 3단계 정체성
 
-2단계(프레임 수신)에서 받은 640x640 BGR 프레임을 **Yolo 26N - Object Detection**으로 추론하여 킥보드, 볼라드, 계단, 차량 등 위험 사물을 탐지하고, **Yolo 26N - Segmentation**으로 노면 상태를 분할하며, **ByteTrack**으로 Track ID를 부여합니다. **이중 게이트**(Reflex Gate + Surface Gate) 룰로 위험도를 1차 분류하여 반사 경로(즉시 경보)와 인지 경로(상세 가이드)로 분기합니다.
+2단계(프레임 수신)에서 받은 640x640 BGR 프레임을 **Yolo 26N - Object Detection**으로 추론하여 전동킥보드(`scooter`), 볼라드, 차량 등 위험 사물을 탐지하고, **Yolo 26N - Segmentation**으로 노면 상태를 분할하며, **ByteTrack**으로 Track ID를 부여합니다. **이중 게이트**(Reflex Gate + Surface Gate) 룰로 위험도를 1차 분류하여 반사 경로(즉시 경보)와 인지 경로(상세 가이드)로 분기합니다.
 
 ### 1.2 핵심 원칙 (비협상)
 
@@ -57,7 +57,7 @@
 | `server/detection/mock_detector.py` | Mock 구현 | `MockDetector`, `MockSegmentor` — 가중치 없을 때 가짜 탐지 결과 반환 (guide 17.2 Mock 폶백) |
 | `server/detection/yolo_detector.py` | Yolo 26N Detection | `YoloDetector` — `ultralytics.YOLO` 로드 + `predict(conf=0.35)` + boxes 파싱. 로드 실패 시 Mock 폶백 |
 | `server/detection/yolo_segmentor.py` | Yolo 26N Segmentation | `YoloSegmentor` — `ultralytics.YOLO` 로드 + masks 파싱. 노면 클래스 분리(C2) 준수 |
-| `server/detection/bytetrack_tracker.py` | ByteTrack 래퍼 | `ByteTrackTracker` — `ultralytics` 내장 `model.track(persist=True, tracker='bytetrack.yaml')` 사용. track_id 부여 + Redis 컨텍스트 연동 |
+| `server/detection/bytetrack_tracker.py` | ByteTrack 래퍼 | `ByteTrackTracker` — track_id 자체는 `YoloDetector._parse_result`가 `model.track()`의 `box.id`를 `T-0001` 포맷으로 파싱해 이미 부여한다. 본 클래스는 그 track_id를 받아 Redis 컨텍스트(`ctx:{track_id}`)로 이전 위치와 대조해 speed/direction만 계산한다 |
 | `server/detection/gates/__init__.py` | 게이트 패키지 | export |
 | `server/detection/gates/reflex_gate.py` | Reflex Risk Gate | 룰베이스, **LLM 미경유**. 고위험 클래스 + 근접(하단 15%) → `alert_id` + 방향 |
 | `server/detection/gates/surface_gate.py` | Surface Fast-Alert Gate | 룰베이스, **LLM 미경유**. P0 노면 하단 검출 → `alert_id` |
@@ -164,7 +164,7 @@ results = model.track(source=frame, persist=True, tracker="bytetrack.yaml", conf
 
 `persist=True` 옵션으로 동일 모델 인스턴스 내에서 Track ID가 유지되며, Redis 컨텍스트(`hset` + `expire 30`)와 연동하여 접근/이탈 및 속도를 산출합니다.
 
-> **참고**: `model.track()`은 `YoloDetector` 낶에서만 사용 가능하므로, `ByteTrackTracker`는 `YoloDetector`의 추론 결과(`result.boxes.id`)를 받아 track_id를 파싱하는 래퍼로 설계합니다. `MockDetector` 사용 시 track_id는 None으로 처리됩니다.
+> **참고 (2026-07-07 정정)**: `model.track()`은 `YoloDetector` 내부에서만 사용 가능하며, track_id 파싱(`T-0001` 포맷)은 `YoloDetector._parse_result`가 `box.id`로부터 직접 수행한다(`yolo_detector.py` 참조). `ByteTrackTracker`는 이미 부여된 track_id를 받아 Redis 컨텍스트로 speed/direction만 계산하는 래퍼다 — track_id "파싱" 자체를 담당하지 않는다. `MockDetector` 사용 시 track_id는 None으로 처리된다.
 
 ### 4.3 이중 경로 분리 원칙 (비협상)
 
@@ -271,13 +271,19 @@ class DetectionResult(BaseModel):
 
 class ReflexAlert(BaseModel):
     event_id: str
-    alert_id: str                   # "high_front", "surface_crosswalk", ...
-    direction: str                  # "front" | "left" | "right" | "stop"
+    alert_id: str                   # f"high_{class_name}_{direction}", 예: "high_car_front-left"
+    direction: str                  # "front-left" | "front" | "front-right" (estimate_direction() 산출)
     risk_level: str = "high"
-    clip: str                       # "reflex_clips/high_front.mp3"
+    clip: str                       # "reflex_clips/high_front.mp3" (direction 기준, class_name 무관)
     haptic: bool = True
+    panning: float = 0.0
+    distance: float = 1.0
+    beep_interval_ms: int = 250
+    haptic_pattern: str = "double"
     ts: float
 ```
+
+> **2026-07-07 정정**: 위 스키마는 `server/detection/schemas.py`의 실제 `ReflexAlert` 필드와 일치시킨 것이다. `direction`은 `"front"/"left"/"right"/"stop"`이 아니라 `estimate_direction()`(`server/detection/direction.py`)이 산출하는 `"front-left"/"front"/"front-right"` 3종뿐이며, `alert_id`는 고정 목록(`high_front` 등)이 아니라 클래스명을 포함한 동적 문자열이다(§6.3 참조).
 
 ---
 
@@ -297,6 +303,8 @@ v1.1 설계에 따라 노면 클래스를 **독립 클래스로 분리**합니�
 
 > **참고**: `caution` 클래스는 stairs/manhole/grating을 포함하는 통합 클래스입니다. 팀원 학습 시 별도 클래스로 분리할지 통합할지는 학습 데이터에 따라 결정하며, 본 설계서는 SKILL.md 기준으로 `caution` 통합 클래스를 따릅니다.
 
+> **2026-07-07 실제 학습 결과 반영**: 위 7클래스는 최초 제안이었고, 실제로 파인튜닝 완료된 Segmentation 모델(`segbest.pt`)은 **4클래스만 채택**됐다 — `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (`braille_damaged`/`sidewalk_damaged`/`crosswalk` 별도 세분화는 데이터 미확보로 미채택, `docs/ops/model_class_validation_report.md` 참조). 그런데 `server/detection/gates/surface_gate.py`의 `P0_SURFACE_CLASSES`는 여전히 최초 제안 시절의 클래스명(`crosswalk`, `manhole`, `stair`, `stairs`, `grating`, `braille_damaged`)으로 남아 있어, 실제 모델이 내놓는 4개 클래스명(`sidewalk_normal`, `caution`, `roadway`, `braille_normal`) 중 **단 하나도 `P0_SURFACE_CLASSES`에 포함되지 않는다**. 즉 Surface Gate는 현재 코드 그대로는 절대 발동하지 않는다(`surface_gate.py` 자체 주석도 "MVP 범위: 학습된 가중치는 COCO 80클래스이므로... 향후 커스텀 노면 학습 시 자동 활성화"라고 밝혀 이 문제를 인지하고 있었으나, 실제로 커스텀 학습이 완료된 지금도 갱신되지 않은 상태다). `caution`/`braille_damaged`를 P0 목록에 반영할지는 위험도 규칙 담당자의 판단이 필요한 영역이라 이 문서 정정 범위에서는 코드를 직접 고치지 않고 사실관계만 기록한다.
+
 ---
 
 ## 6. 이중 게이트 규칙
@@ -308,16 +316,18 @@ v1.1 설계에 따라 노면 클래스를 **독립 클래스로 분리**합니�
 
 | 조건 | 임계값 | 결과 |
 | --- | --- | --- |
-| 고위험 클래스 | `car`, `truck`, `bus`, `motorcycle` | 1차 통과 |
+| 고위험 클래스 | `car`, `truck`, `bus`, `motorcycle`, `scooter` (5종) | 1차 통과 |
 | 근접 (하단) | bbox 하단 y > 프레임 높이 × (1 - 0.15) | 2차 통과 → `alert_id` 발행 |
-| 방향 추정 | bbox 중심 x 기준 | x < width/3 → `left`, x > width×2/3 → `right`, else → `front` |
+| 방향 추정 | `estimate_direction()`(`direction.py`)의 거리별 충돌 회랑 띠(near/medium/far별 폭이 다름) 겹침 판정 | `front-left` / `front` / `front-right` 3종만 산출 (단순 x<width/3 임계치가 아님) |
 
-**고위험 클래스 정의**:
+**고위험 클래스 정의** (`server/detection/gates/reflex_gate.py` 실제 코드):
 
 ```python
-HIGH_RISK_CLASSES = {"car", "truck", "bus", "motorcycle"}
+HIGH_RISK_CLASSES = {"car", "truck", "bus", "motorcycle", "scooter"}
 PROXIMITY_THRESHOLD = 0.15  # 프레임 하단 면적 비율
 ```
+
+> **2026-07-07 정정**: 29개 클래스 전부를 반사 경로로 보내면 피로도 때문에 실사용이 불가능하므로, 가장 치명적인 동적 객체 5종만 Reflex Gate 1차 필터로 선별했다(코드 내 주석 참조). 최초 설계(4종, `motorcycle`까지)에는 `scooter`가 누락되어 있었다.
 
 ### 6.2 Surface Fast-Alert Gate (룰베이스, LLM 미경유)
 
@@ -337,19 +347,14 @@ P0_SURFACE_CLASSES = {
 }
 ```
 
-### 6.3 alert_id 사전 정의 (api_specification.md §4.2 준수)
+### 6.3 alert_id 실제 생성 규칙 (2026-07-07 정정)
 
-| `alert_id` | 방향 | 트리거 | 게이트 |
-| --- | --- | --- | --- |
-| `high_front` | front | 고위험 객체 근접 (전방) | Reflex Gate |
-| `high_left` | left | 고위험 객체 근접 (좌측) | Reflex Gate |
-| `high_right` | right | 고위험 객체 근접 (우측) | Reflex Gate |
-| `high_stop` | stop | 고위험 객체 근접 (정지) | Reflex Gate |
-| `surface_crosswalk` | front | 횡단복도 하단 검출 | Surface Gate |
-| `surface_manhole` | front | 맨홀 하단 검출 | Surface Gate |
-| `surface_stairs` | front | 계단 하단 검출 | Surface Gate |
-| `surface_grating` | front | 그레이팅 하단 검출 | Surface Gate |
-| `surface_braille_damaged` | front | 점자블록 파손 하단 검출 | Surface Gate |
+> 최초 설계는 `high_front`/`high_left`/`high_right`/`high_stop` 같은 **고정 alert_id 목록**을 전제로 했으나, 실제 `reflex_gate.py:55`는 `alert_id = f"high_{detection.class_name}_{direction}"`로 **클래스명을 포함한 동적 문자열**을 생성한다(예: `high_car_front-left`, `high_scooter_front`). 재생 클립(`clip`)만 `f"reflex_clips/high_{direction}.mp3"`로 direction 기준으로 고정된다 — 클래스와 무관하게 방향별 클립 3종(`high_front-left.mp3`, `high_front.mp3`, `high_front-right.mp3`)만 존재하면 된다.
+
+| 게이트 | `alert_id` 생성식 | 예시 |
+| --- | --- | --- |
+| Reflex Gate | `f"high_{class_name}_{direction}"` | `high_car_front`, `high_scooter_front-left` |
+| Surface Gate | `f"surface_{class_name}"` | `surface_crosswalk`, `surface_manhole` (단, §6.2의 실제 4클래스 모델과 P0_SURFACE_CLASSES 불일치 문제로 현재는 발동하지 않음) |
 
 ---
 
@@ -361,7 +366,7 @@ P0_SURFACE_CLASSES = {
 
 | ID | 검증 항목 | 기준 | Mock 대응 | 상태 |
 | --- | --- | --- | --- | --- |
-| TC-DET-001 | Yolo 26N Detection 킥보드 추론 | `conf≈0.87` | MockDetector 고정 conf 반환 | 대기 |
+| TC-DET-001 | Yolo 26N Detection 전동킥보드(scooter) 추론 | `conf≈0.87` | MockDetector 고정 conf 반환 | 대기 |
 | TC-DET-002 | track_id 부여 | ByteTrack `update()` → track_id | Mock + ByteTrack 래퍼 | Mock 검증 완료 |
 | TC-DET-003 | Detection 추론 지연 | **< 80ms** | Mock 즉시 반환, Yolo는 가중치 도착 후 측정 | 대기 |
 | TC-DET-004 | Yolo 26N Segmentation 마스크 | 노면 의미분할 마스크 생성 | MockSegmentor 가짜 마스크 | 대기 |
@@ -429,11 +434,15 @@ python -m pytest tests/test_detection.py -v
 ```json
 {
   "event_id": "uuid",
-  "alert_id": "high_front",
+  "alert_id": "high_scooter_front",
   "direction": "front",
   "risk_level": "high",
   "clip": "reflex_clips/high_front.mp3",
   "haptic": true,
+  "panning": 0.0,
+  "distance": 0.8,
+  "beep_interval_ms": 100,
+  "haptic_pattern": "continuous",
   "ts": 1719216000000
 }
 ```
@@ -448,12 +457,12 @@ python -m pytest tests/test_detection.py -v
       "class_name": "kickboard",
       "confidence": 0.87,
       "bbox": [120, 200, 280, 360],
-      "track_id": 3
+      "track_id": "T-0003"
     }
   ],
   "surface": [
     {
-      "class_name": "crosswalk",
+      "class_name": "caution",
       "mask": "...",
       "centroid": [320, 580]
     }
@@ -462,6 +471,8 @@ python -m pytest tests/test_detection.py -v
   "inference_ms": 72
 }
 ```
+
+> **2026-07-07 클래스명 참고**: `l1_classifier.py`의 `MID_RISK_CLASSES`는 `"kickboard"`라는 이름을 그대로 쓰고 있으나, 실제 학습 완료된 Object Detection 29클래스(`docs/ops/model_class_validation_report.md`)에는 `kickboard`가 없고 `scooter`가 그 역할을 한다 — 두 게이트/분류기 코드 간 클래스명이 어긋나 있어 `kickboard`는 현재 `l1_classifier`에서 실제로 매칭되지 않는 죽은 규칙일 가능성이 있다. `surface` 예시는 실제 4클래스 모델에 존재하는 `caution`으로 교체했다(§5 참조, `crosswalk`는 실제 모델에 없음).
 
 ### 9.3 Redis Streams 발행 (mid/low)
 
@@ -534,8 +545,8 @@ redis_bus.expire(f"ctx:{track_id}", 30)
 
 | 교체 대상 | 교체 후 | 작업 |
 | --- | --- | --- |
-| `MockDetector` | `YoloDetector` | `server/models/yolo26n/object_detection.pt` 파일 배치 후 자동 전환 (config.py 팩토리) |
-| `MockSegmentor` | `YoloSegmentor` | `server/models/yolo26n/segmentation.pt` 파일 배치 후 자동 전환 |
+| `MockDetector` | `YoloDetector` | `server/models/yolo26n/det_best_20260705.pt`(29클래스 파인튜닝 완료) 배치 후 자동 전환 (config.py 팩토리) |
+| `MockSegmentor` | `YoloSegmentor` | `server/models/yolo26n/segbest.pt`(4클래스 파인튜닝 완료) 배치 후 자동 전환 |
 | `test_detection.py` Mock 테스트 | 실제 가중치 테스트 | Mock 테스트는 유지, 별도 통합 테스트 추가 |
 
 ### 12.2 선행 의존성
@@ -557,8 +568,8 @@ redis_bus.expire(f"ctx:{track_id}", 30)
 | `FRAME_SIZE` | 프레임 리사이즈 크기 | `640` |
 | `REFLEX_FPS` | 반사 캡처 목표 fps | `10` |
 | `COGNITIVE_FPS` | 인지 캡처 목표 fps | `2` |
-| `YOLO26N_OBJECT_DET` | Yolo 26N - Object Detection 가중치 경로 | `server/models/yolo26n/object_detection.pt` |
-| `YOLO26N_SEG` | Yolo 26N - Segmentation 가중치 경로 | `server/models/yolo26n/segmentation.pt` |
+| `YOLO26N_OBJECT_DET` | Yolo 26N - Object Detection 가중치 경로 | `server/models/yolo26n/det_best_20260705.pt` (2026-07-07부터 `.env` 기본값 — `object_detection.pt`는 순정 COCO 80클래스 체크포인트이므로 사용 금지) |
+| `YOLO26N_SEG` | Yolo 26N - Segmentation 가중치 경로 | `server/models/yolo26n/segbest.pt` (2026-07-07부터 `.env` 기본값 — `segmentation.pt`는 순정 COCO 80클래스 체크포인트이므로 사용 금지) |
 | `REDIS_URL` | Redis 연결 URL | `redis://localhost:6379` |
 
 ---
