@@ -180,7 +180,8 @@ transformers_cache/
 # ChromaDB
 # ==========================================
 
-chroma_db/
+**/chroma_db/
+!**/chroma_db/.gitkeep
 chromadb/
 
 # ==========================================
@@ -245,7 +246,6 @@ langgraph_checkpoints/
 # Keep scaffold directories that otherwise match generated-data rules.
 !server/rag/build/
 !server/rag/build/.gitkeep
-!data/chroma_db/
 !data/chroma_db/.gitkeep
 !training/datasets/detection/images/.gitkeep
 !training/datasets/segmentation/images/.gitkeep
