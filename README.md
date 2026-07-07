@@ -6,8 +6,8 @@
 **Minchodan**은 시각장애인 보행 보조를 위한 스마트 가이드독 AI 플랫폼입니다. 스마트폰 카메라로 주변을 인식하고, GPU 서버에서 실시간으로 장애물·노면 상태를 탐지한 뒤, 음성과 햅틱으로 즉시 안내합니다. 안전 대응은 **반사 경로**(즉시 경보)와 **인지 경로**(상세 가이드) 두 갈래로 물리 분리하는 것이 핵심 원칙입니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0 (MVP 골격 기준선)
-> **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
+> **버전**: v0.2.0 (2026-07-07 문서 인덱스 링크를 실제 `docs/` 하위 구조 기준으로 정정, 존재하지 않는 `console/` 디렉토리 트리 제거, Llava→Gemini 캡셔닝 정정)
+> **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
 
 ---
 
@@ -46,7 +46,7 @@
 | 6    | 종합 회피 가이드 생성 (계층 LLM)  | LangGraph, ChatOllama(gemma4-e4b)                               | bollard 주입 시 20자 내·방향 포함          |
 | 7    | 음성 안내 출력 (이중 채널)        | Kokoro/Coqui, Web Audio, Haptics                                | 반사 클립 선점 재생, 햅틱 동시 출력        |
 
-상세 설계는 [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)와 [`docs/architecture.md`](docs/architecture.md)를 참조합니다.
+상세 설계는 [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md)와 [`docs/design/architecture.md`](docs/design/architecture.md)를 참조합니다.
 
 ---
 
@@ -112,16 +112,11 @@ Minchodan/
 │       ├── components/              # CameraView
 │       └── utils/                   # haptics
 │
-├── console/                         # React 운영자 모니터링 콘솔
-│   └── src/
-│       ├── components/              # DetectionFeed, RiskEventLog, SessionStatus
-│       └── hooks/                   # useSSE
-│
 ├── data/                            # 학습·RAG 데이터
 │   ├── raw/                         # AI Hub 보행자 데이터셋 원본
 │   ├── frames/                      # 1fps 추출 프레임
 │   ├── deduped/                     # pHash 중복 제거 후 프레임
-│   ├── captions/                    # Llava 캡셔닝 결과 JSON
+│   ├── captions/                    # Gemini VLM 캡셔닝 결과 JSON
 │   ├── chroma_db/                   # ChromaDB persist 디렉토리
 │   └── reflex_clips/                # 사전합성 반사 음성 클립
 │
@@ -203,7 +198,7 @@ python scripts/verify_gpu.py
 
 ### 4. Docker 구성 (Redis + Ollama + FastAPI)
 
-> 상세 배포 절차는 [`docs/deployment_guide.md`](docs/deployment_guide.md)를 참조하십시오.
+> 상세 배포 절차는 [`docs/ops/deployment_guide.md`](docs/ops/deployment_guide.md)를 참조하십시오.
 
 #### Windows (PowerShell)
 
@@ -243,7 +238,7 @@ bash scripts/build_chroma.sh
 
 ## 환경 변수
 
-> **단일 명세**: 환경 변수의 전체 목록·타입·필수 여부·기본값·참조는 [`docs/environment_variables.md`](docs/environment_variables.md)를 기준으로 합니다. 본 표는 핵심 변수 요약만 제공합니다.
+> **단일 명세**: 환경 변수의 전체 목록·타입·필수 여부·기본값·참조는 [`docs/ops/environment_variables.md`](docs/ops/environment_variables.md)를 기준으로 합니다. 본 표는 핵심 변수 요약만 제공합니다.
 
 | 변수                | 설명                                      | 기본값                   |
 | ------------------- | ----------------------------------------- | ------------------------ |
@@ -267,7 +262,7 @@ bash scripts/build_chroma.sh
 | `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
 | `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
 
-전체 목록은 [`.env.example`](.env.example) 및 [`docs/environment_variables.md`](docs/environment_variables.md)를 참조합니다.
+전체 목록은 [`.env.example`](.env.example) 및 [`docs/ops/environment_variables.md`](docs/ops/environment_variables.md)를 참조합니다.
 
 ---
 
@@ -283,7 +278,7 @@ bash scripts/build_chroma.sh
 | kb   | 3단계 AI 장애물 실시간 인식, 6단계 종합 회피 가이드 생성 |
 | `th`   | (할당 가능)                        |
 
-단계별 분업 인원수 제안은 [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md) 각 단계의 **분업** 필드를 참조합니다. 브랜치 전략은 [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md)를 따릅니다.
+단계별 분업 인원수 제안은 [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md) 각 단계의 **분업** 필드를 참조합니다. 브랜치 전략은 [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md)를 따릅니다.
 
 ---
 
@@ -291,22 +286,22 @@ bash scripts/build_chroma.sh
 
 | 문서                 | 파일                                                               | 설명                                           |
 | -------------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
-| 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                     |
-| **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| 설계 노트 (원본)     | [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                     |
+| **코딩 패턴 기준**   | [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md)   | **수업 전체 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                    |
 | 에이전트 가이드      | [`AGENTS.md`](AGENTS.md)                                           | 코딩·커뮤니케이션 규칙, 기술 스택, 문서 인덱스 |
 | 백엔드 DB 설계 원칙 | [`docs/design/backend_db_architecture.md`](docs/design/backend_db_architecture.md) | 백엔드 코어 비동기 SQLAlchemy 기반 3계층 아키텍처 및 에러 방어 로직 설계 |
-| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동 |
-| API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입       |
-| 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스               |
-| Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                   |
-| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                 |
-| **환경 변수 명세서** | [`docs/environment_variables.md`](docs/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**           |
-| **배포 가이드**      | [`docs/deployment_guide.md`](docs/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004** |
-| 2단계 캡처 설계서    | [`docs/stage2_capture_design.md`](docs/stage2_capture_design.md) | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue) |
-| 3단계 탐지 설계서    | [`docs/stage3_detection_design.md`](docs/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                |
-| 6단계 오케스트레이션 설계서 | [`docs/stage6_orchestration_design.md`](docs/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계       |
-| 보행이론 인사이트    | [`docs/behavior_and_risk_insight.md`](docs/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
+| 시스템 아키텍처      | [`docs/design/architecture.md`](docs/design/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동 |
+| API 명세서           | [`docs/design/api_specification.md`](docs/design/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입       |
+| 테스트 명세서        | [`docs/ops/test_specification.md`](docs/ops/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스               |
+| Git 브랜칭 전략      | [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                   |
+| 파이프라인 단계 설계 | [`docs/design/pipeline_stage_design.md`](docs/design/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                 |
+| **환경 변수 명세서** | [`docs/ops/environment_variables.md`](docs/ops/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소)**           |
+| **배포 가이드**      | [`docs/ops/deployment_guide.md`](docs/ops/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004** |
+| 2단계 캡처 설계서    | [`docs/stage-guides/stage2_capture_design.md`](docs/stage-guides/stage2_capture_design.md) | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue) |
+| 3단계 탐지 설계서    | [`docs/stage-guides/stage3_detection_design.md`](docs/stage-guides/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계                |
+| 6단계 오케스트레이션 설계서 | [`docs/stage-guides/stage6_orchestration_design.md`](docs/stage-guides/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계       |
+| 보행이론 인사이트    | [`docs/design/behavior_and_risk_insight.md`](docs/design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
 | 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위, 스킬 인덱스 |
 | 단계별 구현 스킬     | `.agents/skills/`                                                  | 1~7단계별 SKILL.md + references (7종)          |
 
@@ -355,4 +350,4 @@ python scripts/eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
 python scripts/verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
 ```
 
-상세 검증 기준은 [`docs/test_specification.md`](docs/test_specification.md)를 참조합니다.
+상세 검증 기준은 [`docs/ops/test_specification.md`](docs/ops/test_specification.md)를 참조합니다.

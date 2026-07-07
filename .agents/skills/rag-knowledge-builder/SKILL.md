@@ -1,7 +1,7 @@
 ---
 name: rag-knowledge-builder
 description: |
-  로컬 대처 수칙 리스트를 오픈소스 VLM(Llava)과 로컬 임베딩(nomic-embed-text)을 활용하여
+  로컬 대처 수칙 리스트를 VLM(Gemini 2.5 Flash Lite, 2026-07-07부로 Llava에서 전환)과 로컬 임베딩(nomic-embed-text)을 활용하여
   ChromaDB에 오프라인 배치 구축하고 검증하는 RAG 지식 빌더 스킬.
   메타데이터를 3단계 분리 클래스와 일치시켜 검색 정합을 확보한다.
 ---
@@ -9,21 +9,24 @@ description: |
 # RAG Knowledge Builder (4단계: 위험 대처 수칙 DB 구축)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 4단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 13, 3.3, 17.2
+> **버전**: v0.3.0 (2026-07-07 캡셔닝 VLM을 실제 구현체 Gemini 기준으로 정정)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 4단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 13, 3.3, 17.2
+
+> [!IMPORTANT]
+> **2026-07-07 정정**: 아래 본문은 최초 계획 시점(Ollama 로컬 Llava VLM) 기준으로 작성되어, `llava_captioner.py`/로컬 Ollama Llava API 예시 코드를 그대로 담고 있다. **실제 구현은 `server/rag/build/gemini_captioner.py`로, Google Gemini API(`gemini-2.5-flash-lite`, `langchain_google_genai`)를 사용**하며 `GOOGLE_API_KEY` 환경변수가 필요하다(미설정 시 `ValueError`, 로컬 Llava 폴백 없음). 아래 코드 예시의 함수 시그니처·API 호출부는 참고용 설계 스케치로만 보고, 실제 구현은 `server/rag/build/gemini_captioner.py` 소스를 기준으로 삼는다.
 
 ## 개요
 
-오프라인 환경에서 비용 발생 없이 로컬 RAG 시스템을 구동하기 위해, 위험 상황 이미지 데이터셋을 로컬 VLM(Llava)으로 캡셔닝하고, 로컬 임베딩 모델(nomic-embed-text)로 벡터화하여 ChromaDB 영구 저장소에 인덱싱 및 검증한다.
+오프라인 환경에서 비용 발생 없이 로컬 RAG 시스템을 구동하기 위해, 위험 상황 이미지 데이터셋을 VLM으로 캡셔닝하고, 로컬 임베딩 모델(nomic-embed-text)로 벡터화하여 ChromaDB 영구 저장소에 인덱싱 및 검증한다. (VLM은 최초 계획 시 로컬 Llava였으나 실제로는 Gemini API로 구현됨 — 위 정정 참조)
 
 ## 전체 아키텍처 위치
 
 ```
 [원천 영상/사진 데이터]  [프레임 추출/pHash 중복 제거]  [로컬 VLM Llava 캡셔닝]
-                                                                
+
 [ChromaDB 로컬 DB 저장]  [로컬 임베딩 nomic-embed-text]  [대처 수칙 메타데이터 결합]
-          
+
 [5단계: 실시간 RAG 검색 엔진에서 활용]
 ```
 

@@ -948,3 +948,26 @@
 - **관련 파일**: `.env.example`, `docs/design/backend_db_architecture.md`, `docs/design/behavior_and_risk_insight.md`, `docs/design/pipeline_stage_design.md`, `docs/design/reflex_audio_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage4_5_rag_design.md`, `docs/stage-guides/stage4_5_data_replacement_guide.md`, `docs/stage-guides/stage4_5_test_guide.md`, `docs/changelogs/kb.md` (`.env`도 동일하게 수정했으나 git-ignore 대상)
 - **검증 결과**: `.env` 모델 경로 수정 후 `server.detection.config` 재로드로 실제 경로 반영 확인(`det_best_20260705.pt`/`segbest.pt`, 파일 존재 확인). `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(회귀 없음).
 - **비고**: Surface Gate 미발동 문제와 `l1_classifier.py`의 `kickboard` 클래스명이 실제 탐지기 출력(`scooter`)과 어긋나는 문제는 위험도 판정 로직(핵심 로직, 담당자 직접 작성 영역)에 해당하여 이번 문서 정정 범위에서 코드를 직접 고치지 않고 사실관계만 기록했다. 후속 작업으로 담당자 검토가 필요하다. 나머지 문서(stage6/7, ops 6종, root 6종+skills)의 정정은 후속 커밋에서 이어간다.
+
+---
+
+### 2026-07-07 | 품질 | 전체 문서 정합성 감사 2차 - stage6/7, ops 6종, root 문서 전체 정정 완료
+
+- **커밋**: (대기 중)
+- **변경 내용**: 1차 감사(design/stage3/stage4_5)에 이어 나머지 전 범위를 실제 코드 기준으로 정정 완료.
+  - `docs/stage-guides/stage6_orchestration_design.md`: LLM 클라이언트를 `ChatOllama`/`ChatOpenAI`(LangChain)에서 실제 구현체 `SimpleOllamaClient`/`SimpleOpenAIClient`(raw `ollama.AsyncClient`/`httpx`)로 정정. 핫스왑 트리거를 "L3 실패율 > 10%"에서 실제 기준인 "GPU 부하 감지(`start_gpu_monitor`)"로 정정.
+  - `docs/stage-guides/stage7_tts_design.md`: TTS 엔진을 Kokoro/Coqui에서 실제 유일 구현체 Piper로 정정, `reflex_clip_sender.py`를 "(예정)"에서 "구현 완료"로 정정, 오디오 실제 포맷이 WAV임을 명시(필드명은 `audio_mp3_b64`이나 내용물은 WAV).
+  - `docs/ops/redis_streams_schema.md`: §1.2/§2 전면 재작성. 최초 설계의 가상 필드 목록(`detected_classes`/`surface_state`/`max_risk_level` 등)이 실제로 존재하지 않음을 확인하고, `risk.events`에 실제로 발행되는 두 가지 서로 다른 스키마(2단계 캡처 메타데이터 vs 3단계 탐지 이벤트)를 코드 기준으로 명시. 중복 억제 키를 `session:{device_id}:last_alert:{class_name}`(TTL 30초)에서 실제 `suppress:{device_id}:{alert_id}`(TTL 60초)로 정정하고, 문서에 없던 `ctx:{track_id}` 키(TTL 30초)를 추가.
+  - `docs/ops/environment_variables.md`: Slack 인증 방식을 `SLACK_WEBHOOK_URL`(미사용 변수)에서 실제 사용 중인 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`로 재정정, `TTS_ENGINE` 기본값을 `piper`로 정정, 코드에는 있으나 문서에 누락됐던 변수 6종(`HEARTBEAT_INTERVAL/TIMEOUT`, `MAX_RECONNECT_ATTEMPTS`, `JWT_SECRET_KEY`, `OLLAMA_HOST`, `PIPER_BINARY_PATH` 등) 추가, `GOOGLE_API_KEY`가 문서엔 있으나 `.env.example`엔 없는 불일치 명시, `CHROMA_PATH`/`CHROMA_COLLECTION`이 아직 코드에서 소비되지 않음을 명시.
+  - `docs/ops/ai_model_hardware_setup.md`: CUDA 12.8이 `requirements.txt`/`Dockerfile`에 실제로 고정되어 있지 않음(순정 `torch==2.12.1`, `+cu128` 태그 없음)을 명시.
+  - `docs/ops/code_quality_guide.md`: pre-push 훅이 실제로는 존재하지 않고(mypy/jscpd/pip-audit는 CI 전용) pre-commit은 ruff-format/ruff/bandit만 등록되어 있음을 명시. Bandit `skips`(B101)와 Ruff `per-file-ignores`(B404/B603)를 혼동했던 표 정정. `requirements-dev.txt`에 jscpd가 없음(Node.js 별도 설치) 정정.
+  - `docs/ops/deployment_guide.md`: macOS 로컬 테스트용 `docker/docker-compose.macos.yml`(GPU 미사용 변형, 실제로 `macos_docker_start.sh`가 사용) 파일 인덱스에 누락돼 있던 것 추가.
+  - `docs/ops/git_branching_strategy.md`: 실제 `git branch -a`/커밋 이력과 대조 결과 정확함을 확인, 수정 없음.
+  - **`CLAUDE.md`(루트, 세션 컨텍스트 자동 주입 문서)**: §4 존재하지 않는 `console/` 디렉토리 참조 삭제, §8 스킬 표에 누락된 `xcode-build-management` 추가 및 `.claude/skills`가 `.agents/skills`의 junction이라는 잘못된 서술 정정(실측: 서로 다른 inode의 독립 디렉토리이며 `xcode-build-management`가 누락돼 트리가 어긋나 있음), §9 문서 인덱스의 링크 7개 전부가 `docs/` 평면 경로를 가리켜 깨져 있던 것을 실제 하위 디렉토리(`docs/design/`, `docs/ops/`, `docs/dev-guides/`) 기준으로 전부 정정, `rag-knowledge-builder` 스킬 설명의 Llava를 Gemini로 정정.
+  - `README.md`(루트): CLAUDE.md와 동일한 문서 인덱스 링크 깨짐(7개 이상) 전부 정정, 존재하지 않는 `console/` 디렉토리 트리 전체 제거, `data/captions/` 설명의 Llava→Gemini 정정.
+  - `docs/AGENTS.md`: 루트 `CLAUDE.md`/`AGENTS.md`(v0.3.0)보다 오래된 stale 중복 사본(v0.1.0, 갱신 안 됨)임을 확인, 전면 재작성 대신 상단에 "루트 문서가 최신 기준" deprecated 안내 추가.
+  - `Directory_Structure.md`: 프로젝트 초기 기획 단계의 "임시 디렉토리 구조"로 루트 디렉토리명(`guidedog-ai/`)부터 실제와 다르고 다수 파일 경로가 틀려(`server/config.py`, `llava_captioner.py`, `server/bus/consumer.py` 등 실제 미존재/이동) 있음을 확인, 전면 재작성 대신 상단에 이력 참고용 안내 추가하고 `README.md`/`CLAUDE.md`를 최신 기준으로 안내.
+  - `.agents/skills/rag-knowledge-builder/SKILL.md`: frontmatter `description`(스킬 검색/요약에 노출됨) 및 본문 헤더의 Llava를 Gemini로 정정하고, 본문 코드 예시가 여전히 최초 계획(로컬 Llava) 기준임을 알리는 안내 추가(전체 코드 예시 재작성은 범위 밖).
+- **관련 파일**: `docs/stage-guides/stage6_orchestration_design.md`, `docs/stage-guides/stage7_tts_design.md`, `docs/ops/redis_streams_schema.md`, `docs/ops/environment_variables.md`, `docs/ops/ai_model_hardware_setup.md`, `docs/ops/code_quality_guide.md`, `docs/ops/deployment_guide.md`, `CLAUDE.md`, `README.md`, `docs/AGENTS.md`, `Directory_Structure.md`, `.agents/skills/rag-knowledge-builder/SKILL.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(회귀 없음, 이번 라운드는 문서 전용 변경).
+- **비고**: 6개 병렬 조사 에이전트가 이번 세션 내 `docs/`의 design/stage-guides/ops/root 전 영역(약 40개 문서)을 실제 코드와 전수 대조했다. 의도적으로 범위에서 제외한 것: (1) `docs/research/*.md`(6종, 시점 스냅샷 성격의 타당성 분석 문서라 "현재 상태"로 고쳐 쓰면 이력이 훼손됨), (2) `docs/dev-guides/신규_설계서_예시_2.md`(다른 프로젝트명("VIP Assistant AI")의 템플릿/예시 문서, Minchodan 서술 아님), (3) `docs/dev-guides/antigravity_agent_prompt__4_5_final.md`(이미 실행 완료된 1회성 에이전트 작업 지시서), (4) `docs/mobile/mobile_app_implementation_plan.md`(문서 자체에 이미 "분리된 설계서 사용" 안내 존재), (5) `docs/mobile/ondevice_inference_engine_isolation_plan.md`(LocalDetector 추상화 계획 - 실제 구현이 더 단순한 경로를 택해 상당 부분 미실현, 별도 검토 필요), (6) `.agents/skills/*/SKILL.md` 중 rag-knowledge-builder를 제외한 7개는 경로/클래스명 스팟체크만 수행(전수 라인 단위 검증은 아님).

@@ -1,10 +1,13 @@
 # AI Coding & Communication Guidelines (Minchodan)
 
+> [!IMPORTANT]
+> **2026-07-07 정정**: 본 문서(v0.1.0, 2026-06-24)는 프로젝트 루트의 [`CLAUDE.md`](../CLAUDE.md)/[`AGENTS.md`](../AGENTS.md)(v0.3.0)보다 오래된 중복 사본이며 갱신되지 않고 있었다. **최신 기준은 루트 `CLAUDE.md`/`AGENTS.md`이며, 본 파일은 이력 참고용으로만 남긴다.** 아래 `console/` 디렉토리 참조와 상대경로 문서 링크(`git_branching_strategy.md` 등)는 더 이상 유효하지 않다(실제 경로는 `docs/ops/git_branching_strategy.md`).
+
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
-> **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
+> **버전**: v0.1.0 (2026-07-07부로 deprecated — 루트 `CLAUDE.md`/`AGENTS.md` 참조)
+> **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 
 ---
 
