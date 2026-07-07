@@ -19,6 +19,35 @@ logger = logging.getLogger(__name__)
 
 RISK_LEVELS = {"high", "mid", "low"}
 
+# 2026-07-07 정정: 이전 목록은 COCO 80클래스 잔재(skateboard/backpack/handbag/suitcase/
+# umbrella/"fire hydrant" 등)였고 실제 파인튜닝 완료 29클래스 모델과 대부분 일치하지 않았다.
+# 반사 게이트가 이미 처리하는 5종(car/truck/bus/motorcycle/scooter)과 정보성/비장애물
+# 클래스(person/cat/dog/traffic_light/traffic_sign/stop)를 제외한 정적 장애물 전부를 채택했다.
+# server/orchestration/nodes/l1_classifier.py의 MID_RISK_CLASSES와 동일하게 유지할 것
+# (두 분류기가 서로 다른 목록으로 어긋났던 것이 이번에 고친 버그였다. tests/test_langgraph.py의
+# 일관성 회귀 테스트 참조).
+MID_RISK_CLASSES = {
+    "barricade",
+    "bench",
+    "bicycle",
+    "bollard",
+    "carrier",
+    "chair",
+    "fire_hydrant",
+    "kiosk",
+    "movable_signage",
+    "parking_meter",
+    "pole",
+    "potted_plant",
+    "power_controller",
+    "stroller",
+    "table",
+    "traffic_light_controller",
+    "tree_trunk",
+    "wheelchair",
+}
+MID_RISK_SURFACE_CLASSES = {"caution", "roadway"}
+
 
 class DetectionPipeline:
     """3단계 전체 파이프라인: 탐지 → 분할 → 추적 → 게이트 분기."""
@@ -125,23 +154,19 @@ class DetectionPipeline:
 
     @staticmethod
     def _classify_risk(detections: list[Detection], surfaces: list[SurfaceResult]) -> str:
+        """탐지/분할 결과를 mid/low로 1차 분류한다 (high는 이미 반사 게이트가 처리 완료).
+
+        MID_RISK_CLASSES/MID_RISK_SURFACE_CLASSES(모듈 상수) 기준. 2026-07-07 정정 이력은
+        해당 상수 정의부 주석 참조.
+        """
         if not detections and not surfaces:
             return "none"
-        mid_risk_classes = {
-            "bicycle",
-            "skateboard",
-            "bench",
-            "fire hydrant",
-            "stop sign",
-            "parking meter",
-            "backpack",
-            "handbag",
-            "suitcase",
-            "umbrella",
-            "person",
-        }
+
         for det in detections:
-            if det.class_name in mid_risk_classes:
+            if det.class_name in MID_RISK_CLASSES:
+                return "mid"
+        for surf in surfaces:
+            if surf.class_name in MID_RISK_SURFACE_CLASSES:
                 return "mid"
         return "low"
 

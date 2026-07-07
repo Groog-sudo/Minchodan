@@ -132,18 +132,19 @@ class TestGates:
         assert alert is None
 
     def test_surface_gate_p0(self):
-        surf = SurfaceResult(class_name="stair", centroid=[320.0, 400.0])
+        """실제 4클래스 Segmentation 모델 기준 (2026-07-07 정정, caution=stairs/manhole/grating 통합 클래스)."""
+        surf = SurfaceResult(class_name="caution", centroid=[320.0, 400.0])
         alert = surface_gate(surf, 480.0)
         assert alert is not None
-        assert alert.alert_id == "surface_stair"
+        assert alert.alert_id == "surface_caution"
 
-    def test_surface_gate_coco_class_returns_none(self):
-        surf = SurfaceResult(class_name="person", centroid=[320.0, 400.0])
+    def test_surface_gate_non_p0_class_returns_none(self):
+        surf = SurfaceResult(class_name="sidewalk_normal", centroid=[320.0, 400.0])
         alert = surface_gate(surf, 480.0)
         assert alert is None
 
     def test_surface_gate_top_position_returns_none(self):
-        surf = SurfaceResult(class_name="stair", centroid=[320.0, 100.0])
+        surf = SurfaceResult(class_name="caution", centroid=[320.0, 100.0])
         alert = surface_gate(surf, 480.0)
         assert alert is None
 
@@ -276,7 +277,7 @@ class TestPipelineRobustness:
     @pytest.mark.asyncio
     async def test_surface_gate_triggers(self, frame, mock_redis_bus):
         segmentor = StubSegmentor(
-            surfaces=[SurfaceResult(class_name="stair", centroid=[320.0, 400.0])]
+            surfaces=[SurfaceResult(class_name="caution", centroid=[320.0, 400.0])]
         )
         pipeline = DetectionPipeline(
             detector=StubDetector(detections=[]),
@@ -287,8 +288,27 @@ class TestPipelineRobustness:
         )
         result = await pipeline.run(frame, "test", "evt-surface", "dev-1")
         assert isinstance(result, ReflexAlert)
-        assert result.alert_id == "surface_stair"
+        assert result.alert_id == "surface_caution"
         assert result.direction == "front"
+
+    @pytest.mark.asyncio
+    async def test_surface_only_roadway_classifies_mid(self, frame, mock_redis_bus):
+        """2026-07-07 회귀 테스트: 노면 클래스(roadway)만 있어도 mid로 분류되어야 한다
+        (surface_gate의 P0 임계치에는 못 미치는 낮은 위치의 caution/roadway도 인지 경로에서
+        완전히 무시되지 않도록 _classify_risk가 surfaces를 함께 고려하는지 검증)."""
+        segmentor = StubSegmentor(
+            surfaces=[SurfaceResult(class_name="roadway", centroid=[320.0, 100.0])]
+        )
+        pipeline = DetectionPipeline(
+            detector=StubDetector(detections=[]),
+            segmentor=segmentor,
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result = await pipeline.run(frame, "test", "evt-roadway", "dev-1")
+        assert isinstance(result, DetectionResult)
+        assert result.risk_hint == "mid"
 
     @pytest.mark.asyncio
     async def test_empty_inputs_return_none_risk(self, frame, mock_redis_bus):
@@ -332,7 +352,7 @@ class TestPipelineRobustness:
         detector = StubDetector(
             detections=[
                 Detection(
-                    class_name="skateboard",
+                    class_name="bollard",
                     confidence=0.8,
                     bbox=BBox(x=10.0, y=10.0, w=20.0, h=20.0),
                     track_id="T-0001",

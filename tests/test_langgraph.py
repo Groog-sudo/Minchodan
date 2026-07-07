@@ -18,9 +18,46 @@ if root_dir not in sys.path:
 
 import contextlib
 
+from server.detection.detection_pipeline import MID_RISK_CLASSES as PIPELINE_MID_RISK_CLASSES
+from server.detection.gates.reflex_gate import HIGH_RISK_CLASSES
 from server.orchestration.graph import run_orchestrator
-from server.orchestration.nodes.l1_classifier import classify_risk
+from server.orchestration.nodes.l1_classifier import MID_RISK_CLASSES, classify_risk
 from server.orchestration.nodes.l3_validator import l3_validator_node, validate_guidance
+
+# 실제 파인튜닝 완료된 Object Detection 29클래스 (docs/ops/model_class_validation_report.md 기준).
+# 2026-07-07: 위험도 분류기들이 이 목록과 어긋난 채(COCO 잔재/오탈자 클래스명) 방치되어 있던
+# 실제 버그를 수정한 뒤 재발 방지용으로 추가한 회귀 테스트.
+REAL_DETECTION_CLASSES = {
+    "barricade",
+    "bench",
+    "bicycle",
+    "bollard",
+    "bus",
+    "car",
+    "carrier",
+    "cat",
+    "chair",
+    "dog",
+    "fire_hydrant",
+    "kiosk",
+    "motorcycle",
+    "movable_signage",
+    "parking_meter",
+    "person",
+    "pole",
+    "potted_plant",
+    "power_controller",
+    "scooter",
+    "stop",
+    "stroller",
+    "table",
+    "traffic_light",
+    "traffic_light_controller",
+    "traffic_sign",
+    "tree_trunk",
+    "truck",
+    "wheelchair",
+}
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
 if sys.stdout.encoding != "utf-8":
@@ -33,14 +70,14 @@ def test_l1_risk_classification():
     TC-LG-003: L1 위험도 분류 검증.
     중위험 클래스 포함 시 'mid', 미포함 시 'low' 분류를 검증합니다.
     """
-    # mid 위험 분류 확인
-    assert classify_risk(["kickboard"]) == "mid"
+    # mid 위험 분류 확인 (실제 29클래스 탐지 모델 기준, 2026-07-07 정정)
+    assert classify_risk(["wheelchair"]) == "mid"
     assert classify_risk(["bollard", "person"]) == "mid"
     assert classify_risk(["bicycle"]) == "mid"
-    assert classify_risk(["pothole"]) == "mid"
+    assert classify_risk(["tree_trunk"]) == "mid"
 
-    # low 위험 분류 확인 (기본값)
-    assert classify_risk(["tree"]) == "low"
+    # low 위험 분류 확인 (기본값 - 정보성/비장애물 클래스)
+    assert classify_risk(["traffic_light"]) == "low"
     assert classify_risk([]) == "low"
     assert classify_risk(None) == "low"
 
@@ -198,3 +235,22 @@ async def test_langgraph_api_error_fallback():
         assert result["used_static_fallback"] is True
         assert result["verified"] is True
         assert "total_latency_ms" in result
+
+
+class TestRiskClassifierConsistency:
+    """2026-07-07 회귀 테스트: l1_classifier와 detection_pipeline의 위험도 분류기가
+    서로 다른(그리고 실제 모델과도 어긋난) 클래스명 집합을 쓰던 버그의 재발을 방지한다."""
+
+    def test_l1_and_pipeline_mid_risk_classes_match(self):
+        assert MID_RISK_CLASSES == PIPELINE_MID_RISK_CLASSES
+
+    def test_mid_risk_classes_are_real_detection_classes(self):
+        unknown = MID_RISK_CLASSES - REAL_DETECTION_CLASSES
+        assert not unknown, f"실제 29클래스에 없는 MID_RISK_CLASSES 항목: {unknown}"
+
+    def test_high_risk_classes_are_real_detection_classes(self):
+        unknown = HIGH_RISK_CLASSES - REAL_DETECTION_CLASSES
+        assert not unknown, f"실제 29클래스에 없는 HIGH_RISK_CLASSES 항목: {unknown}"
+
+    def test_high_and_mid_risk_classes_do_not_overlap(self):
+        assert not (HIGH_RISK_CLASSES & MID_RISK_CLASSES)

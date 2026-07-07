@@ -12,8 +12,30 @@ if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
 
-# 3단계 및 설계서에서 정의된 중위험 대상 사물 목록
-MID_RISK_CLASSES = {"bicycle", "kickboard", "pothole", "manhole", "construction_cone", "bollard"}
+# 2026-07-07 정정: 이전 목록(kickboard/pothole/manhole/construction_cone)은 실제 파인튜닝
+# 완료된 29클래스 Object Detection 모델에 존재하지 않는 클래스명이었다(전동킥보드는 실제로는
+# "scooter"이며 이미 반사 게이트 고위험으로 분류됨). server/detection/detection_pipeline.py의
+# _classify_risk와 동일한 실제 클래스 기준 목록으로 정정하여 두 분류기 간 불일치를 해소한다.
+MID_RISK_CLASSES = {
+    "barricade",
+    "bench",
+    "bicycle",
+    "bollard",
+    "carrier",
+    "chair",
+    "fire_hydrant",
+    "kiosk",
+    "movable_signage",
+    "parking_meter",
+    "pole",
+    "potted_plant",
+    "power_controller",
+    "stroller",
+    "table",
+    "traffic_light_controller",
+    "tree_trunk",
+    "wheelchair",
+}
 
 
 def classify_risk(detected_classes: list) -> str:
