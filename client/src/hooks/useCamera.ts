@@ -134,10 +134,33 @@ export function useCamera(
           ? photo.path
           : `file://${photo.path}`;
 
-        // expo-image-manipulator 기기 네이티브 GPU 가속 리사이징/압축 기동
+        // 카메라 미리보기(<Camera resizeMode="cover"> 기본값)는 종횡비를 유지한 채
+        // 화면에 꽉 차도록 중앙 크롭하여 보여준다. 반면 resize({width,height})를
+        // 둘 다 지정하면 종횡비를 무시하고 강제로 눌러 늘리므로(stretch), 모델이 보는
+        // 이미지와 화면 미리보기의 기하 구조가 달라져 bbox가 화면과 어긋나게 그려진다.
+        // 미리보기와 동일하게 중앙 정사각형 크롭 후 리사이즈해야 bbox 좌표가 정합한다.
+        //
+        // photo.width/height는 EXIF PixelXDimension/Dimension(센서 원본, 항상 landscape
+        // 배치) 기준이라 회전 반영 전 값이다. expo-image-manipulator는 크롭보다 먼저
+        // ImageFixOrientationTransformer로 EXIF 회전을 이미지에 반영하므로, 세로로 촬영해
+        // 90/270도 보정이 필요한 경우(orientation === landscape-left/right) 크롭 좌표계에서는
+        // 가로/세로 축이 서로 뒤바뀐다. 이를 보정하지 않으면 크롭 영역이 이미지 경계를 벗어난다.
+        const isRotated90 =
+          photo.orientation === "landscape-left" ||
+          photo.orientation === "landscape-right";
+        const correctedWidth = isRotated90 ? photo.height : photo.width;
+        const correctedHeight = isRotated90 ? photo.width : photo.height;
+        const cropSize = Math.min(correctedWidth, correctedHeight);
+        const originX = Math.floor((correctedWidth - cropSize) / 2);
+        const originY = Math.floor((correctedHeight - cropSize) / 2);
+
+        // expo-image-manipulator 기기 네이티브 GPU 가속 크롭/리사이징/압축 기동
         const manipResult = await manipulateAsync(
           path,
-          [{ resize: { width: 640, height: 640 } }],
+          [
+            { crop: { originX, originY, width: cropSize, height: cropSize } },
+            { resize: { width: 640, height: 640 } },
+          ],
           { compress: 0.5, format: SaveFormat.JPEG, base64: true },
         );
 

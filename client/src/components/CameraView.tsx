@@ -31,6 +31,11 @@ const FRAME_SIZE = 640;
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
 
+// 29클래스 중 이동체(충돌 접근 속도가 빠른 대상) - 조기 경보 임계치를 낮게 적용
+const HIGH_HAZARDS = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "scooter", "wheelchair", "stroller", "carrier"];
+// 노면 위험 구간 (segmentation 클래스, SEG_HAZARD 인덱스와 정합: caution, roadway)
+const GROUND_HAZARDS = ["caution", "roadway"];
+
 export function CameraView() {
   const { status, send, lastMessage } = useWebSocket(DEVICE_ID, TOKEN);
   const {
@@ -52,6 +57,7 @@ export function CameraView() {
   const [hapticFlash, setHapticFlash] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
+  const [confThreshold, setConfThreshold] = useState(0.40);
 
   // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트
   useEffect(() => {
@@ -79,11 +85,13 @@ export function CameraView() {
   const setLastDetectRef = useRef(setLastDetect);
   const setPreviewSrcRef = useRef(setPreviewSrc);
   const setDetectionsRef = useRef(setDetections);
+  const confThresholdRef = useRef(confThreshold);
 
   useEffect(() => { detectFrameRef.current = detectFrame; }, [detectFrame]);
   useEffect(() => { isModelsLoadedRef.current = isModelsLoaded; }, [isModelsLoaded]);
   useEffect(() => { isMockModeRef.current = isMockMode; }, [isMockMode]);
   useEffect(() => { sendRef.current = send; }, [send]);
+  useEffect(() => { confThresholdRef.current = confThreshold; }, [confThreshold]);
 
   const detectingRef = useRef(false);
   const lastDetectTsRef = useRef(0);
@@ -117,10 +125,8 @@ export function CameraView() {
 
     if (!isModelsLoadedRef.current) return;
 
-    // 실기기 실제 동작 시에는 로컬 GPU/NeuralEngine 과부하 및 팅김(SIGKILL) 방지를 위해 서버 추론 전담으로 동작 (로컬 추론 스킵)
-    if (!isMockModeRef.current) {
-      return;
-    }
+    // 실기기 온디바이스 추론 재활성화 (Vision/raw-tensor 불일치로 인한 크래시 원인 수정 완료,
+    // CoreMLInferenceBridge.swift 참조). 재현 테스트를 위해 서버 추론 전담 우회 가드를 제거함.
 
     const minInterval = isMockModeRef.current
       ? MOCK_DETECT_MIN_INTERVAL_MS
@@ -144,7 +150,7 @@ export function CameraView() {
       setDetectionsRef.current(allDetections);
 
       // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
-      const validDetections = allDetections.filter(d => d.confidence > 0.40);
+      const validDetections = allDetections.filter(d => d.confidence > confThresholdRef.current);
       if (validDetections.length > 0) {
         let maxAreaRatio = 0;
         let mostCriticalClass = "";
@@ -158,9 +164,8 @@ export function CameraView() {
           }
         });
 
-        // 긴급 회피 클래스 목록
-        const highHazards = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "skateboard", "pothole", "caution"];
-        const isHighClass = highHazards.includes(mostCriticalClass);
+        // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
+        const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
 
         // 주차센서식 거리 반비례 4단계 피드백 캘리브레이션
         if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
@@ -258,7 +263,7 @@ export function CameraView() {
     );
   }
 
-  const activeDetections = detections.filter(d => d.confidence > 0.40);
+  const activeDetections = detections.filter(d => d.confidence > confThreshold);
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
         const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
@@ -293,8 +298,8 @@ export function CameraView() {
           )
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
-        {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합 */}
-        <BBoxOverlay detections={detections} />
+        {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
+        <BBoxOverlay detections={activeDetections} />
       </View>
 
       <View style={styles.overlayTop}>
@@ -305,6 +310,24 @@ export function CameraView() {
         {debugInfo.map((line, i) => (
           <Text key={i} style={styles.debugText}>{line}</Text>
         ))}
+      </View>
+
+      <View style={styles.confThresholdRow}>
+        <Text style={styles.confThresholdLabel}>신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%</Text>
+        <View style={styles.confThresholdButtons}>
+          <Pressable
+            style={styles.confThresholdButton}
+            onPress={() => setConfThreshold(v => Math.max(0.05, Math.round((v - 0.05) * 100) / 100))}
+          >
+            <Text style={styles.confThresholdButtonText}>-</Text>
+          </Pressable>
+          <Pressable
+            style={styles.confThresholdButton}
+            onPress={() => setConfThreshold(v => Math.min(0.95, Math.round((v + 0.05) * 100) / 100))}
+          >
+            <Text style={styles.confThresholdButtonText}>+</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.detectionListOverlay}>
@@ -332,14 +355,12 @@ function DebugBox({ info }: { info: string[] }) {
 // 간단한 스트링 해시를 통해 고유 HSL 색상 생성 (시각장애인 보행 시인성 확보)
 function getClassColor(className: string): string {
   // 긴급 충돌 위험군은 빨간색 강제 고정
-  const highHazards = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "skateboard", "pothole", "caution"];
-  if (highHazards.includes(className)) {
+  if (HIGH_HAZARDS.includes(className) || className === "caution") {
     return "#EF4444";
   }
 
   // 지면 관련 위험은 주황색 강제 고정
-  const groundHazards = ["roadway"];
-  if (groundHazards.includes(className)) {
+  if (className === "roadway") {
     return "#F59E0B";
   }
 
@@ -461,9 +482,43 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     borderRadius: 8,
   },
+  confThresholdRow: {
+    position: "absolute",
+    top: 216,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 8,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 8,
+  },
+  confThresholdLabel: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: "monospace",
+  },
+  confThresholdButtons: {
+    flexDirection: "row",
+  },
+  confThresholdButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#007AFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  confThresholdButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
   detectionListOverlay: {
     position: "absolute",
-    top: 250,
+    top: 300,
     left: 16,
     right: 16,
     padding: 10,
@@ -505,8 +560,12 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   cameraContainer: {
+    // 실제 캡처/추론 프레임은 640x640 정사각형(디버그로 확인함, 2026-07-06)이므로
+    // 미리보기 컨테이너도 1:1 정사각형이어야 BBox 좌표가 화면과 정합한다.
+    // 3:4였을 때는 미리보기가 실제 캡처 범위보다 넓게 보여, 박스가 실제 사물보다
+    // 훨씬 넓게 그려지는 것처럼 보이는 불일치가 있었다.
     width: "100%",
-    aspectRatio: 3 / 4,
+    aspectRatio: 1,
     overflow: "hidden",
     position: "relative",
     backgroundColor: "#111111",

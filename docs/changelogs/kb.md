@@ -815,3 +815,33 @@
   - minchodan_design_note.md: 3단계 커스텀 학습 대상 29종 2000장 추출 전략 명세 갱신
 - **Files**: scripts/prepare_aihub_yolo_detection.py, server/detection/yolo_detector.py, server/detection/yolo_segmentor.py, docs/design/api_specification.md, docs/design/minchodan_design_note.md
 - **Verification**: 핑퐁 및 YOLO 파이프라인 정합성 문서 교차 검증 완료
+
+---
+
+### 2026-07-06 | 3단계+iOS | iOS CoreML 온디바이스 추론 raw tensor 파싱 재구성 및 모델 클래스별 검증 보고서 신규 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - **iOS CoreML 추론 파이프라인 전면 재구성** (`client/ios/CoreMLInferenceBridge.swift`, 실제 Xcode 빌드 타겟 파일): 기존 `VNCoreMLRequest`/`VNImageRequestHandler`(Vision Framework) 기반 호출을 제거하고, `MLModel`을 직접 로드해 YOLO26n end2end 모델의 raw tensor 출력(`[1, 300, 6]`, `(cx, cy, w, h, confidence, class_id)`)을 수동 파싱하는 방식으로 교체. Vision이 강제하는 `VNRecognizedObjectObservation` 클래스 라벨 매핑 방식이 커스텀 29/4클래스 모델과 맞지 않아 필요해진 재작성.
+  - `computeUnits`를 `.cpuAndGPU`에서 `.cpuOnly`로 재하향: GPU(Metal) 경로에서도 `MLIR pass manager failed` 크래시가 재현되어(end2end NMS 연산인 Topk/GatherNd 등의 Metal 컴파일 실패로 추정), 현재는 CPU 전용으로 완전히 내려 안정성을 우선함.
+  - 이미지 방향 정규화 버그 수정 (`normalizedCGImage()` 추가): `UIImage.cgImage`가 EXIF `imageOrientation`을 반영하지 않아, 세로로 촬영된 사진이 회전되지 않은 채 그대로 모델에 들어가 엉뚱한 클래스로 오탐지되던 문제를 해결.
+  - bbox 좌표 단위 버그 수정: 클라이언트(`CameraView.tsx`)가 bbox 전체(x,y,w,h)를 640x640 픽셀 단위로 취급해 `FRAME_SIZE`로 나눠 화면 비율과 위험도 area ratio를 계산하므로, 기존에 `(x,y)`만 0~1로 정규화하고 `(w,h)`는 픽셀값으로 남겨 단위가 섞이던 것을 `(cx,cy,w,h)` 중심점 좌표를 좌상단 기준 `(x,y,w,h)`로만 변환하고 픽셀 단위를 유지하도록 수정.
+  - segmentation 모델을 선택(optional) 로드로 변경: `segmentation.mlmodelc`가 번들되지 않은 경우에도 `object_detection`만으로 det-only 모드로 기동하도록 방어 처리. det/seg 독립 벤치마크 로깅(`det_ms`/`seg_ms`/`total_ms`) 유지.
+  - `client/ios/Minchodan/CoreMLInferenceBridge.swift`(project.pbxproj 그룹에 path 속성이 없어 실제로는 빌드 타겟에 연결되지 않는 미사용 사본, `.d` 의존성 파일로 확인)에도 동일한 재구성을 반영해 두 파일 간 코드 드리프트를 최소화. 단, `confThreshold`(0.25 vs 0.05)와 bbox 정규화 방식은 실제 빌드 타겟 파일(`client/ios/CoreMLInferenceBridge.swift`)에만 추가 보정이 반영되어 있고 두 파일이 완전히 동일하지는 않음.
+  - **iOS 온디바이스 추론 재활성화** (`client/src/components/CameraView.tsx`): 위 크래시/오탐지 원인 수정을 근거로, 실기기(REAL 모드)에서 로컬 CoreML 추론을 건너뛰던 `if (!isMockModeRef.current) { return; }` 서버 전담 우회 가드를 제거.
+  - `CameraView.tsx`에 신뢰도 임계값 실시간 조절 UI 추가(`confThreshold` state, `+`/`-` 버튼, 5%~95% 범위): BBox 오버레이·감지 목록·Reflex Gate 피드백 전부 이 임계값 기준으로 필터링.
+  - `CameraView.tsx`의 긴급 회피 클래스 목록(`HIGH_HAZARDS`)을 신규 29클래스 taxonomy(`scooter`, `wheelchair`, `stroller`, `carrier` 등)에 맞게 갱신하고, `GROUND_HAZARDS`(segmentation `caution`/`roadway`)를 신설해 노면 위험 구간도 조기 경보 대상에 포함.
+  - 카메라 미리보기 컨테이너 종횡비를 `3:4`에서 `1:1`로 수정: 실제 캡처/추론 프레임이 640x640 정사각형인데 미리보기만 3:4였던 불일치로 인해 bbox가 실제 사물보다 넓게 그려지던 문제를 해결.
+  - `client/src/hooks/useOnDeviceDetection.ts`: 기존 COCO 91클래스 라벨(`COCO_CLASS_NAMES`)을 신규 커스텀 29클래스(`DET_CLASS_NAMES`, export)로 교체. object_detection 29클래스는 이미 보행 위험 사물만 선별한 도메인 특화 모델이므로, 기존 COCO 화이트리스트(`DET_HAZARD`, 7종 선별)가 불필요해져 제거하고 탐지 결과 전체를 위험군으로 취급하도록 단순화.
+  - iOS 온디바이스 bbox 좌표 어긋남 버그 수정: `client/src/hooks/useCamera.ts`의 `captureRealFrame`이 `expo-image-manipulator`의 `resize({width,height})`로 원본 사진을 종횡비 무시하고 늘려(stretch) 모델에 넣던 것을, 카메라 미리보기(`resizeMode="cover"`)와 동일하게 중앙 정사각형 크롭 후 리사이즈하도록 수정. `PhotoFile.width/height`가 EXIF 원본(회전 미반영) 축이라 세로 촬영 시 크롭 좌표축이 뒤바뀌는 문제도 `photo.orientation` 기준으로 함께 보정.
+  - `.mcp.json` 수정: XcodeBuildMCP 활성 워크플로우에 `swiftpm`, `project-scaffolding` 추가(기존 `simulator,device,macos,debugging,ui-automation`에 이어).
+  - `server/detection/yolo_detector.py`의 `_parse_result` 파싱 스텁 활성화: `SKILLS.md` 담당자 학습형 협업 규칙에 따라 `for box in result.boxes:` 루프 진입 전 조기 `return detections`로 막혀 있던 것을, 사용자 직접 지시에 따라 루프를 살리고 누락되어 있던 최종 `return detections`를 추가하여 서버 탐지 파이프라인이 실제 `list[Detection]`을 반환하도록 수정.
+  - `scripts/validate_class_samples.py` 신규 작성: `det_best_20260705.pt`(Detection 29클래스), `segbest.pt`(Segmentation 4클래스) 두 모델을 ultralytics로 직접 로드해 클래스별 샘플 이미지에 추론을 실행하고, `result.plot(conf=True, labels=True)`로 bbox+신뢰도 오버레이 이미지를 저장.
+  - `data/validation_samples/raw/<class_name>/`에 33클래스(Detection 29 + Segmentation 4) 각 3장씩 총 99장의 검증용 샘플 이미지 확보(한국 인도·도로 맥락 우선, 인터넷 공개 이미지). `data/validation_samples/results/{detection,segmentation}/<class_name>/`에 시각화 결과 저장.
+  - `docs/ops/model_class_validation_report.md` 신규 작성: 클래스별 탐지 성공률·총 박스 수·최고 신뢰도 표, 실패/저조 클래스(`stop` 0/3 등) 원인 분석 및 후속 조치 제안 수록.
+  - `docs/ops/ondevice_coreml_benchmark.md` 수정: Vision Framework 기반 서술을 raw tensor 파싱 기준으로 정정하고, `computeUnits` 값(`.all` → `.cpuOnly`) 및 클래스 체계(80클래스 COCO → 커스텀 29/4클래스) 최신화. 기존 실측 벤치마크 수치(`laptop` 탐지 등)는 구 아키텍처(Vision+COCO) 기준이라 현재 raw tensor 파이프라인 재측정 전까지 참고용으로만 유지한다고 명시.
+  - `docs/README.md` 수정: 버전 v0.7.0 → v0.8.0, ops/ 문서 목록에 모델 클래스별 검증 보고서 추가.
+  - `.claude/settings.json` 신규 작성: 검증 이미지 수집 과정에서 반복적으로 발생하던 curl/WebSearch/WebFetch 권한 프롬프트를 줄이기 위해 `Bash(curl *)`, `WebSearch`, `WebFetch(domain:commons.wikimedia.org)` 등 허용 목록 추가.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/ios/Minchodan/CoreMLInferenceBridge.swift`, `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `.mcp.json`, `server/detection/yolo_detector.py`, `scripts/validate_class_samples.py`, `docs/ops/model_class_validation_report.md`, `docs/ops/ondevice_coreml_benchmark.md`, `docs/README.md`, `.claude/settings.json`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 신규 에러 없음 확인. `scripts/validate_class_samples.py` 실행 결과 Detection 29클래스 중 28개 클래스 최소 1장 이상 탐지 성공, Segmentation 4클래스 전부 탐지 성공. `stop` 클래스만 3장 전부 탐지 실패(conf 0.01까지 낮춰도 미탐지) 확인.
+- **비고**: `stop` 클래스 탐지 실패는 학습 데이터 부족 또는 `traffic_sign`과의 클래스 혼동 가능성으로 추정되며, 재학습 데이터 보강이 필요하다. `traffic_light_controller` 등 일부 클래스는 한국 실사 샘플을 끝내 확보하지 못해 해외 사진으로 대체됐다(상세는 검증 보고서 3.3절 참조). iOS raw tensor 파이프라인은 실기기 재빌드 후 벤치마크 재측정이 필요하며(`docs/ops/ondevice_coreml_benchmark.md` §4 부록 참조), `client/ios/Minchodan/CoreMLInferenceBridge.swift`는 여전히 빌드 미대상 사본이므로 향후 정리(삭제 또는 실제 연결) 필요.

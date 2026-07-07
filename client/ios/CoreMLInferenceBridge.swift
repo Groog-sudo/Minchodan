@@ -1,3 +1,7 @@
+// 실제 Xcode 빌드 타겟 파일 (project.pbxproj의 "Minchodan" 그룹에 path 속성이 없어
+// 이 파일의 fileRef가 SRCROOT 바로 아래, 즉 이 경로로 resolve된다. .d 의존성 파일로 확인함, 2026-07-06).
+// client/ios/Minchodan/CoreMLInferenceBridge.swift 는 프로젝트에 실제로 연결되지 않은 미사용 사본이다.
+
 import Foundation
 import CoreML
 import Vision
@@ -12,8 +16,10 @@ class CoreMLInferenceBridge: NSObject {
   private var segModel: MLModel?
   private var detModel: MLModel?
 
-  // confidence 임계값 (패딩 박스 및 노이즈 필터링)
-  private let confThreshold: Double = 0.25
+  // confidence 임계값 (패딩 박스 및 노이즈 필터링).
+  // 실제 표시/경보 기준 임계값은 앱 UI(CameraView.tsx)에서 사용자가 조절하므로,
+  // 여기서는 조절 가능 범위를 넓게 확보하기 위해 낮은 하한값만 둔다.
+  private let confThreshold: Double = 0.05
   // Object Detection 29 커스텀 클래스 라벨 (det_best_20260705.mlpackage 기준)
   private let classNames: [Int: String] = [
     0: "barricade", 1: "bench", 2: "bicycle", 3: "bollard", 4: "bus",
@@ -37,8 +43,9 @@ class CoreMLInferenceBridge: NSObject {
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
       let config = MLModelConfiguration()
-      // ANE 가속 에러(MLIR pass manager failed) 우회를 위해 CPU 및 GPU 가속으로 정책 완화
-      config.computeUnits = .cpuAndGPU
+      // GPU(Metal) 경로에서도 MLIR pass manager failed 크래시가 재현되어(Topk/GatherNd 등
+      // end2end NMS 연산의 Metal 컴파일 실패로 추정) CPU 전용으로 완전히 하향함.
+      config.computeUnits = .cpuOnly
 
       // object_detection (필수) - end2end raw tensor 모델
       guard let detURL = Bundle.main.url(forResource: "object_detection", withExtension: "mlmodelc") else {
@@ -74,9 +81,12 @@ class CoreMLInferenceBridge: NSObject {
       return
     }
 
+    // cgImage는 EXIF 방향 정보(imageOrientation)를 반영하지 않으므로,
+    // 회전된 상태 그대로 모델에 들어가 완전히 다른(엉뚱한) 클래스로 오탐지되는 원인이 된다.
+    // 반드시 방향이 정규화된(.up) cgImage를 사용해야 한다.
     guard let imageData = Data(base64Encoded: base64Image),
           let image = UIImage(data: imageData),
-          let cgImage = image.cgImage else {
+          let cgImage = image.normalizedCGImage() else {
       reject("INVALID_IMAGE", "전송된 base64 이미지 디코딩 실패", nil)
       return
     }
@@ -219,15 +229,12 @@ class CoreMLInferenceBridge: NSObject {
       if confidence < confThreshold { continue }
       if classId < 0 || classId >= numClasses { continue }
 
-      // YOLO26n end2end 모델의 산출물은 픽셀 단위(0~640) 좌표이므로 0~1 정규화값으로 변환
-      // (cx, cy, w, h) 포맷을 React Native 좌표계의 기준점(origin=좌상단)인 (x, y, w, h) 포맷으로 변환
-      let imgSize = 640.0 // 입력 이미지 640x640 고정
-      let nx = cx / imgSize
-      let ny = cy / imgSize
-      let nw = w / imgSize
-      let nh = h / imgSize
-      let x = nx - nw / 2.0
-      let y = ny - nh / 2.0
+      // 클라이언트(CameraView.tsx)는 bbox 전체(x,y,w,h)를 640x640 픽셀 단위로 취급하여
+      // FRAME_SIZE(640)로 나눠 화면 비율(%)과 위험도 area ratio를 계산한다.
+      // x,y만 정규화하고 w,h는 원본 픽셀값으로 남기면 단위가 섞여 박스 위치가 다 뭉치므로,
+      // (cx, cy, w, h) 중심점 좌표를 좌상단 기준 (x, y, w, h)로만 변환하고 픽셀 단위를 유지한다.
+      let x = cx - w / 2.0
+      let y = cy - h / 2.0
       let className = activeClassNames[classId] ?? "unknown"
 
       results.append([
@@ -251,5 +258,21 @@ class CoreMLInferenceBridge: NSObject {
     }
 
     return results
+  }
+}
+
+private extension UIImage {
+  // imageOrientation을 픽셀 데이터에 반영해 방향이 정규화된(.up) CGImage를 반환한다.
+  // UIImage.cgImage는 회전 메타데이터를 무시한 원본 센서 방향 그대로이므로,
+  // 세로로 촬영된 사진을 그대로 쓰면 모델이 90도 회전된 이미지를 받게 된다.
+  func normalizedCGImage() -> CGImage? {
+    if imageOrientation == .up {
+      return cgImage
+    }
+    let renderer = UIGraphicsImageRenderer(size: size)
+    let normalized = renderer.image { _ in
+      draw(in: CGRect(origin: .zero, size: size))
+    }
+    return normalized.cgImage
   }
 }

@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.7.0 (2026-07-01 Post-MVP 하이브리드 온디바이스 로드맵 설계서 추가)
+> **버전**: v0.8.0 (2026-07-06 모델 클래스별 검증 보고서 추가)
 
 ## 문서 목록
 
@@ -124,6 +124,7 @@ docs/
 | **모바일 빌드 트러블슈팅 가이드** | [mobile_build_troubleshooting.md](ops/mobile_build_troubleshooting.md) | **iOS 샌드박싱/Rosetta ffi 및 Android SDK/JDK 버전 충돌 해결 핸드북** |
 | **코드 품질 검증 가이드** | [code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 검증 파이프라인** |
 | **iOS CoreML ANE 벤치마크** | [ondevice_coreml_benchmark.md](ops/ondevice_coreml_benchmark.md) | **CoreML ANE 온디바이스 추론 지연 벤치마크 및 서버 KPI 비교** |
+| **모델 클래스별 검증 보고서** | [model_class_validation_report.md](ops/model_class_validation_report.md) | **YOLO26n 33클래스(탐지29+세그멘테이션4) 샘플 이미지 탐지 검증 결과** |
 | Git 브랜칭 전략 | [git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조 (`main` / `dev` / 개인), PR 작업 규칙 |
 | 테스트 명세서 | [test_specification.md](ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
 

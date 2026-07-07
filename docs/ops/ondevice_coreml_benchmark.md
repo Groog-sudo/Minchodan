@@ -1,10 +1,10 @@
 # iOS CoreML ANE 추론 지연 벤치마크 명세
 
 > **작성일**: 2026-07-05
-> **버전**: v1.1.0 (2026-07-05 실기기 벤치마크 측정 완료 반영)
+> **버전**: v1.2.0 (2026-07-06 Vision Framework 제거, raw tensor 파싱 재구성 반영. §2·§4·§6 갱신, 실측 재측정 전까지 §4/부록 수치는 구 아키텍처 참고용)
 > **기준 문서**: [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) (3단계 KPI), [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](../mobile/ondevice_inference_engine_isolation_plan.md)
-> **코드 참조**: `client/ios/CoreMLInferenceBridge.swift`, `client/ios/Minchodan/CoreMLInferenceBridge.swift`
-> **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md)
+> **코드 참조**: `client/ios/CoreMLInferenceBridge.swift`(실제 Xcode 빌드 타겟), `client/ios/Minchodan/CoreMLInferenceBridge.swift`(미사용 사본)
+> **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md), [`docs/ops/model_class_validation_report.md`](model_class_validation_report.md)
 
 ---
 
@@ -22,14 +22,17 @@
 |:---|:---|
 | **하드웨어** | 고태현 iPhone (애플 실리콘 탑재, Apple Neural Engine 내장) |
 | **OS** | iOS 16.4+ |
-| **추론 엔진** | CoreML (`MLModelConfiguration.computeUnits = .all`) |
-| **ANE 바인딩** | `config.computeUnits = .all` → ANE 우선, CPU/GPU 폴백 |
+| **추론 엔진** | CoreML `MLModel` 직접 호출 + raw tensor 수동 파싱 (2026-07-06부로 Vision Framework/`VNCoreMLRequest` 제거) |
+| **컴퓨팅 유닛** | `config.computeUnits = .cpuOnly` — GPU(Metal) 경로에서도 `MLIR pass manager failed` 크래시가 재현되어(end2end NMS 연산의 Metal 컴파일 실패 추정) CPU 전용으로 하향 |
 | **모델 포맷** | `.mlmodelc` (Xcode 컴파일 완료 바이너리) |
-| **모델 파일** | `object_detection.mlmodelc` (80 클래스 COCO), `segmentation.mlmodelc` (4 클래스 노면) |
-| **번들 상태** | `object_detection.mlpackage` + `segmentation.mlpackage` Xcode Resources 빌드 단계 등록 완료 |
+| **모델 파일** | `object_detection.mlmodelc` (커스텀 Object Detection **29클래스**, `det_best_20260705.pt` 파인튜닝, end2end raw tensor `[1, 300, 6]` 출력), `segmentation.mlmodelc` (커스텀 노면 Segmentation **4클래스**) — 두 모델 모두 80클래스 COCO 원본이 아닌 재학습 가중치 |
+| **번들 상태** | `object_detection.mlpackage` 필수 번들, `segmentation.mlpackage`는 선택(optional) 번들 — 미번들 시 det-only 모드로 자동 기동 |
 | **입력 해상도** | 640x640 RGB (`CVPixelBuffer`, `kCVPixelFormatType_32BGRA`) |
 | **프레임 압축** | JPEG 50% 품질, base64 인코딩 (원본 3.4MB → 12KB, 1/45 압축) |
 | **스레드 모델** | `DispatchQueue.global(qos: .userInteractive)` 백그라운드 처리 |
+| **이미지 방향 보정** | `normalizedCGImage()`로 EXIF `imageOrientation` 반영 후 추론 (2026-07-06 추가, 세로 촬영 시 오탐지 원인 수정) |
+
+> **2026-07-06 아키텍처 변경 요약**: 기존 `VNCoreMLRequest`/`VNRecognizedObjectObservation`(Vision Framework) 기반 파싱은 커스텀 29/4클래스 라벨 매핑과 맞지 않아 폐기하고, `MLModel.prediction(from:)`으로 raw tensor를 직접 받아 `(cx, cy, w, h, confidence, class_id)` 6속성을 수동 디코딩하는 방식으로 전면 교체했다. 상세는 [`docs/changelogs/kb.md`](../changelogs/kb.md) 2026-07-06 항목 참조.
 
 ---
 
@@ -81,7 +84,9 @@ React Native로 반환되는 JSON:
 
 ## 4. 벤치마크 결과
 
-### 4.1 추론 지연 측정값 (2026-07-05 실기기 측정)
+> **주의 (2026-07-06)**: 아래 §4.1~§4.3 및 부록 수치는 2026-07-05 Vision Framework + COCO 클래스 기준 구 아키텍처에서 측정된 값이다. raw tensor 파싱 재구성(§2 참조) 이후 실기기 재측정이 아직 수행되지 않았으므로, 절대값이 아닌 상대적 참고치로만 사용한다. `computeUnits`가 `.cpuOnly`로 하향되어 실측 레이턴시는 아래 표보다 늘어날 가능성이 있다.
+
+### 4.1 추론 지연 측정값 (2026-07-05 실기기 측정, 구 아키텍처 기준)
 
 | 측정 항목 | 평균값 | 최소값 | 최대값 | 서버 KPI 목표 | 비교 결과 |
 |:---|:---|:---|:---|:---|:---|
@@ -216,8 +221,8 @@ graph LR
 
 | 항목 | 내용 |
 |:---|:---|
-| **CoreML 벤치마크 코드 (신규)** | `client/ios/CoreMLInferenceBridge.swift` — det/seg 독립 측정, raw tensor 파싱 |
-| **CoreML 빌드 코드 (레거시)** | `client/ios/Minchodan/CoreMLInferenceBridge.swift` — Vision 기반, 총추론만 측정 |
+| **CoreML 벤치마크 코드 (실제 빌드 타겟)** | `client/ios/CoreMLInferenceBridge.swift` — det/seg 독립 측정, raw tensor 파싱, `computeUnits = .cpuOnly` |
+| **CoreML 코드 (미사용 사본)** | `client/ios/Minchodan/CoreMLInferenceBridge.swift` — project.pbxproj 미연결로 실제 빌드에 반영되지 않음. raw tensor 파싱은 동일 반영되었으나 confThreshold 등 일부 보정값은 실제 빌드 타겟과 다름 |
 | **서버 KPI 기준** | [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) §4 종단 지연 목표 |
 | **온디바이스 격리 설계** | [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](../mobile/ondevice_inference_engine_isolation_plan.md) |
 | **iOS 구현 설계서** | [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md) §1.5 하이브리드 아키텍처 |

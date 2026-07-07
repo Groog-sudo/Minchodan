@@ -122,11 +122,6 @@ class YoloDetector(DetectorInterface):
 
         names = result.names
 
-        # 담당자님, 여기에 for box in result.boxes: 로 시작하는 루프를 직접 타이핑해주세요!
-        # (box.cls, box.conf, box.xyxy, box.id 를 파싱하여 Detection 객체로 append 하시면 됩니다.)
-
-        return detections
-
         for box in result.boxes:
             # 1. 클래스 ID 와 이름 파싱 (Tensor -> int)
             cls_id = int(box.cls[0])
@@ -155,3 +150,5 @@ class YoloDetector(DetectorInterface):
                     risk=None,
                 )
             )
+
+        return detections

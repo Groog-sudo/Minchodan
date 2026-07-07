@@ -9,7 +9,7 @@
         "mcp"
       ],
       "env": {
-        "XCODEBUILDMCP_ENABLED_WORKFLOWS": "simulator,device,macos,debugging,ui-automation"
+        "XCODEBUILDMCP_ENABLED_WORKFLOWS": "simulator,device,macos,debugging,ui-automation,swiftpm,project-scaffolding"
       }
     }
   }

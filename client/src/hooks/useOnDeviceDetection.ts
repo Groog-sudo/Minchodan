@@ -4,20 +4,16 @@ import { DetectionResult } from "../inference/types";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 
-// 보행 충돌 위험 COCO 클래스 인덱스 명세 (기존 TFLite 명세와 정합)
-const COCO_CLASS_NAMES = [
-  "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-  "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-  "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-  "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
-  "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
-  "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
-  "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana",
-  "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza",
-  "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table",
-  "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
-  "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock",
-  "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
+// Object Detection 29 커스텀 클래스 인덱스 명세
+// (CoreMLInferenceBridge.swift의 classNames 딕셔너리, det_best_20260705.mlpackage 기준과 순서 일치)
+export const DET_CLASS_NAMES = [
+  "barricade", "bench", "bicycle", "bollard", "bus",
+  "car", "carrier", "cat", "chair", "dog",
+  "fire_hydrant", "kiosk", "motorcycle", "movable_signage",
+  "parking_meter", "person", "pole", "potted_plant",
+  "power_controller", "scooter", "stop", "stroller",
+  "table", "traffic_light", "traffic_light_controller",
+  "traffic_sign", "tree_trunk", "truck", "wheelchair",
 ];
 
 const SEG_CLASS_NAMES = [
@@ -27,9 +23,11 @@ const SEG_CLASS_NAMES = [
   "braille_normal",
 ];
 
-// 위험 주의/차도/장애물 클래스 인덱스 (기존 로직 보존)
+// object_detection 29 클래스는 범용 COCO가 아니라 보행 위험 사물만 선별해
+// 재학습된 도메인 특화 모델이므로, 탐지된 결과 자체가 이미 전부 위험군이다
+// (기존 COCO 91클래스에서 7종만 골라 쓰던 화이트리스트 방식이 불필요해짐).
+// segmentation은 노면 상태 4클래스 중 위험 구간(caution, roadway)만 위험군으로 취급한다.
 const SEG_HAZARD = new Set<number>([1, 2]); // caution, roadway
-const DET_HAZARD = new Set<number>([0, 1, 2, 3, 5, 7, 36]); // person, bicycle, car, motorcycle, bus, truck, skateboard
 
 const FRAME_SIZE = 640;
 const PROXIMITY_Y = FRAME_SIZE * 0.85; // 하단 15% 진입 임계치
@@ -103,9 +101,7 @@ export function useOnDeviceDetection() {
       let highest: OnDeviceDetectionResult | null = null;
       const all = [...det, ...seg]; // det 우선순위 적용
       for (const d of all) {
-        const isDetHazard =
-          d.model === "object_detection" &&
-          DET_HAZARD.has(COCO_CLASS_NAMES.indexOf(d.className));
+        const isDetHazard = d.model === "object_detection";
         const isSegHazard =
           d.model === "segmentation" &&
           SEG_HAZARD.has(SEG_CLASS_NAMES.indexOf(d.className));
