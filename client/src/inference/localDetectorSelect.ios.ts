@@ -93,13 +93,21 @@ class CoreMLDetector implements LocalDetector {
         : Promise.resolve({ seg: [], det: [] } as DualDetectionResult);
 
       // det 및 CoreML 세그멘테이션 (base64 사용)
-      let coremlResults: { seg: any[]; det: any[] } = { seg: [], det: [] };
+      let coremlResults: DualDetectionResult = { seg: [], det: [] };
       if (base64) {
         const bridgeResult = await CoreMLInferenceBridge.detectFrame(base64);
         // 벤치마크 로그 출력 (Swift 네이티브 측정값)
         if (bridgeResult.benchmark) {
           const b = bridgeResult.benchmark;
-          console.log(`[CoreMLBenchmark] det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`);
+          console.log(`[CoreMLBenchmark] det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms scene=${b.scene_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`);
+        }
+        // docs/design/indoor_fp_mitigation_design.md §4.4: isLikelyIndoor 게이트 판정에
+        // 더해, top-5 identifier는 계속 로그로 남겨 향후 키워드 집합 보강에 활용한다.
+        if (bridgeResult.scene?.topLabels?.length) {
+          const labels = bridgeResult.scene.topLabels
+            .map((l: { identifier: string; confidence: number }) => `${l.identifier}(${l.confidence.toFixed(2)})`)
+            .join(", ");
+          console.log(`[SceneClassify] ${labels}`);
         }
         coremlResults = bridgeResult as DualDetectionResult;
       } else {
@@ -111,12 +119,14 @@ class CoreMLDetector implements LocalDetector {
         return {
           det: coremlResults.det,
           seg: segResults.seg,
+          scene: coremlResults.scene,
         };
       } else {
         // 완전 CoreML 가속 모드
         return {
           det: coremlResults.det,
           seg: coremlResults.seg || [],
+          scene: coremlResults.scene,
         };
       }
     } catch (e) {

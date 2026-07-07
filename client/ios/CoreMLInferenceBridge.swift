@@ -111,19 +111,27 @@ class CoreMLInferenceBridge: NSObject {
           segLatency = (CFAbsoluteTimeGetCurrent() - segStartTime) * 1000.0
         }
 
-        let totalLatency = detLatency + segLatency
-        print("[CoreMLBridge] 벤치마크 - 탐지(det): \(String(format: "%.2f", detLatency))ms | 분할(seg): \(String(format: "%.2f", segLatency))ms | 총추론: \(String(format: "%.2f", totalLatency))ms")
+        // docs/design/indoor_fp_mitigation_design.md §4: isLikelyIndoor 판정 + top-5
+        // identifier+confidence를 함께 반환한다(§4.4 게이트는 JS 측 CameraView.tsx에서 결합).
+        let sceneStartTime = CFAbsoluteTimeGetCurrent()
+        let sceneResult = self.classifyScene(cgImage: cgImage)
+        let sceneLatency = (CFAbsoluteTimeGetCurrent() - sceneStartTime) * 1000.0
+
+        let totalLatency = detLatency + segLatency + sceneLatency
+        print("[CoreMLBridge] 벤치마크 - 탐지(det): \(String(format: "%.2f", detLatency))ms | 분할(seg): \(String(format: "%.2f", segLatency))ms | 씬분류(scene): \(String(format: "%.2f", sceneLatency))ms | 총추론: \(String(format: "%.2f", totalLatency))ms")
 
         DispatchQueue.main.async {
           let benchmarkDict: [String: Any] = [
             "det_ms": detLatency,
             "seg_ms": segLatency,
+            "scene_ms": sceneLatency,
             "total_ms": totalLatency
           ]
           let responseDict: [String: Any] = [
             "seg": segResults as NSArray,
             "det": detResults as NSArray,
-            "benchmark": benchmarkDict as NSDictionary
+            "benchmark": benchmarkDict as NSDictionary,
+            "scene": sceneResult as NSDictionary
           ]
           resolve(responseDict as NSDictionary)
         }
@@ -132,6 +140,74 @@ class CoreMLInferenceBridge: NSObject {
           reject("EXEC_ERROR", "추론 실행 오류: \(error.localizedDescription)", error as NSError)
         }
       }
+    }
+  }
+
+  // docs/design/indoor_fp_mitigation_design.md §4 실내/실외 씬 분류기 게이트.
+  // Vision 내장 VNClassifyImageRequest는 det/seg 모델과 완전히 독립된 Apple 사전학습
+  // 분류기라 우리 모델의 도메인쉬프트를 공유하지 않는다. 키워드 집합은 실내 558건 +
+  // 실내/실외 혼합 74건(2026-07-07) 실측 로그 분석으로 확정했다(§4.5 근거 참조).
+
+  // "outdoor" 단독 confidence보다 신뢰도가 높은 실외 긍정 증거: 지면/초목/도로 계열
+  // identifier. 실측 최대 confidence 0.66(grass/land), 0.48(foliage/plant), crosswalk
+  // 등장(0.27) 시 실외로 확정해도 안전했다.
+  private let outdoorPositiveIdentifiers: Set<String> = [
+    "grass", "land", "path", "plant", "foliage", "crosswalk", "sand_dune", "sand"
+  ]
+
+  // "outdoor"가 등장해도 실내 천장 조명을 달/밤하늘로 오인하는 것으로 추정되는
+  // 동반 identifier. 실내 558건 중 25%(139건)에서 이 조합으로 "outdoor" confidence가
+  // 최대 0.71까지 나왔다 - outdoor 리터럴 단독으로는 신뢰 불가.
+  private let indoorFalsePositiveIdentifiers: Set<String> = [
+    "night_sky", "moon", "celestial_body"
+  ]
+
+  private func classifyScene(cgImage: CGImage) -> [String: Any] {
+    do {
+      let request = VNClassifyImageRequest()
+      let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+      try handler.perform([request])
+
+      guard let observations = request.results else {
+        // 분류 실패(observations 없음) 시 판정 불가 상태이므로 §4.6 폴백 정책에 따라
+        // isLikelyIndoor=false(허용적)로 반환해 기존 co-occurrence 게이트만으로 동작시킨다.
+        return ["isLikelyIndoor": false, "confidence": 0.0, "topLabels": []]
+      }
+
+      let top5 = observations.prefix(5)
+      let topLabels = top5.map { obs -> [String: Any] in
+        ["identifier": obs.identifier, "confidence": Double(obs.confidence)]
+      }
+      let identifierSet = Set(top5.map { $0.identifier })
+
+      let outdoorEvidence = top5.first { self.outdoorPositiveIdentifiers.contains($0.identifier) }
+      let hasIndoorFPSignature = identifierSet.contains("outdoor")
+        && !identifierSet.isDisjoint(with: self.indoorFalsePositiveIdentifiers)
+
+      let isLikelyIndoor: Bool
+      let indoorConfidence: Double
+      if let outdoorEvidence {
+        // 지면/초목/도로 identifier가 top-5에 있으면 실외로 확정한다.
+        isLikelyIndoor = false
+        indoorConfidence = Double(outdoorEvidence.confidence)
+      } else if hasIndoorFPSignature {
+        // "outdoor"가 나와도 night_sky/moon/celestial_body와 동반되면 조명 오탐으로 간주해 override.
+        isLikelyIndoor = true
+        indoorConfidence = Double(top5.first { $0.identifier == "outdoor" }?.confidence ?? 0.0)
+      } else {
+        // 확정적 실외 증거가 없으면 보수적으로 실내로 취급한다(반사 경보 억제 방향 기본값).
+        isLikelyIndoor = true
+        indoorConfidence = 0.0
+      }
+
+      return [
+        "isLikelyIndoor": isLikelyIndoor,
+        "confidence": indoorConfidence,
+        "topLabels": topLabels
+      ]
+    } catch {
+      print("[CoreMLBridge] 씬 분류 실패, 허용적 폴백 적용: \(error.localizedDescription)")
+      return ["isLikelyIndoor": false, "confidence": 0.0, "topLabels": []]
     }
   }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLocalDetector } from "../inference/localDetector";
-import { DetectionResult } from "../inference/types";
+import { DetectionResult, SceneClassification } from "../inference/types";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 
@@ -79,9 +79,10 @@ export function useOnDeviceDetection() {
     async (
       frame: Float32Array,
       base64: string | null = null
-    ): Promise<{ seg: OnDeviceDetectionResult[]; det: OnDeviceDetectionResult[] }> => {
+    ): Promise<{ seg: OnDeviceDetectionResult[]; det: OnDeviceDetectionResult[]; scene?: SceneClassification }> => {
       let seg: OnDeviceDetectionResult[] = [];
       let det: OnDeviceDetectionResult[] = [];
+      let scene: SceneClassification | undefined;
 
       if (!detectorRef.current || !detectorRef.current.isLoaded) {
         return { seg, det };
@@ -91,6 +92,7 @@ export function useOnDeviceDetection() {
         const result = await detectorRef.current.detect(frame, base64);
         seg = result.seg;
         det = result.det;
+        scene = result.scene;
       } catch (e) {
         console.error("[OnDevice] 로컬 추론 실행 중 오류:", e);
       }
@@ -116,7 +118,7 @@ export function useOnDeviceDetection() {
       }
 
       // 중복 피드백 제어를 제거하여 상위 CameraView.tsx 단일 오케스트레이션으로 일원화합니다.
-      return { seg, det };
+      return { seg, det, scene };
     },
     []
   );

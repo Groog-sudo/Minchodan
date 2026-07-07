@@ -986,3 +986,64 @@
 - **관련 파일**: `server/detection/schemas.py`, `server/detection/bytetrack_tracker.py`, `server/detection/gates/reflex_gate.py`, `client/src/components/CameraView.tsx`, `tests/test_detection.py`, `tests/test_langgraph.py`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx tsc --noEmit` 오류 0건. `pytest tests/ --ignore=tests/test_ws_echo.py` 93건 전체 통과(신규 8건 포함). `ruff format/check`, `bandit` 전부 통과.
 - **비고**: `direction.py::estimate_distance()`의 `small_objects` 집합에도 동일 패턴의 존재하지 않는 클래스명(`kickboard`, `planter`)이 남아 있음을 검토 중 발견했으나, 이 함수는 현재 어디서도 호출되지 않는 죽은 코드라 이번 수정 범위에서 제외했다(향후 연결 시 함께 정정 필요). MIN_HIT_COUNT=3, 클래스별 confidence 값은 초기 추정치이며 실기기/실외 재현 테스트를 통해 조정이 필요할 수 있다.
+
+---
+
+### 2026-07-07 | 3단계 | 실내 오탐 완화 실기기 현장 검증 및 2차 방어선(co-occurrence, 안전노면 제외, bbox 라벨 clamp) 구현 + 2차 설계서 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**: 1차 완화책(클래스별 confidence + hit_count) 적용 후 실기기 실내 현장 재테스트를 진행한 결과, `car` 오탐이 confidence 0.916까지, `sidewalk_normal` 오탐이 0.95까지 나와 confidence 임계값만으로는 원천 차단이 불가능함을 실측으로 확인. 이에 따라 추가 방어선을 구현하고, 남은 근본 대응은 별도 설계서로 분리했다.
+  - `client/src/components/CameraView.tsx`: `VEHICLE_CLASSES`(차량류)에만 걸었던 실외 노면 co-occurrence 게이트(`hasOutdoorSurface`)를 전체 object_detection 클래스로 확장(bollard/movable_signage 등도 동일 패턴의 실내 오탐이 확인됨). `SAFE_SURFACE_CLASSES`(`sidewalk_normal`, `braille_normal`) 신설 — 안전한 정상 보행로는 화면을 얼마나 채우든 반사 경보 판정에서 제외(기존 `maxAreaRatio > 0.32` 무조건 최상위 경보 발동 조건이 클래스 무관하게 걸리는 문제를 해소).
+  - `BBoxOverlay`: bbox가 화면 밖(음수 좌표)으로 나갈 때 클래스명 라벨이 같이 잘려 안 보이는 문제를 라벨-박스 위치 분리 + clamp로 수정. 1차 수정에서 스타일 없는 wrapper `<View>`로 감쌌다가 %기반 좌표가 0x0으로 collapse된 부모 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생, `Fragment`로 교체해 두 View 모두 원래 컨테이너의 직계 자식으로 되돌려 해결.
+  - `docs/design/indoor_fp_mitigation_design.md`(신규): co-occurrence 게이트의 구조적 한계(seg 모델도 동일 도메인쉬프트를 공유해 "노면 신호=실외"라는 전제가 실내에서도 거짓이 됨)를 문서화하고, 재학습 없이 적용 가능한 2개 방어선(물리적 타당성 필터 - bbox가 640 캔버스를 초과하는 회귀 붕괴 케이스 차단, `VNClassifyImageRequest` 기반 독립 씬 분류기 게이트)의 구현 설계를 작성. 아직 코드 구현 전 단계(설계서만 작성).
+- **관련 파일**: `client/src/components/CameraView.tsx`, `docs/design/indoor_fp_mitigation_design.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. 실기기 재현 테스트로 co-occurrence 게이트 확장 후 동일 실내 물체 밀착 시 `car`/`bollard`/`movable_signage` 경보 미발동, `sidewalk_normal` 고신뢰도(0.7~0.81)에도 경보 미발동 확인. bbox 렌더링 회귀는 Fragment 수정 후 재확인 대기 중.
+- **비고**: `docs/design/indoor_fp_mitigation_design.md`의 §3(물리적 타당성 필터)·§4(씬 분류기 게이트)는 아직 구현 전이다. 특히 §3의 캔버스 초과 임계값(1.02배)은 실외 근접 상황에서의 정상 bbox 데이터가 없어 실외 현장 검증 전까지 확정치가 아니며, §4는 `VNClassifyImageRequest`의 identifier taxonomy 자체가 실측 전이라 로깅 전용 계측 단계부터 시작해야 한다.
+
+---
+
+### 2026-07-07 | 3단계 | 실내 오탐 완화 설계서(§3/§4) 구현 및 §4 씬 분류기 계측 1차 데이터 분석
+
+- **커밋**: (대기 중)
+- **변경 내용**: `docs/design/indoor_fp_mitigation_design.md` 설계서를 그대로 구현하고, §4 로깅 전용 계측 단계에서 실기기 실내 데이터를 수집·분석했다.
+  - `client/src/components/CameraView.tsx`: §3 물리적 타당성 필터 구현 — `isGeometricallyImplausible(bbox)` 추가(`CANVAS_OVERFLOW_MARGIN=1.02`, w/h가 640 캔버스를 2% 이상 초과하면 클래스 무관하게 반사 경보 제외). `validDetections` 필터 체인에 반영.
+  - `client/ios/CoreMLInferenceBridge.swift`: §4 롤아웃 2단계(로깅 전용 계측) 구현 — `VNClassifyImageRequest` 기반 `classifyScene()` 신설. `detectFrame` 응답에 `scene.topLabels`(top-5 identifier+confidence)와 `scene_ms` 지연시간을 추가(`isLikelyIndoor` 판정 로직은 아직 미구현, 설계서 §4.5 지침대로 계측 전용).
+  - `client/src/inference/localDetectorSelect.ios.ts`: 브리지 응답의 `scene.topLabels`를 `[SceneClassify] ...` 형식으로 Metro 콘솔에 로그 출력하도록 연결(게이트 미연결, 순수 계측).
+  - 네이티브(Swift) 변경이라 `mcp__xcodebuildmcp__build_run_device`로 리빌드·재설치 후 실기기에서 558개 `[SceneClassify]` 로그(전량 실내 세션)를 수집·분석.
+- **분석 결과 (실내 558개 샘플)**:
+  - `indoor` 리터럴 identifier는 **한 번도 등장하지 않음**. Apple 분류기 taxonomy에 이 정확한 라벨이 없거나 이번 씬에서 전혀 활성화되지 않았다.
+  - `outdoor`가 139/558(25%) 등장 — **전량 실내(사무실)에서 나온 오탐**. 동반 identifier(`night_sky`/`sky`/`moon`/`celestial_body`, 평균 confidence 0.11~0.21)로 보아 **천장 조명을 달/밤하늘로 오인해 "outdoor"로 연쇄 추론**하는 것으로 추정됨. 최대 confidence가 0.71까지 나와, 진짜 실외 confidence와 겹칠 위험이 있다(YOLO det/seg에서 봤던 FP-TP confidence 겹침 문제가 씬 분류기에서도 재현될 조짐).
+  - 반대로 `computer_monitor`(172회, 평균 0.70), `computer_keyboard`(122회, 평균 0.71), `people`/`adult`(87~92회, 평균 0.68~0.71), `desk`/`furniture`(57~66회, 평균 0.59~0.61)는 고빈도·고confidence로 안정적으로 실내를 정확히 짚어냈다.
+  - **결론**: `outdoor` 리터럴 라벨을 그대로 신뢰하는 단순 규칙은 위험하다(25% 오탐률, TP와 confidence 겹침 우려). 대신 "실내 사물 identifier가 고confidence로 존재하면 실내"라는 역방향(positive indoor evidence) 규칙이 더 유망해 보이나, **실외 비교 데이터 없이는 확정할 수 없다.**
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `build_run_device` 빌드 성공(processId 1677). §3은 실기기 재현 테스트로 기존 오탐 케이스에 대한 영향 없음(회귀 없음) 확인. §4는 계측 전용이라 게이트 동작에는 아직 영향 없음.
+- **비고**: 사용자 요청으로 실외 데이터 수집은 추후로 연기됨. §4.4 게이트 활성화(3단계)는 실외 `[SceneClassify]` 데이터 확보 후 재개한다. §3의 `CANVAS_OVERFLOW_MARGIN` 값도 여전히 실외 근접 상황 실측 검증 대기 중.
+
+---
+
+### 2026-07-07 | 3단계 | 실외 실측 로그 확보 및 §4.4 씬 분류기 게이트 규칙 확정·코드 반영
+
+- **커밋**: (대기 중)
+- **변경 내용**: Docker(Redis+Ollama+FastAPI, macOS CPU 구성) + ngrok(`partake-primer-surround.ngrok-free.dev`) + Metro 터널(`exp.direct`)을 기동해 실기기를 무선(핫스팟)으로 야외 이동시켜 `[SceneClassify]` 로그를 추가 수집하고, 이전 실내 558건 분석과 대조해 §4.4 게이트 규칙을 확정·구현했다.
+  - **실외 실측 분석(74건, 실내→이동→실외→재입장 혼합 세션)**: 진짜 실외 구간(잔디/보도, 191·194행)에서 `outdoor` confidence가 0.48~0.66으로, 기존에 확인된 실내 오탐 패턴(천장 조명→`night_sky`/`moon`/`celestial_body` 동반, 0.51 고정)보다 오히려 높게 나와 confidence 단독으로는 안정적 분리가 어려움을 확인. 대신 **동반 identifier의 종류**가 질적으로 달랐다 — 오탐은 항상 `night_sky`/`celestial_body`/`moon`과, 실외 정탐은 `grass`/`land`/`path`/`plant`/`foliage`/`crosswalk`(212행)와 함께 등장. 씬 분류 지연시간은 평균 11.27ms(최대 74.13ms, 콜드스타트 추정)로 반사 경로 예산(300ms) 대비 부담 없음을 확인.
+  - `docs/design/indoor_fp_mitigation_design.md`(v0.1.0 → v0.2.0): §4.3 `classifyScene()` 의사코드를 키워드 매핑 로직(`OUTDOOR_POSITIVE_IDENTIFIERS`/`INDOOR_FALSE_POSITIVE_IDENTIFIERS`)으로 확정, §4.4에 실측 근거 표와 3단계 확정 규칙(실외 긍정 증거 우선 → 조명 오탐 override → 기본값 실내) 추가, §4.5를 "해결된 항목"/"남은 한계"(실외 표본 4~5건뿐)로 재구성, §6 롤아웃 순서 1~3단계 완료 표시.
+  - `client/ios/CoreMLInferenceBridge.swift`: `classifyScene()`을 로깅 전용(`topLabels`만 반환)에서 `isLikelyIndoor`/`confidence` 판정 로직으로 교체. `outdoorPositiveIdentifiers`/`indoorFalsePositiveIdentifiers` 키워드 집합 추가. 분류 실패(예외/observations 없음) 시 `isLikelyIndoor=false`(허용적 폴백, §4.6)로 반환.
+  - `client/src/inference/types.ts`: `SceneClassification` 인터페이스 신규 추가, `DualDetectionResult`에 `scene?: SceneClassification` 필드 추가.
+  - `client/src/inference/localDetectorSelect.ios.ts`: `coremlResults` 타입을 `DualDetectionResult`로 변경하고 `detect()`의 양쪽 반환 경로(하이브리드/풀 CoreML)에 `scene` 필드를 전달하도록 수정(기존에는 로그만 남기고 값이 드롭됐음).
+  - `client/src/hooks/useOnDeviceDetection.ts`: `detectFrame()`이 `result.scene`을 캡처해 반환값에 포함하도록 수정(기존에는 `{ seg, det }`만 반환해 상위로 전파되지 않았음).
+  - `client/src/components/CameraView.tsx`: `handleFrame`에서 `scene`을 구조분해하고 `isOutdoorByScene = scene ? !scene.isLikelyIndoor : true`를 계산해, 기존 `hasOutdoorSurface`(seg 기반 co-occurrence)와 AND로 결합. `validDetections` 필터에 씬 분류 게이트 조건 추가.
+- **관련 파일**: `docs/design/indoor_fp_mitigation_design.md`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/types.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `build_run_device` 빌드 성공(processId 1954). 실기기 재설치 후 Metro 로그로 `[SceneClassify]`/`[CoreMLBenchmark]` 정상 출력 확인(현재 실내 세션 기준 `night_sky` override 패턴 재현). 게이트가 실제로 실외에서 정상 발동하고 실내에서 억제되는지의 현장 회귀 테스트는 아직 미실시.
+- **비고**: `OUTDOOR_POSITIVE_IDENTIFIERS`/`INDOOR_FALSE_POSITIVE_IDENTIFIERS` 키워드 집합은 오늘 확보한 작은 실외 표본(4~5건) 기준이라, 맑은 날/흐린 날/야간, 도로/공원 등 더 다양한 실외 환경에서 추가 수집·보강이 필요하다(설계서 §4.5 참조). 코드 반영은 완료했으나 실외 현장에서의 최종 회귀 검증(정상 탐지 유지 + 실내 오탐 억제 동시 확인)은 후속 세션 과제로 남는다.
+
+---
+
+### 2026-07-07 | 문서 | 씬 분류기 게이트 기법 해설 문서(팀 학습용) 신규 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**: 팀원들이 씬 분류기 게이트 기법(§4)을 잘 모른다는 피드백에 따라, 기존 기술 설계서(`indoor_fp_mitigation_design.md`)와 별도로 배경·원리·코드 위치·FAQ 중심의 학습용 해설 문서를 신규 작성했다.
+  - `docs/design/scene_classifier_gate_guide.md` 신규 작성(9개 섹션): (1) 문서 목적, (2) 문제 상황(도메인 시프트, 1차 완화책의 논리적 구멍), (3) 핵심 아이디어(VNClassifyImageRequest 독립성, AND 결합 아키텍처 mermaid), (4) 판정 규칙 도출 과정(단순 방법의 실패 → 동반 identifier 기반 규칙 확정, 실측 표 포함), (5) 코드 위치 매핑 표 + 데이터 흐름 mermaid, (6) 로그로 직접 확인하는 방법(예시 2종), (7) 한계 및 주의점, (8) FAQ 5문항, (9) 참고 문서.
+  - `docs/README.md`: v0.9.0 → v0.10.0, design/ 섹션 문서 목록에 신규 문서 인덱스 추가.
+- **관련 파일**: `docs/design/scene_classifier_gate_guide.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 규칙(이모지 금지, 한국어, 표 우선, 인용 블록 메타데이터, Mermaid 큰따옴표·`<br/>`) 준수 확인. `indoor_fp_mitigation_design.md`의 실측 수치(confidence, identifier 목록)와 교차 확인해 정합성 확보.
+- **비고**: 이 문서는 기술 설계서를 대체하지 않는다 — 안전성 검토·인터페이스 계약 등 구현 세부사항은 여전히 `indoor_fp_mitigation_design.md`가 원본이며, 이 문서는 그 내용을 처음 접하는 팀원 관점에서 재구성한 보조 자료다.

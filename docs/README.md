@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.9.0 (2026-07-07 detection 프레임 바이너리 전송 전환 및 iOS CoreML 재검증 반영, 관련 문서 전반 갱신)
+> **버전**: v0.10.0 (2026-07-07 씬 분류기 게이트 해설(팀 학습용) 문서 추가)
 
 ## 문서 목록
 
@@ -62,6 +62,8 @@ docs/
 | 파이프라인 단계 설계 | [pipeline_stage_design.md](design/pipeline_stage_design.md) | 7단계 run mode, 종단 지연 목표, 추상화 지점 |
 | 반사 오디오·햅틱 명세 | [reflex_audio_specification.md](design/reflex_audio_specification.md) | 반사 경로 비프음·진동 피드백 기술 명세 |
 | 보행이론 인사이트 | [behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
+| **실내 오탐 완화 2차 설계서** | [indoor_fp_mitigation_design.md](design/indoor_fp_mitigation_design.md) | **물리적 타당성 필터 + VNClassifyImageRequest 씬 분류기 게이트 설계** |
+| **씬 분류기 게이트 해설(팀 학습용)** | [scene_classifier_gate_guide.md](design/scene_classifier_gate_guide.md) | **VNClassifyImageRequest 게이트 기법을 배경·원리·코드 위치·FAQ로 풀어 쓴 학습용 문서** |
 
 ---
 

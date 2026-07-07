@@ -9,7 +9,7 @@
  * - WS 연결 여부와 캡처 시작을 분리: 모델 로드 완료 + 권한 확보 시 즉시 구동.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Dimensions, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
 
@@ -35,6 +35,23 @@ const REAL_DETECT_MIN_INTERVAL_MS = 120;
 const HIGH_HAZARDS = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "scooter", "wheelchair", "stroller", "carrier"];
 // 노면 위험 구간 (segmentation 클래스, SEG_HAZARD 인덱스와 정합: caution, roadway)
 const GROUND_HAZARDS = ["caution", "roadway"];
+// 2026-07-07 추가: 정상 보행로(안전한 바닥면)는 화면을 크게 채워도 장애물이 아니다.
+// 기존 로직은 maxAreaRatio > 0.32 등 면적 조건이 클래스와 무관하게 무조건 최상위(초접근)
+// 경보를 발동시켜, 카메라를 아래로 향하거나 바닥에 가까이 대면 정상 보행로만으로도
+// 연속음+강한 진동이 울리는 오탐이 관측됨. 안전 노면 클래스는 반사 경보 판정에서
+// 완전히 제외한다(디스플레이용 activeDetections/BBoxOverlay에는 계속 노출됨).
+const SAFE_SURFACE_CLASSES = ["sidewalk_normal", "braille_normal"];
+
+// 2026-07-07 추가: 이 모델(det/seg 둘 다)은 AI Hub 한국 인도(실외) 데이터셋만으로
+// 학습되어 실내 개념 자체를 모른다. 특정 클래스(car)만 개별로 막아본 결과 bollard/
+// movable_signage/pole 등 다른 클래스도 똑같이 실내에서 고신뢰도 오탐이 발생함을 확인함.
+// 이 제품 자체가 "실외 보행로 보조"로 스코프가 한정되어 있으므로(README/설계 문서),
+// object_detection 클래스 전체에 대해 "같은 프레임에 실외 보행로 segmentation 신호가
+// 전혀 없으면 반사 경보 대상에서 제외"하는 포괄적 교차검증(co-occurrence)을 적용한다.
+// segmentation 4클래스 자체(sidewalk_normal/caution/roadway/braille_normal)는 그 존재
+// 자체가 "실외 보행로를 보고 있다"는 근거이므로 이 게이트에서 자기 자신을 통과시킨다.
+const OUTDOOR_SURFACE_CLASSES = ["sidewalk_normal", "caution", "roadway", "braille_normal"];
+const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
 
 // 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
 // YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
@@ -60,6 +77,18 @@ const CLASS_MIN_CONFIDENCE: Record<string, number> = {
 function getEffectiveConfThreshold(className: string, baseThreshold: number): number {
   const classMin = CLASS_MIN_CONFIDENCE[className];
   return classMin !== undefined ? Math.max(classMin, baseThreshold) : baseThreshold;
+}
+
+// 2026-07-07 추가 (docs/design/indoor_fp_mitigation_design.md §3 물리적 타당성 필터):
+// bbox는 640x640 캔버스에 대한 회귀 출력이므로, 정상 학습 데이터의 GT는 캔버스 경계를
+// 초과할 수 없다. 실기기 실내 오탐 로그에서 w/h가 640을 뚜렷하게 초과(641~676)하는
+// 회귀 붕괴 패턴이 반복 관측됨 - 클래스와 무관하게 이런 bbox는 신뢰할 수 없으므로
+// 반사 경보 판정에서 제외한다. 부동소수점 회귀 노이즈 감안 2% 여유만 허용.
+const CANVAS_OVERFLOW_MARGIN = 1.02;
+
+function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
+  const maxSize = FRAME_SIZE * CANVAS_OVERFLOW_MARGIN;
+  return bbox.w > maxSize || bbox.h > maxSize;
 }
 
 export function CameraView() {
@@ -187,7 +216,7 @@ export function CameraView() {
     lastDetectTsRef.current = now;
     try {
       const t0 = Date.now();
-      const { seg, det, benchmark } = await detectFrameRef.current(frame.float32, frame.base64) as any;
+      const { seg, det, benchmark, scene } = await detectFrameRef.current(frame.float32, frame.base64) as any;
       const dt = Date.now() - t0;
       if (benchmark) {
         console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
@@ -200,9 +229,26 @@ export function CameraView() {
       setDetectionsRef.current(allDetections);
 
       // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
-      const validDetections = allDetections.filter(
-        d => d.confidence > getEffectiveConfThreshold(d.className, confThresholdRef.current)
+      const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
+        (d: OnDeviceDetectionResult) => OUTDOOR_SURFACE_CLASSES.includes(d.className) && d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE
       );
+      // docs/design/indoor_fp_mitigation_design.md §4.4: seg 기반 co-occurrence 게이트(hasOutdoorSurface)와
+      // VNClassifyImageRequest 씬 분류(scene.isLikelyIndoor)를 AND로 결합한다(중첩 방어).
+      // scene이 없거나(Android, 계측 실패) 판정 불가면 true로 폴백해 기존 게이트만으로 동작시킨다.
+      const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
+      const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
+        // 안전 보행로는 화면을 아무리 채워도 장애물이 아니므로 반사 경보 판정에서 제외
+        if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
+        // 회귀 붕괴로 캔버스 크기를 초과하는 bbox는 기하학적으로 신뢰 불가 (§3 물리적 타당성 필터)
+        if (isGeometricallyImplausible(d.bbox)) return false;
+        if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
+        // 실외 보행로 신호가 전혀 없는 프레임(=실내로 추정)이면 어떤 클래스든 반사 경보 대상에서 제외.
+        // OUTDOOR_SURFACE_CLASSES 자신은 존재 자체가 hasOutdoorSurface를 true로 만들므로 자기 자신은 통과한다.
+        if (!hasOutdoorSurface) return false;
+        // §4.4 씬 분류 게이트: 지면/초목/도로 긍정 증거 없이 실내로 판정되면 제외
+        if (!isOutdoorByScene) return false;
+        return true;
+      });
       if (validDetections.length > 0) {
         let maxAreaRatio = 0;
         let mostCriticalClass = "";
@@ -442,26 +488,39 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
         const heightPct = (d.bbox.h / FRAME_SIZE) * 100;
         const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
         const distance = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
+        // 박스가 화면 밖(음수 좌표 등)으로 나가도 클래스명 라벨은 항상 화면 안쪽에 보이도록
+        // 박스 테두리와 라벨의 위치를 분리하고, 라벨 좌표만 [0, 100]%로 clamp한다.
+        const labelLeftPct = Math.min(100, Math.max(0, leftPct));
+        const labelTopPct = Math.min(100, Math.max(0, topPct));
+        // Fragment 사용 필수: 두 절대좌표 View를 감싸는 style 없는 중간 View를 두면
+        // 그 View가 0x0으로 collapse되어, 안쪽 %기반 left/top/width/height가 그 0x0
+        // 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생함(실기기 재현 확인, 2026-07-07).
+        // 반드시 두 View 모두 바깥 absoluteFill 컨테이너의 직계 자식으로 유지해야 한다.
         return (
-          <View
-            key={`${d.model}-${i}`}
-            style={{
-              position: "absolute",
-              left: `${leftPct}%`,
-              top: `${topPct}%`,
-              width: `${widthPct}%`,
-              height: `${heightPct}%`,
-              borderWidth: 2,
-              borderColor: color,
-              backgroundColor: "transparent",
-            }}
-          >
-            <View style={[styles.bboxLabel, { backgroundColor: color }]}>
+          <Fragment key={`${d.model}-${i}`}>
+            <View
+              style={{
+                position: "absolute",
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                width: `${widthPct}%`,
+                height: `${heightPct}%`,
+                borderWidth: 2,
+                borderColor: color,
+                backgroundColor: "transparent",
+              }}
+            />
+            <View
+              style={[
+                styles.bboxLabel,
+                { position: "absolute", left: `${labelLeftPct}%`, top: `${labelTopPct}%`, backgroundColor: color },
+              ]}
+            >
               <Text style={styles.bboxText}>
                 {d.className} {distance.toFixed(1)}m ({(d.confidence * 100).toFixed(0)}%)
               </Text>
             </View>
-          </View>
+          </Fragment>
         );
       })}
     </View>
