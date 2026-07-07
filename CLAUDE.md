@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-07-07 §4/§8/§9 문서 링크를 실제 `docs/` 하위 구조 기준으로 정정, 존재하지 않는 `console/` 참조 제거, `xcode-build-management` 스킬 추가, junction 오기 정정)
+> **버전**: v0.3.1 (2026-07-07 §8 스킬 문서 실측 정합 감사 완료: stage2/3/6/7 스킬을 실제 코드 기준으로 정정하고 `.agents`↔`.claude` 두 트리 전수 동기화)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -150,7 +150,7 @@
 | `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점                                  |
 | `xcode-build-management`    | -    | `.agents/skills/xcode-build-management/`    | iOS Xcode 프로젝트 빌드, 시뮬레이터 관리 및 Swift/SwiftUI 리팩토링/디버깅 |
 
-> **2026-07-07 정정**: `.agents/skills/`(opencode, 범용)와 `.claude/skills/`(Claude Code)는 junction/symlink가 **아니라 서로 다른 실제 디렉토리**다(inode 다름, 실측 확인). `.claude/skills/`에는 현재 `xcode-build-management`가 누락되어 있어 두 트리가 어긋나 있으니, 신규 스킬 추가 시 양쪽에 수동으로 반영해야 한다.
+> **2026-07-07 정정**: `.agents/skills/`(opencode, 범용)와 `.claude/skills/`(Claude Code)는 junction/symlink가 **아니라 서로 다른 실제 디렉토리**다(inode 다름, 실측 확인). **2026-07-07 두 트리를 전수 동기화 완료**(8개 스킬 SKILL.md·references 전부 일치, `xcode-build-management` 포함)했으나 여전히 독립 디렉토리이므로, 신규 스킬 추가나 SKILL.md 수정 시 양쪽에 수동으로 반영해야 한다.
 
 ---
 

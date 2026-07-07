@@ -9,9 +9,11 @@ description: |
 # LLM Guidance Orchestrator (6단계: 종합 회피 가이드 생성)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.2.1 (2026-07-07 실제 LLM 클라이언트·핫스왑 트리거 정정)
 > **설계 기준**: `docs/minchodan_design_note.md` 6단계
 > **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 14, 12, 11, 17.2
+
+> **2026-07-07 정정**: 본문 코드는 LangChain 래퍼 `ChatOllama`/`ChatOpenAI`를 예시로 쓰지만, **실제 구현은 래퍼 없이 raw `ollama.AsyncClient`/`httpx`를 직접 감싼 `SimpleOllamaClient`/`SimpleOpenAIClient`**(`server/orchestration/llm_client_factory.py`)다. 핫스왑 트리거도 "L3 실패율"이 아니라 **GPU 부하 감지(`start_gpu_monitor`)** 기준이다. 로컬 기본 모델은 `gemma4:e4b`(env `GEMMA_MODEL`), 상용 폴백은 `gpt-4o-mini`. 상세: [`docs/stage-guides/stage6_orchestration_design.md`](../../../docs/stage-guides/stage6_orchestration_design.md).
 
 ## 개요
 
@@ -122,7 +124,11 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
-MID_RISK_CLASSES = {"bicycle", "kickboard", "pothole", "manhole", "construction_cone"}
+# 2026-07-07 정정: 실제 29클래스 모델 기준 목록. kickboard/pothole/manhole/construction_cone는
+# 존재하지 않는 클래스명이었다(전동킥보드는 scooter이며 반사 게이트 고위험 처리). 실제 코드는
+# barricade/bench/bicycle/bollard/carrier/chair/fire_hydrant/kiosk/movable_signage/parking_meter/
+# pole/potted_plant/power_controller/stroller/table/traffic_light_controller/tree_trunk/wheelchair.
+MID_RISK_CLASSES = {"bicycle", "bollard", "kiosk", "movable_signage", "pole", "wheelchair", "..."}
 # high 위험도는 3단계 게이트에서 이미 반사 경로로 처리됨
 
 def classify_risk(detected_classes: list) -> str:

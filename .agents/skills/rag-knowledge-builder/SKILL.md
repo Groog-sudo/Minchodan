@@ -199,12 +199,14 @@ def build_chroma_db(captions: list, persist_dir: str = "data/chroma_db"):
 
 ## v1.1 핵심: 메타데이터 분리 클래스 일치
 
-메타데이터 `objects`·`scene_type`을 3단계 **분리 클래스**(예: `braille_damaged`)와 일치시켜 검색 정합을 확보한다.
+메타데이터 `objects`·`scene_type`을 3단계 클래스와 일치시켜 검색 정합을 확보한다.
 
-| 메타데이터 필드 | 값 예시 | 3단계 클래스와의 관계 |
+> **알려진 불일치(2026-07-07)**: 현재 RAG 라벨 정의(`server/rag/shared/labels.py`)의 `ALL_CLASSES`는 최초 계획 명칭 `[kickboard, bollard, braille_damaged, stairs, crosswalk, manhole, grating]`을 그대로 쓰고 있어, **실제 파인튜닝 완료 탐지 모델의 29클래스(전동킥보드=`scooter`, `stairs`/`manhole`/`grating`은 `caution`으로 통합)와 어긋난다.** 아래 예시 값도 `labels.py` 기준이라 탐지 클래스명과 다르다. RAG 검색 정합을 위해서는 `labels.py`를 탐지 taxonomy에 맞추는 코드 정정이 필요하나, 이는 RAG 지식베이스 재빌드가 걸린 담당자 판단 영역이라 여기서는 사실만 기록한다.
+
+| 메타데이터 필드 | 값 예시(현재 labels.py 기준) | 비고 |
 | --- | --- | --- |
-| `objects` | `["kickboard", "bollard"]` | Yolo 26N - Object Detection 클래스와 일치 |
-| `scene_type` | `braille_damaged` | Yolo 26N - Segmentation 클래스와 일치 |
+| `objects` | `["kickboard", "bollard"]` | 탐지 모델은 `scooter` 사용 - 위 불일치 참조 |
+| `scene_type` | `braille_damaged` | seg 모델은 4클래스(해당 명칭 없음, `caution` 통합) |
 | `risk_level` | `high` / `mid` / `low` | Reflex/Surface Gate 위험도와 일치 |
 | `guidance_template` | `"전방 점자블록 파손, 우측으로 우회하세요"` | RAG 검색 결과 텍스트 |
 

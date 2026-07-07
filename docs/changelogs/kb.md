@@ -1047,3 +1047,20 @@
 - **관련 파일**: `docs/design/scene_classifier_gate_guide.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 문서 규칙(이모지 금지, 한국어, 표 우선, 인용 블록 메타데이터, Mermaid 큰따옴표·`<br/>`) 준수 확인. `indoor_fp_mitigation_design.md`의 실측 수치(confidence, identifier 목록)와 교차 확인해 정합성 확보.
 - **비고**: 이 문서는 기술 설계서를 대체하지 않는다 — 안전성 검토·인터페이스 계약 등 구현 세부사항은 여전히 `indoor_fp_mitigation_design.md`가 원본이며, 이 문서는 그 내용을 처음 접하는 팀원 관점에서 재구성한 보조 자료다.
+
+---
+
+### 2026-07-07 | 문서/스킬 | 단계별 스킬 문서(.agents/.claude) 실측 정합 감사 및 두 트리 전수 동기화
+
+- **커밋**: (대기 중)
+- **변경 내용**: 8개 단계별 스킬 문서(`.agents/skills/*/SKILL.md`)를 실제 코드와 전수 대조해 낡은 명세를 정정하고, `.agents`↔`.claude` 두 스킬 트리를 완전 동기화했다.
+  - **stage3 (yolo-obstacle-detection)**: 최초 계획 taxonomy가 실제 파인튜닝 모델과 어긋나 있던 것을 정정. 객체 탐지 "커스텀 클래스: kickboard/stair" → 실제 **29클래스**(전동킥보드=`scooter`, `stair` 부재) 명시. 노면 "7클래스(braille_damaged/crosswalk/manhole/grating 등)" → 실제 **4클래스**(sidewalk_normal/caution/roadway/braille_normal). `HIGH_RISK_CLASSES`를 set→{클래스:confidence} dict(scooter 포함 5종)+`MIN_HIT_COUNT`로, `P0_SURFACE_CLASSES`를 존재하지 않는 클래스명→`caution` 단일로 정정. 모델 경로를 순정 COCO(`object_detection.pt`/`segmentation.pt`)→실제 파인튜닝(`det_best_20260705.pt`/`segbest.pt`)로 정정. Surface Gate 미발동 알려진 이슈 기록. **온디바이스(CoreML/TFLite) 런타임 각주 신설** — 실제 배포 앱 반사 탐지는 서버가 아니라 온디바이스에서 수행됨을 명시.
+  - **stage7 (tts-voice-streamer)**: 인지 TTS 엔진 **Kokoro/Coqui(미구현)→Piper**(`PiperTTSService`, `piper-kss-korean.onnx`), 클라이언트 오디오 **Web Audio API→expo-audio**(`createAudioPlayer`), 오디오 포맷 MP3→WAV(필드명은 `audio_mp3_b64` 유지), panning 미구현 사실 명시. frontmatter description·기술스택표·디렉토리·코드 스케치·테스트 체크리스트 전반 정정.
+  - **stage2 (camera-frame-capture)**: detection 프레임 전송을 **base64→바이너리(raw JPEG) 기본**으로 정정(2단 전송: transport 메타 JSON + raw 바이너리 프레임). base64는 구버전 호환·Mock 폴백으로 명시.
+  - **stage6 (llm-guidance-orchestrator)**: 실제 클라이언트가 LangChain `ChatOllama`가 아니라 raw `SimpleOllamaClient`/`SimpleOpenAIClient`이고 핫스왑 트리거가 "L3 실패율"이 아니라 "GPU 부하 감지"임을 정정. `MID_RISK_CLASSES`를 존재하지 않는 클래스명(kickboard 등)→실제 29클래스 기준 목록으로 정정. `.claude` 트리의 `gemma4-e4b`(오기)를 실제 `gemma4:e4b`로 통일.
+  - **stage4/5 (rag-knowledge-builder/rag-realtime-search)**: RAG 라벨(`labels.py`)·retriever가 최초 계획 명칭(`kickboard`/`stairs`/`manhole`)으로 내부 일관돼 있으나 **실제 탐지 모델 29클래스(scooter/caution)와 어긋나는 코드 레벨 불일치**를 각주로 기록(RAG 재빌드가 걸린 담당자 영역이라 코드 직접 수정은 보류). rag-realtime의 실제 진입점이 `build_search_query`가 아니라 `Retriever.search_guidance(detect_info, k=5)`임도 명시.
+  - **두 트리 동기화**: `.claude/skills/`에 누락돼 있던 `xcode-build-management` 스킬을 복사하고, 서로 어긋나 있던 5개 스킬(camera/llm/rag-knowledge/tts + rag-realtime)을 `.agents` 정본 기준으로 동기화. 결과적으로 **8개 스킬 SKILL.md·references 전부 양 트리 일치** 확인.
+  - `SKILLS.md`·`CLAUDE.md`: 스킬 인덱스 표의 낡은 설명(stage2 base64, stage3 킥보드/계단, stage4 Llava) 정정, §8 두 트리 "xcode 누락·어긋남" 주석을 "전수 동기화 완료(여전히 수동 동기화 필요)"로 갱신.
+- **관련 파일**: `.agents/skills/{camera-frame-capture,llm-guidance-orchestrator,rag-knowledge-builder,rag-realtime-search,tts-voice-streamer,yolo-obstacle-detection}/SKILL.md`, `.claude/skills/` 8개 스킬 전체(동기화), `SKILLS.md`, `CLAUDE.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 두 트리 diff 전수 검사로 8개 스킬 SKILL.md·references 완전 일치 확인. 정정 근거는 실제 코드(`yolo_detector.py`/`reflex_gate.py`/`surface_gate.py`/`tts_service.py`/`l1_classifier.py`/`labels.py`/`retriever.py`) 및 `docs/ops/model_class_validation_report.md`와 교차 확인. 문서 규칙(이모지 금지, 한국어, 표 우선, 인용 블록 메타데이터) 준수.
+- **비고**: 코드 레벨의 실제 버그성 불일치 2건(RAG `labels.py` 명칭이 탐지 taxonomy와 어긋남, Surface Gate 미발동)은 위험도/RAG 로직 담당자 판단 영역이라 스킬 문서에는 사실만 기록하고 코드는 직접 수정하지 않았다. 후속 담당자 검토 필요. references/implementation_detail.md의 라인 단위 전수 검증은 이번 범위에서 제외(SKILL.md 우선 정정), 향후 필요 시 별도 진행.
