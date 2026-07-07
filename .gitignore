@@ -270,6 +270,9 @@ node_modules/
 server/models/yolo26n/segbest.pt
 server/models/yolo26n/segbest.tflite
 
+# TTS 서버 기동 시 자동 생성되는 런타임 호환 설정 (server/tts/tts_service.py)
+server/models/piper/*.runtime.compat.json
+
 # Unused alternative model weights (post-MVP 배제 안)
 yolo11n.pt
 yolov8n.pt

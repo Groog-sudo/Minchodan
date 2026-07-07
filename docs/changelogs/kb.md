@@ -865,3 +865,17 @@
 - **검증 결과**:
   - `python -m pytest tests/test_langgraph.py` 실행 결과 전체 6개 단위 테스트 케이스 100% PASS (수정된 아키텍처 상태 전이 및 1회 재시도 보장 흐름 정상 검증 완료).
 - **비고**: 오케스트레이션 단계에서 기획된 설계서 상의 분기 구조를 온전히 복구하고 치명적인 오추출 보행 유도 버그를 완치하였습니다.
+
+---
+
+### 2026-07-07 | 품질 | 프로젝트 전체 검증 및 CI 차단 요인 수정 (S105, tsc 타입 오류, 런타임 생성 파일 ignore)
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `pyproject.toml`: `server/db/schemas.py`의 `TokenResponse.token_type = "bearer"`가 최신 Ruff(0.15.x)에서 S105(하드코딩 비밀번호 의심)로 오탐 판정되는 문제를 per-file-ignores로 정정. pre-commit은 ruff v0.6.9로 핀 고정되어 통과했지만, CI(`.github/workflows/lint.yml`)는 `requirements-dev.txt`의 `ruff>=0.6.0`(핀 없음)으로 최신 버전을 설치하므로 CI 린트가 실패하는 상태였음. (`# noqa: S105` 인라인 방식은 pre-commit 구버전 ruff가 RUF100 unused-noqa로 자동 제거해버려 설정 파일 방식을 채택.)
+  - `client/src/types/detection.ts`: `WSMessage` 인터페이스에 `frame_id`, `decode_ms` 필드 추가. 서버 ack 메시지(`server/api/ws_router.py`)는 `decode_ms`를 payload가 아닌 최상위 필드로 전송하는데 타입 정의에 누락되어 `CameraView.tsx:75`에서 `npx tsc --noEmit` 타입 오류(TS2339)가 발생하던 것을 수정.
+  - `.gitignore`: TTS 서버 기동 시 `server/tts/tts_service.py`가 자동 생성하는 `server/models/piper/*.runtime.compat.json`을 ignore 목록에 추가 (untracked 파일로 계속 노출되던 런타임 산출물).
+  - 로컬 가상환경 동기화: `venv/`에 `aiomysql`, `PyJWT` 등 `requirements.txt` 명시 패키지가 미설치되어 pytest collection 자체가 실패하던 것을 `pip install -r requirements.txt`로 동기화 (`.venv/`는 정상이었음).
+- **관련 파일**: `pyproject.toml`, `client/src/types/detection.ts`, `.gitignore`, `docs/changelogs/kb.md`
+- **검증 결과**: `ruff check server/ scripts/ tests/` All checks passed. `npx tsc --noEmit` 오류 0건. `pytest tests/ --ignore=tests/test_ws_echo.py` 74건 전체 통과 (`test_ws_echo.py`는 로컬 서버 기동이 필요한 통합 테스트라 서버 중지 상태에서는 연결 거부로 실패하는 것이 정상). Bandit 통과. LangGraph retry 흐름(L1 초기화 → L3 증가 → retry_count>1 시 fallback) 무한루프 없음 확인.
+- **비고**: `requirements.txt`의 `tokenizers==0.23.1` 핀이 전이 의존성 transformers 5.12.1의 요구(`tokenizers<=0.23.0`)와 충돌한다는 pip resolver 경고가 있음 (동작에는 지장 없으나 향후 requirements 정리 시 검토 필요 — requirements.txt 변경은 사전 허가 대상이라 이번에 수정하지 않음). `server/api/config.py:27`의 `# nosec B104` 주석은 현재 Bandit 기준 불필요(stale)하다는 경고가 있으나 무해하여 보존함.
