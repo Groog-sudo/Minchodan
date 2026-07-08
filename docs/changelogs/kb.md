@@ -1101,3 +1101,21 @@
 - **관련 파일**: `client/ios/Minchodan/CoreMLInferenceBridge.mm`(삭제), `client/ios/CoreMLInferenceBridge.swift`, `docs/changelogs/kb.md`
 - **검증 결과**: `grep`으로 `project.pbxproj` 및 `project.xcworkspace` 전체에서 `Minchodan/CoreMLInferenceBridge` 참조 0건 확인 후 삭제. 삭제 대상 파일 내용이 실제 빌드 대상 `.mm`과 동일(RCT_EXTERN_MODULE 선언)함을 대조 확인.
 - **비고**: 런타임 동작 변화 없음(애초에 컴파일되지 않던 사본 제거). 향후 STT 브릿지 등 신규 네이티브 파일 추가 시 `client/ios/` 루트에 두는 규칙을 헤더 주석으로 명문화해 재발 방지.
+
+---
+
+### 2026-07-08 | 3+7단계 | 전체 파이프라인 실측 감사 후 발견된 긴급 결함 4건 수정
+
+- **커밋**: `fix(detection,stt,auth): YOLO 기본가중치·STT 크래시·JWT검증·중복억제 결함 수정`
+- **변경 내용**: `dev` 브랜치에 팀원 4개 브랜치(kb/jy/jh/th)를 모두 병합한 뒤, 서버 전체 코드·파일·의존성을 실제로 조사(5개 조사 에이전트 병렬 실행)해 "구현됨"으로 문서화돼 있던 항목 중 실제로는 조용히 깨져 있던 결함 4건을 찾아 수정했다.
+  - **YOLO 기본 가중치 오지정**: `server/detection/config.py`의 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 기본값(`.env` 부재 시 폴백)이 커스텀 학습이 전혀 안 된 COCO 80클래스 스톡 모델(`object_detection.pt`/`segmentation.pt`)을 가리키고 있었음을 확인. 실제 학습 완료 가중치(`det_best_20260705.pt`/`segbest.pt`)로 정정. `.env`/`.env.example`은 원래부터 정상값이었으나, 두 파일이 없거나 다른 환경에서 실행하면 에러 없이 잘못된 모델이 조용히 로드되는 구조였다.
+  - **STT 모듈 import 크래시**: `server/stt/stt_service.py`가 모듈 최상단에서 `from faster_whisper import WhisperModel`을 무가드로 실행해, `faster-whisper`가 설치되지 않은 환경(현재 requirements.txt에도 미기재)에서는 `import server.stt`만 해도 `ModuleNotFoundError`로 전체 프로세스가 죽었다. `pytest tests/`를 실행하면 STT 테스트 3개 파일이 collection 단계에서 즉시 실패해 전체 테스트 스위트가 깨지는 상태였음을 실측으로 확인. `try/except`로 임포트를 방어하고 `FASTER_WHISPER_AVAILABLE` 플래그를 두어, 패키지가 없어도 다른 모듈 import에는 영향이 없도록 수정(`get_model()`의 기존 예외 처리가 자연스럽게 `RuntimeError`로 래핑).
+  - **JWT 토큰 검증 함수 부재**: `server/db/security.py`에 `create_access_token()`(발급)만 있고 이를 검증(`decode`)하는 함수가 프로젝트 어디에도 없어, 관리자 로그인이 발급하는 토큰이 사실상 검증 불가능한 상태였다. `decode_access_token()`을 추가해 서명·만료 검증이 가능하도록 함(호출부에서 401 변환은 후속 과제).
+  - **반사 경보 중복 억제 미연결**: `server/tts/suppressor.py`의 `AlertSuppressor`(Redis `setex` 60초 기반 중복 억제)는 구현이 완료돼 있었으나, 실제 반사 알림 전송 지점인 `server/detection/consumer.py`의 `_send_reflex_alert()`가 이를 전혀 호출하지 않아 동일 장애물에 대해 60초 쿨다운 없이 반사 경보가 계속 발행될 수 있는 상태였다. `should_suppress()`/`mark_as_sent()`를 전송 경로에 배선.
+  - **부수 발견 및 수정**: 위 STT 크래시를 고치는 과정에서 `tests/test_stt_service_template.py`가 이미 폐기된 모델 정책(`faster-whisper-small`)을 참조하고 있어 테스트가 실패하는 것을 확인(jh의 `78ca47a` small→medium 정책 변경 커밋이 프로덕션 설정만 바꾸고 테스트는 갱신하지 않았던 기존 불일치, 크래시에 가려져 있었음) — `faster-whisper-medium`으로 정정.
+  - `tests/test_detection.py`에 `TestReflexAlertSuppression` 신규 테스트 2건(억제 케이스/비억제 케이스) 추가해 중복 억제 배선을 실제로 검증.
+  - `docs/ops/environment_variables.md`(v0.4.1→v0.4.2): `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 기본값 정정, `DETECTOR_TYPE`이 코드에서 읽히지 않는 죽은 변수임을 명시.
+  - `docs/ops/test_specification.md`(v0.6.0→v0.6.1): TC-TTS-005(중복 억제) 상태를 대기→완료로 갱신, 검증 테스트 위치 및 여전히 미해결인 반사 사전합성 클립 파일 부재 문제를 비고에 명시.
+- **관련 파일**: `server/detection/config.py`, `server/stt/stt_service.py`, `server/db/security.py`, `server/detection/consumer.py`, `tests/test_stt_service_template.py`, `tests/test_detection.py`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/ --ignore=tests/test_ws_echo.py` 108 passed, 1 skipped(test_ws_echo.py는 실제 uvicorn 서버 기동이 필요해 통합 smoke로 별도 분류, 이번 변경과 무관). 수정한 4개 프로덕션 파일 + 테스트 파일 `ruff check` 전체 통과.
+- **비고**: 이번 감사에서 발견했으나 코드 수정으로 해결 불가능한 항목은 그대로 남겨뒀다 — (1) `data/reflex_clips/*.mp3` 사전합성 클립 파일 자체가 저장소에 없어 반사 음성이 실제로는 재생 불가능(오디오 자산 제작 필요), (2) `faster-whisper` 패키지 자체 미설치로 STT 실제 추론은 여전히 불가(사전 허가 없는 requirements.txt 변경 금지 원칙에 따라 패키지 추가는 보류), (3) WS 디바이스 인증(하드코딩 딕셔너리)과 JWT 인증이 여전히 통합되지 않은 별개 시스템, (4) MariaDB 테이블 자동 생성(`create_all`) 부재로 수동 마이그레이션 필요. 전체 구현/미구현 현황은 세션 내 Artifact 현황판으로 별도 정리함.

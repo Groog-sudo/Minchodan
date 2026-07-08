@@ -36,3 +36,12 @@ def create_access_token(data: dict) -> str:
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def decode_access_token(token: str) -> dict:
+    """발급된 JWT를 검증하고 payload를 반환한다.
+
+    서명/만료 검증 실패 시 jwt.InvalidTokenError(만료 포함)를 그대로 전파한다.
+    호출부(Depends 등)에서 401 응답으로 변환한다.
+    """
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

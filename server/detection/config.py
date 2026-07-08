@@ -19,11 +19,9 @@ FRAME_SIZE = int(os.getenv("FRAME_SIZE", "640"))
 REFLEX_FPS = int(os.getenv("REFLEX_FPS", "10"))
 COGNITIVE_FPS = int(os.getenv("COGNITIVE_FPS", "2"))
 YOLO26N_OBJECT_DET = os.getenv(
-    "YOLO26N_OBJECT_DET", os.path.join("server", "models", "yolo26n", "object_detection.pt")
+    "YOLO26N_OBJECT_DET", os.path.join("server", "models", "yolo26n", "det_best_20260705.pt")
 )
-YOLO26N_SEG = os.getenv(
-    "YOLO26N_SEG", os.path.join("server", "models", "yolo26n", "segmentation.pt")
-)
+YOLO26N_SEG = os.getenv("YOLO26N_SEG", os.path.join("server", "models", "yolo26n", "segbest.pt"))
 
 
 def resolve_path(path: str) -> str:

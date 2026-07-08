@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -9,9 +8,8 @@ from pathlib import Path
 import pytest
 
 import server.stt.stt_service as stt_service_module
-from server.stt.stt_service import SttService
 from server.stt.stt_schema import SttTranscribeResult
-
+from server.stt.stt_service import SttService
 
 # ============================================================
 # 테스트 파일 역할
@@ -65,14 +63,16 @@ def test_get_model_builds_and_reuses_cache(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(stt_service_module, "WhisperModel", FakeWhisperModel)
     SttService._model_cache.clear()
 
-    model_a = SttService.get_model("faster-whisper-small")
-    model_b = SttService.get_model("faster-whisper-small")
+    model_a = SttService.get_model("faster-whisper-medium")
+    model_b = SttService.get_model("faster-whisper-medium")
 
     assert model_a is model_b
-    assert created_calls == [("small", "cpu", "int8")]
+    assert created_calls == [("medium", "cpu", "int8")]
 
 
-def test_transcribe_production_returns_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_transcribe_production_returns_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     wav_path = tmp_path / "sample.wav"
     wav_path.write_bytes(b"fake-wav")
 
