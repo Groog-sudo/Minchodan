@@ -1,0 +1,82 @@
+[
+  {
+    "caption": "보도를 이탈하여 자동차 주행 차도로 진입하는 긴급 상황입니다. 차량 충돌 예방을 위해 즉시 보행을 정지해야 합니다.",
+    "objects": ["roadway"],
+    "scene_type": "roadway",
+    "risk_level": "critical",
+    "beep_pattern": {
+      "frequency": 2000,
+      "duration_ms": 150,
+      "repeat_count": 3
+    },
+    "haptic_pattern": {
+      "intensity": "heavy",
+      "duration_ms": 1000,
+      "pattern": "continuous"
+    }
+  },
+  {
+    "caption": "계단, 수직 단차, 공사장 등 추락 또는 심각한 낙상 위험이 있는 수직 단차가 전방 1m 이내에 검출된 상태입니다.",
+    "objects": ["stairs", "construction_barrier"],
+    "scene_type": "caution",
+    "risk_level": "critical",
+    "beep_pattern": {
+      "frequency": 1800,
+      "duration_ms": 100,
+      "repeat_count": 3
+    },
+    "haptic_pattern": {
+      "intensity": "heavy",
+      "duration_ms": 800,
+      "pattern": "triple"
+    }
+  },
+  {
+    "caption": "차량, 오토바이, 전동 킥보드, 자전거 등 보행자 충돌 사고를 유발할 수 있는 바퀴 달린 고속 이동체가 1.5m 이내로 돌발 접근하는 상황입니다.",
+    "objects": ["car", "motorcycle", "scooter", "kickboard", "bicycle"],
+    "scene_type": "sidewalk",
+    "risk_level": "high",
+    "beep_pattern": {
+      "frequency": 1500,
+      "duration_ms": 100,
+      "repeat_count": 2
+    },
+    "haptic_pattern": {
+      "intensity": "heavy",
+      "duration_ms": 600,
+      "pattern": "double"
+    }
+  },
+  {
+    "caption": "볼라드, 제어기 박스, 저상 간판 등 머리, 어깨 또는 하반신 높이에 있어 흰지팡이 스캔 영역을 벗어나 즉각적인 부딪힘이 우려되는 돌출 고정 장애물 조우 상황입니다.",
+    "objects": ["bollard", "parking_meter", "traffic_light"],
+    "scene_type": "sidewalk",
+    "risk_level": "high",
+    "beep_pattern": {
+      "frequency": 1200,
+      "duration_ms": 100,
+      "repeat_count": 2
+    },
+    "haptic_pattern": {
+      "intensity": "medium",
+      "duration_ms": 400,
+      "pattern": "double"
+    }
+  },
+  {
+    "caption": "파손된 점자블록, 열려있는 배수구 그레이팅 틈새, 훼손된 맨홀 틈새 등 흰지팡이 끝 끼임으로 인한 낙상 및 실족이 우려되는 노면 훼손 상태입니다.",
+    "objects": ["manhole"],
+    "scene_type": "braille_damaged",
+    "risk_level": "mid",
+    "beep_pattern": {
+      "frequency": 900,
+      "duration_ms": 80,
+      "repeat_count": 1
+    },
+    "haptic_pattern": {
+      "intensity": "medium",
+      "duration_ms": 200,
+      "pattern": "single"
+    }
+  }
+]
