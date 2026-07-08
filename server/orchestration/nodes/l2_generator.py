@@ -75,17 +75,20 @@ async def l2_generator_node(state: dict) -> dict:
     detected_classes = state.get("detected_classes", [])
     risk_level = state.get("risk_level", "low")
     rag_context = state.get("rag_context", "관련 수칙 없음")
+    navigation_guidance = state.get("navigation_guidance", "")
     retry_count = state.get("retry_count", 0)
     errors = state.get("validation_errors", [])
 
     classes_str = ", ".join(detected_classes) if detected_classes else "장애물 없음"
+    nav_str = f"[길안내 멘트]: {navigation_guidance}\n" if navigation_guidance else ""
 
-    # 사용자 프롬프트 조립 (설계서 10.2절 프롬프트 준수)
+    # 사용자 프롬프트 조립 (설계서 10.2절 프롬프트 및 내비게이션 멘트 융합)
     user_prompt = (
         f"[탐지 장애물]: {classes_str}\n"
         f"[위험도]: {risk_level}\n"
-        f"[안전 수칙]:\n{rag_context}\n\n"
-        f"위 정보를 바탕으로 20자 이내 한국어 1문장 회피 안내를 작성하세요."
+        f"[안전 수칙]:\n{rag_context}\n"
+        f"{nav_str}\n"
+        f"위 정보를 바탕으로, 장애물 회피 안내와 길안내 멘트를 자연스럽게 조합하여 20자 이내 한국어 1문장 보행 안내 가이드를 작성하세요."
     )
 
     # 1차 검증에 실패하여 다시 재생성(RETRY)을 수행하는 경우 에러 피드백 피딩

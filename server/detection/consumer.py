@@ -183,6 +183,16 @@ class DetectionConsumer:
         if not result.detections:
             return
 
+        # NavigationManager에서 융합 길안내 멘트 조회
+        navigation_guidance = ""
+        try:
+            from server.navigation.manager import nav_manager
+            guidance_event = nav_manager.get_combined_guidance(device_id)
+            if guidance_event:
+                navigation_guidance = guidance_event.get("text", "")
+        except Exception as e:
+            logger.error(f"[DetectionConsumer] NavigationManager 조회 실패: {e}")
+
         orch_input = {
             "event": {
                 "event_id": result.event_id,
@@ -199,6 +209,7 @@ class DetectionConsumer:
             "detected_classes": [det.class_name for det in result.detections],
             "positions": [det.direction or "" for det in result.detections],
             "risk_level": result.risk_hint,
+            "navigation_guidance": navigation_guidance,
             "retry_count": 0,
             "verified": False,
             "validation_errors": [],

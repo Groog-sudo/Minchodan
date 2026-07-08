@@ -35,8 +35,16 @@ def load_env_file():
 load_env_file()
 APP_KEY = os.getenv("TMAP_APP_KEY")
 
-from navigation_filter import NavigationFilter
-from manager import nav_manager
+try:
+    # server.navigation 패키지 경유(예: stt_to_llm_bridge.py의 helper_search_poi/
+    # helper_fetch_route 임포트)로 로드되는 경우
+    from server.navigation.manager import nav_manager
+    from server.navigation.navigation_filter import NavigationFilter
+except ImportError:
+    # 이 파일을 독립 스크립트로 직접 실행하는 경우
+    # (모듈 상단에서 자신의 디렉토리를 sys.path에 추가함)
+    from manager import nav_manager
+    from navigation_filter import NavigationFilter
 
 async def redis_stream_listener():
     """
