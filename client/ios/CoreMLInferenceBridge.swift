@@ -1,6 +1,8 @@
 // 실제 Xcode 빌드 타겟 파일 (project.pbxproj의 "Minchodan" 그룹에 path 속성이 없어
 // 이 파일의 fileRef가 SRCROOT 바로 아래, 즉 이 경로로 resolve된다. .d 의존성 파일로 확인함, 2026-07-06).
-// client/ios/Minchodan/CoreMLInferenceBridge.swift 는 프로젝트에 실제로 연결되지 않은 미사용 사본이다.
+// 신규 네이티브 브릿지 파일(.swift/.mm)도 client/ios/Minchodan/ 서브폴더가 아니라
+// 이 파일과 같은 client/ios/ 루트에 두어야 실제 빌드에 반영된다(2026-07-08: 동일 함정으로 생긴
+// 미사용 사본 Minchodan/CoreMLInferenceBridge.mm 발견 및 제거 완료).
 
 import Foundation
 import CoreML

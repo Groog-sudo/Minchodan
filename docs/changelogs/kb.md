@@ -1089,3 +1089,15 @@
 - **관련 파일**: `docs/research/sensevoice_stt_feasibility.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 실측 수치는 웹 리서치(Hugging Face FunAudioLLM/SenseVoiceSmall, whispernotes CJK 벤치마크, FunASR MODEL_LICENSE, arXiv 2407.04051)로 교차 확인. 기존 `gemini_fallback_feasibility.md`와 동일한 보고서 형식(메타데이터 인용 블록, 섹션 번호, 표 우선, 이모지 금지) 준수.
 - **비고**: 결론은 "서버측 STT + 짧은 한국어 명령이면 지연·로딩 관점에서 채택 정당(강력 후보)"이며, 한국어 정확도 2.7%p 열위의 도메인 명령 셋 실측 검증, 온디바이스 요구 시 재평가, 라이선스 attribution 준수를 전제로 단다. STT 경로 정식 착수 시 본 보고서를 기준선으로 삼는다. 코드 변경은 없음(리서치 문서 전용).
+
+---
+
+### 2026-07-08 | 1+2단계 | iOS 네이티브 브릿지 미사용 사본 제거 및 파일 위치 함정 주석 보강
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - STT 네이티브 브릿지 추가를 검토하는 과정에서, `project.pbxproj`의 `Minchodan` 그룹에 `path` 속성이 없어 그룹 소속 파일이 `Minchodan/` 서브폴더가 아니라 SRCROOT(`client/ios/` 루트)로 resolve되는 구조를 재확인. 이 함정으로 과거에 생성된 채 빌드에 전혀 연결되지 않은 미사용 사본 `client/ios/Minchodan/CoreMLInferenceBridge.mm`(pbxproj 미참조, 실제 빌드 대상은 `client/ios/CoreMLInferenceBridge.mm`)를 발견하고 삭제.
+  - `client/ios/CoreMLInferenceBridge.swift` 헤더 주석 갱신: 기존 "Minchodan/CoreMLInferenceBridge.swift는 미사용 사본" 문구(대상 파일이 이미 없어 stale)를 "신규 네이티브 브릿지 파일도 client/ios/ 루트에 두어야 한다"는 일반 규칙 + 이번 `.mm` 사본 발견·제거 이력으로 교체.
+- **관련 파일**: `client/ios/Minchodan/CoreMLInferenceBridge.mm`(삭제), `client/ios/CoreMLInferenceBridge.swift`, `docs/changelogs/kb.md`
+- **검증 결과**: `grep`으로 `project.pbxproj` 및 `project.xcworkspace` 전체에서 `Minchodan/CoreMLInferenceBridge` 참조 0건 확인 후 삭제. 삭제 대상 파일 내용이 실제 빌드 대상 `.mm`과 동일(RCT_EXTERN_MODULE 선언)함을 대조 확인.
+- **비고**: 런타임 동작 변화 없음(애초에 컴파일되지 않던 사본 제거). 향후 STT 브릿지 등 신규 네이티브 파일 추가 시 `client/ios/` 루트에 두는 규칙을 헤더 주석으로 명문화해 재발 방지.
