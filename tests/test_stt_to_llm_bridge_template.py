@@ -5,6 +5,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,12 +22,12 @@ from server.stt.stt_to_llm_bridge import SttToLlmBridge
 # - invoke_existing_llm의 빈 입력 폴백/정상 응답 매핑을 검증.
 #
 # [하드 코딩 부분]
-# - invoke_existing_llm 예외 폴백(source=stt-bridge-error) 시나리오를 직접 추가.
-# - 최소 추가 권장 시나리오:
-#   1) stt_result.text 빈 값에서 폴백 dict 키/값 검증
-#   2) run_orchestrator 정상 응답 시 guidance_text 전달 검증
-#   3) run_orchestrator 예외 발생 시 오류 폴백(source 구분) 검증
-#   4) 로그에 원문 전체 미기록(길이/파일명만 기록) 정책 검증
+# - 목적지 파싱 -> navigation 연동 핵심 분기를 고정 케이스로 검증.
+# - 최소 핵심 시나리오:
+#   1) Wake-up 명령으로 WAITING_FOR_DESTINATION 상태 전환
+#   2) Shutdown 명령으로 IDLE 상태 및 경로 초기화
+#   3) WAITING 상태에서 목적지 입력 시 경로 수립 성공
+#   4) 목적지 검색 실패 시 navigation-setup-fail 폴백
 
 
 def _make_stt_result(text: str, has_input: bool = True) -> SttTranscribeResult:
@@ -39,6 +40,31 @@ def _make_stt_result(text: str, has_input: bool = True) -> SttTranscribeResult:
         has_input=has_input,
         saved_file=Path("dummy.wav").name,
     )
+
+
+class _FakeNavManager:
+    """테스트에서 navigation 상태 전이와 경로 갱신 호출만 추적한다."""
+
+    def __init__(self, status: str = "IDLE"):
+        self.status = status
+        self.last_route: list[dict] = []
+        self.session = SimpleNamespace(lat=None, lon=None)
+
+    def get_status(self, device_id: str) -> str:
+        _ = device_id
+        return self.status
+
+    def set_status(self, device_id: str, status: str) -> None:
+        _ = device_id
+        self.status = status
+
+    def update_route(self, device_id: str, waypoints: list[dict]) -> None:
+        _ = device_id
+        self.last_route = waypoints
+
+    def _get_or_create_session(self, device_id: str):
+        _ = device_id
+        return self.session
 
 
 def test_build_orch_input_success() -> None:
@@ -83,3 +109,131 @@ async def test_invoke_existing_llm_success(monkeypatch: pytest.MonkeyPatch) -> N
         "used_fallback_llm": False,
         "source": "stt-bridge",
     }
+
+
+@pytest.mark.asyncio
+async def test_invoke_existing_llm_error_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_run_orchestrator(_state: dict) -> dict:
+        raise RuntimeError("forced-error")
+
+    monkeypatch.setattr(stt_bridge_module, "run_orchestrator", _fake_run_orchestrator)
+
+    bridge = SttToLlmBridge()
+    result = _make_stt_result("테스트")
+    response = await bridge.invoke_existing_llm(result)
+
+    assert response["source"] == "stt-bridge-error"
+    assert response["used_fallback_llm"] is True
+
+
+# [바이브 코딩 부분]
+# - 아래 테스트는 부가 설명보다 실제 사용자 음성 흐름(켜기/목적지/끄기)에 맞춰 동작 검증을 제공한다.
+# - 명령어 문구 자체보다 상태 전환과 source 값이 기대대로 나오는지에 집중한다.
+
+
+@pytest.mark.asyncio
+async def test_navigation_wakeup_command_sets_waiting_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import server.navigation.manager as nav_manager_module
+
+    fake_manager = _FakeNavManager(status="IDLE")
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    bridge = SttToLlmBridge()
+    result = _make_stt_result("네비게이션 시작")
+    response = await bridge.invoke_existing_llm(result)
+
+    assert response["source"] == "navigation-setup-wakeup"
+    assert fake_manager.status == "WAITING_FOR_DESTINATION"
+
+
+@pytest.mark.asyncio
+async def test_navigation_shutdown_command_resets_status_and_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import server.navigation.manager as nav_manager_module
+
+    fake_manager = _FakeNavManager(status="NAVIGATING")
+    fake_manager.last_route = [{"index": 1, "lat": 37.1, "lon": 127.1}]
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    bridge = SttToLlmBridge()
+    result = _make_stt_result("네비게이션 꺼줘")
+    response = await bridge.invoke_existing_llm(result)
+
+    assert response["source"] == "navigation-setup-shutdown"
+    assert fake_manager.status == "IDLE"
+    assert fake_manager.last_route == []
+
+
+# [하드 코딩 부분 - 핵심]
+# - 목적지 파싱 후 helper_search_poi/helper_fetch_route를 거쳐 waypoints를 구성하는 경로를 검증한다.
+# - WAITING_FOR_DESTINATION 상태에서만 목적지 처리 분기가 타도록 고정한다.
+
+
+@pytest.mark.asyncio
+async def test_navigation_destination_setup_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    def _fake_search_poi(keyword: str) -> dict:
+        _ = keyword
+        return {"name": "서울역", "x": "126.9707", "y": "37.5547"}
+
+    def _fake_fetch_route(_start: dict, _end: dict) -> dict:
+        return {
+            "features": [
+                {
+                    "geometry": {"type": "Point", "coordinates": [126.9710, 37.5550]},
+                    "properties": {
+                        "description": "직진",
+                        "facilityType": "crosswalk",
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(nav_server_module, "helper_search_poi", _fake_search_poi)
+    monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
+
+    bridge = SttToLlmBridge()
+    result = _make_stt_result("서울역으로 설정")
+    response = await bridge.invoke_existing_llm(result)
+
+    assert response["source"] == "navigation-setup-success"
+    assert fake_manager.status == "NAVIGATING"
+    assert len(fake_manager.last_route) == 1
+    assert fake_manager.last_route[0]["description"] == "직진"
+
+
+@pytest.mark.asyncio
+async def test_navigation_destination_setup_fail_when_poi_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    def _fake_search_poi(_keyword: str):
+        return None
+
+    def _fake_fetch_route(_start: dict, _end: dict):
+        return None
+
+    monkeypatch.setattr(nav_server_module, "helper_search_poi", _fake_search_poi)
+    monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
+
+    bridge = SttToLlmBridge()
+    result = _make_stt_result("없는목적지로 설정")
+    response = await bridge.invoke_existing_llm(result)
+
+    assert response["source"] == "navigation-setup-fail"
+    assert fake_manager.status == "WAITING_FOR_DESTINATION"
