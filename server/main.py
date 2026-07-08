@@ -30,6 +30,7 @@ from server.api.user_router import router as user_router
 from server.api.ws_router import router as ws_router
 from server.detection.consumer import get_default_consumer
 from server.mcp.manager import mcp_manager
+from server.navigation.server import app as navigation_app
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,9 @@ app.include_router(ws_router, prefix="")
 # 사용자 및 관리자 API 라우터 마운트
 app.include_router(user_router)
 app.include_router(admin_router)
+
+# 네비게이션 서브앱 마운트
+app.mount("/navigation", navigation_app)
 
 
 @app.get("/health")
