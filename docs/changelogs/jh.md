@@ -342,3 +342,17 @@
 - **관련 파일**: `server/stt/stt_config.py`
 - **검증 결과**: 설정 변경 기준으로 `MODEL_NAME_MAP`과 `DEFAULT_REQUEST_MODEL` 정합성 유지 확인
 - **비고**: 현재 커밋 전 상태의 변경 내역 기록이며, 커밋 해시는 확정 후 추가 가능
+
+---
+
+### 2026-07-08 | STT API | STT 전사·가이드 라우터 연결 및 패키지 의존성 보강
+
+- **커밋**: `feat(stt): STT 전사·가이드 라우터 연결 및 패키지 의존성 보강`
+- **변경 내용**:
+  - `server/api/stt_router.py`를 신규 추가해 음성 파일 업로드 기반 `POST /api/v1/stt/transcribe` 와 `POST /api/v1/stt/transcribe-and-guide` 엔드포인트를 구현함
+  - 업로드 파일을 임시 경로로 저장한 뒤 `SttService.transcribe_file()`로 전사하고, 필요 시 `SttToLlmBridge.invoke_existing_llm()`로 기존 오케스트레이션 연결까지 이어지도록 배선함
+  - `server/main.py`에 STT 라우터를 마운트하고 OpenAPI 태그에 STT 섹션을 추가해 API 노출 경로를 정리함
+  - `requirements.txt`에 `faster-whisper` 의존성을 명시해 STT 런타임이 패키지 수준에서 설치 가능하도록 보강함
+- **관련 파일**: `server/api/stt_router.py`, `server/main.py`, `requirements.txt`
+- **검증 결과**: 라우터·메인 마운트·의존성 선언 반영 완료, 실제 음성 업로드 E2E 및 모델 실행 검증은 후속 필요
+- **비고**: STT는 서비스/브리지/라우터의 입구가 생긴 상태이며, 클라이언트 녹음·업로드 경로와 실사용 검증은 아직 남아 있음

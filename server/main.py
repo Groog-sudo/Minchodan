@@ -26,6 +26,7 @@ if current_dir not in sys.path:
 
 from server.api.admin_router import router as admin_router
 from server.api.monitor import router as monitor_router
+from server.api.stt_router import router as stt_router
 from server.api.user_router import router as user_router
 from server.api.ws_router import router as ws_router
 from server.detection.consumer import get_default_consumer
@@ -96,6 +97,14 @@ openapi_tags = [
         ),
     },
     {
+        "name": "STT",
+        "description": (
+            "음성 파일 업로드 기반 **Speech-to-Text** API.\n\n"
+            "- `POST /api/v1/stt/transcribe`: 음성 파일을 텍스트로 전사\n"
+            "- `POST /api/v1/stt/transcribe-and-guide`: 전사 후 기존 오케스트레이션으로 안내문 생성"
+        ),
+    },
+    {
         "name": "default",
         "description": "헬스체크 및 기타 관리 API.",
     },
@@ -134,6 +143,7 @@ app.include_router(ws_router, prefix="")
 # 사용자 및 관리자 API 라우터 마운트
 app.include_router(user_router)
 app.include_router(admin_router)
+app.include_router(stt_router)
 
 
 @app.get("/health")
