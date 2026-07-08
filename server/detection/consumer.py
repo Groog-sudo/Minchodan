@@ -27,6 +27,7 @@ from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.tts.realtime_tts import realtime_tts
+from server.tts.suppressor import Alert_suppressor
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,17 @@ class DetectionConsumer:
             logger.warning(f"[DetectionConsumer] 예상치 못한 결과 타입: {type(result)}")
 
     async def _send_reflex_alert(self, device_id: str, alert: ReflexAlert) -> None:
-        """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유)."""
+        """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
+
+        동일 device_id+alert_id 조합이 60초 이내 재발행되면 억제한다(중복 스팸 방지).
+        """
+        if await Alert_suppressor.should_suppress(device_id, alert.alert_id):
+            logger.debug(
+                f"[DetectionConsumer] 반사 알림 중복 억제: "
+                f"device_id={device_id}, alert_id={alert.alert_id}"
+            )
+            return
+
         payload = {
             "type": "reflex_alert",
             "event_id": alert.event_id,
@@ -159,6 +170,7 @@ class DetectionConsumer:
         }
         try:
             await manager.send_json(device_id, payload)
+            await Alert_suppressor.mark_as_sent(device_id, alert.alert_id)
             logger.info(
                 f"[DetectionConsumer] 반사 알림 전송: "
                 f"device_id={device_id}, alert_id={alert.alert_id}"
@@ -170,6 +182,17 @@ class DetectionConsumer:
         """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
         if not result.detections:
             return
+
+        # NavigationManager에서 융합 길안내 멘트 조회
+        navigation_guidance = ""
+        try:
+            from server.navigation.manager import nav_manager
+
+            guidance_event = nav_manager.get_combined_guidance(device_id)
+            if guidance_event:
+                navigation_guidance = guidance_event.get("text", "")
+        except Exception as e:
+            logger.error(f"[DetectionConsumer] NavigationManager 조회 실패: {e}")
 
         orch_input = {
             "event": {
@@ -187,6 +210,7 @@ class DetectionConsumer:
             "detected_classes": [det.class_name for det in result.detections],
             "positions": [det.direction or "" for det in result.detections],
             "risk_level": result.risk_hint,
+            "navigation_guidance": navigation_guidance,
             "retry_count": 0,
             "verified": False,
             "validation_errors": [],

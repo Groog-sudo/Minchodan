@@ -220,6 +220,16 @@ async def ws_detect(
                 event_id = payload.get("event_id", "unknown")
                 frame_id = payload.get("frame_id", 0)
 
+                # GPS 데이터 수신 시 NavigationManager로 위치 정보 업데이트 전파
+                gps_data = payload.get("gps")
+                if gps_data and isinstance(gps_data, dict):
+                    lat = gps_data.get("lat")
+                    lon = gps_data.get("lon")
+                    heading = gps_data.get("heading")
+                    if lat is not None and lon is not None:
+                        from server.navigation.manager import nav_manager
+                        nav_manager.update_gps(device_id, float(lat), float(lon), float(heading) if heading is not None else None)
+
                 if payload.get("transport") == "binary":
                     # 뒤이어 도착할 바이너리 프레임을 대기 (ack는 그때 응답)
                     pending_binary_meta = payload
@@ -235,6 +245,14 @@ async def ws_detect(
                 await _finish_detection(
                     ws, splitter, processed, event_id, frame_id, decode_ms, b64_len
                 )
+
+            elif msg_type == "realtime_gps":
+                lat = data.get("lat")
+                lon = data.get("lon")
+                heading = data.get("heading")
+                if lat is not None and lon is not None:
+                    from server.navigation.manager import nav_manager
+                    nav_manager.update_gps(device_id, float(lat), float(lon), float(heading) if heading is not None else None)
 
             else:
                 logger.warning(f"[WS] 알 수 없는 메시지 타입: {msg_type}")

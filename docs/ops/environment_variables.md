@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-07
-> **버전**: v0.4.1 (2026-07-07 kb/jy 병합: Slack 인증 방식 재정정(Bot Token이 실제 사용됨), TTS_ENGINE 실제값(piper), 코드에만 있고 문서 누락됐던 변수 6종 추가, GOOGLE_API_KEY/.env.example 불일치 명시 + 2026-07-06 jy 교차 검증(NGROK_AUTHTOKEN 및 DB 환경 변수 정합) 통합)
+> **수정일**: 2026-07-08
+> **버전**: v0.4.2 (2026-07-08 §2.5 YOLO26N_OBJECT_DET/SEG 기본값을 실제 학습 가중치 기준으로 정정, DETECTOR_TYPE이 코드에서 읽히지 않는 죽은 변수임을 명시 + 2026-07-07 kb/jy 병합: Slack 인증 방식 재정정(Bot Token이 실제 사용됨), TTS_ENGINE 실제값(piper), 코드에만 있고 문서 누락됐던 변수 6종 추가, GOOGLE_API_KEY/.env.example 불일치 명시 + 2026-07-06 jy 교차 검증(NGROK_AUTHTOKEN 및 DB 환경 변수 정합) 통합)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -59,12 +59,12 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - Object Detection 신뢰도 임계값 | [`stage3_detection_design.md`](stage3_detection_design.md) 5절 |
-| **`DETECTOR_TYPE`** | string | 선택 | `mock` | 탐지 파이프라인 구동 모드 (`mock`: Mock 폴백 / `yolo`: 실제 모델 추론). 개발 환경 및 테스트에서 `mock` 사용 권장 | [`architecture.md`](architecture.md) 10절 |
+| **`DETECTOR_TYPE`** | string | 미사용 | `mock` | **2026-07-08 확인: 코드 어디에서도 `os.getenv`로 읽히지 않는 죽은 변수.** 실제 Mock/YOLO 분기는 `server/detection/config.py`의 `get_detector()`/`get_segmentor()`가 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 파일의 존재 여부만으로 결정한다 | `server/detection/config.py` |
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
-| **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/object_detection.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적) | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
-| **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segmentation.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적) | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
+| **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
+| **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 
 ### 2.6 TTS (7단계 음성 출력)
 
