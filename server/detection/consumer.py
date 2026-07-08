@@ -187,6 +187,7 @@ class DetectionConsumer:
         navigation_guidance = ""
         try:
             from server.navigation.manager import nav_manager
+
             guidance_event = nav_manager.get_combined_guidance(device_id)
             if guidance_event:
                 navigation_guidance = guidance_event.get("text", "")
