@@ -5,6 +5,9 @@ import { SessionStatus } from "./components/SessionStatus";
 import { StatusBadge } from "./components/StatusBadge";
 import { SystemMetrics } from "./components/SystemMetrics";
 import { useMonitorStream } from "./api/useMonitorStream";
+import { OperatorLiveMap } from "./components/OperatorLiveMap";
+import { useState } from "react";
+import { Login } from "./components/Login";
 
 function connectionTone(connection: string) {
   if (connection === "connected") return "good";
@@ -14,10 +17,24 @@ function connectionTone(connection: string) {
 }
 
 export default function App() {
-  const { state, streamUrl, injectDemoEvents } = useMonitorStream();
+  // 💡 [면접 대비 주석 - 토큰 관리]
+  // MVP 단계라 일단 메모리(useState)에만 들고 있습니다. 
+  // 새로고침하면 로그아웃되지만, 보안상 XSS 등 탈취 위험이 가장 적은 안전한 방식입니다!
+  const [token, setToken] = useState<string | null>(null);
 
+  // 기존 useMonitorStream 코드 유지 (여기에 나중에 ?token= 붙일 예정)
+  // 로그인 안 해도 무조건 이 Hook이 실행되어 백엔드를 두드립니다!
+  const { state, streamUrl, injectDemoEvents } = useMonitorStream(token);
+
+  // 토큰이 없으면 무조건 로그인 화면만 띄움!
+  if(!token){
+    return <Login onLogin={(newToken) => setToken(newToken)} />;
+  }
+
+  // 토큰이 있으면 원래 화면(대시보드) 랜더링!
   return (
     <main className="app-shell">
+          {/* ... 기존 헤더, 대시보드, 지도 등 전체 코드 그대로 ... */}
       <header className="topbar">
         <div>
           <p className="eyebrow">Minchodan Operator Console</p>
@@ -44,6 +61,9 @@ export default function App() {
         <AiPipelineMonitor ai={state.ai} />
         <DetectionFeed items={state.detections} />
       </section>
+
+      {/* 📍 여기에 지도 컴포넌트 추가! */}
+      <OperatorLiveMap />
 
       <RiskEventLog events={state.risks} />
     </main>

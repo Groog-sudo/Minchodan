@@ -9,8 +9,10 @@ import json
 import logging
 import sys
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import StreamingResponse
+
+from server.api.dependencies import get_current_admin
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
 if sys.stdout.encoding != "utf-8":
@@ -23,8 +25,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/monitor", tags=["Monitor"])
 
 
+# ==========================================
+# 🧠 TH HARDCODE AREA (면접/발표 핵심 방어 영역)
+# 미션 2: 여기에 Depends(get_current_admin) 자물쇠를 걸어주세요!
+# ==========================================
 @router.get("/stream")
-async def monitor_stream(request: Request):
+async def monitor_stream(request: Request, admin_id: str = Depends(get_current_admin)):
     """
     FastAPI StreamingResponse를 사용하여 실시간 MCP 및 시스템 메트릭 데이터를
     SSE(Server-Sent Events) 프로토콜로 브로드캐스트합니다.

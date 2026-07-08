@@ -1,0 +1,76 @@
+/* console/src/components/Login.css */
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: #0a0a0a;
+  color: #fff;
+}
+
+.login-form {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 40px;
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 350px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.login-title {
+  margin: 0;
+  text-align: center;
+  color: #4ade80;
+  font-weight: 700;
+}
+
+.login-subtitle {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: #aaa;
+}
+
+.login-input {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #222;
+  color: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.2);
+}
+
+.login-error {
+  color: #ef4444;
+  font-size: 14px;
+  text-align: center;
+}
+
+.login-button {
+  padding: 12px;
+  border-radius: 8px;
+  border: none;
+  background: #4ade80;
+  color: #000;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.login-button:hover {
+  background: #22c55e;
+}
+
+.login-button:active {
+  transform: scale(0.98);
+}
