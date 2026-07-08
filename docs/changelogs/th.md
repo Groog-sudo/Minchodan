@@ -206,3 +206,45 @@
   - scripts/run_desktop_full_training.py의 결과 요약 출력부에서도 갱신된 날짜 포함 파일명을 .env에 설정하도록 가이드를 개선했습니다.
   - 서버 재부팅 직전까지 완료되었던 3단계 탐지/세그멘테이션 풀 학습의 est.pt 가중치 결과물을 물리적으로 복사하여 성공적으로 보존했습니다.
 - **관련 파일**: 	raining/train_common.py, scripts/run_desktop_full_training.py
+
+---
+
+### 2026-07-06 | 프로젝트 종합 평가 및 최신 dev 병합 동기화
+
+- **커밋**: chore: dev 브랜치 병합 동기화 및 프로젝트 스캔 보고서 갱신
+- **변경 내용**:
+  - dev 브랜치에 반영된 170여 개 이상의 최신 팀원 작업물(React Native iOS/Android 클라이언트 연동, CoreML/TFLite 추론 구조, TTS 실시간 오디오 서비스 등)을 	h 브랜치로 병합(Merge)하여 동기화 완료했습니다.
+  - 최신 코드를 기반으로 scripts/project_scan.py를 실행하여 전체 파일 통계 및 핵심 기술 스택(yolo, langchain, fastapi) 사용 현황을 종합한 project_scan_report.md와 project_scan_summary.json을 갱신 및 커밋했습니다.
+  - 해당 스캔 결과와 병합된 server/tts/tts_service.py 코드를 바탕으로 전체 MVP 7단계 중 1~3단계 완성도 평가 및 방어적 코딩(I/O 예외처리 보강) 관점의 코드 리뷰를 수행했습니다.
+- **관련 파일**: project_scan_report.md, project_scan_summary.json, docs/changelogs/th.md
+
+---
+
+### 2026-07-07 | 운영자 콘솔 | React SSE 관제 콘솔 학습형 스캐폴드 추가
+
+- **커밋**: `feat: React SSE 운영자 콘솔 학습형 스캐폴드 추가`
+- **변경 내용**:
+  - `console/` 디렉토리에 Vite + React + TypeScript 기반 운영자 관제 콘솔 스캐폴드를 신규 구성했습니다.
+  - TH 하드코딩 비중을 80%로 높이기 위해 `useMonitorStream.ts`의 `EventSource` 연결, `event_type` 분기, 상태 갱신 로직은 직접 작성 영역으로 비워두었습니다.
+  - SystemMetrics, RiskEventLog, SessionStatus, DetectionFeed, AI Pipeline Monitor 컴포넌트는 최소 placeholder와 직접 구현 지시만 남겼습니다.
+  - AI는 프로젝트 설정, 폴더 구조, 빌드 가능한 최소 레이아웃까지만 보조하도록 범위를 축소했습니다.
+- **관련 파일**: `console/package.json`, `console/src/api/useMonitorStream.ts`, `console/src/App.tsx`, `console/src/components/*.tsx`, `console/src/types/monitor.ts`, `console/src/styles.css`, `console/README.md`
+- **검증 결과**:
+  - `npm install` 완료
+  - `npm run build` 통과
+
+---
+
+### 2026-07-08 | 운영자 콘솔 | SSE 이벤트 렌더링 및 발표 대응 주석 보강
+
+- **커밋**: `feat: 운영자 콘솔 SSE 상태 렌더링 보강`
+- **변경 내용**:
+  - `useMonitorStream.ts`에 `session_status`, `detection_event`, `llm_status`, `rag_result`, `tts_status`, `stt_status` 이벤트 분기와 상태 갱신 로직을 보강했습니다.
+  - `SessionStatus` 컴포넌트에서 단말 `device_id`, 플랫폼, 연결 상태, RTT, 마지막 수신 시간을 실제 목록으로 표시하도록 수정했습니다.
+  - `SystemMetrics` 컴포넌트에서 GPU 사용률, 메모리, provider, RTT, queue, dropped frame, 에러 상태를 카드 형태로 표시하도록 수정했습니다.
+  - `AiPipelineMonitor` 컴포넌트에서 LLM, RAG, TTS, STT 상태와 최근 안내문을 표시하도록 수정했습니다.
+  - 화면에 노출되던 내부 작업 문구(`TH 직접 구현`)를 운영자 관제 용어(`시스템 상태`, `단말 연결`, `탐지 메타데이터`, `AI 상태`, `위험 로그`)로 교체했습니다.
+  - 발표/면접 대응을 위해 SSE 단방향 구독, device_id 기준 upsert, 최신 상태성 데이터와 누적 로그성 데이터의 차이, AI 상태 보존 방식에 대한 주석을 보강했습니다.
+- **관련 파일**: `console/src/api/useMonitorStream.ts`, `console/src/components/AiPipelineMonitor.tsx`, `console/src/components/DetectionFeed.tsx`, `console/src/components/RiskEventLog.tsx`, `console/src/components/SessionStatus.tsx`, `console/src/components/SystemMetrics.tsx`
+- **검증 결과**:
+  - `cd console && npm run build` 통과

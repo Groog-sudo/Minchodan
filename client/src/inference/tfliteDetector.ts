@@ -20,22 +20,43 @@ const SEG_CLASS_NAMES = [
   "braille_normal",
 ];
 
-const COCO_CLASS_NAMES = [
-  "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-  "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-  "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-  "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
-  "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
-  "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
-  "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana",
-  "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza",
-  "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table",
-  "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone",
-  "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock",
-  "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
+const AIHUB_CLASS_NAMES = [
+  "barricade", "bench", "bicycle", "bollard", "bus", "car", "carrier", "cat",
+  "chair", "dog", "fire_hydrant", "kiosk", "motorcycle", "movable_signage",
+  "parking_meter", "person", "pole", "potted_plant", "power_controller",
+  "scooter", "stop", "stroller", "table", "traffic_light", "traffic_light_controller",
+  "traffic_sign", "tree_trunk", "truck", "wheelchair"
 ];
 
-const CONF_THRESHOLD = 0.25;
+const CONF_THRESHOLD = 0.50; // 오탐 방지를 위해 0.25에서 0.50으로 상향
+const IOU_THRESHOLD = 0.45; // 중복 박스 제거(NMS) 기준
+
+function calculateIoU(box1: {x:number, y:number, w:number, h:number}, box2: {x:number, y:number, w:number, h:number}) {
+  const x1 = Math.max(box1.x, box2.x);
+  const y1 = Math.max(box1.y, box2.y);
+  const x2 = Math.min(box1.x + box1.w, box2.x + box2.w);
+  const y2 = Math.min(box1.y + box1.h, box2.y + box2.h);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const area1 = box1.w * box1.h;
+  const area2 = box2.w * box2.h;
+  return intersection / (area1 + area2 - intersection);
+}
+
+function nonMaxSuppression(boxes: DetectionResult[], iouThreshold: number): DetectionResult[] {
+  const sorted = [...boxes].sort((a, b) => b.confidence - a.confidence);
+  const keep: DetectionResult[] = [];
+  for (const box of sorted) {
+    let shouldKeep = true;
+    for (const keptBox of keep) {
+      if (box.className === keptBox.className && calculateIoU(box.bbox, keptBox.bbox) > iouThreshold) {
+        shouldKeep = false;
+        break;
+      }
+    }
+    if (shouldKeep) keep.push(box);
+  }
+  return keep;
+}
 
 export class TFLiteDetector implements LocalDetector {
   isLoaded = false;
@@ -106,30 +127,69 @@ export class TFLiteDetector implements LocalDetector {
         out = new Float32Array(outputs[0]);
       }
       const numBoxes = Math.floor(out.length / attrsPerBox);
+      const shape = model.outputs?.[0]?.shape || [];
+      const isTransposed = shape.length >= 3 && shape[1] === attrsPerBox; // e.g. [1, 33, 8400]
 
       const results: DetectionResult[] = [];
       for (let i = 0; i < numBoxes; i++) {
-        const off = i * attrsPerBox;
-        const x1 = Math.min(out[off], out[off + 2]);
-        const y1 = Math.min(out[off + 1], out[off + 3]);
-        const x2 = Math.max(out[off], out[off + 2]);
-        const y2 = Math.max(out[off + 1], out[off + 3]);
-        const score = out[off + 4];
-        const cls = Math.round(Math.abs(out[off + 5]));
+        let xc, yc, w, h, maxScore = 0, clsId = -1;
 
-        if (score < CONF_THRESHOLD || cls >= numClasses) continue;
-        const w = x2 - x1;
-        const h = y2 - y1;
+        if (label === "object_detection" && attrsPerBox >= 33) {
+          // Yolo 26N Format
+          if (isTransposed) {
+            // Memory layout: [1, attrsPerBox, numBoxes] -> out[attr * numBoxes + i]
+            xc = out[0 * numBoxes + i];
+            yc = out[1 * numBoxes + i];
+            w  = out[2 * numBoxes + i];
+            h  = out[3 * numBoxes + i];
+            for (let c = 0; c < numClasses; c++) {
+              const score = out[(4 + c) * numBoxes + i];
+              if (score > maxScore) {
+                maxScore = score;
+                clsId = c;
+              }
+            }
+          } else {
+            // Memory layout: [1, numBoxes, attrsPerBox] -> out[i * attrsPerBox + attr]
+            const off = i * attrsPerBox;
+            xc = out[off];
+            yc = out[off + 1];
+            w  = out[off + 2];
+            h  = out[off + 3];
+            for (let c = 0; c < numClasses; c++) {
+              const score = out[off + 4 + c];
+              if (score > maxScore) {
+                maxScore = score;
+                clsId = c;
+              }
+            }
+          }
+        } else {
+          // Legacy/Fallback Format
+          const off = i * attrsPerBox;
+          const x1 = Math.min(out[off], out[off + 2]);
+          const y1 = Math.min(out[off + 1], out[off + 3]);
+          const x2 = Math.max(out[off], out[off + 2]);
+          const y2 = Math.max(out[off + 1], out[off + 3]);
+          w = x2 - x1;
+          h = y2 - y1;
+          xc = x1 + w / 2;
+          yc = y1 + h / 2;
+          maxScore = out[off + 4];
+          clsId = Math.round(Math.abs(out[off + 5]));
+        }
+
+        if (maxScore < CONF_THRESHOLD || clsId >= numClasses) continue;
         if (w <= 1 || h <= 1) continue;
 
         results.push({
           model: label,
-          className: names[cls] ?? `cls_${cls}`,
-          confidence: score,
-          bbox: { x: x1, y: y1, w, h },
+          className: names[clsId] ?? `cls_${clsId}`,
+          confidence: maxScore,
+          bbox: { x: xc - w / 2, y: yc - h / 2, w, h },
         });
       }
-      return results.sort((a, b) => b.confidence - a.confidence);
+      return nonMaxSuppression(results, IOU_THRESHOLD);
     } catch (err) {
       console.error(`[TFLiteDetector] ${label} 추론 에러:`, err);
       return [];
@@ -151,9 +211,9 @@ export class TFLiteDetector implements LocalDetector {
       ),
       this.runModel(
         this.detModel,
-        6,
-        COCO_CLASS_NAMES.length,
-        COCO_CLASS_NAMES,
+        33, // 4(coords) + 29(classes) for Yolo 26N
+        AIHUB_CLASS_NAMES.length,
+        AIHUB_CLASS_NAMES,
         "object_detection",
         frame.buffer as ArrayBuffer
       ),
