@@ -62,10 +62,10 @@ if hasattr(sys.stdout, "reconfigure"):
 #   - 분석/로그 집계를 위해 일관된 단일 값 사용 권장
 
 MODEL_NAME_MAP: dict[str, str] = {
-    "faster-whisper-small": "small",
+    "faster-whisper-medium": "medium",
 }
 
-DEFAULT_REQUEST_MODEL = "faster-whisper-small"
+DEFAULT_REQUEST_MODEL = "faster-whisper-medium"
 TRANSCRIBE_LANGUAGE = "ko"
 TRANSCRIBE_BEAM_SIZE = 3
 TRANSCRIBE_VAD_FILTER = False

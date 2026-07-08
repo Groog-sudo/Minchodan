@@ -329,3 +329,16 @@
 - **관련 파일**: `docs/changelogs/jh.md`
 - **검증 결과**: changelog 항목 구조가 TEMPLATE 필수 필드(커밋/변경 내용/관련 파일/검증 결과/비고)와 정합함
 - **비고**: 본 항목은 jh.md 문서 갱신 내역을 기록하기 위한 문서화 엔트리임
+
+---
+
+### 2026-07-08 | STT 서버 | Whisper 기본 모델 정책을 medium으로 상향
+
+- **커밋**: `feat(stt): Whisper 기본 모델 정책 small→medium 상향`
+- **변경 내용**:
+  - `MODEL_NAME_MAP` 기본 매핑을 `faster-whisper-small/small`에서 `faster-whisper-medium/medium`으로 변경함
+  - `DEFAULT_REQUEST_MODEL` 값을 `faster-whisper-medium`으로 동기화하여 미매핑 요청 폴백 정책을 상향함
+  - 나머지 STT 실행 정책(`language`, `beam_size`, `device`, `compute_type`)은 기존 값을 유지함
+- **관련 파일**: `server/stt/stt_config.py`
+- **검증 결과**: 설정 변경 기준으로 `MODEL_NAME_MAP`과 `DEFAULT_REQUEST_MODEL` 정합성 유지 확인
+- **비고**: 현재 커밋 전 상태의 변경 내역 기록이며, 커밋 해시는 확정 후 추가 가능
