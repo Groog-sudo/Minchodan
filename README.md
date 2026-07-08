@@ -103,6 +103,7 @@ Minchodan/
 │   │   └── nodes/                   # 분류, 생성, 검증, fallback
 │   ├── tts/                         # 실시간 TTS, 반사 클립 전송, 억제
 │   ├── bus/                         # Redis Streams 인터페이스
+│   ├── db/                          # RDB ORM/DTO/DDL (사용자, 단말, 관리자, 감사 로그)
 │   └── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
 │       └── yolo26n/
 │

@@ -1,8 +1,8 @@
 -- Minchodan MariaDB 초기 스키마 세션 스크립트입니다.
--- 기준: `back_sql/init_minchodan_tmp_schema.sql` 및 설명서 v0.2.0.
--- 파일명에는 `tmp`가 남아 있지만 실제 대상 DB는 시트 기준 `minchodan_db`입니다.
--- DBeaver에서 실행할 때는 이전 DB(`minchodan_tmp`)를 먼저 USE하지 말고
--- 아래 `CREATE DATABASE`부터 순서대로 실행해 현재 세션 DB를 명확히 고정합니다.
+-- 기준: `.env.example`의 DB_NAME=minchodan_db, `server/db/models.py`, `server/db/schema.sql`.
+-- 과거 초안의 `minchodan_tmp` 또는 `minchodan_app` 기준과 다르게 현재 대상 DB는 `minchodan_db`입니다.
+-- DBeaver에서 실행할 때는 이전 DB를 먼저 USE하지 말고 아래 `CREATE DATABASE`부터
+-- 순서대로 실행해 현재 세션 DB를 명확히 고정합니다.
 -- 주의: `CREATE TABLE IF NOT EXISTS`는 중복 생성 오류만 피하며,
 -- 기존 테이블의 컬럼, 인덱스, FK 구조를 자동 마이그레이션하지 않습니다.
 
