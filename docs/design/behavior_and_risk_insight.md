@@ -1,9 +1,10 @@
 # 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
 
 > **작성일**: 2026-06-25
-> **버전**: v1.0.0
+> **버전**: v1.1.0 (2026-07-07 §3.1 표를 실제 구현 클래스 배정 기준으로 정정, §4.1 미구현 상태 명시)
 > **참조 자료**: `final_project_meet/docs/보행지도사_Gmini_요약.txt`
-> **관련 문서**: [`docs/minchodan_design_note.md`](file:///D:/korea_IT/2025_LangChain_/Minchodan/docs/minchodan_design_note.md), [`docs/stage3_detection_design.md`](file:///D:/korea_IT/2025_LangChain_/Minchodan/docs/stage3_detection_design.md)
+> **관련 문서**: [`docs/minchodan_design_note.md`](minchodan_design_note.md), [`docs/stage-guides/stage3_detection_design.md`](../stage-guides/stage3_detection_design.md)
+> **주의**: 본 문서는 보행이론 교육자료를 분석한 **인사이트/제안 보고서**다. §3.1의 클래스 배정 예시는 2026-07-07 기준 실제 코드(`server/detection/gates/reflex_gate.py`, `server/orchestration/nodes/l1_classifier.py`, `server/detection/gates/surface_gate.py`)와 일치하도록 갱신했으나, 실제 구현이 이 제안을 100% 그대로 따른 것은 아니므로 코드가 최종 근거임을 유의한다.
 
 ---
 
@@ -63,9 +64,11 @@
 
 | 위험 등급 (Risk Level) | 보행이론적 정의 및 영향 | 대상 탐지 클래스 및 세그먼트 | 시스템 액션 및 타임 필드 |
 | :--- | :--- | :--- | :--- |
-| **🚨 고위험<br>(High / Reflex)** | - 직접적인 신체 충돌 위협이 존재함.<br>- 낙상, 낭떠러지 추락 등 즉각적인 상해 유발 환경. | - 전방 1.5m 이내 킥보드, 오토바이, 차량, 이동 중인 사람.<br>- 노면 분할 상 **계단 아래 방향(Stairs down)**, **맨홀 열림**, **단차/구덩이** 등. | **반사 경로(Reflex Path) 가동**<br>- LLM 및 실시간 TTS 절대 경유 금지.<br>- RTT/지연 최소화하여 사전합성 고정 클립 즉시 재생 (`< 300ms`). |
-| **⚠️ 중위험<br>(Mid / Cognitive)** | - 직접 충돌은 아니나 정상 경로를 방해하여 **행동 수정(회피 또는 우회)**을 지시해야 하는 환경. | - 전방 3.0m 이내 정지된 볼라드, 가로수, 소화전, 보행로 적치물.<br>- 보행로의 끝 경계선(Sidewalk Border) 침범. | **인지 경로(Cognitive Path) 가동**<br>- Yolo 탐지 이벤트의 Redis Streams 발행.<br>- LangGraph L1/L2/L3 및 RAG(수칙 검색) 거쳐 음성 스트리밍 송출. |
-| **ℹ️ 저위험/단서<br>(Low / Clue)** | - 안전 보행의 **단서(Positive Clues)** 및 공간 정의를 돕는 **랜드마크(Landmark)** 역할.<br>- 보행 정위(Orientation)의 보조 지표. | - 정상 **점자블록(Braille Block)**.<br>- 횡단보도(Crosswalk) 진입 대기점.<br>- 안전한 보도 인도면(Sidewalk Normal). | **인지 경로 가이드 강화**<br>- 보행 정렬 보정 정보 전송.<br>- 랜드마크 도달 시 확인 피드백 제공 (예: "점자블록 유도선 상에 진입했습니다"). |
+| **🚨 고위험<br>(High / Reflex)** | - 직접적인 신체 충돌 위협이 존재함.<br>- 낙상, 낭떠러지 추락 등 즉각적인 상해 유발 환경. | (실제 구현, `reflex_gate.py`/`surface_gate.py` 기준) 전방 이동체 `car, truck, bus, motorcycle, scooter`.<br>- 노면 P0: `caution`(계단/맨홀/그레이팅 통합 클래스). | **반사 경로(Reflex Path) 가동**<br>- LLM 및 실시간 TTS 절대 경유 금지.<br>- RTT/지연 최소화하여 사전합성 고정 클립 즉시 재생 (`< 300ms`). |
+| **⚠️ 중위험<br>(Mid / Cognitive)** | - 직접 충돌은 아니나 정상 경로를 방해하여 **행동 수정(회피 또는 우회)**을 지시해야 하는 환경. | (실제 구현, `l1_classifier.py`/`detection_pipeline.py` `MID_RISK_CLASSES` 기준) `barricade, bench, bicycle, bollard, carrier, chair, fire_hydrant, kiosk, movable_signage, parking_meter, pole, potted_plant, power_controller, stroller, table, traffic_light_controller, tree_trunk, wheelchair` + 노면 `caution`(P0 미도달 시)/`roadway`. | **인지 경로(Cognitive Path) 가동**<br>- Yolo 탐지 이벤트의 Redis Streams 발행.<br>- LangGraph L1/L2/L3 및 RAG(수칙 검색) 거쳐 음성 스트리밍 송출. |
+| **ℹ️ 저위험/단서<br>(Low / Clue)** | - 안전 보행의 **단서(Positive Clues)** 및 공간 정의를 돕는 **랜드마크(Landmark)** 역할.<br>- 보행 정위(Orientation)의 보조 지표. | - 정상 **점자블록(Braille Block, `braille_normal`)**.<br>- 안전한 보도 인도면(`sidewalk_normal`).<br>- 정보성 클래스(`person, cat, dog, traffic_light, traffic_sign, stop`). | **인지 경로 가이드 강화**<br>- 보행 정렬 보정 정보 전송.<br>- 랜드마크 도달 시 확인 피드백 제공 (예: "점자블록 유도선 상에 진입했습니다"). |
+
+> **2026-07-07 정정 및 버그 수정**: 최초 제안 시점에는 킥보드/오토바이/차량/이동 중인 사람을 고위험으로, 가로수·소화전·보행로 적치물을 중위험으로, 횡단보도를 저위험(랜드마크)으로 구상했다. 실제 구현을 조사한 결과 `surface_gate.py`의 P0 노면 클래스명이 실제 4클래스 모델과 전혀 안 맞아 **노면 즉시경보가 한 번도 발동하지 않았고**, `l1_classifier.py`/`detection_pipeline.py`의 중위험 분류기 2개도 서로 다른 어휘(COCO 잔재, `kickboard`/`pothole`/`manhole`/`construction_cone` 등 실재하지 않는 클래스명)를 쓰며 어긋나 있던 **실제 코드 결함**임을 확인하고, 위 표를 실제 코드 기준으로 수정 완료했다(가로수/소화전/보행로 적치물도 이제 중위험으로 정상 반영됨). `tests/test_langgraph.py::TestRiskClassifierConsistency`가 재발을 방지한다.
 
 ---
 
@@ -75,7 +78,8 @@
 
 1. **상체 보호법 (Upper Body Protection) 보완**
    - **이론**: 머리나 어깨 등 상체 높이에 있는 나뭇가지, 열려 있는 트럭 적재함 등은 흰지팡이로 감지하기 힘들어 충돌 사고 위험이 매우 높습니다.
-   - **AI 대응**: Yolo 26N - Object Detection에서 카메라 상단 임계 영역(Y축 상단 40% 이상 영역)에 위치한 위험 객체 감지 시, 중위험 사물이라도 **고위험(High) 수준으로 격상**시켜 "상체 머리 위 주의" 사전합성 음성을 출력합니다.
+   - **AI 대응(제안, 미구현)**: Yolo 26N - Object Detection에서 카메라 상단 임계 영역(Y축 상단 40% 이상 영역)에 위치한 위험 객체 감지 시, 중위험 사물이라도 **고위험(High) 수준으로 격상**시켜 "상체 머리 위 주의" 사전합성 음성을 출력하는 것을 제안한다.
+   - **2026-07-07 현황**: `server/detection/gates/`, `server/orchestration/nodes/` 전역을 확인한 결과 이 Y축 기반 격상 로직은 아직 구현되어 있지 않다(코드 미존재). 후속 작업 후보로 남겨둔다.
 2. **햅틱(Haptic) 패턴 이중화**
    - 보행지도사 이론 상 시각장애인은 촉각에 고도로 의존합니다.
    - 고위험(Reflex) 시에는 **연속적인 단발성 강한 진동(Error Haptic)**을 주어 즉각 멈추게 유도하고, 중위험(Cognitive) 우회 지시 시에는 **부드러운 이중 진동(Warning Haptic)**을 가이드 음성 시작 시점에 함께 보내 정보의 인지적 대비를 강화합니다.

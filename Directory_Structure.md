@@ -1,5 +1,7 @@
 <!-- Directory_Structure.md -->
 
+> **2026-07-07 정정**: 이 문서는 프로젝트 초기 기획 단계의 임시 스켈레톤이며, 실제 현재 구조와 크게 다르다(루트 디렉토리명이 `guidedog-ai/`로 되어 있으나 실제 저장소명은 `Minchodan`, `server/config.py`는 실제로 `server/api/config.py`/`server/detection/config.py`로 분리, `llava_captioner.py`는 실제로 `gemini_captioner.py`, `server/bus/consumer.py`는 실제로 `server/detection/consumer.py`, `console/` 디렉토리는 존재하지 않는 등). **현재 정확한 디렉토리 구조는 [`README.md`](README.md)의 트리와 [`CLAUDE.md`](CLAUDE.md) §4를 참조할 것.** 본 파일은 초기 기획 이력 참고용으로만 보존한다.
+
 ### 임시 디렉토리 구조
 
 ```shell

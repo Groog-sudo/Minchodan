@@ -1,7 +1,7 @@
 # Minchodan 4·5단계 RAG 백엔드 설계서
 
 > **작성일**: 2026-06-26
-> **버전**: v0.2.0
+> **버전**: v0.3.0 (2026-07-07 캡셔닝 VLM을 실제 구현체(Gemini) 기준으로 정정, Retriever 메서드명/import 경로 오탈자 수정)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 4·5단계
 > **스킬 참조**: [`.agents/skills/rag-knowledge-builder/SKILL.md`](../.agents/skills/rag-knowledge-builder/SKILL.md), [`.agents/skills/rag-realtime-search/SKILL.md`](../.agents/skills/rag-realtime-search/SKILL.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md)
@@ -13,7 +13,7 @@
 본 문서는 Minchodan 7단계 파이프라인 중 **4단계 (위험 대처 수칙 DB 구축)** 및 **5단계 (실시간 대처 수칙 검색)** 의 백엔드 스켈레톤 및 단위 테스트를 위한 상세 기술 설계서입니다. 본 설계의 핵심 목적은 모듈 간 데이터 계약(Data Contract)과 인터페이스가 정상 작동하는지 검증하고, GPU 가중치나 외부 서비스가 준비되지 않은 상태에서도 오프라인 파이프라인과 실시간 RAG 검색 흐름이 끝까지 동작할 수 있도록 뼈대를 구축하는 것입니다.
 
 ### 1.1 4단계 정체성
-- 보행 위험 환경(킥보드, 볼라드, 계단 등)의 영상/이미지 데이터로부터 프레임을 추출하고, 중복을 제거한 뒤, VLM(Llava)을 이용하여 한글 상황 묘사 캡션을 생성합니다.
+- 보행 위험 환경(킥보드, 볼라드, 계단 등)의 영상/이미지 데이터로부터 프레임을 추출하고, 중복을 제거한 뒤, VLM(Gemini 2.5 Flash Lite, `server/rag/build/gemini_captioner.py`)를 이용하여 한글 상황 묘사 캡션을 생성합니다.
 - 생성된 캡션과 인간 검수를 거친 안전 대처 수칙을 로컬 임베딩 모델(nomic-embed-text)을 통해 벡터화하여 로컬 Vector DB(ChromaDB)에 구축(인덱싱)하는 오프라인 배치 프로세스입니다.
 
 ### 1.2 5단계 정체성
@@ -114,7 +114,7 @@ classDiagram
     }
     class Retriever {
         -vector_db VectorStore
-        +search(detect_info: dict, k: int) str
+        +search_guidance(detect_info: dict, k: int) str
     }
 
     EmbeddingEngineFactory ..> VectorDBFactory : "Embeddings 주입"
@@ -288,7 +288,7 @@ class Retriever:
 # -*- coding: utf-8 -*-
 import sys
 from dotenv import load_dotenv
-from rag.shared.labels import KICKBOARD, BOLLARD, BRAILLE_DAMAGED, STAIRS, CROSSWALK, MANHOLE, GRATING
+from server.rag.shared.labels import KICKBOARD, BOLLARD, BRAILLE_DAMAGED, STAIRS, CROSSWALK, MANHOLE, GRATING
 
 load_dotenv()
 sys.stdout.reconfigure(encoding="utf-8")

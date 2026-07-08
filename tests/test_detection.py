@@ -96,6 +96,7 @@ class TestGates:
             class_name="car",
             confidence=0.9,
             bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
@@ -107,6 +108,7 @@ class TestGates:
             class_name="truck",
             confidence=0.9,
             bbox=BBox(x=10.0, y=420.0, w=50.0, h=60.0),
+            hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
@@ -118,6 +120,7 @@ class TestGates:
             class_name="car",
             confidence=0.9,
             bbox=BBox(x=0.0, y=0.0, w=10.0, h=10.0),
+            hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is None
@@ -127,23 +130,47 @@ class TestGates:
             class_name="bicycle",
             confidence=0.9,
             bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=3,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is None
+
+    def test_reflex_gate_low_confidence_rejected(self):
+        """실내 오탐 완화: 클래스별 최소 confidence 미달 시 발동하지 않는다."""
+        det = Detection(
+            class_name="car",
+            confidence=0.4,  # HIGH_RISK_CLASSES["car"] = 0.6 미달
+            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=3,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is None
+
+    def test_reflex_gate_insufficient_hit_count_rejected(self):
+        """실내 오탐 완화: 연속 프레임 수(hit_count)가 MIN_HIT_COUNT 미만이면 발동하지 않는다."""
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            hit_count=1,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is None
 
     def test_surface_gate_p0(self):
-        surf = SurfaceResult(class_name="stair", centroid=[320.0, 400.0])
+        """실제 4클래스 Segmentation 모델 기준 (2026-07-07 정정, caution=stairs/manhole/grating 통합 클래스)."""
+        surf = SurfaceResult(class_name="caution", centroid=[320.0, 400.0])
         alert = surface_gate(surf, 480.0)
         assert alert is not None
-        assert alert.alert_id == "surface_stair"
+        assert alert.alert_id == "surface_caution"
 
-    def test_surface_gate_coco_class_returns_none(self):
-        surf = SurfaceResult(class_name="person", centroid=[320.0, 400.0])
+    def test_surface_gate_non_p0_class_returns_none(self):
+        surf = SurfaceResult(class_name="sidewalk_normal", centroid=[320.0, 400.0])
         alert = surface_gate(surf, 480.0)
         assert alert is None
 
     def test_surface_gate_top_position_returns_none(self):
-        surf = SurfaceResult(class_name="stair", centroid=[320.0, 100.0])
+        surf = SurfaceResult(class_name="caution", centroid=[320.0, 100.0])
         alert = surface_gate(surf, 480.0)
         assert alert is None
 
@@ -177,6 +204,52 @@ class TestByteTrackTracker:
         updated = await tracker.update(dets, mock_redis_bus)
         assert updated[0].track_id == "T-0001"
         mock_redis_bus.set_track_context.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_new_track_hit_count_starts_at_one(self, mock_redis_bus):
+        """2026-07-07 추가: 신규 track(이전 컨텍스트 없음)은 hit_count=1로 시작한다."""
+        tracker = ByteTrackTracker()
+        dets = [
+            Detection(
+                class_name="car",
+                confidence=0.9,
+                bbox=BBox(x=0, y=100, w=10, h=10),
+                track_id="T-0001",
+            )
+        ]
+        updated = await tracker.update(dets, mock_redis_bus)
+        assert updated[0].hit_count == 1
+
+    @pytest.mark.asyncio
+    async def test_hit_count_increments_across_consecutive_frames(self, mock_redis_bus):
+        """2026-07-07 추가: 동일 track_id가 연속 프레임에 걸쳐 갱신되면 hit_count가 누적된다
+        (실내 오탐 완화용 reflex_gate MIN_HIT_COUNT 조건의 근간)."""
+        tracker = ByteTrackTracker()
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=0, y=100, w=10, h=10),
+            track_id="T-0001",
+        )
+
+        # 1프레임째: 컨텍스트 없음 -> hit_count=1
+        mock_redis_bus.get_track_context = AsyncMock(return_value={})
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].hit_count == 1
+
+        # 2프레임째: 직전 컨텍스트에 hit_count=1이 있었다고 가정 -> hit_count=2
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={"hit_count": "1", "last_pos": '{"x":0,"y":100,"w":10,"h":10}'}
+        )
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].hit_count == 2
+
+        # 3프레임째: 직전 컨텍스트에 hit_count=2 -> hit_count=3 (MIN_HIT_COUNT 도달)
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={"hit_count": "2", "last_pos": '{"x":0,"y":100,"w":10,"h":10}'}
+        )
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].hit_count == 3
 
 
 class TestPipeline:
@@ -252,12 +325,17 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_reflex_gate_triggers(self, frame, mock_redis_bus):
+        # 2026-07-07: 실내 오탐 완화를 위해 MIN_HIT_COUNT(3) 조건이 추가됨에 따라,
+        # track_id를 부여하고 직전 컨텍스트에 hit_count=2가 있었던 것으로 모킹하여
+        # 이번 프레임에서 hit_count=3(조건 충족)이 되도록 구성한다.
+        mock_redis_bus.get_track_context = AsyncMock(return_value={"hit_count": "2"})
         detector = StubDetector(
             detections=[
                 Detection(
                     class_name="car",
                     confidence=0.9,
                     bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+                    track_id="T-0001",
                 )
             ]
         )
@@ -276,7 +354,7 @@ class TestPipelineRobustness:
     @pytest.mark.asyncio
     async def test_surface_gate_triggers(self, frame, mock_redis_bus):
         segmentor = StubSegmentor(
-            surfaces=[SurfaceResult(class_name="stair", centroid=[320.0, 400.0])]
+            surfaces=[SurfaceResult(class_name="caution", centroid=[320.0, 400.0])]
         )
         pipeline = DetectionPipeline(
             detector=StubDetector(detections=[]),
@@ -287,8 +365,27 @@ class TestPipelineRobustness:
         )
         result = await pipeline.run(frame, "test", "evt-surface", "dev-1")
         assert isinstance(result, ReflexAlert)
-        assert result.alert_id == "surface_stair"
+        assert result.alert_id == "surface_caution"
         assert result.direction == "front"
+
+    @pytest.mark.asyncio
+    async def test_surface_only_roadway_classifies_mid(self, frame, mock_redis_bus):
+        """2026-07-07 회귀 테스트: 노면 클래스(roadway)만 있어도 mid로 분류되어야 한다
+        (surface_gate의 P0 임계치에는 못 미치는 낮은 위치의 caution/roadway도 인지 경로에서
+        완전히 무시되지 않도록 _classify_risk가 surfaces를 함께 고려하는지 검증)."""
+        segmentor = StubSegmentor(
+            surfaces=[SurfaceResult(class_name="roadway", centroid=[320.0, 100.0])]
+        )
+        pipeline = DetectionPipeline(
+            detector=StubDetector(detections=[]),
+            segmentor=segmentor,
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result = await pipeline.run(frame, "test", "evt-roadway", "dev-1")
+        assert isinstance(result, DetectionResult)
+        assert result.risk_hint == "mid"
 
     @pytest.mark.asyncio
     async def test_empty_inputs_return_none_risk(self, frame, mock_redis_bus):
@@ -332,7 +429,7 @@ class TestPipelineRobustness:
         detector = StubDetector(
             detections=[
                 Detection(
-                    class_name="skateboard",
+                    class_name="bollard",
                     confidence=0.8,
                     bbox=BBox(x=10.0, y=10.0, w=20.0, h=20.0),
                     track_id="T-0001",

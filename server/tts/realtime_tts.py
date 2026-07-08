@@ -3,6 +3,7 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):  # 한글 깨짐을 방지하기 위한 방어적 인코딩 설정
     sys.stdout.reconfigure(encoding="utf-8")
 
+import asyncio
 import base64
 import logging
 
@@ -33,7 +34,8 @@ class RealtimeTTS:
         speed: 말하기 속도
 
         반환값: 베이스64로 인코딩된 오디오 문자열
-        합성에 실패하면 None을 반환한다
+        합성에 실패하거나 250ms를 초과하면 None을 반환하여
+        단말 내장 TTS 폴백 작동을 유도한다.
         """
 
         # 빈 문자열이나 공백만 있는 경우 합성을 시도하지 않는다
@@ -42,7 +44,10 @@ class RealtimeTTS:
             return None
 
         try:
-            audio_bytes = await self.tts.generate(text=text, voice=voice, speed=speed)
+            # 250ms 타임아웃 가드레일 설치 (asyncio.wait_for)
+            audio_bytes = await asyncio.wait_for(
+                self.tts.generate(text=text, voice=voice, speed=speed), timeout=0.250
+            )
             # 음성 데이터가 정상적으로 생성된 경우
             if audio_bytes:
                 # 바이트 데이터를 베이스64 문자열로 변환
@@ -53,6 +58,11 @@ class RealtimeTTS:
                 # 음성 데이터가 비어있는 경우 None 반환
                 return None
 
+        except TimeoutError:
+            logger.warning(
+                f"[TTS] 음성 합성 시간 초과(250ms 경과). 단말 내장 TTS 우회 폴백을 가동합니다: '{text}'"
+            )
+            return None
         except Exception as e:
             # 합성 과정에서 예외가 발생한 경우 에러 로그를 남기고 None 반환
             logger.error(f"음성 합성 중 오류 발생: {e}")

@@ -10,9 +10,9 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+> **버전**: v0.3.2 (2026-07-07 §2 기술 스택 stale 항목 정정: Gemma2:9b→gemma4:e4b, 로컬 Llava→Gemini API 캡셔닝, Kokoro/Coqui→Piper, 클라이언트 Web Audio→expo-audio, 온디바이스 추론 항목 추가)
+> **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
+> **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
 
@@ -36,9 +36,10 @@
 - Segmentation: Ultralytics Yolo 26N - Segmentation
 - Tracking: ByteTrack
 - Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
-- LLM Orchestration: LangGraph, LangChain
-- Local LLM/Embedding: Ollama (Gemma2:9b, Llava, nomic-embed-text)
-- TTS: Kokoro-82M / Coqui (로컬)
+- LLM Orchestration: LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용)
+- Local LLM/Embedding: Ollama (gemma4:e4b, nomic-embed-text)
+- VLM Captioning (오프라인 RAG 빌드): Gemini API (gemini-2.5-flash-lite, 최초 계획 로컬 Llava에서 전환)
+- TTS: Piper (로컬, piper-kss-korean.onnx; 최초 계획 Kokoro/Coqui는 미구현)
 - Message Bus: Redis (Streams + 컨텍스트 TTL)
 - Image: OpenCV
 
@@ -46,7 +47,8 @@
 
 - Framework: React Native (iOS/Android)
 - Camera: react-native-vision-camera
-- Audio: Web Audio API, react-native-tts (예비)
+- On-device Inference: CoreML(iOS) / TFLite(Android) - 반사 경로 온디바이스 탐지
+- Audio: expo-audio (createAudioPlayer; Web Audio API 아님), react-native-tts (예비)
 - Accessibility: Haptics, announceForAccessibility
 
 ### 운영 콘솔
@@ -82,7 +84,6 @@
   - `bus/`: Redis Streams 인터페이스
   - `models/`: 모델 가중치 (git-ignore)
 - `client/`: React Native thin client
-- `console/`: React 운영자 모니터링 콘솔
 - `data/`: 학습·RAG 데이터
 - `training/`: 모델 학습 (오프라인)
 - `scripts/`: 유틸리티 스크립트
@@ -95,7 +96,7 @@
 
 ## 5. AI Coding Rules
 
-- **Coding Pattern Compliance**: 모든 Python 코드는 [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)의 코딩 패턴과 함수 시그니처 표준을 준수합니다. 특히 아래 항목은 필수 준수 대상입니다.
+- **Coding Pattern Compliance**: 모든 Python 코드는 [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md)의 코딩 패턴과 함수 시그니처 표준을 준수합니다. 특히 아래 항목은 필수 준수 대상입니다.
   - **파일 헤더 인코딩** (guide 3.1): 모든 Python 파일 첫 줄에 UTF-8 선언 및 `sys.stdout.reconfigure` 패턴 포함.
   - **임포트 순서** (guide 3.2): 표준 라이브러리 → 외부 라이브러리 → 로컬 모듈 순서로 정렬.
   - **경로 처리** (guide 3.3): `os.path.dirname(os.path.abspath(__file__))` 기반 절대 경로 사용. 하드코딩 경로 금지.
@@ -120,7 +121,7 @@
 ## 6. AI Communication Rules
 
 - Language: 모든 아티팩트(Plan, Task, Walkthrough)와 대화 응답은 **한국어(Korean)**로 작성.
-- Compliance: 작업 시작 전 항상 본 문서와 `docs/minchodan_design_note.md`를 읽고 프로젝트의 맥락을 파악.
+- Compliance: 작업 시작 전 항상 본 문서와 `docs/design/minchodan_design_note.md`를 읽고 프로젝트의 맥락을 파악.
 - Artifact Focus: 아티팩트 생성 후 내용을 중복해서 설명하지 말고, 핵심적인 질문이나 결정 사항만 대화로 제시.
 
 ---
@@ -132,7 +133,7 @@
   - `master` 또는 `main`: 운영 기준선. 직접 push 금지.
   - `dev`: 통합 개발 및 머지 브랜치. 로컬 직접 병합 후 push 허용.
   - `dg`, `jh`, `jy`, `kb`, `th`: 개별 개발 브랜치.
-- Compliance: 상세 내용은 [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md)를 참조하고, 모든 작업은 직접 병합 및 push 기반으로 진행.
+- Compliance: 상세 내용은 [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md)를 참조하고, 모든 작업은 직접 병합 및 push 기반으로 진행.
 
 ---
 
@@ -145,12 +146,13 @@
 | `websocket-gateway`         | 1    | `.agents/skills/websocket-gateway/`         | FastAPI WebSocket 실시간 통신, Redis Streams                                    |
 | `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송                                |
 | `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트 |
-| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드                             |
+| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Gemini VLM 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드 (2026-07-07: Llava에서 Gemini로 실제 구현 정정) |
 | `rag-realtime-search`       | 5    | `.agents/skills/rag-realtime-search/`       | similarity_search(k=5) < 50ms, VectorDBFactory                                  |
 | `llm-guidance-orchestrator` | 6    | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑                                     |
 | `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점                                  |
+| `xcode-build-management`    | -    | `.agents/skills/xcode-build-management/`    | iOS Xcode 프로젝트 빌드, 시뮬레이터 관리 및 Swift/SwiftUI 리팩토링/디버깅 |
 
-> 스킬은 `.agents/skills/` (opencode, 범용) 와 `.claude/skills/` (Claude Code) 양쪽에서 접근 가능합니다. `.claude/skills/`는 `.agents/skills/`의 junction 링크입니다.
+> **2026-07-07 정정**: `.agents/skills/`(opencode, 범용)와 `.claude/skills/`(Claude Code)는 junction/symlink가 **아니라 서로 다른 실제 디렉토리**다(inode 다름, 실측 확인). **2026-07-07 두 트리를 전수 동기화 완료**(8개 스킬 SKILL.md·references 전부 일치, `xcode-build-management` 포함)했으나 여전히 독립 디렉토리이므로, 신규 스킬 추가나 SKILL.md 수정 시 양쪽에 수동으로 반영해야 한다.
 
 ---
 
@@ -158,12 +160,12 @@
 
 | 문서                 | 파일                                                               | 설명                                                              |
 | -------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| 설계 노트 (원본)     | [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                                        |
-| **코딩 패턴 기준**   | [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| 설계 노트 (원본)     | [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                                        |
+| **코딩 패턴 기준**   | [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                                       |
-| 시스템 아키텍처      | [`docs/architecture.md`](docs/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약                        |
-| API 명세서           | [`docs/api_specification.md`](docs/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입                          |
-| 테스트 명세서        | [`docs/test_specification.md`](docs/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스                                  |
-| Git 브랜칭 전략      | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                                      |
-| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
+| 시스템 아키텍처      | [`docs/design/architecture.md`](docs/design/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약                        |
+| API 명세서           | [`docs/design/api_specification.md`](docs/design/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입                          |
+| 테스트 명세서        | [`docs/ops/test_specification.md`](docs/ops/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스                                  |
+| Git 브랜칭 전략      | [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md) | 3계층 브랜치 구조, 작업 규칙                                      |
+| 파이프라인 단계 설계 | [`docs/design/pipeline_stage_design.md`](docs/design/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표                                    |
 | 에이전트 스킬 가이드 | [`SKILLS.md`](SKILLS.md)                                           | 시작 시퀀스, 문서 규칙, 금지 행위                                 |

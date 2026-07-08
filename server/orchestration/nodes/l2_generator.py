@@ -39,7 +39,8 @@ GUIDANCE_SYSTEM_PROMPT = """당신은 시각장애인 보행 보조 AI입니다.
 
 def extract_direction(text: str) -> str:
     """
-    텍스트 내에서 방향성 키워드를 찾아내어 단일 방향 문자로 매핑합니다.
+    텍스트 내에서 방향성 키워드를 찾아내어, 문장의 최종 회피 지시 방향을 추출합니다.
+    (문장에서 가장 마지막에 등장하는 키워드가 최종 결정 지시어일 확률이 높습니다)
     """
     if not text:
         return ""
@@ -51,10 +52,19 @@ def extract_direction(text: str) -> str:
         "정지": ["정지", "멈추", "서세요", "대기"],
     }
 
+    found = []
     for direction, keywords in keyword_mapping.items():
-        if any(kw in text for kw in keywords):
-            return direction
-    return ""
+        for kw in keywords:
+            idx = text.rfind(kw)  # 가장 마지막에 나타난 위치 찾기
+            if idx != -1:
+                found.append((idx, direction))
+
+    if not found:
+        return ""
+
+    # 가장 마지막에 나타난 방향을 핵심 지시 방향으로 판정
+    found.sort(key=lambda x: x[0], reverse=True)
+    return found[0][1]
 
 
 async def l2_generator_node(state: dict) -> dict:
@@ -65,6 +75,8 @@ async def l2_generator_node(state: dict) -> dict:
     detected_classes = state.get("detected_classes", [])
     risk_level = state.get("risk_level", "low")
     rag_context = state.get("rag_context", "관련 수칙 없음")
+    retry_count = state.get("retry_count", 0)
+    errors = state.get("validation_errors", [])
 
     classes_str = ", ".join(detected_classes) if detected_classes else "장애물 없음"
 
@@ -75,6 +87,14 @@ async def l2_generator_node(state: dict) -> dict:
         f"[안전 수칙]:\n{rag_context}\n\n"
         f"위 정보를 바탕으로 20자 이내 한국어 1문장 회피 안내를 작성하세요."
     )
+
+    # 1차 검증에 실패하여 다시 재생성(RETRY)을 수행하는 경우 에러 피드백 피딩
+    if retry_count > 0 and errors:
+        user_prompt += (
+            f"\n\n[피드백]: 이전 생성 문장('{state.get('guidance_text', '')}')은 "
+            f"다음 오류로 인해 거절되었습니다: {', '.join(errors)}.\n"
+            f"이번에는 반드시 위의 위반 사항을 보완하여 올바른 안내문을 생성하세요."
+        )
 
     messages = [SystemMessage(content=GUIDANCE_SYSTEM_PROMPT), HumanMessage(content=user_prompt)]
 

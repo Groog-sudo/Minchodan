@@ -26,7 +26,7 @@
 ### 2.3. Repository (데이터 접근 계층)
 - **위치**: `server/db/repositories.py`
 - **역할**: 데이터베이스와의 직접적인 통신(CRUD 쿼리 실행)만을 전담합니다.
-- **특징**: `await self.session.execute(select(...))` 형태의 비동기 SQLAlchemy 2.0 최신 문법을 사용하여 쿼리 결과를 반환합니다. 
+- **특징**: `await self.session.execute(select(...))` 형태의 비동기 SQLAlchemy 2.0 최신 문법을 사용하여 쿼리 결과를 반환합니다.
 
 ## 3. 핵심 비동기 방어 원칙 (Core Defensive Strategies)
 
@@ -38,8 +38,8 @@
 
 ### 3.2. 의존성 주입 트랜잭션 수거 (get_db)
 ```python
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_factory() as session:
+async def get_db() -> AsyncGenerator[AsyncSession]:
+    async with async_sessionmaker_factory() as session:
         try:
             yield session
         except Exception:

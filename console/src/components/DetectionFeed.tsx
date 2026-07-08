@@ -5,7 +5,7 @@ export function DetectionFeed({ items }: { items: DetectionFeedItem[] }) {
     <section className="panel">
       <div className="panel-header">
         <h2>DetectionFeed</h2>
-        <span className="panel-kicker">TH 직접 구현</span>
+        <span className="panel-kicker">탐지 메타데이터</span>
       </div>
 
       {/* TH HARDCODE AREA:

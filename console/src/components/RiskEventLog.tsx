@@ -5,7 +5,7 @@ export function RiskEventLog({ events }: { events: RiskEvent[] }) {
     <section className="panel panel-table">
       <div className="panel-header">
         <h2>RiskEventLog</h2>
-        <span className="panel-kicker">TH 직접 구현</span>
+        <span className="panel-kicker">위험 로그</span>
       </div>
 
       {/* TH HARDCODE AREA:

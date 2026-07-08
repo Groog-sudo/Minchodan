@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.0.0
+> **버전**: v1.1.0 (2026-07-07 §1.1 CUDA 12.8 요건이 requirements.txt/Dockerfile에 실제로 고정되어 있지 않음을 명시)
 > **설계 기준**: docs/ops/deployment_guide.md (v0.2.0)
 
 # Minchodan AI 모델 및 하드웨어 구성 지침
@@ -15,9 +15,11 @@
 | 분류 | 권장사양 (GPU 가속) | 최소사양 (CPU Fallback) |
 | :--- | :--- | :--- |
 | **장치 (Device)** | **NVIDIA RTX 3060 / 4080** 이상<br/>(Blackwell sm_120 아키텍처 지원 권장) | macOS (Apple Silicon M1/M2/M3)<br/>또는 외장 GPU 없는 Windows 데스크톱 |
-| **CUDA 버전** | **CUDA 12.8** 이상 필수 | N/A (CPU 구동) |
+| **CUDA 버전** | **CUDA 12.8** 이상 필수 (권장 사양) | N/A (CPU 구동) |
 | **NVIDIA Driver** | **v550.x** 이상 필수 | N/A |
 | **VRAM / RAM** | **VRAM 8GB** 이상 / RAM 16GB 이상 | RAM 16GB 이상 (Ollama 모델 로드 전제) |
+
+> **2026-07-07 참고**: `requirements.txt`는 `torch==2.12.1`/`torchvision==0.27.1`을 `+cu128` 태그나 `--extra-index-url` 없이 순정 PyPI 패키지로 설치하며, `docker/Dockerfile`도 `pip install -r requirements.txt`만 실행한다. 즉 cu128 빌드가 코드로 강제되어 있지 않으므로, 실제 CUDA 12.8 가속을 쓰려면 설치 환경에서 별도로 cu128 wheel을 지정해야 한다.
 
 ### 1.2 GPU 가속 연결 검증
 개발자는 컨테이너 기동 전 호스트 OS 상에서 파이썬 스크립트를 통해 GPU 연계 가능 여부를 사전 검증해야 합니다:

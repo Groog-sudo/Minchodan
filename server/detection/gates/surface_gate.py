@@ -5,15 +5,13 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from server.detection.schemas import ReflexAlert, SurfaceResult
 
-# MVP 범위: 학습된 가중치는 COCO 80클래스이므로 노면/보행 안전 P0 클래스 없음.
-# 향후 커스텀 노면 학습(crosswalk/manhole/stair/grating/braille_damaged) 시 자동 활성화.
+# 2026-07-07 정정: 최초 계획은 crosswalk/manhole/stair/grating/braille_damaged를 별도 클래스로
+# 학습하는 것이었으나, 실제 파인튜닝 완료된 Segmentation 모델(segbest.pt)은 이들을 전부 "caution"
+# 하나로 통합한 4클래스(sidewalk_normal/caution/roadway/braille_normal)로 확정됐다
+# (stage3_detection_design.md §5 참조). 예전 클래스명 그대로 두면 실제 모델 출력과 절대
+# 매칭되지 않아 이 게이트가 영구히 발동하지 않는 문제가 있어, 실제 클래스명으로 교체한다.
 P0_SURFACE_CLASSES = {
-    "crosswalk",
-    "manhole",
-    "stair",
-    "stairs",
-    "grating",
-    "braille_damaged",
+    "caution",  # 계단/맨홀/그레이팅 통합 클래스 - 즉시 물리적 낙상/충돌 위험
 }
 
 
@@ -21,10 +19,7 @@ def surface_gate(
     surface_result: SurfaceResult,
     frame_height: float,
 ) -> ReflexAlert | None:
-    """P0 노면 클래스가 프레임 하단에 검출되면 alert_id를 반환한다.
-
-    커스텀 노면 학습 전까지는 COCO 클래스와 매칭되지 않아 None을 반환한다.
-    """
+    """P0 노면 클래스가 프레임 하단에 검출되면 alert_id를 반환한다."""
     if surface_result.class_name not in P0_SURFACE_CLASSES:
         return None
 

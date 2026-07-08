@@ -1,7 +1,7 @@
 ---
 name: rag-knowledge-builder
 description: |
-  로컬 대처 수칙 리스트를 오픈소스 VLM(Llava)과 로컬 임베딩(nomic-embed-text)을 활용하여
+  로컬 대처 수칙 리스트를 VLM(Gemini 2.5 Flash Lite, 2026-07-07부로 Llava에서 전환)과 로컬 임베딩(nomic-embed-text)을 활용하여
   ChromaDB에 오프라인 배치 구축하고 검증하는 RAG 지식 빌더 스킬.
   메타데이터를 3단계 분리 클래스와 일치시켜 검색 정합을 확보한다.
 ---
@@ -9,21 +9,24 @@ description: |
 # RAG Knowledge Builder (4단계: 위험 대처 수칙 DB 구축)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 4단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 13, 3.3, 17.2
+> **버전**: v0.3.0 (2026-07-07 캡셔닝 VLM을 실제 구현체 Gemini 기준으로 정정)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 4단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 13, 3.3, 17.2
+
+> [!IMPORTANT]
+> **2026-07-07 정정**: 아래 본문은 최초 계획 시점(Ollama 로컬 Llava VLM) 기준으로 작성되어, `llava_captioner.py`/로컬 Ollama Llava API 예시 코드를 그대로 담고 있다. **실제 구현은 `server/rag/build/gemini_captioner.py`로, Google Gemini API(`gemini-2.5-flash-lite`, `langchain_google_genai`)를 사용**하며 `GOOGLE_API_KEY` 환경변수가 필요하다(미설정 시 `ValueError`, 로컬 Llava 폴백 없음). 아래 코드 예시의 함수 시그니처·API 호출부는 참고용 설계 스케치로만 보고, 실제 구현은 `server/rag/build/gemini_captioner.py` 소스를 기준으로 삼는다.
 
 ## 개요
 
-오프라인 환경에서 비용 발생 없이 로컬 RAG 시스템을 구동하기 위해, 위험 상황 이미지 데이터셋을 로컬 VLM(Llava)으로 캡셔닝하고, 로컬 임베딩 모델(nomic-embed-text)로 벡터화하여 ChromaDB 영구 저장소에 인덱싱 및 검증한다.
+오프라인 환경에서 비용 발생 없이 로컬 RAG 시스템을 구동하기 위해, 위험 상황 이미지 데이터셋을 VLM으로 캡셔닝하고, 로컬 임베딩 모델(nomic-embed-text)로 벡터화하여 ChromaDB 영구 저장소에 인덱싱 및 검증한다. (VLM은 최초 계획 시 로컬 Llava였으나 실제로는 Gemini API로 구현됨 — 위 정정 참조)
 
 ## 전체 아키텍처 위치
 
 ```
 [원천 영상/사진 데이터]  [프레임 추출/pHash 중복 제거]  [로컬 VLM Llava 캡셔닝]
-                                                                
+
 [ChromaDB 로컬 DB 저장]  [로컬 임베딩 nomic-embed-text]  [대처 수칙 메타데이터 결합]
-          
+
 [5단계: 실시간 RAG 검색 엔진에서 활용]
 ```
 
@@ -196,12 +199,14 @@ def build_chroma_db(captions: list, persist_dir: str = "data/chroma_db"):
 
 ## v1.1 핵심: 메타데이터 분리 클래스 일치
 
-메타데이터 `objects`·`scene_type`을 3단계 **분리 클래스**(예: `braille_damaged`)와 일치시켜 검색 정합을 확보한다.
+메타데이터 `objects`·`scene_type`을 3단계 클래스와 일치시켜 검색 정합을 확보한다.
 
-| 메타데이터 필드 | 값 예시 | 3단계 클래스와의 관계 |
+> **알려진 불일치(2026-07-07)**: 현재 RAG 라벨 정의(`server/rag/shared/labels.py`)의 `ALL_CLASSES`는 최초 계획 명칭 `[kickboard, bollard, braille_damaged, stairs, crosswalk, manhole, grating]`을 그대로 쓰고 있어, **실제 파인튜닝 완료 탐지 모델의 29클래스(전동킥보드=`scooter`, `stairs`/`manhole`/`grating`은 `caution`으로 통합)와 어긋난다.** 아래 예시 값도 `labels.py` 기준이라 탐지 클래스명과 다르다. RAG 검색 정합을 위해서는 `labels.py`를 탐지 taxonomy에 맞추는 코드 정정이 필요하나, 이는 RAG 지식베이스 재빌드가 걸린 담당자 판단 영역이라 여기서는 사실만 기록한다.
+
+| 메타데이터 필드 | 값 예시(현재 labels.py 기준) | 비고 |
 | --- | --- | --- |
-| `objects` | `["kickboard", "bollard"]` | Yolo 26N - Object Detection 클래스와 일치 |
-| `scene_type` | `braille_damaged` | Yolo 26N - Segmentation 클래스와 일치 |
+| `objects` | `["kickboard", "bollard"]` | 탐지 모델은 `scooter` 사용 - 위 불일치 참조 |
+| `scene_type` | `braille_damaged` | seg 모델은 4클래스(해당 명칭 없음, `caution` 통합) |
 | `risk_level` | `high` / `mid` / `low` | Reflex/Surface Gate 위험도와 일치 |
 | `guidance_template` | `"전방 점자블록 파손, 우측으로 우회하세요"` | RAG 검색 결과 텍스트 |
 

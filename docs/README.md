@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.7.0 (2026-07-01 Post-MVP 하이브리드 온디바이스 로드맵 설계서 추가)
+> **버전**: v0.10.0 (2026-07-07 씬 분류기 게이트 해설(팀 학습용) 문서 추가)
 
 ## 문서 목록
 
@@ -62,6 +62,8 @@ docs/
 | 파이프라인 단계 설계 | [pipeline_stage_design.md](design/pipeline_stage_design.md) | 7단계 run mode, 종단 지연 목표, 추상화 지점 |
 | 반사 오디오·햅틱 명세 | [reflex_audio_specification.md](design/reflex_audio_specification.md) | 반사 경로 비프음·진동 피드백 기술 명세 |
 | 보행이론 인사이트 | [behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
+| **실내 오탐 완화 2차 설계서** | [indoor_fp_mitigation_design.md](design/indoor_fp_mitigation_design.md) | **물리적 타당성 필터 + VNClassifyImageRequest 씬 분류기 게이트 설계** |
+| **씬 분류기 게이트 해설(팀 학습용)** | [scene_classifier_gate_guide.md](design/scene_classifier_gate_guide.md) | **VNClassifyImageRequest 게이트 기법을 배경·원리·코드 위치·FAQ로 풀어 쓴 학습용 문서** |
 
 ---
 
@@ -107,6 +109,7 @@ docs/
 | Gemini Fallback 검토 | [gemini_fallback_feasibility.md](research/gemini_fallback_feasibility.md) | Fallback LLM 대체 모델 비용 비교 및 최적 모델 선정 |
 | Post-MVP 온디바이스 타당성 | [post_mvp_ondevice_feasibility.md](research/post_mvp_ondevice_feasibility.md) | 엣지 TFLite 추론 가능성 검증서 |
 | Post-MVP 하이브리드 로드맵 | [post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | 하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP) |
+| SenseVoice-Small STT 검토 | [sensevoice_stt_feasibility.md](research/sensevoice_stt_feasibility.md) | 음성 명령(STT) 경로용 SenseVoice-Small 도입 정당성(지연·로딩·한국어 정확도) |
 
 ---
 
@@ -124,6 +127,7 @@ docs/
 | **모바일 빌드 트러블슈팅 가이드** | [mobile_build_troubleshooting.md](ops/mobile_build_troubleshooting.md) | **iOS 샌드박싱/Rosetta ffi 및 Android SDK/JDK 버전 충돌 해결 핸드북** |
 | **코드 품질 검증 가이드** | [code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 검증 파이프라인** |
 | **iOS CoreML ANE 벤치마크** | [ondevice_coreml_benchmark.md](ops/ondevice_coreml_benchmark.md) | **CoreML ANE 온디바이스 추론 지연 벤치마크 및 서버 KPI 비교** |
+| **모델 클래스별 검증 보고서** | [model_class_validation_report.md](ops/model_class_validation_report.md) | **YOLO26n 33클래스(탐지29+세그멘테이션4) 샘플 이미지 탐지 검증 결과** |
 | Git 브랜칭 전략 | [git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조 (`main` / `dev` / 개인), PR 작업 규칙 |
 | 테스트 명세서 | [test_specification.md](ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
 

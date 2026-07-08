@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.2.0 (2026-06-28 Docker Compose 포트 매핑 동기화)
+> **버전**: v0.3.0 (2026-07-07 §11 macOS 전용 docker-compose.macos.yml 누락 추가)
 > **설계 기준**: [`docs/architecture.md`](architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`docs/environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -318,7 +318,8 @@ docker compose -f docker/docker-compose.yml ps
 | 파일 | 경로 | 설명 |
 | :--- | :--- | :--- |
 | Dockerfile | [`docker/Dockerfile`](../docker/Dockerfile) | FastAPI 컨테이너 이미지 정의 |
-| docker-compose.yml | [`docker/docker-compose.yml`](../docker/docker-compose.yml) | 3컨테이너 오케스트레이션 |
+| docker-compose.yml | [`docker/docker-compose.yml`](../docker/docker-compose.yml) | 3컨테이너 오케스트레이션 (GPU 서버용, `deploy.resources` GPU 예약 포함) |
+| docker-compose.macos.yml | [`docker/docker-compose.macos.yml`](../docker/docker-compose.macos.yml) | **2026-07-07 추가**: macOS 로컬 테스트용 CPU 전용 변형 (GPU `deploy` 블록 없음). `macos_docker_start.sh`/`windows_docker_start.bat`가 실제로 이 파일을 사용함 |
 | .dockerignore | [`docker/.dockerignore`](../docker/.dockerignore) | 빌드 컨텍스트 제외 패턴 |
 | Windows 시작 스크립트 | [`docker/windows_docker_start.bat`](../docker/windows_docker_start.bat) | Windows용 빌드·시작 자동화 |
 | Linux 시작 스크립트 | [`docker/linux_docker_start.sh`](../docker/linux_docker_start.sh) | Linux용 빌드·시작 자동화 |

@@ -31,7 +31,6 @@ from server.services.user_service import UserService
 # 2. APIRouter 인스턴스를 생성하세요.
 # (힌트: prefix="/api/v1/users", tags=["users"])
 # 여기에 작성:
-# type: ignore noqa: S105
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
 

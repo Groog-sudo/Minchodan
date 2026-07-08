@@ -7,7 +7,8 @@
  *  - MOCK_CAMERA=true : MockFrameProvider가 번들 샘플 → float32 (시뮬레이터)
  *  - MOCK_CAMERA=false: react-native-vision-camera takePhoto → base64 → decode → float32 (실기기)
  *
- * 실기기에서는 base64도 함께 전달하여 서버 전송 경로를 유지할 수 있다.
+ * 실기기에서는 서버 WS 전송용 raw JPEG 바이트(jpegBytes)와 CoreML 네이티브 브릿지 호출용
+ * base64 문자열을 함께 전달한다 (서버 전송은 jpegBytes를 바이너리 프레임으로 직접 사용).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,6 +21,7 @@ import {
   useCameraPermission,
 } from "react-native-vision-camera";
 import * as FileSystem from "expo-file-system/legacy";
+import { File } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
 import { COGNITIVE_FPS, REFLEX_FPS } from "../config";
@@ -34,8 +36,20 @@ import {
 export interface FrameData {
   float32: Float32Array;
   stream: StreamType;
+  // CoreML 네이티브 브릿지 호출용 (RN 브릿지는 JSON 직렬화 가능 타입만 인자로 받으므로 base64 유지 필요)
   base64: string | null;
+  // 서버 WS 전송용 raw JPEG 바이트 (base64 미경유, 바이너리 프레임으로 직접 전송)
+  jpegBytes: Uint8Array | null;
 }
+
+// 동적 FPS 조절 파라미터 (온디바이스 추론 지연 기준)
+// - 지연이 현재 간격의 90%를 넘으면(따라잡지 못함) 간격을 늘려 fps를 낮춘다.
+// - 지연이 현재 간격의 50% 미만으로 안정되면 기본 간격까지 서서히 되돌린다.
+const OVERLOAD_LATENCY_RATIO = 0.9;
+const RECOVERY_LATENCY_RATIO = 0.5;
+const INTERVAL_INCREASE_STEP_MS = 50;
+const INTERVAL_DECREASE_STEP_MS = 20;
+const MAX_REFLEX_INTERVAL_MS = 1000; // 최저 1fps 보장 (반사 경로 완전 정지 방지)
 
 export interface UseCameraReturn {
   cameraRef: React.RefObject<Camera | null>;
@@ -44,9 +58,12 @@ export interface UseCameraReturn {
   permissionStatus: string;
   isCapturing: boolean;
   isMockMode: boolean;
+  currentReflexFps: number;
   startCapture: (onFrame: (frame: FrameData) => void) => void;
   stopCapture: () => void;
   requestCameraPermission: () => Promise<boolean>;
+  /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
+  reportInferenceLatency: (latencyMs: number) => void;
 }
 
 export function useCamera(
@@ -59,12 +76,41 @@ export function useCamera(
   const allDevices = useCameraDevices();
   const device = backDevice || allDevices[0];
   const cameraRef = useRef<Camera | null>(null);
-  const reflexTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reflexTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
   const isCapturingRealFrame = useRef(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
+
+  // 동적 FPS 상태: baseIntervalRef는 설정된 기본값(가장 빠른 허용치),
+  // currentIntervalRef는 추론 지연 피드백에 따라 조절되는 실제 반사 루프 간격
+  const baseIntervalRef = useRef(Math.floor(1000 / reflexFps));
+  const currentIntervalRef = useRef(baseIntervalRef.current);
+  const [currentReflexFps, setCurrentReflexFps] = useState(reflexFps);
+
+  const reportInferenceLatency = useCallback((latencyMs: number) => {
+    if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+    const base = baseIntervalRef.current;
+    const cur = currentIntervalRef.current;
+    let next = cur;
+
+    if (latencyMs > cur * OVERLOAD_LATENCY_RATIO) {
+      // 추론이 캡처 간격을 따라가지 못함 - fps를 낮춰 부하 경감 (SIGKILL 재발 방지)
+      next = Math.min(MAX_REFLEX_INTERVAL_MS, cur + INTERVAL_INCREASE_STEP_MS);
+    } else if (latencyMs < cur * RECOVERY_LATENCY_RATIO && cur > base) {
+      // 여유가 충분하면 기본 fps까지 서서히 복구
+      next = Math.max(base, cur - INTERVAL_DECREASE_STEP_MS);
+    }
+
+    if (next !== cur) {
+      currentIntervalRef.current = next;
+      setCurrentReflexFps(Math.round(1000 / next));
+      console.log(
+        `[Camera] 동적 FPS 조절: 반사 간격 ${cur}ms -> ${next}ms (추론 지연=${latencyMs.toFixed(1)}ms)`,
+      );
+    }
+  }, []);
 
   const effectivePermission = isMockMode ? true : hasPermission;
 
@@ -105,7 +151,7 @@ export function useCamera(
       if (!provider) return null;
       try {
         const float32 = await provider.getFrame();
-        return { float32, stream, base64: null };
+        return { float32, stream, base64: null, jpegBytes: null };
       } catch (err) {
         console.error(`[Camera/Mock] ${stream} 프레임 오류:`, err);
         return null;
@@ -134,23 +180,53 @@ export function useCamera(
           ? photo.path
           : `file://${photo.path}`;
 
-        // expo-image-manipulator 기기 네이티브 GPU 가속 리사이징/압축 기동
+        // 카메라 미리보기(<Camera resizeMode="cover"> 기본값)는 종횡비를 유지한 채
+        // 화면에 꽉 차도록 중앙 크롭하여 보여준다. 반면 resize({width,height})를
+        // 둘 다 지정하면 종횡비를 무시하고 강제로 눌러 늘리므로(stretch), 모델이 보는
+        // 이미지와 화면 미리보기의 기하 구조가 달라져 bbox가 화면과 어긋나게 그려진다.
+        // 미리보기와 동일하게 중앙 정사각형 크롭 후 리사이즈해야 bbox 좌표가 정합한다.
+        //
+        // photo.width/height는 EXIF PixelXDimension/Dimension(센서 원본, 항상 landscape
+        // 배치) 기준이라 회전 반영 전 값이다. expo-image-manipulator는 크롭보다 먼저
+        // ImageFixOrientationTransformer로 EXIF 회전을 이미지에 반영하므로, 세로로 촬영해
+        // 90/270도 보정이 필요한 경우(orientation === landscape-left/right) 크롭 좌표계에서는
+        // 가로/세로 축이 서로 뒤바뀐다. 이를 보정하지 않으면 크롭 영역이 이미지 경계를 벗어난다.
+        const isRotated90 =
+          photo.orientation === "landscape-left" ||
+          photo.orientation === "landscape-right";
+        const correctedWidth = isRotated90 ? photo.height : photo.width;
+        const correctedHeight = isRotated90 ? photo.width : photo.height;
+        const cropSize = Math.min(correctedWidth, correctedHeight);
+        const originX = Math.floor((correctedWidth - cropSize) / 2);
+        const originY = Math.floor((correctedHeight - cropSize) / 2);
+
+        // expo-image-manipulator 기기 네이티브 GPU 가속 크롭/리사이징/압축 기동
         const manipResult = await manipulateAsync(
           path,
-          [{ resize: { width: 640, height: 640 } }],
+          [
+            { crop: { originX, originY, width: cropSize, height: cropSize } },
+            { resize: { width: 640, height: 640 } },
+          ],
           { compress: 0.5, format: SaveFormat.JPEG, base64: true },
         );
 
         const base64 = manipResult.base64 ?? "";
-        const float32 = decodeBase64JpegToChw(base64);
+        // 실기기 실행 시 JS CPU 100% 점유로 인한 iOS Watchdog SIGKILL (code 9) 차단을 위해 온디바이스 디코딩 루프 생략
+        // (실기기에서는 서버로 raw JPEG 바이트만 전송하여 GPU 추론 서버에서 디코딩 및 검출을 전담 처리함)
+        const float32 = new Float32Array(0);
 
-        console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> 압축 base64len=${base64.length} float32len=${float32.length}`);
+        // 서버 WS 전송용 raw JPEG 바이트 (base64 미경유). CoreML 네이티브 브릿지 호출은
+        // RN 구 브릿지가 JSON 직렬화 가능 타입만 인자로 받을 수 있어 base64 문자열이 불가피하지만,
+        // 서버로의 WS 전송은 이 바이트를 그대로 바이너리 프레임으로 보내 33% 오버헤드를 제거한다.
+        const jpegBytes = await new File(manipResult.uri).bytes();
+
+        console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> JPEG bytes=${jpegBytes.length} base64len(CoreML용)=${base64.length} float32len=${float32.length}`);
 
         // 디바이스 임시 스토리지 고갈 방지를 위해 촬영된 원본 및 리사이징 임시 파일 청소
         void FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
         void FileSystem.deleteAsync(manipResult.uri, { idempotent: true }).catch(() => {});
 
-        return { float32, stream, base64 };
+        return { float32, stream, base64, jpegBytes };
       } catch (err) {
         console.error(`[Camera/Real] ${stream} 캡처 오류:`, err);
         return null;
@@ -172,31 +248,42 @@ export function useCamera(
       onFrameRef.current = onFrame;
       setIsCapturing(true);
 
-      const reflexInterval = Math.floor(1000 / reflexFps);
+      baseIntervalRef.current = Math.floor(1000 / reflexFps);
+      currentIntervalRef.current = baseIntervalRef.current;
+      setCurrentReflexFps(reflexFps);
       const frameCounter = { current: 0 };
 
-      reflexTimerRef.current = setInterval(async () => {
+      // setInterval 대신 재귀 setTimeout을 사용: 매 tick마다 currentIntervalRef의
+      // 최신값을 다시 읽어와야 reportInferenceLatency()의 동적 fps 조절이 반영된다.
+      const tick = async () => {
         frameCounter.current++;
 
         // 단일 프레임 캡처 (하드웨어 호출 1회로 통일)
         const frame = await captureFrame("reflex");
-        if (!frame || !onFrameRef.current) return;
+        if (frame && onFrameRef.current) {
+          // 반사 경로로 즉시 전달
+          onFrameRef.current(frame);
 
-        // 반사 경로로 즉시 전달
-        onFrameRef.current(frame);
-
-        // 매 N번째 프레임마다 동일 프레임을 인지 경로로 전달 (중복 캡처 제거)
-        const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
-        if (frameCounter.current % ratio === 0) {
-          onFrameRef.current({
-            ...frame,
-            stream: "cognitive",
-          });
+          // 매 N번째 프레임마다 동일 프레임을 인지 경로로 전달 (중복 캡처 제거)
+          const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
+          if (frameCounter.current % ratio === 0) {
+            onFrameRef.current({
+              ...frame,
+              stream: "cognitive",
+            });
+          }
         }
-      }, reflexInterval);
+
+        // stopCapture()가 이미 호출되어 null이 됐다면 재예약하지 않는다.
+        if (reflexTimerRef.current !== null) {
+          reflexTimerRef.current = setTimeout(tick, currentIntervalRef.current);
+        }
+      };
+
+      reflexTimerRef.current = setTimeout(tick, currentIntervalRef.current);
 
       console.log(
-        `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`,
+        `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성)`,
       );
     },
     [reflexFps, cognitiveFps, isCapturing, isMockMode, captureFrame],
@@ -204,7 +291,7 @@ export function useCamera(
 
   const stopCapture = useCallback(() => {
     if (reflexTimerRef.current) {
-      clearInterval(reflexTimerRef.current);
+      clearTimeout(reflexTimerRef.current);
       reflexTimerRef.current = null;
     }
     if (cognitiveTimerRef.current) {
@@ -233,9 +320,11 @@ export function useCamera(
           : "not-requested",
     isCapturing,
     isMockMode,
+    currentReflexFps,
     startCapture,
     stopCapture,
     requestCameraPermission,
+    reportInferenceLatency,
   };
 }
 

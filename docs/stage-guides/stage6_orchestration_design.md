@@ -1,7 +1,7 @@
 # 6단계 설계서 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 > **작성일**: 2026-06-26
-> **버전**: v0.1.0
+> **버전**: v0.2.0 (2026-07-07 LLM 클라이언트를 실제 구현체(SimpleOllamaClient/SimpleOpenAIClient, LangChain ChatOllama/ChatOpenAI 미경유)로 정정, 핫스왑 트리거를 GPU 부하 기준으로 정정)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 6단계, [`docs/architecture.md`](architecture.md) 5.6절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 11, 12, 14, 17.2
 > **스킬 참조**: [`.agents/skills/llm-guidance-orchestrator/SKILL.md`](../.agents/skills/llm-guidance-orchestrator/SKILL.md)
@@ -42,7 +42,7 @@ graph LR
 
     subgraph Stage6 ["6단계: LangGraph 오케스트레이션"]
         L1["L1 Classifier<br/>(룰 기반 위험도)"]
-        L2["L2 Generator<br/>(ChatOllama gemma4-e4b)"]
+        L2["L2 Generator<br/>(SimpleOllamaClient gemma4-e4b)"]
         L3["L3 Validator<br/>(길이·방향 검증)"]
         FB["Fallback Node<br/>(고정 문장)"]
     end
@@ -74,8 +74,8 @@ graph LR
 | LLM (기본) | Ollama gemma4-e4b | `gemma4-e4b` | 로컬 추론, temperature=0.3 |
 | LLM (Fallback) | OpenAI GPT-4o-mini | `gpt-4o-mini` | 핫스왑, max_tokens=50 |
 | 오케스트레이션 | LangGraph | `>= 0.2.x` | StateGraph + 조건부 엣지 |
-| LLM 래퍼 | LangChain | `>= 0.3` | ChatOllama / ChatOpenAI |
-| 추상화 | LLMClientFactory | `BaseChatModel` | Ollama ↔ OpenAI 핫스왑 |
+| LLM 래퍼 | 커스텀 클라이언트 (LangChain `ChatOllama`/`ChatOpenAI` 미경유) | - | `SimpleOllamaClient`(`ollama.AsyncClient`) / `SimpleOpenAIClient`(raw `httpx`) |
+| 추상화 | LLMClientFactory | `get_client(provider)` | Ollama ↔ OpenAI 핫스왑 (GPU 부하 기반 자동 전환) |
 | 환경 변수 | python-dotenv | - | `LLM_PROVIDER`, `OPENAI_API_KEY` |
 
 ---
@@ -87,11 +87,11 @@ server/orchestration/
 ├── __init__.py
 ├── state.py                   # OrchState TypedDict
 ├── graph.py                   # StateGraph 조립, 노드 등록, 엣지 정의
-├── llm_client_factory.py      # BaseChatModel Ollama ↔ gpt-4o-mini 핫스왑
+├── llm_client_factory.py      # SimpleOllamaClient/SimpleOpenAIClient, GPU 부하 기반 Ollama ↔ gpt-4o-mini 핫스왑
 └── nodes/
     ├── __init__.py
     ├── l1_classifier.py       # L1: 룰 기반 위험도 분류 (mid/low만 진입)
-    ├── l2_generator.py        # L2: ChatOllama(gemma4-e4b) ainvoke
+    ├── l2_generator.py        # L2: SimpleOllamaClient(gemma4-e4b) ainvoke
     ├── l3_validator.py        # L3: 길이·방향 검증, RETRY(최대 1회)
     └── fallback_node.py       # 최종 실패 → 고정 문장
 ```
@@ -196,7 +196,7 @@ def retrieve_rag_context(class_name: str, k: int = 5) -> str:
 graph TD
     Entry["StateGraph 진입<br/>(OrchState)"]
     L1["L1 Classifier<br/>룰 기반 위험도 분류"]
-    L2["L2 Generator<br/>ChatOllama ainvoke"]
+    L2["L2 Generator<br/>SimpleOllamaClient ainvoke"]
     L3["L3 Validator<br/>길이·방향 검증"]
     End["END<br/>guidance_text 확정"]
     Block["진입 차단<br/>(high 수신 시)"]
@@ -278,7 +278,7 @@ graph TD
 | ---- | ---- |
 | 검증 통과 | `verified=True`, END로 라우팅 |
 | 검증 실패 + `retry < MAX_RETRY` | `retry_count += 1`, L2로 재진입 |
-| 검증 실패 + `retry = MAX_RETRY` | 고정 문장 `"전방 주의, 천천히 멈추세요"` 반환, `used_static_fallback=True` |
+| 검증 실패 + `retry >= MAX_RETRY` | `retry_count += 1`, `verified=False` 유지 및 fallback 노드로 분기 |
 
 > **코딩 패턴**: L3 검증은 LLM을 호출하지 않는 **순수 함수**입니다. `retry_count` 상태를 통해 무한 루프를 방지합니다 (guide 17.2 예외 후 루프 유지 패턴).
 
@@ -303,22 +303,27 @@ graph TD
 | `l1_classify` | `l1_classifier_node` | 엔트리포인트 |
 | `l2_generate` | `l2_generator_node` | LLM ainvoke |
 | `l3_validate` | `l3_validator_node` | 검증 + RETRY 제어 |
+| `fallback` | `fallback_node` | 최종 정적 폴백 |
 
 | 엣지 | from → to | 조건 |
 | ---- | --------- | ---- |
 | 엔트리 | `START` → `l1_classify` | 고정 |
 | 순차 | `l1_classify` → `l2_generate` | 고정 |
 | 순차 | `l2_generate` → `l3_validate` | 고정 |
-| 조건부 | `l3_validate` → `l2_generate` | `verified=False` (RETRY) |
+| 조건부 | `l3_validate` → `l2_generate` | `verified=False` 및 `retry_count <= 1` (RETRY) |
+| 조건부 | `l3_validate` → `fallback` | `verified=False` 및 `retry_count > 1` (최종 실패) |
 | 조건부 | `l3_validate` → `END` | `verified=True` |
+| 순차 | `fallback` → `END` | 고정 |
 
 ### 8.2 조건부 라우팅 함수
 
 ```python
 def route_after_l3(state: dict) -> str:
-    """L3 검증 결과에 따라 L2 재시도 또는 END로 라우팅."""
+    """L3 검증 결과에 따라 L2 재시도, fallback 또는 END로 라우팅."""
     if state.get("verified"):
         return "end"
+    if state.get("retry_count", 0) > 1:
+        return "fallback"
     return "l2_generate"
 ```
 
@@ -345,18 +350,18 @@ def get_orchestrator():
 
 | 조건 | 전환 대상 | 트리거 |
 | ---- | --------- | ------ |
-| 기본 | `ChatOllama(gemma4-e4b)` | `LLM_PROVIDER=ollama` (기본값) |
-| 강제 전환 | `ChatOpenAI(gpt-4o-mini)` | `LLM_PROVIDER=openai` 환경 변수 |
-| L3 실패율 > 10% | `ChatOpenAI(gpt-4o-mini)` | 자동 전환 (모니터링 기반) |
+| 기본 | `SimpleOllamaClient(gemma4-e4b)` | `LLM_PROVIDER=ollama` (기본값) |
+| 강제 전환 | `SimpleOpenAIClient(gpt-4o-mini)` | `LLM_PROVIDER=openai` 환경 변수 |
+| GPU 과부하 감지 | `SimpleOpenAIClient(gpt-4o-mini)` | 자동 전환 (`start_gpu_monitor()`의 `GPUMonitorMCP.check_hotswap_trigger()` 폴링 기반. L3 실패율 기준이 아님) |
 | 최종 실패 | 고정 문장 | Fallback Node |
 
 ### 9.2 클래스 구조
 
 | 메서드 | 반환 타입 | 비고 |
 | ------ | --------- | ---- |
-| `get_ollama()` | `ChatOllama` | 싱글톤, `temperature=0.3`, `num_predict=50` |
-| `get_openai()` | `ChatOpenAI` | 싱글톤, `temperature=0.3`, `max_tokens=50` |
-| `get_client(provider)` | `BaseChatModel` | provider에 따른 분기 |
+| `get_ollama()` | `SimpleOllamaClient` | 싱글톤, `ollama.AsyncClient` 래핑 |
+| `get_openai()` | `SimpleOpenAIClient` | 싱글톤, raw `httpx` POST로 OpenAI REST API 직접 호출 |
+| `get_client(provider)` | `SimpleOllamaClient \| SimpleOpenAIClient` | provider에 따른 분기 |
 
 > **방어적 코딩**: `get_openai()`는 `OPENAI_API_KEY` 환경 변수 부재 시 `ValueError`를 발생시킵니다 (guide 17.2 API 키 검증 패턴). 단, 6단계 파이프라인은 이 예외를 상위에서 포착하여 Fallback Node로 우회합니다.
 

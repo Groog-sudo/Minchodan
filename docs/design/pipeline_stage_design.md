@@ -1,7 +1,7 @@
 # Minchodan 파이프라인 단계 설계
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
+> **버전**: v0.3.0 (2026-07-07 §5.3/5.4/5.6/5.7/§6 실제 구현 기준 정정 - 노면 4클래스, Gemini 캡셔닝, 커스텀 LLM 클라이언트, Piper TTS/WAV)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -97,11 +97,11 @@ graph LR
   - Reflex Gate: 고위험 + 근접 `alert_id`+방향 반사 경로
   - Surface Gate: P0 노면 하단 `alert_id` 반사 경로
 - mid/low `redis_bus.xadd("risk.events")` 인지 경로
-- 노면 클래스 분리(C2): `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution`
+- 노면 클래스 분리(C2, 실제 학습 완료 모델 기준): `braille_normal`, `sidewalk_normal`, `caution`, `roadway` (4클래스 — `damaged`/`crosswalk` 세분화는 데이터 미확보로 미채택, `docs/ops/model_class_validation_report.md` 참조)
 
 ### 5.4 4단계 - RAG DB 구축 (오프라인 배치)
 
-- 영상 1fps 프레임 추출 pHash 중복 제거 Llava 한글 캡셔닝 nomic-embed-text(768d) `Chroma.from_documents(persist_directory)`
+- 영상 1fps 프레임 추출 pHash 중복 제거 Gemini(`gemini-2.5-flash-lite`) 한글 캡셔닝 nomic-embed-text(768d) `Chroma.from_documents(persist_directory)`
 - 메타데이터 `objects`/`scene_type`을 3단계 분리 클래스와 일치
 
 ### 5.5 5단계 - 실시간 대처 수칙 검색
@@ -114,13 +114,13 @@ graph LR
 
 - `StateGraph(OrchState)`:
   - L1: 룰 기반 위험도 분류 (mid/low만 진입)
-  - L2: ChatOllama(gemma4-e4b) `ainvoke` (20자/방향)
-  - L3: 검증 + RETRY(최대 1회)
-  - Fallback: gpt-4o-mini 핫스왑 또는 고정 문장
+  - L2: `SimpleOllamaClient`(gemma4-e4b, LangChain `ChatOllama` 미경유 커스텀 클라이언트) `ainvoke` (20자/방향)
+  - L3: 검증 + RETRY(최대 1회) → 초과 시 fallback 노드로 라우팅
+  - Fallback: GPU 부하 기반 `SimpleOpenAIClient`(gpt-4o-mini) 핫스왑 또는 고정 문장
 
 ### 5.7 7단계 - 음성 안내 출력 (이중 채널)
 
-- **인지**: Kokoro/Coqui `generate()` base64 MP3 WS Web Audio
+- **인지**: Piper(`TTS_ENGINE=piper` 기본값, Kokoro/Coqui 미구현) `generate()` base64 **WAV**(MP3 아님) WS Web Audio
 - **반사**: 사전합성 고정 클립 `alert_id`로 즉시 재생 (선점, 실시간 합성 금지)
 - 중복 억제 `setex(suppress:…, 60)`, 햅틱 연동
 
@@ -131,9 +131,9 @@ graph LR
 | 추상화     | 기본                               | 대안                 | 위치                                         |
 | ---------- | ---------------------------------- | -------------------- | -------------------------------------------- |
 | Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
-| LLM Client | ChatOllama(gemma4-e4b)             | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
-| Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상)        |
-| TTS        | Kokoro/Coqui                       | OpenAI TTS           | `server/tts/tts_service.py`                  |
+| LLM Client | SimpleOllamaClient(gemma4-e4b)      | SimpleOpenAIClient(gpt-4o-mini) | `server/orchestration/llm_client_factory.py` |
+| Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/embedding_engine_factory.py` (Embeddings 추상) |
+| TTS        | Piper                               | (미구현: OpenAI TTS)  | `server/tts/tts_service.py`                  |
 
 ---
 

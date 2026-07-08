@@ -10,6 +10,9 @@
 > **담당 브랜치**: `kb` (iOS 주도 + 서버 Phase A)
 > **협업 대상**: Android 담당자 (`dg`) — 공통 TS 코드 검토 + Android 빌드/검증
 
+> [!IMPORTANT]
+> **2026-07-07 프로토콜 갱신**: 본 문서(v0.1.0)는 최초 계획 시점 기준으로 `thumbnail_jpeg_b64`(base64) 단일 전송을 전제로 작성되었다. 실제 구현은 이후 **base64를 경유하지 않는 바이너리 전송(기본)** 으로 전환되었고, base64는 구버전 호환 경로로만 남았다. 최신 규격은 [`docs/design/api_specification.md`](../design/api_specification.md) §3.1(바이너리)/§3.2(base64), 구현 상세는 [`docs/stage-guides/stage2_capture_design.md`](../stage-guides/stage2_capture_design.md) §6.4를 따른다. 본 문서 내 `thumbnail_jpeg_b64` 예시들은 구버전 호환 경로 기준으로 읽는다.
+
 ---
 
 ## 1. 개요

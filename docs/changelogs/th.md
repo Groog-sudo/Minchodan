@@ -232,3 +232,19 @@
 - **검증 결과**:
   - `npm install` 완료
   - `npm run build` 통과
+
+---
+
+### 2026-07-08 | 운영자 콘솔 | SSE 이벤트 렌더링 및 발표 대응 주석 보강
+
+- **커밋**: `feat: 운영자 콘솔 SSE 상태 렌더링 보강`
+- **변경 내용**:
+  - `useMonitorStream.ts`에 `session_status`, `detection_event`, `llm_status`, `rag_result`, `tts_status`, `stt_status` 이벤트 분기와 상태 갱신 로직을 보강했습니다.
+  - `SessionStatus` 컴포넌트에서 단말 `device_id`, 플랫폼, 연결 상태, RTT, 마지막 수신 시간을 실제 목록으로 표시하도록 수정했습니다.
+  - `SystemMetrics` 컴포넌트에서 GPU 사용률, 메모리, provider, RTT, queue, dropped frame, 에러 상태를 카드 형태로 표시하도록 수정했습니다.
+  - `AiPipelineMonitor` 컴포넌트에서 LLM, RAG, TTS, STT 상태와 최근 안내문을 표시하도록 수정했습니다.
+  - 화면에 노출되던 내부 작업 문구(`TH 직접 구현`)를 운영자 관제 용어(`시스템 상태`, `단말 연결`, `탐지 메타데이터`, `AI 상태`, `위험 로그`)로 교체했습니다.
+  - 발표/면접 대응을 위해 SSE 단방향 구독, device_id 기준 upsert, 최신 상태성 데이터와 누적 로그성 데이터의 차이, AI 상태 보존 방식에 대한 주석을 보강했습니다.
+- **관련 파일**: `console/src/api/useMonitorStream.ts`, `console/src/components/AiPipelineMonitor.tsx`, `console/src/components/DetectionFeed.tsx`, `console/src/components/RiskEventLog.tsx`, `console/src/components/SessionStatus.tsx`, `console/src/components/SystemMetrics.tsx`
+- **검증 결과**:
+  - `cd console && npm run build` 통과

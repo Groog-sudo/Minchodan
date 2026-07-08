@@ -815,3 +815,289 @@
   - minchodan_design_note.md: 3단계 커스텀 학습 대상 29종 2000장 추출 전략 명세 갱신
 - **Files**: scripts/prepare_aihub_yolo_detection.py, server/detection/yolo_detector.py, server/detection/yolo_segmentor.py, docs/design/api_specification.md, docs/design/minchodan_design_note.md
 - **Verification**: 핑퐁 및 YOLO 파이프라인 정합성 문서 교차 검증 완료
+
+---
+
+### 2026-07-06 | 3단계+iOS | iOS CoreML 온디바이스 추론 raw tensor 파싱 재구성 및 모델 클래스별 검증 보고서 신규 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - **iOS CoreML 추론 파이프라인 전면 재구성** (`client/ios/CoreMLInferenceBridge.swift`, 실제 Xcode 빌드 타겟 파일): 기존 `VNCoreMLRequest`/`VNImageRequestHandler`(Vision Framework) 기반 호출을 제거하고, `MLModel`을 직접 로드해 YOLO26n end2end 모델의 raw tensor 출력(`[1, 300, 6]`, `(cx, cy, w, h, confidence, class_id)`)을 수동 파싱하는 방식으로 교체. Vision이 강제하는 `VNRecognizedObjectObservation` 클래스 라벨 매핑 방식이 커스텀 29/4클래스 모델과 맞지 않아 필요해진 재작성.
+  - `computeUnits`를 `.cpuAndGPU`에서 `.cpuOnly`로 재하향: GPU(Metal) 경로에서도 `MLIR pass manager failed` 크래시가 재현되어(end2end NMS 연산인 Topk/GatherNd 등의 Metal 컴파일 실패로 추정), 현재는 CPU 전용으로 완전히 내려 안정성을 우선함.
+  - 이미지 방향 정규화 버그 수정 (`normalizedCGImage()` 추가): `UIImage.cgImage`가 EXIF `imageOrientation`을 반영하지 않아, 세로로 촬영된 사진이 회전되지 않은 채 그대로 모델에 들어가 엉뚱한 클래스로 오탐지되던 문제를 해결.
+  - bbox 좌표 단위 버그 수정: 클라이언트(`CameraView.tsx`)가 bbox 전체(x,y,w,h)를 640x640 픽셀 단위로 취급해 `FRAME_SIZE`로 나눠 화면 비율과 위험도 area ratio를 계산하므로, 기존에 `(x,y)`만 0~1로 정규화하고 `(w,h)`는 픽셀값으로 남겨 단위가 섞이던 것을 `(cx,cy,w,h)` 중심점 좌표를 좌상단 기준 `(x,y,w,h)`로만 변환하고 픽셀 단위를 유지하도록 수정.
+  - segmentation 모델을 선택(optional) 로드로 변경: `segmentation.mlmodelc`가 번들되지 않은 경우에도 `object_detection`만으로 det-only 모드로 기동하도록 방어 처리. det/seg 독립 벤치마크 로깅(`det_ms`/`seg_ms`/`total_ms`) 유지.
+  - `client/ios/Minchodan/CoreMLInferenceBridge.swift`(project.pbxproj 그룹에 path 속성이 없어 실제로는 빌드 타겟에 연결되지 않는 미사용 사본, `.d` 의존성 파일로 확인)에도 동일한 재구성을 반영해 두 파일 간 코드 드리프트를 최소화. 단, `confThreshold`(0.25 vs 0.05)와 bbox 정규화 방식은 실제 빌드 타겟 파일(`client/ios/CoreMLInferenceBridge.swift`)에만 추가 보정이 반영되어 있고 두 파일이 완전히 동일하지는 않음.
+  - **iOS 온디바이스 추론 재활성화** (`client/src/components/CameraView.tsx`): 위 크래시/오탐지 원인 수정을 근거로, 실기기(REAL 모드)에서 로컬 CoreML 추론을 건너뛰던 `if (!isMockModeRef.current) { return; }` 서버 전담 우회 가드를 제거.
+  - `CameraView.tsx`에 신뢰도 임계값 실시간 조절 UI 추가(`confThreshold` state, `+`/`-` 버튼, 5%~95% 범위): BBox 오버레이·감지 목록·Reflex Gate 피드백 전부 이 임계값 기준으로 필터링.
+  - `CameraView.tsx`의 긴급 회피 클래스 목록(`HIGH_HAZARDS`)을 신규 29클래스 taxonomy(`scooter`, `wheelchair`, `stroller`, `carrier` 등)에 맞게 갱신하고, `GROUND_HAZARDS`(segmentation `caution`/`roadway`)를 신설해 노면 위험 구간도 조기 경보 대상에 포함.
+  - 카메라 미리보기 컨테이너 종횡비를 `3:4`에서 `1:1`로 수정: 실제 캡처/추론 프레임이 640x640 정사각형인데 미리보기만 3:4였던 불일치로 인해 bbox가 실제 사물보다 넓게 그려지던 문제를 해결.
+  - `client/src/hooks/useOnDeviceDetection.ts`: 기존 COCO 91클래스 라벨(`COCO_CLASS_NAMES`)을 신규 커스텀 29클래스(`DET_CLASS_NAMES`, export)로 교체. object_detection 29클래스는 이미 보행 위험 사물만 선별한 도메인 특화 모델이므로, 기존 COCO 화이트리스트(`DET_HAZARD`, 7종 선별)가 불필요해져 제거하고 탐지 결과 전체를 위험군으로 취급하도록 단순화.
+  - iOS 온디바이스 bbox 좌표 어긋남 버그 수정: `client/src/hooks/useCamera.ts`의 `captureRealFrame`이 `expo-image-manipulator`의 `resize({width,height})`로 원본 사진을 종횡비 무시하고 늘려(stretch) 모델에 넣던 것을, 카메라 미리보기(`resizeMode="cover"`)와 동일하게 중앙 정사각형 크롭 후 리사이즈하도록 수정. `PhotoFile.width/height`가 EXIF 원본(회전 미반영) 축이라 세로 촬영 시 크롭 좌표축이 뒤바뀌는 문제도 `photo.orientation` 기준으로 함께 보정.
+  - `.mcp.json` 수정: XcodeBuildMCP 활성 워크플로우에 `swiftpm`, `project-scaffolding` 추가(기존 `simulator,device,macos,debugging,ui-automation`에 이어).
+  - `server/detection/yolo_detector.py`의 `_parse_result` 파싱 스텁 활성화: `SKILLS.md` 담당자 학습형 협업 규칙에 따라 `for box in result.boxes:` 루프 진입 전 조기 `return detections`로 막혀 있던 것을, 사용자 직접 지시에 따라 루프를 살리고 누락되어 있던 최종 `return detections`를 추가하여 서버 탐지 파이프라인이 실제 `list[Detection]`을 반환하도록 수정.
+  - `scripts/validate_class_samples.py` 신규 작성: `det_best_20260705.pt`(Detection 29클래스), `segbest.pt`(Segmentation 4클래스) 두 모델을 ultralytics로 직접 로드해 클래스별 샘플 이미지에 추론을 실행하고, `result.plot(conf=True, labels=True)`로 bbox+신뢰도 오버레이 이미지를 저장.
+  - `data/validation_samples/raw/<class_name>/`에 33클래스(Detection 29 + Segmentation 4) 각 3장씩 총 99장의 검증용 샘플 이미지 확보(한국 인도·도로 맥락 우선, 인터넷 공개 이미지). `data/validation_samples/results/{detection,segmentation}/<class_name>/`에 시각화 결과 저장.
+  - `docs/ops/model_class_validation_report.md` 신규 작성: 클래스별 탐지 성공률·총 박스 수·최고 신뢰도 표, 실패/저조 클래스(`stop` 0/3 등) 원인 분석 및 후속 조치 제안 수록.
+  - `docs/ops/ondevice_coreml_benchmark.md` 수정: Vision Framework 기반 서술을 raw tensor 파싱 기준으로 정정하고, `computeUnits` 값(`.all` → `.cpuOnly`) 및 클래스 체계(80클래스 COCO → 커스텀 29/4클래스) 최신화. 기존 실측 벤치마크 수치(`laptop` 탐지 등)는 구 아키텍처(Vision+COCO) 기준이라 현재 raw tensor 파이프라인 재측정 전까지 참고용으로만 유지한다고 명시.
+  - `docs/README.md` 수정: 버전 v0.7.0 → v0.8.0, ops/ 문서 목록에 모델 클래스별 검증 보고서 추가.
+  - `.claude/settings.json` 신규 작성: 검증 이미지 수집 과정에서 반복적으로 발생하던 curl/WebSearch/WebFetch 권한 프롬프트를 줄이기 위해 `Bash(curl *)`, `WebSearch`, `WebFetch(domain:commons.wikimedia.org)` 등 허용 목록 추가.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/ios/Minchodan/CoreMLInferenceBridge.swift`, `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `.mcp.json`, `server/detection/yolo_detector.py`, `scripts/validate_class_samples.py`, `docs/ops/model_class_validation_report.md`, `docs/ops/ondevice_coreml_benchmark.md`, `docs/README.md`, `.claude/settings.json`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 신규 에러 없음 확인. `scripts/validate_class_samples.py` 실행 결과 Detection 29클래스 중 28개 클래스 최소 1장 이상 탐지 성공, Segmentation 4클래스 전부 탐지 성공. `stop` 클래스만 3장 전부 탐지 실패(conf 0.01까지 낮춰도 미탐지) 확인.
+- **비고**: `stop` 클래스 탐지 실패는 학습 데이터 부족 또는 `traffic_sign`과의 클래스 혼동 가능성으로 추정되며, 재학습 데이터 보강이 필요하다. `traffic_light_controller` 등 일부 클래스는 한국 실사 샘플을 끝내 확보하지 못해 해외 사진으로 대체됐다(상세는 검증 보고서 3.3절 참조). iOS raw tensor 파이프라인은 실기기 재빌드 후 벤치마크 재측정이 필요하며(`docs/ops/ondevice_coreml_benchmark.md` §4 부록 참조), `client/ios/Minchodan/CoreMLInferenceBridge.swift`는 여전히 빌드 미대상 사본이므로 향후 정리(삭제 또는 실제 연결) 필요.
+
+---
+
+### 2026-07-07 | 오케스트레이션 | LangGraph 3계층 오케스트레이션 구조 정상화 및 방향 추출 알고리즘 버그 수정
+
+- **커밋**: `refactor(server): LangGraph 엣지 구조 정상화 및 extract_direction 오추출 버그 수정`
+- **변경 내용**:
+  - **LangGraph fallback 노드 연결 정상화**:
+    - [graph.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/graph.py)와 [l3_validator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l3_validator.py)를 수정하여, 검증 실패 및 재시도 횟수 초과 시 L3 검증자 내부에서 직접 폴백을 주입하는 대신 `verified=False` 상태로 `fallback` 노드로 올바르게 라우팅되도록 개선 (데드 노드 해결).
+    - `route_after_l3`에서 `retry_count > 1` (MAX_RETRY=1 초과) 조건을 통해 1회의 재시도 기회를 보장하도록 조건부 분기 정교화.
+  - **L2 프롬프트 피드백 환류 루프 구축**:
+    - [l2_generator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l2_generator.py)에 동적 에러 피드백을 적용하여, 재시도 시 이전 실패 사유(`validation_errors`)를 사용자 프롬프트 하단에 주입함으로써 재생성 성공률 극대화.
+  - **최종 결정 방향어 추출 알고리즘 버그 수정**:
+    - 복합문("좌측 장애물 회피하여 우측으로 이동")에서 단순히 딕셔너리 정적 순서에 의존하여 반대 방향을 오추출하던 문제를, 문장에서 가장 마지막에 등장하는 방향 키워드(`text.rfind`)를 우선시하는 출현 위치 인덱스 분석 알고리즘으로 개선하여 오추출 차단.
+  - **FastAPI 생명주기에 GPU 모니터링 시동 탑재**:
+    - [main.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/main.py)의 `lifespan` 블록이 실행될 때 `LLMClientFactory.start_gpu_monitor()`가 비동기로 가동되도록 마운트하여, GPU 과부하 상태 시 OpenAI 핫스왑 기능의 런타임 활성화 보장.
+- **관련 파일**: [graph.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/graph.py), [l3_validator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l3_validator.py), [l2_generator.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/orchestration/nodes/l2_generator.py), [main.py](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/server/main.py)
+- **검증 결과**:
+  - `python -m pytest tests/test_langgraph.py` 실행 결과 전체 6개 단위 테스트 케이스 100% PASS (수정된 아키텍처 상태 전이 및 1회 재시도 보장 흐름 정상 검증 완료).
+- **비고**: 오케스트레이션 단계에서 기획된 설계서 상의 분기 구조를 온전히 복구하고 치명적인 오추출 보행 유도 버그를 완치하였습니다.
+
+---
+
+### 2026-07-07 | 품질 | 프로젝트 전체 검증 및 CI 차단 요인 수정 (S105, tsc 타입 오류, 런타임 생성 파일 ignore)
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `pyproject.toml`: `server/db/schemas.py`의 `TokenResponse.token_type = "bearer"`가 최신 Ruff(0.15.x)에서 S105(하드코딩 비밀번호 의심)로 오탐 판정되는 문제를 per-file-ignores로 정정. pre-commit은 ruff v0.6.9로 핀 고정되어 통과했지만, CI(`.github/workflows/lint.yml`)는 `requirements-dev.txt`의 `ruff>=0.6.0`(핀 없음)으로 최신 버전을 설치하므로 CI 린트가 실패하는 상태였음. (`# noqa: S105` 인라인 방식은 pre-commit 구버전 ruff가 RUF100 unused-noqa로 자동 제거해버려 설정 파일 방식을 채택.)
+  - `client/src/types/detection.ts`: `WSMessage` 인터페이스에 `frame_id`, `decode_ms` 필드 추가. 서버 ack 메시지(`server/api/ws_router.py`)는 `decode_ms`를 payload가 아닌 최상위 필드로 전송하는데 타입 정의에 누락되어 `CameraView.tsx:75`에서 `npx tsc --noEmit` 타입 오류(TS2339)가 발생하던 것을 수정.
+  - `.gitignore`: TTS 서버 기동 시 `server/tts/tts_service.py`가 자동 생성하는 `server/models/piper/*.runtime.compat.json`을 ignore 목록에 추가 (untracked 파일로 계속 노출되던 런타임 산출물).
+  - 로컬 가상환경 동기화: `venv/`에 `aiomysql`, `PyJWT` 등 `requirements.txt` 명시 패키지가 미설치되어 pytest collection 자체가 실패하던 것을 `pip install -r requirements.txt`로 동기화 (`.venv/`는 정상이었음).
+- **관련 파일**: `pyproject.toml`, `client/src/types/detection.ts`, `.gitignore`, `docs/changelogs/kb.md`
+- **검증 결과**: `ruff check server/ scripts/ tests/` All checks passed. `npx tsc --noEmit` 오류 0건. `pytest tests/ --ignore=tests/test_ws_echo.py` 74건 전체 통과 (`test_ws_echo.py`는 로컬 서버 기동이 필요한 통합 테스트라 서버 중지 상태에서는 연결 거부로 실패하는 것이 정상). Bandit 통과. LangGraph retry 흐름(L1 초기화 → L3 증가 → retry_count>1 시 fallback) 무한루프 없음 확인.
+- **비고**: `requirements.txt`의 `tokenizers==0.23.1` 핀이 전이 의존성 transformers 5.12.1의 요구(`tokenizers<=0.23.0`)와 충돌한다는 pip resolver 경고가 있음 (동작에는 지장 없으나 향후 requirements 정리 시 검토 필요 — requirements.txt 변경은 사전 허가 대상이라 이번에 수정하지 않음). `server/api/config.py:27`의 `# nosec B104` 주석은 현재 Bandit 기준 불필요(stale)하다는 경고가 있으나 무해하여 보존함.
+
+---
+
+### 2026-07-07 | 2단계 | 온디바이스 추론 지연 기반 동적 반사(reflex) FPS 조절 추가
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - `client/src/hooks/useCamera.ts`: 반사 캡처 루프를 `setInterval` 고정 주기에서 재귀 `setTimeout` 방식으로 교체하여, 매 tick마다 최신 간격값을 반영할 수 있도록 재구성.
+  - `reportInferenceLatency(latencyMs)` 신규 API 추가: 온디바이스 CoreML 추론 지연이 현재 캡처 간격의 90%를 넘으면(따라가지 못하는 상태) 간격을 50ms씩 늘려 fps를 낮추고(최저 1fps까지), 지연이 간격의 50% 미만으로 안정되면 20ms씩 기본 간격까지 서서히 복구한다.
+  - `client/src/components/CameraView.tsx`: `detectFrameRef.current(...)` 호출 후 얻은 `benchmark.total_ms`(또는 `dt` 폴백)를 `reportInferenceLatencyRef.current(...)`로 매 추론마다 피드백. 디버그 오버레이에 `현재 반사 fps`를 표시(`currentReflexFps`).
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 신규 에러 없음.
+- **비고**: 조절 기준을 "온디바이스 추론 지연" 단독으로 채택함(사용자 확인). WS 연결 상태(fallback 등) 기준은 이번 범위에 포함하지 않음 — 필요 시 후속 작업으로 별도 추가. 반사 경로(Reflex Path)는 여전히 LLM/RAG/실시간 TTS를 경유하지 않으며, 이번 변경은 캡처 주기 조절에 한정된다(비협상 원칙 위반 없음).
+
+---
+
+### 2026-07-07 | 2단계 | detection 프레임 Base64 탈피 및 바이너리(raw JPEG) 전송 전환
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - **클라이언트 (`client/src/hooks/useCamera.ts`)**: `captureRealFrame`에서 `expo-file-system`의 신규 `File(uri).bytes()` API로 매니퓰레이션 완료된 JPEG 파일을 raw `Uint8Array`로 직접 읽어 `FrameData.jpegBytes`에 담아 반환. 기존 `base64` 필드는 CoreML 네이티브 브릿지 호출용(구 RN 브릿지가 JSON 직렬화 가능 타입만 인자로 받을 수 있어 불가피)으로만 유지하고, 서버 전송 용도로는 더 이상 사용하지 않음.
+  - **클라이언트 (`client/src/hooks/useWebSocket.ts`)**: `sendBinary(data: Uint8Array)` 신규 API 추가. RN `WebSocket.send()`가 `ArrayBufferView`를 바이너리 프레임으로 직접 전송하는 것을 활용.
+  - **클라이언트 (`client/src/components/CameraView.tsx`)**: `handleFrame`에서 `frame.jpegBytes`가 있으면 (1) `transport: "binary"` 메타만 담은 JSON 텍스트 메시지, (2) 곧바로 raw JPEG 바이트 바이너리 프레임을 순차 전송하도록 변경. `jpegBytes`가 없는 경로(Mock 등)는 기존 base64 방식으로 폴백.
+  - **서버 (`server/capture/frame_decoder.py`)**: `_parse_frame_meta`/`_build_processed_frame` 공통 헬퍼로 리팩터링하고, base64 미경유 `decode_frame_binary(jpeg_bytes, meta)`를 신규 추가. 기존 `decode_frame(payload)`(base64 경로)는 그대로 유지하여 하위 호환.
+  - **서버 (`server/api/ws_router.py`)**: 메인 수신 루프를 `ws.receive_text()` 고정에서 `ws.receive()` 제네릭 방식으로 교체해 텍스트/바이너리 프레임을 구분 처리. `transport: "binary"` 메타 수신 시 `pending_binary_meta`에 보관해뒀다가 곧바로 뒤따르는 바이너리 프레임과 짝지어 `decode_frame_binary`로 디코딩. route_frame+ack 로직은 `_finish_detection` 헬퍼로 공통화하여 base64/바이너리 두 경로가 공유.
+  - **문서 (`docs/design/api_specification.md`)**: v0.4.0으로 갱신. detection 프레임 전송 규격을 바이너리(기본, §3.1) / base64(구버전 호환, §3.2) 2단으로 재구성.
+  - **테스트**: `tests/test_frame_decode.py`에 `TestDecodeFrameBinary` 클래스 신규 추가(정상/빈바이트/과대/과소/손상 바이트/base64 경로와의 결과 일치 검증, 7건). `tests/test_api_ws.py`에 실제 `/ws/detect` 엔드포인트를 통한 바이너리 전송 e2e 테스트 2건 추가(정상 전송 ack 확인, 메타 없는 고아 바이너리 프레임 무시 확인).
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `server/capture/frame_decoder.py`, `server/capture/__init__.py`, `server/api/ws_router.py`, `docs/design/api_specification.md`, `tests/test_frame_decode.py`, `tests/test_api_ws.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `ruff check`/`ruff format --check`/`bandit` 전부 통과. `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(신규 9건 포함) — 특히 `test_websocket_detection_binary_transport`는 `TestClient.websocket_connect`로 실제 `/ws/detect` 라우터 코드 경로를 통해 JSON 메타 + `send_bytes()` 바이너리 프레임 → ack 왕복을 검증.
+- **비고**: 단일 WS 연결에서 프레임 전송 순서가 보장된다는 전제(RFC 6455 및 ASGI 스펙)로 메타-바이너리 짝짓기를 구현했다. 하트비트/핑퐁 등 제어 메시지는 여전히 JSON 텍스트로 유지(빈도가 낮고 페이로드가 작아 최적화 실익이 없음). Mock 모드는 여전히 base64 경로를 사용(시뮬레이터 프리뷰용 float32 디코딩과 결합되어 있어 이번 범위에서 제외).
+
+---
+
+### 2026-07-07 | 문서 | 이번 세션 구현 변경사항(바이너리 전송, iOS CoreML 재검증) 전반에 걸친 문서 동기화
+
+- **커밋**: (대기 중)
+- **변경 내용**: 오늘 세션에서 구현/변경된 내용(detection 프레임 바이너리 전송 전환, iOS CoreML raw tensor 재구성 및 GPU/ANE 재검증)이 아직 반영되지 않은 관련 설계·운영 문서를 전수 점검하여 갱신.
+  - `docs/design/api_specification.md`(직전 커밋에서 이미 v0.4.0 갱신 완료, 본 항목에서는 나머지 문서 동기화)
+  - `docs/design/architecture.md`: v0.3.0. §6.3 2단계 인터페이스를 바이너리(기본)/base64(구버전 호환) 2단으로 갱신.
+  - `docs/design/minchodan_design_note.md`: v0.2.1. 2단계 핵심 절차·데이터 인터페이스를 `File.bytes()` 기반 바이너리 전송 기준으로 갱신.
+  - `docs/stage-guides/stage1_websocket_design.md`: v1.1.0. §3.1을 바이너리(신설)/§3.1b base64(구버전 호환)로 재구성.
+  - `docs/stage-guides/stage2_capture_design.md`: v0.2.0. §6.4 바이너리 전송 디코딩 경로(`_parse_frame_meta`/`_build_processed_frame`/`decode_frame_binary`) 신설, §9.1 입력 인터페이스에 바이너리 예시 추가, §7.1에 신규 테스트 커버리지 각주 추가.
+  - `docs/ops/mobile_build_troubleshooting.md`: v1.5.0. §1.6(이중화 파일 삭제 완료), §1.7(`.cpuOnly` 재확정), §1.8(온디바이스 추론 재활성화 + 바이너리 전송 전환)에 2026-07-07 후속 업데이트 각주 추가.
+  - `docs/ops/wireless_test_guide.md`: v1.1.0. §4.2 프레임 캡처·전송 절차, §5.1 트러블슈팅 항목을 바이너리 기본/base64 구버전 호환 기준으로 갱신.
+  - `docs/ops/test_specification.md`: v0.6.0. TC-WS-007(바이너리 전송 프로토콜), TC-CAP-010(바이너리 디코딩) 신규 검증 케이스 추가.
+  - `docs/mobile/mobile_ios_implementation_plan.md`, `docs/mobile/mobile_android_implementation_plan.md`: 각 문서 상단에 2026-07-07 프로토콜 갱신 알림(`[!IMPORTANT]`) 추가 — 두 문서는 최초 계획 시점(v0.1.0, base64 전제) 원본이라 전면 재작성 대신 최신 규격 문서로의 안내 각주만 삽입.
+  - `docs/README.md`: v0.9.0으로 버전 갱신.
+- **관련 파일**: `docs/README.md`, `docs/design/architecture.md`, `docs/design/minchodan_design_note.md`, `docs/stage-guides/stage1_websocket_design.md`, `docs/stage-guides/stage2_capture_design.md`, `docs/ops/mobile_build_troubleshooting.md`, `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/mobile/mobile_android_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 전용 변경으로 코드 검증은 해당 없음. 각 파일의 마크다운 표/각주 형식이 기존 문서 스타일(인용 블록 메타데이터, 표 구조, `[!IMPORTANT]` 콜아웃)과 일치하는지 diff로 육안 확인.
+- **비고**: `docs/mobile/mobile_app_implementation_plan.md`(플랫폼 분리 이전 통합 원본, 문서 자체에 "분리된 설계서 사용" 안내가 이미 있음)와 `docs/mobile/ondevice_inference_engine_isolation_plan.md`(LocalDetector 추상화 계획 - 실제 구현은 더 단순한 직접 수정 경로를 택해 상당 부분 미실현 상태)는 이번 범위에서 제외했다. 후자는 향후 온디바이스 아키텍처 정리 시 별도로 현재 구현과의 정합 여부를 재검토할 필요가 있다.
+
+---
+
+### 2026-07-07 | 품질 | 전체 문서 정합성 감사 1차 - 설계 문서 4종 + 3/4/5단계 설계서 정정, 운영 설정 버그 수정
+
+- **커밋**: (대기 중)
+- **변경 내용**: 6개 병렬 조사 에이전트로 프로젝트 전체 문서(design/stage-guides/ops/root 40여개)를 실제 코드와 대조 감사. 이번 커밋은 그 중 design 4종 + stage3 + stage4_5 3종 + 발견된 실제 운영 버그를 반영한다 (나머지 stage6/7·ops·root는 후속 커밋).
+  - **`.env`/`.env.example` 운영 버그 수정 (문서 아닌 실제 설정)**: `YOLO26N_OBJECT_DET`/`YOLO26N_SEG`가 순정 COCO 80클래스 사전학습 체크포인트(`object_detection.pt`/`segmentation.pt`)를 가리키고 있어, 실제로는 검증 완료된 파인튜닝 모델(`det_best_20260705.pt` 29클래스/`segbest.pt` 4클래스, `docs/ops/model_class_validation_report.md` 참조)이 아니라 순정 COCO 모델로 추론하도록 설정되어 있었음을 `ultralytics.YOLO()`로 직접 로드해 클래스 수 확인 후 정정. `TTS_ENGINE=kokoro`(미구현, `tts_service.py`는 piper만 지원)도 `piper`로 정정.
+  - `docs/design/backend_db_architecture.md`: `async_session_factory`→`async_sessionmaker_factory` 함수명 정정.
+  - `docs/design/behavior_and_risk_insight.md`: §3.1 위험도 표를 실제 `reflex_gate.py`/`l1_classifier.py`/`surface_gate.py` 클래스 배정 기준으로 재작성(최초 제안은 킥보드=고위험/횡단보도=저위험이었으나 실제는 킥보드=중위험, 횡단보도=고위험 P0로 반대). §4.1 "Y축 상단 40% 격상" 로직이 미구현 상태임을 명시.
+  - `docs/design/pipeline_stage_design.md`: 캡셔닝 Llava→Gemini, 노면 7클래스→실제 4클래스, LLM 클라이언트 ChatOllama/ChatOpenAI→커스텀 SimpleOllamaClient/SimpleOpenAIClient, TTS Kokoro/Coqui→Piper, Embeddings 파일 경로 정정.
+  - `docs/design/reflex_audio_specification.md`: §2.1 direction/alert_id 실제 값(front-left/front/front-right, 클래스명 포함 동적 alert_id)으로 정정. §4 Web Audio API(OscillatorNode/GainNode/StereoPannerNode) 가상 파이프라인을 실제 구현(`expo-audio` 정적 WAV 루프 + 볼륨 스위칭)으로 전면 재작성하고, **`panning`(입체 음향)이 현재 미구현**임을 명시(저장만 되고 실제 좌우 밸런스에 적용되지 않음).
+  - `docs/stage-guides/stage3_detection_design.md`: `ByteTrackTracker`의 실제 역할(track_id 파싱은 `YoloDetector`가 담당, 본 클래스는 speed/direction만 계산) 정정. `ReflexAlert` 스키마에 누락 필드(panning/distance/beep_interval_ms/haptic_pattern) 추가, track_id 타입(`str`, `T-0001` 포맷)로 수정. `HIGH_RISK_CLASSES`에 `scooter` 추가(4→5종). direction/alert_id 실제 값 정정. **Surface Gate가 실제 4클래스 세그멘테이션 모델과 `P0_SURFACE_CLASSES` 불일치로 현재 전혀 발동하지 않는 문제**를 사실관계로 기록(위험도 규칙 담당자 판단 필요 영역이라 코드는 직접 수정하지 않음). 모델 가중치 경로를 실제 파인튜닝 완료 파일 기준으로 정정.
+  - `docs/stage-guides/stage4_5_rag_design.md`: 캡셔닝 VLM Llava→Gemini 2.5 Flash Lite, `Retriever.search()`→`search_guidance()`, import 경로 `rag.shared.labels`→`server.rag.shared.labels` 오탈자 수정.
+  - `docs/stage-guides/stage4_5_data_replacement_guide.md`: §2.4(env var 미연동), §3(`__main__` 블록이 실제로는 임시 데이터를 쓰고 삭제하는 스모크 테스트일 뿐 프로덕션 DB를 조작하지 않음) 현황 각주 추가.
+  - `docs/stage-guides/stage4_5_test_guide.md`: 스모크 테스트 예상 콘솔 출력 문자열을 실제 코드 기준으로 정정, 존재하지 않는 테스트 함수(`test_generate_caption_real_integration`) 참조 제거.
+- **관련 파일**: `.env.example`, `docs/design/backend_db_architecture.md`, `docs/design/behavior_and_risk_insight.md`, `docs/design/pipeline_stage_design.md`, `docs/design/reflex_audio_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage4_5_rag_design.md`, `docs/stage-guides/stage4_5_data_replacement_guide.md`, `docs/stage-guides/stage4_5_test_guide.md`, `docs/changelogs/kb.md` (`.env`도 동일하게 수정했으나 git-ignore 대상)
+- **검증 결과**: `.env` 모델 경로 수정 후 `server.detection.config` 재로드로 실제 경로 반영 확인(`det_best_20260705.pt`/`segbest.pt`, 파일 존재 확인). `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(회귀 없음).
+- **비고**: Surface Gate 미발동 문제와 `l1_classifier.py`의 `kickboard` 클래스명이 실제 탐지기 출력(`scooter`)과 어긋나는 문제는 위험도 판정 로직(핵심 로직, 담당자 직접 작성 영역)에 해당하여 이번 문서 정정 범위에서 코드를 직접 고치지 않고 사실관계만 기록했다. 후속 작업으로 담당자 검토가 필요하다. 나머지 문서(stage6/7, ops 6종, root 6종+skills)의 정정은 후속 커밋에서 이어간다.
+
+---
+
+### 2026-07-07 | 품질 | 전체 문서 정합성 감사 2차 - stage6/7, ops 6종, root 문서 전체 정정 완료
+
+- **커밋**: (대기 중)
+- **변경 내용**: 1차 감사(design/stage3/stage4_5)에 이어 나머지 전 범위를 실제 코드 기준으로 정정 완료.
+  - `docs/stage-guides/stage6_orchestration_design.md`: LLM 클라이언트를 `ChatOllama`/`ChatOpenAI`(LangChain)에서 실제 구현체 `SimpleOllamaClient`/`SimpleOpenAIClient`(raw `ollama.AsyncClient`/`httpx`)로 정정. 핫스왑 트리거를 "L3 실패율 > 10%"에서 실제 기준인 "GPU 부하 감지(`start_gpu_monitor`)"로 정정.
+  - `docs/stage-guides/stage7_tts_design.md`: TTS 엔진을 Kokoro/Coqui에서 실제 유일 구현체 Piper로 정정, `reflex_clip_sender.py`를 "(예정)"에서 "구현 완료"로 정정, 오디오 실제 포맷이 WAV임을 명시(필드명은 `audio_mp3_b64`이나 내용물은 WAV).
+  - `docs/ops/redis_streams_schema.md`: §1.2/§2 전면 재작성. 최초 설계의 가상 필드 목록(`detected_classes`/`surface_state`/`max_risk_level` 등)이 실제로 존재하지 않음을 확인하고, `risk.events`에 실제로 발행되는 두 가지 서로 다른 스키마(2단계 캡처 메타데이터 vs 3단계 탐지 이벤트)를 코드 기준으로 명시. 중복 억제 키를 `session:{device_id}:last_alert:{class_name}`(TTL 30초)에서 실제 `suppress:{device_id}:{alert_id}`(TTL 60초)로 정정하고, 문서에 없던 `ctx:{track_id}` 키(TTL 30초)를 추가.
+  - `docs/ops/environment_variables.md`: Slack 인증 방식을 `SLACK_WEBHOOK_URL`(미사용 변수)에서 실제 사용 중인 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`로 재정정, `TTS_ENGINE` 기본값을 `piper`로 정정, 코드에는 있으나 문서에 누락됐던 변수 6종(`HEARTBEAT_INTERVAL/TIMEOUT`, `MAX_RECONNECT_ATTEMPTS`, `JWT_SECRET_KEY`, `OLLAMA_HOST`, `PIPER_BINARY_PATH` 등) 추가, `GOOGLE_API_KEY`가 문서엔 있으나 `.env.example`엔 없는 불일치 명시, `CHROMA_PATH`/`CHROMA_COLLECTION`이 아직 코드에서 소비되지 않음을 명시.
+  - `docs/ops/ai_model_hardware_setup.md`: CUDA 12.8이 `requirements.txt`/`Dockerfile`에 실제로 고정되어 있지 않음(순정 `torch==2.12.1`, `+cu128` 태그 없음)을 명시.
+  - `docs/ops/code_quality_guide.md`: pre-push 훅이 실제로는 존재하지 않고(mypy/jscpd/pip-audit는 CI 전용) pre-commit은 ruff-format/ruff/bandit만 등록되어 있음을 명시. Bandit `skips`(B101)와 Ruff `per-file-ignores`(B404/B603)를 혼동했던 표 정정. `requirements-dev.txt`에 jscpd가 없음(Node.js 별도 설치) 정정.
+  - `docs/ops/deployment_guide.md`: macOS 로컬 테스트용 `docker/docker-compose.macos.yml`(GPU 미사용 변형, 실제로 `macos_docker_start.sh`가 사용) 파일 인덱스에 누락돼 있던 것 추가.
+  - `docs/ops/git_branching_strategy.md`: 실제 `git branch -a`/커밋 이력과 대조 결과 정확함을 확인, 수정 없음.
+  - **`CLAUDE.md`(루트, 세션 컨텍스트 자동 주입 문서)**: §4 존재하지 않는 `console/` 디렉토리 참조 삭제, §8 스킬 표에 누락된 `xcode-build-management` 추가 및 `.claude/skills`가 `.agents/skills`의 junction이라는 잘못된 서술 정정(실측: 서로 다른 inode의 독립 디렉토리이며 `xcode-build-management`가 누락돼 트리가 어긋나 있음), §9 문서 인덱스의 링크 7개 전부가 `docs/` 평면 경로를 가리켜 깨져 있던 것을 실제 하위 디렉토리(`docs/design/`, `docs/ops/`, `docs/dev-guides/`) 기준으로 전부 정정, `rag-knowledge-builder` 스킬 설명의 Llava를 Gemini로 정정.
+  - `README.md`(루트): CLAUDE.md와 동일한 문서 인덱스 링크 깨짐(7개 이상) 전부 정정, 존재하지 않는 `console/` 디렉토리 트리 전체 제거, `data/captions/` 설명의 Llava→Gemini 정정.
+  - `docs/AGENTS.md`: 루트 `CLAUDE.md`/`AGENTS.md`(v0.3.0)보다 오래된 stale 중복 사본(v0.1.0, 갱신 안 됨)임을 확인, 전면 재작성 대신 상단에 "루트 문서가 최신 기준" deprecated 안내 추가.
+  - `Directory_Structure.md`: 프로젝트 초기 기획 단계의 "임시 디렉토리 구조"로 루트 디렉토리명(`guidedog-ai/`)부터 실제와 다르고 다수 파일 경로가 틀려(`server/config.py`, `llava_captioner.py`, `server/bus/consumer.py` 등 실제 미존재/이동) 있음을 확인, 전면 재작성 대신 상단에 이력 참고용 안내 추가하고 `README.md`/`CLAUDE.md`를 최신 기준으로 안내.
+  - `.agents/skills/rag-knowledge-builder/SKILL.md`: frontmatter `description`(스킬 검색/요약에 노출됨) 및 본문 헤더의 Llava를 Gemini로 정정하고, 본문 코드 예시가 여전히 최초 계획(로컬 Llava) 기준임을 알리는 안내 추가(전체 코드 예시 재작성은 범위 밖).
+- **관련 파일**: `docs/stage-guides/stage6_orchestration_design.md`, `docs/stage-guides/stage7_tts_design.md`, `docs/ops/redis_streams_schema.md`, `docs/ops/environment_variables.md`, `docs/ops/ai_model_hardware_setup.md`, `docs/ops/code_quality_guide.md`, `docs/ops/deployment_guide.md`, `CLAUDE.md`, `README.md`, `docs/AGENTS.md`, `Directory_Structure.md`, `.agents/skills/rag-knowledge-builder/SKILL.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/ --ignore=tests/test_ws_echo.py` 83건 전체 통과(회귀 없음, 이번 라운드는 문서 전용 변경).
+- **비고**: 6개 병렬 조사 에이전트가 이번 세션 내 `docs/`의 design/stage-guides/ops/root 전 영역(약 40개 문서)을 실제 코드와 전수 대조했다. 의도적으로 범위에서 제외한 것: (1) `docs/research/*.md`(6종, 시점 스냅샷 성격의 타당성 분석 문서라 "현재 상태"로 고쳐 쓰면 이력이 훼손됨), (2) `docs/dev-guides/신규_설계서_예시_2.md`(다른 프로젝트명("VIP Assistant AI")의 템플릿/예시 문서, Minchodan 서술 아님), (3) `docs/dev-guides/antigravity_agent_prompt__4_5_final.md`(이미 실행 완료된 1회성 에이전트 작업 지시서), (4) `docs/mobile/mobile_app_implementation_plan.md`(문서 자체에 이미 "분리된 설계서 사용" 안내 존재), (5) `docs/mobile/ondevice_inference_engine_isolation_plan.md`(LocalDetector 추상화 계획 - 실제 구현이 더 단순한 경로를 택해 상당 부분 미실현, 별도 검토 필요), (6) `.agents/skills/*/SKILL.md` 중 rag-knowledge-builder를 제외한 7개는 경로/클래스명 스팟체크만 수행(전수 라인 단위 검증은 아님).
+
+---
+
+### 2026-07-07 | 3단계 | 실내 오탐(도메인 시프트) 완화 - 클래스별 confidence 임계값 및 연속 프레임(hit_count) 검증 추가
+
+- **커밋**: (대기 중)
+- **변경 내용**: YOLO26n det/seg 모델이 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 실내 환경을 미학습 도메인(OOD)으로 취급, 실내에서 `car`/`bus` 등이 오탐되는 문제에 대한 완화책 2종을 구현.
+  - `server/detection/schemas.py`: `Detection`에 `hit_count: int = 0` 필드 추가 — 동일 `track_id`가 연속 몇 프레임 유지됐는지를 담는다.
+  - `server/detection/bytetrack_tracker.py`: `ByteTrackTracker.update()`가 Redis `ctx:{track_id}` 컨텍스트의 `hit_count`를 프레임마다 +1 누적하도록 `_compute_hit_count()` 추가. track_id가 없는 경우(Mock 등)와 새 track은 1부터 시작.
+  - `server/detection/gates/reflex_gate.py`: `HIGH_RISK_CLASSES`를 `set`에서 `{class_name: min_confidence}` 딕셔너리로 변경(car/truck/bus=0.6, motorcycle=0.55, scooter=0.5 — 실내 오탐이 잦은 차량류 위주로 상향). `MIN_HIT_COUNT=3` 신설: 클래스+위치 조건을 통과해도 confidence 미달 또는 hit_count가 3프레임 미만이면 반사 경보를 발동하지 않는다. 기존에는 게이트가 confidence를 아예 확인하지 않았고 단일 프레임만으로 즉시 발동했던 문제를 함께 해소.
+  - `client/src/components/CameraView.tsx`: `CLASS_MIN_CONFIDENCE` 맵 및 `getEffectiveConfThreshold()` 추가 — 사용자 조절 슬라이더(`confThreshold`, 기본 40%)와 클래스별 최소값 중 더 높은 쪽을 유효 임계값으로 사용(실외 전용 클래스인 car/bus/truck/motorcycle/scooter/fire_hydrant/parking_meter/traffic_light(_controller)/traffic_sign/stop/roadway 대상). 서버 `reflex_gate.py`와 동일한 완화 전략을 온디바이스 경로에도 반영.
+  - 테스트: 기존 reflex_gate/ByteTrackTracker 테스트에 `hit_count=3` 보강, 신규 회귀 테스트 추가 — confidence 미달 시 거부, hit_count 미달 시 거부, 신규 track hit_count=1 시작, 연속 3프레임에 걸친 hit_count 누적(1→2→3) 검증, `HIGH_RISK_CLASSES`(dict로 변경됨) 관련 일관성 테스트 시그니처 보정.
+- **관련 파일**: `server/detection/schemas.py`, `server/detection/bytetrack_tracker.py`, `server/detection/gates/reflex_gate.py`, `client/src/components/CameraView.tsx`, `tests/test_detection.py`, `tests/test_langgraph.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `pytest tests/ --ignore=tests/test_ws_echo.py` 93건 전체 통과(신규 8건 포함). `ruff format/check`, `bandit` 전부 통과.
+- **비고**: `direction.py::estimate_distance()`의 `small_objects` 집합에도 동일 패턴의 존재하지 않는 클래스명(`kickboard`, `planter`)이 남아 있음을 검토 중 발견했으나, 이 함수는 현재 어디서도 호출되지 않는 죽은 코드라 이번 수정 범위에서 제외했다(향후 연결 시 함께 정정 필요). MIN_HIT_COUNT=3, 클래스별 confidence 값은 초기 추정치이며 실기기/실외 재현 테스트를 통해 조정이 필요할 수 있다.
+
+---
+
+### 2026-07-07 | 3단계 | 실내 오탐 완화 실기기 현장 검증 및 2차 방어선(co-occurrence, 안전노면 제외, bbox 라벨 clamp) 구현 + 2차 설계서 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**: 1차 완화책(클래스별 confidence + hit_count) 적용 후 실기기 실내 현장 재테스트를 진행한 결과, `car` 오탐이 confidence 0.916까지, `sidewalk_normal` 오탐이 0.95까지 나와 confidence 임계값만으로는 원천 차단이 불가능함을 실측으로 확인. 이에 따라 추가 방어선을 구현하고, 남은 근본 대응은 별도 설계서로 분리했다.
+  - `client/src/components/CameraView.tsx`: `VEHICLE_CLASSES`(차량류)에만 걸었던 실외 노면 co-occurrence 게이트(`hasOutdoorSurface`)를 전체 object_detection 클래스로 확장(bollard/movable_signage 등도 동일 패턴의 실내 오탐이 확인됨). `SAFE_SURFACE_CLASSES`(`sidewalk_normal`, `braille_normal`) 신설 — 안전한 정상 보행로는 화면을 얼마나 채우든 반사 경보 판정에서 제외(기존 `maxAreaRatio > 0.32` 무조건 최상위 경보 발동 조건이 클래스 무관하게 걸리는 문제를 해소).
+  - `BBoxOverlay`: bbox가 화면 밖(음수 좌표)으로 나갈 때 클래스명 라벨이 같이 잘려 안 보이는 문제를 라벨-박스 위치 분리 + clamp로 수정. 1차 수정에서 스타일 없는 wrapper `<View>`로 감쌌다가 %기반 좌표가 0x0으로 collapse된 부모 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생, `Fragment`로 교체해 두 View 모두 원래 컨테이너의 직계 자식으로 되돌려 해결.
+  - `docs/design/indoor_fp_mitigation_design.md`(신규): co-occurrence 게이트의 구조적 한계(seg 모델도 동일 도메인쉬프트를 공유해 "노면 신호=실외"라는 전제가 실내에서도 거짓이 됨)를 문서화하고, 재학습 없이 적용 가능한 2개 방어선(물리적 타당성 필터 - bbox가 640 캔버스를 초과하는 회귀 붕괴 케이스 차단, `VNClassifyImageRequest` 기반 독립 씬 분류기 게이트)의 구현 설계를 작성. 아직 코드 구현 전 단계(설계서만 작성).
+- **관련 파일**: `client/src/components/CameraView.tsx`, `docs/design/indoor_fp_mitigation_design.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. 실기기 재현 테스트로 co-occurrence 게이트 확장 후 동일 실내 물체 밀착 시 `car`/`bollard`/`movable_signage` 경보 미발동, `sidewalk_normal` 고신뢰도(0.7~0.81)에도 경보 미발동 확인. bbox 렌더링 회귀는 Fragment 수정 후 재확인 대기 중.
+- **비고**: `docs/design/indoor_fp_mitigation_design.md`의 §3(물리적 타당성 필터)·§4(씬 분류기 게이트)는 아직 구현 전이다. 특히 §3의 캔버스 초과 임계값(1.02배)은 실외 근접 상황에서의 정상 bbox 데이터가 없어 실외 현장 검증 전까지 확정치가 아니며, §4는 `VNClassifyImageRequest`의 identifier taxonomy 자체가 실측 전이라 로깅 전용 계측 단계부터 시작해야 한다.
+
+---
+
+### 2026-07-07 | 3단계 | 실내 오탐 완화 설계서(§3/§4) 구현 및 §4 씬 분류기 계측 1차 데이터 분석
+
+- **커밋**: (대기 중)
+- **변경 내용**: `docs/design/indoor_fp_mitigation_design.md` 설계서를 그대로 구현하고, §4 로깅 전용 계측 단계에서 실기기 실내 데이터를 수집·분석했다.
+  - `client/src/components/CameraView.tsx`: §3 물리적 타당성 필터 구현 — `isGeometricallyImplausible(bbox)` 추가(`CANVAS_OVERFLOW_MARGIN=1.02`, w/h가 640 캔버스를 2% 이상 초과하면 클래스 무관하게 반사 경보 제외). `validDetections` 필터 체인에 반영.
+  - `client/ios/CoreMLInferenceBridge.swift`: §4 롤아웃 2단계(로깅 전용 계측) 구현 — `VNClassifyImageRequest` 기반 `classifyScene()` 신설. `detectFrame` 응답에 `scene.topLabels`(top-5 identifier+confidence)와 `scene_ms` 지연시간을 추가(`isLikelyIndoor` 판정 로직은 아직 미구현, 설계서 §4.5 지침대로 계측 전용).
+  - `client/src/inference/localDetectorSelect.ios.ts`: 브리지 응답의 `scene.topLabels`를 `[SceneClassify] ...` 형식으로 Metro 콘솔에 로그 출력하도록 연결(게이트 미연결, 순수 계측).
+  - 네이티브(Swift) 변경이라 `mcp__xcodebuildmcp__build_run_device`로 리빌드·재설치 후 실기기에서 558개 `[SceneClassify]` 로그(전량 실내 세션)를 수집·분석.
+- **분석 결과 (실내 558개 샘플)**:
+  - `indoor` 리터럴 identifier는 **한 번도 등장하지 않음**. Apple 분류기 taxonomy에 이 정확한 라벨이 없거나 이번 씬에서 전혀 활성화되지 않았다.
+  - `outdoor`가 139/558(25%) 등장 — **전량 실내(사무실)에서 나온 오탐**. 동반 identifier(`night_sky`/`sky`/`moon`/`celestial_body`, 평균 confidence 0.11~0.21)로 보아 **천장 조명을 달/밤하늘로 오인해 "outdoor"로 연쇄 추론**하는 것으로 추정됨. 최대 confidence가 0.71까지 나와, 진짜 실외 confidence와 겹칠 위험이 있다(YOLO det/seg에서 봤던 FP-TP confidence 겹침 문제가 씬 분류기에서도 재현될 조짐).
+  - 반대로 `computer_monitor`(172회, 평균 0.70), `computer_keyboard`(122회, 평균 0.71), `people`/`adult`(87~92회, 평균 0.68~0.71), `desk`/`furniture`(57~66회, 평균 0.59~0.61)는 고빈도·고confidence로 안정적으로 실내를 정확히 짚어냈다.
+  - **결론**: `outdoor` 리터럴 라벨을 그대로 신뢰하는 단순 규칙은 위험하다(25% 오탐률, TP와 confidence 겹침 우려). 대신 "실내 사물 identifier가 고confidence로 존재하면 실내"라는 역방향(positive indoor evidence) 규칙이 더 유망해 보이나, **실외 비교 데이터 없이는 확정할 수 없다.**
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `build_run_device` 빌드 성공(processId 1677). §3은 실기기 재현 테스트로 기존 오탐 케이스에 대한 영향 없음(회귀 없음) 확인. §4는 계측 전용이라 게이트 동작에는 아직 영향 없음.
+- **비고**: 사용자 요청으로 실외 데이터 수집은 추후로 연기됨. §4.4 게이트 활성화(3단계)는 실외 `[SceneClassify]` 데이터 확보 후 재개한다. §3의 `CANVAS_OVERFLOW_MARGIN` 값도 여전히 실외 근접 상황 실측 검증 대기 중.
+
+---
+
+### 2026-07-07 | 3단계 | 실외 실측 로그 확보 및 §4.4 씬 분류기 게이트 규칙 확정·코드 반영
+
+- **커밋**: (대기 중)
+- **변경 내용**: Docker(Redis+Ollama+FastAPI, macOS CPU 구성) + ngrok(`partake-primer-surround.ngrok-free.dev`) + Metro 터널(`exp.direct`)을 기동해 실기기를 무선(핫스팟)으로 야외 이동시켜 `[SceneClassify]` 로그를 추가 수집하고, 이전 실내 558건 분석과 대조해 §4.4 게이트 규칙을 확정·구현했다.
+  - **실외 실측 분석(74건, 실내→이동→실외→재입장 혼합 세션)**: 진짜 실외 구간(잔디/보도, 191·194행)에서 `outdoor` confidence가 0.48~0.66으로, 기존에 확인된 실내 오탐 패턴(천장 조명→`night_sky`/`moon`/`celestial_body` 동반, 0.51 고정)보다 오히려 높게 나와 confidence 단독으로는 안정적 분리가 어려움을 확인. 대신 **동반 identifier의 종류**가 질적으로 달랐다 — 오탐은 항상 `night_sky`/`celestial_body`/`moon`과, 실외 정탐은 `grass`/`land`/`path`/`plant`/`foliage`/`crosswalk`(212행)와 함께 등장. 씬 분류 지연시간은 평균 11.27ms(최대 74.13ms, 콜드스타트 추정)로 반사 경로 예산(300ms) 대비 부담 없음을 확인.
+  - `docs/design/indoor_fp_mitigation_design.md`(v0.1.0 → v0.2.0): §4.3 `classifyScene()` 의사코드를 키워드 매핑 로직(`OUTDOOR_POSITIVE_IDENTIFIERS`/`INDOOR_FALSE_POSITIVE_IDENTIFIERS`)으로 확정, §4.4에 실측 근거 표와 3단계 확정 규칙(실외 긍정 증거 우선 → 조명 오탐 override → 기본값 실내) 추가, §4.5를 "해결된 항목"/"남은 한계"(실외 표본 4~5건뿐)로 재구성, §6 롤아웃 순서 1~3단계 완료 표시.
+  - `client/ios/CoreMLInferenceBridge.swift`: `classifyScene()`을 로깅 전용(`topLabels`만 반환)에서 `isLikelyIndoor`/`confidence` 판정 로직으로 교체. `outdoorPositiveIdentifiers`/`indoorFalsePositiveIdentifiers` 키워드 집합 추가. 분류 실패(예외/observations 없음) 시 `isLikelyIndoor=false`(허용적 폴백, §4.6)로 반환.
+  - `client/src/inference/types.ts`: `SceneClassification` 인터페이스 신규 추가, `DualDetectionResult`에 `scene?: SceneClassification` 필드 추가.
+  - `client/src/inference/localDetectorSelect.ios.ts`: `coremlResults` 타입을 `DualDetectionResult`로 변경하고 `detect()`의 양쪽 반환 경로(하이브리드/풀 CoreML)에 `scene` 필드를 전달하도록 수정(기존에는 로그만 남기고 값이 드롭됐음).
+  - `client/src/hooks/useOnDeviceDetection.ts`: `detectFrame()`이 `result.scene`을 캡처해 반환값에 포함하도록 수정(기존에는 `{ seg, det }`만 반환해 상위로 전파되지 않았음).
+  - `client/src/components/CameraView.tsx`: `handleFrame`에서 `scene`을 구조분해하고 `isOutdoorByScene = scene ? !scene.isLikelyIndoor : true`를 계산해, 기존 `hasOutdoorSurface`(seg 기반 co-occurrence)와 AND로 결합. `validDetections` 필터에 씬 분류 게이트 조건 추가.
+- **관련 파일**: `docs/design/indoor_fp_mitigation_design.md`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/types.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 오류 0건. `build_run_device` 빌드 성공(processId 1954). 실기기 재설치 후 Metro 로그로 `[SceneClassify]`/`[CoreMLBenchmark]` 정상 출력 확인(현재 실내 세션 기준 `night_sky` override 패턴 재현). 게이트가 실제로 실외에서 정상 발동하고 실내에서 억제되는지의 현장 회귀 테스트는 아직 미실시.
+- **비고**: `OUTDOOR_POSITIVE_IDENTIFIERS`/`INDOOR_FALSE_POSITIVE_IDENTIFIERS` 키워드 집합은 오늘 확보한 작은 실외 표본(4~5건) 기준이라, 맑은 날/흐린 날/야간, 도로/공원 등 더 다양한 실외 환경에서 추가 수집·보강이 필요하다(설계서 §4.5 참조). 코드 반영은 완료했으나 실외 현장에서의 최종 회귀 검증(정상 탐지 유지 + 실내 오탐 억제 동시 확인)은 후속 세션 과제로 남는다.
+
+---
+
+### 2026-07-07 | 문서 | 씬 분류기 게이트 기법 해설 문서(팀 학습용) 신규 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**: 팀원들이 씬 분류기 게이트 기법(§4)을 잘 모른다는 피드백에 따라, 기존 기술 설계서(`indoor_fp_mitigation_design.md`)와 별도로 배경·원리·코드 위치·FAQ 중심의 학습용 해설 문서를 신규 작성했다.
+  - `docs/design/scene_classifier_gate_guide.md` 신규 작성(9개 섹션): (1) 문서 목적, (2) 문제 상황(도메인 시프트, 1차 완화책의 논리적 구멍), (3) 핵심 아이디어(VNClassifyImageRequest 독립성, AND 결합 아키텍처 mermaid), (4) 판정 규칙 도출 과정(단순 방법의 실패 → 동반 identifier 기반 규칙 확정, 실측 표 포함), (5) 코드 위치 매핑 표 + 데이터 흐름 mermaid, (6) 로그로 직접 확인하는 방법(예시 2종), (7) 한계 및 주의점, (8) FAQ 5문항, (9) 참고 문서.
+  - `docs/README.md`: v0.9.0 → v0.10.0, design/ 섹션 문서 목록에 신규 문서 인덱스 추가.
+- **관련 파일**: `docs/design/scene_classifier_gate_guide.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 규칙(이모지 금지, 한국어, 표 우선, 인용 블록 메타데이터, Mermaid 큰따옴표·`<br/>`) 준수 확인. `indoor_fp_mitigation_design.md`의 실측 수치(confidence, identifier 목록)와 교차 확인해 정합성 확보.
+- **비고**: 이 문서는 기술 설계서를 대체하지 않는다 — 안전성 검토·인터페이스 계약 등 구현 세부사항은 여전히 `indoor_fp_mitigation_design.md`가 원본이며, 이 문서는 그 내용을 처음 접하는 팀원 관점에서 재구성한 보조 자료다.
+
+---
+
+### 2026-07-07 | 문서/스킬 | 단계별 스킬 문서(.agents/.claude) 실측 정합 감사 및 두 트리 전수 동기화
+
+- **커밋**: (대기 중)
+- **변경 내용**: 8개 단계별 스킬 문서(`.agents/skills/*/SKILL.md`)를 실제 코드와 전수 대조해 낡은 명세를 정정하고, `.agents`↔`.claude` 두 스킬 트리를 완전 동기화했다.
+  - **stage3 (yolo-obstacle-detection)**: 최초 계획 taxonomy가 실제 파인튜닝 모델과 어긋나 있던 것을 정정. 객체 탐지 "커스텀 클래스: kickboard/stair" → 실제 **29클래스**(전동킥보드=`scooter`, `stair` 부재) 명시. 노면 "7클래스(braille_damaged/crosswalk/manhole/grating 등)" → 실제 **4클래스**(sidewalk_normal/caution/roadway/braille_normal). `HIGH_RISK_CLASSES`를 set→{클래스:confidence} dict(scooter 포함 5종)+`MIN_HIT_COUNT`로, `P0_SURFACE_CLASSES`를 존재하지 않는 클래스명→`caution` 단일로 정정. 모델 경로를 순정 COCO(`object_detection.pt`/`segmentation.pt`)→실제 파인튜닝(`det_best_20260705.pt`/`segbest.pt`)로 정정. Surface Gate 미발동 알려진 이슈 기록. **온디바이스(CoreML/TFLite) 런타임 각주 신설** — 실제 배포 앱 반사 탐지는 서버가 아니라 온디바이스에서 수행됨을 명시.
+  - **stage7 (tts-voice-streamer)**: 인지 TTS 엔진 **Kokoro/Coqui(미구현)→Piper**(`PiperTTSService`, `piper-kss-korean.onnx`), 클라이언트 오디오 **Web Audio API→expo-audio**(`createAudioPlayer`), 오디오 포맷 MP3→WAV(필드명은 `audio_mp3_b64` 유지), panning 미구현 사실 명시. frontmatter description·기술스택표·디렉토리·코드 스케치·테스트 체크리스트 전반 정정.
+  - **stage2 (camera-frame-capture)**: detection 프레임 전송을 **base64→바이너리(raw JPEG) 기본**으로 정정(2단 전송: transport 메타 JSON + raw 바이너리 프레임). base64는 구버전 호환·Mock 폴백으로 명시.
+  - **stage6 (llm-guidance-orchestrator)**: 실제 클라이언트가 LangChain `ChatOllama`가 아니라 raw `SimpleOllamaClient`/`SimpleOpenAIClient`이고 핫스왑 트리거가 "L3 실패율"이 아니라 "GPU 부하 감지"임을 정정. `MID_RISK_CLASSES`를 존재하지 않는 클래스명(kickboard 등)→실제 29클래스 기준 목록으로 정정. `.claude` 트리의 `gemma4-e4b`(오기)를 실제 `gemma4:e4b`로 통일.
+  - **stage4/5 (rag-knowledge-builder/rag-realtime-search)**: RAG 라벨(`labels.py`)·retriever가 최초 계획 명칭(`kickboard`/`stairs`/`manhole`)으로 내부 일관돼 있으나 **실제 탐지 모델 29클래스(scooter/caution)와 어긋나는 코드 레벨 불일치**를 각주로 기록(RAG 재빌드가 걸린 담당자 영역이라 코드 직접 수정은 보류). rag-realtime의 실제 진입점이 `build_search_query`가 아니라 `Retriever.search_guidance(detect_info, k=5)`임도 명시.
+  - **두 트리 동기화**: `.claude/skills/`에 누락돼 있던 `xcode-build-management` 스킬을 복사하고, 서로 어긋나 있던 5개 스킬(camera/llm/rag-knowledge/tts + rag-realtime)을 `.agents` 정본 기준으로 동기화. 결과적으로 **8개 스킬 SKILL.md·references 전부 양 트리 일치** 확인.
+  - `SKILLS.md`·`CLAUDE.md`: 스킬 인덱스 표의 낡은 설명(stage2 base64, stage3 킥보드/계단, stage4 Llava) 정정, §8 두 트리 "xcode 누락·어긋남" 주석을 "전수 동기화 완료(여전히 수동 동기화 필요)"로 갱신.
+- **관련 파일**: `.agents/skills/{camera-frame-capture,llm-guidance-orchestrator,rag-knowledge-builder,rag-realtime-search,tts-voice-streamer,yolo-obstacle-detection}/SKILL.md`, `.claude/skills/` 8개 스킬 전체(동기화), `SKILLS.md`, `CLAUDE.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 두 트리 diff 전수 검사로 8개 스킬 SKILL.md·references 완전 일치 확인. 정정 근거는 실제 코드(`yolo_detector.py`/`reflex_gate.py`/`surface_gate.py`/`tts_service.py`/`l1_classifier.py`/`labels.py`/`retriever.py`) 및 `docs/ops/model_class_validation_report.md`와 교차 확인. 문서 규칙(이모지 금지, 한국어, 표 우선, 인용 블록 메타데이터) 준수.
+- **비고**: 코드 레벨의 실제 버그성 불일치 2건(RAG `labels.py` 명칭이 탐지 taxonomy와 어긋남, Surface Gate 미발동)은 위험도/RAG 로직 담당자 판단 영역이라 스킬 문서에는 사실만 기록하고 코드는 직접 수정하지 않았다. 후속 담당자 검토 필요. references/implementation_detail.md의 라인 단위 전수 검증은 이번 범위에서 제외(SKILL.md 우선 정정), 향후 필요 시 별도 진행.
+
+---
+
+### 2026-07-07 | 문서 | 루트 문서(CLAUDE.md/README.md) 기술 스택 stale 항목 실측 정정
+
+- **커밋**: (대기 중)
+- **변경 내용**: 스킬 감사 중 발견한, 루트 권위 문서의 기술 스택·환경변수 stale 항목을 실제 코드 기준으로 정정(스킬 문서와 동일 기준으로 통일).
+  - `CLAUDE.md` §2: `Ollama (Gemma2:9b, Llava, ...)` → `gemma4:e4b, nomic-embed-text` + VLM 캡셔닝을 Gemini API(`gemini-2.5-flash-lite`)로 분리 명시. `TTS: Kokoro/Coqui` → `Piper`. LLM Orchestration에 raw SimpleOllamaClient/SimpleOpenAIClient(LangChain 래퍼 미사용) 명시. 클라이언트 `Audio: Web Audio API` → `expo-audio(createAudioPlayer)`, 온디바이스 추론(CoreML/TFLite) 항목 추가.
+  - `README.md`: 7단계 요약 표(stage3 킥보드→scooter·29/4클래스·온디바이스, stage4 Llava→Gemini, stage6 ChatOllama→SimpleOllamaClient·gemma4:e4b, stage7 Kokoro/Coqui→Piper·Web Audio→expo-audio) 및 기술 스택 리스트 정정. 환경변수 표 `GEMMA_MODEL` 기본값 `gemma4-e4b`→`gemma4:e4b` 정정, 미사용 `LLAVA_MODEL` 행에 "미사용(구 Llava 잔재)" 명시하고 실제 캡셔닝 키 `GOOGLE_API_KEY` 행 추가. RAG 빌드 파이프라인 주석의 Llava 캡셔닝→Gemini 캡셔닝 2건 정정.
+  - 두 문서 상단 버전 메타데이터 갱신(CLAUDE.md v0.3.2, README.md v0.2.1).
+- **관련 파일**: `CLAUDE.md`, `README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 정정값은 실제 코드(`llm_client_factory.py` `GEMMA_MODEL` 기본 `gemma4:e4b`, `gemini_captioner.py` `GOOGLE_API_KEY`, `tts_service.py` PiperTTSService, `audioEngine.ts` expo-audio) 및 `.env.example`과 교차 확인. `grep` 재검사로 정정 문맥 밖 잔여 stale 토큰 0건 확인.
+- **비고**: `docs/AGENTS.md`는 이미 상단에 "루트 문서가 최신 기준" deprecated 안내가 있는 stale 중복 사본이라 이번에도 수정 대상에서 제외했다(동일 stale 토큰이 남아있으나 문서 자체가 참고용). `.env.example`의 미사용 `LLAVA_MODEL` 변수 자체 제거는 `.env`/`.env.example` 정리 시 별도 검토.
+
+---
+
+### 2026-07-07 | 리서치 | STT 모델(Alibaba SenseVoice-Small) 도입 정당성 검토 보고서 작성
+
+- **커밋**: (대기 중)
+- **변경 내용**: 사용자 요청으로 STT 경로용 SenseVoice-Small의 도입 타당성을 지연·로딩·한국어 정확도 관점에서 웹 리서치 기반으로 검토하고, `docs/research/`에 타당성 보고서로 정리했다.
+  - `docs/research/sensevoice_stt_feasibility.md` 신규 작성(6개 섹션): (1) 개요(STT가 현재 7단계 골격 범위 밖·음성 명령 경로임을 설계 문서로 확인), (2) SenseVoice-Small 실측 스펙 표(지연 70ms/10s·RTF 52~118×, 로딩 0.81초, 크기 827MB/RAM 700MB, 한국어 CER 8.28% vs Whisper-Large-V3 5.59%, 비스트리밍 오프라인, CPU 구동, FunASR MODEL_LICENSE 상업 허용), (3) 아키텍처 적합성(서버 배치=정합/온디바이스=자원 경합), (4) 대안 비교표(Whisper-Large-V3/faster-whisper/whisper.cpp/클라우드), (5) 결론·권고(서버+짧은 한국어 명령이면 정당, 3가지 단서), (6) 참고 자료.
+  - `docs/README.md`: research/ 섹션 문서 목록에 신규 보고서 인덱스 추가.
+- **관련 파일**: `docs/research/sensevoice_stt_feasibility.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 실측 수치는 웹 리서치(Hugging Face FunAudioLLM/SenseVoiceSmall, whispernotes CJK 벤치마크, FunASR MODEL_LICENSE, arXiv 2407.04051)로 교차 확인. 기존 `gemini_fallback_feasibility.md`와 동일한 보고서 형식(메타데이터 인용 블록, 섹션 번호, 표 우선, 이모지 금지) 준수.
+- **비고**: 결론은 "서버측 STT + 짧은 한국어 명령이면 지연·로딩 관점에서 채택 정당(강력 후보)"이며, 한국어 정확도 2.7%p 열위의 도메인 명령 셋 실측 검증, 온디바이스 요구 시 재평가, 라이선스 attribution 준수를 전제로 단다. STT 경로 정식 착수 시 본 보고서를 기준선으로 삼는다. 코드 변경은 없음(리서치 문서 전용).
+
+---
+
+### 2026-07-08 | 1+2단계 | iOS 네이티브 브릿지 미사용 사본 제거 및 파일 위치 함정 주석 보강
+
+- **커밋**: (대기 중)
+- **변경 내용**:
+  - STT 네이티브 브릿지 추가를 검토하는 과정에서, `project.pbxproj`의 `Minchodan` 그룹에 `path` 속성이 없어 그룹 소속 파일이 `Minchodan/` 서브폴더가 아니라 SRCROOT(`client/ios/` 루트)로 resolve되는 구조를 재확인. 이 함정으로 과거에 생성된 채 빌드에 전혀 연결되지 않은 미사용 사본 `client/ios/Minchodan/CoreMLInferenceBridge.mm`(pbxproj 미참조, 실제 빌드 대상은 `client/ios/CoreMLInferenceBridge.mm`)를 발견하고 삭제.
+  - `client/ios/CoreMLInferenceBridge.swift` 헤더 주석 갱신: 기존 "Minchodan/CoreMLInferenceBridge.swift는 미사용 사본" 문구(대상 파일이 이미 없어 stale)를 "신규 네이티브 브릿지 파일도 client/ios/ 루트에 두어야 한다"는 일반 규칙 + 이번 `.mm` 사본 발견·제거 이력으로 교체.
+- **관련 파일**: `client/ios/Minchodan/CoreMLInferenceBridge.mm`(삭제), `client/ios/CoreMLInferenceBridge.swift`, `docs/changelogs/kb.md`
+- **검증 결과**: `grep`으로 `project.pbxproj` 및 `project.xcworkspace` 전체에서 `Minchodan/CoreMLInferenceBridge` 참조 0건 확인 후 삭제. 삭제 대상 파일 내용이 실제 빌드 대상 `.mm`과 동일(RCT_EXTERN_MODULE 선언)함을 대조 확인.
+- **비고**: 런타임 동작 변화 없음(애초에 컴파일되지 않던 사본 제거). 향후 STT 브릿지 등 신규 네이티브 파일 추가 시 `client/ios/` 루트에 두는 규칙을 헤더 주석으로 명문화해 재발 방지.

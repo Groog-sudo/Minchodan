@@ -1,6 +1,6 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.0.0
-> **설계 기준**: docs/design/api_specification.md (v0.2.0)
+> **버전**: v1.1.0 (2026-07-07 §3.1 detection 페이로드를 바이너리 전송 기준으로 갱신)
+> **설계 기준**: docs/design/api_specification.md (v0.4.0)
 
 # Minchodan 1단계: WebSocket Gateway 세부 설계서
 
@@ -59,7 +59,29 @@ sequenceDiagram
 
 ## 3. 페이로드 스키마 정의
 
-### 3.1 단말 송신: `detection`
+### 3.1 단말 송신: `detection` (바이너리 전송, 기본 - 2026-07-07 신설)
+
+실기기는 base64를 경유하지 않고 JSON 메타 메시지와 raw JPEG 바이트 **바이너리 WS 프레임**을 순차 전송한다. 단일 WS 연결은 프레임 전송 순서를 보장하므로, 서버는 `transport: "binary"` 메타 수신 직후 도착하는 바이너리 프레임을 해당 이벤트로 짝짓는다(`server/api/ws_router.py`의 `pending_binary_meta`).
+
+```json
+{
+  "type": "detection",
+  "payload": {
+    "event_id": "evt-1719216000000-001",
+    "device_id": "dev-001",
+    "ts": 1719216000000,
+    "frame_id": 42,
+    "stream": "reflex",
+    "transport": "binary"
+  }
+}
+```
+위 텍스트 메시지 직후 별도의 WS 바이너리 프레임으로 raw JPEG 바이트가 전송된다(JSON 필드 아님).
+
+### 3.1b 단말 송신: `detection` (base64, 구버전 호환)
+
+`transport` 필드가 없으면 서버는 `payload.thumbnail_jpeg_b64`가 채워진 기존 단일 JSON 메시지 방식으로 처리한다(Mock 모드 등 바이너리 미지원 클라이언트용 폴백).
+
 ```json
 {
   "type": "detection",
@@ -73,6 +95,8 @@ sequenceDiagram
   }
 }
 ```
+
+> 상세 규격은 [`docs/design/api_specification.md`](../design/api_specification.md) §3.1/§3.2 참조.
 
 ### 3.2 서버 송신: `ack`
 ```json

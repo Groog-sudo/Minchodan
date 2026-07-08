@@ -1,7 +1,7 @@
 # Minchodan 2단계 카메라 프레임 캡처 백엔드 설계서
 
 > **작성일**: 2026-06-28
-> **버전**: v0.1.0
+> **버전**: v0.2.0 (2026-07-07 §6.4 바이너리 전송 디코딩 경로, §9.1 페이로드 갱신 - base64 탈피)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 2단계 (v1.1 이중 스트림 반영)
 > **스킬 참조**: [`.agents/skills/camera-frame-capture/SKILL.md`](../.agents/skills/camera-frame-capture/SKILL.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md)
@@ -238,6 +238,28 @@ sequenceDiagram
 | `cv2.resize` 예외 | None 반환 + 에러 로그 | 예외 후 루프 유지 (17.2 #4) |
 | 전체 예외 | None 반환 + 에러 로그, 파이프라인 영속성 유지 | 예외 후 루프 유지 (17.2 #4) |
 
+### 6.4 바이너리 전송 디코딩 경로 (2026-07-07 추가)
+
+단말이 base64 인코딩을 경유하지 않고 raw JPEG 바이트를 바이너리 WS 프레임으로 직접 전송하는 경로를 지원하기 위해, `frame_decoder.py`의 핵심 로직을 공통 헬퍼로 분리했다.
+
+```python
+def _parse_frame_meta(payload: dict) -> tuple[str, str, str, int]:
+    """event_id/device_id/stream/ts 추출 - base64/바이너리 양 경로 공유."""
+
+def _build_processed_frame(jpeg_bytes: bytes, event_id, device_id, stream, ts, start_ts) -> Optional[ProcessedFrame]:
+    """크기 검사 -> cv2.imdecode -> resize -> ProcessedFrame. base64/바이너리 양 경로 공유."""
+
+async def decode_frame(payload: dict) -> Optional[ProcessedFrame]:
+    """base64 → decode → _build_processed_frame (구버전 호환 경로)."""
+
+async def decode_frame_binary(jpeg_bytes: bytes, meta: dict) -> Optional[ProcessedFrame]:
+    """raw JPEG 바이트 → _build_processed_frame 직접 호출 (base64 디코딩 단계 없음)."""
+```
+
+`server/api/ws_router.py`는 `ws.receive_text()` 고정 대신 `ws.receive()` 제네릭 수신으로 텍스트/바이너리 프레임을 구분한다. `transport: "binary"` 메타(JSON)를 받으면 `pending_binary_meta`에 잠시 보관해뒀다가, 곧바로 뒤따르는 바이너리 프레임과 짝지어 `decode_frame_binary`를 호출한다(단일 WS 연결은 프레임 전송 순서를 보장하므로 메타→바이너리 순서 매칭이 안전함). route_frame + ack 응답 로직은 `_finish_detection` 헬퍼로 공통화되어 base64/바이너리 두 경로가 공유한다.
+
+> **가드레일**: `decode_frame_binary`도 §6.3의 5종 가드레일(크기 임계치, imdecode 실패, 전체 예외)을 `_build_processed_frame` 공유를 통해 동일하게 적용받는다. base64 특유의 "None/빈 문자열" 가드는 "빈 바이트(`b\"\"`)" 가드로 대체된다.
+
 ---
 
 ## 7. 검증 기준
@@ -273,6 +295,8 @@ python -m pytest tests/test_frame_decode.py -v
 
 > `pytest`, `pytest-asyncio`는 3단계 설계서에서 이미 `requirements.txt` 추가 승인됨.
 
+> **2026-07-07 추가**: `TestDecodeFrameBinary` 클래스(정상/빈바이트/과대/과소/손상 바이트/base64 경로와의 결과 일치, 7건)와 `tests/test_api_ws.py`의 실제 `/ws/detect` 엔드포인트 바이너리 전송 e2e 테스트 2건이 §6.4 바이너리 경로를 커버한다.
+
 ---
 
 ## 8. 코딩 패턴 준수 사항
@@ -297,7 +321,25 @@ python -m pytest tests/test_frame_decode.py -v
 
 ## 9. 데이터 인터페이스
 
-### 9.1 2단계 입력 (1단계 WS에서 전달, api_specification.md §3.1 준수)
+### 9.1 2단계 입력 (1단계 WS에서 전달, api_specification.md §3.1/§3.2 준수)
+
+**바이너리 전송(기본, 2026-07-07~)**: JSON 메타 메시지 뒤에 raw JPEG 바이트 바이너리 프레임이 별도로 도착한다.
+
+```json
+{
+  "type": "detection",
+  "payload": {
+    "event_id": "uuid",
+    "device_id": "android-xxxx",
+    "ts": 1719216000000,
+    "frame_id": 42,
+    "stream": "reflex",
+    "transport": "binary"
+  }
+}
+```
+
+**base64 전송(구버전 호환)**: 단일 JSON 메시지에 base64 프레임이 포함된다.
 
 ```json
 {
@@ -320,7 +362,8 @@ python -m pytest tests/test_frame_decode.py -v
 | `payload.ts` | int (epoch ms) | 타임스탬프 (passthrough) |
 | `payload.frame_id` | int | 프레임 일련 번호 |
 | `payload.stream` | string | `reflex` (8~10fps) 또는 `cognitive` (1~2fps) |
-| `payload.thumbnail_jpeg_b64` | string | JPEG 압축 base64 프레임 |
+| `payload.transport` | string | `"binary"`이면 뒤이은 바이너리 프레임과 짝지어 `decode_frame_binary` 처리 |
+| `payload.thumbnail_jpeg_b64` | string | (구버전 호환) JPEG 압축 base64 프레임. `transport`가 없을 때 필수 |
 
 ### 9.2 2단계 출력 (ack, api_specification.md §3.2 준수)
 

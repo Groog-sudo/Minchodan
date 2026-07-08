@@ -44,6 +44,15 @@ async def lifespan(app: FastAPI):
     """
     logger.info("Minchodan API Server 시작 중...")
 
+    # 0. LLM 핫스왑용 GPU 모니터링 태스크 기동 (6단계 RAG/LLM 핫스왑용)
+    from server.orchestration.llm_client_factory import LLMClientFactory
+
+    try:
+        LLMClientFactory.start_gpu_monitor()
+        logger.info("LLMClientFactory GPU 모니터링 시작 완료")
+    except Exception as e:
+        logger.error(f"LLMClientFactory GPU 모니터링 시작 실패: {e}")
+
     # 1. MCP 통합 관리용 Redis Stream Consumer 태스크 시작
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     await mcp_manager.start_consumer(redis_url=redis_url)

@@ -24,10 +24,13 @@ if sys.stdout.encoding != "utf-8":
 def route_after_l3(state: dict) -> str:
     """
     L3 검증 노드 이후의 조건부 라우팅 판단 함수.
-    검증이 통과되었거나 최종 폴백에 도달하면 END로, 그렇지 않으면 L2(생성) 노드로 회귀합니다.
+    검증이 통과되면 END로, 재시도 한계(MAX_RETRY=1)를 초과하면 fallback 노드로 분기하며,
+    그렇지 않은 경우 L2(생성) 노드로 돌아가 재성공을 시도합니다.
     """
     if state.get("verified"):
         return "end"
+    if state.get("retry_count", 0) > 1:
+        return "fallback"
     return "l2_generate"
 
 
@@ -52,8 +55,17 @@ def build_graph() -> StateGraph:
 
     # 조건부 엣지 정의
     workflow.add_conditional_edges(
-        "l3_validate", route_after_l3, {"l2_generate": "l2_generate", "end": END}
+        "l3_validate",
+        route_after_l3,
+        {
+            "l2_generate": "l2_generate",
+            "fallback": "fallback",
+            "end": END,
+        },
     )
+
+    # fallback 노드에서 최종 END로 종료 처리
+    workflow.add_edge("fallback", END)
 
     return workflow.compile()
 

@@ -2225,12 +2225,12 @@ SPEC CHECKSUMS:
   ExpoImageManipulator: adcc5d5b08c08d66273e5f96ad1f0449d27d5c72
   ExpoKeepAwake: 359c47a1d9ccc3a3c519bca6e39562cce230c5bb
   ExpoLogBox: cdad5c9402a186574fb5924ea91df1f08ba9a98a
-  ExpoModulesCore: 0bfde7fdd6a58617f449a9a3d43e7b1549726dcd
+  ExpoModulesCore: ec3b2c80ee1bd0fd934c1b31648ac57127a972d6
   ExpoModulesJSI: abc606cf32f6eeb4e2ad44ec3fc4b24143abd8f6
   ExpoModulesWorklets: 38cbef838d25eaa28fe57e28275e5d940f852eeb
   ExpoSplashScreen: d012bb405b5127e37c469ce0e8e53f538d6a8704
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
-  hermes-engine: 62781e40b2694acf671f743819cc1b386c5f73de
+  hermes-engine: ae012571c7e67432da8122b5874d375699fffd90
   NitroModules: b4174dd303728e16ad1afb79f64c1a5c69a3b373
   RCTDeprecation: a4c521821fab57cbb125b36effe84d897d0dfa12
   RCTRequired: 9f3a7e5645d4bc3f551593de7550bb66ab6e42bc
@@ -2240,7 +2240,7 @@ SPEC CHECKSUMS:
   React: e2dc35338068bbd299c66f043ae0d7f25de8499e
   React-callinvoker: 28b25d21b124c26cebaea713ba7d801b9351dc48
   React-Core: 02ed7d2ffb70437bdf2aba074a13078a7b0b9ff0
-  React-Core-prebuilt: aee1d137d3fc6623f8ed63f47a4b582a5a0f56b6
+  React-Core-prebuilt: 685776a0933562f8e0afa38cdfc447bcda6720a5
   React-CoreModules: b3a5a42dadcde3b5d47b325bd912eb2ced89e146
   React-cxxreact: fe8f88dda044e5905e99a00f41b7a874c3908716
   React-debug: 92944dc4d89f56d640e75498266cbde557a48189
@@ -2303,7 +2303,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: 25c9c516839be2c5e3d3344f95dc7da5f7e63fc2
   ReactCodegen: c8f81e6c6f762dcf442a6203a1fb58f7dafc8014
   ReactCommon: 7dfc3250793bf36cf221096ff59e1179e13eef7f
-  ReactNativeDependencies: 613bf01b3fcaf412701f592c1a0966ffcaa22a43
+  ReactNativeDependencies: b0e0302ebfbe00c2f10bea188903390fa7db06de
   TensorFlowLiteC: eac6d689a8d391d1b202dc59e3d9165ba64aaf73
   VisionCamera: 7187b3dac1ff3071234ead959ce311875748e14f
   Yoga: 77dfa8673de2874e1855002ae59c68b8be9b007b

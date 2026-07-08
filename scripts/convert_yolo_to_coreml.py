@@ -126,7 +126,7 @@ def verify_model(mlpackage_path: str, model_name: str, expect_nms: bool) -> bool
             if has_nms_outputs:
                 print(f"  - [OK] NMS 파이프라인 출력 감지: {output_names}")
             else:
-                print(f"  - [경고] NMS 출력 미감지: {output_names}" " (Vision 호환 문제 가능성)")
+                print(f"  - [경고] NMS 출력 미감지: {output_names} (Vision 호환 문제 가능성)")
 
         # 클래스 라벨 메타데이터
         user_metadata = spec.description.metadata.userDefined

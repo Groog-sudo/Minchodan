@@ -87,9 +87,9 @@ Minchodan은 결과물뿐 아니라 담당자의 발표와 학습이 중요한 �
 | 스킬                        | 단계 | 경로                                        | 설명                                                                            |
 | --------------------------- | ---- | ------------------------------------------- | ------------------------------------------------------------------------------- |
 | `websocket-gateway`         | 1    | `.agents/skills/websocket-gateway/`         | FastAPI WebSocket 실시간 통신, Redis Streams                                    |
-| `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송                                |
-| `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트 |
-| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드                             |
+| `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), 바이너리(raw JPEG) 전송(base64는 폴백)      |
+| `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Object Detection 29클래스 + Segmentation 4클래스 + ByteTrack + 이중 게이트 (반사는 온디바이스) |
+| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Gemini 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드                            |
 | `rag-realtime-search`       | 5    | `.agents/skills/rag-realtime-search/`       | similarity_search(k=5) < 50ms, VectorDBFactory                                  |
 | `llm-guidance-orchestrator` | 6    | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑                                     |
 | `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점                                  |

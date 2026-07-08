@@ -3,8 +3,8 @@
 > **이 문서는?** 5인 MVP 팀의 7단계 파이프라인 표준 양식이다. 네 개의 초안을 통합했다 — **문서2(구현 상세)를 본문 백본**으로, **문서1**의 인터페이스·예외 계약, **문서3**의 선택 근거·분업·MVP 스코프, **문서4**의 완료 기준을 각 단계에 이식했다.
 > **전제:** 비전 설계서 **v1.1**(이중 경로 / Yolo 26N - Object Detection·Yolo 26N - Segmentation / cu128 / 클래스 분리)을 오버레이로 반영한다. 충돌 시 v1.1이 우선한다.
 > **작성일**: 2026-06-23
-> **수정일**: 2026-06-24
-> **버전**: v0.2.0
+> **수정일**: 2026-07-07 (2단계 프레임 전송을 base64 미경유 바이너리 방식으로 갱신)
+> **버전**: v0.2.1
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
@@ -76,9 +76,9 @@
 - **주제 / 키워드:** 프레임 캡처·전송 / 이중 캡처 스트림
 - **목표·목적:** 카메라 화면을 캡처해 서버로 실시간 업로드. 현재 보행 시야를 AI에 전달.
 - **선택 이유:** 영상 전체 전송은 대역폭·연산 과부하. 주기적 프레임만 JPEG 압축 후 WS로 송신 = 실시간성·리소스 균형. 무거운 처리는 서버 GPU 담당.
-- **핵심 절차:** `react-native-vision-camera` 권한·후면 카메라 **이중 타이머**로 캡처 `takePhoto({qualityPrioritization:'speed'})` JPEG base64 DetectionEvent 조립 `ws.send()`. 서버: `base64.b64decode` `np.frombuffer` `cv2.imdecode` `resize(640,640)` ack.
-- **활용 스택·핵심 함수:** react-native-vision-camera, OpenCV / `useCameraDevice('back')`, `np.frombuffer()`, `cv2.imdecode()`
-- **데이터 인터페이스:** In 비디오 프레임 Out `{type:"detection", payload:{event_id, device_id, ts, frame_id, thumbnail_jpeg_b64}}`
+- **핵심 절차:** `react-native-vision-camera` 권한·후면 카메라 **이중 타이머**로 캡처 `takePhoto({qualityPrioritization:'speed'})` JPEG 압축(`expo-image-manipulator`) `File(uri).bytes()`로 raw 바이트 획득 JSON 메타(`transport:"binary"`) + 바이너리 프레임 순차 `ws.send()`(base64 미경유, 2026-07-07~). 서버: `ws.receive()`로 텍스트/바이너리 구분 `decode_frame_binary` `np.frombuffer` `cv2.imdecode` `resize(640,640)` ack. (구버전 호환: base64 단일 메시지 → `base64.b64decode` 경로도 유지)
+- **활용 스택·핵심 함수:** react-native-vision-camera, expo-file-system, OpenCV / `useCameraDevice('back')`, `File.bytes()`, `np.frombuffer()`, `cv2.imdecode()`
+- **데이터 인터페이스:** In 비디오 프레임 Out(바이너리, 기본) `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream, transport:"binary"}}` + raw JPEG 바이너리 프레임 / Out(base64, 구버전 호환) `{type:"detection", payload:{event_id, device_id, ts, frame_id, thumbnail_jpeg_b64}}`
 - **의존성·예외:** 선행=1단계 WS. 출력=3단계 입력. **필수 가드:** 카메라 권한 거부(`NotAllowedError`); 소켓 유실 시 `clearInterval`로 타이머 자원 즉시 해제(메모리 고갈 방지).
 - **분업:** 모바일 캡처/전송 1명 전담, 화질·압축·전송속도 테스트 분담.
 - **MVP 스코프:** 640해상도로 시작해 전송 속도 확보 후 점진 상향.
@@ -104,7 +104,7 @@
 - **데이터 인터페이스:** In 이미지 bytes Out `{event_id, detections:[{class_name, confidence, bbox, track_id}], surface:[{class_name, mask|centroid}], risk_hint, inference_ms}`
 - **의존성·예외:** 선행=2단계. 출력=4·5·6단계. **필수 가드:** 빈 버퍼/디코딩 실패(None) 가드레일; 무탐지 시 에러 없이 빈 리스트 반환(파이프라인 영속성).
 - **분업:** CV/PyTorch 경험자 1~2명. Colab 검증 서버 이식. 탐지 결과는 전원 검증.
-- **MVP 스코프:** 
+- **MVP 스코프:**
   - **효율적 커스텀 학습 (YOLO)**: AI Hub 29종 전체 클래스를 대상으로, 면적 비율(1~80%) 및 정중앙(10~90%) 필터를 통과한 확실하고 선명한 이미지만 클래스당 최대 2,000장씩 선별 추출하여 베이스라인 커스텀 학습을 수행. 학습 결과 파일명에 날짜를 명시(예: `aihub_det_v1_20260704/weights/best.pt`)하여 버전 관리 혼선 방지.
 - **완료 기준:** 킥보드 추론 `conf≈0.87, track_id` 출력, **Detection 추론 < 80ms**; 30초 후 Redis ctx 키 자동 삭제(TTL 동작).
 - ** v1.1 반영:**

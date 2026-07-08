@@ -9,7 +9,7 @@ class CoreMLDetector implements LocalDetector {
   isLoaded = false;
   segLoaded = false;
   detLoaded = false;
-  detShapeLog = "CoreML ANE Engine";
+  detShapeLog = "CoreML CPU Engine";
 
   // TFLite는 seg 전용 폴백으로 사용 (segmentation.mlmodelc 번들 전까지)
   private segFallback: TFLiteDetector | null = null;
@@ -28,7 +28,7 @@ class CoreMLDetector implements LocalDetector {
     }
 
     try {
-      console.log("[CoreMLDetector] CoreML 모델 ANE 적재 시도...");
+      console.log("[CoreMLDetector] CoreML 모델 적재 시도...");
       const result = await CoreMLInferenceBridge.loadModels();
 
       // 결과가 Dictionary 형태 { det: boolean, seg: boolean } 로 리턴되거나, 구버전에서는 boolean일 수 있음
@@ -38,12 +38,15 @@ class CoreMLDetector implements LocalDetector {
       if (isDetLoaded) {
         this.isLoaded = true;
         this.detLoaded = true;
-        this.detShapeLog = "CoreML ANE Engine";
+        this.detShapeLog = "CoreML CPU Engine";
 
         if (isSegLoaded) {
           this.segLoaded = true;
           this.segFallback = null;
-          console.log("[CoreMLDetector] det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료");
+          // 2026-07-07 실기기 재검증 결과 GPU(computeUnits=.cpuAndGPU)에서 크래시가
+          // 재현되어 네이티브(CoreMLInferenceBridge.swift)가 CPU 전용으로 동작 중이므로,
+          // 실제로는 ANE/GPU 가속이 아닌 CPU 추론임을 로그에 정확히 반영한다.
+          console.log("[CoreMLDetector] det=CoreML(CPU) / seg=CoreML(CPU) 기동 완료");
         } else {
           // segmentation.mlmodelc가 번들에 없으면 seg 전용 TFLite 로드
           console.log("[CoreMLDetector] seg 전용 TFLite 폴백 적재 (segmentation.mlmodelc 미번들)");
@@ -51,7 +54,7 @@ class CoreMLDetector implements LocalDetector {
           const segOk = await this.segFallback.load();
           // seg 모델만 로드되면 충분 (det는 CoreML 경로 사용)
           this.segLoaded = segOk && this.segFallback.segLoaded;
-          console.log("[CoreMLDetector] det=CoreML ANE / seg=TFLite 하이브리드 기동 완료");
+          console.log("[CoreMLDetector] det=CoreML(CPU) / seg=TFLite 하이브리드 기동 완료");
         }
         return true;
       }
@@ -90,13 +93,21 @@ class CoreMLDetector implements LocalDetector {
         : Promise.resolve({ seg: [], det: [] } as DualDetectionResult);
 
       // det 및 CoreML 세그멘테이션 (base64 사용)
-      let coremlResults: { seg: any[]; det: any[] } = { seg: [], det: [] };
+      let coremlResults: DualDetectionResult = { seg: [], det: [] };
       if (base64) {
         const bridgeResult = await CoreMLInferenceBridge.detectFrame(base64);
         // 벤치마크 로그 출력 (Swift 네이티브 측정값)
         if (bridgeResult.benchmark) {
           const b = bridgeResult.benchmark;
-          console.log(`[CoreMLBenchmark] det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`);
+          console.log(`[CoreMLBenchmark] det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms scene=${b.scene_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`);
+        }
+        // docs/design/indoor_fp_mitigation_design.md §4.4: isLikelyIndoor 게이트 판정에
+        // 더해, top-5 identifier는 계속 로그로 남겨 향후 키워드 집합 보강에 활용한다.
+        if (bridgeResult.scene?.topLabels?.length) {
+          const labels = bridgeResult.scene.topLabels
+            .map((l: { identifier: string; confidence: number }) => `${l.identifier}(${l.confidence.toFixed(2)})`)
+            .join(", ");
+          console.log(`[SceneClassify] ${labels}`);
         }
         coremlResults = bridgeResult as DualDetectionResult;
       } else {
@@ -108,12 +119,14 @@ class CoreMLDetector implements LocalDetector {
         return {
           det: coremlResults.det,
           seg: segResults.seg,
+          scene: coremlResults.scene,
         };
       } else {
         // 완전 CoreML 가속 모드
         return {
           det: coremlResults.det,
           seg: coremlResults.seg || [],
+          scene: coremlResults.scene,
         };
       }
     } catch (e) {
