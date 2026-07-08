@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 
-import type { MonitorEvent, MonitorState, RiskEvent } from "../types/monitor";
+import type {
+  DetectionFeedItem,
+  MonitorEvent,
+  MonitorState,
+  RiskEvent,
+  SessionStatus,
+} from "../types/monitor";
 
 const DEFAULT_STREAM_URL = "http://localhost:8000/api/v1/monitor/stream";
 
@@ -268,12 +274,187 @@ export function useMonitorStream(streamUrl?: string) {
               risks: [risk, ...current.risks].slice(0, 80),
             };
           }
-        default:
-          return {
-            ...current,
-            last_event_at: receivedAt,
-            raw_events,
-          };
+
+          case "session_status": {
+            // device_id 기준으로 sessions 배열 upsert
+
+            /*
+            * 발표/면접 대응 포인트:
+            * - 세션 상태는 로그처럼 계속 쌓는 데이터가 아니라 device_id 기준 최신 상태를 보여주는 데이터입니다.
+            * - 같은 device_id가 다시 들어오면 기존 행을 갱신하고, 처음 보는 device_id면 새 행을 추가합니다.
+            * - 이 패턴은 upsert라고 설명할 수 있습니다.
+            * - SessionStatus["status"]로 타입을 고정한 이유는 connected/disconnected/unknown 외 문자열이 화면 상태에 섞이지 않게 하기 위해서입니다.
+             */ 
+            const device_id = 
+                  typeof payload.device_id === "string"
+                    ? payload.device_id 
+                    : "unknown-device";
+
+            const sessionsStatus: SessionStatus["status"] = 
+                  payload.status === "connected" || payload.status === "disconnected"
+                    ? payload.status
+                    : "unknown"
+
+            const session: SessionStatus =  {
+              device_id: device_id,
+              platform:
+                typeof payload.platform === "string"
+                ? payload.platform
+                : undefined,
+              status: sessionsStatus,
+              rtt_ms:
+              typeof payload.rtt_ms === "number"
+                ? payload.rtt_ms
+                : undefined,
+              last_seen: receivedAt,
+            };
+
+
+            const exists = current.sessions.some(
+              (item) => item.device_id === device_id
+            );
+
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              sessions: exists
+                ? current.sessions.map((item) => item.device_id === device_id ? session : item, )
+                : [session, ...current.sessions],
+            };
+            // risk_event = 누적 로그라 배열 앞에 계속 추가
+            // system_metrics = 최신 상태라 덮어쓰기
+            // session_status = device_id 기준으로 있으면 갱신, 없으면 추가
+          }
+
+          case "detection_event": {
+            // detections 배열 앞에 누적
+            // detection_event는 텍스트 기반 DetectionFeed 1차 MVP
+            // 실제 이미지/박스/마스크는 아직 2차
+            // stream 값으로 reflex와 cognitive를 구분해서 이중 경로 흐름을 콘솔에서 볼 수 있음
+            // 배열은 무한 증가 방지를 위해 최근 80개만 유지
+
+            /* 
+            * 발표 및 면접 대응 포인트:
+            * - DetectionFeed는 1차 MVP에서 실제 카메라 이미지를 띄우지 않습니다.
+            * - 대신 서버가 보내는 탐지 메타데이터(event_id, stream, class_name, confidence, inference_ms)를 먼저 표시합니다.
+            * - stream이 reflex이면 반사 경로, cognitive이면 인지 경로로 흘러간 이벤트라 설명할 수 있습니다.
+            * - 2차에서 이 event_id를 기준으로 썸네일, BBox, Segmentation Overlay를 붙일 수 있습니다.
+            * - DetectionFeedItem["stream"]으로 타입을 고정해 reflex/cognitive/unknown 외 값이 화면에 섞이지 않게 막습니다.
+            */
+            const stream: DetectionFeedItem["stream"]  =
+              payload.stream === "reflex" || payload.stream === "cognitive"
+              ? payload.stream
+              : "unknown";
+
+            const detection : DetectionFeedItem = {
+              id: `${payload.event_id ?? "detection" } ${ receivedAt }`,
+              event_id :
+                typeof payload.event_id === "string"
+                    ?  payload.event_id 
+                    : "unknown" ,
+              device_id : 
+                typeof payload.device_id === "string"
+                    ? payload.device_id
+                    : "unknown-device",
+              stream,
+              class_name:
+                typeof payload.class_name === "string"
+                  ? payload.class_name 
+                  : "unknown",
+              
+              confidence : 
+                typeof payload.confidence === "number"
+                  ? payload.confidence 
+                  : undefined ,
+              
+              inference_ms:
+                typeof payload.inference_ms === "number"
+                  ? payload.inference_ms 
+                  : undefined ,
+
+              surface :
+                typeof payload.surface === "string"
+                  ? payload.surface 
+                  : "unknown" ,
+
+              ts : receivedAt
+            };
+
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              detections: [detection, ...current.detections].slice(0, 80)
+              
+            }
+          }
+
+          case "llm_status" : 
+          case "rag_result" :
+          case "tts_status" :
+          case "stt_status" : {
+            /*
+             * 발표/면접 대응 포인트:
+             * - AI 파이프라인 상태는 누적 로그보다 최신 상태 확인이 중요합니다.
+             * - LLM/RAG/TTS/STT 이벤트를 한 구역에 묶어 콘솔에서 불안한 AI 계층을 한눈에 점검하려는 구조입니다.
+             * - 현재는 TH 하드코딩 1차 구간이라 raw_events와 last_event_at만 갱신하고, 다음 단계에서 ai 객체 필드를 직접 채웁니다.
+             */
+
+            /*
+             * 발표/면접 대응 포인트:
+             * - current.ai는 최초 상태에서 null일 수 있으므로 previousAi라는 빈 객체 fallback을 먼저 만듭니다.
+             * - nextAi는 기존 AI 상태를 보존한 뒤, 이번 SSE 이벤트에 포함된 필드만 덮어쓴 결과입니다.
+             * - 이렇게 분리하면 바깥 return의 ...current와 ai 내부 상태 보존이 서로 다른 계층이라는 점을 설명하기 쉽습니다.
+             */
+            const previousAi = current.ai ?? {};
+
+            const nextAi = {
+              ...previousAi,
+              llm_provider:
+                typeof payload.llm_provider === "string"
+                  ? payload.llm_provider
+                  : previousAi.llm_provider,
+              rag_query:
+                typeof payload.rag_query === "string"
+                  ? payload.rag_query
+                  : previousAi.rag_query,
+              rag_score:
+                typeof payload.rag_score === "number"
+                  ? payload.rag_score
+                  : previousAi.rag_score,
+              tts_engine:
+                typeof payload.tts_engine === "string"
+                  ? payload.tts_engine
+                  : previousAi.tts_engine,
+              tts_status:
+                typeof payload.tts_status === "string"
+                  ? payload.tts_status
+                  : previousAi.tts_status,
+              stt_status:
+                typeof payload.stt_status === "string"
+                  ? payload.stt_status
+                  : previousAi.stt_status,
+            };
+
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              ai: nextAi,
+              /*
+              AI 파이프라인 상태는 위험 이벤트처럼 누적 로그가 아니라 최신 상태를 보는 목적입니다. LLM, RAG, TTS, STT는 각각 독립 이벤트로 들어올 수 있어서 
+              기존 ai 상태를 펼친 뒤 들어온 필드만 갱신합니다. 그래서 한 이벤트가 들어와도 다른 필드가 사라지지 않습니다. 
+              */ 
+            };
+          }
+          default: 
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+            };
+         
       }
   // connection_established와 ping은 연결 상태 이벤트라 화면 상태만 갱신합니다.
   // system_metrics와 gpu_status는 최신 시스템 상태이므로 배열에 누적하지 않고 system 객체를 덮어씁니다.
