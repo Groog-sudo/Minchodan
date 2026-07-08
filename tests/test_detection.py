@@ -453,3 +453,63 @@ class TestYoloDetectorLoad:
         det = YoloDetector(weights_path="server/models/yolo26n/not_exist.pt")
         assert det.load() is False
         assert det.model is None
+
+
+class TestReflexAlertSuppression:
+    """2026-07-08: 중복 억제(Alert_suppressor)가 실제 반사 전송 경로(_send_reflex_alert)에
+    연결됐는지 검증. 이전에는 suppressor 구현은 있었으나 consumer.py가 호출하지 않아
+    60초 이내 동일 alert_id가 억제 없이 계속 전송되는 결함이 있었다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_suppressed_alert_is_not_sent(self, monkeypatch):
+        import server.detection.consumer as consumer_module
+
+        send_mock = AsyncMock()
+        should_suppress_mock = AsyncMock(return_value=True)
+        mark_as_sent_mock = AsyncMock()
+        monkeypatch.setattr(consumer_module.manager, "send_json", send_mock)
+        monkeypatch.setattr(
+            consumer_module.Alert_suppressor, "should_suppress", should_suppress_mock
+        )
+        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_as_sent", mark_as_sent_mock)
+
+        consumer = consumer_module.DetectionConsumer()
+        alert = ReflexAlert(
+            event_id="evt-1",
+            alert_id="high_front",
+            direction="front",
+            clip="reflex_clips/high_front.mp3",
+            ts=0.0,
+        )
+        await consumer._send_reflex_alert("device-1", alert)
+
+        should_suppress_mock.assert_awaited_once_with("device-1", "high_front")
+        send_mock.assert_not_awaited()
+        mark_as_sent_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unsuppressed_alert_is_sent_and_marked(self, monkeypatch):
+        import server.detection.consumer as consumer_module
+
+        send_mock = AsyncMock()
+        should_suppress_mock = AsyncMock(return_value=False)
+        mark_as_sent_mock = AsyncMock()
+        monkeypatch.setattr(consumer_module.manager, "send_json", send_mock)
+        monkeypatch.setattr(
+            consumer_module.Alert_suppressor, "should_suppress", should_suppress_mock
+        )
+        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_as_sent", mark_as_sent_mock)
+
+        consumer = consumer_module.DetectionConsumer()
+        alert = ReflexAlert(
+            event_id="evt-2",
+            alert_id="high_front",
+            direction="front",
+            clip="reflex_clips/high_front.mp3",
+            ts=0.0,
+        )
+        await consumer._send_reflex_alert("device-1", alert)
+
+        send_mock.assert_awaited_once()
+        mark_as_sent_mock.assert_awaited_once_with("device-1", "high_front")

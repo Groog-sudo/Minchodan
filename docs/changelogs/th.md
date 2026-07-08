@@ -248,3 +248,18 @@
 - **관련 파일**: `console/src/api/useMonitorStream.ts`, `console/src/components/AiPipelineMonitor.tsx`, `console/src/components/DetectionFeed.tsx`, `console/src/components/RiskEventLog.tsx`, `console/src/components/SessionStatus.tsx`, `console/src/components/SystemMetrics.tsx`
 - **검증 결과**:
   - `cd console && npm run build` 통과
+
+---
+
+### 2026-07-08 | 운영자 콘솔 | 1차 MVP 마감 정리
+
+- **변경 내용**:
+  - `console/README.md`의 1차 MVP 상태를 스캐폴드에서 구현 완료 기준으로 갱신했습니다.
+  - 샘플 이벤트 버튼을 통해 SystemMetrics, SessionStatus, DetectionFeed, RiskEventLog, AI Pipeline Monitor 전 패널을 데모 화면에서 채울 수 있는 상태임을 문서화했습니다.
+  - 1차 MVP는 화면 구성과 샘플 시연까지 마감하고, 실제 백엔드 SSE 이벤트명 및 payload 필드 정합은 후속 검증 단계로 분리했습니다.
+  - TH 하드코딩 80% 원칙에 따라 `useMonitorStream.ts`의 이벤트 분기와 상태 설계는 직접 설명 가능 핵심 영역으로 유지한다는 기준을 명시했습니다.
+  - `server/api/monitor.py`, `server/mcp/manager.py`, `server/api/ws_router.py`, `server/detection/consumer.py` 기준으로 실제 확인된 SSE 이벤트와 데모/확장 이벤트를 분리해 `console/README.md`에 정리했습니다.
+- **관련 파일**: `console/README.md`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - 기존 `cd console && npm run build` 통과 상태 유지
+  - 문서 정리 작업으로 추가 빌드는 생략
