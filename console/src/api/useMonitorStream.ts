@@ -38,7 +38,7 @@ const CONSOLE_DEMO_OR_EXTENDED_EVENTS = [
   "rag_result",
   "tts_status",
   "stt_status",
-  
+
 ] as const;
 
 /*
@@ -441,11 +441,16 @@ export function useMonitorStream(streamUrl?: string) {
               
             }
           }
+          // 💡 [면접 대비 주석 - 프론트 주도 데모 계약]
+          // Q. 백엔드에서 아직 안 쏴주는 이벤트(llm_status 등)를 프론트에서 먼저 정의한 이유는?
+          // A. "애자일 개발을 위해 프론트-백엔드 간 '데모/확장 계약'을 먼저 체결했습니다.
+          //    백엔드 Producer(6, 7단계)가 아직 없지만 프론트는 주입(Inject) 함수로 UI를 미리 검증할 수 있습니다."
 
           case "llm_status" : 
           case "rag_result" :
           case "tts_status" :
-          case "stt_status" : {
+          // case "stt_status" : {  // ❌ STT는 7단계 파이프라인 범위 밖이므로 제외 (삭제)
+          {
             /*
              * 발표/면접 대응 포인트:
              * - AI 파이프라인 상태는 누적 로그보다 최신 상태 확인이 중요합니다.
