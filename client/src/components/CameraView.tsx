@@ -128,6 +128,9 @@ export function CameraView() {
       const text = lastMessage.guidance_text ?? "";
       const risk = lastMessage.risk_level ?? "unknown";
       setLastDetect(`서버가이드: ${text} (${risk})`);
+      if (lastMessage.audio_mp3_b64) {
+        void audioEngine.playGuideAudio(lastMessage.audio_mp3_b64);
+      }
     } else if (lastMessage.type === "ack") {
       setLastDetect(`서버추론: 안전 (${lastMessage.decode_ms ?? 0}ms)`);
     }
@@ -180,6 +183,7 @@ export function CameraView() {
         type: "detection",
         payload: {
           event_id: `event-${now}`,
+          device_id: DEVICE_ID,
           frame_id: now,
           stream: frame.stream ?? "reflex",
           transport: "binary",
@@ -192,6 +196,7 @@ export function CameraView() {
         type: "detection",
         payload: {
           event_id: `event-${now}`,
+          device_id: DEVICE_ID,
           frame_id: now,
           thumbnail_jpeg_b64: frame.base64,
           stream: frame.stream ?? "reflex",

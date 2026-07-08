@@ -31,6 +31,12 @@ from server.api.ws_router import router as ws_router
 from server.detection.consumer import get_default_consumer
 from server.mcp.manager import mcp_manager
 
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
+
 logger = logging.getLogger(__name__)
 
 # Load environment configuration (guide 3.4)

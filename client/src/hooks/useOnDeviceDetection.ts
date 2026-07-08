@@ -109,11 +109,13 @@ export function useOnDeviceDetection() {
           SEG_HAZARD.has(SEG_CLASS_NAMES.indexOf(d.className));
         if (isDetHazard || isSegHazard) {
           highest = d;
-          console.log(`[Reflex] 위험 탐지: ${d.model}/${d.className} conf=${d.confidence.toFixed(3)} bbox=${JSON.stringify(d.bbox)}`);
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[Reflex] 위험 탐지: ${d.model}/${d.className} conf=${d.confidence.toFixed(3)} bbox=${JSON.stringify(d.bbox)}`);
+          }
           break;
         }
       }
-      if (all.length > 0) {
+      if (all.length > 0 && !audioEngine.isGuidePlaying) {
         console.log(`[Reflex] 전체 탐지: ${all.map(d => `${d.className}(${d.confidence.toFixed(2)})`).join(", ")}`);
       }
 

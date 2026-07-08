@@ -1,5 +1,6 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 import { Asset } from "expo-asset";
+import * as FileSystem from "expo-file-system/legacy";
 
 /**
  * 시각장애인 긴급 회피용 입체 비프음 오디오 엔진.
@@ -14,15 +15,38 @@ class AudioEngine {
   private currentBeepInterval: number = -1;
   private currentPanning: number = 0.0;
   private sessionInitialized = false;
+  private guidePlayer: AudioPlayer | null = null;
+  private guideFileUri: string | null = null;
+  /**
+   * 가이드 음성 재생 중 여부. 재생 구간 동안 반사 경로의 프레임당 콘솔 로그(디버그용)를
+   * 억제하는 데 사용한다 - Metro 개발 모드에서 로그가 JS 브릿지로 실시간 전송되며
+   * 오디오 콜백 스케줄링과 경합해 음성이 끊기는 문제가 실측 확인됨(2026-07-08).
+   * 탐지/햅틱/비프 로직 자체는 계속 동작하며 콘솔 출력만 억제한다.
+   */
+  public isGuidePlaying = false;
 
   // 로컬 번들 800Hz 비프 에셋 (reflex_audio_specification.md 준수, 오프라인 안정)
   private readonly BEEP_SRC: number = require("../../assets/sounds/beep.wav");
 
-  /** iOS 오디오 세션 초기화 - 충돌 방지를 위해 기본 세션 유지 및 바이패스. */
+  /**
+   * iOS 오디오 세션 초기화. 반사 루프 플레이어와 인지 가이드 일회성 플레이어가
+   * 동시에 활성화되는 상황이 있어, mixWithOthers를 명시적으로 설정해 두 플레이어가
+   * 서로의 재생을 끊거나 덕킹(ducking)하지 않도록 한다.
+   */
   private async ensureSession(): Promise<void> {
     if (this.sessionInitialized) return;
     this.sessionInitialized = true;
-    console.log("[AudioEngine] 기본 오디오 세션 바이패스 완료");
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        interruptionMode: "mixWithOthers",
+        shouldPlayInBackground: false,
+        allowsRecording: false,
+      });
+      console.log("[AudioEngine] 오디오 세션 설정 완료 (mixWithOthers)");
+    } catch (err) {
+      console.error("[AudioEngine] 오디오 세션 설정 실패:", err);
+    }
   }
 
   /** 사운드 플레이어 지연 초기화 (최초 1회 런타임에 안전하게 로컬 URI로 생성). */
@@ -147,6 +171,64 @@ class AudioEngine {
       }
     } catch (err) {
       console.error("[AudioEngine] 즉시 정지 오류:", err);
+    }
+  }
+
+  /**
+   * 인지 경로 서버 TTS 결과(WAV base64)를 1회 재생합니다.
+   * 반사 경로의 상시 루프 플레이어(this.player)와는 별개의 일회성 플레이어를 사용한다.
+   */
+  public async playGuideAudio(base64Wav: string): Promise<void> {
+    if (!base64Wav) return;
+
+    // 선점(Preemption): 재생 중인 이전 안내 음성이 있으면 즉시 중단하고 정리한다.
+    // (tts-voice-streamer 스킬 설계: 인지 경로는 최신 안내가 이전 안내를 선점)
+    this.stopGuideAudio();
+    await this.ensureSession();
+    this.isGuidePlaying = true;
+
+    const fileUri = `${FileSystem.cacheDirectory}guide-${Date.now()}.wav`;
+    try {
+      await FileSystem.writeAsStringAsync(fileUri, base64Wav, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const guidePlayer = createAudioPlayer(fileUri);
+      this.guidePlayer = guidePlayer;
+      this.guideFileUri = fileUri;
+      guidePlayer.volume = 1.0;
+
+      guidePlayer.addListener("playbackStatusUpdate", (status) => {
+        if (status.didJustFinish && this.guidePlayer === guidePlayer) {
+          this.stopGuideAudio();
+        }
+      });
+
+      guidePlayer.play();
+    } catch (err) {
+      console.error("[AudioEngine] 가이드 음성 재생 실패:", err);
+      this.isGuidePlaying = false;
+      FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
+    }
+  }
+
+  /** 재생 중인 안내 음성을 즉시 중단하고 플레이어/임시 파일을 정리한다. */
+  public stopGuideAudio(): void {
+    const prevPlayer = this.guidePlayer;
+    const prevFileUri = this.guideFileUri;
+    this.guidePlayer = null;
+    this.guideFileUri = null;
+    this.isGuidePlaying = false;
+
+    if (prevPlayer) {
+      try {
+        prevPlayer.remove();
+      } catch (err) {
+        console.error("[AudioEngine] 가이드 플레이어 정리 실패:", err);
+      }
+    }
+    if (prevFileUri) {
+      FileSystem.deleteAsync(prevFileUri, { idempotent: true }).catch(() => {});
     }
   }
 

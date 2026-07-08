@@ -19,7 +19,12 @@ class VectorDBFactory:
     """
 
     @staticmethod
-    def get_vector_db(db_type: str, persist_directory: str, embeddings: Embeddings):
+    def get_vector_db(
+        db_type: str,
+        persist_directory: str,
+        embeddings: Embeddings,
+        collection_name: str | None = None,
+    ):
         """
         요청된 db_type에 맞추어 로컬 Vector DB 객체를 반환합니다.
 
@@ -27,6 +32,7 @@ class VectorDBFactory:
             db_type: "chroma" | "qdrant" (현재 ChromaDB 기본 지원)
             persist_directory: DB가 영구 저장될 로컬 디렉토리 경로
             embeddings: 주입받을 외부 임베딩 모델 인스턴스 (결합 제거)
+            collection_name: 조회할 컬렉션명 (미지정 시 langchain 기본 컬렉션)
 
         Returns:
             VectorStore 구현체 인스턴스
@@ -52,11 +58,14 @@ class VectorDBFactory:
 
         if db_type == "chroma":
             # ChromaDB 인스턴스 로드/생성
-            db = Chroma(
-                persist_directory=persist_directory,
-                embedding_function=embeddings,
-                collection_metadata={"hnsw:space": "cosine"},
-            )
+            chroma_kwargs = {
+                "persist_directory": persist_directory,
+                "embedding_function": embeddings,
+                "collection_metadata": {"hnsw:space": "cosine"},
+            }
+            if collection_name:
+                chroma_kwargs["collection_name"] = collection_name
+            db = Chroma(**chroma_kwargs)
             return db
         elif db_type == "qdrant":
             # Qdrant 로컬 연동 (추후 확장 대비 플레이스홀더)

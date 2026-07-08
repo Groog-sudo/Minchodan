@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+import time
 
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
@@ -26,6 +27,7 @@ from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
+from server.rag.retriever import get_default_retriever
 from server.tts.realtime_tts import realtime_tts
 from server.tts.suppressor import Alert_suppressor
 
@@ -50,6 +52,10 @@ class DetectionConsumer:
         self._reflex_task: asyncio.Task | None = None
         self._cognitive_task: asyncio.Task | None = None
         self._running = False
+        # device_id별 마지막 인지 가이드 전송 시각 (초). 이전 안내 음성이 끝나기 전에
+        # 다음 안내가 겹쳐 재생을 끊는 문제를 막기 위한 최소 간격 쿨다운(비협상 아님, 튜닝값).
+        self._last_guide_ts: dict[str, float] = {}
+        self._guide_cooldown_sec: float = 8.0
 
     async def _ensure_pipeline(self) -> DetectionPipeline:
         if self._pipeline is None:
@@ -183,6 +189,15 @@ class DetectionConsumer:
         if not result.detections:
             return
 
+        # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이
+        # 오케스트레이션/TTS(수 초 소요)를 새로 돌리지 않고 조기 반환한다. 실제 간격
+        # 보장은 아래 전송 직전 재검사에서 확정하므로 여기서는 슬롯을 갱신하지 않는다.
+        if time.monotonic() - self._last_guide_ts.get(device_id, 0.0) < self._guide_cooldown_sec:
+            logger.debug(
+                f"[DetectionConsumer] 인지 가이드 쿨다운 중 - 전송 생략: device_id={device_id}"
+            )
+            return
+
         # NavigationManager에서 융합 길안내 멘트 조회
         navigation_guidance = ""
         try:
@@ -193,6 +208,19 @@ class DetectionConsumer:
                 navigation_guidance = guidance_event.get("text", "")
         except Exception as e:
             logger.error(f"[DetectionConsumer] NavigationManager 조회 실패: {e}")
+
+        # RAG 검색: 가장 신뢰도 높은 탐지 사물 기준으로 안전 수칙 조회 (실패 시 빈 문자열, fallback 미경유 유지)
+        rag_context = ""
+        try:
+            retriever = get_default_retriever()
+            if retriever is not None:
+                primary_det = max(result.detections, key=lambda d: d.confidence)
+                rag_context = await asyncio.to_thread(
+                    retriever.search_guidance,
+                    {"class_name": primary_det.class_name, "confidence": primary_det.confidence},
+                )
+        except Exception as e:
+            logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
 
         orch_input = {
             "event": {
@@ -211,6 +239,7 @@ class DetectionConsumer:
             "positions": [det.direction or "" for det in result.detections],
             "risk_level": result.risk_hint,
             "navigation_guidance": navigation_guidance,
+            "rag_context": rag_context or "관련 수칙 없음",
             "retry_count": 0,
             "verified": False,
             "validation_errors": [],
@@ -226,6 +255,19 @@ class DetectionConsumer:
                 return
 
             audio_b64 = await realtime_tts.synthesize_from_llm(orch_result)
+
+            # 전송 직전 재검사: 오케스트레이션/TTS 처리 시간이 요청마다 달라(2~10s+),
+            # "처리 시작" 시점 쿨다운만으로는 실제 전송(클라이언트 재생 트리거) 간격이
+            # 8초보다 가까워질 수 있다. 실제 전송 직전에 한 번 더 슬롯을 확인/갱신해
+            # 클라이언트에서 이전 안내 음성이 끝나기 전에 새 안내가 도착하는 것을 막는다.
+            send_now = time.monotonic()
+            if send_now - self._last_guide_ts.get(device_id, 0.0) < self._guide_cooldown_sec:
+                logger.debug(
+                    f"[DetectionConsumer] 인지 가이드 전송 직전 쿨다운 재검사 - 생략: "
+                    f"device_id={device_id}, event_id={result.event_id}"
+                )
+                return
+            self._last_guide_ts[device_id] = send_now
 
             payload = {
                 "type": "guide",

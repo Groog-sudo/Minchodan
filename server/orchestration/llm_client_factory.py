@@ -67,10 +67,14 @@ class SimpleOllamaClient:
             formatted_messages.append({"role": role, "content": content})
 
         logger.info(f"Ollama async chat invocation: model={self.model_name}")
+        # think=False: gemma4:e4b는 추론(thinking) 모드가 기본 활성화된 모델이라,
+        # 이를 끄지 않으면 응답 토큰 예산(num_predict)을 내부 추론에서 전부 소진해
+        # content가 항상 빈 문자열로 반환되는 문제가 있었다(2026-07-08 실측 확인).
         response = await self.client.chat(
             model=self.model_name,
             messages=formatted_messages,
-            options={"temperature": 0.3, "num_predict": 50},
+            options={"temperature": 0.3, "num_predict": 100},
+            think=False,
         )
         content = response.get("message", {}).get("content", "").strip()
         return LLMResponse(content)
