@@ -71,7 +71,7 @@ class AdminAccountCreate(BaseModel):
 
     employee_no: str = Field(..., min_length=1, max_length=50)
     name: str = Field(..., min_length=1, max_length=50)
-    password_hash: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=1, max_length=255)
     role: AdminRole = AdminRole.OPERATOR
     status: AdminAccountStatus = AdminAccountStatus.ACTIVE
 

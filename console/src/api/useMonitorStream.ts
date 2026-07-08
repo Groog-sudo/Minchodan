@@ -58,18 +58,19 @@ const initialState: MonitorState = {
   raw_events: [],
 };
 
-export function useMonitorStream(streamUrl?: string) {
+export function useMonitorStream(token: string | null = null) {
   /*
    * 발표/면접 대응 포인트:
    * - 기본값은 로컬 FastAPI 서버의 `/api/v1/monitor/stream`입니다.
    * - 배포나 팀원 PC 환경에서는 `VITE_MONITOR_STREAM_URL`로 서버 주소만 바꿔 재사용할 수 있습니다.
    * - URL을 코드 곳곳에 흩뿌리지 않고 이 훅 한 곳에서 결정해 유지보수를 쉽게 합니다.
    */
+  const [state, setState] = useState<MonitorState>(initialState);
+  const [streamUrl, setStreamUrl] = useState(DEFAULT_STREAM_URL);
   const resolvedUrl = useMemo(
     () => streamUrl || import.meta.env.VITE_MONITOR_STREAM_URL || DEFAULT_STREAM_URL,
     [streamUrl],
   );
-  const [state, setState] = useState<MonitorState>(initialState);
 
   /*
    * TH HARDCODE AREA 1: SSE 연결
@@ -89,6 +90,10 @@ export function useMonitorStream(streamUrl?: string) {
    */
 
   useEffect(() => {
+    // 💡 [면접 대비 주석 - 연결 방어]
+    // 토큰이 없으면 아예 백엔드에 헛된 연결 시도(401 에러)를 하지 않도록 막습니다!
+    if (!token) return;
+
     // 1. useEffect 안에서 new EventSource(resolvedUrl) 생성 
     setState((current) => ({
       ...current,
@@ -101,7 +106,8 @@ export function useMonitorStream(streamUrl?: string) {
      * - 별도 라이브러리 없이 HTTP 연결을 유지하며 서버 이벤트를 계속 수신합니다.
      * - 연결 생성은 컴포넌트 생명주기에 맞춰 useEffect 안에서 한 번 수행합니다.
      */
-    const source = new EventSource(resolvedUrl);
+    const urlWithToken = `${resolvedUrl}?token=${token}`;
+    const source = new EventSource(urlWithToken);
     
     // 2. source.onopen에서 connection="connected" 처리
     source.onopen = () => {
