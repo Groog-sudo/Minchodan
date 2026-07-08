@@ -31,6 +31,30 @@ export function AiPipelineMonitor({ ai }: { ai: AiPipelineStatus | null }) {
                 <span>STT</span>
                 <strong>{ai.stt_status ?? "-"}</strong>
               </div>
+              <div>
+                <span>Reflex Bypass</span>
+                <strong>
+                  {typeof ai.reflex_bypass === "boolean"
+                    ? ai.reflex_bypass
+                      ? "true"
+                      : "false"
+                    : "-"}
+                </strong>
+              </div>
+              <div>
+                <span>LLM Verified</span>
+                <strong>
+                  {typeof ai.llm_verified === "boolean"
+                    ? ai.llm_verified
+                      ? "true"
+                      : "false"
+                    : "-"}
+                </strong>
+              </div>
+              <div>
+                <span>Retry</span>
+                <strong>{ai.llm_retry_count ?? "-"}</strong>
+              </div>
             </div>
             <div className="guidance-line">
                 <span>최근 안내문</span>

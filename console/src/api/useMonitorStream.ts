@@ -11,6 +11,37 @@ import type {
 const DEFAULT_STREAM_URL = "http://localhost:8000/api/v1/monitor/stream";
 
 /*
+ * 실제 백엔드 코드 기준으로 직접 확인된 SSE 이벤트:
+ * - server/api/monitor.py: connection_established, ping
+ *
+ * 그 외 system_metrics / risk_event / detection_event / llm_status 등은
+ * 현재 콘솔 데모/확장 계약으로 해석해야 합니다.
+ * 즉, 프론트 분기는 먼저 준비되어 있지만 producer 위치는 추가 확인이 필요합니다.
+ */
+const CONFIRMED_SSE_EVENTS = ["connection_established", "ping"] as const;
+
+/*
+ * 1차 MVP 콘솔에서 화면/데모를 위해 먼저 받아두는 확장 이벤트 묶음.
+ * 실제 SSE producer가 아직 확정되지 않은 이벤트도 포함됩니다.
+ * 단, system_status는 server/mcp/manager.py의 기본 fallback event_type이라
+ * manager 기준으로는 실제 들어올 수 있는 이름입니다.
+ */
+const CONSOLE_DEMO_OR_EXTENDED_EVENTS = [
+  "system_metrics",
+  "gpu_status",
+  "system_status",
+  "system_error",
+  "risk_event",
+  "session_status",
+  "detection_event",
+  "llm_status",
+  "rag_result",
+  "tts_status",
+  "stt_status",
+  
+] as const;
+
+/*
  * 발표/면접 대응 포인트:
  * - 운영자 콘솔은 단말에 명령을 보내는 화면이 아니라 서버 상태를 "구독"하는 화면입니다.
  * - 그래서 양방향 WebSocket보다 서버 -> 브라우저 단방향 스트리밍인 SSE(EventSource)가 단순하고 적합합니다.
@@ -93,9 +124,22 @@ export function useMonitorStream(streamUrl?: string) {
        * - 여기서는 그 문자열을 MonitorEvent 계약으로 파싱한 뒤 applyEvent로 넘깁니다.
        * - 다음 개선 포인트는 try/catch를 추가해 파싱 실패도 system_error로 관측하는 것입니다.
        */
-      const parsed = JSON.parse(message.data) as MonitorEvent;
-      applyEvent(parsed)
-    }
+
+
+      try {
+        const parsed = JSON.parse(message.data) as MonitorEvent;
+        applyEvent(parsed);
+      } catch (error) {
+        applyEvent({
+          event_type: "system_error",
+          timestamp: new Date().toISOString(),
+          payload: {
+            error_message:
+              error instanceof Error ? error.message : "SSE payload parse failed",
+          },
+        });
+      }
+    };
 
     // 4. source.onerror에서 connection="error" 처리
     source.onerror = () => {
@@ -154,7 +198,13 @@ export function useMonitorStream(streamUrl?: string) {
        * - 실제 운영 화면에서는 raw_events보다 system, risks, sessions처럼 목적별로 정규화한 상태를 사용합니다.
        */
       const raw_events = [event, ...current.raw_events].slice(0, 40);
-    
+
+      /*
+       * 발표/면접 대응 포인트:
+       * - CONFIRMED_SSE_EVENTS는 실제 backend SSE 코드에서 직접 확인된 이벤트 묶음입니다.
+       * - CONSOLE_DEMO_OR_EXTENDED_EVENTS는 화면 선구현용 확장 이벤트 묶음입니다.
+       * - 지금 switch는 두 범주를 함께 처리하지만, 해석은 동일선상에 두지 않는 것이 중요합니다.
+       */
       switch(event.event_type){
         case "connection_established":
             /*
@@ -183,12 +233,14 @@ export function useMonitorStream(streamUrl?: string) {
 
         case "system_metrics": 
         case "gpu_status":
+        case "system_status":
         case "system_error":
           /*
            * 발표/면접 대응 포인트:
            * - system 계열 이벤트는 최신 상태성 데이터입니다.
            * - 위험 이벤트처럼 배열에 누적하지 않고, 현재 GPU/RTT/Queue 상태를 덮어씁니다.
            * - 이 방식은 대시보드 카드가 항상 최신 서버 상태만 보여주게 합니다.
+           * - 특히 system_status는 server/mcp/manager.py에서 event_type 누락 시 붙는 fallback 이름입니다.
            */
           return {
             ...current,
@@ -435,6 +487,24 @@ export function useMonitorStream(streamUrl?: string) {
                 typeof payload.stt_status === "string"
                   ? payload.stt_status
                   : previousAi.stt_status,
+              last_guidance:
+                typeof payload.last_guidance === "string"
+                  ? payload.last_guidance
+                  : typeof payload.guidance_text === "string"
+                    ? payload.guidance_text
+                    : previousAi.last_guidance,
+              reflex_bypass:
+                typeof payload.reflex_bypass === "boolean"
+                  ? payload.reflex_bypass
+                  : previousAi.reflex_bypass,
+              llm_verified:
+                typeof payload.llm_verified === "boolean"
+                  ? payload.llm_verified
+                  : previousAi.llm_verified,
+              llm_retry_count:
+                typeof payload.llm_retry_count === "number"
+                  ? payload.llm_retry_count
+                  : previousAi.llm_retry_count,
             };
 
             return {
@@ -469,11 +539,106 @@ export function useMonitorStream(streamUrl?: string) {
    * 담당자가 직접 system_metrics, risk_event, session_status 샘플을 만들어 applyEvent에 넣습니다.
    */
   function injectDemoEvents() {
+    /*
+     * 발표/면접 대응 포인트:
+     * - 아래 주입 이벤트는 CONSOLE_DEMO_OR_EXTENDED_EVENTS 화면 검증용 샘플입니다.
+     * - connection_established만 실제 SSE 최초 연결 이벤트와 이름이 같고,
+     *   나머지는 "현재 콘솔에서 이렇게 쓰고 있다"는 데모 계약으로 봐야 합니다.
+     */
     applyEvent({
       event_type: "connection_established",
       timestamp: new Date().toISOString(),
       payload: { status: "ok" },
+    });
 
+    applyEvent({
+      event_type: "system_metrics",
+      timestamp: new Date().toISOString(),
+      payload: {
+        gpu_usage_pct: 41,
+        memory_used_mb: 6144,
+        current_provider: "ollama(gemma4-e4b)",
+        network_rtt_ms: 74,
+        queue_depth: 3,
+        dropped_frames: 1,
+      },
+    });
+
+    applyEvent({
+      event_type: "session_status",
+      timestamp: new Date().toISOString(),
+      payload: {
+        device_id: "ios-demo-01",
+        platform: "ios",
+        status: "connected",
+        rtt_ms: 68,
+      },
+    });
+
+    applyEvent({
+      event_type: "detection_event",
+      timestamp: new Date().toISOString(),
+      payload: {
+        event_id: "det-demo-001",
+        device_id: "ios-demo-01",
+        stream: "cognitive",
+        class_name: "bollard",
+        confidence: 0.93,
+        inference_ms: 47,
+        surface: "sidewalk",
+      },
+    });
+
+    applyEvent({
+      event_type: "risk_event",
+      timestamp: new Date().toISOString(),
+      payload: {
+        event_id: "risk-demo-001",
+        risk_level: "mid",
+        class_name: "bollard",
+        confidence: 0.93,
+        direction: "left",
+        guidance_text: "왼쪽 볼라드 우회",
+      },
+    });
+
+    applyEvent({
+      event_type: "llm_status",
+      timestamp: new Date().toISOString(),
+      payload: {
+        llm_provider: "ollama(gemma4-e4b)",
+        llm_verified: true,
+        llm_retry_count: 0,
+      },
+    });
+
+    applyEvent({
+      event_type: "rag_result",
+      timestamp: new Date().toISOString(),
+      payload: {
+        rag_query: "bollard avoidance",
+        rag_score: 0.88,
+        guidance_text: "왼쪽 볼라드 우회",
+        reflex_bypass: true,
+      },
+    });
+
+    applyEvent({
+      event_type: "tts_status",
+      timestamp: new Date().toISOString(),
+      payload: {
+        tts_engine: "piper",
+        tts_status: "ok",
+        last_guidance: "왼쪽 볼라드 우회",
+      },
+    });
+
+    applyEvent({
+      event_type: "stt_status",
+      timestamp: new Date().toISOString(),
+      payload: {
+        stt_status: "idle",
+      },
     });
   }
 
