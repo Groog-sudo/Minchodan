@@ -70,3 +70,19 @@
   - `minchodan_app`, `ON DELETE CASCADE`, `disability_grade`, `login_id`, `ws_token_hash` 등 과거 초안 키워드 잔존 여부 검색 완료
   - `minchodan_db`, `DB_*`, `server/db`, `ON DELETE RESTRICT` 기준 반영 여부 검색 완료
   - `git diff --check` 통과
+
+---
+
+### 2026-07-08 | DB | MariaDB 연결 정보 환경 변수 로드 전환
+
+- **커밋**: `db: 환경변수 기반 MariaDB 연결 설정`
+- **변경 내용**:
+  - `server/db/connection.py`의 MariaDB 비동기 접속 문자열 하드코딩을 제거하고 루트 `.env`의 `DB_*` 값을 조합해 사용하도록 변경했습니다.
+  - `mysql+aiomysql` 기반 비동기 SQLAlchemy 엔진 설정은 유지하면서 `pool_pre_ping=True`, `pool_recycle=3600`, `expire_on_commit=False` 세션 팩토리 구성을 보존했습니다.
+  - DB 연결에 필요한 런타임 의존성 항목을 `requirements.txt`의 고정 버전 목록에 정리했습니다.
+- **관련 파일**: `server/db/connection.py`, `requirements.txt`
+- **검증 결과**:
+  - `.venv/bin/python -m py_compile server/db/connection.py` 통과
+  - `.venv/bin/python -c "import server.db.connection as c; ..."` 기반 import 검증 통과
+  - SQLAlchemy 엔진 URL은 비밀번호 마스킹 상태로 `mysql+aiomysql` 형식 확인
+  - `git diff --check` 통과

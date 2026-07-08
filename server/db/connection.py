@@ -1,4 +1,21 @@
 import sys
+# ============================
+import os
+from dotenv import load_dotenv
+
+# .env 파일의 환경 변수를 시스템 환경 변수로 로드
+# 프로젝트 루트 디렉토리에서 .env 파일을 찾도록 설정
+# load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+load_dotenv()
+
+db_type = os.getenv("DB_TYPE")
+db_host = os.getenv("DB_HOST")
+db_port = os.getenv("DB_PORT")
+db_name = os.getenv("DB_NAME")
+db_user = os.getenv("DB_USER")
+db_password = os.getenv("DB_PASSWORD")
+
+# ===========================
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -23,7 +40,8 @@ from sqlalchemy.ext.asyncio import (
 
 # 2. MariaDB 접속 주소를 정의하세요.
 # (힌트: "mysql+aiomysql://minchodan_team:minCho_0717@100.105.221.31:3306/minchodan_db" 형식입니다)
-DATABASE_URL = "mysql+aiomysql://minchodan_team:minCho_0717@100.105.221.31:3306/minchodan_db"
+#   - 보안을 위해 mariaDB의 접속 정보를 .env 파일에서 로드해서 사용합니다.
+DATABASE_URL = f"mysql+aiomysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 
 # 3. 비동기 엔진을 생성하세요. (면접 단골 질문!)
