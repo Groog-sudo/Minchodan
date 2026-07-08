@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.0 (2026-07-07 TC-WS-007/TC-CAP-010 바이너리 전송 프로토콜 검증 케이스 추가)
+> **버전**: v0.6.1 (2026-07-08 TC-TTS-005 중복 억제가 반사 전송 경로에 미연결이던 결함 수정 및 검증 완료로 상태 갱신 + 2026-07-07 TC-WS-007/TC-CAP-010 바이너리 전송 프로토콜 검증 케이스 추가)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -206,11 +206,12 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-TTS-002 | 단말 재생 성공      | Web Audio `decodeAudioData()` 재생   | 대기 |
 | TC-TTS-003 | 반사 클립 선점 재생 | 인지 음성 중단 후 반사 재생          | 완료 |
 | TC-TTS-004 | high 햅틱 동시 출력 | Haptics 동시 동작                    | 완료 |
-| TC-TTS-005 | 중복 억제           | `setex(suppress:…, 60)` 60초         | 대기 |
+| TC-TTS-005 | 중복 억제           | `setex(suppress:…, 60)` 60초         | 완료 |
 | TC-TTS-006 | TTS 실패 우회       | 기기 내장 TTS로 우회                 | 대기 |
 | TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인              | 완료 |
 
 > **7단계 비고 (2026-07-01)**: `docs/reflex_audio_specification.md`에 근거한 입체 비프음(`audioEngine.ts`) 및 햅틱 엔진(`hapticEngine.ts`) 구현 완료. 반사 경보 수신 시 인지 음성 선점 차단 및 동시 햅틱 피드백 검증 완료.
+> **7단계 비고 (2026-07-08)**: TC-TTS-005 — `AlertSuppressor`(60초 setex)는 구현돼 있었으나 실제 반사 전송 경로(`server/detection/consumer.py`의 `_send_reflex_alert`)에서 호출되지 않아 중복 억제가 실질적으로 동작하지 않던 결함을 발견해 연결. `tests/test_detection.py::TestReflexAlertSuppression` 2건(억제/비억제 각 케이스)으로 검증 완료. **미해결**: `data/reflex_clips/*.mp3` 사전합성 클립 파일 자체가 저장소에 없어(디렉토리 부재) 반사 음성 재생은 여전히 불가능 — 오디오 자산 제작이 필요해 코드 수정 범위 밖.
 
 
 ### 5.9 공통 - 정적 분석 게이트 (코드 품질 검증)

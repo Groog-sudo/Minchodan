@@ -23,6 +23,7 @@ class OrchState(TypedDict, total=False):
     detected_classes: list[str]
     risk_level: Literal["high", "mid", "low"]
     rag_context: str
+    navigation_guidance: str
     positions: list[str]
     guidance_text: str
     direction: Literal["좌", "우", "직진", "정지", ""]
