@@ -60,11 +60,38 @@ VITE_MONITOR_STREAM_URL=http://localhost:8000/api/v1/monitor/stream
 
 | 화면 | 상태 |
 | --- | --- |
-| SSE 연결 상태 | 스캐폴드 |
-| SystemMetrics 카드 | 스캐폴드 |
-| RiskEventLog 테이블 | 스캐폴드 |
-| SessionStatus 단말 목록 | 스캐폴드 |
-| DetectionFeed 텍스트 메타데이터 | 스캐폴드 |
+| SSE 연결 상태 | 구현 완료 |
+| SystemMetrics 카드 | 구현 완료 |
+| RiskEventLog 테이블 | 구현 완료 |
+| SessionStatus 단말 목록 | 구현 완료 |
+| DetectionFeed 텍스트 메타데이터 | 구현 완료 |
+| AI Pipeline Monitor | 구현 완료 |
+| 샘플 이벤트 주입 버튼 | 구현 완료 |
+
+---
+
+## 현재 상태
+
+| 항목 | 설명 |
+| --- | --- |
+| 1차 화면 구성 | 운영자 콘솔 5개 패널과 SSE 연결 상태 라인이 동작합니다. |
+| 샘플 시연 | 백엔드가 꺼져 있어도 버튼 한 번으로 각 패널을 채워 발표/데모가 가능합니다. |
+| 실데이터 연동 | `/api/v1/monitor/stream` 구독 구조는 연결되어 있으나, 실제 SSE 이벤트명과 payload 필드는 최종 정합 검증이 남아 있습니다. |
+| 하드코딩 원칙 | `useMonitorStream.ts`의 이벤트 분기와 상태 설계는 TH 직접 설명 가능 영역으로 유지합니다. |
+
+---
+
+## 백엔드 이벤트 근거
+
+| 콘솔 이벤트 | 현재 코드 근거 | 상태 |
+| --- | --- | --- |
+| `connection_established` | `server/api/monitor.py`에서 SSE 연결 직후 직접 전송 | 실제 확인 |
+| `ping` | `server/api/monitor.py`에서 1초 timeout keep-alive로 직접 전송 | 실제 확인 |
+| `gpu_status` 등 MCP 메트릭 | `server/mcp/manager.py`가 Redis Stream `mcp:metrics`의 `event_type`을 중계 | producer 추가 확인 필요 |
+| `risk_event`, `detection_event` | `useMonitorStream.ts` 데모 이벤트 및 화면 확장 계약 | 실제 SSE producer 추가 확인 필요 |
+| `llm_status`, `rag_result`, `tts_status`, `stt_status` | `useMonitorStream.ts` 데모 이벤트 및 AI Pipeline Monitor 표시 계약 | 실제 SSE producer 추가 확인 필요 |
+
+`server/api/ws_router.py`와 `server/detection/consumer.py` 기준 실제 단말 WebSocket 메시지는 `welcome`, `auth_ok`, `ack`, `reflex_alert`, `guide`가 확인됩니다. 이 메시지는 모바일 단말용 WS 계약이며, 현재 콘솔 SSE 이벤트명과는 별도입니다.
 
 ---
 
