@@ -143,6 +143,16 @@
 
 ---
 
+### 2026-07-09 | 3단계 | YOLO 가중치 폴백 경로 및 surface-only 인지 발행 보강
+
+- **변경 내용**:
+  - `server/detection/config.py`에서 `DETECTOR_TYPE=yolo`일 때 우선 커스텀 경로(`det_best_20260705.pt`, `segbest.pt`)를 보고, 해당 파일이 없으면 현재 워크스페이스에 실제 존재하는 `object_detection.pt`, `segmentation.pt`로 한 번 더 폴백하도록 보강했습니다.
+  - `server/detection/detection_pipeline.py`와 `server/bus/producer.py`에서 탐지 박스 없이 노면 분할 결과만 있는 `mid/low` 프레임도 Redis `risk.events`로 발행되게 연결했습니다.
+  - `tests/test_detection.py`에 `surface-only mid` 이벤트 발행 회귀 테스트를 추가했습니다.
+- **관련 파일**: `server/detection/config.py`, `server/detection/detection_pipeline.py`, `server/bus/producer.py`, `tests/test_detection.py`
+
+---
+
 ### 2026-07-01 | 3단계 | YOLO Segmentation 모델 학습(RTX 5090) 백그라운드 실행
 
 - **상태**: `진행 중`

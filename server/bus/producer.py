@@ -12,7 +12,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from server.bus.redis_client import RedisBus, redis_bus
 
 if TYPE_CHECKING:
-    from server.detection.schemas import Detection
+    from server.detection.schemas import Detection, SurfaceResult
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,26 @@ class RiskEventProducer:
             "speed": str(detection.speed or 0.0),
             "direction": detection.direction or "unknown",
             "risk": risk_hint,
+            "timestamp": str(time.time()),
+        }
+        return await self.bus.publish_event(self.stream, payload)
+
+    async def publish_surface(
+        self,
+        event_id: str,
+        surface: SurfaceResult,
+        risk_hint: str,
+    ) -> str | None:
+        payload: dict[str, Any] = {
+            "event_id": event_id,
+            "track_id": "surface",
+            "class_name": surface.class_name,
+            "confidence": "1.0",
+            "bbox": "",
+            "speed": "0.0",
+            "direction": "front",
+            "risk": risk_hint,
+            "surface_centroid": json.dumps(surface.centroid),
             "timestamp": str(time.time()),
         }
         return await self.bus.publish_event(self.stream, payload)

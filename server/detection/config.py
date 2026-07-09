@@ -31,6 +31,15 @@ def resolve_path(path: str) -> str:
     return os.path.join(project_root, path)
 
 
+def _resolve_existing_path(primary_path: str, fallback_paths: list[str]) -> str | None:
+    candidates = [primary_path, *fallback_paths]
+    for candidate in candidates:
+        resolved = resolve_path(candidate)
+        if os.path.exists(resolved):
+            return resolved
+    return None
+
+
 def get_yolo_device() -> str:
     try:
         import torch
@@ -61,10 +70,16 @@ def get_detector():
     if _should_use_mock():
         return MockDetector()
 
-    weights_path = resolve_path(YOLO26N_OBJECT_DET)
-    if not os.path.exists(weights_path):
+    weights_path = _resolve_existing_path(
+        YOLO26N_OBJECT_DET,
+        [
+            os.path.join("server", "models", "yolo26n", "object_detection.pt"),
+        ],
+    )
+    if weights_path is None:
         logger.warning(
-            f"[config] Detector 가중치 없음: {weights_path}. 폴백으로 MockDetector를 로드합니다."
+            "[config] Detector 가중치 없음: YOLO26N_OBJECT_DET 및 fallback 경로를 모두 확인했으나 "
+            "실파일을 찾지 못했습니다. 폴백으로 MockDetector를 로드합니다."
         )
         return MockDetector()
     detector: DetectorInterface = YoloDetector(
@@ -89,10 +104,16 @@ def get_segmentor():
     if _should_use_mock():
         return MockSegmentor()
 
-    weights_path = resolve_path(YOLO26N_SEG)
-    if not os.path.exists(weights_path):
+    weights_path = _resolve_existing_path(
+        YOLO26N_SEG,
+        [
+            os.path.join("server", "models", "yolo26n", "segmentation.pt"),
+        ],
+    )
+    if weights_path is None:
         logger.warning(
-            f"[config] Segmentor 가중치 없음: {weights_path}. 폴백으로 MockSegmentor를 로드합니다."
+            "[config] Segmentor 가중치 없음: YOLO26N_SEG 및 fallback 경로를 모두 확인했으나 "
+            "실파일을 찾지 못했습니다. 폴백으로 MockSegmentor를 로드합니다."
         )
         return MockSegmentor()
     segmentor: SegmentorInterface = YoloSegmentor(
