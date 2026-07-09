@@ -2,6 +2,7 @@
   {
     "danger_type": "차도 진입 위험",
     "scene_type": "roadway",
+    "risk_level": "high",
     "beep_pattern": {
       "frequency": 2000,
       "duration_ms": 150,
@@ -16,6 +17,7 @@
   {
     "danger_type": "낙상 및 추락 단차 위험",
     "objects": ["stairs", "construction_barrier"],
+    "risk_level": "high",
     "beep_pattern": {
       "frequency": 1800,
       "duration_ms": 100,
@@ -30,6 +32,7 @@
   {
     "danger_type": "바퀴 달린 이동체 돌발 급접근 위험",
     "objects": ["car", "motorcycle", "scooter", "kickboard", "bicycle"],
+    "risk_level": "high",
     "beep_pattern": {
       "frequency": 1500,
       "duration_ms": 100,
@@ -44,6 +47,7 @@
   {
     "danger_type": "돌출 고정 장애물 부딪힘 위험",
     "objects": ["bollard", "parking_meter", "traffic_light"],
+    "risk_level": "mid",
     "beep_pattern": {
       "frequency": 1200,
       "duration_ms": 100,
@@ -58,6 +62,7 @@
   {
     "danger_type": "노면 실족 및 흰지팡이 끼임 위험",
     "objects": ["manhole"],
+    "risk_level": "mid",
     "beep_pattern": {
       "frequency": 900,
       "duration_ms": 80,

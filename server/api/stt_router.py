@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+import asyncio
 import contextlib
 import logging
 import os
@@ -30,6 +30,11 @@ router = APIRouter(prefix="/api/v1/stt", tags=["STT"])
 # [하드 코딩 부분]
 # - 어떤 예외를 어떤 HTTP 상태코드로 매핑할지(400/422/500)는 운영 정책으로 직접 확정한다.
 # - 파일 삭제 시점, 로그 민감정보 정책(원문 비노출), 허용 파일 형식/용량 제한 정책을 직접 확정한다.
+#
+# [2026-07-09 참고] 실제 단말 앱은 이 REST 엔드포인트가 아니라 server/api/ws_router.py의
+# stt_audio WS 메시지(client/src/hooks/useSttRecorder.ts)를 사용한다. 이 라우터는 curl/
+# Postman 등 외부 도구로 STT 서비스만 독립적으로 호출·디버깅할 때 쓰는 용도로 유지한다.
+# 두 경로 모두 동일한 SttService/SttToLlmBridge를 재사용하므로 로직 중복은 없다.
 
 
 class SttGuideResponse(BaseModel):
@@ -112,7 +117,13 @@ async def transcribe_audio(
 
         # 2) STT 서비스는 Path 기반 입력만 받으므로 라우터에서는 변환 없이 위임
         #    (라우터는 I/O 경계, 서비스는 도메인 로직이라는 계층 분리 원칙)
-        return SttService.transcribe_file(saved_path=temp_path, model_name=model_name)
+        # 2026-07-09 정정: transcribe_file()은 동기 블로킹 함수(faster-whisper 추론)라
+        # await 없이 직접 호출하면 처리가 끝날 때까지 프로세스의 단일 이벤트 루프 전체가
+        # 멈춰, 이 요청과 무관한 다른 모든 연결(반사 경보 WS 포함)까지 함께 정지되는 것을
+        # 실측으로 확인했다. asyncio.to_thread로 스레드에 위임해 이벤트 루프를 보존한다.
+        return await asyncio.to_thread(
+            SttService.transcribe_file, saved_path=temp_path, model_name=model_name
+        )
     except KeyError as exc:
         # 모델명 매핑 정책 위반은 클라이언트 입력 오류로 처리(400)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -158,8 +169,10 @@ async def transcribe_and_guide(
         # 1) 업로드 저장
         temp_path = await _save_upload_to_temp(audio)
 
-        # 2) STT 전사 수행
-        stt_result = SttService.transcribe_file(saved_path=temp_path, model_name=model_name)
+        # 2) STT 전사 수행 (2026-07-09: 이벤트 루프 블로킹 방지를 위해 스레드 위임, 위 참조)
+        stt_result = await asyncio.to_thread(
+            SttService.transcribe_file, saved_path=temp_path, model_name=model_name
+        )
 
         # 3) 기존 오케스트레이션 브리지 재사용
         #    (라우터에서 LLM 직접 호출 대신, 도메인 어댑터를 통해 일관된 정책 유지)
@@ -186,7 +199,9 @@ async def transcribe_and_guide(
     except Exception as exc:
         # 브리지/오케스트레이션 계층 오류는 500으로 통일
         logger.error("STT transcribe-and-guide 처리 실패: %s", exc)
-        raise HTTPException(status_code=500, detail="STT 가이드 처리 중 오류가 발생했습니다.") from exc
+        raise HTTPException(
+            status_code=500, detail="STT 가이드 처리 중 오류가 발생했습니다."
+        ) from exc
     finally:
         # 요청 단위 임시 자원 정리
         if temp_path and temp_path.exists():

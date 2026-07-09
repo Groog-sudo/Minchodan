@@ -1,6 +1,6 @@
 import sys
 
-from server.db.models import AdminAccount, AdminLoginAudit
+from server.db.models import AdminAccount, AdminAccountStatus, AdminLoginAudit
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -71,9 +71,26 @@ class AdminService:
     #    뭉뚱그려 에러를 반환했습니다. 해커가 유효한 사번을 유추하는 것을 막기 위한 보안 취약점 방어입니다.
     #    또한 어떤 이유로든 실패하면 Audit(감사) 로그를 무조건 남겨 이상 행동을 추적할 수 있게 했습니다!"
     async def login(self, employee_no: str, password: str) -> TokenResponse:
-        # 💡 [면접 대비 주석 - 꼼수 우회 (Hardcode)]
-        # 프론트엔드 UI 테스트를 위해 DB를 거치지 않고 무조건 통과시키도록 우회해 두었습니다.
-        # 실제 운영에서는 반드시 DB(self.admin_repo.get_by_employee_no) 검증을 거쳐야 합니다!
-        
-        access_token = create_access_token(data={"sub": employee_no, "role": "OPERATOR"})
+        # 2026-07-09 정정: 이전에는 DB 조회/비밀번호 검증 없이 어떤 employee_no/password
+        # 조합이든 무조건 통과시켜 유효한 JWT를 발급하는 우회가 남아있었다(프론트 UI 테스트용
+        # 임시 코드가 그대로 병합됨). 위 힌트 주석에 이미 명시된 대로 실제 DB 검증 경로로 정정한다.
+        admin = await self.admin_repo.get_by_employee_no(employee_no)
+        is_valid = admin is not None and verify_password(password, admin.password_hash)
+
+        # 성공/실패 여부와 무관하게 시도 자체를 감사 로그에 남긴다(이상 행동 추적용).
+        await self.audit_repo.create(AdminLoginAudit(employee_no=employee_no, success=is_valid))
+
+        if not is_valid:
+            # 존재하지 않는 사번과 비밀번호 불일치를 동일한 메시지로 응답해
+            # 유효한 사번을 유추하는 공격(user enumeration)을 방지한다.
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+            )
+
+        if admin.status in (AdminAccountStatus.LOCKED, AdminAccountStatus.DELETED):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Account is locked or deleted"
+            )
+
+        access_token = create_access_token(data={"sub": employee_no, "role": admin.role.value})
         return TokenResponse(access_token=access_token)
