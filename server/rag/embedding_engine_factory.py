@@ -43,7 +43,7 @@ class EmbeddingEngineFactory:
                 # langchain-ollama 패키지 로드
                 from langchain_ollama import OllamaEmbeddings
 
-                ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+                ollama_host = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
                 return OllamaEmbeddings(model=model_name, base_url=ollama_host)
             except Exception as e:
                 print(

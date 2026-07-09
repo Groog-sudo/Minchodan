@@ -91,6 +91,40 @@ class Retriever:
             return ""
 
 
+_default_retriever: "Retriever | None" = None
+
+
+def get_default_retriever() -> "Retriever | None":
+    """
+    모듈 수준 싱글턴. .env의 CHROMA_PATH/CHROMA_COLLECTION/EMBEDDING_MODEL 기준으로
+    Ollama 임베딩 + ChromaDB를 연결한 Retriever를 최초 호출 시 1회 생성해 재사용한다.
+    임베딩/DB 연결 실패 시 None을 반환해 호출부가 fallback으로 우회하도록 한다(비협상 가드).
+    """
+    global _default_retriever
+    if _default_retriever is not None:
+        return _default_retriever
+
+    try:
+        from server.rag.embedding_engine_factory import EmbeddingEngineFactory
+        from server.rag.vector_db_factory import VectorDBFactory
+
+        chroma_path = os.getenv("CHROMA_PATH", "data/chroma_db")
+        collection_name = os.getenv("CHROMA_COLLECTION", "safety_guidelines")
+        embedding_model = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+
+        embeddings = EmbeddingEngineFactory.get_embeddings(
+            provider="ollama", model_name=embedding_model
+        )
+        vector_db = VectorDBFactory.get_vector_db(
+            "chroma", chroma_path, embeddings, collection_name=collection_name
+        )
+        _default_retriever = Retriever(vector_db)
+        return _default_retriever
+    except Exception as e:
+        print(f"[Retriever] 기본 Retriever 초기화 실패 (RAG 미사용으로 진행): {e}")
+        return None
+
+
 if __name__ == "__main__":
     print("retriever.py 스모크 테스트 실행")
 

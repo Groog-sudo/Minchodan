@@ -342,3 +342,32 @@
 - **관련 파일**: `server/stt/stt_config.py`
 - **검증 결과**: 설정 변경 기준으로 `MODEL_NAME_MAP`과 `DEFAULT_REQUEST_MODEL` 정합성 유지 확인
 - **비고**: 현재 커밋 전 상태의 변경 내역 기록이며, 커밋 해시는 확정 후 추가 가능
+
+---
+
+### 2026-07-08 | STT API | STT 전사·가이드 라우터 연결 및 패키지 의존성 보강
+
+- **커밋**: `feat(stt): STT 전사·가이드 라우터 연결 및 패키지 의존성 보강`
+- **변경 내용**:
+  - `server/api/stt_router.py`를 신규 추가해 음성 파일 업로드 기반 `POST /api/v1/stt/transcribe` 와 `POST /api/v1/stt/transcribe-and-guide` 엔드포인트를 구현함
+  - 업로드 파일을 임시 경로로 저장한 뒤 `SttService.transcribe_file()`로 전사하고, 필요 시 `SttToLlmBridge.invoke_existing_llm()`로 기존 오케스트레이션 연결까지 이어지도록 배선함
+  - `server/main.py`에 STT 라우터를 마운트하고 OpenAPI 태그에 STT 섹션을 추가해 API 노출 경로를 정리함
+  - `requirements.txt`에 `faster-whisper` 의존성을 명시해 STT 런타임이 패키지 수준에서 설치 가능하도록 보강함
+- **관련 파일**: `server/api/stt_router.py`, `server/main.py`, `requirements.txt`
+- **검증 결과**: 라우터·메인 마운트·의존성 선언 반영 완료, 실제 음성 업로드 E2E 및 모델 실행 검증은 후속 필요
+- **비고**: STT는 서비스/브리지/라우터의 입구가 생긴 상태이며, 클라이언트 녹음·업로드 경로와 실사용 검증은 아직 남아 있음
+
+---
+
+### 2026-07-08 | STT 연동 및 평가 | navigation 검증, 브리지 주석 정리, Top-5 평가 스크립트 정리
+
+- **커밋**: `feat(stt): navigation 연동 검증, 브리지 주석 정리, Top-5 평가 스크립트 정리`
+- **변경 내용**:
+  - `server/stt/stt_to_llm_bridge.py`에서 STT 입력 정규화, 네비게이션 wake-up/shutdown, 목적지 파싱, POI/route 수립, 오케스트레이션 예외 폴백 흐름에 대해 바이브/하드코딩 주석을 반반 구조로 재정리함
+  - `tests/test_stt_to_llm_bridge_template.py`에 목적지 파싱과 navigation 연동 검증 케이스를 추가해 wake-up, shutdown, 목적지 수립 성공/실패 흐름을 고정 시나리오로 확인하도록 확장함
+  - `scripts/eval_hitrate.py`를 기준 Top-5 hit-rate 평가 스크립트로 정리해 `safety_guidelines.json` 103건 기준의 RAG 평가 루틴을 구성함
+  - `data/safety_guidelines.json`은 33건에서 103건 규모로 확장된 상태를 유지하며, `objects`/`scene_type` 기반 평가 정합성을 확보함
+  - `requirements.txt`에는 `faster-whisper`가 반영되어 STT 실행 의존성 조건을 만족함
+- **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `tests/test_stt_to_llm_bridge_template.py`, `scripts/eval_hitrate.py`, `data/safety_guidelines.json`, `requirements.txt`, `docs/changelogs/jh.md`
+- **검증 결과**: `scripts/eval_hitrate.py` 실행 기준 RAG 평가 루틴 구성 확인, STT 라우터/브리지 연동 코드와 네비게이션 상태 전이 경로 확인 완료. 단, 테스트 실행은 현재 환경에서 `langgraph` 미설치로 수집 단계에서 중단됨
+- **비고**: 이번 항목은 ⑤ navigation 검증을 중심으로 ① RAG 확충, ② 평가 스크립트 정리, ③ STT 의존성 반영, ④ 라우터 마운트 완료 상태까지 함께 묶어 정리한 통합 기록임

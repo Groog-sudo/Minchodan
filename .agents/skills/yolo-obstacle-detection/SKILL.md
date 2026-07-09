@@ -10,8 +10,8 @@ description: |
 
 > **작성일**: 2026-06-24
 > **버전**: v0.3.0 (2026-07-07 실제 파인튜닝 모델 클래스·게이트 기준으로 정정, 온디바이스 추론 경로 각주 추가)
-> **설계 기준**: `docs/minchodan_design_note.md` 3단계 (v1.1 듀얼헤드 + 이중 게이트)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 10, 9, 17.2
+> **설계 기준**: `docs/design/minchodan_design_note.md` 3단계 (v1.1 듀얼헤드 + 이중 게이트)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 10, 9, 17.2
 
 > **2026-07-07 정정 요약**: 최초 계획 시점의 클래스 taxonomy(킥보드/계단, 노면 7클래스)가 실제 파인튜닝 완료 모델과 어긋나 있어 실측 기준으로 정정했다. 실제 모델은 **Object Detection 29클래스**(`det_best_20260705.pt`), **Segmentation 4클래스**(`segbest.pt`, `sidewalk_normal`/`caution`/`roadway`/`braille_normal`)다. 상세 근거: [`docs/ops/model_class_validation_report.md`](../../../docs/ops/model_class_validation_report.md), [`docs/stage-guides/stage3_detection_design.md`](../../../docs/stage-guides/stage3_detection_design.md). 또한 **실제 배포 앱은 이 서버 경로가 아니라 온디바이스(CoreML/TFLite)로 탐지·게이트를 수행**한다(§ 온디바이스 런타임 각주 참조).
 
@@ -357,5 +357,5 @@ class RiskEvent(BaseModel):
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- 아키텍처 설계서: [`docs/architecture.md`](../../../docs/architecture.md) 5.3절
-- 학습 환경 전제: [`docs/architecture.md`](../../../docs/architecture.md) 11절
+- 아키텍처 설계서: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 5.3절
+- 학습 환경 전제: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 11절

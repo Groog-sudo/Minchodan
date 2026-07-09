@@ -16,20 +16,41 @@ export function AiPipelineMonitor({ ai }: { ai: AiPipelineStatus | null }) {
           <>
             <div className="ai-grid">
               <div>
-                <span>LLM</span>
-                <strong>{ai.llm_provider ?? "-"}</strong>
+                <span>LLM(L2)</span>
+                <strong>{ai.llm_provider ?? "대기"}</strong>
               </div>
               <div>
-                <span>RAG</span>
+                <span>RAG (유사도)</span>
                 <strong>{ai.rag_score ?? "-"}</strong>
               </div>
               <div>
-                <span>TTS</span>
-                <strong>{ai.tts_status ?? "-"}</strong>
+                <span>TTS (출력)</span>
+                <strong>{ai.tts_status ?? "대기"}</strong>
               </div>
               <div>
-                <span>STT</span>
-                <strong>{ai.stt_status ?? "-"}</strong>
+                <span>Reflex Bypass</span>
+                {/* 💡 [면접 대비 주석 - 이중 경로 모니터링] 
+                    반사 경로를 탓다면 이 값이 true가 되면. LLM/RAG/TTS 상태는 멈춰 있어야 합니다. */}
+                <strong>
+                  {typeof ai.reflex_bypass === "boolean"
+                    ? ai.reflex_bypass
+                    ? " ⚡ 즉시 우회 " : "거침"
+                    : "-"}
+                </strong>
+              </div>
+              <div>
+                <span>LLM Verified</span>
+                <strong>
+                  {typeof ai.llm_verified === "boolean"
+                    ? ai.llm_verified
+                      ? "true"
+                      : "false"
+                    : "-"}
+                </strong>
+              </div>
+              <div>
+                <span>Retry</span>
+                <strong>{ai.llm_retry_count ?? "-"}</strong>
               </div>
             </div>
             <div className="guidance-line">

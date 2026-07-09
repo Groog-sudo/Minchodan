@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-08
-> **버전**: v0.4.2 (2026-07-08 §2.5 YOLO26N_OBJECT_DET/SEG 기본값을 실제 학습 가중치 기준으로 정정, DETECTOR_TYPE이 코드에서 읽히지 않는 죽은 변수임을 명시 + 2026-07-07 kb/jy 병합: Slack 인증 방식 재정정(Bot Token이 실제 사용됨), TTS_ENGINE 실제값(piper), 코드에만 있고 문서 누락됐던 변수 6종 추가, GOOGLE_API_KEY/.env.example 불일치 명시 + 2026-07-06 jy 교차 검증(NGROK_AUTHTOKEN 및 DB 환경 변수 정합) 통합)
+> **수정일**: 2026-07-09
+> **버전**: v0.4.6 (2026-07-09 문서 정합성 점검: `DATA_REFLEX_CLIPS`가 코드에서 소비되지 않는 죽은 변수임을 확인해 미사용(폐기)으로 정정 + 이전 v0.4.5 이력 유지)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -34,8 +34,8 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`CHROMA_PATH`** | path | 필수(설계상) | `data/chroma_db` | ChromaDB persist 디렉토리 (로컬 파일 기반). **2026-07-07 현황**: `.env.example`에는 정의돼 있으나 `vector_db_factory.py`/`retriever.py`가 아직 이 변수를 `os.getenv`로 읽지 않는다(명시적 경로/인스턴스 인자로만 동작) — `docs/stage-guides/stage4_5_data_replacement_guide.md` §2.4 참조 | [`architecture.md`](architecture.md) 2절 |
-| **`CHROMA_COLLECTION`** | string | 필수(설계상) | `minchodan_kb` | ChromaDB 컬렉션명 (보행 수칙 지식베이스). 위와 동일하게 아직 코드에서 소비되지 않음 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.5절 |
+| **`CHROMA_PATH`** | path | 필수(설계상) | `data/chroma_db` | ChromaDB persist 디렉토리 (로컬 파일 기반). **2026-07-08 정정**: `server/rag/retriever.py`의 `get_default_retriever()`가 `os.getenv("CHROMA_PATH", "data/chroma_db")`로 읽어 실시간 인지 가이드 파이프라인에 실제 연결됨(이전에는 미소비 상태였음) | [`architecture.md`](architecture.md) 2절 |
+| **`CHROMA_COLLECTION`** | string | 필수(설계상) | `safety_guidelines` | ChromaDB 컬렉션명 (보행 수칙 지식베이스). **2026-07-08 정정**: 기존 `.env`/`.env.example` 기본값(`bidding_kb`/`minchodan_kb`)이 실제 저장된 컬렉션명과 달라 RAG 검색이 항상 미적중이었음. 실제 데이터가 적재된 컬렉션명(`safety_guidelines`)으로 정정하고 `get_default_retriever()`에서 소비하도록 연결 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.5절 |
 
 ### 2.3 Redis (이벤트 버스·MCP 메트릭)
 
@@ -52,6 +52,7 @@
 | **`HEARTBEAT_INTERVAL`** | int | 선택 | (코드 기본값) | 하트비트 송신 주기(초). `server/api/config.py` (2026-07-07 추가 — 기존 명세서에 누락돼 있었음) | `server/api/config.py:30` |
 | **`HEARTBEAT_TIMEOUT`** | int | 선택 | (코드 기본값) | 하트비트 미수신 타임아웃(초) | `server/api/config.py:31` |
 | **`MAX_RECONNECT_ATTEMPTS`** | int | 선택 | (코드 기본값) | 서버 측 재연결 허용 횟수 | `server/api/config.py:32` |
+| **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-09 정정**: 필드는 존재했으나 `server/main.py`가 소비하지 않고 `allow_origins=["*"]`로 고정돼 있던 문제를 연결. 프로덕션 배포 시 반드시 콘솔 실제 도메인으로 override | `server/api/config.py`, `server/main.py` |
 | **`JWT_SECRET_KEY`** | string | 선택 | (코드 기본값) | 관리자/유저 인증 JWT 서명 키 (2026-07-07 추가 — `.env.example`에도 없어 실서비스 배포 전 반드시 별도 설정 필요) | `server/db/security.py:19` |
 
 ### 2.5 탐지 설정 (3단계 Detection)
@@ -71,8 +72,9 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`TTS_ENGINE`** | string | 필수 | `piper` | TTS 엔진. **2026-07-07 정정**: `piper`만 실제 지원(`kokoro`/`coqui` 미구현, 지정 시 경고 로그 후 piper로 강제 폴백). 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
-| **`PIPER_BINARY_PATH`** | path | 선택 | (코드 기본값) | Piper ONNX 실행 바이너리 경로 (2026-07-07 추가) | `server/tts/tts_service.py:103` |
-| **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | (코드 기본값) | Piper 발화 속도 스케일 범위 (2026-07-07 추가) | `server/tts/tts_service.py:104-105` |
+| **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부. **2026-07-09 추가**: 상주 프로세스화(아래 참고)로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
+| **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위 | `server/tts/tts_service.py` |
+| **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.9` | 인지 경로 실시간 합성 기본 속도. **2026-07-08 추가**: 모델 원 설정(`phoneme_type=pygoruut`)을 실제로 지원하지 않는 `piper-tts==1.4.2`에서 발생한 속도 이상(정상 대비 약 2.5~3배 느림)을 `pygoruut` 사전 음소화 도입으로 해소한 뒤의 정상 범위 값 | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
 
 ### 2.7 데이터 경로 (4단계 RAG 빌드·7단계 반사 클립)
 
@@ -82,7 +84,7 @@
 | **`DATA_FRAMES`** | path | 필수 | `data/frames` | 1fps 추출 프레임 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_DEDUPED`** | path | 필수 | `data/deduped` | pHash 중복 제거 후 프레임 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_CAPTIONS`** | path | 필수 | `data/captions` | 캡셔닝 결과 JSON (Llava 또는 Gemini API 사용에 따라 동일 경로에 저장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
-| **`DATA_REFLEX_CLIPS`** | path | 필수 | `data/reflex_clips` | 사전합성 반사 음성 클립 (alert_id별 MP3) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.7절 |
+| **`DATA_REFLEX_CLIPS`** | path | 미사용(폐기) | `data/reflex_clips` | **2026-07-09 정정**: 코드 어디서도 소비되지 않는 죽은 변수. 반사 음성 클립은 서버 `data/`가 아니라 단말 번들(`client/assets/sounds/reflex_clips/`, WAV 5종)로 실제 구현됨 | [`reflex_audio_specification.md`](../design/reflex_audio_specification.md) §4 |
 
 ### 2.8 Slack Integration (공통 경보)
 

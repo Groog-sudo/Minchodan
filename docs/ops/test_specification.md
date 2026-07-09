@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.1 (2026-07-08 TC-TTS-005 중복 억제가 반사 전송 경로에 미연결이던 결함 수정 및 검증 완료로 상태 갱신 + 2026-07-07 TC-WS-007/TC-CAP-010 바이너리 전송 프로토콜 검증 케이스 추가)
+> **버전**: v0.6.2 (2026-07-09 반사 클립 파일 부재 미해결 항목 해소로 상태 갱신, STT 종단 연결 완료 반영 + 이전 v0.6.1 이력 유지)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -41,7 +41,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 - 부하 테스트
 - 보안 취약점 진단
 - 셀룰러/실환경 on-device 반사 레이어 (post-MVP)
-- 사용자 음성 명령(STT) 경로 (본 골격 범위 밖)
+- ~~사용자 음성 명령(STT) 경로 (본 골격 범위 밖)~~ **2026-07-09 정정**: 7단계 골격 범위 밖이라는 서술은 유효하나, 실제로 STT는 2026-07-09에 `server/api/ws_router.py`의 `stt_audio` 핸들러로 종단 연결 및 실기동 검증까지 완료됨. 상세는 §7(변경 이력) 및 `docs/changelogs/kb.md` 참조 — 이 문서의 테스트 케이스 목록에는 아직 별도 TC 미추가
 - 단말 UI 픽셀 단위 디자인 검수
 
 ---
@@ -211,7 +211,9 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인              | 완료 |
 
 > **7단계 비고 (2026-07-01)**: `docs/reflex_audio_specification.md`에 근거한 입체 비프음(`audioEngine.ts`) 및 햅틱 엔진(`hapticEngine.ts`) 구현 완료. 반사 경보 수신 시 인지 음성 선점 차단 및 동시 햅틱 피드백 검증 완료.
-> **7단계 비고 (2026-07-08)**: TC-TTS-005 — `AlertSuppressor`(60초 setex)는 구현돼 있었으나 실제 반사 전송 경로(`server/detection/consumer.py`의 `_send_reflex_alert`)에서 호출되지 않아 중복 억제가 실질적으로 동작하지 않던 결함을 발견해 연결. `tests/test_detection.py::TestReflexAlertSuppression` 2건(억제/비억제 각 케이스)으로 검증 완료. **미해결**: `data/reflex_clips/*.mp3` 사전합성 클립 파일 자체가 저장소에 없어(디렉토리 부재) 반사 음성 재생은 여전히 불가능 — 오디오 자산 제작이 필요해 코드 수정 범위 밖.
+> **7단계 비고 (2026-07-08)**: TC-TTS-005 — `AlertSuppressor`(60초 setex)는 구현돼 있었으나 실제 반사 전송 경로(`server/detection/consumer.py`의 `_send_reflex_alert`)에서 호출되지 않아 중복 억제가 실질적으로 동작하지 않던 결함을 발견해 연결. `tests/test_detection.py::TestReflexAlertSuppression` 2건(억제/비억제 각 케이스)으로 검증 완료.
+>
+> **2026-07-09 해소**: 위에서 미해결로 남겼던 반사 클립 파일 부재 문제를 해소했다. `data/reflex_clips/*.mp3`(서버 경유)가 아니라 `client/assets/sounds/reflex_clips/*.wav`(단말 번들) 방식으로 실제 구현: macOS `say`로 한국어 임시 음성 5종을 생성해 번들하고 `audioEngine.playReflexClip()`/`useWebSocket.ts` reflex_alert 핸들러에 연결. 조사 중 `reflex_gate.py`의 `alert_id`(클래스명 포함)와 `clip`(direction 기준)이 애초부터 다른 값이었고, `reflex_clip_sender.py`의 `REFLEX_CLIP_MAP`이 실제로는 어디서도 호출되지 않는 죽은 코드였음도 함께 확인·정정. 상세는 `docs/changelogs/kb.md`(2026-07-09) 참조. 실기기 청취(음질) 검증은 아직 미완.
 
 
 ### 5.9 공통 - 정적 분석 게이트 (코드 품질 검증)

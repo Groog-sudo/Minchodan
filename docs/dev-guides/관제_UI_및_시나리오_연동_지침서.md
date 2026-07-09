@@ -12,7 +12,7 @@
 
 앱 실행 초기에는 기존 객체 탐지 기능만 동작하여 사용 불필요 시 네비게이션이 개입하지 않으며, 사용자의 음성 명령(Wake-up)에 따라 대화식으로 기능이 켜고 꺼집니다.
 
-* **초기 상태 (IDLE)**: 
+* **초기 상태 (IDLE)**:
   * YOLO 객체 탐지 모드로만 단독 작동합니다.
 * **기능 시작 요청 (Wake-up)**:
   * 사용자가 아이폰 마이크에 대고 **"네비게이션 켜줘"** 혹은 **"길안내 시작해줘"**라고 말하면, 시스템이 이를 감지하여 목적지 입력을 대기하는 상태(`WAITING_FOR_DESTINATION`)로 전환합니다.
@@ -45,8 +45,8 @@ import React from 'react';
 const OperatorLiveMap = () => {
   return (
     <div style={{ width: '100%', height: '100%', minHeight: '450px' }}>
-      {/* 
-        8000번 메인 서버 및 ngrok 터널 주소 하위의 서브앱 경로(/navigation)를 
+      {/*
+        8000번 메인 서버 및 ngrok 터널 주소 하위의 서브앱 경로(/navigation)를
         관제 콘솔 내에 iframe으로 임베딩하여 연동을 완료합니다.
       */}
       <iframe

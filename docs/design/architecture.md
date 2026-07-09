@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-07-07 §6.3 2단계 인터페이스를 바이너리 전송 기준으로 갱신)
+> **버전**: v0.3.1 (2026-07-09 반사 클립 저장 위치를 서버 data/reflex_clips/(MP3)에서 실제 구현인 client/assets/sounds/reflex_clips/(WAV, 단말 번들)로 정정)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -101,7 +101,7 @@ graph TD
 
     subgraph Data ["Data & Storage"]
         Chroma[("ChromaDB<br/>(data/chroma_db)")]
-        Clips[("reflex_clips/<br/>사전합성 MP3")]
+        Clips[("client/assets/sounds/reflex_clips/<br/>사전합성 WAV, 단말 번들<br/>(2026-07-09: 서버 data/ 경유 아님)")]
         Models[("models/<br/>Yolo 26N - Object Detection<br/>Yolo 26N - Segmentation 가중치")]
     end
 
@@ -185,7 +185,7 @@ graph TD
 | `data/deduped/`                               | pHash 중복 제거 후 프레임                                                  | 4    |
 | `data/captions/`                              | Llava 캡셔닝 결과 JSON                                                     | 4    |
 | `data/chroma_db/`                             | ChromaDB persist 디렉토리                                                  | 4    |
-| `data/reflex_clips/`                          | 사전합성 반사 음성 클립 (alert_id별 MP3)                                   | 7    |
+| `client/assets/sounds/reflex_clips/`          | 사전합성 반사 음성 클립 5종(WAV, direction/유형 기준). **2026-07-09 정정**: 최초 설계는 `data/reflex_clips/`(서버측 MP3)였으나 실제로는 단말 번들 방식으로 구현됨(서버는 clip 경로 문자열만 전달) | 7    |
 | `training/`                                   | 모델 학습 (오프라인)                                                       | 3    |
 | `client/src/hooks/useWebSocket.ts`            | WS 연결·hello/welcome 핸드셰이크                                           | 1    |
 | `client/src/hooks/useCamera.ts`               | `useCameraDevice('back')` + 이중 타이머                                    | 2    |

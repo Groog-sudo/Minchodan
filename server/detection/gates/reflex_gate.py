@@ -107,7 +107,9 @@ def reflex_gate(
         event_id="",
         alert_id=alert_id,
         direction=direction,
-        clip=f"reflex_clips/high_{direction}.mp3",
+        # 클라이언트가 client/assets/sounds/reflex_clips/에 동일 파일명으로 번들 재생한다.
+        # (2026-07-09: mp3 인코더 없이 macOS say로 생성 가능한 wav로 확정)
+        clip=f"reflex_clips/high_{direction}.wav",
         haptic=True,
         panning=panning,
         distance=round(distance, 2),
