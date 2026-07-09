@@ -1,10 +1,10 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.1.0 (2026-07-07 §1.1 CUDA 12.8 요건이 requirements.txt/Dockerfile에 실제로 고정되어 있지 않음을 명시)
-> **설계 기준**: docs/ops/deployment_guide.md (v0.2.0)
+> **버전**: v1.2.0 (2026-07-09 Ollama를 Docker 컨테이너가 아닌 호스트 로컬 프로세스로 실행하도록 정정)
+> **설계 기준**: docs/ops/deployment_guide.md (v0.5.0)
 
 # Minchodan AI 모델 및 하드웨어 구성 지침
 
-본 문서는 인공지능 코딩 에이전트와 팀원들이 GPU/CPU 추론 서버 인프라를 셋업할 때 참조할 하드웨어 사양 요건 및 Ollama 탑재 로컬 AI 모델 구성 지침서입니다.
+본 문서는 인공지능 코딩 에이전트와 팀원들이 GPU/CPU 추론 서버 인프라를 셋업할 때 참조할 하드웨어 사양 요건 및 호스트 로컬 Ollama 모델 구성 지침서입니다.
 
 ---
 
@@ -32,27 +32,25 @@ python scripts/verify_gpu.py
 
 ## 2. Ollama 로컬 모델 구성 및 풀링 (Pull)
 
-추론 서버의 LangGraph 오케스트레이터 및 RAG 검색을 위해 Ollama 컨테이너 내부에 총 3개의 AI 모델 패키지를 내려받아 영속 볼륨에 마운트해야 합니다.
+추론 서버의 LangGraph 오케스트레이터 및 RAG 검색을 위해 호스트 로컬 Ollama에 모델 패키지를 내려받아야 합니다. Docker Compose는 Ollama 컨테이너를 만들지 않으며, FastAPI 컨테이너가 `COMPOSE_OLLAMA_BASE_URL`을 통해 호스트 Ollama에 접속합니다.
 
 ### 2.1 모델 패킹 정보 및 용량 명세
 
 | 모델 식별자 (Model Tag) | 모델 계열 및 성격 | 메모리상 로드 용량 | 용도 및 역할 |
 | :--- | :--- | :--- | :--- |
 | **`gemma4:e4b`** | Google Gemma 4세대 Edge 최적화 LLM | **약 9.6 GB** | 6단계 LangGraph의 L2 노드 한국어 가이드 문장 생성 |
-| **`llava`** | 오픈소스 소형 멀티모달 비전 모델(VLM) | **약 4.7 GB** | 4단계 오프라인 데이터 수집 캡셔닝 빌더 (이미지 해석) |
 | **`nomic-embed-text`** | 로컬 768차원 텍스트 임베딩 모델 | **약 274 MB** | 5단계 실기기 RAG 검색 수칙의 벡터 차원 변환 및 정밀도 수치 연산 |
 
+> 현재 4단계 오프라인 캡셔닝은 Gemini API(`gemini-2.5-flash-lite`) 기준입니다. `llava`는 구 로컬 VLM 계획 또는 별도 실험 경로에서만 선택적으로 내려받습니다.
+
 ### 2.2 모델 풀링 및 다운로드 명령어
-도커 컨테이너가 켜진 직후, 호스트의 터미널 창에서 최초 1회 각각 실행하여 다운로드합니다:
+호스트 터미널에서 최초 1회 각각 실행하여 다운로드합니다:
 ```bash
 # gemma4:e4b 모델 (9.6GB) 수신
-docker exec -it minchodan-ollama ollama pull gemma4:e4b
-
-# llava 모델 (4.7GB) 수신
-docker exec -it minchodan-ollama ollama pull llava
+ollama pull gemma4:e4b
 
 # nomic-embed-text 모델 (274MB) 수신
-docker exec -it minchodan-ollama ollama pull nomic-embed-text
+ollama pull nomic-embed-text
 ```
 
 ---
