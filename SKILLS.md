@@ -38,7 +38,7 @@ README를 처음부터 끝까지 읽고 다음을 파악합니다:
 
 ### Step 3: AGENTS.md 읽기
 
-**파일:** [`docs/AGENTS.md`](docs/AGENTS.md)
+**파일:** [`AGENTS.md`](AGENTS.md)
 
 AGENTS.md를 읽고 다음을 숙지합니다:
 
@@ -167,7 +167,7 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 
 - [ ] `README.md` 읽기 완료
 - [ ] `docs/design/minchodan_design_note.md` 읽기 완료
-- [ ] `docs/AGENTS.md` 읽기 완료
+- [ ] `AGENTS.md` 읽기 완료
 - [ ] `docs/dev-guides/llm_collaboration_workflow.md` 읽기 완료
 - [ ] 작업 유형에 맞는 추가 문서 참조 완료
 - [ ] 현재 프로젝트가 GPU/CUDA 환경에서 실행 가능한 상태인지 확인

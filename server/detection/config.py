@@ -18,6 +18,7 @@ YOLO_CONF = float(os.getenv("YOLO_CONF", "0.35"))
 FRAME_SIZE = int(os.getenv("FRAME_SIZE", "640"))
 REFLEX_FPS = int(os.getenv("REFLEX_FPS", "10"))
 COGNITIVE_FPS = int(os.getenv("COGNITIVE_FPS", "2"))
+DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "mock").strip().lower()
 YOLO26N_OBJECT_DET = os.getenv(
     "YOLO26N_OBJECT_DET", os.path.join("server", "models", "yolo26n", "det_best_20260705.pt")
 )
@@ -39,10 +40,26 @@ def get_yolo_device() -> str:
         return "cpu"
 
 
+def _should_use_mock() -> bool:
+    """환경 변수 기준으로 Mock 모드 사용 여부를 결정한다."""
+    if DETECTOR_TYPE == "mock":
+        logger.info("[config] DETECTOR_TYPE=mock - MockDetector/MockSegmentor를 사용합니다.")
+        return True
+    if DETECTOR_TYPE != "yolo":
+        logger.warning(
+            f"[config] 알 수 없는 DETECTOR_TYPE='{DETECTOR_TYPE}'. 안전 폴백으로 mock을 사용합니다."
+        )
+        return True
+    return False
+
+
 def get_detector():
     from server.detection.detector_interface import DetectorInterface
     from server.detection.mock_detector import MockDetector
     from server.detection.yolo_detector import YoloDetector
+
+    if _should_use_mock():
+        return MockDetector()
 
     weights_path = resolve_path(YOLO26N_OBJECT_DET)
     if not os.path.exists(weights_path):
@@ -68,6 +85,9 @@ def get_segmentor():
     from server.detection.detector_interface import SegmentorInterface
     from server.detection.mock_detector import MockSegmentor
     from server.detection.yolo_segmentor import YoloSegmentor
+
+    if _should_use_mock():
+        return MockSegmentor()
 
     weights_path = resolve_path(YOLO26N_SEG)
     if not os.path.exists(weights_path):
