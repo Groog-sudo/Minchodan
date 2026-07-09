@@ -247,35 +247,133 @@ class PiperTTSService(TTSService):
 
 
 # ============================================================
-# [파트 3] get_tts_service() 팩토리 함수
+# [파트 3] SherpaTTSService 클래스
+# - sherpa-onnx Offline TTS (MeloTTS Ko) 엔진 구현체
+# - sherpa-melotts-kr-int8(51MB, MIT) 모델 이용
+# ============================================================
+
+
+class SherpaTTSService(TTSService):
+    """
+    sherpa-onnx MeloTTS 기반 한국어 TTS 서비스.
+    최초 1회만 모델을 메모리에 로드하고, generate 호출 시 마다 온디바이스 WAV 합성을 병렬 위임 처리.
+    """
+
+    def __init__(self) -> None:
+        project_root = Path(root_dir)
+        self.model_dir = project_root / "server" / "models" / "sherpa-onnx"
+        self.model_path = self.model_dir / "model.onnx"
+        self.lexicon_path = self.model_dir / "lexicon.txt"
+        self.tokens_path = self.model_dir / "tokens.txt"
+        self.dict_dir = self.model_dir / "dict"
+
+        self._tts: None | "sherpa_onnx.OfflineTts" = None
+        self._tts_load_lock = asyncio.Lock()
+
+    def _load_tts_sync(self) -> "sherpa_onnx.OfflineTts":
+        import sherpa_onnx
+
+        vits_config = sherpa_onnx.OfflineTtsVitsModelConfig(
+            model=str(self.model_path),
+            lexicon=str(self.lexicon_path),
+            tokens=str(self.tokens_path),
+            data_dir=str(self.dict_dir),
+            noise_scale=0.667,
+            noise_scale_w=0.8,
+            length_scale=1.0,
+        )
+
+        model_config = sherpa_onnx.OfflineTtsModelConfig(
+            vits=vits_config,
+            num_threads=4,
+            debug=False,
+            provider="cpu",
+        )
+
+        tts_config = sherpa_onnx.OfflineTtsConfig(
+            model=model_config,
+            rule_fsts="",
+            max_num_sentences=1,
+        )
+
+        tts = sherpa_onnx.OfflineTts(tts_config)
+        logger.info(f"[SherpaTTS] 상주 OfflineTts 모델 로드 완료: {self.model_path}")
+        return tts
+
+    async def _ensure_tts(self) -> "sherpa_onnx.OfflineTts":
+        if self._tts is not None:
+            return self._tts
+        async with self._tts_load_lock:
+            if self._tts is None:
+                self._tts = await asyncio.to_thread(self._load_tts_sync)
+        return self._tts
+
+    def _synthesize_sync(self, tts: "sherpa_onnx.OfflineTts", text: str, speed: float) -> bytes | None:
+        try:
+            import numpy as np
+
+            audio = tts.generate(text, sid=0, speed=speed)
+            if not audio or len(audio.samples) == 0:
+                logger.error("[SherpaTTS] 음성 합성 샘플 획득에 실패했습니다.")
+                return None
+
+            # float32 리스트 -> 16-bit PCM으로 변환 후 WAV 스트림 생성
+            samples = np.array(audio.samples, dtype=np.float32)
+            samples = np.clip(samples, -1.0, 1.0)
+            int_samples = (samples * 32767).astype(np.int16)
+
+            buffer = io.BytesIO()
+            with wave.open(buffer, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(audio.sample_rate)
+                wav_file.writeframes(int_samples.tobytes())
+
+            return buffer.getvalue()
+        except Exception as e:
+            logger.error(f"[SherpaTTS] 동기 합성 중 에러 발생: {e}")
+            return None
+
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
+        if not text or not text.strip():
+            logger.warning("[SherpaTTS] 빈 텍스트는 합성하지 않습니다.")
+            return None
+
+        if not self.model_path.exists():
+            logger.error(f"[SherpaTTS] 모델 파일이 없습니다: {self.model_path}")
+            return None
+
+        try:
+            tts_obj = await self._ensure_tts()
+            return await asyncio.to_thread(self._synthesize_sync, tts_obj, text, speed)
+        except Exception as e:
+            logger.error(f"[SherpaTTS] generate 에러 발생: {e}")
+            return None
+
+
+# ============================================================
+# [파트 4] get_tts_service() 팩토리 함수
 # - 환경 변수에 따라 어떤 TTS 구현체를 사용할지 결정
-# - 현재 지원: piper (기본)
-# - 클라이언트(react-native-tts) 사용 시에도 이 팩토리는 유지될 수 있음
-#   (단, 이 경우 실제 audio bytes 생성은 클라이언트가 담당)
 # ============================================================
 
 
 def get_tts_service() -> TTSService:
     """
     현재 설정에 맞는 음성 합성 서비스 객체를 만들어서 돌려준다.
-    환경 변수 TTS_ENGINE (piper, 기본 piper)에 따라 결정.
-    docs/environment_variables.md, pipeline_stage_design.md, architecture.md 준수.
+    환경 변수 TTS_ENGINE (기본값: sherpa)에 따라 결정.
     """
+    engine = os.getenv("TTS_ENGINE", "sherpa").lower().strip()
 
-    # ------------------------------------------------------------
-    # [변수] engine : 사용할 TTS 엔진 종류 결정
-    # - os.getenv로 환경 변수 읽기 (기본값 "piper")
-    # - .lower().strip()으로 대소문자/공백 정규화
-    # ------------------------------------------------------------
-    engine = os.getenv("TTS_ENGINE", "piper").lower().strip()
-
-    if engine not in {"", "default", "piper"}:
-        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(piper) 사용.")
+    if engine not in {"", "default", "piper", "sherpa"}:
+        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(sherpa) 사용.")
 
     try:
-        return PiperTTSService()
+        if engine == "piper":
+            return PiperTTSService()
+        else:
+            return SherpaTTSService()
     except Exception as e:
-        logger.error(f"[TTS] PiperTTSService 초기화 실패: {e}")
+        logger.error(f"[TTS] TTS 서비스 초기화 실패 (engine={engine}): {e}")
         return NullTTSService()
 
 
