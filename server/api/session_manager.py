@@ -45,6 +45,20 @@ class SessionManager:
         if ws:
             await ws.send_json(data)
 
+    async def send_bytes(self, device_id: str, data: bytes) -> None:
+        """특정 디바이스에 바이너리(raw bytes) 프레임 송신.
+
+        인지 경로 guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는 대신
+        원본 바이트를 그대로 전송한다(2026-07-09 도입). base64는 페이로드를
+        33% 부풀리고, RN 구 브릿지에서 대용량 문자열을 다루는 경로를 추가로
+        거치게 한다 - 실기기에서 문장 중간 음절이 산발적으로 사라지는 현상의
+        원인 후보를 좁히기 위해, 카메라 프레임 전송(client->server)에 이미
+        적용된 바이너리 프레임 패턴을 반대 방향(server->client)에도 적용한다.
+        """
+        ws = self.active_connections.get(device_id)
+        if ws:
+            await ws.send_bytes(data)
+
     def is_connected(self, device_id: str) -> bool:
         """디바이스 연결 여부 확인."""
         return device_id in self.active_connections

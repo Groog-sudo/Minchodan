@@ -1,7 +1,7 @@
 # Minchodan 파이프라인 단계 설계
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-07-07 §5.3/5.4/5.6/5.7/§6 실제 구현 기준 정정 - 노면 4클래스, Gemini 캡셔닝, 커스텀 LLM 클라이언트, Piper TTS/WAV)
+> **버전**: v0.3.1 (2026-07-09 §5.2 반사 캡처 takePhoto()→Frame Processor 전환, §5.7 TTS 엔진 Piper→Supertonic 교체(Piper는 핫스왑 폴백) 반영 + 이전 v0.3.0 이력 유지)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -86,8 +86,9 @@ graph LR
 ### 5.2 2단계 - 카메라 화면 전송
 
 - **이중 타이머**: 반사 8~10fps / 인지 1~2fps 분리 (v1.1, 충돌 회피)
-- `takePhoto({qualityPrioritization:'speed'})` JPEG base64 `ws.send()`
-- 서버: `base64.b64decode` `np.frombuffer` `cv2.imdecode` `resize(640,640)` ack
+- **2026-07-09 정정**: `takePhoto({qualityPrioritization:'speed'})` 방식은 iOS `AVCapturePhotoOutput`이 촬영마다 오디오 세션을 인터럽트해(실기기 로그로 확인) TTS 안내 음성이 끊기는 근본 원인이었다. 기본 경로를 **Frame Processor**(`useFrameProcessor`, `AVCaptureVideoDataOutput` 기반 연속 스트림)로 전환 - `client/ios/ReflexFrameProcessorPlugin.swift`가 CVPixelBuffer를 크롭/리사이즈/JPEG 인코딩해 base64로 반환, 이후 파이프라인은 무변경. `CAPTURE_ENGINE='takePhoto'`(`client/src/config/capture.ts`)로 구 경로 롤백 가능.
+- raw JPEG bytes → WS 바이너리 프레임(`sendBinary()`, base64 미경유, 2026-07-07 전환)
+- 서버: `decode_frame_binary()` `cv2.imdecode` `resize(640,640)` ack
 - 출력: 640x640 프레임 (3단계 입력)
 
 ### 5.3 3단계 - AI 장애물 실시간 인식 핵심
@@ -120,7 +121,7 @@ graph LR
 
 ### 5.7 7단계 - 음성 안내 출력 (이중 채널)
 
-- **인지**: Piper(`TTS_ENGINE=piper` 기본값, Kokoro/Coqui 미구현) `generate()` base64 **WAV**(MP3 아님) WS Web Audio
+- **인지**: **2026-07-09 정정** - Supertonic(`TTS_ENGINE=supertonic` 기본값, Piper는 핫스왑 폴백, Kokoro/Coqui 미구현) `generate()` **WAV** bytes → WS 바이너리 프레임(base64 미경유) `expo-audio` 상시 재생 웜 플레이어
 - **반사**: 사전합성 고정 클립 `alert_id`로 즉시 재생 (선점, 실시간 합성 금지)
 - 중복 억제 `setex(suppress:…, 60)`, 햅틱 연동
 
@@ -133,7 +134,7 @@ graph LR
 | Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
 | LLM Client | SimpleOllamaClient(gemma4-e4b)      | SimpleOpenAIClient(gpt-4o-mini) | `server/orchestration/llm_client_factory.py` |
 | Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/embedding_engine_factory.py` (Embeddings 추상) |
-| TTS        | Piper                               | (미구현: OpenAI TTS)  | `server/tts/tts_service.py`                  |
+| TTS        | Supertonic (2026-07-09 변경)        | Piper(핫스왑 폴백), (미구현: OpenAI TTS)  | `server/tts/tts_service.py`                  |
 
 ---
 

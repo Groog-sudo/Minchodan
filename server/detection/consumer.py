@@ -6,6 +6,7 @@ DetectionPipeline을 실행한 뒤, 반사 알림은 WebSocket 고우선 채널�
 """
 
 import asyncio
+import base64
 import contextlib
 import logging
 import sys
@@ -287,17 +288,26 @@ class DetectionConsumer:
             self._last_guide_ts[device_id] = send_now
             self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
 
+            # [2026-07-09 도입] guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는
+            # 대신, 메타데이터(JSON) 전송 직후 원본 바이트를 바이너리 프레임으로 이어
+            # 보낸다(카메라 프레임 client->server 전송에 이미 적용된 패턴을 반대
+            # 방향에도 적용). 실기기에서 문장 중간 음절이 산발적으로 사라지는 현상의
+            # 원인 후보(base64 팽창/RN 구 브릿지 대용량 문자열 처리)를 제거하기 위함.
+            audio_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
+
             payload = {
                 "type": "guide",
                 "event_id": result.event_id,
                 "risk_level": result.risk_hint,
                 "guidance_text": guidance_text,
-                "audio_mp3_b64": audio_b64 or "",
                 "audio_codec": "wav",
                 "duration_ms": duration_ms,
+                "transport": "binary" if audio_bytes else "none",
                 "ts": now_ts(),
             }
             await manager.send_json(device_id, payload)
+            if audio_bytes:
+                await manager.send_bytes(device_id, audio_bytes)
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
             )

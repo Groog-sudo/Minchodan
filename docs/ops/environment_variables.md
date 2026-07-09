@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-09
-> **버전**: v0.4.6 (2026-07-09 문서 정합성 점검: `DATA_REFLEX_CLIPS`가 코드에서 소비되지 않는 죽은 변수임을 확인해 미사용(폐기)으로 정정 + 이전 v0.4.5 이력 유지)
+> **버전**: v0.4.7 (2026-07-09 `TTS_ENGINE` 기본값 piper→supertonic 변경, `SUPERTONIC_VOICE`/`SUPERTONIC_MODEL_DIR`/`SUPERTONIC_TOTAL_STEPS` 신규 추가, `PIPER_*` 변수들을 핫스왑 폴백용으로 재정의 + 이전 v0.4.6 이력 유지)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -71,10 +71,13 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TTS_ENGINE`** | string | 필수 | `piper` | TTS 엔진. **2026-07-07 정정**: `piper`만 실제 지원(`kokoro`/`coqui` 미구현, 지정 시 경고 로그 후 piper로 강제 폴백). 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
-| **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부. **2026-07-09 추가**: 상주 프로세스화(아래 참고)로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
-| **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위 | `server/tts/tts_service.py` |
-| **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.9` | 인지 경로 실시간 합성 기본 속도. **2026-07-08 추가**: 모델 원 설정(`phoneme_type=pygoruut`)을 실제로 지원하지 않는 `piper-tts==1.4.2`에서 발생한 속도 이상(정상 대비 약 2.5~3배 느림)을 `pygoruut` 사전 음소화 도입으로 해소한 뒤의 정상 범위 값 | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
+| **`TTS_ENGINE`** | string | 필수 | `supertonic` | TTS 엔진. **2026-07-09 변경**: 실기기 청취 검증 결과 Piper의 발음 품질 한계(흔한 음절 누락)가 확인되어 기본값을 `supertonic`으로 교체. `piper`는 핫스왑 폴백으로 여전히 지정 가능(코드 보존). 그 외 값은 경고 로그 후 supertonic으로 강제 폴백. 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
+| **`SUPERTONIC_VOICE`** | string | 선택 | `F1` | **2026-07-09 신규.** Supertonic 보이스 스타일 이름(`server/models/supertonic` 웹 콘솔 기준 F1~F5/M1~M5 등) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_MODEL_DIR`** | path | 선택 | (미지정, 라이브러리 기본 `~/.cache/supertonic3`) | **2026-07-09 신규.** 명시적으로 지정하지 않는 것을 권장 - `server/models/` 하위로 지정하면 `docker-compose.yml`의 `../server:/app/server` 볼륨 마운트가 빌드 타임에 받아둔 캐시를 컨테이너 시작 시 호스트 쪽 내용으로 덮어써 버린다(pygoruut와 동일 문제) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_TOTAL_STEPS`** | int | 선택 | `8` | **2026-07-09 신규.** 합성 품질/속도 트레이드오프(5=저품질·고속 ~ 12=고품질·저속) | `server/tts/tts_service.py` |
+| **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부(핫스왑 폴백용, `TTS_ENGINE=piper`일 때만 사용). **2026-07-09 정정**: 상주 프로세스화로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
+| **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위(핫스왑 폴백용) | `server/tts/tts_service.py` |
+| **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.9` | Piper 핫스왑 경로 사용 시 기본 속도. **2026-07-08 추가**: 모델 원 설정(`phoneme_type=pygoruut`)을 실제로 지원하지 않는 `piper-tts==1.4.2`에서 발생한 속도 이상(정상 대비 약 2.5~3배 느림)을 `pygoruut` 사전 음소화 도입으로 해소한 뒤의 정상 범위 값 | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
 
 ### 2.7 데이터 경로 (4단계 RAG 빌드·7단계 반사 클립)
 

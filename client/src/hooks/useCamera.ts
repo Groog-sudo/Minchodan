@@ -15,17 +15,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Camera,
   type CameraDevice,
+  type Frame,
+  type FrameProcessorPlugin,
   type PhotoFile,
   useCameraDevice,
   useCameraDevices,
   useCameraPermission,
+  useFrameProcessor,
+  VisionCameraProxy,
 } from "react-native-vision-camera";
+import { useRunOnJS, useSharedValue } from "react-native-worklets-core";
 import * as FileSystem from "expo-file-system/legacy";
 import { File } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
 import { COGNITIVE_FPS, REFLEX_FPS } from "../config";
 import { MOCK_CAMERA } from "../config/mock";
+import { CAPTURE_ENGINE } from "../config/capture";
 import type { StreamType } from "../types/detection";
 import {
   decodeBase64JpegToChw,
@@ -33,6 +39,22 @@ import {
   getFrameProvider,
 } from "../services/frameProvider";
 import { audioEngine } from "../services/audioEngine";
+
+// [2026-07-09 도입] client/ios/ReflexFrameProcessorPlugin.swift 등록명과 반드시 일치해야 한다.
+// 플러그인 인스턴스는 네이티브 리소스(CIContext)를 갖고 있어 모듈 스코프에서 1회만 생성한다
+// (컴포넌트 리렌더마다 재생성하면 매번 새 네이티브 인스턴스가 만들어짐).
+const reflexFrameProcessorPlugin: FrameProcessorPlugin | undefined =
+  CAPTURE_ENGINE === "frameProcessor" && !MOCK_CAMERA
+    ? VisionCameraProxy.initFrameProcessorPlugin("reflexFrameCapture", {})
+    : undefined;
+
+/** base64 문자열을 Uint8Array로 변환한다 (services/realFrameProvider.ts의 동일 패턴). */
+function base64ToUint8(b64: string): Uint8Array {
+  const bin = globalThis.atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 0xff;
+  return bytes;
+}
 
 export interface FrameData {
   float32: Float32Array;
@@ -65,6 +87,10 @@ export interface UseCameraReturn {
   requestCameraPermission: () => Promise<boolean>;
   /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
   reportInferenceLatency: (latencyMs: number) => void;
+  /** true면 <Camera>가 photo 대신 frameProcessor(연속 스트림)로 구동돼야 한다(2026-07-09 도입). */
+  useStreamCapture: boolean;
+  /** useStreamCapture가 true일 때만 값이 있다. <Camera frameProcessor={...}>에 그대로 전달한다. */
+  frameProcessor: ReturnType<typeof useFrameProcessor> | undefined;
 }
 
 export function useCamera(
@@ -90,6 +116,12 @@ export function useCamera(
   const currentIntervalRef = useRef(baseIntervalRef.current);
   const [currentReflexFps, setCurrentReflexFps] = useState(reflexFps);
 
+  // 프레임 프로세서(worklet) 경로용 SharedValue. worklet(별도 JS 컨텍스트)과 메인
+  // JS 스레드 간 상태 공유는 SharedValue로만 안전하다(일반 useRef는 worklet에서
+  // 최신값을 보장하지 못함). currentIntervalRef가 갱신될 때마다 함께 갱신한다.
+  const intervalSharedValue = useSharedValue(currentIntervalRef.current);
+  const lastCaptureTsShared = useSharedValue(0);
+
   const reportInferenceLatency = useCallback((latencyMs: number) => {
     if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
     const base = baseIntervalRef.current;
@@ -106,12 +138,13 @@ export function useCamera(
 
     if (next !== cur) {
       currentIntervalRef.current = next;
+      intervalSharedValue.value = next;
       setCurrentReflexFps(Math.round(1000 / next));
       console.log(
         `[Camera] 동적 FPS 조절: 반사 간격 ${cur}ms -> ${next}ms (추론 지연=${latencyMs.toFixed(1)}ms)`,
       );
     }
-  }, []);
+  }, [intervalSharedValue]);
 
   const effectivePermission = isMockMode ? true : hasPermission;
 
@@ -161,7 +194,12 @@ export function useCamera(
     [],
   );
 
-  const captureRealFrame = useCallback(
+  // takePhoto() 기반 캡처 (구 경로, CAPTURE_ENGINE='takePhoto' 롤백용으로 보존).
+  // AVCapturePhotoOutput.capturePhoto()가 촬영마다 AVAudioSessionInterruption을 유발해
+  // 동시 재생 중인 TTS 안내 음성이 끊기는 결함이 실기기에서 확인됐다(2026-07-09,
+  // client/src/config/capture.ts 주석 참조). 기본 경로는 captureRealFrameStream(프레임
+  // 프로세서)이며, 문제가 재현되면 CAPTURE_ENGINE만 바꿔 이 경로로 즉시 원복할 수 있다.
+  const captureRealFramePhoto = useCallback(
     async (stream: StreamType): Promise<FrameData | null> => {
       if (!cameraRef.current) {
         console.warn(`[Camera/Real] ${stream} 캡처 실패: cameraRef 없음`);
@@ -241,9 +279,60 @@ export function useCamera(
   );
 
 
-  const captureFrame = isMockMode ? captureMockFrame : captureRealFrame;
+  const captureFrame = isMockMode ? captureMockFrame : captureRealFramePhoto;
+  const useStreamCapture =
+    !isMockMode && CAPTURE_ENGINE === "frameProcessor";
 
-  // ---- 캡처 루프 ----
+  // ---- 프레임 프로세서 캡처 (신 경로, 기본값) ----
+  const streamFrameCounterRef = useRef(0);
+
+  // worklet에서 runOnJS로 넘어온 base64를 FrameData로 조립해 반사/인지 경로에 전달한다.
+  // captureRealFramePhoto와 동일한 반사+N번째 인지 재전달 규칙을 유지한다(재캡처 없음).
+  const handleStreamFrameBase64 = useRunOnJS((base64: string) => {
+    if (!onFrameRef.current || !base64) return;
+    streamFrameCounterRef.current++;
+
+    const jpegBytes = base64ToUint8(base64);
+    const frame: FrameData = {
+      float32: new Float32Array(0),
+      stream: "reflex",
+      base64,
+      jpegBytes,
+    };
+
+    if (!audioEngine.isGuidePlaying) {
+      console.log(
+        `[Camera/Stream] reflex 프레임 수신: JPEG bytes=${jpegBytes.length} base64len=${base64.length}`,
+      );
+    }
+
+    onFrameRef.current(frame);
+
+    const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
+    if (streamFrameCounterRef.current % ratio === 0) {
+      onFrameRef.current({ ...frame, stream: "cognitive" });
+    }
+  }, [reflexFps, cognitiveFps]);
+
+  // 카메라 전체 fps(예: 30fps)로 호출되므로, 반사 fps 간격(intervalSharedValue)으로
+  // throttle해야 CoreML 추론이 못 따라가는 것을 막는다(동적 fps 조절과 동일한 목적).
+  const frameProcessor = useFrameProcessor(
+    (frame: Frame) => {
+      "worklet";
+      if (reflexFrameProcessorPlugin == null) return;
+      const now = Date.now();
+      if (now - lastCaptureTsShared.value < intervalSharedValue.value) return;
+      lastCaptureTsShared.value = now;
+
+      const result = reflexFrameProcessorPlugin.call(frame);
+      if (typeof result === "string" && result.length > 0) {
+        handleStreamFrameBase64(result);
+      }
+    },
+    [handleStreamFrameBase64],
+  );
+
+  // ---- 캡처 루프 (takePhoto 경로 전용, frameProcessor 경로는 <Camera frameProcessor>가 구동) ----
 
   const startCapture = useCallback(
     (onFrame: (frame: FrameData) => void) => {
@@ -253,7 +342,20 @@ export function useCamera(
 
       baseIntervalRef.current = Math.floor(1000 / reflexFps);
       currentIntervalRef.current = baseIntervalRef.current;
+      intervalSharedValue.value = currentIntervalRef.current;
       setCurrentReflexFps(reflexFps);
+      streamFrameCounterRef.current = 0;
+
+      if (useStreamCapture) {
+        // 프레임 프로세서 경로: <Camera frameProcessor={frameProcessor}>가 이미 프레임을
+        // 지속적으로 공급 중이므로(isCapturing=true가 됨과 동시에 onFrameRef가 유효해져
+        // handleStreamFrameBase64가 실제로 dispatch를 시작), 여기서는 별도 타이머가 필요 없다.
+        console.log(
+          `[Camera] Stream(FrameProcessor) 캡처 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성)`,
+        );
+        return;
+      }
+
       const frameCounter = { current: 0 };
 
       // setInterval 대신 재귀 setTimeout을 사용: 매 tick마다 currentIntervalRef의
@@ -289,7 +391,15 @@ export function useCamera(
         `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성)`,
       );
     },
-    [reflexFps, cognitiveFps, isCapturing, isMockMode, captureFrame],
+    [
+      reflexFps,
+      cognitiveFps,
+      isCapturing,
+      isMockMode,
+      captureFrame,
+      useStreamCapture,
+      intervalSharedValue,
+    ],
   );
 
   const stopCapture = useCallback(() => {
@@ -302,6 +412,7 @@ export function useCamera(
       cognitiveTimerRef.current = null;
     }
     onFrameRef.current = null;
+    streamFrameCounterRef.current = 0;
     setIsCapturing(false);
     console.log("[Camera] 루프 중지");
   }, []);
@@ -328,6 +439,8 @@ export function useCamera(
     stopCapture,
     requestCameraPermission,
     reportInferenceLatency,
+    useStreamCapture,
+    frameProcessor: useStreamCapture ? frameProcessor : undefined,
   };
 }
 

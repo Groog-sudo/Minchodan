@@ -2,19 +2,32 @@
 name: tts-voice-streamer
 description: |
   6단계 LangGraph에서 생성된 최종 안내문을 이중 채널로 출력한다.
-  인지 경로: 로컬 TTS(Piper)로 한글 음성 합성 후 base64 WAV(필드명 audio_mp3_b64)로 WebSocket 전송.
+  인지 경로: 로컬 TTS(Supertonic, 기본)로 한글 음성 합성 후 WS 바이너리 프레임(raw WAV bytes)으로 전송.
   반사 경로: 사전합성 고정 클립을 alert_id로 즉시 재생(선점, 실시간 합성 금지).
-  TTSService 추상화로 출력 규격을 통일한다. 클라이언트 재생은 expo-audio.
+  TTSService 추상화로 출력 규격을 통일한다(Piper는 핫스왑 폴백으로 보존). 클라이언트 재생은 expo-audio.
 ---
 
 # TTS Voice Streamer (7단계: 음성 안내 출력, 이중 채널)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-07-07 실제 구현 기준 정정: 인지 TTS 엔진 Kokoro/Coqui→Piper, 클라이언트 오디오 Web Audio→expo-audio)
-> **설계 기준**: `docs/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16, 17.2
+> **버전**: v0.4.0 (2026-07-09 실기기 TTS 절단 근본 원인 규명에 따른 전면 정정: 인지 TTS 엔진 Piper→Supertonic 교체, `audio_mp3_b64`→WS 바이너리 프레임 전환, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어 도입)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 8, 16, 17.2
 
-> **2026-07-07 정정 요약**: 최초 계획의 인지 TTS 엔진 Kokoro/Coqui는 **실제로 구현되지 않았고, 유일 구현체는 Piper**(`PiperTTSService`, `server/tts/tts_service.py`, `piper-kss-korean.onnx`)다. 오디오 필드명은 `audio_mp3_b64`이나 실제 내용물은 **WAV**다. 클라이언트 재생 계층은 Web Audio API가 아니라 **`expo-audio`**(`createAudioPlayer`, `client/src/services/audioEngine.ts`)이며, 입체 음향(panning)은 저장만 되고 실제 좌우 밸런스에 **미적용**이다. 상세: [`docs/stage-guides/stage7_tts_design.md`](../../../docs/stage-guides/stage7_tts_design.md), [`docs/design/reflex_audio_specification.md`](../../../docs/design/reflex_audio_specification.md).
+> **2026-07-09 정정 요약 (중요, 엔진·전송 방식 모두 변경)**: 실기기 청취 검증 결과 Piper(pygoruut/자체
+> 규칙 기반 G2P/espeak 음소화 모두 시도)가 흔한 음절을 발음에서 통째로 누락시키는 모델 자체 한계가
+> 확인되어, **인지 TTS 기본 엔진을 Supertonic 3**(`SupertonicTTSService`, supertone-inc, MIT
+> 라이선스, 99M 파라미터 ONNX)로 교체했다. `PiperTTSService`는 삭제하지 않고 `TTS_ENGINE=piper`로
+> 즉시 되돌릴 수 있는 핫스왑 폴백으로 코드에 보존된다. 오디오 전송도 `audio_mp3_b64`(base64 JSON
+> 필드)를 폐기하고, 카메라 프레임(client→server)에 이미 쓰이던 메타+바이너리 2단계 WS 프로토콜을
+> 반대 방향(server→client)에 적용했다 - JSON 메타(`transport:"binary"`) 직후 raw WAV 바이트가
+> 별도 바이너리 프레임으로 전송된다. 추가로 iOS Hearing Protection이 재생 "시작" 이벤트마다 볼륨을
+> 제한하는 것을 우회하기 위해, 클라이언트는 매번 새 플레이어를 만들지 않고 무음 placeholder를 상시
+> 재생 중인 단일 플레이어(`guideWarmPlayer`)의 소스만 `player.replace()`로 교체하는 방식으로
+> 전환됐다(반사 비프 상시 루프 플레이어와 동일 원칙). 상세: `docs/changelogs/kb.md`(2026-07-09),
+> [`docs/stage-guides/stage7_tts_design.md`](../../../docs/stage-guides/stage7_tts_design.md).
+
+> **2026-07-07 정정 요약**: 최초 계획의 인지 TTS 엔진 Kokoro/Coqui는 **실제로 구현되지 않았다**(위 2026-07-09 정정으로 Piper도 핫스왑 폴백으로 격하됨). 클라이언트 재생 계층은 Web Audio API가 아니라 **`expo-audio`**(`createAudioPlayer`, `client/src/services/audioEngine.ts`)이다. 입체 음향(panning)은 **2026-07-09 구현 완료**(등파워 패닝, 버킷별 프리렌더링 스테레오 WAV 5종 전환 방식) - 이 절의 "저장만 되고 미적용" 서술은 구버전 정보였다. 상세: [`docs/stage-guides/stage7_tts_design.md`](../../../docs/stage-guides/stage7_tts_design.md), [`docs/design/reflex_audio_specification.md`](../../../docs/design/reflex_audio_specification.md) §4.
 
 ## 개요
 
@@ -35,7 +48,7 @@ description: |
 ```
 [6단계 LangGraph]  guidance_text
 
-[7-인지] 로컬 TTS(Piper) generate()  base64 WAV(필드명 audio_mp3_b64)  WS 스트리밍  단말 expo-audio 재생
+[7-인지] 로컬 TTS(Supertonic, 기본/Piper 핫스왑) generate()  WAV bytes  WS 바이너리 프레임(transport:"binary")  단말 expo-audio 재생(상시 재생 웜 플레이어)
 
 [3단계 Gate]  alert_id
 
@@ -49,7 +62,7 @@ description: |
 
 | 구분 | 스택 | 용도 |
 |------|------|------|
-| 로컬 TTS (인지) | **Piper** (piper-kss-korean.onnx) | 실시간 한글 음성 합성 (Kokoro/Coqui는 미구현) |
+| 로컬 TTS (인지) | **Supertonic 3**(기본, MIT, 99M 파라미터 ONNX) / **Piper**(piper-kss-korean.onnx, 핫스왑 폴백) | 실시간 한글 음성 합성 (Kokoro/Coqui는 미구현) |
 | 사전합성 클립 (반사) | WAV 파일 (앱 번들) | 즉시 재생 |
 | 서버 프레임워크 | FastAPI + Uvicorn | WebSocket |
 | 메시지 버스 | Redis SETEX | 중복 억제 (60초) |
@@ -62,10 +75,11 @@ description: |
 
 ```
 server/tts/
-├── realtime_tts.py           # 인지 경로: Piper generate()  base64 WAV
-├── reflex_clip_sender.py     # 반사 경로: alert_id  사전합성 클립 WS 고우선 전송 (구현 완료)
+├── realtime_tts.py           # 인지 경로: TTSService.generate()  base64 WAV(→ consumer.py가 바이너리 프레임으로 재전송)
+├── reflex_clip_sender.py     # 정정: 실제로는 어디서도 호출되지 않는 죽은 코드 (server/detection/consumer.py의 _send_reflex_alert()가 담당)
 ├── suppressor.py             # Redis setex(suppress:…, 60) 중복 억제
-└── tts_service.py            # TTSService 추상화(PiperTTSService), WAV 출력
+├── korean_g2p.py             # 2026-07-09 신규(현재 미사용): Piper용 표준 발음법 G2P, 핫스왑 대비 보존
+└── tts_service.py            # TTSService 추상화(SupertonicTTSService 기본 + PiperTTSService 핫스왑), WAV 출력
 
 client/src/services/
 ├── audioEngine.ts            # expo-audio createAudioPlayer 재생 (인지 음성 + 반사 비프 통합)
@@ -78,7 +92,7 @@ client/assets/reflex_clips/   # 사전합성 클립 앱 번들 (server/data와 �
 
 ### 단계 7-1. 인지 경로: 실시간 TTS 합성
 
-> **정정(2026-07-07)**: 아래 코드는 최초 계획(Kokoro) 기준 설계 스케치다. **실제 구현은 Piper**(`server/tts/tts_service.py`의 `PiperTTSService`)이며 `piper-kss-korean.onnx` ONNX 모델과 `piper` 바이너리(서브프로세스)로 합성한다. 함수 시그니처·엔진 초기화부는 실제 소스를 기준으로 삼는다.
+> **정정(2026-07-09, 이전 2026-07-07 정정 갱신)**: 아래 코드는 최초 계획(Kokoro) 기준 설계 스케치다. **실제 구현 기본값은 Supertonic**(`server/tts/tts_service.py`의 `SupertonicTTSService`, ONNX 상주 세션)이며, `PiperTTSService`(`piper-kss-korean.onnx`, 상주 `PiperVoice` 세션)는 `TTS_ENGINE=piper` 지정 시 쓰이는 핫스왑 폴백으로 코드에 남아있다. 함수 시그니처·엔진 초기화부는 실제 소스를 기준으로 삼는다.
 
 ```python
 # -*- coding: utf-8 -*-
@@ -207,11 +221,17 @@ class TTSService(Protocol):
     async def generate(self, text: str, voice: str, speed: float) -> str: ...
     def get_format(self) -> str: ...
 
-# 실제 구현체는 PiperTTSService 하나뿐이다(KokoroService/CoquiService는 미구현 계획안).
+# 실제 구현체는 SupertonicTTSService(기본)와 PiperTTSService(핫스왑) 2종이다
+# (KokoroService/CoquiService는 미구현 계획안).
+class SupertonicTTSService:
+    """Supertonic 3 ONNX 모델 기반 한국어 TTS (server/tts/tts_service.py, 기본 엔진)"""
+    async def generate(self, text, voice="ko", speed=1.0): ...
+    def get_format(self): return "wav"  # WS 전송 시 base64가 아니라 바이너리 프레임(2026-07-09)
+
 class PiperTTSService:
-    """Piper ONNX 모델 기반 한국어 TTS (server/tts/tts_service.py)"""
+    """Piper ONNX 모델 기반 한국어 TTS (server/tts/tts_service.py, 핫스왑 폴백)"""
     async def generate(self, text, voice="ko", speed=0.9): ...
-    def get_format(self): return "wav"  # 필드명은 audio_mp3_b64이나 실제 내용물은 WAV
+    def get_format(self): return "wav"
 
 class OpenAITTSService:
     """post-MVP: OpenAI TTS 핫스왑"""
@@ -299,7 +319,7 @@ export function announceForAccessibility(text: string) {
 | --- | --- |
 | In (인지) | 가이드 문장(String) |
 | In (반사) | `alert_id` |
-| Out (인지) | 오디오 bytes — base64 WAV(필드명 `audio_mp3_b64`) WS |
+| Out (인지) | 오디오 bytes — raw WAV, WS 바이너리 프레임(2026-07-09, JSON 메타의 `transport:"binary"` 직후) |
 | Out (반사) | 사전합성 클립 경로 — WS 고우선 타입 |
 
 ## 의존성·예외
@@ -311,8 +331,8 @@ export function announceForAccessibility(text: string) {
 
 | 항목 | 기대 결과 | 합격 기준 |
 |------|-----------|-----------|
-| 실시간 TTS 합성 | Piper generate()  base64 WAV | TTFB < 200ms |
-| 단말 재생 성공 | expo-audio createAudioPlayer 재생 | 재생 확인 |
+| 실시간 TTS 합성 | Supertonic generate()  WAV bytes(WS 바이너리 프레임) | TTFB < 200ms |
+| 단말 재생 성공 | expo-audio 상시 재생 웜 플레이어(`playGuideAudioBytes`) 재생 | 재생 확인 |
 | **반사 클립 선점 재생** | 인지 음성 중단 후 반사 재생 | 선목 동작 |
 | high 햅틱 동시 출력 | Haptics 동시 동작 | 진동 확인 |
 | 중복 억제 | setex(suppress:…, 60) 60초 | 60초 내 재전송 없음 |
@@ -322,5 +342,5 @@ export function announceForAccessibility(text: string) {
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md) 4·5절
-- 아키텍처 설계서: [`docs/architecture.md`](../../../docs/architecture.md) 5.7절
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md) 4·5절
+- 아키텍처 설계서: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 5.7절

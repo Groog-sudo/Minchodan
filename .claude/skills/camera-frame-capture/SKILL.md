@@ -9,9 +9,11 @@ description: |
 # Camera Frame Capture (2단계: 카메라 화면 전송)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-07-07 detection 프레임 전송을 base64→바이너리(raw JPEG) 기본으로 정정)
-> **설계 기준**: `docs/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 9, 16, 17.2
+> **버전**: v0.4.0 (2026-07-09 반사 캡처 방식을 takePhoto()→Frame Processor로 전환한 근본 원인·구현 내용 정정)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 9, 16, 17.2
+
+> **2026-07-09 정정 (중요, 캡처 메커니즘 자체 변경)**: 반사 캡처가 `cameraRef.current.takePhoto()`(정지사진 반복 촬영)를 쓰던 방식에서 **VisionCamera Frame Processor**(`AVCaptureVideoDataOutput` 기반 연속 비디오 스트림)로 전환됐다. 근본 원인: 실기기 시스템 로그(`log collect --device`) 분석 결과, iOS의 `AVCapturePhotoOutput.capturePhoto()`가 `enableShutterSound:false`로도 촬영마다 `AVAudioSessionInterruption`을 유발해(반사 fps 간격과 정확히 일치하는 ~300~400ms 주기, 3분간 80회) 동시 재생 중인 TTS 안내 음성을 순간 끊는 것이 확인됐다. `photo={true}` 대신 `video={true} frameProcessor={...}`로 `<Camera>`를 구동해 `AVCapturePhotoOutput`을 세션에서 완전히 배제한다. 아래 본문의 `takePhoto()` 기반 코드 예시(단계 2-1)는 **`CAPTURE_ENGINE='takePhoto'` 롤백 경로**(`client/src/hooks/useCamera.ts`의 `captureRealFramePhoto`)로만 보존되며, 기본 경로는 새 코드다. 신규 파일: `client/ios/ReflexFrameProcessorPlugin.swift`(+`.m`, 등록명 `reflexFrameCapture`) - CVPixelBuffer를 기존과 동일한 규칙(중앙 정사각형 크롭+640x640 리사이즈+JPEG quality 0.5)으로 가공해 base64 반환, 기존 `CoreMLInferenceBridge.detectFrame(base64)`는 무변경 재사용. `client/src/config/capture.ts`(신규) `CAPTURE_ENGINE` 플래그로 두 경로 병행 유지. 신규 의존성 `react-native-worklets-core`. 상세: `docs/changelogs/kb.md`(2026-07-09), `docs/design/api_specification.md`.
 
 > **2026-07-07 정정**: detection 프레임 전송 규격이 **바이너리(raw JPEG 바이트) 전송을 기본**으로 전환됐다(2단 전송: `transport:"binary"` 메타 JSON 텍스트 → 곧바로 raw JPEG 바이너리 프레임). 아래 본문의 base64(`thumbnail_jpeg_b64`) 방식은 **구버전 호환·Mock 경로용 폴백**으로만 유지된다. 클라이언트는 `File(uri).bytes()`로 raw `Uint8Array`를 읽어 `sendBinary()`로 보내고, 서버는 `decode_frame_binary()`로 디코딩한다. 하트비트/핑퐁 등 제어 메시지는 여전히 JSON 텍스트다. 상세: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)(v0.4.0), [`docs/stage-guides/stage2_capture_design.md`](../../../docs/stage-guides/stage2_capture_design.md).
 
@@ -68,7 +70,7 @@ description: |
 
 | 구분 | 기술 | 용도 |
 |------|------|------|
-| 모바일 카메라 | react-native-vision-camera v4 | 후면 카메라 이중 캡처 |
+| 모바일 카메라 | react-native-vision-camera v4 | 후면 카메라 이중 캡처. **2026-07-09**: 기본 캡처 경로는 Frame Processor(`useFrameProcessor`, `react-native-worklets-core` 필요) - `AVCapturePhotoOutput` 미사용 |
 | 이미지 인코딩 | base64 (JPEG) | 바이너리텍스트 변환 (WS 전송용) |
 | 서버 이미지 처리 | OpenCV (cv2) + NumPy | JPEG 디코딩 + 리사이징 |
 | 전송 프로토콜 | WebSocket (1단계 연결 재사용) | 프레임 데이터 전송 |
@@ -395,8 +397,9 @@ async def route_frame(processed: ProcessedFrame):
 |------|-----------|-----------|
 | 카메라 권한 요청 | 승인 다이얼로그 | Android/iOS 모두 |
 | 후면 카메라 활성화 | isActive=true | device !== null |
-| 반사 캡처 8~10fps | setInterval 주기 확인 | ±100ms 오차 |
-| 인지 캡처 1~2fps | setInterval 주기 확인 | ±100ms 오차 |
+| 반사 캡처 8~10fps | Frame Processor worklet throttle 주기 확인 | ±100ms 오차 |
+| 인지 캡처 1~2fps | Frame Processor worklet throttle 주기 확인 | ±100ms 오차 |
+| **오디오 세션 인터럽션 없음 (2026-07-09 신규)** | `log collect --device`로 3분+ 캡처 중 `AVAudioSessionInterruption` 카운트 | **0건** (구 `takePhoto()` 경로는 80회/3분) |
 | base64 변환 | JPEG base64 문자열 | 30~50KB 범위 |
 | 서버 수신 | 프레임 디코딩 성공 | frame.shape == (640, 640, 3) |
 | **캡처수신 지연** | 전체 파이프라인 | **< 50ms** |
@@ -406,5 +409,5 @@ async def route_frame(processed: ProcessedFrame):
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md)
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)
 - react-native-vision-camera 공식 문서: https://react-native-vision-camera.com/

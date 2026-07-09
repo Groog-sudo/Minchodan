@@ -1,7 +1,7 @@
 # iOS CoreML 온디바이스 추론 지연 벤치마크 명세
 
 > **작성일**: 2026-07-05
-> **버전**: v1.3.0 (2026-07-07 실기기 재검증: `.cpuAndGPU` 크래시 재현 확인 및 `.cpuOnly` 실측 벤치마크 갱신. §1·§2·§4·§5·§6·§7 갱신)
+> **버전**: v1.3.1 (2026-07-09 정정 노트 추가: 반사 캡처 방식이 takePhoto()→Frame Processor로 전환됨에 따라 아래 §7 "1. 카메라 캡처" 단계의 측정 조건이 구경로 기준임을 명시 + 이전 v1.3.0(2026-07-07 실기기 재검증: `.cpuAndGPU` 크래시 재현 확인 및 `.cpuOnly` 실측 벤치마크 갱신) 이력 유지)
 > **기준 문서**: [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) (3단계 KPI), [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](../mobile/ondevice_inference_engine_isolation_plan.md)
 > **코드 참조**: `client/ios/CoreMLInferenceBridge.swift`(유일한 실제 Xcode 빌드 타겟 — 2026-07-07 미사용 사본 `client/ios/Minchodan/CoreMLInferenceBridge.swift` 삭제)
 > **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md), [`docs/ops/model_class_validation_report.md`](model_class_validation_report.md)
@@ -125,9 +125,14 @@ WS RTT(< 100ms)까지 포함한 서버 종단(< 300ms) 대비, 온디바이스 �
 
 ### 5.1 반사 경로 전체 흐름 (2026-07-07 `.cpuOnly` 실측 기준)
 
+> **2026-07-09 정정**: 아래 "1. 카메라 캡처" 수치는 `takePhoto()`(구 경로) 기준이다. 반사 캡처
+> 기본 경로가 Frame Processor로 전환됐으므로(원인: `AVCapturePhotoOutput`의 오디오 세션
+> 인터럽션, `docs/design/architecture.md` §5.2 참조) 재측정이 필요하다 - CoreML 추론(3단계)
+> 자체는 무변경이므로 큰 변화는 없을 것으로 예상되나 실측 전까지는 참고치로만 취급할 것.
+
 | 단계 | 소요 시간 | 비고 |
 |:---|:---|:---|
-| 1. 카메라 캡처 | ~5ms | `takePhoto({qualityPrioritization:'speed'})` |
+| 1. 카메라 캡처 | ~5ms | `takePhoto({qualityPrioritization:'speed'})` (구 경로, 위 정정 참조) |
 | 2. Base64 압축 | < 1ms | JPEG 50%, 640x640, 12KB |
 | 3. CoreML CPU 추론 | ~42.97ms (평균) | det(24.11ms) + seg(18.86ms) 순차 |
 | 4. Reflex Gate 판정 | < 1ms | 룰베이스, LLM 미경유 |

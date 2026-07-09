@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.1 (2026-07-09 반사 클립 저장 위치를 서버 data/reflex_clips/(MP3)에서 실제 구현인 client/assets/sounds/reflex_clips/(WAV, 단말 번들)로 정정)
+> **버전**: v0.3.2 (2026-07-09 §5.2 반사 캡처 takePhoto()→Frame Processor 전환 반영: AVCapturePhotoOutput의 오디오 세션 인터럽션이 TTS 안내 음성 절단 근본 원인이었음을 실측 확인 + 이전 v0.3.1 이력 유지)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -88,7 +88,7 @@ graph TD
         end
 
         subgraph TTS ["7. 음성 출력"]
-            RealtimeTTS["실시간 TTS<br/>(Kokoro/Coqui)"]
+            RealtimeTTS["실시간 TTS<br/>(Supertonic, Piper 핫스왑)"]
             ClipSender["Reflex Clip Sender<br/>(사전합성 클립)"]
             Suppressor["Suppressor<br/>(Redis setex 60)"]
         end
@@ -189,7 +189,7 @@ graph TD
 | `training/`                                   | 모델 학습 (오프라인)                                                       | 3    |
 | `client/src/hooks/useWebSocket.ts`            | WS 연결·hello/welcome 핸드셰이크                                           | 1    |
 | `client/src/hooks/useCamera.ts`               | `useCameraDevice('back')` + 이중 타이머                                    | 2    |
-| `client/src/services/frameCapture.ts`         | `takePhoto({qualityPrioritization:'speed'})` base64                        | 2    |
+| `client/src/hooks/useCamera.ts` (Frame Processor 경로) | **2026-07-09 정정**: 반사 캡처 기본 경로. `useFrameProcessor` + `client/ios/ReflexFrameProcessorPlugin.swift`(CVPixelBuffer→크롭/리사이즈/JPEG→base64). `takePhoto()` 경로(`captureRealFramePhoto`)는 `CAPTURE_ENGINE='takePhoto'`(`client/src/config/capture.ts`) 롤백용으로 보존 | 2    |
 | `client/src/services/audioPlayer.ts`          | `decodeAudioData()` Web Audio 재생                                         | 7    |
 | `client/src/services/audioEngine.ts`          | 반사 비프음 즉시 재생 및 선점 정지                                         | 7    |
 | `client/src/services/hapticEngine.ts`         | Haptics 패턴 실행 및 지속 진동 정리                                        | 7    |
@@ -210,9 +210,10 @@ graph TD
 
 - `react-native-vision-camera` 권한·후면 카메라 **이중 타이머**로 캡처
 - 반사 캡처 8~10fps / 인지 캡처 1~2fps 분리 (v1.1 반영, 충돌 회피)
-- `takePhoto({qualityPrioritization:'speed'})` JPEG base64 `ws.send()`
-- 서버: `base64.b64decode` `np.frombuffer` `cv2.imdecode` `resize(640,640)` ack
-- 카메라 권한 거부(`NotAllowedError`); 소켓 유실 시 `clearInterval`로 타이머 자원 즉시 해제
+- **2026-07-09 정정**: 기본 캡처 경로는 `useFrameProcessor`(연속 비디오 스트림, `AVCaptureVideoDataOutput`). 원래 `takePhoto({qualityPrioritization:'speed'})`(`AVCapturePhotoOutput`) 방식은 실기기 시스템 로그로 촬영마다 iOS 오디오 세션 인터럽션을 유발함이 확인돼(TTS 안내 음성 절단 근본 원인) 폐기 - `CAPTURE_ENGINE='takePhoto'` 롤백 경로로만 코드 보존
+- raw JPEG bytes → WS 바이너리 프레임(`sendBinary()`, base64 미경유)
+- 서버: `decode_frame_binary()` `cv2.imdecode` `resize(640,640)` ack
+- 카메라 권한 거부(`NotAllowedError`); 소켓 유실 시 타이머/frameProcessor 자원 즉시 해제
 
 ### 5.3 3단계 - AI 장애물 실시간 인식 (듀얼헤드 + 이중 게이트) v1.1 핵심
 
@@ -253,12 +254,14 @@ graph TD
 
 ### 5.7 7단계 - 음성 안내 출력 (이중 채널)
 
-- **(인지)** 로컬 TTS(Kokoro/Coqui) `generate(guidance_text, voice="ko")` base64 MP3 WS 스트리밍 단말 Web Audio 재생
+> **2026-07-09 정정**: 아래는 실제 구현 기준이다(최초 계획 Kokoro/Coqui·MP3·Web Audio는 미구현).
+
+- **(인지)** 로컬 TTS(**Supertonic**, `TTS_ENGINE=supertonic` 기본. **Piper**는 `TTS_ENGINE=piper` 핫스왑 폴백으로 코드 보존) `generate(guidance_text, voice="ko")` → WAV bytes → WS 바이너리 프레임(`transport:"binary"`, base64 미경유) → 단말 `expo-audio` 상시 재생 웜 플레이어(`player.replace()`, iOS Hearing Protection 우회)
 - **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생 (실시간 TTS 합성 금지)
 - **선점(preempt)**: 반사 음성은 인지 음성을 중단시키고 재생. WS에서 반사 이벤트는 별도 고우선 타입
 - 중복 억제 `setex(suppress:…, 60)`
 - 햅틱·접근성(`announceForAccessibility`) 연동
-- `TTSService` 추상화, 출력은 MP3/WAV로 규격 통일
+- `TTSService` 추상화(`SupertonicTTSService`/`PiperTTSService`), 출력은 WAV로 규격 통일
 
 ---
 

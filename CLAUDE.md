@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.2 (2026-07-07 §2 기술 스택 stale 항목 정정: Gemma2:9b→gemma4:e4b, 로컬 Llava→Gemini API 캡셔닝, Kokoro/Coqui→Piper, 클라이언트 Web Audio→expo-audio, 온디바이스 추론 항목 추가)
+> **버전**: v0.3.3 (2026-07-09 §2 TTS 엔진 Piper→Supertonic 교체(Piper는 핫스왑 폴백으로 보존), 반사 캡처 방식 takePhoto()→Frame Processor 전환 반영 + 이전 v0.3.2 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -39,14 +39,14 @@
 - LLM Orchestration: LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용)
 - Local LLM/Embedding: Ollama (gemma4:e4b, nomic-embed-text)
 - VLM Captioning (오프라인 RAG 빌드): Gemini API (gemini-2.5-flash-lite, 최초 계획 로컬 Llava에서 전환)
-- TTS: Piper (로컬, piper-kss-korean.onnx; 최초 계획 Kokoro/Coqui는 미구현)
+- TTS: Supertonic 3 (로컬, ONNX, MIT 라이선스, 99M 파라미터; 기본 엔진, 2026-07-09 Piper에서 교체 - 발음 품질 한계 실측 확인). Piper(piper-kss-korean.onnx)는 핫스왑 폴백으로 코드 보존(`TTS_ENGINE=piper`). 최초 계획 Kokoro/Coqui는 미구현
 - Message Bus: Redis (Streams + 컨텍스트 TTL)
 - Image: OpenCV
 
 ### 클라이언트 (단말)
 
 - Framework: React Native (iOS/Android)
-- Camera: react-native-vision-camera
+- Camera: react-native-vision-camera (Frame Processor 기반 연속 캡처, 기본; 2026-07-09 takePhoto()에서 전환 - AVCapturePhotoOutput의 오디오 세션 인터럽션 회피)
 - On-device Inference: CoreML(iOS) / TFLite(Android) - 반사 경로 온디바이스 탐지
 - Audio: expo-audio (createAudioPlayer; Web Audio API 아님), react-native-tts (예비)
 - Accessibility: Haptics, announceForAccessibility

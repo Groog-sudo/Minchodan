@@ -50,6 +50,9 @@ export function useWebSocket(
     const wsUrl = `${WS_URL}?device_id=${deviceId}`;
     console.log(`[WS] 연결 시도 주소: ${wsUrl}`);
     const ws = new WebSocket(wsUrl);
+    // guide 오디오(WAV)를 서버가 바이너리 프레임으로 보내므로(2026-07-09 도입),
+    // 수신 시 Blob이 아닌 ArrayBuffer로 받아 동기적으로 다루기 쉽게 한다.
+    ws.binaryType = "arraybuffer";
     wsRef.current = ws;
     setStatus("connecting");
 
@@ -68,6 +71,14 @@ export function useWebSocket(
     };
 
     ws.onmessage = (event: any) => {
+      // guide 오디오 바이너리 프레임: 직전 "guide" JSON 메시지(transport:"binary")에
+      // 이어 도착하는 원본 WAV 바이트다. base64 인코딩을 완전히 우회한다(2026-07-09).
+      if (event.data instanceof ArrayBuffer) {
+        console.log(`[WS] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}`);
+        void audioEngine.playGuideAudioBytes(new Uint8Array(event.data));
+        return;
+      }
+
       try {
         const data: WSMessage = JSON.parse(event.data);
 
@@ -96,18 +107,16 @@ export function useWebSocket(
           }
         } else if (data.type === "guide") {
           // 인지 경로 가이드 음성은 onmessage에서 직접 재생한다(React 상태를 경유하지 않음).
-          // audio_mp3_b64(수백 KB base64 문자열)를 setLastMessage로 상태에 태우면
-          // JSON.parse -> setState -> 리렌더 -> effect 체인을 다시 관통하며 JS 스레드가
-          // 오디오 콜백 스케줄링과 경합해 재생이 끊기는 문제가 있었다(2026-07-09).
-          if (data.audio_mp3_b64) {
-            void audioEngine.playGuideAudio(data.audio_mp3_b64);
-          } else if (data.guidance_text) {
-            // 서버 TTS 실패/타임아웃(realtime_tts.py 3초 가드레일)으로 오디오가 빈 경우
-            // 단말 내장 TTS로 대신 발화해 무음 구간을 없앤다.
+          // [2026-07-09 변경] 서버가 guide 오디오를 더 이상 audio_mp3_b64(base64 문자열)로
+          // JSON에 싣지 않고, 이 메시지 직후 바이너리 프레임으로 원본 WAV 바이트를 보낸다
+          // (transport:"binary"). 실제 재생은 위 ArrayBuffer 분기에서 이어서 처리한다.
+          // transport가 "binary"가 아니면(서버 TTS 실패) 즉시 단말 TTS로 폴백한다.
+          console.log(`[WS] guide 수신: text="${data.guidance_text}", transport=${data.transport}`);
+          if (data.transport !== "binary" && data.guidance_text) {
+            console.log("[WS] -> speakFallback(단말 TTS) 경로 진입");
             audioEngine.speakFallback(data.guidance_text);
           }
-          const { audio_mp3_b64: _audio_mp3_b64, ...guideWithoutAudio } = data;
-          setLastMessage(guideWithoutAudio as WSMessage);
+          setLastMessage(data as WSMessage);
         } else {
           setLastMessage(data);
         }

@@ -106,6 +106,8 @@ export function CameraView() {
     stopCapture,
     requestCameraPermission,
     reportInferenceLatency,
+    useStreamCapture,
+    frameProcessor,
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
@@ -404,7 +406,22 @@ export function CameraView() {
             resizeMode="cover"
           />
         ) : (
-          !isMockMode && (
+          !isMockMode &&
+          (useStreamCapture ? (
+            // 프레임 프로세서 경로(기본값, 2026-07-09): AVCapturePhotoOutput을 세션에
+            // 붙이지 않아(photo 미지정) 촬영마다 발생하던 AVAudioSessionInterruption을
+            // 원천 제거한다. client/src/config/capture.ts 참조.
+            <Camera
+              ref={cameraRef}
+              device={device!}
+              isActive={true}
+              video={true}
+              audio={false}
+              pixelFormat="yuv"
+              frameProcessor={frameProcessor}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : (
             <Camera
               ref={cameraRef}
               device={device!}
@@ -413,7 +430,7 @@ export function CameraView() {
               audio={false}
               style={StyleSheet.absoluteFill}
             />
-          )
+          ))
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}

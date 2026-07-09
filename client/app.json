@@ -33,7 +33,12 @@
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
-      "react-native-vision-camera",
+      [
+        "react-native-vision-camera",
+        {
+          "enableFrameProcessors": true
+        }
+      ],
       "react-native-fast-tflite",
       "expo-splash-screen",
       "expo-audio"

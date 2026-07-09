@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.2 (2026-07-09 감사 항목 보완: stt_audio 메시지 신설, reflex_alert clip/alert_id 사전 정의를 실제 게이트 출력값으로 정정, head_level_gate 신규 clip 추가 + 이전 v0.4.1 이력 유지)
+> **버전**: v0.4.3 (2026-07-09 guide 메시지 오디오 전송 방식 변경: `audio_mp3_b64` base64 필드 폐기, `transport:"binary"` + WS 바이너리 프레임 방식으로 전환 - §3 client→server 프레임 프로토콜과 동일 패턴 반대 방향 적용 + 이전 v0.4.2 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1+2+3단계 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드(640x640 압축 이미지), ack 응답, 단말 측 Reflex Gate 4단계 피드백(주차센서식 거리 반비례 햅틱/비프음) 정합 확인. `reflex_alert`/`guide`는 6·7단계 범위로 미구현(설계상 정상).
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -290,27 +290,44 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 ### 6.1 guide (서버 → 단말)
 
+**2026-07-09 변경**: guide 오디오는 더 이상 `audio_mp3_b64`(base64 JSON 필드)로 전송되지
+않는다. §3의 client→server 바이너리 프레임 프로토콜과 동일한 방식을 반대 방향(server→client)에
+적용해, JSON 메타데이터 메시지 직후 raw WAV 바이트를 별도 WS **바이너리 프레임**으로 전송한다.
+실기기 실측 결과 base64 인코딩/디코딩 경로 자체가 원인은 아니었으나(§ 아래 비고 참조), 카메라
+프레임 전송과 동일한 아키텍처로 통일해 페이로드 크기와 처리 오버헤드를 줄인다.
+
 ```json
 {
   "type": "guide",
   "event_id": "uuid",
   "risk_level": "mid",
   "guidance_text": "전방 킥보드, 우측으로 한 발 물러서세요",
-  "audio_mp3_b64": "SUQzBAAAA...",
   "audio_codec": "wav",
   "duration_ms": 4820.5,
+  "transport": "binary",
   "sources": [{ "citation_number": 1, "label": "VEC_0", "role": "vector" }],
   "ts": 1719216000000
 }
 ```
 
+위 텍스트 메시지 직후, 별도의 WS **바이너리 프레임**으로 raw WAV 바이트(합성 실패 시 프레임
+없이 `transport: "none"`)를 전송한다(JSON 필드 아님, base64 인코딩 없음). 클라이언트
+(`client/src/hooks/useWebSocket.ts`)는 `ws.binaryType = "arraybuffer"`로 수신해
+`audioEngine.playGuideAudioBytes(Uint8Array)`에 그대로 전달한다.
+
 | 필드 | 설명 |
 | :--- | :--- |
 | `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함) |
-| `audio_mp3_b64` | 실시간 TTS 합성 base64 오디오 (`audio_codec` 참조, 실제 구현은 WAV) |
 | `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
-| `duration_ms` | 합성된 오디오 재생 길이(ms). **2026-07-09 추가**: 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
+| `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
+| `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |
 | `sources` | RAG 근거 인용 (선택) |
+
+> **비고 (2026-07-09)**: 실기기에서 안내 음성이 문장 중간에 끊기던 근본 원인은 base64
+> 전송 방식이 아니라 (1) 서버 TTS 엔진(Piper) 자체의 발음 품질 한계와 (2) 반사 캡처가
+> `takePhoto()`(정지사진 반복 촬영)를 써서 촬영마다 iOS 오디오 세션을 인터럽트하던
+> 문제였다. 자세한 경위는 `docs/stage-guides/stage7_tts_design.md` §TTS 엔진, `docs/changelogs/kb.md`
+> 참조. 바이너리 전송 전환 자체는 페이로드 최적화 목적으로 유지한다.
 
 ### 6.2 status (서버 → 단말, 진행 알림)
 
@@ -352,7 +369,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | `model_name` | 선택. 미지정 시 `server/stt/stt_config.py`의 `DEFAULT_REQUEST_MODEL`(`faster-whisper-medium`) 사용 |
 
 응답은 별도 신규 타입이 아니라 기존 **6.1 guide** 메시지로 온다(클라이언트가 이미
-`audio_mp3_b64` 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
+guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
 `guidance_text: "음성 인식에 실패했습니다..."`를 담은 guide 메시지로 응답한다(무응답 방지).
 
 ---

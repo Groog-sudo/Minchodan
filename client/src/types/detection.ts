@@ -47,7 +47,8 @@ export interface WSMessage {
   beep_interval_ms?: number;
   haptic_pattern?: HapticPattern | string;
   guidance_text?: string;
-  audio_mp3_b64?: string;
+  /** guide 오디오 전송 방식. "binary"면 이 메시지 직후 WS 바이너리 프레임으로 WAV 원본이 이어진다(2026-07-09 도입). */
+  transport?: "binary" | "none";
   duration_ms?: number;
 }
 
@@ -89,7 +90,7 @@ export interface GuidePayload {
   event_id: string;
   risk_level: "mid" | "low";
   guidance_text: string;
-  audio_mp3_b64?: string;
+  transport?: "binary" | "none";
   duration_ms?: number;
   ts: number;
 }
