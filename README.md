@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **이 저장소에서 작업할 때는 먼저 [`docs/AGENTS.md`](docs/AGENTS.md), [`docs/README.md`](docs/README.md), [`SKILLS.md`](SKILLS.md)를 읽고 프로젝트 규칙과 문서 기준선을 확인합니다.
+> **이 저장소에서 작업할 때는 먼저 [`AGENTS.md`](AGENTS.md), [`docs/README.md`](docs/README.md), [`SKILLS.md`](SKILLS.md)를 읽고 프로젝트 규칙과 문서 기준선을 확인합니다.
 
 # Minchodan (민초단)
 

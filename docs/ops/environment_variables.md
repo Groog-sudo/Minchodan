@@ -60,7 +60,7 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - Object Detection 신뢰도 임계값 | [`stage3_detection_design.md`](stage3_detection_design.md) 5절 |
-| **`DETECTOR_TYPE`** | string | 미사용 | `mock` | **2026-07-08 확인: 코드 어디에서도 `os.getenv`로 읽히지 않는 죽은 변수.** 실제 Mock/YOLO 분기는 `server/detection/config.py`의 `get_detector()`/`get_segmentor()`가 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 파일의 존재 여부만으로 결정한다 | `server/detection/config.py` |
+| **`DETECTOR_TYPE`** | string | 선택 | `mock` | **2026-07-09 정정**: `server/detection/config.py`가 실제로 읽는다. `mock`이면 노트북/데모 환경에서 `MockDetector`/`MockSegmentor`를 강제 사용하고, `yolo`이면 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 로드 시도를 수행한다. 미지원 값은 안전 폴백으로 `mock` 처리 | `server/detection/config.py` |
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
