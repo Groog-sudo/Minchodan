@@ -2,6 +2,7 @@ import { NativeModules } from "react-native";
 import { LocalDetector } from "./localDetector";
 import { TFLiteDetector } from "./tfliteDetector";
 import { DualDetectionResult } from "./types";
+import { audioEngine } from "../services/audioEngine";
 
 const { CoreMLInferenceBridge } = NativeModules;
 
@@ -97,13 +98,14 @@ class CoreMLDetector implements LocalDetector {
       if (base64) {
         const bridgeResult = await CoreMLInferenceBridge.detectFrame(base64);
         // 벤치마크 로그 출력 (Swift 네이티브 측정값)
-        if (bridgeResult.benchmark) {
+        if (bridgeResult.benchmark && !audioEngine.isGuidePlaying) {
           const b = bridgeResult.benchmark;
           console.log(`[CoreMLBenchmark] det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms scene=${b.scene_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`);
         }
         // docs/design/indoor_fp_mitigation_design.md §4.4: isLikelyIndoor 게이트 판정에
         // 더해, top-5 identifier는 계속 로그로 남겨 향후 키워드 집합 보강에 활용한다.
-        if (bridgeResult.scene?.topLabels?.length) {
+        // (가이드 음성 재생 중에는 JS 브릿지 로그 전송이 오디오 콜백과 경합해 억제한다)
+        if (bridgeResult.scene?.topLabels?.length && !audioEngine.isGuidePlaying) {
           const labels = bridgeResult.scene.topLabels
             .map((l: { identifier: string; confidence: number }) => `${l.identifier}(${l.confidence.toFixed(2)})`)
             .join(", ");

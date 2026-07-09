@@ -19,6 +19,7 @@ import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS } from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
+import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
@@ -109,6 +110,12 @@ export function CameraView() {
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
 
+  // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
+  const { status: sttStatus, startRecording: startSttRecording, stopRecordingAndSend: stopSttRecording } =
+    useSttRecorder((audioB64) => {
+      send({ type: "stt_audio", audio_b64: audioB64 });
+    });
+
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [lastDetect, setLastDetect] = useState<string>("대기");
   const [hapticFlash, setHapticFlash] = useState(false);
@@ -125,6 +132,7 @@ export function CameraView() {
       const risk = lastMessage.risk_level ?? "unknown";
       setLastDetect(`서버반사: ${alertId} (위험: ${risk})`);
     } else if (lastMessage.type === "guide") {
+      // 오디오 재생은 useWebSocket의 onmessage에서 직접 트리거된다(상태 경유 차단).
       const text = lastMessage.guidance_text ?? "";
       const risk = lastMessage.risk_level ?? "unknown";
       setLastDetect(`서버가이드: ${text} (${risk})`);
@@ -180,6 +188,7 @@ export function CameraView() {
         type: "detection",
         payload: {
           event_id: `event-${now}`,
+          device_id: DEVICE_ID,
           frame_id: now,
           stream: frame.stream ?? "reflex",
           transport: "binary",
@@ -192,6 +201,7 @@ export function CameraView() {
         type: "detection",
         payload: {
           event_id: `event-${now}`,
+          device_id: DEVICE_ID,
           frame_id: now,
           thumbnail_jpeg_b64: frame.base64,
           stream: frame.stream ?? "reflex",
@@ -218,7 +228,7 @@ export function CameraView() {
       const t0 = Date.now();
       const { seg, det, benchmark, scene } = await detectFrameRef.current(frame.float32, frame.base64) as any;
       const dt = Date.now() - t0;
-      if (benchmark) {
+      if (benchmark && !audioEngine.isGuidePlaying) {
         console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
       }
       // 온디바이스 추론 지연을 캡처 루프에 피드백하여 반사 fps를 동적으로 조절
@@ -270,22 +280,30 @@ export function CameraView() {
           // 1단계: 초접근 (연속음 + 강한 진동)
           void hapticEngine.trigger("continuous");
           void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
-          console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
+          }
         } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
           // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
           void hapticEngine.trigger("double");
           void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
-          console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
+          }
         } else if (maxAreaRatio > 0.03) {
           // 3단계: 중거리 (일반 점멸 + 단발 진동)
           void hapticEngine.trigger("short");
           void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
-          console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
+          }
         } else {
           // 4단계: 원거리 (매우 느린 점멸 + 무진동)
           hapticEngine.stopContinuous();
           void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
-          console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
+          }
         }
       } else {
         // 안전 상황: 햅틱 및 비프음 끔
@@ -434,6 +452,24 @@ export function CameraView() {
         <Text style={styles.detectionListTitle}>[실시간 감지]</Text>
         <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
       </View>
+
+      <Pressable
+        style={[styles.sttButton, sttStatus !== "idle" && styles.sttButtonActive]}
+        onPressIn={() => {
+          void hapticEngine.trigger("short");
+          void startSttRecording();
+        }}
+        onPressOut={() => {
+          void stopSttRecording();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel="음성 명령 버튼. 누르고 있는 동안 말하세요."
+        accessibilityHint="손을 떼면 서버로 전송되어 음성 명령을 인식합니다."
+      >
+        <Text style={styles.sttButtonText}>
+          {sttStatus === "recording" ? "듣는 중..." : sttStatus === "sending" ? "전송 중..." : "누르고 말하기"}
+        </Text>
+      </Pressable>
 
       <View style={styles.panelWrap}>
         <DebugTriggerPanel />
@@ -658,6 +694,26 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+  },
+  sttButton: {
+    position: "absolute",
+    bottom: 180,
+    alignSelf: "center",
+    minWidth: 220,
+    paddingVertical: 18,
+    paddingHorizontal: 28,
+    borderRadius: 32,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sttButtonActive: {
+    backgroundColor: "#DC2626",
+  },
+  sttButtonText: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
   },
   bboxLabel: {
     position: "absolute",

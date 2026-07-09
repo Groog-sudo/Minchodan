@@ -10,8 +10,8 @@ description: |
 
 > **작성일**: 2026-06-24
 > **버전**: v0.3.0 (2026-07-07 detection 프레임 전송을 base64→바이너리(raw JPEG) 기본으로 정정)
-> **설계 기준**: `docs/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 9, 16, 17.2
+> **설계 기준**: `docs/design/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 9, 16, 17.2
 
 > **2026-07-07 정정**: detection 프레임 전송 규격이 **바이너리(raw JPEG 바이트) 전송을 기본**으로 전환됐다(2단 전송: `transport:"binary"` 메타 JSON 텍스트 → 곧바로 raw JPEG 바이너리 프레임). 아래 본문의 base64(`thumbnail_jpeg_b64`) 방식은 **구버전 호환·Mock 경로용 폴백**으로만 유지된다. 클라이언트는 `File(uri).bytes()`로 raw `Uint8Array`를 읽어 `sendBinary()`로 보내고, 서버는 `decode_frame_binary()`로 디코딩한다. 하트비트/핑퐁 등 제어 메시지는 여전히 JSON 텍스트다. 상세: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)(v0.4.0), [`docs/stage-guides/stage2_capture_design.md`](../../../docs/stage-guides/stage2_capture_design.md).
 
@@ -406,5 +406,5 @@ async def route_frame(processed: ProcessedFrame):
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md)
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)
 - react-native-vision-camera 공식 문서: https://react-native-vision-camera.com/

@@ -70,9 +70,9 @@ export function useWebSocket(
     ws.onmessage = (event: any) => {
       try {
         const data: WSMessage = JSON.parse(event.data);
-        setLastMessage(data);
 
         if (data.type === "welcome") {
+          setLastMessage(data);
           setStatus("connected");
           console.log(`[WS] 연결 성공, 세션 ID: ${data.session_id}`);
         } else if (data.type === "heartbeat") {
@@ -80,14 +80,36 @@ export function useWebSocket(
             JSON.stringify({ type: "heartbeat_ack", ts: Date.now() }),
           );
         } else if (data.type === "reflex_alert") {
+          setLastMessage(data);
           // 입체 비프음 및 햅틱 연동 실행 (docs/reflex_audio_specification.md 준수)
           const panning = typeof data.panning === "number" ? data.panning : 0.0;
           const beepInterval = typeof data.beep_interval_ms === "number" ? data.beep_interval_ms : 250;
           const hapticPattern = typeof data.haptic_pattern === "string" ? data.haptic_pattern : "double";
 
-          console.log(`[WS] 반사 알림 수신: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}`);
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[WS] 반사 알림 수신: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}`);
+          }
           audioEngine.playBeep(panning, beepInterval);
           hapticEngine.trigger(hapticPattern);
+          if (data.clip) {
+            void audioEngine.playReflexClip(data.clip);
+          }
+        } else if (data.type === "guide") {
+          // 인지 경로 가이드 음성은 onmessage에서 직접 재생한다(React 상태를 경유하지 않음).
+          // audio_mp3_b64(수백 KB base64 문자열)를 setLastMessage로 상태에 태우면
+          // JSON.parse -> setState -> 리렌더 -> effect 체인을 다시 관통하며 JS 스레드가
+          // 오디오 콜백 스케줄링과 경합해 재생이 끊기는 문제가 있었다(2026-07-09).
+          if (data.audio_mp3_b64) {
+            void audioEngine.playGuideAudio(data.audio_mp3_b64);
+          } else if (data.guidance_text) {
+            // 서버 TTS 실패/타임아웃(realtime_tts.py 3초 가드레일)으로 오디오가 빈 경우
+            // 단말 내장 TTS로 대신 발화해 무음 구간을 없앤다.
+            audioEngine.speakFallback(data.guidance_text);
+          }
+          const { audio_mp3_b64: _audio_mp3_b64, ...guideWithoutAudio } = data;
+          setLastMessage(guideWithoutAudio as WSMessage);
+        } else {
+          setLastMessage(data);
         }
       } catch (err) {
         console.error("[WS] 메시지 파싱 오류:", err);

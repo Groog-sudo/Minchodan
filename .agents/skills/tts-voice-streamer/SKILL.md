@@ -11,8 +11,8 @@ description: |
 
 > **작성일**: 2026-06-24
 > **버전**: v0.3.0 (2026-07-07 실제 구현 기준 정정: 인지 TTS 엔진 Kokoro/Coqui→Piper, 클라이언트 오디오 Web Audio→expo-audio)
-> **설계 기준**: `docs/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16, 17.2
+> **설계 기준**: `docs/design/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 8, 16, 17.2
 
 > **2026-07-07 정정 요약**: 최초 계획의 인지 TTS 엔진 Kokoro/Coqui는 **실제로 구현되지 않았고, 유일 구현체는 Piper**(`PiperTTSService`, `server/tts/tts_service.py`, `piper-kss-korean.onnx`)다. 오디오 필드명은 `audio_mp3_b64`이나 실제 내용물은 **WAV**다. 클라이언트 재생 계층은 Web Audio API가 아니라 **`expo-audio`**(`createAudioPlayer`, `client/src/services/audioEngine.ts`)이며, 입체 음향(panning)은 저장만 되고 실제 좌우 밸런스에 **미적용**이다. 상세: [`docs/stage-guides/stage7_tts_design.md`](../../../docs/stage-guides/stage7_tts_design.md), [`docs/design/reflex_audio_specification.md`](../../../docs/design/reflex_audio_specification.md).
 
@@ -322,5 +322,5 @@ export function announceForAccessibility(text: string) {
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md) 4·5절
-- 아키텍처 설계서: [`docs/architecture.md`](../../../docs/architecture.md) 5.7절
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md) 4·5절
+- 아키텍처 설계서: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 5.7절

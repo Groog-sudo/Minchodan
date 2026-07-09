@@ -25,11 +25,20 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 from server.api.admin_router import router as admin_router
+from server.api.config import settings
 from server.api.monitor import router as monitor_router
+from server.api.stt_router import router as stt_router
 from server.api.user_router import router as user_router
 from server.api.ws_router import router as ws_router
 from server.detection.consumer import get_default_consumer
 from server.mcp.manager import mcp_manager
+from server.navigation.server import app as navigation_app
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +105,14 @@ openapi_tags = [
         ),
     },
     {
+        "name": "STT",
+        "description": (
+            "음성 파일 업로드 기반 **Speech-to-Text** API.\n\n"
+            "- `POST /api/v1/stt/transcribe`: 음성 파일을 텍스트로 전사\n"
+            "- `POST /api/v1/stt/transcribe-and-guide`: 전사 후 기존 오케스트레이션으로 안내문 생성"
+        ),
+    },
+    {
         "name": "default",
         "description": "헬스체크 및 기타 관리 API.",
     },
@@ -116,10 +133,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 미들웨어 추가 (추후 프론트엔드 연동 지원용)
+# CORS 미들웨어 추가: 운영자 콘솔(React) 연동용. 허용 출처는 settings.CORS_ORIGINS
+# (.env의 CORS_ORIGINS, 기본값은 로컬 개발 콘솔 포트)로 제어한다.
+# 2026-07-09 정정: 이전에는 allow_origins=["*"]로 고정돼 있어 배포 환경에서도 모든
+# 출처를 허용하는 상태였다(allow_credentials=True와 결합 시 보안상 특히 부적절).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -134,6 +154,10 @@ app.include_router(ws_router, prefix="")
 # 사용자 및 관리자 API 라우터 마운트
 app.include_router(user_router)
 app.include_router(admin_router)
+app.include_router(stt_router)
+
+# 네비게이션 서브앱 마운트
+app.mount("/navigation", navigation_app)
 
 
 @app.get("/health")

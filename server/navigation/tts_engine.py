@@ -1,10 +1,23 @@
+# -*- coding: utf-8 -*-
+import sys
 import contextlib
 import threading
-import winsound
+
+if sys.stdout.encoding != "utf-8":
+    with contextlib.suppress(AttributeError):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+# Dynamic winsound import for OS compatibility (winsound is Windows-only)
+WINSOUND_AVAILABLE = False
+if sys.platform == "win32":
+    try:
+        import winsound
+        WINSOUND_AVAILABLE = True
+    except ImportError:
+        pass
 
 try:
     import pyttsx3
-
     PYTTSX3_AVAILABLE = True
 except ImportError:
     PYTTSX3_AVAILABLE = False
@@ -42,7 +55,14 @@ class TTSEngine:
         # Immediate warning tone if high danger (Proposed Feature 1 & 2)
         if is_danger:
             # High pitch, short beep for immediate physical stopping cue
-            threading.Thread(target=lambda: winsound.Beep(1200, 150), daemon=True).start()
+            if WINSOUND_AVAILABLE:
+                threading.Thread(target=lambda: winsound.Beep(1200, 150), daemon=True).start()
+            else:
+                # Bell signal fallback for non-Windows (macOS/Linux)
+                def non_windows_beep():
+                    sys.stdout.write('\a')
+                    sys.stdout.flush()
+                threading.Thread(target=non_windows_beep, daemon=True).start()
 
         if self.tts_available and self.engine:
             # Set volume dynamically based on noise sensor

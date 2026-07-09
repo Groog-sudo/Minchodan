@@ -97,14 +97,14 @@
 
 ## 5. AI Coding Rules
 
-- **Coding Pattern Compliance**: 모든 Python 코드는 [`docs/course_codebase_guide.md`](docs/course_codebase_guide.md)의 코딩 패턴과 함수 시그니처 표준을 준수합니다. 특히 아래 항목은 필수 준수 대상입니다.
+- **Coding Pattern Compliance**: 모든 Python 코드는 [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md)의 코딩 패턴과 함수 시그니처 표준을 준수합니다. 특히 아래 항목은 필수 준수 대상입니다.
   - **파일 헤더 인코딩** (guide 3.1): 모든 Python 파일 첫 줄에 UTF-8 선언 및 `sys.stdout.reconfigure` 패턴 포함.
   - **임포트 순서** (guide 3.2): 표준 라이브러리 → 외부 라이브러리 → 로컬 모듈 순서로 정렬.
   - **경로 처리** (guide 3.3): Python 실행 경로는 `os.path.dirname(os.path.abspath(__file__))`로 계산하고 하드코딩하지 않음.
   - **환경 변수 로드** (guide 3.4): `load_dotenv()` + `os.getenv(..., default)` 패턴 적용.
   - **방어적 코딩** (guide 17.2): None 가드레일, API 키 검증, Mock 폴백, 예외 후 루프 유지, 방어적 dict 접근 5종 패턴.
   - **계층 분리** (guide 17.1): Router → Service → Repository 3계층 구조 (FastAPI 프로젝트).
-- **Code Quality Verification**: 코드 품질 검증은 [`docs/code_quality_guide.md`](docs/code_quality_guide.md)의 파이프라인을 준수합니다. 커밋·푸시·PR 시 자동 실행됩니다.
+- **Code Quality Verification**: 코드 품질 검증은 [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md)의 파이프라인을 준수합니다. 커밋·푸시·PR 시 자동 실행됩니다.
   - **검증 도구**: Ruff(린트+포맷+보안 1차), Bandit(보안 심층 2차), mypy(타입 점진적), jscpd(중복 검출), pip-audit(의존성 CVE).
   - **실행 시점 분리**: pre-commit(Ruff+Bandit, 빠름) / pre-push(mypy+jscpd+pip-audit, 느림) / GitHub Actions(PR 게이트).
   - **자동 수정 명령**: `ruff format . ; ruff check --fix .` (커밋 전 실행 권장).

@@ -86,3 +86,20 @@
   - `.venv/bin/python -c "import server.db.connection as c; ..."` 기반 import 검증 통과
   - SQLAlchemy 엔진 URL은 비밀번호 마스킹 상태로 `mysql+aiomysql` 형식 확인
   - `git diff --check` 통과
+
+---
+
+### 2026-07-09 | DB | MariaDB Primary-Replica 실습 경로 정리 및 연결 모듈 정리
+
+- **커밋**: `db: connection whitespace cleanup and replica notes`
+- **변경 내용**:
+  - Raspberry Pi 5B 16GB 단일 장비에서 `3306` Primary와 `3307` Replica를 분리 실행하는 1차 복제 실습 경로를 정리했습니다.
+  - 향후 동일 스펙 별도 장비 추가 시 Primary-Replica, 자동 백업/복구 리허설, MaxScale/VIP 자동 페일오버 순서로 고도화하는 운영 방향을 정리했습니다.
+  - MariaDB Replica 인스턴스의 AppArmor 프로파일(`mariadbd`)에서 `/var/lib/mysql-replica`, `/var/log/mysql-replica`, `/run/mysqld`, Raspberry Pi block device metadata 접근 허용이 필요한 원인을 확인했습니다.
+  - `server/db/connection.py`의 `AsyncSession` 세션 팩토리 옵션 줄에 남아 있던 trailing whitespace를 제거했습니다.
+- **관련 파일**: `server/db/connection.py`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `connection.py` import 검증 재실행 완료
+  - `.venv/bin/python -m py_compile server/db/connection.py` 통과
+  - `.venv/bin/python -c "import server.db.connection as c; ..."` 기반 SQLAlchemy URL 마스킹 출력 확인
+  - `git diff --check` 통과

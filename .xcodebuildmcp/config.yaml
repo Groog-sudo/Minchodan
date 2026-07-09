@@ -1,0 +1,7 @@
+schemaVersion: 1
+sessionDefaults:
+  workspacePath: /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Minchodan.xcworkspace
+  scheme: Minchodan
+  deviceId: 7C12D347-0486-5BC2-B7B7-35C6E715B47C
+  platform: iOS
+  bundleId: com.minchodan.app.kwanbum

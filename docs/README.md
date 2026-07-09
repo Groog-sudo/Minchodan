@@ -1,33 +1,32 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.10.0 (2026-07-07 씬 분류기 게이트 해설(팀 학습용) 문서 추가)
+> **버전**: v0.12.0 (2026-07-09 루트 잔류 파일 4건 정리: scripts/ 이동 3건, 빈 파일 삭제 1건)
 
 ## 문서 목록
 
 | 문서                 | 파일                                                   | 설명                                                              |
 | -------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- |
-| **AI 프롬프트 컨텍스트** | [ai_prompt_context.md](ai_prompt_context.md)           | **AI 에이전트에 붙여 넣는 프롬프트 템플릿·마스터 컨텍스트**        |
-| 설계 노트 (원본)     | [minchodan_design_note.md](minchodan_design_note.md)   | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영                      |
-| **코딩 패턴 기준**   | [course_codebase_guide.md](course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
-| **코드 품질 검증 가이드** | [code_quality_guide.md](code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증 (코딩 전 필수 참조)** |
+| 설계 노트 (원본)     | [design/minchodan_design_note.md](design/minchodan_design_note.md)   | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영                      |
+| **코딩 패턴 기준**   | [dev-guides/course_codebase_guide.md](dev-guides/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
+| **코드 품질 검증 가이드** | [ops/code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증 (코딩 전 필수 참조)** |
 | 에이전트 가이드      | [../AGENTS.md](../AGENTS.md)                           | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템, 문서 인덱스     |
-| 시스템 아키텍처      | [architecture.md](architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수, MCP 연동   |
-| API 명세서           | [api_specification.md](api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷             |
-| 테스트 명세서        | [test_specification.md](test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑                |
-| Git 브랜칭 전략      | [git_branching_strategy.md](git_branching_strategy.md) | 3계층 브랜치 구조(`master` 또는 `main` / `dev` / 개인), 작업 규칙 |
-| 파이프라인 단계 설계 | [pipeline_stage_design.md](pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
-| **환경 변수 명세서** | [environment_variables.md](environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류**             |
-| **배포 가이드**      | [deployment_guide.md](deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
-| **LLM 협업 작업 분담 가이드** | [llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
-| **YOLO/TTS MVP 다음 작업 계획** | [yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
-| **백엔드 DB 아키텍처** | [backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
-| 2단계 캡처 설계서     | [stage2_capture_design.md](stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
+| 시스템 아키텍처      | [design/architecture.md](design/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수, MCP 연동   |
+| API 명세서           | [design/api_specification.md](design/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷             |
+| 테스트 명세서        | [ops/test_specification.md](ops/test_specification.md)         | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑                |
+| Git 브랜칭 전략      | [ops/git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조(`master` 또는 `main` / `dev` / 개인), 작업 규칙 |
+| 파이프라인 단계 설계 | [design/pipeline_stage_design.md](design/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
+| **환경 변수 명세서** | [ops/environment_variables.md](ops/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류**             |
+| **배포 가이드**      | [ops/deployment_guide.md](ops/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
+| **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
+| **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
+| **백엔드 DB 아키텍처** | [design/backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
+| 2단계 캡처 설계서     | [stage-guides/stage2_capture_design.md](stage-guides/stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 
-| 3단계 탐지 설계서     | [stage3_detection_design.md](stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
-| 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
-| **Post-MVP 하이브리드 로드맵** | [post_mvp_hybrid_roadmap.md](post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
-| 보행이론 인사이트 보고서 | [behavior_and_risk_insight.md](behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
+| 3단계 탐지 설계서     | [stage-guides/stage3_detection_design.md](stage-guides/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
+| 6단계 오케스트레이션 설계서 | [stage-guides/stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
+| **Post-MVP 하이브리드 로드맵** | [research/post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
+| 보행이론 인사이트 보고서 | [design/behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
 | Changelog 템플릿     | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md)       | 신규 changelog 작성 양식                                           |
 | 디렉토리 구조        | [../Directory_Structure.md](../Directory_Structure.md) | 계획된 물리적 폴더 구조                                           |
@@ -82,6 +81,8 @@ docs/
 | 4·5단계 구현 이력 로그 | [stage4_5_implementation_log.md](stage-guides/stage4_5_implementation_log.md) | 수정 행동 이력 및 의사결정 기록 |
 | 4·5단계 테스트 가이드 | [stage4_5_test_guide.md](stage-guides/stage4_5_test_guide.md) | RAG 백엔드 단위 테스트 실행 가이드 |
 | 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | LangGraph L1/L2/L3, LLM 핫스왑, 가드레일 |
+| 7단계 TTS 설계서 | [stage7_tts_design.md](stage-guides/stage7_tts_design.md) | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점 재생 설계 |
+| **3단계 YOLO 코드 리뷰** | [stage3_detection_code_review.md](stage-guides/stage3_detection_code_review.md) | **3단계 탐지 파이프라인 코드 분석, 준수 점검, 종합 평가 및 개선 제안** |
 
 ---
 
@@ -142,6 +143,8 @@ docs/
 | **코딩 패턴 기준** | [course_codebase_guide.md](dev-guides/course_codebase_guide.md) | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 에이전트 작업 지시서 | [antigravity_agent_prompt__4_5_final.md](dev-guides/antigravity_agent_prompt__4_5_final.md) | Antigravity 에이전트 4·5단계 RAG 작업 지시서 (최종 병합본) |
 | 설계서 예시 | [신규_설계서_예시_2.md](dev-guides/신규_설계서_예시_2.md) | 장애물 탐지 설계 참고 예시 문서 |
+| **관제 UI 연동 지침서** | [관제_UI_및_시나리오_연동_지침서.md](dev-guides/관제_UI_및_시나리오_연동_지침서.md) | **관제 콘솔 실시간 지도 iframe 임베딩 및 대화형 길안내 시나리오 연동 가이드** |
+| **서버 통합 기술 지침서** | [서버_및_시스템_통합_기술_지침서.md](dev-guides/서버_및_시스템_통합_기술_지침서.md) | **네비게이션 백엔드 모듈 배치, 의존성, 핵심 5대 소스코드 결합 사양** |
 
 ---
 
@@ -151,31 +154,30 @@ docs/
 | :--- | :--- | :--- |
 | Changelog 목록 | [changelogs/README.md](changelogs/README.md) | 팀원별 작업 내역, 날짜순 changelog 목록 |
 | Changelog 템플릿 | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md) | 신규 changelog 작성 양식 |
-Cursor·Claude 등에 작업을 지시할 때 `[ai_prompt_context.md](ai_prompt_context.md)` **섹션 2(마스터 시스템 프롬프트)** 를 첫 메시지에 붙여 넣고, 단계별 작업은 **섹션 4** 블록을 추가합니다.
 
 ---
 
 ## 권장 독해 순서
 
 1. [`../README.md`](../README.md) - 프로젝트 개요 및 7단계 요약
-2. [`minchodan_design_note.md`](minchodan_design_note.md) - 7단계 상세 설계 (백본)
+2. [`design/minchodan_design_note.md`](design/minchodan_design_note.md) - 7단계 상세 설계 (백본)
 3. [`../AGENTS.md`](../AGENTS.md) - 코딩·커뮤니케이션 규칙
-4. [`course_codebase_guide.md`](course_codebase_guide.md) - **코딩 패턴·함수 시그니처 표준 (코딩 전 필수 참조)**
-5. [`code_quality_guide.md`](code_quality_guide.md) - **코드 품질 검증 파이프라인 (린트·보안·중복·CVE, 코딩 전 필수 참조)**
-6. [`architecture.md`](architecture.md) - 시스템 아키텍처 및 컴포넌트
-7. [`api_specification.md`](api_specification.md) - WebSocket API 계약
-8. [`environment_variables.md`](environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
-9. [`deployment_guide.md`](deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
-10. [`llm_collaboration_workflow.md`](dev-guides/llm_collaboration_workflow.md) - **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준**
-11. [`yolo_tts_mvp_next_steps.md`](research/yolo_tts_mvp_next_steps.md) - **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목**
-12. [`backend_db_architecture.md`](design/backend_db_architecture.md) - **백엔드 비동기 DB 및 3계층 아키텍처 설계 (코딩 전 필수 참조)**
-13. [`pipeline_stage_design.md`](pipeline_stage_design.md) - 파이프라인 단계 설계
-14. [`behavior_and_risk_insight.md`](behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
-15. [`stage2_capture_design.md`](stage2_capture_design.md) - 2단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-16. [`stage3_detection_design.md`](stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-17. [`stage6_orchestration_design.md`](stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
-18. [`test_specification.md`](test_specification.md) - 검증 기준
-19. [`post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) - **Post-MVP 하이브리드 온디바이스 로드맵 (MVP 완성 후 착수)**
+4. [`dev-guides/course_codebase_guide.md`](dev-guides/course_codebase_guide.md) - **코딩 패턴·함수 시그니처 표준 (코딩 전 필수 참조)**
+5. [`ops/code_quality_guide.md`](ops/code_quality_guide.md) - **코드 품질 검증 파이프라인 (린트·보안·중복·CVE, 코딩 전 필수 참조)**
+6. [`design/architecture.md`](design/architecture.md) - 시스템 아키텍처 및 컴포넌트
+7. [`design/api_specification.md`](design/api_specification.md) - WebSocket API 계약
+8. [`ops/environment_variables.md`](ops/environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
+9. [`ops/deployment_guide.md`](ops/deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
+10. [`dev-guides/llm_collaboration_workflow.md`](dev-guides/llm_collaboration_workflow.md) - **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준**
+11. [`research/yolo_tts_mvp_next_steps.md`](research/yolo_tts_mvp_next_steps.md) - **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목**
+12. [`design/backend_db_architecture.md`](design/backend_db_architecture.md) - **백엔드 비동기 DB 및 3계층 아키텍처 설계 (코딩 전 필수 참조)**
+13. [`design/pipeline_stage_design.md`](design/pipeline_stage_design.md) - 파이프라인 단계 설계
+14. [`design/behavior_and_risk_insight.md`](design/behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
+15. [`stage-guides/stage2_capture_design.md`](stage-guides/stage2_capture_design.md) - 2단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+16. [`stage-guides/stage3_detection_design.md`](stage-guides/stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+17. [`stage-guides/stage6_orchestration_design.md`](stage-guides/stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
+18. [`ops/test_specification.md`](ops/test_specification.md) - 검증 기준
+19. [`research/post_mvp_hybrid_roadmap.md`](research/post_mvp_hybrid_roadmap.md) - **Post-MVP 하이브리드 온디바이스 로드맵 (MVP 완성 후 착수)**
 
 ---
 

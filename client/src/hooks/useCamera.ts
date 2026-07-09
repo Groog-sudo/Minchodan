@@ -32,6 +32,7 @@ import {
   FRAME_TENSOR_LENGTH,
   getFrameProvider,
 } from "../services/frameProvider";
+import { audioEngine } from "../services/audioEngine";
 
 export interface FrameData {
   float32: Float32Array;
@@ -220,7 +221,9 @@ export function useCamera(
         // 서버로의 WS 전송은 이 바이트를 그대로 바이너리 프레임으로 보내 33% 오버헤드를 제거한다.
         const jpegBytes = await new File(manipResult.uri).bytes();
 
-        console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> JPEG bytes=${jpegBytes.length} base64len(CoreML용)=${base64.length} float32len=${float32.length}`);
+        if (!audioEngine.isGuidePlaying) {
+          console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> JPEG bytes=${jpegBytes.length} base64len(CoreML용)=${base64.length} float32len=${float32.length}`);
+        }
 
         // 디바이스 임시 스토리지 고갈 방지를 위해 촬영된 원본 및 리사이징 임시 파일 청소
         void FileSystem.deleteAsync(path, { idempotent: true }).catch(() => {});
