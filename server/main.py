@@ -25,6 +25,7 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 from server.api.admin_router import router as admin_router
+from server.api.config import settings
 from server.api.monitor import router as monitor_router
 from server.api.user_router import router as user_router
 from server.api.ws_router import router as ws_router
@@ -122,10 +123,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 미들웨어 추가 (추후 프론트엔드 연동 지원용)
+# CORS 미들웨어 추가: 운영자 콘솔(React) 연동용. 허용 출처는 settings.CORS_ORIGINS
+# (.env의 CORS_ORIGINS, 기본값은 로컬 개발 콘솔 포트)로 제어한다.
+# 2026-07-09 정정: 이전에는 allow_origins=["*"]로 고정돼 있어 배포 환경에서도 모든
+# 출처를 허용하는 상태였다(allow_credentials=True와 결합 시 보안상 특히 부적절).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

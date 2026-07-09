@@ -10,8 +10,8 @@ description: |
 
 > **작성일**: 2026-06-24
 > **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 1단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16.3, 17.2, 17.3
+> **설계 기준**: `docs/design/minchodan_design_note.md` 1단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 8, 16.3, 17.2, 17.3
 
 ## 개요
 
@@ -528,6 +528,6 @@ export function useWebSocket(deviceId: string, token: string) {
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md)
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)
 - FastAPI WebSocket 공식 문서: https://fastapi.tiangolo.com/advanced/websockets/
 - Redis Streams 공식 문서: https://redis.io/docs/data-types/streams/

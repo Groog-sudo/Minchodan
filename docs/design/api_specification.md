@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.0 (2026-07-07 detection 프레임 바이너리 전송 프로토콜 추가, base64는 구버전 호환 경로로 격하)
+> **버전**: v0.4.2 (2026-07-09 감사 항목 보완: stt_audio 메시지 신설, reflex_alert clip/alert_id 사전 정의를 실제 게이트 출력값으로 정정, head_level_gate 신규 clip 추가 + 이전 v0.4.1 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1+2+3단계 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드(640x640 압축 이미지), ack 응답, 단말 측 Reflex Gate 4단계 피드백(주차센서식 거리 반비례 햅틱/비프음) 정합 확인. `reflex_alert`/`guide`는 6·7단계 범위로 미구현(설계상 정상).
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -201,10 +201,10 @@
 {
   "type": "reflex_alert",
   "event_id": "uuid",
-  "alert_id": "high_front",
+  "alert_id": "high_car_front",
   "direction": "front",
   "risk_level": "high",
-  "clip": "reflex_clips/high_front.mp3",
+  "clip": "reflex_clips/high_front.wav",
   "haptic": true,
   "panning": 0.0,
   "distance": 1.0,
@@ -216,31 +216,29 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `alert_id` | 사전합성 클립 식별자 (예: `high_front`, `surface_crosswalk`) |
-| `direction` | 방향 (`front`, `left`, `right`, `stop`) |
+| `alert_id` | 알림 식별자(중복 억제 키). **2026-07-09 정정**: `reflex_gate.py`는 클래스명을 포함한 동적 값(`high_{class_name}_{direction}`, 예: `high_car_front`)을 생성한다 — 클립 선택에는 쓰이지 않고 60초 억제 키로만 쓰인다 |
+| `direction` | 방향 (`front`, `front-left`, `front-right`) |
 | `risk_level` | `high` (반사 경로 전용) |
-| `clip` | 단말 번들 사전합성 클립 경로 |
+| `clip` | 단말 번들 사전합성 클립 경로(`client/assets/sounds/reflex_clips/`, basename 매칭). **2026-07-09 정정**: 클래스와 무관하게 방향/유형 기준으로 고정되며, 확장자는 `.wav`(인코더 제약으로 mp3 대신 채택) |
 | `haptic` | 햅틱 동시 출력 여부 |
-| `panning` | 스테레오 사운드 좌우 지향 밸런스 값 (-1.0 ~ 1.0) |
+| `panning` | 스테레오 사운드 좌우 지향 밸런스 값 (-1.0 ~ 1.0). 클라이언트는 5단계 버킷(`-1.0/-0.5/0.0/0.5/1.0`)으로 반올림해 재생한다 |
 | `distance` | 역산된 장애물 거리 (0.4m ~ 1.5m) |
 | `beep_interval_ms` | 비프음 주기 (ms, 0은 연속 경고음) |
 | `haptic_pattern` | 진동 패턴 (`short` \| `double` \| `continuous` \| `light`) |
 
 선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. 중복 억제는 서버 `setex(suppress:{alert_id}, 60)`로 처리합니다.
 
-### 4.2 alert_id 사전 정의
+### 4.2 clip 사전 정의
 
-| `alert_id` | 방향 | 트리거 |
-| :--- | :--- | :--- |
-| `high_front` | front | 고위험 객체 근접 (전방) |
-| `high_left` | left | 고위험 객체 근접 (좌측) |
-| `high_right` | right | 고위험 객체 근접 (우측) |
-| `high_stop` | stop | 고위험 객체 근접 (정지) |
-| `surface_crosswalk` | front | 횡단보도 하단 검출 |
-| `surface_manhole` | front | 맨홀 하단 검출 |
-| `surface_stairs` | front | 계단 하단 검출 |
-| `surface_grating` | front | 그레이팅 하단 검출 |
-| `surface_braille_damaged` | front | 점자블록 파손 하단 검출 |
+**2026-07-09 정정**: 이전 표는 실제 게이트 3곳(`reflex_gate.py`/`surface_gate.py`/`head_level_gate.py`)이 생성하는 값과 맞지 않는 상상 속 파일명 목록이었다(예: `high_left`/`high_stop`은 존재하지 않음, direction은 `front`/`front-left`/`front-right` 3종뿐). 실제 게이트 출력 기준으로 정정한다.
+
+| `clip` (basename) | 방향 | 트리거 | 발생 게이트 |
+| :--- | :--- | :--- | :--- |
+| `high_front.wav` | front | 고위험 객체(차량류 5종) 발밑 근접, 정면 회랑 | `reflex_gate.py` |
+| `high_front-left.wav` | front-left | 고위험 객체 발밑 근접, 좌측 회랑 | `reflex_gate.py` |
+| `high_front-right.wav` | front-right | 고위험 객체 발밑 근접, 우측 회랑 | `reflex_gate.py` |
+| `surface_caution.wav` | front | 노면 P0 클래스(`caution`, 계단/맨홀/그레이팅 통합) 하단 검출 | `surface_gate.py` |
+| `head_level_warning.wav` | 탐지 방향 | 중위험 클래스가 화면 상단 40%(머리 높이)에서 검출돼 고위험으로 격상. **2026-07-09 신규** | `head_level_gate.py` |
 
 ---
 
@@ -299,6 +297,8 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
   "risk_level": "mid",
   "guidance_text": "전방 킥보드, 우측으로 한 발 물러서세요",
   "audio_mp3_b64": "SUQzBAAAA...",
+  "audio_codec": "wav",
+  "duration_ms": 4820.5,
   "sources": [{ "citation_number": 1, "label": "VEC_0", "role": "vector" }],
   "ts": 1719216000000
 }
@@ -307,7 +307,9 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | 필드 | 설명 |
 | :--- | :--- |
 | `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함) |
-| `audio_mp3_b64` | 실시간 TTS 합성 base64 MP3 |
+| `audio_mp3_b64` | 실시간 TTS 합성 base64 오디오 (`audio_codec` 참조, 실제 구현은 WAV) |
+| `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
+| `duration_ms` | 합성된 오디오 재생 길이(ms). **2026-07-09 추가**: 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
 | `sources` | RAG 근거 인용 (선택) |
 
 ### 6.2 status (서버 → 단말, 진행 알림)
@@ -329,6 +331,29 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | `l2_generating` | L2 가이드 생성 중 |
 | `l3_validating` | L3 검증 중 |
 | `tts_synthesizing` | 실시간 TTS 합성 중 |
+
+### 6.3 stt_audio (단말 → 서버, 2026-07-09 신설)
+
+음성 명령(네비게이션 켜기/끄기, 목적지 설정 등) 캡처 결과를 서버로 전달합니다. 단말은
+녹음만 담당하고("서버가 모든 추론 수행" 원칙), 실제 음성 인식(faster-whisper)은
+서버(`server/api/ws_router.py`의 `_handle_stt_audio`)가 수행합니다.
+
+```json
+{
+  "type": "stt_audio",
+  "audio_b64": "UklGRi...",
+  "model_name": "faster-whisper-medium"
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `audio_b64` | 녹음된 오디오 파일 전체를 base64 인코딩한 값 (필수). 컨테이너 포맷은 서버의 `av` 기반 디코더가 처리하므로 특정 포맷에 종속되지 않음(iOS `RecordingPresets.HIGH_QUALITY` 기준 m4a) |
+| `model_name` | 선택. 미지정 시 `server/stt/stt_config.py`의 `DEFAULT_REQUEST_MODEL`(`faster-whisper-medium`) 사용 |
+
+응답은 별도 신규 타입이 아니라 기존 **6.1 guide** 메시지로 온다(클라이언트가 이미
+`audio_mp3_b64` 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
+`guidance_text: "음성 인식에 실패했습니다..."`를 담은 guide 메시지로 응답한다(무응답 방지).
 
 ---
 
@@ -398,3 +423,6 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | v0.2.0 | 2026-06-29 | 2단계 프레임 전송(detection/ack) 규격 추가 |
 | v0.2.1 | 2026-06-30 | 1+2단계 Phase A~D 구현 완료 반영 |
 | **v0.3.0** | **2026-07-05** | **640x640 JPEG 이미지 압축 규격 신설 / 단말 Reflex Gate 4단계 피드백 규격 신설 / BBox 오버레이 색상 규격 신설 / Swagger UI openapi_tags 안내 섹션 추가 / 운영자 콘솔 SSE 명세 구체화** |
+| v0.4.0 | 2026-07-07 | detection 프레임 바이너리 전송 프로토콜 추가, base64는 구버전 호환 경로로 격하 |
+| v0.4.1 | 2026-07-09 | guide 메시지에 `audio_codec`, `duration_ms` 필드 추가 |
+| **v0.4.2** | **2026-07-09** | **stt_audio(6.3) 신설 / reflex_alert clip·alert_id 사전 정의(4.2)를 실제 게이트 3곳 출력값으로 정정 / head_level_warning.wav 클립 추가** |

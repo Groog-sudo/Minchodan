@@ -11,19 +11,22 @@ logger = logging.getLogger(__name__)  # logger 객체 생성
 # ============================================================
 DEFAULT_TTL = 60
 
+# 2026-07-09 정정: 이 맵은 실제로는 어디서도 호출되지 않는다(반사 알림 실전송은
+# consumer.py의 DetectionConsumer._send_reflex_alert()가 reflex_gate/surface_gate/
+# head_level_gate가 채운 ReflexAlert.clip을 그대로 사용). 예전 값은 클래스명이 섞인
+# alert_id(예: "high_car_front")와도, 실제 세그멘테이션 모델이 출력하는 단일 P0 클래스
+# "caution"과도 맞지 않는 상상 속 파일명이었다. 실제 게이트 3곳이 생성하는 clip 값과
+# 일치하도록 정정한다(값은 direction/alert_id 기준, client/assets/sounds/reflex_clips/
+# 번들 파일명과 동일).
 REFLEX_CLIP_MAP = {
-    "high_front": "reflex_clips/high_front.mp3",
-    "high_left": "reflex_clips/high_left.mp3",
-    "high_right": "reflex_clips/high_right.mp3",
-    "high_stop": "reflex_clips/high_stop.mp3",
-    "surface_crosswalk": "reflex_clips/surface_crosswalk.mp3",
-    "surface_manhole": "reflex_clips/surface_manhole.mp3",
-    "surface_stairs": "reflex_clips/surface_stairs.mp3",
-    "surface_grating": "reflex_clips/surface_grating.mp3",
-    "surface_braille_damaged": "reflex_clips/surface_braille_damaged.mp3",
+    "front": "reflex_clips/high_front.wav",
+    "front-left": "reflex_clips/high_front-left.wav",
+    "front-right": "reflex_clips/high_front-right.wav",
+    "surface_caution": "reflex_clips/surface_caution.wav",
+    "head_level": "reflex_clips/head_level_warning.wav",
 }
 
-DEFAULT_REFLEX_CLIP = "reflex_clips/pingpong_default.mp3"
+DEFAULT_REFLEX_CLIP = "reflex_clips/high_front.wav"
 
 
 def _resolve_reflex_clip(alert_id: str, clip: str | None) -> str:

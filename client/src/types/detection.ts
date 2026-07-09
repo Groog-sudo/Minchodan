@@ -48,6 +48,7 @@ export interface WSMessage {
   haptic_pattern?: HapticPattern | string;
   guidance_text?: string;
   audio_mp3_b64?: string;
+  duration_ms?: number;
 }
 
 export interface DetectionPayload {
@@ -89,5 +90,6 @@ export interface GuidePayload {
   risk_level: "mid" | "low";
   guidance_text: string;
   audio_mp3_b64?: string;
+  duration_ms?: number;
   ts: number;
 }

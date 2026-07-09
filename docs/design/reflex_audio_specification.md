@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.1.0 (2026-07-07 §2.1 direction/alert_id 예시, §4 재생 아키텍처를 실제 구현 기준으로 정정)
+> **버전**: v1.2.0 (2026-07-09 §4 스테레오 패닝을 실제 구현 완료 상태로 정정, 반사 음성 클립 재생 경로 추가 반영)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -75,6 +75,7 @@
 | **alert_id**         | String  | **필수**  | 경보 고유 식별자 (`f"high_{class_name}_{direction}"` 형식, 예: `high_car_front-left`. `server/detection/gates/reflex_gate.py:55` 참조) |
 | **direction**        | String  | **필수**  | 장애물 출현 방향 (`front-left`, `front`, `front-right` — `server/detection/direction.py`의 `estimate_direction()` 산출값. `left`/`right`/`center`/`stop`은 사용하지 않음) |
 | **panning**          | Float   | **필수**  | 오디오 좌우 밸런스 편향값 (**-1.0**은 완전 왼쪽, **1.0**은 완전 오른쪽, **0.0**은 중앙) |
+| **clip**             | String  | **필수**  | 사전합성 음성 클립 경로(`reflex_clips/high_front.wav` 형식). 클래스와 무관하게 direction/유형 기준으로만 정해진다(§4.2 참조). 서버는 오디오 바이트가 아니라 이 경로 문자열만 전달하고, 실제 파일은 단말 번들(`client/assets/sounds/reflex_clips/`)에서 재생한다 |
 | **distance**         | Float   | **필수**  | 탐지된 장애물과의 렌즈 기준 상대 거리 (단위: 미터)                                      |
 | **beep_interval_ms** | Integer | **필수**  | 비프음 반복 재생 주기 (단위: 밀리초, **0**은 무점멸 연속음)                             |
 | **haptic_pattern**   | String  | **필수**  | 기기에 전달할 진동 프로파일 식별자 (`short`, `double`, `continuous`)                    |
@@ -96,26 +97,28 @@
 
 ---
 
-## 4. 모바일 클라이언트 재생 아키텍처 (2026-07-07 실제 구현 기준 정정)
+## 4. 모바일 클라이언트 재생 아키텍처 (2026-07-09 §4.2 패닝 구현 완료 반영)
 
-> 최초 설계는 Web Audio API(`AudioContext`/`OscillatorNode`/`GainNode`/`StereoPannerNode`)를 전제로 했으나, 실제 구현(`client/src/services/audioEngine.ts`)은 React Native 환경 제약(Web Audio API 노드 미지원, iOS Hearing Protection 우회 필요)에 맞춰 **`expo-audio`의 정적 음원 루프 + 볼륨 스위칭** 방식으로 대체되었다. 아래는 실제 코드 기준 서술이다.
+> 최초 설계는 Web Audio API(`AudioContext`/`OscillatorNode`/`GainNode`/`StereoPannerNode`)를 전제로 했으나, 실제 구현(`client/src/services/audioEngine.ts`)은 React Native 환경 제약(Web Audio API 노드 미지원, `expo-audio`에 실시간 pan API 부재, iOS Hearing Protection 우회 필요)에 맞춰 **버킷별 프리렌더링 스테레오 음원 루프 + 볼륨 스위칭** 방식으로 대체되었다. 아래는 실제 코드 기준 서술이다.
 
 ### 4.1 실제 재생 파이프라인
 
 ```mermaid
 graph TD
-    "expo-asset Asset.fromModule<br/>(로컬 800Hz 비프 WAV 로드)" --> "expo-audio createAudioPlayer<br/>(loop=true 상시 재생 스트림)"
-    "expo-audio createAudioPlayer<br/>(loop=true 상시 재생 스트림)" --> "player.volume 스위칭<br/>(1.0 <-> 0.0, 120ms 펄스)"
-    "player.volume 스위칭<br/>(1.0 <-> 0.0, 120ms 펄스)" --> "Destination<br/>(스피커/이어폰 출력)"
+    "beep.wav 원본 샘플을<br/>Python wave/struct로 등파워 패닝<br/>(-1.0/-0.5/0.0/0.5/1.0, 5버킷 프리렌더링)" --> "expo-asset Asset.fromModule<br/>(버킷별 스테레오 WAV 5개 로드)"
+    "expo-asset Asset.fromModule<br/>(버킷별 스테레오 WAV 5개 로드)" --> "expo-audio createAudioPlayer x5<br/>(전부 loop=true 상시 재생 스트림)"
+    "expo-audio createAudioPlayer x5<br/>(전부 loop=true 상시 재생 스트림)" --> "panning 값으로 최근접 버킷 선택<br/>-> 해당 플레이어만 volume 스위칭<br/>(1.0 <-> 0.0, 120ms 펄스), 나머지는 0.0 유지"
+    "panning 값으로 최근접 버킷 선택<br/>-> 해당 플레이어만 volume 스위칭<br/>(1.0 <-> 0.0, 120ms 펄스), 나머지는 0.0 유지" --> "Destination<br/>(스피커/이어폰 출력)"
 ```
 
 ### 4.2 실제 재생 로직 명세 (`client/src/services/audioEngine.ts`)
 
-- **음원**: `assets/sounds/beep.wav`(로컬 번들 정적 800Hz 비프 파일)를 `createAudioPlayer(sourceUri)`로 1회 생성하고, `player.loop = true`로 앱 전체 생명주기 동안 **끊김 없이 계속 재생**시켜 둔다(iOS가 재생 시작 시점마다 부여하는 Hearing Protection 볼륨 제한을 우회하기 위함).
-- **비프 표현**: 실제 오디오 신호를 켜고 끄는 대신, `player.volume`을 `1.0`(소리 남)과 `0.0`(무음)으로 스위칭하는 방식으로 "삐-" 펄스를 만든다. 각 펄스는 볼륨 `1.0` 설정 후 120ms 뒤 `0.0`으로 복귀한다.
+- **음원**: 원본 `assets/sounds/beep.wav`(800Hz 비프)에서 좌우 채널 게인만 다르게 프리렌더링한 스테레오 WAV 5종(`assets/sounds/beep_pan/beep_pan_{-1.0,-0.5,0.0,0.5,1.0}.wav`)을 각각 `createAudioPlayer(sourceUri)`로 생성하고, 5개 전부 `player.loop = true`로 앱 전체 생명주기 동안 **동시에 끊김 없이 계속 재생**시켜 둔다(iOS가 재생 시작 시점마다 부여하는 Hearing Protection 볼륨 제한을 우회하기 위함).
+- **비프 표현**: 실제 오디오 신호를 켜고 끄는 대신, 선택된 버킷 플레이어의 `player.volume`을 `1.0`(소리 남)과 `0.0`(무음)으로 스위칭하는 방식으로 "삐-" 펄스를 만든다. 각 펄스는 볼륨 `1.0` 설정 후 120ms 뒤 `0.0`으로 복귀한다.
 - **주기 제어**: `beep_interval_ms`가 `0`이면 볼륨을 `1.0`으로 고정해 끊김 없는 연속음을 낸다. `0`이 아니면 `setInterval(..., intervalMs)`로 위 펄스를 반복한다.
-- **`panning`(좌우 밸런스) 미적용**: WS로 수신한 `panning` 값은 `AudioEngine.currentPanning`에 저장만 되고(`audioEngine.ts:72`), 실제로 좌우 스피커 밸런스나 팬(pan)에 적용되는 코드 경로가 없다. 즉 **입체 음향(스테레오 패닝) 기능은 현재 미구현**이며, 볼륨 스위칭 기반 모노 비프음만 출력된다. 이는 §1의 "방향성 입체 비프음(Stereo Panning Beep)" 목표가 아직 완전히 실현되지 않았음을 의미하며, `panning` 필드를 실제 좌우 밸런스에 반영하는 것은 후속 작업 과제로 남는다.
-- **정지 규칙**: `stopBeep()`은 500~600ms 쿨다운 타이머 후 볼륨을 `0.0`으로 되돌리며(널뛰기 방지), `stopAllActiveAudio()`는 즉시 무음 처리한다.
+- **`panning`(좌우 밸런스) 구현 완료 (2026-07-09)**: WS로 수신한 `panning` 값(-1.0~1.0 연속값)은 `nearestPanBucket()`으로 5단계 버킷(`DebugTriggerPanel.tsx`의 `PAN_PRESETS`와 동일 단계) 중 가장 가까운 값에 매핑되고, 해당 버킷의 스테레오 플레이어만 볼륨 스위칭되며 나머지 4개는 `0.0`으로 묵음 유지된다. 방향이 바뀌면 이전 버킷을 즉시 묵음 처리하고 새 버킷으로 전환한다. 버킷별 WAV는 등파워 패닝(equal-power panning, `left_gain=cos(θ)`, `right_gain=sin(θ)`, `θ=(panning+1)·π/4`)으로 프리렌더링돼 있어 하드좌측/하드우측 버킷은 반대쪽 채널 진폭이 정확히 0이다(파형 레벨로 검증 완료). §1의 "방향성 입체 비프음(Stereo Panning Beep)" 목표가 실현됐다.
+- **정지 규칙**: `stopBeep()`은 500~600ms 쿨다운 타이머 후 현재 활성 버킷의 볼륨을 `0.0`으로 되돌리며(널뛰기 방지), `stopAllActiveAudio()`는 즉시 무음 처리한다.
+- **반사 음성 클립 병행 재생**: 방향성 비프음과 별개로, `reflex_alert.clip` 필드(예: `reflex_clips/high_front.wav`)로 지정된 사전합성 한국어 음성 클립을 `audioEngine.playReflexClip()`이 병행 재생한다. 클립은 `assets/sounds/reflex_clips/`에 번들되며, 서버는 오디오 바이트 자체가 아니라 클립 경로 문자열만 전달한다(§2.1 참조).
 
 ---
 

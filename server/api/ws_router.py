@@ -7,11 +7,14 @@ detection: decode_frame -> stream_splitter -> ack
 """
 
 import asyncio
+import base64
 import contextlib
 import json
 import logging
 import sys
+import tempfile
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
@@ -23,6 +26,9 @@ from server.api.session_manager import manager
 from server.bus.redis_client import redis_bus
 from server.capture.frame_decoder import decode_frame, decode_frame_binary
 from server.capture.stream_splitter import get_default_splitter
+from server.stt.stt_service import SttService
+from server.stt.stt_to_llm_bridge import SttToLlmBridge
+from server.tts.realtime_tts import realtime_tts
 
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
@@ -73,6 +79,89 @@ async def _finish_detection(
     )
 
 
+_stt_bridge = SttToLlmBridge()
+
+
+async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
+    """STT 음성 명령 메시지를 처리한다: 오디오 저장 -> 전사 -> 네비게이션/LLM 브리지 -> TTS 합성.
+
+    응답은 기존 인지 경로 클라이언트 핸들러가 이미 처리 가능한 "guide" 타입으로 보낸다
+    (client/src/hooks/useWebSocket.ts가 audio_mp3_b64 수신 시 자동 재생하므로 클라이언트
+    쪽에 별도 신규 메시지 타입 처리를 추가할 필요가 없다).
+
+    2026-07-09: server/stt/*.py(SttService, SttToLlmBridge)는 완성돼 있었으나 어떤
+    라우터에서도 호출되지 않아 서버가 STT 요청을 받을 경로 자체가 없었다(main.py에는
+    STT 라우팅이 전혀 없고, server/navigation/server.py는 별도 FastAPI 앱이라 클라이언트가
+    실제로 붙는 /ws/detect와 무관했다). 이 핸들러가 그 배선을 연결한다.
+    """
+    audio_b64 = data.get("audio_b64", "")
+    if not audio_b64:
+        logger.warning(f"[WS] stt_audio 메시지에 audio_b64 없음: device_id={device_id}")
+        return
+
+    model_name = data.get("model_name")
+
+    try:
+        audio_bytes = base64.b64decode(audio_b64)
+    except (ValueError, TypeError) as e:
+        logger.error(f"[WS] stt_audio base64 디코딩 실패: device_id={device_id}, {e}")
+        return
+
+    saved_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
+            temp_wav.write(audio_bytes)
+            saved_path = Path(temp_wav.name)
+
+        stt_result = await asyncio.to_thread(
+            SttService.transcribe_file, saved_path=saved_path, model_name=model_name
+        )
+        bridge_result = await _stt_bridge.invoke_existing_llm(stt_result)
+        guidance_text = bridge_result.get("guidance_text", "")
+
+        audio_mp3_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
+
+        # 백그라운드 태스크로 분리돼(2026-07-09) 처리 도중 클라이언트가 이미 끊어졌을 수
+        # 있다 - 전송 실패는 결과를 못 받는 것 이상의 문제가 아니므로 조용히 무시한다.
+        with contextlib.suppress(Exception):
+            await ws.send_json(
+                {
+                    "type": "guide",
+                    "event_id": f"stt-{device_id}-{now_ts()}",
+                    "risk_level": "low",
+                    "guidance_text": guidance_text,
+                    "audio_mp3_b64": audio_mp3_b64 or "",
+                    "audio_codec": "wav",
+                    "duration_ms": duration_ms,
+                    "source": bridge_result.get("source", "stt-bridge"),
+                    "ts": now_ts(),
+                }
+            )
+        logger.info(
+            f"[WS] stt_audio 처리 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
+            f"source={bridge_result.get('source')}"
+        )
+    except (KeyError, ValueError, RuntimeError) as e:
+        logger.error(f"[WS] STT 전사 실패: device_id={device_id}, {e}")
+        with contextlib.suppress(Exception):
+            await ws.send_json(
+                {
+                    "type": "guide",
+                    "event_id": f"stt-error-{device_id}-{now_ts()}",
+                    "risk_level": "low",
+                    "guidance_text": "음성 인식에 실패했습니다. 다시 말씀해 주세요.",
+                    "audio_mp3_b64": "",
+                    "audio_codec": "wav",
+                    "duration_ms": 0,
+                    "source": "stt-transcribe-error",
+                    "ts": now_ts(),
+                }
+            )
+    finally:
+        if saved_path is not None:
+            saved_path.unlink(missing_ok=True)
+
+
 @router.websocket("/ws/detect")
 async def ws_detect(
     ws: WebSocket,
@@ -95,6 +184,7 @@ async def ws_detect(
 
     heartbeat: HeartbeatManager | None = None
     heartbeat_task: asyncio.Task[None] | None = None
+    background_tasks: set[asyncio.Task] = set()
 
     try:
         await ws.send_json(
@@ -164,6 +254,14 @@ async def ws_detect(
         # 바로 뒤이어 오는 바이너리 프레임과 짝지어 처리한다.
         pending_binary_meta: dict | None = None
 
+        # stt_audio 처리(STT+LLM+TTS)는 수 초~수십 초가 걸릴 수 있어(2026-07-09 실측:
+        # 로컬 tiny 모델+gemma4:e4b만으로도 약 10초), 메인 수신 루프에서 inline await로
+        # 처리하면 그동안 ws.receive()가 멈춰 클라이언트의 heartbeat_ack를 못 받아
+        # HeartbeatManager가 타임아웃으로 연결을 강제 종료해버린다(응답을 다 만들어놓고도
+        # 전송 직전에 끊기는 것을 실측으로 확인). 다른 메시지 타입과 달리 백그라운드
+        # asyncio.Task(background_tasks)로 분리해 메인 루프가 계속 heartbeat/다른
+        # 메시지를 처리하게 한다.
+
         while True:
             message = await ws.receive()
             if message["type"] == "websocket.disconnect":
@@ -228,7 +326,13 @@ async def ws_detect(
                     heading = gps_data.get("heading")
                     if lat is not None and lon is not None:
                         from server.navigation.manager import nav_manager
-                        nav_manager.update_gps(device_id, float(lat), float(lon), float(heading) if heading is not None else None)
+
+                        nav_manager.update_gps(
+                            device_id,
+                            float(lat),
+                            float(lon),
+                            float(heading) if heading is not None else None,
+                        )
 
                 if payload.get("transport") == "binary":
                     # 뒤이어 도착할 바이너리 프레임을 대기 (ack는 그때 응답)
@@ -246,13 +350,24 @@ async def ws_detect(
                     ws, splitter, processed, event_id, frame_id, decode_ms, b64_len
                 )
 
+            elif msg_type == "stt_audio":
+                task = asyncio.create_task(_handle_stt_audio(ws, device_id, data))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
             elif msg_type == "realtime_gps":
                 lat = data.get("lat")
                 lon = data.get("lon")
                 heading = data.get("heading")
                 if lat is not None and lon is not None:
                     from server.navigation.manager import nav_manager
-                    nav_manager.update_gps(device_id, float(lat), float(lon), float(heading) if heading is not None else None)
+
+                    nav_manager.update_gps(
+                        device_id,
+                        float(lat),
+                        float(lon),
+                        float(heading) if heading is not None else None,
+                    )
 
             else:
                 logger.warning(f"[WS] 알 수 없는 메시지 타입: {msg_type}")
@@ -273,4 +388,6 @@ async def ws_detect(
             heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await heartbeat_task
+        for task in list(background_tasks):
+            task.cancel()
         logger.info(f"[WS] 세션 종료: device_id={device_id}")

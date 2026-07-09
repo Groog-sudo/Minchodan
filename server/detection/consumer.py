@@ -52,10 +52,22 @@ class DetectionConsumer:
         self._reflex_task: asyncio.Task | None = None
         self._cognitive_task: asyncio.Task | None = None
         self._running = False
-        # device_id별 마지막 인지 가이드 전송 시각 (초). 이전 안내 음성이 끝나기 전에
-        # 다음 안내가 겹쳐 재생을 끊는 문제를 막기 위한 최소 간격 쿨다운(비협상 아님, 튜닝값).
+        # device_id별 마지막 인지 가이드 전송 시각(초)과 그 오디오 재생 길이(초).
+        # 이전 안내 음성이 끝나기 전에 다음 안내가 겹쳐 재생을 끊는 문제를 막기 위한
+        # 간격 쿨다운. 고정값 하나로는 문장 길이에 따라 달라지는 실제 WAV 재생 시간을
+        # 반영하지 못해(짧은 문장엔 과잉 대기, 긴 문장엔 재생 중 짤림) 직전 오디오의
+        # 실측 길이 기반으로 동적 산정한다(비협상 아님, 튜닝값).
         self._last_guide_ts: dict[str, float] = {}
-        self._guide_cooldown_sec: float = 8.0
+        self._last_guide_duration_sec: dict[str, float] = {}
+        self._min_guide_cooldown_sec: float = 8.0
+        self._guide_cooldown_margin_sec: float = 1.5
+
+    def _required_guide_gap_sec(self, device_id: str) -> float:
+        """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다."""
+        prev_duration_sec = self._last_guide_duration_sec.get(device_id, 0.0)
+        return max(
+            self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
+        )
 
     async def _ensure_pipeline(self) -> DetectionPipeline:
         if self._pipeline is None:
@@ -192,7 +204,9 @@ class DetectionConsumer:
         # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이
         # 오케스트레이션/TTS(수 초 소요)를 새로 돌리지 않고 조기 반환한다. 실제 간격
         # 보장은 아래 전송 직전 재검사에서 확정하므로 여기서는 슬롯을 갱신하지 않는다.
-        if time.monotonic() - self._last_guide_ts.get(device_id, 0.0) < self._guide_cooldown_sec:
+        if time.monotonic() - self._last_guide_ts.get(
+            device_id, 0.0
+        ) < self._required_guide_gap_sec(device_id):
             logger.debug(
                 f"[DetectionConsumer] 인지 가이드 쿨다운 중 - 전송 생략: device_id={device_id}"
             )
@@ -254,20 +268,24 @@ class DetectionConsumer:
                 )
                 return
 
-            audio_b64 = await realtime_tts.synthesize_from_llm(orch_result)
+            audio_b64, duration_ms = await realtime_tts.synthesize_from_llm(orch_result)
 
             # 전송 직전 재검사: 오케스트레이션/TTS 처리 시간이 요청마다 달라(2~10s+),
             # "처리 시작" 시점 쿨다운만으로는 실제 전송(클라이언트 재생 트리거) 간격이
-            # 8초보다 가까워질 수 있다. 실제 전송 직전에 한 번 더 슬롯을 확인/갱신해
-            # 클라이언트에서 이전 안내 음성이 끝나기 전에 새 안내가 도착하는 것을 막는다.
+            # 직전 안내 재생 시간보다 가까워질 수 있다. 실제 전송 직전에 한 번 더 슬롯을
+            # 확인/갱신해 클라이언트에서 이전 안내 음성이 끝나기 전에 새 안내가 도착하는
+            # 것을 막는다(_required_guide_gap_sec가 직전 오디오 실측 길이를 반영).
             send_now = time.monotonic()
-            if send_now - self._last_guide_ts.get(device_id, 0.0) < self._guide_cooldown_sec:
+            if send_now - self._last_guide_ts.get(device_id, 0.0) < self._required_guide_gap_sec(
+                device_id
+            ):
                 logger.debug(
                     f"[DetectionConsumer] 인지 가이드 전송 직전 쿨다운 재검사 - 생략: "
                     f"device_id={device_id}, event_id={result.event_id}"
                 )
                 return
             self._last_guide_ts[device_id] = send_now
+            self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
 
             payload = {
                 "type": "guide",
@@ -276,6 +294,7 @@ class DetectionConsumer:
                 "guidance_text": guidance_text,
                 "audio_mp3_b64": audio_b64 or "",
                 "audio_codec": "wav",
+                "duration_ms": duration_ms,
                 "ts": now_ts(),
             }
             await manager.send_json(device_id, payload)

@@ -3,7 +3,7 @@
 > **작성일**: 2026-06-29
 > **버전**: v1.0.0
 > **분석 대상**: `server/detection/` (3단계 장애물 탐지 파이프라인)
-> **설계 기준**: `docs/stage3_detection_design.md`, `.agents/skills/yolo-obstacle-detection/SKILL.md`
+> **설계 기준**: `docs/stage-guides/stage3_detection_design.md`, `.agents/skills/yolo-obstacle-detection/SKILL.md`
 
 ---
 
@@ -235,7 +235,7 @@ print('segmentor:', type(seg).__name__, 'surfs:', len(seg.predict(frame)))
 
 | 문서 | 경로 |
 | --- | --- |
-| 3단계 설계서 | `docs/stage3_detection_design.md` |
+| 3단계 설계서 | `docs/stage-guides/stage3_detection_design.md` |
 | 에이전트 스킬 | `.agents/skills/yolo-obstacle-detection/SKILL.md` |
-| 테스트 명세 | `docs/test_specification.md` |
-| API 계약 | `docs/api_specification.md` |
+| 테스트 명세 | `docs/ops/test_specification.md` |
+| API 계약 | `docs/design/api_specification.md` |

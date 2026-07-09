@@ -17,6 +17,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# pygoruut 네이티브 바이너리(goruut, 약 96MB)를 빌드 타임에 미리 받아 이미지에 고정한다.
+# server/tts/tts_service.py의 _phonemize()가 Pygoruut(writeable_bin_dir="")로 호출하면
+# 라이브러리가 자체적으로 ~/.goruut(USER 미지정이므로 /root/.goruut)에 캐시하는데,
+# 이 단계 없이 최초 요청 시점에 처음 다운로드되면 realtime_tts.py의 3초 TTS 타임아웃을
+# 초과해 무음으로 폴백되는 문제가 실측 확인됐다(2026-07-09). 컨테이너가 배포마다 새로
+# 생성돼도 이 레이어에서 이미 캐시가 채워진 채로 시작하도록, 실제 한국어 phonemize
+# 호출까지 수행해 바이너리 다운로드와 정상 동작을 빌드 타임에 함께 검증한다.
+RUN python -c "from pygoruut.pygoruut import Pygoruut; p = Pygoruut(writeable_bin_dir=''); print(p.phonemize(language='Korean', sentence='빌드 타임 캐시 확인'))"
+
 # 앱 코드는 docker-compose.yml에서 볼륨 마운트로 전달
 # 포트 노출
 EXPOSE 8000

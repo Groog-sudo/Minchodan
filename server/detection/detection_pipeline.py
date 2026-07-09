@@ -11,6 +11,7 @@ from server.bus.producer import RiskEventProducer
 from server.bus.redis_client import RedisBus
 from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.detector_interface import DetectorInterface, SegmentorInterface
+from server.detection.gates.head_level_gate import head_level_gate
 from server.detection.gates.reflex_gate import reflex_gate
 from server.detection.gates.surface_gate import surface_gate
 from server.detection.schemas import Detection, DetectionResult, ReflexAlert, SurfaceResult
@@ -108,6 +109,13 @@ class DetectionPipeline:
             logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
             return reflex_alert
 
+        head_level_alert = self._evaluate_head_level(detections, height, width)
+        if head_level_alert is not None:
+            head_level_alert.event_id = event_id
+            head_level_alert.ts = time.time()
+            logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
+            return head_level_alert
+
         surface_alert = self._evaluate_surface(surfaces, height)
         if surface_alert is not None:
             surface_alert.event_id = event_id
@@ -137,6 +145,25 @@ class DetectionPipeline:
     ) -> ReflexAlert | None:
         for det in detections:
             alert = reflex_gate(det, frame_height, frame_width)
+            if alert is not None:
+                return alert
+        return None
+
+    @staticmethod
+    def _evaluate_head_level(
+        detections: list[Detection],
+        frame_height: float,
+        frame_width: float,
+    ) -> ReflexAlert | None:
+        """중위험(mid) 클래스가 화면 상단 40%(머리 높이)에 있으면 고위험으로 격상한다.
+
+        docs/design/behavior_and_risk_insight.md 제안 반영(2026-07-09 구현):
+        발밑 근접만 보는 reflex_gate와 달리, 흰지팡이로 감지 불가능한 상체 높이
+        돌출 장애물(나뭇가지, 개방된 적재함 등)을 조기에 반사 경로로 격상한다.
+        """
+        escalation_classes = frozenset(MID_RISK_CLASSES)
+        for det in detections:
+            alert = head_level_gate(det, frame_height, frame_width, escalation_classes)
             if alert is not None:
                 return alert
         return None

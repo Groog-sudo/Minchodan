@@ -9,7 +9,7 @@ description: |
 
 > **작성일**: 2026-07-05
 > **버전**: v1.0.0
-> **설계 기준**: `docs/minchodan_design_note.md` 및 iOS thin client 아키텍처
+> **설계 기준**: `docs/design/minchodan_design_note.md` 및 iOS thin client 아키텍처
 > **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md)
 
 ---

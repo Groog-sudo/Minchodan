@@ -32,7 +32,8 @@ def surface_gate(
         event_id="",
         alert_id=alert_id,
         direction="front",
-        clip=f"reflex_clips/{alert_id}.mp3",
+        # 클라이언트 번들 자산과 동일 파일명(client/assets/sounds/reflex_clips/).
+        clip=f"reflex_clips/{alert_id}.wav",
         haptic=True,
         ts=0.0,
     )

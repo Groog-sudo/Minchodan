@@ -25,7 +25,7 @@ README를 처음부터 끝까지 읽고 다음을 파악합니다:
 
 ### Step 2: 설계 노트 읽기
 
-**파일:** [`docs/minchodan_design_note.md`](docs/minchodan_design_note.md)
+**파일:** [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md)
 
 7단계 골격 설계 노트를 읽고 다음을 숙지합니다:
 
@@ -55,12 +55,12 @@ AGENTS.md를 읽고 다음을 숙지합니다:
 
 | 작업 유형            | 참조 문서                                                          |
 | -------------------- | ------------------------------------------------------------------ |
-| 시스템 아키텍처 변경 | [`docs/architecture.md`](docs/architecture.md)                     |
-| 테스트 작성/수정     | [`docs/test_specification.md`](docs/test_specification.md)         |
-| 파이프라인 단계 설계 | [`docs/pipeline_stage_design.md`](docs/pipeline_stage_design.md)   |
-| 브랜치/PR 작업       | [`docs/git_branching_strategy.md`](docs/git_branching_strategy.md) |
+| 시스템 아키텍처 변경 | [`docs/design/architecture.md`](docs/design/architecture.md)                     |
+| 테스트 작성/수정     | [`docs/ops/test_specification.md`](docs/ops/test_specification.md)         |
+| 파이프라인 단계 설계 | [`docs/design/pipeline_stage_design.md`](docs/design/pipeline_stage_design.md)   |
+| 브랜치/PR 작업       | [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md) |
 | 문서 전체 인덱스     | [`docs/README.md`](docs/README.md)                                 |
-| 담당자 학습형 구현   | [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md) |
+| 담당자 학습형 구현   | [`docs/dev-guides/llm_collaboration_workflow.md`](docs/dev-guides/llm_collaboration_workflow.md) |
 
 단계별 구현 작업은 아래 스킬 인덱스를 참조합니다.
 
@@ -76,7 +76,7 @@ Minchodan은 결과물뿐 아니라 담당자의 발표와 학습이 중요한 �
 | **실행/검증** | PowerShell 명령 실행, 결과 해석, 발표용 로그 확인 | 테스트 자동화, 실패 원인 분석, 보고서 정리 |
 | **데모 연결** | 입력-처리-출력 흐름 설명 | argparse, JSON 저장, React Native 서비스 연결 |
 
-작업을 시작할 때는 [`docs/llm_collaboration_workflow.md`](docs/llm_collaboration_workflow.md)를 확인하고, 핵심 판단 로직은 20~40줄 이하 단위로 나누어 담당자가 직접 입력할 기회를 먼저 제공합니다.
+작업을 시작할 때는 [`docs/dev-guides/llm_collaboration_workflow.md`](docs/dev-guides/llm_collaboration_workflow.md)를 확인하고, 핵심 판단 로직은 20~40줄 이하 단위로 나누어 담당자가 직접 입력할 기회를 먼저 제공합니다.
 
 ---
 
@@ -166,9 +166,9 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 세션 시작 시 다음을 확인합니다:
 
 - [ ] `README.md` 읽기 완료
-- [ ] `docs/minchodan_design_note.md` 읽기 완료
+- [ ] `docs/design/minchodan_design_note.md` 읽기 완료
 - [ ] `docs/AGENTS.md` 읽기 완료
-- [ ] `docs/llm_collaboration_workflow.md` 읽기 완료
+- [ ] `docs/dev-guides/llm_collaboration_workflow.md` 읽기 완료
 - [ ] 작업 유형에 맞는 추가 문서 참조 완료
 - [ ] 현재 프로젝트가 GPU/CUDA 환경에서 실행 가능한 상태인지 확인
 - [ ] 작업 완료 후 `docs/changelogs/[이니셜].md` 파일에 changelog 엔트리 추가 여부 확인

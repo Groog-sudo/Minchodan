@@ -1,7 +1,7 @@
 # Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
 
 > **작성일**: 2026-07-01
-> **버전**: v0.2.0 (2026-07-07 TTS 엔진을 실제 구현체(Piper 단독, Kokoro/Coqui 미구현)로 정정, reflex_clip_sender.py 구현 완료 상태 반영, 오디오 포맷 WAV임을 명시)
+> **버전**: v0.3.0 (2026-07-09 §2 각 항목에 실제 구현 상태 표기 추가: reflex_clip_sender.py가 사실은 어디서도 호출되지 않는 죽은 코드였음을 정정, 클라이언트 클립 번들·단말 TTS 폴백 구현 완료 반영 + 이전 v0.2.0 이력 유지)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 7단계, [`docs/architecture.md`](architecture.md) 5.7절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md) 5.7절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 3, 17.2
 > **스킬 참조**: [`.agents/skills/tts-voice-streamer/SKILL.md`](../.agents/skills/tts-voice-streamer/SKILL.md)
@@ -27,31 +27,34 @@
 
 ## 2. 구현 목록
 
-- 반사 경로: alert_id 기반 사전합성 클립 즉시 재생 + 선점 + 중복 억제
-- 인지 경로: LangGraph L3 검증 통과 가이드 문장 → 서버 실시간 TTS(Piper, `TTS_ENGINE=piper`) → base64 **WAV**(필드명은 `audio_mp3_b64`이나 실제 포맷은 WAV) WS 전송 → 단말 Web Audio 재생
-- TTSService 추상화 계층 (현재 구현: Piper만 지원. Kokoro/Coqui는 미구현 - 핫스왑 대비 설계만 존재)
-- 중복 억제 (Suppressor, Redis SETEX 60초)
-- 햅틱·접근성 연동 (Haptics + announceForAccessibility)
-- 클라이언트 번들 클립 관리 (data/reflex_clips/ → client/assets/reflex_clips/)
-- 실패 시 기기 내장 TTS 우회
+- **[완료]** 반사 경로: direction/유형 기준 사전합성 클립 즉시 재생 + 선점 + 중복 억제. **2026-07-09 정정**: 실제 전송 경로는 `server/detection/consumer.py`의 `_send_reflex_alert()`가 게이트(`reflex_gate.py`/`surface_gate.py`/`head_level_gate.py`)가 채운 `ReflexAlert.clip`을 그대로 사용한다 — `server/tts/reflex_clip_sender.py`(아래 참조)는 실제로는 어디서도 호출되지 않는 죽은 코드였다.
+- **[완료]** 인지 경로: LangGraph L3 검증 통과 가이드 문장 → 서버 실시간 TTS(Piper, `TTS_ENGINE=piper`) → base64 **WAV**(필드명은 `audio_mp3_b64`이나 실제 포맷은 WAV) WS 전송 → 단말 `expo-audio` 재생(Web Audio API 아님, React Native 환경 제약)
+- **[부분 완료]** TTSService 추상화 계층 (현재 구현: Piper만 지원. Kokoro/Coqui는 미구현 - 핫스왑 대비 설계만 존재, 2026-07-09 기준 이번 범위에서 제외 확인됨)
+- **[완료]** 중복 억제 (Suppressor, Redis SETEX 60초)
+- **[부분 완료]** 햅틱·접근성 연동 (Haptics 연동 완료, `announceForAccessibility` 별도 확인 필요)
+- **[완료, 2026-07-09]** 클라이언트 번들 클립 관리: 최초 설계(`data/reflex_clips/` → `client/assets/reflex_clips/`)와 실제 경로가 다르다 — 실제로는 `client/assets/sounds/reflex_clips/`(기존 `beep.wav`와 같은 `sounds/` 하위 규칙 준수)에 WAV 5종(direction 3종 + surface_caution + head_level_warning)으로 번들됨. `audioEngine.playReflexClip()` 신규 구현.
+- **[완료, 2026-07-09]** 실패 시 기기 내장 TTS 우회: `expo-speech`로 서버 TTS 3초 타임아웃 시 단말이 직접 발화하는 `audioEngine.speakFallback()` 구현. 상세는 `docs/changelogs/kb.md`(2026-07-09) 참조.
 
 ---
 
-## 3. 구현 파일 목록
+## 3. 구현 파일 목록 (2026-07-09 실제 코드 기준 전면 정정)
+
+> 이 절은 최초 설계 시점의 예상 파일 구조였으나 실제 구현과 다수 어긋나 있었다(파일명, 데이터 흐름 모두). 아래는 실제 코드를 확인해 정정한 목록이다.
 
 ### 서버 (인지 경로 실시간 TTS)
-- `server/tts/tts_service.py`: TTSService 추상 클래스 + `get_tts_service()` 팩토리 (TTS_ENGINE 기반)
-- `server/tts/realtime_tts.py`: RealtimeTTS (synthesize → base64 MP3)
+- `server/tts/tts_service.py`: TTSService 추상 클래스 + `get_tts_service()` 팩토리(TTS_ENGINE 기반) + `PiperTTSService`(상주 `PiperVoice` 세션, 2026-07-09 서브프로세스 방식에서 전환)
+- `server/tts/realtime_tts.py`: RealtimeTTS (`synthesize()` → `(base64 WAV, duration_ms)` 튜플. **정정**: MP3가 아니라 WAV)
 - `server/tts/suppressor.py`: AlertSuppressor (Redis 기반 중복 억제)
-- `server/tts/reflex_clip_sender.py`: 반사 경로 alert_id 클립 WS 고우선 전송 — **구현 완료**(`send_reflex_clip()`이 `REFLEX_CLIP_MAP` 조회 + `AlertSuppressor` 중복 억제 + `manager.send_json()`으로 서버 주도 전송, 2026-07-07 확인)
+- `server/tts/reflex_clip_sender.py`: **정정(2026-07-09)** — 반사 경로 클립 전송 스켈레톤으로 작성됐으나 실제로는 어디서도 호출되지 않는 죽은 코드다. 실제 전송은 `server/detection/consumer.py`의 `_send_reflex_alert()`가 담당하며, 게이트(`server/detection/gates/{reflex_gate,surface_gate,head_level_gate}.py`)가 채운 `ReflexAlert.clip`을 그대로 WS로 보낸다.
 
-### 데이터
-- `data/reflex_clips/`: 사전합성 반사 음성 클립 (alert_id별 MP3)
-- `DATA_REFLEX_CLIPS`: 환경 변수로 경로 지정
+### 데이터 (2026-07-09 정정: 서버 data/ 경유 아님)
+- ~~`data/reflex_clips/`~~, ~~`DATA_REFLEX_CLIPS`~~: 최초 설계였으나 미사용. 실제로는 클라이언트가 클립을 번들로 갖고 있고 서버는 경로 문자열만 전달한다(아래 클라이언트 항목 참조).
 
 ### 클라이언트 (재생 담당)
-- `client/src/services/reflexClipPlayer.ts`: 반사 클립 즉시 재생 + 선점 로직
-- `client/src/services/audioPlayer.ts`: Web Audio API로 base64 MP3 디코딩·재생
+- `client/src/services/audioEngine.ts`: 반사 비프(버킷별 스테레오 루프 플레이어), 반사 음성 클립(`playReflexClip()`), 인지 가이드 WAV(`playGuideAudio()`), 단말 TTS 폴백(`speakFallback()`)을 전부 담당하는 단일 서비스. **정정**: `reflexClipPlayer.ts`/`audioPlayer.ts`라는 별도 파일은 존재하지 않으며, Web Audio API가 아니라 `expo-audio`를 사용한다.
+- `client/assets/sounds/reflex_clips/*.wav`: 사전합성 반사 음성 클립 5종(번들 자산)
+- `client/assets/sounds/beep_pan/*.wav`: 방향성 비프음 스테레오 버킷 5종(번들 자산)
+- `client/src/hooks/useWebSocket.ts`: `reflex_alert`/`guide` 메시지 수신 시 위 `audioEngine` 메서드를 직접 호출
 - `client/src/utils/haptics.ts`: Haptics + announceForAccessibility
 
 ### 환경 변수 (docs/environment_variables.md 참조)

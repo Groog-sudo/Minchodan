@@ -10,8 +10,8 @@ description: |
 
 > **작성일**: 2026-06-24
 > **버전**: v0.2.1 (2026-07-07 실제 LLM 클라이언트·핫스왑 트리거 정정)
-> **설계 기준**: `docs/minchodan_design_note.md` 6단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 14, 12, 11, 17.2
+> **설계 기준**: `docs/design/minchodan_design_note.md` 6단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 14, 12, 11, 17.2
 
 > **2026-07-07 정정**: 본문 코드는 LangChain 래퍼 `ChatOllama`/`ChatOpenAI`를 예시로 쓰지만, **실제 구현은 래퍼 없이 raw `ollama.AsyncClient`/`httpx`를 직접 감싼 `SimpleOllamaClient`/`SimpleOpenAIClient`**(`server/orchestration/llm_client_factory.py`)다. 핫스왑 트리거도 "L3 실패율"이 아니라 **GPU 부하 감지(`start_gpu_monitor`)** 기준이다. 로컬 기본 모델은 `gemma4:e4b`(env `GEMMA_MODEL`), 상용 폴백은 `gpt-4o-mini`. 상세: [`docs/stage-guides/stage6_orchestration_design.md`](../../../docs/stage-guides/stage6_orchestration_design.md).
 
@@ -361,4 +361,4 @@ def get_orchestrator():
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- 아키텍처 설계서: [`docs/architecture.md`](../../../docs/architecture.md) 5.6절
+- 아키텍처 설계서: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 5.6절

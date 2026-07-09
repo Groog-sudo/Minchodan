@@ -43,7 +43,7 @@ graph TD
 * **기대 결과 (Pass 조건)**:
   - 서버는 100ms 이내에 `ack`를 응답해야 합니다.
   - 단말로 `"type": "reflex_alert"` 이벤트가 발송되어야 합니다.
-  - 수신된 페이로드에 `alert_id: "high_car_front"`, `clip: "reflex_clips/high_front.mp3"`, `haptic: true`가 명시되어 있어야 합니다.
+  - 수신된 페이로드에 `alert_id: "high_car_front"`, `clip: "reflex_clips/high_front.wav"`(2026-07-09 정정: mp3가 아니라 wav, 단말 번들 `client/assets/sounds/reflex_clips/` 기준), `haptic: true`가 명시되어 있어야 합니다.
 
 ### SC-E2E-002: 노면 파손 안내 및 회피 가이드 생성 (인지 경로)
 
