@@ -219,10 +219,10 @@ export function useCamera(
         // 서버 WS 전송용 raw JPEG 바이트 (base64 미경유). CoreML 네이티브 브릿지 호출은
         // RN 구 브릿지가 JSON 직렬화 가능 타입만 인자로 받을 수 있어 base64 문자열이 불가피하지만,
         // 서버로의 WS 전송은 이 바이트를 그대로 바이너리 프레임으로 보내 33% 오버헤드를 제거한다.
-        const jpegBytes = await new File(manipResult.uri).bytes();
+        const jpegBytes = null; // Fallback to base64 string
 
         if (!audioEngine.isGuidePlaying) {
-          console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> JPEG bytes=${jpegBytes.length} base64len(CoreML용)=${base64.length} float32len=${float32.length}`);
+          console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> base64len(CoreML용)=${base64.length} float32len=${float32.length}`);
         }
 
         // 디바이스 임시 스토리지 고갈 방지를 위해 촬영된 원본 및 리사이징 임시 파일 청소

@@ -4,7 +4,7 @@
  * 실기기: 서버 LAN IP로 변경 필요
  */
 
-const LAN_IP = "192.168.0.209";
+const LAN_IP = "222.112.165.158";
 
 export const WS_URL = `ws://${LAN_IP}:8000/ws/detect`;
 export const DEVICE_ID = "dev-001";
