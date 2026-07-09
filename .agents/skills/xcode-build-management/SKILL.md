@@ -37,10 +37,10 @@ iOS 빌드 및 시뮬레이션 제어를 위해 에이전트 환경(macOS)에서
 
 | 경로 | 역할 |
 |---|---|
-| [`client/ios/`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios) | iOS 네이티브 프로젝트 및 CocoaPods 설정 경로 |
-| [`client/ios/Minchodan.xcworkspace`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Minchodan.xcworkspace) | Xcode 작업 공간 파일 (빌드 대상) |
-| [`client/ios/Podfile`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Podfile) | CocoaPods 의존성 명세 |
-| [`client/ios/Minchodan/CoreMLInferenceBridge.swift`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Minchodan/CoreMLInferenceBridge.swift) | 온디바이스 CoreML 추론 브릿지 소스코드 |
+| [`client/ios/`](../../../client/ios/) | iOS 네이티브 프로젝트 및 CocoaPods 설정 경로 |
+| [`client/ios/Minchodan.xcworkspace`](../../../client/ios/Minchodan.xcworkspace) | Xcode 작업 공간 파일 (빌드 대상) |
+| [`client/ios/Podfile`](../../../client/ios/Podfile) | CocoaPods 의존성 명세 |
+| [`client/ios/CoreMLInferenceBridge.swift`](../../../client/ios/CoreMLInferenceBridge.swift) | 온디바이스 CoreML 추론 브릿지 소스코드 |
 
 ---
 
