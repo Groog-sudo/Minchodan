@@ -75,7 +75,7 @@ class RealtimeTTS:
 
         try:
             audio_bytes = await asyncio.wait_for(
-                self.tts.generate(text=text, voice=voice, speed=speed), timeout=3.0
+                self.tts.generate(text=text, voice=voice, speed=speed), timeout=15.0
             )
             # 음성 데이터가 정상적으로 생성된 경우
             if audio_bytes:

@@ -247,108 +247,91 @@ class PiperTTSService(TTSService):
 
 
 # ============================================================
-# [파트 3] SherpaTTSService 클래스
-# - sherpa-onnx Offline TTS (MeloTTS Ko) 엔진 구현체
-# - sherpa-melotts-kr-int8(51MB, MIT) 모델 이용
+# [파트 3] Pyttsx3TTSService 클래스
+# - pyttsx3 기반 OS 내장형 한글 TTS 엔진 구현체
 # ============================================================
 
 
-class SherpaTTSService(TTSService):
+class Pyttsx3TTSService(TTSService):
     """
-    sherpa-onnx MeloTTS 기반 한국어 TTS 서비스.
-    최초 1회만 모델을 메모리에 로드하고, generate 호출 시 마다 온디바이스 WAV 합성을 병렬 위임 처리.
+    pyttsx3 기반 한국어 TTS 서비스.
+    임시 파일에 음성을 WAV 포맷으로 저장한 뒤, 파일 바이트 데이터를 읽어 반환합니다.
     """
 
     def __init__(self) -> None:
-        project_root = Path(root_dir)
-        self.model_dir = project_root / "server" / "models" / "sherpa-onnx"
-        self.model_path = self.model_dir / "model.onnx"
-        self.lexicon_path = self.model_dir / "lexicon.txt"
-        self.tokens_path = self.model_dir / "tokens.txt"
-        self.dict_dir = self.model_dir / "dict"
+        logger.info("[Pyttsx3TTS] pyttsx3 서비스가 준비되었습니다.")
 
-        self._tts: None | "sherpa_onnx.OfflineTts" = None
-        self._tts_load_lock = asyncio.Lock()
+    def _synthesize_sync(self, text: str, output_path: str, speed: float) -> bytes | None:
+        import pyttsx3
+        is_windows = sys.platform == "win32"
+        if is_windows:
+            import pythoncom
+            pythoncom.CoInitialize()
 
-    def _load_tts_sync(self) -> "sherpa_onnx.OfflineTts":
-        import sherpa_onnx
-
-        vits_config = sherpa_onnx.OfflineTtsVitsModelConfig(
-            model=str(self.model_path),
-            lexicon=str(self.lexicon_path),
-            tokens=str(self.tokens_path),
-            data_dir=str(self.dict_dir),
-            noise_scale=0.667,
-            noise_scale_w=0.8,
-            length_scale=1.0,
-        )
-
-        model_config = sherpa_onnx.OfflineTtsModelConfig(
-            vits=vits_config,
-            num_threads=4,
-            debug=False,
-            provider="cpu",
-        )
-
-        tts_config = sherpa_onnx.OfflineTtsConfig(
-            model=model_config,
-            rule_fsts="",
-            max_num_sentences=1,
-        )
-
-        tts = sherpa_onnx.OfflineTts(tts_config)
-        logger.info(f"[SherpaTTS] 상주 OfflineTts 모델 로드 완료: {self.model_path}")
-        return tts
-
-    async def _ensure_tts(self) -> "sherpa_onnx.OfflineTts":
-        if self._tts is not None:
-            return self._tts
-        async with self._tts_load_lock:
-            if self._tts is None:
-                self._tts = await asyncio.to_thread(self._load_tts_sync)
-        return self._tts
-
-    def _synthesize_sync(self, tts: "sherpa_onnx.OfflineTts", text: str, speed: float) -> bytes | None:
         try:
-            import numpy as np
-
-            audio = tts.generate(text, sid=0, speed=speed)
-            if not audio or len(audio.samples) == 0:
-                logger.error("[SherpaTTS] 음성 합성 샘플 획득에 실패했습니다.")
+            # 호출 단위로 독립된 pyttsx3 엔진 생성
+            engine = pyttsx3.init()
+            
+            # 발화 속도 설정 (기본 속도에 배율 적용)
+            rate = engine.getProperty('rate')
+            engine.setProperty('rate', int(rate * speed))
+            
+            # 한국어 목소리 설정 시도
+            voices = engine.getProperty('voices')
+            for voice in voices:
+                name_lower = voice.name.lower()
+                languages = getattr(voice, 'languages', [])
+                langs_lower = [str(l).lower() for l in languages]
+                
+                is_korean = (
+                    "korean" in name_lower or 
+                    "ko" in name_lower or 
+                    any("ko" in lang for lang in langs_lower)
+                )
+                if is_korean:
+                    engine.setProperty('voice', voice.id)
+                    break
+            
+            # 파일로 저장 후 대기
+            engine.save_to_file(text, output_path)
+            engine.runAndWait()
+            
+            # 생성된 음성 파일 로드
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                with open(output_path, "rb") as f:
+                    return f.read()
+            else:
+                logger.error(f"[Pyttsx3TTS] 음성 파일 저장 실패 또는 크기가 0입니다: {output_path}")
                 return None
-
-            # float32 리스트 -> 16-bit PCM으로 변환 후 WAV 스트림 생성
-            samples = np.array(audio.samples, dtype=np.float32)
-            samples = np.clip(samples, -1.0, 1.0)
-            int_samples = (samples * 32767).astype(np.int16)
-
-            buffer = io.BytesIO()
-            with wave.open(buffer, "wb") as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(audio.sample_rate)
-                wav_file.writeframes(int_samples.tobytes())
-
-            return buffer.getvalue()
         except Exception as e:
-            logger.error(f"[SherpaTTS] 동기 합성 중 에러 발생: {e}")
+            logger.error(f"[Pyttsx3TTS] 동기 합성 중 에러 발생: {e}")
             return None
+        finally:
+            if is_windows:
+                pythoncom.CoUninitialize()
 
     async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
         if not text or not text.strip():
-            logger.warning("[SherpaTTS] 빈 텍스트는 합성하지 않습니다.")
+            logger.warning("[Pyttsx3TTS] 빈 텍스트는 합성하지 않습니다.")
             return None
 
-        if not self.model_path.exists():
-            logger.error(f"[SherpaTTS] 모델 파일이 없습니다: {self.model_path}")
-            return None
+        # 임시 파일 경로를 생성하고, 합성이 완료되면 바이트를 반환 후 삭제
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            temp_path = temp_file.name
 
         try:
-            tts_obj = await self._ensure_tts()
-            return await asyncio.to_thread(self._synthesize_sync, tts_obj, text, speed)
+            # asyncio 이벤트 루프의 블로킹 방지를 위해 비동기 스레드 실행
+            audio_data = await asyncio.to_thread(self._synthesize_sync, text, temp_path, speed)
+            return audio_data
         except Exception as e:
-            logger.error(f"[SherpaTTS] generate 에러 발생: {e}")
+            logger.error(f"[Pyttsx3TTS] generate 에러 발생: {e}")
             return None
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except Exception as e:
+                    logger.warning(f"[Pyttsx3TTS] 임시 파일 삭제 실패: {e}")
 
 
 # ============================================================
@@ -360,18 +343,18 @@ class SherpaTTSService(TTSService):
 def get_tts_service() -> TTSService:
     """
     현재 설정에 맞는 음성 합성 서비스 객체를 만들어서 돌려준다.
-    환경 변수 TTS_ENGINE (기본값: sherpa)에 따라 결정.
+    환경 변수 TTS_ENGINE (기본값: pyttsx3)에 따라 결정.
     """
-    engine = os.getenv("TTS_ENGINE", "sherpa").lower().strip()
+    engine = os.getenv("TTS_ENGINE", "pyttsx3").lower().strip()
 
-    if engine not in {"", "default", "piper", "sherpa"}:
-        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(sherpa) 사용.")
+    if engine not in {"", "default", "piper", "pyttsx3"}:
+        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(pyttsx3) 사용.")
 
     try:
         if engine == "piper":
             return PiperTTSService()
         else:
-            return SherpaTTSService()
+            return Pyttsx3TTSService()
     except Exception as e:
         logger.error(f"[TTS] TTS 서비스 초기화 실패 (engine={engine}): {e}")
         return NullTTSService()
