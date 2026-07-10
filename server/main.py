@@ -155,7 +155,6 @@ app.include_router(ws_router, prefix="")
 app.include_router(user_router)
 app.include_router(admin_router)
 app.include_router(stt_router)
-app.include_router(detection_guidance_log_router)
 
 # 네비게이션 서브앱 마운트
 app.mount("/navigation", navigation_app)

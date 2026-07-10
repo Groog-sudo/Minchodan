@@ -429,3 +429,16 @@
 - **관련 파일**: `server/api/detection_guidance_log_router.py`, `server/main.py`, `docs/changelogs/jh.md`
 - **검증 결과**: main 라우터 등록 경로 반영 완료, 라우터 파일 정적 진단 기준 문법 오류 없음
 - **비고**: 학습형 구현 흐름을 위해 일부 HARDCODE 힌트 주석을 유지한 템플릿 형태로 반영함
+
+---
+
+### 2026-07-10 | DB API | detection_guidance_logs 라우터 제거 및 메인 배선 해제
+
+- **커밋**: `revert(api): detection_guidance_logs 라우터 제거 및 main 배선 해제`
+- **변경 내용**:
+  - `server/api/detection_guidance_log_router.py` 파일을 제거해 로그 저장/조회용 REST 라우터 기본틀을 되돌림
+  - `server/main.py`에서 `detection_guidance_log_router` import와 `app.include_router(...)` 배선을 제거해 미정의 심볼 오류가 남지 않도록 정리함
+  - 결과적으로 detection_guidance_logs는 다시 모델/서비스 계층까지만 남고, HTTP 엔드포인트 노출은 해제된 상태로 정리됨
+- **관련 파일**: `server/api/detection_guidance_log_router.py`, `server/main.py`, `docs/changelogs/jh.md`
+- **검증 결과**: `server/main.py` 기준 미정의 심볼 오류 제거 확인
+- **비고**: 라우터 구조 재설계 또는 WebSocket 경로 배선 방향 재검토 전의 정리 커밋임
