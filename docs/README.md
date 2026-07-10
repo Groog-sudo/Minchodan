@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.13.1 (2026-07-10 jy 브랜치 병합: DB Tailscale 외부망 연결 가이드 추가 + 이전 v0.13.0 이력 유지: iOS/Android 이원화 통합 계약서 추가)
+> **버전**: v0.13.2 (2026-07-10 th 브랜치 병합: 문서 폴더 재정리 반영 + 이전 v0.13.1 이력 유지: jy 브랜치 병합의 DB Tailscale 외부망 연결 가이드 추가, iOS/Android 이원화 통합 계약서 추가)
 
 ## 문서 목록
 
@@ -45,8 +45,12 @@ docs/
 ├── mobile/          # 모바일 앱 구현 계획서 (iOS/Android)
 ├── research/        # 분석 보고서 및 Post-MVP 검토
 ├── ops/             # 운영·개발 환경 설정 및 절차
+│   └── reports/     # 단발성 운영 보고서
 ├── db_tailscale_guide/ # MariaDB Tailscale 외부망 연결 가이드
-├── dev-guides/      # 코딩 표준, 에이전트 프롬프트, 참고 예시
+├── dev-guides/      # 코딩 표준 및 개발 참고 자료
+│   ├── prompts/     # 1회성 에이전트 작업 프롬프트 아카이브
+│   ├── templates/   # 설계서 예시/템플릿
+│   └── integration/ # 콘솔·서버 통합 지침서
 └── changelogs/      # 팀원별 작업 변경 내역
 ```
 
@@ -140,19 +144,29 @@ docs/
 
 ## 6. dev-guides/ — 코딩 표준 및 참고 자료
 
-> 코딩 패턴·함수 시그니처 표준, 에이전트 프롬프트 아카이브, 설계서 예시.
+> 코딩 패턴·함수 시그니처 표준, 에이전트 프롬프트 아카이브, 설계서 예시, 통합 지침서.
 
 | 문서 | 파일 | 설명 |
 | :--- | :--- | :--- |
 | **코딩 패턴 기준** | [course_codebase_guide.md](dev-guides/course_codebase_guide.md) | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
-| 에이전트 작업 지시서 | [antigravity_agent_prompt__4_5_final.md](dev-guides/antigravity_agent_prompt__4_5_final.md) | Antigravity 에이전트 4·5단계 RAG 작업 지시서 (최종 병합본) |
-| 설계서 예시 | [신규_설계서_예시_2.md](dev-guides/신규_설계서_예시_2.md) | 장애물 탐지 설계 참고 예시 문서 |
-| **관제 UI 연동 지침서** | [관제_UI_및_시나리오_연동_지침서.md](dev-guides/관제_UI_및_시나리오_연동_지침서.md) | **관제 콘솔 실시간 지도 iframe 임베딩 및 대화형 길안내 시나리오 연동 가이드** |
-| **서버 통합 기술 지침서** | [서버_및_시스템_통합_기술_지침서.md](dev-guides/서버_및_시스템_통합_기술_지침서.md) | **네비게이션 백엔드 모듈 배치, 의존성, 핵심 5대 소스코드 결합 사양** |
+| 에이전트 작업 지시서 | [antigravity_agent_prompt__4_5_final.md](dev-guides/prompts/antigravity_agent_prompt__4_5_final.md) | Antigravity 에이전트 4·5단계 RAG 작업 지시서 (최종 병합본) |
+| 설계서 예시 | [신규_설계서_예시_2.md](dev-guides/templates/신규_설계서_예시_2.md) | 장애물 탐지 설계 참고 예시 문서 |
+| **관제 UI 연동 지침서** | [관제_UI_및_시나리오_연동_지침서.md](dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md) | **관제 콘솔 실시간 지도 iframe 임베딩 및 대화형 길안내 시나리오 연동 가이드** |
+| **서버 통합 기술 지침서** | [서버_및_시스템_통합_기술_지침서.md](dev-guides/integration/서버_및_시스템_통합_기술_지침서.md) | **네비게이션 백엔드 모듈 배치, 의존성, 핵심 5대 소스코드 결합 사양** |
 
 ---
 
-## 7. changelogs/ — 팀원별 작업 변경 내역
+## 7. ops/reports/ — 단발성 운영 보고서
+
+> 운영 규칙 그 자체가 아니라, 특정 통합 작업의 결과를 남기는 보고서 모음.
+
+| 문서 | 파일 | 설명 |
+| :--- | :--- | :--- |
+| 역할 C 연동 완료 보고서 | [역할_C_TTS_반사경로_Navigation_가이드_기준_연동_적용_완료_보고서.md](ops/reports/역할_C_TTS_반사경로_Navigation_가이드_기준_연동_적용_완료_보고서.md) | TTS·반사경로·Navigation 연동 수정 및 검증 기록 |
+
+---
+
+## 8. changelogs/ — 팀원별 작업 변경 내역
 
 | 문서 | 파일 | 설명 |
 | :--- | :--- | :--- |

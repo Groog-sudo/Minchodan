@@ -118,7 +118,38 @@
   - 6개의 원본 라벨(`sidewalk`, `caution_zone`, `roadway` 등)을 YOLO 학습용 4개 라벨(`sidewalk_normal`, `caution`, `roadway`, `braille_normal`)로 통합 매핑했습니다.
   - train/val 분할 및 하드링크 복사를 지원하며, 학습을 위한 `training/configs/aihub_yolo_segmentation.yaml` 설정 파일을 생성했습니다.
 - **관련 파일**: `scripts/convert_aihub_seg_to_yolo.py`, `training/configs/aihub_yolo_segmentation.yaml`
+
+---
+
+### 2026-07-09 | 3단계 | DETECTOR_TYPE 환경변수 실제 연결
+
+- **변경 내용**:
+  - `server/detection/config.py`가 `.env`의 `DETECTOR_TYPE`를 실제로 읽도록 수정했습니다.
+  - `DETECTOR_TYPE=mock`이면 노트북/데모 환경에서 `MockDetector`/`MockSegmentor`를 강제 사용하고, `DETECTOR_TYPE=yolo`이면 가중치 로드 경로로 진입하도록 분기했습니다.
+  - 잘못된 값은 서버를 죽이지 않고 경고 로그 후 `mock`으로 안전 폴백하게 했습니다.
+  - `docs/ops/environment_variables.md`의 기존 "죽은 변수" 설명을 현재 코드와 맞게 정정했습니다.
+- **관련 파일**: `server/detection/config.py`, `docs/ops/environment_variables.md`
+
+---
+
+### 2026-07-09 | 공통 | docs 폴더 용도별 하위 분류 정리
+
+- **변경 내용**:
+  - `docs/dev-guides/` 아래에 `prompts/`, `templates/`, `integration/` 하위 폴더를 만들어 1회성 프롬프트, 설계 예시, 통합 지침서를 용도별로 분리했습니다.
+  - `docs/ops/` 아래에 `reports/` 하위 폴더를 만들어 단발성 연동 보고서를 운영 기준 문서와 분리했습니다.
+  - `README.md`, `SKILLS.md`, `docs/README.md`의 경로 안내를 현재 구조에 맞게 정정했습니다.
+- **관련 파일**: `README.md`, `SKILLS.md`, `docs/README.md`, `docs/dev-guides/prompts/`, `docs/dev-guides/templates/`, `docs/dev-guides/integration/`, `docs/ops/reports/`
 - **검증 결과**: 100개 이미지 샘플 변환 테스트 완료 (`training/datasets/segmentation/aihub_0820_26/`에 정상 생성 및 라벨 정규화 값 0~1 사이 검증)
+
+---
+
+### 2026-07-09 | 3단계 | YOLO 가중치 폴백 경로 및 surface-only 인지 발행 보강
+
+- **변경 내용**:
+  - `server/detection/config.py`에서 `DETECTOR_TYPE=yolo`일 때 우선 커스텀 경로(`det_best_20260705.pt`, `segbest.pt`)를 보고, 해당 파일이 없으면 현재 워크스페이스에 실제 존재하는 `object_detection.pt`, `segmentation.pt`로 한 번 더 폴백하도록 보강했습니다.
+  - `server/detection/detection_pipeline.py`와 `server/bus/producer.py`에서 탐지 박스 없이 노면 분할 결과만 있는 `mid/low` 프레임도 Redis `risk.events`로 발행되게 연결했습니다.
+  - `tests/test_detection.py`에 `surface-only mid` 이벤트 발행 회귀 테스트를 추가했습니다.
+- **관련 파일**: `server/detection/config.py`, `server/detection/detection_pipeline.py`, `server/bus/producer.py`, `tests/test_detection.py`
 
 ---
 

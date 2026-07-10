@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 
 RISK_LEVELS = {"high", "mid", "low"}
 
+# =========================================================================
+# 👨‍💻 HARD CODE 영역 시작: cognitive 경로로 넘길 mid risk 클래스 확정 👨‍💻
+# 💡 [면접 대비 주석]
+# 질문: 왜 모든 탐지 객체를 reflex(즉시 경보)로 보내지 않았나요?
+# 답변: 시각장애인 보행 보조에서 가장 위험한 것은 "경보 과다"로 인한 피로 누적입니다.
+# 따라서 즉시 충돌 가능성이 큰 5종(car/truck/bus/motorcycle/scooter)만 reflex로 고정하고,
+# 나머지 정적 장애물/보행 방해물은 mid risk로 분류해 cognitive 경로에서 방향성과 회피
+# 문장을 포함한 상세 안내로 처리하도록 설계했습니다.
+#
 # 2026-07-07 정정: 이전 목록은 COCO 80클래스 잔재(skateboard/backpack/handbag/suitcase/
 # umbrella/"fire hydrant" 등)였고 실제 파인튜닝 완료 29클래스 모델과 대부분 일치하지 않았다.
 # 반사 게이트가 이미 처리하는 5종(car/truck/bus/motorcycle/scooter)과 정보성/비장애물
@@ -47,7 +56,20 @@ MID_RISK_CLASSES = {
     "tree_trunk",
     "wheelchair",
 }
+
+# =========================================================================
+# 👨‍💻 HARD CODE 영역 시작: segmentation 기반 mid risk 노면 기준 👨‍💻
+# 💡 [면접 대비 주석]
+# 질문: segmentation 결과는 왜 `caution`, `roadway`만 mid로 봤나요?
+# 답변: 현재 실제 4클래스 segmentation 모델에서 보행 판단에 직접 영향을 주는 노면 위험은
+# caution(계단/맨홀/그레이팅 통합)과 roadway(차도) 두 가지입니다.
+# sidewalk_normal / braille_normal은 상태 정보로는 의미가 있지만 즉시 회피 문장을 만들
+# 필요가 적기 때문에 mid 경로에 올리지 않고 low 쪽으로 남겨두었습니다.
+# 노면은 현재 실제 segmentation 4클래스 기준으로 본다.
+# caution : 계단/맨홀/그레이팅 통합 위험 구간
+# roadway : 차도 침범 / 이탈 위험
 MID_RISK_SURFACE_CLASSES = {"caution", "roadway"}
+# =========================================================================
 
 
 class DetectionPipeline:
@@ -128,7 +150,7 @@ class DetectionPipeline:
         inference_ms = (time.time() - start_ts) * 1000
 
         if risk_hint in ("mid", "low"):
-            await self._publish_cognitive(event_id, detections, risk_hint)
+            await self._publish_cognitive(event_id, detections, surfaces, risk_hint)
 
         res = DetectionResult(
             event_id=event_id,
@@ -188,6 +210,10 @@ class DetectionPipeline:
         MID_RISK_CLASSES/MID_RISK_SURFACE_CLASSES(모듈 상수) 기준. 2026-07-07 정정 이력은
         해당 상수 정의부 주석 참조.
         """
+        # 💡 [면접 대비 주석]
+        # 3단계 DetectionPipeline은 "최종 문장 생성"이 아니라 "반사와 인지의 경계 분리"까지만 맡는다.
+        # high는 reflex/surface gate에서 이미 잘라냈고, 여기서는 남은 후보를 mid/low/none으로만
+        # 정리해 후속 RAG/LangGraph로 넘긴다. 즉 3단계는 과판단을 피하고 경로 분리 책임에 집중한다.
         if not detections and not surfaces:
             return "none"
 
@@ -203,6 +229,7 @@ class DetectionPipeline:
         self,
         event_id: str,
         detections: list[Detection],
+        surfaces: list[SurfaceResult],
         risk_hint: str,
     ):
         for det in detections:
@@ -210,3 +237,10 @@ class DetectionPipeline:
                 await self.producer.publish_detection(event_id, det, risk_hint)
             except Exception as e:
                 logger.warning(f"[Pipeline] cognitive 발행 실패: {e}")
+        if detections:
+            return
+        for surf in surfaces:
+            try:
+                await self.producer.publish_surface(event_id, surf, risk_hint)
+            except Exception as e:
+                logger.warning(f"[Pipeline] surface cognitive 발행 실패: {e}")

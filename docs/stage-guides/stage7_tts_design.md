@@ -1,7 +1,7 @@
-# Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
+﻿# Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
 
 > **작성일**: 2026-07-01
-> **버전**: v0.4.0 (2026-07-09 실기기 TTS 절단 근본 원인 규명에 따른 전면 갱신: 기본 TTS 엔진 Piper→Supertonic 교체(`SupertonicTTSService` 신규, Piper는 핫스왑 폴백으로 보존), guide 오디오 `audio_mp3_b64`→WS 바이너리 프레임 전환, `_synthesize_lock` 동시성 직렬화, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어(`playGuideAudioBytes`) 반영 + 이전 v0.3.0 이력 유지)
+> **버전**: v0.4.1 (2026-07-10 th 브랜치 병합: pyttsx3를 로컬 저사양 대체 옵션으로 병기 + 이전 v0.4.0 이력 유지: 실기기 TTS 절단 근본 원인 규명에 따른 전면 갱신, 기본 TTS 엔진 Piper→Supertonic 교체(`SupertonicTTSService` 신규, Piper는 핫스왑 폴백으로 보존), guide 오디오 `audio_mp3_b64`→WS 바이너리 프레임 전환, `_synthesize_lock` 동시성 직렬화, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어(`playGuideAudioBytes`) 반영)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 7단계, [`docs/architecture.md`](architecture.md) 5.7절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md) 5.7절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 3, 17.2
 > **스킬 참조**: [`.agents/skills/tts-voice-streamer/SKILL.md`](../.agents/skills/tts-voice-streamer/SKILL.md)
@@ -29,7 +29,7 @@
 
 - **[완료]** 반사 경로: direction/유형 기준 사전합성 클립 즉시 재생 + 선점 + 중복 억제. **2026-07-09 정정**: 실제 전송 경로는 `server/detection/consumer.py`의 `_send_reflex_alert()`가 게이트(`reflex_gate.py`/`surface_gate.py`/`head_level_gate.py`)가 채운 `ReflexAlert.clip`을 그대로 사용한다 — `server/tts/reflex_clip_sender.py`(아래 참조)는 실제로는 어디서도 호출되지 않는 죽은 코드였다.
 - **[완료, 2026-07-09 엔진 교체]** 인지 경로: LangGraph L3 검증 통과 가이드 문장 → 서버 실시간 TTS(**Supertonic 3**, `TTS_ENGINE=supertonic` 기본) → raw **WAV** WS 바이너리 프레임 전송(`audio_mp3_b64` base64 필드는 폐기됨, §9 참조) → 단말 `expo-audio` 재생(Web Audio API 아님, React Native 환경 제약)
-- **[완료]** TTSService 추상화 계층: **Supertonic**(`SupertonicTTSService`, 기본)과 **Piper**(`PiperTTSService`, 핫스왑 폴백으로 코드 보존, `TTS_ENGINE=piper`로 즉시 전환 가능) 2종 구현. Kokoro/Coqui는 여전히 미구현(핫스왑 대비 설계만 존재).
+- **[완료]** TTSService 추상화 계층: **Supertonic**(`SupertonicTTSService`, 기본), **Piper**(`PiperTTSService`, 핫스왑 폴백으로 코드 보존, `TTS_ENGINE=piper`로 즉시 전환 가능), **pyttsx3**(`Pyttsx3TTSService`, GPU·네트워크 불필요한 로컬 저사양 대체, `TTS_ENGINE=pyttsx3`) 3종 구현. Kokoro/Coqui는 여전히 미구현(핫스왑 대비 설계만 존재).
 - **[완료]** 중복 억제 (Suppressor, Redis SETEX 60초)
 - **[부분 완료]** 햅틱·접근성 연동 (Haptics 연동 완료, `announceForAccessibility` 별도 확인 필요)
 - **[완료, 2026-07-09]** 클라이언트 번들 클립 관리: 최초 설계(`data/reflex_clips/` → `client/assets/reflex_clips/`)와 실제 경로가 다르다 — 실제로는 `client/assets/sounds/reflex_clips/`(기존 `beep.wav`와 같은 `sounds/` 하위 규칙 준수)에 WAV 5종(direction 3종 + surface_caution + head_level_warning)으로 번들됨. `audioEngine.playReflexClip()` 신규 구현.
@@ -64,7 +64,7 @@
 - `client/src/utils/haptics.ts`: Haptics + announceForAccessibility
 
 ### 환경 변수 (docs/environment_variables.md 참조)
-- `TTS_ENGINE`: supertonic (기본, 2026-07-09 변경) | piper (핫스왑 폴백) — 그 외 값 지정 시 `tts_service.py`가 경고 로그를 남기고 supertonic으로 강제 폴백
+- `TTS_ENGINE`: supertonic (기본, 2026-07-09 변경) | piper (핫스왑 폴백) | pyttsx3 (로컬 저사양 대체, 2026-07-10 추가) — 그 외 값 지정 시 `tts_service.py`가 경고 로그를 남기고 supertonic으로 강제 폴백
 - `SUPERTONIC_VOICE`: F1 (기본, 2026-07-09 신규 - Supertonic 보이스 스타일 이름)
 - `DATA_REFLEX_CLIPS`: data/reflex_clips
 

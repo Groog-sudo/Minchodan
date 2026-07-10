@@ -1,7 +1,7 @@
-# Minchodan 시스템 아키텍처 설계서
+﻿# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.3 (2026-07-10 §5.2 카메라 캡처 계층을 FrameCaptureProvider 인터페이스로 iOS/Android 물리 분리 반영, `docs/mobile/ios_android_bifurcation_contract.md` 연동 + 이전 v0.3.2 이력 유지)
+> **버전**: v0.3.4 (2026-07-10 th 브랜치 병합: 7단계 다이어그램 TTS 라벨을 Piper/pyttsx3 핫스왑 병기로 정리 + 이전 v0.3.3 이력 유지: §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -24,7 +24,7 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 - LangGraph + LangChain (L1/L2/L3 오케스트레이션)
 - Ollama (Llava 캡셔닝, gemma4-e4b 가이드 생성, nomic-embed-text 임베딩)
 - ChromaDB (로컬 파일 기반 벡터 저장소)
-- Kokoro-82M / Coqui (로컬 TTS)
+- pyttsx3(기본) / piper(선택) 로컬 TTS (선택 이력: piper → sherpa-onnx → supertonic 최종 선정안, 코드 반영은 순차 진행)
 - OpenCV (프레임 디코딩)
 
 ### 클라이언트 (단말)
@@ -88,7 +88,7 @@ graph TD
         end
 
         subgraph TTS ["7. 음성 출력"]
-            RealtimeTTS["실시간 TTS<br/>(Supertonic, Piper 핫스왑)"]
+            RealtimeTTS["실시간 TTS<br/>(Supertonic 기본, Piper/pyttsx3 핫스왑)"]
             ClipSender["Reflex Clip Sender<br/>(사전합성 클립)"]
             Suppressor["Suppressor<br/>(Redis setex 60)"]
         end
@@ -368,7 +368,7 @@ sequenceDiagram
 | Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
 | LLM Client | ChatOllama(gemma4-e4b)             | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
 | Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상 클래스) |
-| TTS        | Kokoro/Coqui                       | OpenAI TTS           | `server/tts/tts_service.py`                  |
+| TTS        | pyttsx3(기본) / piper(선택)        | supertonic(최종 선정안, 순차 반영) / OpenAI TTS | `server/tts/tts_service.py`                  |
 
 ---
 
@@ -389,7 +389,7 @@ sequenceDiagram
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
-| `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)          | `kokoro`                 |
+| `TTS_ENGINE`        | TTS 엔진 (`pyttsx3` 기본, `piper` 선택)   | `pyttsx3`                |
 | `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |

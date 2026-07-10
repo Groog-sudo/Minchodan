@@ -165,4 +165,14 @@ async def health_check():
     """
     서버 및 Redis 상태를 점검하는 헬스체크 API.
     """
-    return {"status": "healthy", "timestamp": asyncio.get_event_loop().time()}
+    consumer = get_default_consumer()
+    return {
+        "status": "healthy",
+        "timestamp": asyncio.get_event_loop().time(),
+        "runtime": {
+            "detector_type": os.getenv("DETECTOR_TYPE", "mock"),
+            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            "chroma_collection": os.getenv("CHROMA_COLLECTION", "safety_guidelines"),
+            "detection_consumer": consumer.get_runtime_status(),
+        },
+    }

@@ -1,4 +1,4 @@
-# Minchodan 환경 변수 명세서
+﻿# Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-10
@@ -61,7 +61,7 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - Object Detection 신뢰도 임계값 | [`stage3_detection_design.md`](stage3_detection_design.md) 5절 |
-| **`DETECTOR_TYPE`** | string | 미사용 | `mock` | **2026-07-08 확인: 코드 어디에서도 `os.getenv`로 읽히지 않는 죽은 변수.** 실제 Mock/YOLO 분기는 `server/detection/config.py`의 `get_detector()`/`get_segmentor()`가 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 파일의 존재 여부만으로 결정한다 | `server/detection/config.py` |
+| **`DETECTOR_TYPE`** | string | 선택 | `mock` | **2026-07-09 정정**: `server/detection/config.py`가 실제로 읽는다. `mock`이면 노트북/데모 환경에서 `MockDetector`/`MockSegmentor`를 강제 사용하고, `yolo`이면 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 로드 시도를 수행한다. 미지원 값은 안전 폴백으로 `mock` 처리 | `server/detection/config.py` |
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
@@ -79,6 +79,8 @@
 | **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부(핫스왑 폴백용, `TTS_ENGINE=piper`일 때만 사용). **2026-07-09 정정**: 상주 프로세스화로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
 | **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위(핫스왑 폴백용) | `server/tts/tts_service.py` |
 | **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.9` | Piper 핫스왑 경로 사용 시 기본 속도. **2026-07-08 추가**: 모델 원 설정(`phoneme_type=pygoruut`)을 실제로 지원하지 않는 `piper-tts==1.4.2`에서 발생한 속도 이상(정상 대비 약 2.5~3배 느림)을 `pygoruut` 사전 음소화 도입으로 해소한 뒤의 정상 범위 값 | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
+
+> **TTS 엔진 선택 이력**: piper → sherpa-onnx → **supertonic(최종 선정안)**. 현재 코드 런타임은`pyttsx3`(기본)·`piper`(선택)만 구현되어 있으며, supertonic은 후속 단계에서 반영됩니다.
 
 ### 2.7 데이터 경로 (4단계 RAG 빌드·7단계 반사 클립)
 

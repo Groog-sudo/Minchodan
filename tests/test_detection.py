@@ -424,6 +424,22 @@ class TestPipelineRobustness:
         mock_redis_bus.publish_event.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_surface_only_mid_risk_publishes_to_redis(self, frame, mock_redis_bus):
+        pipeline = DetectionPipeline(
+            detector=StubDetector(detections=[]),
+            segmentor=StubSegmentor(
+                surfaces=[SurfaceResult(class_name="roadway", centroid=[320.0, 120.0])]
+            ),
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result, _, _ = await pipeline.run(frame, "test", "evt-surface-mid", "dev-1")
+        assert isinstance(result, DetectionResult)
+        assert result.risk_hint == "mid"
+        mock_redis_bus.publish_event.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_tracker_exception_still_returns_result(self, frame, mock_redis_bus):
         mock_redis_bus.get_track_context = AsyncMock(side_effect=RuntimeError("redis down"))
         detector = StubDetector(

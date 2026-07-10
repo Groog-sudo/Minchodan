@@ -62,6 +62,15 @@ class DetectionConsumer:
         self._last_guide_duration_sec: dict[str, float] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
+        self._last_status: dict[str, str | float | int | None] = {
+            "stream": None,
+            "event_id": None,
+            "device_id": None,
+            "result_type": None,
+            "risk_hint": None,
+            "updated_at": None,
+            "error": None,
+        }
 
     def _required_guide_gap_sec(self, device_id: str) -> float:
         """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다."""
@@ -69,6 +78,10 @@ class DetectionConsumer:
         return max(
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
+
+    def get_runtime_status(self) -> dict[str, str | float | int | None]:
+        """최근 DetectionConsumer 처리 상태를 반환한다."""
+        return dict(self._last_status)
 
     async def _ensure_pipeline(self) -> DetectionPipeline:
         if self._pipeline is None:
@@ -133,6 +146,17 @@ class DetectionConsumer:
                 f"[DetectionConsumer] pipeline 미초기화, skip: "
                 f"event_id={processed.event_id}, stream={stream}"
             )
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": processed.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "pipeline_uninitialized",
+                    "risk_hint": None,
+                    "updated_at": now_ts(),
+                    "error": None,
+                }
+            )
             return
 
         frame: np.ndarray = processed.frame
@@ -147,6 +171,17 @@ class DetectionConsumer:
             logger.error(
                 f"[DetectionConsumer] pipeline.run 실패: event_id={processed.event_id}, {e}"
             )
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": processed.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "pipeline_error",
+                    "risk_hint": None,
+                    "updated_at": now_ts(),
+                    "error": str(e),
+                }
+            )
             return
 
         # 서버 YOLO 추론 결과를 BBox 렌더링용으로 단말에 실시간 송신
@@ -155,8 +190,30 @@ class DetectionConsumer:
         )
 
         if isinstance(result, ReflexAlert):
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": result.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "reflex_alert",
+                    "risk_hint": result.risk_level,
+                    "updated_at": now_ts(),
+                    "error": None,
+                }
+            )
             await self._send_reflex_alert(processed.device_id, result)
         elif isinstance(result, DetectionResult):
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": result.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "detection_result",
+                    "risk_hint": result.risk_hint,
+                    "updated_at": now_ts(),
+                    "error": None,
+                }
+            )
             if result.risk_hint in ("mid", "low"):
                 await self._send_cognitive_guide(processed.device_id, result)
             logger.debug(
@@ -165,6 +222,17 @@ class DetectionConsumer:
             )
         else:
             logger.warning(f"[DetectionConsumer] 예상치 못한 결과 타입: {type(result)}")
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": processed.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": type(result).__name__,
+                    "risk_hint": None,
+                    "updated_at": now_ts(),
+                    "error": "unexpected_result_type",
+                }
+            )
 
     async def _send_server_detection(
         self,
