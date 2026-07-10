@@ -24,8 +24,10 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
       // #    강제하기 때문에, 프론트에서도 그 규칙에 맞춰 폼 데이터를 전송하는 것입니다."
 
       const formData = new URLSearchParams();
-      formData.append("username", employeeNo);
-      formData.append("password", password);
+      // 수정 메모:
+      // 입력값 앞뒤 공백으로 인한 401 방지를 위해 trim()을 적용한 구간입니다.
+      formData.append("username", employeeNo.trim());
+      formData.append("password", password.trim());
 
       const response = await fetch("http://localhost:8000/api/v1/admin/login", {
         method: "POST",
@@ -35,11 +37,19 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
         body: formData.toString()      
       });
 
-      if(!response.ok){
-        throw new Error("사번 또는 비밀번호가 틀렸습니다.")
+      // TH HARDCODE AREA:
+      // 로그인 응답 detail/access_token을 직접 확인해 에러 메시지를 분기하는 구간입니다.
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail ?? "사번 또는 비밀번호가 틀렸습니다.");
       }
 
       const data = await response.json();
+      console.log("login response", data);
+      if (!data?.access_token) {
+        throw new Error("access_token 응답이 없습니다.");
+      }
+      console.log("access token exists", !!data.access_token);
       // 발급받은 JWT 토큰(access_token)을 부모(App.tsx)에게 넘겨줌
       onLogin(data.access_token);
     }catch (err: any){

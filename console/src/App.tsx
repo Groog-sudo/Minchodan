@@ -22,6 +22,7 @@ export default function App() {
   // MVP 단계라 일단 메모리(useState)에만 들고 있습니다. 
   // 새로고침하면 로그아웃되지만, 보안상 XSS 등 탈취 위험이 가장 적은 안전한 방식입니다!
   const [token, setToken] = useState<string | null>(null);
+  console.log("app token", token);
 
   // 기존 useMonitorStream 코드 유지 (여기에 나중에 ?token= 붙일 예정)
   // 로그인 안 해도 무조건 이 Hook이 실행되어 백엔드를 두드립니다!
@@ -82,8 +83,10 @@ export default function App() {
         <DetectionFeed items={state.detections} />
       </section>
 
-      {/* 📍 여기에 지도 컴포넌트 추가! */}
-      <OperatorLiveMap />
+      {/* TH HARDCODE AREA:
+          8001 지도 서버 미실행 상태에서는 iframe load fail이 발생하므로
+          OperatorLiveMap은 임시 비활성화합니다. */}
+      {/* <OperatorLiveMap /> */}
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,
