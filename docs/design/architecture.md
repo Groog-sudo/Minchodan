@@ -1,4 +1,4 @@
-# Minchodan 시스템 아키텍처 설계서
+﻿# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
 > **버전**: v0.3.1 (2026-07-09 반사 클립 저장 위치를 서버 data/reflex_clips/(MP3)에서 실제 구현인 client/assets/sounds/reflex_clips/(WAV, 단말 번들)로 정정)
@@ -24,7 +24,7 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 - LangGraph + LangChain (L1/L2/L3 오케스트레이션)
 - Ollama (Llava 캡셔닝, gemma4-e4b 가이드 생성, nomic-embed-text 임베딩)
 - ChromaDB (로컬 파일 기반 벡터 저장소)
-- Kokoro-82M / Coqui (로컬 TTS)
+- pyttsx3(기본) / piper(선택) 로컬 TTS (선택 이력: piper → sherpa-onnx → supertonic 최종 선정안, 코드 반영은 순차 진행)
 - OpenCV (프레임 디코딩)
 
 ### 클라이언트 (단말)
@@ -88,7 +88,7 @@ graph TD
         end
 
         subgraph TTS ["7. 음성 출력"]
-            RealtimeTTS["실시간 TTS<br/>(Kokoro/Coqui)"]
+            RealtimeTTS["실시간 TTS<br/>(pyttsx3/piper)"]
             ClipSender["Reflex Clip Sender<br/>(사전합성 클립)"]
             Suppressor["Suppressor<br/>(Redis setex 60)"]
         end
@@ -362,7 +362,7 @@ sequenceDiagram
 | Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
 | LLM Client | ChatOllama(gemma4-e4b)             | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
 | Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상 클래스) |
-| TTS        | Kokoro/Coqui                       | OpenAI TTS           | `server/tts/tts_service.py`                  |
+| TTS        | pyttsx3(기본) / piper(선택)        | supertonic(최종 선정안, 순차 반영) / OpenAI TTS | `server/tts/tts_service.py`                  |
 
 ---
 
@@ -383,7 +383,7 @@ sequenceDiagram
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
-| `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)          | `kokoro`                 |
+| `TTS_ENGINE`        | TTS 엔진 (`pyttsx3` 기본, `piper` 선택)   | `pyttsx3`                |
 | `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
