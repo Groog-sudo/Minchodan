@@ -1,4 +1,4 @@
-import json
+﻿import json
 import sys
 from datetime import UTC, datetime
 
@@ -13,73 +13,130 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 
 
 # ==========================================
-# VIBE PART (설명 중심, 반복 작업 위임 영역)
-# - 함수/변수/구조를 빠르게 조립하고 전체 흐름을 연결하는 영역입니다.
-# - 핵심 판단(중복 기준, 필수 필드 정책)은 HARDCODE PART에서 확정합니다.
+# VIBE PART - 서비스 클래스 설명
+#
+# [이 클래스가 하는 일]
+# - detection_guidance_logs 테이블에 탐지/안내 이벤트 로그를 저장하는 서비스 계층입니다.
+# - Router에서 넘겨받은 DTO(DetectionGuidanceLogCreate)를
+#   ORM 객체(DetectionGuidanceLog)로 변환해 Repository에 전달합니다.
+#
+# [3계층 구조에서의 위치]
+# Router (API 입구) -> Service (비즈니스 로직) -> Repository (DB 저장)
+# 이 클래스는 중간(Service) 계층입니다.
+#
+# [event_id 중복 방지 원칙]
+# - 같은 event_id가 두 번 들어오면 두 번째 요청은 저장하지 않고 기존 로그를 반환합니다.
+# - 클라이언트 재전송(retry) 등 중복 요청으로 인한 데이터 오염을 막기 위한 설계입니다.
 # ==========================================
 class DetectionGuidanceLogService:
-    """detction_guidance_logs 적재 서비스.
-
-    역할:
-    1) DTO 입력 검증 결과를 ORM으로 변환
-    2) event_id 중복 시 재적재 방지
-    3) 저장 완료 후 응답 DTO 반환
-    """
 
     def __init__(self, session: AsyncSession):
+        # VIBE: AsyncSession을 주입받아 Repository에 넘깁니다.
+        # 세션은 FastAPI의 Depends(get_db)에서 생성되고 요청이 끝나면 자동으로 닫힙니다.
         self.session = session
         self.log_repo = DetectionGuidanceLogRepository(session)
 
     # ==========================================
-    # HARDCODE PART (면접/발표 핵심 방어 영역)
-    # 이 함수의 핵심 로직은 일부러 비워두었습니다.
-    # 아래 힌트 순서대로 직접 작성하세요.
+    # HARDCODE PART - create_log 설명 및 작성 조건
     #
-    # 조건 설명:
-    # 1) payload.event_id가 있으면 get_by_event_id()로 중복 검사
-    # 2) 중복 로그가 있으면 Response로 바로 반환
-    # 3) 없으면 DetectionGuidanceLog(...) 생성
-    # 4) repo.create(...) 저장 후 Response 변환 반환
+    # [기능 설명]
+    # - DTO(payload)를 받아 DB에 로그를 저장하고 응답 DTO를 반환합니다.
+    # - 내부에서 event_id 중복 검사 -> ORM 객체 생성 -> 저장 -> 응답 변환 순서로 동작합니다.
+    #
+    # [파라미터 설명]
+    # - payload: DetectionGuidanceLogCreate
+    #   event_id, user_id, device_id, detected_at,
+    #   stream_type, detected_objects_json, tts_text 필드를 가집니다.
+    #
+    # [반환 설명]
+    # - DetectionGuidanceLogResponse: 저장된(또는 기존) 로그의 응답 DTO입니다.
+    #
+    # [작성 조건 - 반드시 이 순서대로 구현]
+    # 1) payload.event_id가 있으면(None이 아니면) get_by_event_id()로 중복 조회
+    #    - 이미 저장된 로그가 있으면 -> model_validate()로 Response 변환 후 즉시 반환
+    # 2) DetectionGuidanceLog ORM 객체를 payload 값으로 생성
+    #    - 컬럼명: event_id, user_id, device_id, detected_at,
+    #              stream_type, detected_objects_json, tts_text
+    # 3) self.log_repo.create(log)로 저장 후 Response 변환해 반환
     # ==========================================
     async def create_log(self, payload: DetectionGuidanceLogCreate) -> DetectionGuidanceLogResponse:
-        # HINT 1: event_id가 있으면 중복 조회
-        # existed = ...
-        # if existed is not None:
-        #     return ...
+        # HINT 1: event_id 중복 검사
+        # if payload.event_id:
+        #     existed = await self.log_repo.get_by_event_id(payload.event_id)
+        #     if existed is not None:
+        #         return DetectionGuidanceLogResponse.model_validate(existed)
 
         # HINT 2: ORM 객체 생성
-        # log = DetectionGuidanceLog(...)
+        # log = DetectionGuidanceLog(
+        #     event_id=payload.event_id,
+        #     user_id=payload.user_id,
+        #     device_id=payload.device_id,
+        #     detected_at=payload.detected_at,
+        #     stream_type=payload.stream_type,
+        #     detected_objects_json=payload.detected_objects_json,
+        #     tts_text=payload.tts_text,
+        # )
 
-        # HINT 3: 저장 + 응답 변환
+        # HINT 3: 저장 + 응답 변환 반환
         # saved = await self.log_repo.create(log)
         # return DetectionGuidanceLogResponse.model_validate(saved)
 
-        raise NotImplementedError("HARDCODE PART: create_log를 직접 구현하세요.")
+        if payload.event_id :
+            existed = await self.log_repo.get_by_event_id(payload.event_id)
+            if existed is not None:
+                return DetectionGuidanceLogResponse.model_validate(existed)
+
+        log = DetectionGuidanceLog(
+            event_id=payload.event_id,
+            user_id=payload.user_id,
+            device_id=payload.device_id,
+            detected_at=payload.detected_at,
+            stream_type=payload.stream_type,
+            detected_objects_json=payload.detected_objects_json,
+            tts_text=payload.tts_text,
+        )
+
+        saved = await self.log_repo.create(log)
+        return DetectionGuidanceLogResponse.model_validate(saved)
+
+        # raise NotImplementedError("HARDCODE PART: create_log()를 직접 구현하세요.")
 
 
 # ==========================================
-# HARDCODE PART (직접 작성용 유틸 템플릿)
-# 이 함수는 "탐지 객체 리스트 -> JSON 문자열" 변환을 담당합니다.
+# HARDCODE PART - build_detected_objects_json 설명 및 작성 조건
+#
+# [기능 설명]
+# - YOLO 탐지 결과 리스트를 DB 저장용 JSON 문자열로 변환합니다.
+# - detected_objects_json 컬럼은 MySQL JSON 타입이지만,
+#   Python에서는 문자열로 직렬화해서 넘겨야 SQLAlchemy가 처리합니다.
+#
+# [파라미터 설명]
+# - detections: list[dict]
+#   예: [{"class_name": "car", "confidence": 0.91, "direction": "front"}]
+#
+# [작성 조건]
+# - json.dumps()를 사용합니다.
+# - ensure_ascii=False 옵션을 반드시 사용합니다.
+#   이유: 한글 class_name 등이 \uXXXX 형태로 깨지지 않도록
+# - 빈 리스트([])도 유효한 입력입니다.
 # ==========================================
 def build_detected_objects_json(detections: list[dict]) -> str:
-    """탐지 객체 배열을 DB 저장용 JSON 문자열로 변환합니다.
+    # HINT: return json.dumps(detections, ensure_ascii=False)
 
-    예시 입력:
-    [
-        {"class_name": "car", "confidence": 0.91, "direction": "front"},
-        {"class_name": "bollard", "confidence": 0.74, "direction": "left"},
-    ]
-    """
-    # HINT:
-    # 1) ensure_ascii=False를 사용하면 한글이 \uXXXX로 깨지지 않습니다.
-    # 2) DB 저장 컬럼은 LONGTEXT이므로 문자열 직렬화가 필요합니다.
-    # return json.dumps(detections, ensure_ascii=False)
-    raise NotImplementedError("HARDCODE PART: build_detected_objects_json을 직접 구현하세요.")
+    # raise NotImplementedError("HARDCODE PART: build_detected_objects_json()을 직접 구현하세요.")
+
+    return json.dumps(detections, ensure_ascii=False)
 
 
 # ==========================================
-# VIBE PART (테스트용 샘플 payload 생성)
-# - detected_at은 클라이언트 프레임 시각을 원칙으로 합니다.
+# VIBE PART - build_sample_payload 설명
+#
+# [이 함수가 하는 일]
+# - 테스트용 샘플 payload를 만들어주는 헬퍼 함수입니다.
+# - create_log()를 직접 호출해 저장 흐름을 테스트할 때 사용합니다.
+#
+# [detected_at 원칙]
+# - 실제 사용 시에는 클라이언트 프레임 기준 탐지 시각을 넣어야 합니다.
 # ==========================================
 def build_sample_payload() -> DetectionGuidanceLogCreate:
     return DetectionGuidanceLogCreate(
@@ -88,6 +145,6 @@ def build_sample_payload() -> DetectionGuidanceLogCreate:
         device_id=None,
         detected_at=datetime.now(UTC),
         stream_type="unknown",
-        detected_objects_json=build_detected_objects_json([]),
+        detected_objects_json=json.dumps([], ensure_ascii=False),
         tts_text="전방 상황을 확인했습니다.",
     )

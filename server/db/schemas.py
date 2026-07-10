@@ -140,7 +140,7 @@ class DetectionGuidanceLogResponse(BaseModel):
     stream_type: StreamType
     detected_objects_json: str
     tts_text: str
-    create_at: datetime
+    created_at: datetime
 
 
 class TokenResponse(BaseModel):

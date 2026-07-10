@@ -31,7 +31,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SQLEnum,
 )
-from sqlalchemy.dialects.mysql import LONGTEXT
+from sqlalchemy.dialects.mysql import JSON as MySQLJSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -310,18 +310,19 @@ class DetectionGuidanceLog(Base):
     """탐지/안내 결과 영속 로그 테이블 매핑.
 
     주의:
-    - 테이블명은 요청 원문 기준으로 detction_guidance_logs(오탈자 포함)를 유지합니다.
+    - 머지(5cd8372) 기준 테이블명은 detection_guidance_logs 입니다.
     - event_id는 NULL 허용 + UNIQUE입니다(MySQL은 NULL을 여러 건 허용).
     - user/device 삭제 시 FK는 SET NULL로 이력 보존합니다.
+    - detected_objects_json은 MySQL JSON 타입, created_at은 6자리 마이크로초입니다.
     """
 
-    __tablename__ = "detction_guidance_logs"
+    __tablename__ = "detection_guidance_logs"
     __table_args__ = (
-        UniqueConstraint("event_id", name="UK_DETCTION_GUIDANCE_LOGS_EVENT_ID"),
-        Index("IDX_DETCTION_GUIDANCE_LOGS_USER_ID", "user_id"),
-        Index("IDX_DETCTION_GUIDANCE_LOGS_DEVICE_ID", "device_id"),
-        Index("IDX_DETCTION_GUIDANCE_LOGS_DETECTED_AT", "detected_at"),
-        Index("IDX_DETCTION_GUIDANCE_LOGS_STREAM_TYPE", "stream_type"),
+        UniqueConstraint("event_id", name="UK_DETECTION_GUIDANCE_LOGS_EVENT_ID"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_USER_ID", "user_id"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_DEVICE_ID", "device_id"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT", "detected_at"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_STREAM_TYPE", "stream_type"),
         {"sqlite_autoincrement": True},
     )
 
@@ -351,12 +352,15 @@ class DetectionGuidanceLog(Base):
         default=StreamType.UNKNOWN,
         server_default=StreamType.UNKNOWN.value,
     )
+    # detected_objects_json: MySQL JSON 타입으로 저장합니다.
+    # SQLite 환경에서는 Text로 폴백됩니다(with_variant).
     detected_objects_json: Mapped[str] = mapped_column(
-        Text().with_variant(LONGTEXT, "mysql"),
+        Text().with_variant(MySQLJSON, "mysql"),
         nullable=False,
     )
     tts_text: Mapped[str] = mapped_column(Text, nullable=False)
-    create_at: Mapped[datetime] = mapped_column(
+    # created_at: DB 레코드 적재 시각 (마이크로초 6자리)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
