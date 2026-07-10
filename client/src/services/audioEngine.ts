@@ -83,12 +83,15 @@ class AudioEngine {
   // 가이드 음성 상시 재생 플레이어의 유휴 상태 소스 (1초 무음, 44.1kHz 모노).
   private readonly SILENCE_SRC: number = require("../../assets/sounds/silence.wav");
 
-  // STT 녹음 진입/종료 신호음. 시각장애인 사용자가 화면을 보지 않고도 실제 녹음
-  // 시작·종료 순간을 구분할 수 있도록, 서로 다른 패턴(단일 고음 vs 더블 비프)을 사용한다.
-  private readonly STT_START_CUE_SRC: number = require("../../assets/sounds/stt_start.wav");
+  // STT 녹음 종료 신호음(더블 비프). 진입점은 haptic이 담당한다 - 녹음이 활성 상태인
+  // 동안 스피커로 소리를 내면 마이크가 그대로 다시 주워듣는 음향 블리드가 물리적으로
+  // 발생함을 실기기 파형 분석으로 확인했다(2026-07-11). 종료 신호음은 recorder.stop()
+  // 완료 이후에만 재생되므로 이 문제가 없다.
   private readonly STT_END_CUE_SRC: number = require("../../assets/sounds/stt_end.wav");
-  private sttStartCueUri: string | null = null;
   private sttEndCueUri: string | null = null;
+  // guideWarmPlayer와 동일한 이유(재생 "시작" 이벤트를 만들지 않기 위해)로 무음
+  // placeholder를 상시 재생해두고 소스만 교체하는 상시 플레이어를 사용한다.
+  private sttCueWarmPlayer: AudioPlayer | null = null;
 
   /**
    * iOS 오디오 세션 초기화. 반사 루프 플레이어와 인지 가이드 일회성 플레이어가
@@ -575,57 +578,59 @@ class AudioEngine {
     }
   }
 
-  /** STT 신호음(시작/종료) 로컬 번들 자산 URI를 1회만 리졸브하고 캐시한다. */
-  private async resolveSttCueUri(kind: "start" | "end"): Promise<string | null> {
-    if (kind === "start" && this.sttStartCueUri) return this.sttStartCueUri;
-    if (kind === "end" && this.sttEndCueUri) return this.sttEndCueUri;
+  /** STT 종료 신호음 로컬 번들 자산 URI를 1회만 리졸브하고 캐시한다. */
+  private async resolveSttEndCueUri(): Promise<string | null> {
+    if (this.sttEndCueUri) return this.sttEndCueUri;
 
-    const src = kind === "start" ? this.STT_START_CUE_SRC : this.STT_END_CUE_SRC;
-    const asset = Asset.fromModule(src);
+    const asset = Asset.fromModule(this.STT_END_CUE_SRC);
     if (!asset.localUri) {
       await asset.downloadAsync();
     }
     const uri = asset.localUri || asset.uri;
     if (!uri) return null;
-    if (kind === "start") this.sttStartCueUri = uri;
-    else this.sttEndCueUri = uri;
+    this.sttEndCueUri = uri;
     return uri;
   }
 
-  /** STT 녹음이 실제로 시작되는 순간 재생하는 단일 고음 신호음(진입점 안내). */
-  public async playSttStartCue(): Promise<void> {
-    const uri = await this.resolveSttCueUri("start");
-    if (!uri) {
-      console.warn("[AudioEngine] STT 시작 신호음 에셋 없음");
-      return;
-    }
+  /** STT 신호음 상시 재생 플레이어를 지연 초기화한다(무음 placeholder, volume=0.0 루프). */
+  private async ensureSttCueWarmPlayer(): Promise<AudioPlayer | null> {
+    if (this.sttCueWarmPlayer) return this.sttCueWarmPlayer;
     try {
-      await this.ensureSession();
-      const player = createAudioPlayer(uri);
-      player.volume = 1.0;
-      player.addListener("playbackStatusUpdate", (status) => {
-        if (status.didJustFinish) player.remove();
-      });
+      const asset = Asset.fromModule(this.SILENCE_SRC);
+      if (!asset.localUri) {
+        await asset.downloadAsync();
+      }
+      const sourceUri = asset.localUri || asset.uri;
+      if (!sourceUri) {
+        throw new Error("STT 신호음 무음 placeholder 에셋 URI 생성 실패");
+      }
+
+      const player = createAudioPlayer(sourceUri);
+      player.loop = true;
+      player.volume = 0.0;
       player.play();
+      this.sttCueWarmPlayer = player;
+      return player;
     } catch (err) {
-      console.error("[AudioEngine] STT 시작 신호음 재생 실패:", err);
+      console.error("[AudioEngine] STT 신호음 상시 재생 플레이어 생성 실패:", err);
+      return null;
     }
   }
 
   /** STT 녹음이 실제로 종료되는 순간 재생하는 더블 비프 신호음(종료점 안내). */
   public async playSttEndCue(): Promise<void> {
-    const uri = await this.resolveSttCueUri("end");
+    const uri = await this.resolveSttEndCueUri();
     if (!uri) {
       console.warn("[AudioEngine] STT 종료 신호음 에셋 없음");
       return;
     }
     try {
       await this.ensureSession();
-      const player = createAudioPlayer(uri);
+      const player = await this.ensureSttCueWarmPlayer();
+      if (!player) return;
+      player.loop = false;
+      player.replace({ uri });
       player.volume = 1.0;
-      player.addListener("playbackStatusUpdate", (status) => {
-        if (status.didJustFinish) player.remove();
-      });
       player.play();
     } catch (err) {
       console.error("[AudioEngine] STT 종료 신호음 재생 실패:", err);
