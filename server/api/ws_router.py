@@ -69,14 +69,18 @@ async def _finish_detection(
             flush=True,
         )
 
-    await ws.send_json(
-        {
-            "type": "ack",
-            "event_id": event_id,
-            "frame_id": frame_id,
-            "decode_ms": round(decode_ms, 2),
-        }
-    )
+    # HeartbeatManager가 다른 태스크에서 동시에 타임아웃 close를 걸 수 있어(레이스),
+    # ack 전송 실패가 세션 전체를 죽이지 않도록 여기서 흡수한다. 소켓이 실제로
+    # 끊겼다면 메인 루프의 다음 ws.receive()가 WebSocketDisconnect로 정상 정리한다.
+    with contextlib.suppress(Exception):
+        await ws.send_json(
+            {
+                "type": "ack",
+                "event_id": event_id,
+                "frame_id": frame_id,
+                "decode_ms": round(decode_ms, 2),
+            }
+        )
 
 
 _stt_bridge = SttToLlmBridge()
@@ -298,20 +302,23 @@ async def ws_detect(
                     heartbeat.record_ack()
 
             elif msg_type == "ping":
-                await ws.send_json(
-                    {
-                        "type": "pong",
-                        "ts": now_ts(),
-                    }
-                )
+                # HeartbeatManager와의 동시 close 레이스 방지 (ack 전송과 동일 사유)
+                with contextlib.suppress(Exception):
+                    await ws.send_json(
+                        {
+                            "type": "pong",
+                            "ts": now_ts(),
+                        }
+                    )
 
             elif msg_type == "heartbeat":
-                await ws.send_json(
-                    {
-                        "type": "heartbeat_ack",
-                        "ts": now_ts(),
-                    }
-                )
+                with contextlib.suppress(Exception):
+                    await ws.send_json(
+                        {
+                            "type": "heartbeat_ack",
+                            "ts": now_ts(),
+                        }
+                    )
 
             elif msg_type == "detection":
                 payload = data.get("payload", {})

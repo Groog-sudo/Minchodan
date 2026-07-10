@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.2 (2026-07-09 §5.2 반사 캡처 takePhoto()→Frame Processor 전환 반영: AVCapturePhotoOutput의 오디오 세션 인터럽션이 TTS 안내 음성 절단 근본 원인이었음을 실측 확인 + 이전 v0.3.1 이력 유지)
+> **버전**: v0.3.3 (2026-07-10 §5.2 카메라 캡처 계층을 FrameCaptureProvider 인터페이스로 iOS/Android 물리 분리 반영, `docs/mobile/ios_android_bifurcation_contract.md` 연동 + 이전 v0.3.2 이력 유지)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -188,8 +188,10 @@ graph TD
 | `client/assets/sounds/reflex_clips/`          | 사전합성 반사 음성 클립 5종(WAV, direction/유형 기준). **2026-07-09 정정**: 최초 설계는 `data/reflex_clips/`(서버측 MP3)였으나 실제로는 단말 번들 방식으로 구현됨(서버는 clip 경로 문자열만 전달) | 7    |
 | `training/`                                   | 모델 학습 (오프라인)                                                       | 3    |
 | `client/src/hooks/useWebSocket.ts`            | WS 연결·hello/welcome 핸드셰이크                                           | 1    |
-| `client/src/hooks/useCamera.ts`               | `useCameraDevice('back')` + 이중 타이머                                    | 2    |
-| `client/src/hooks/useCamera.ts` (Frame Processor 경로) | **2026-07-09 정정**: 반사 캡처 기본 경로. `useFrameProcessor` + `client/ios/ReflexFrameProcessorPlugin.swift`(CVPixelBuffer→크롭/리사이즈/JPEG→base64). `takePhoto()` 경로(`captureRealFramePhoto`)는 `CAPTURE_ENGINE='takePhoto'`(`client/src/config/capture.ts`) 롤백용으로 보존 | 2    |
+| `client/src/hooks/useCamera.ts`               | `useCameraDevice('back')` + 이중 타이머·동적 FPS·Mock 분기(플랫폼 무관 오케스트레이션만 담당) | 2    |
+| `client/src/services/frameCaptureProvider.ts` | **2026-07-10 정정**: 카메라 하드웨어 접근을 플랫폼별로 분리(iOS/Android 이원화 계약 §4). 공통 인터페이스(`FrameCaptureController`) + `takePhoto()` 공용 크롭 로직(`captureViaTakePhoto`)을 이 파일에 두고, 실제 캡처 방식은 `frameCaptureProviderSelect.ios.ts`/`.android.ts`(Metro 플랫폼 확장자 분기)가 구현 | 2    |
+| `client/src/services/frameCaptureProviderSelect.ios.ts` | 반사 캡처 기본 경로(iOS). `useFrameProcessor` + `client/ios/ReflexFrameProcessorPlugin.swift`(CVPixelBuffer→크롭/리사이즈/JPEG→base64) | 2    |
+| `client/src/services/frameCaptureProviderSelect.android.ts` | 반사 캡처 과도기 경로(Android). 네이티브 Frame Processor 플러그인이 아직 없어 `takePhoto()` 기반 단발 촬영으로 동작(`docs/mobile/ios_android_bifurcation_contract.md` §4.5 참조) | 2    |
 | `client/src/services/audioPlayer.ts`          | `decodeAudioData()` Web Audio 재생                                         | 7    |
 | `client/src/services/audioEngine.ts`          | 반사 비프음 즉시 재생 및 선점 정지                                         | 7    |
 | `client/src/services/hapticEngine.ts`         | Haptics 패턴 실행 및 지속 진동 정리                                        | 7    |
@@ -210,7 +212,8 @@ graph TD
 
 - `react-native-vision-camera` 권한·후면 카메라 **이중 타이머**로 캡처
 - 반사 캡처 8~10fps / 인지 캡처 1~2fps 분리 (v1.1 반영, 충돌 회피)
-- **2026-07-09 정정**: 기본 캡처 경로는 `useFrameProcessor`(연속 비디오 스트림, `AVCaptureVideoDataOutput`). 원래 `takePhoto({qualityPrioritization:'speed'})`(`AVCapturePhotoOutput`) 방식은 실기기 시스템 로그로 촬영마다 iOS 오디오 세션 인터럽션을 유발함이 확인돼(TTS 안내 음성 절단 근본 원인) 폐기 - `CAPTURE_ENGINE='takePhoto'` 롤백 경로로만 코드 보존
+- **2026-07-09 정정**: iOS 기본 캡처 경로는 `useFrameProcessor`(연속 비디오 스트림, `AVCaptureVideoDataOutput`). 원래 `takePhoto({qualityPrioritization:'speed'})`(`AVCapturePhotoOutput`) 방식은 실기기 시스템 로그로 촬영마다 iOS 오디오 세션 인터럽션을 유발함이 확인돼(TTS 안내 음성 절단 근본 원인) 폐기
+- **2026-07-10 정정**: 캡처 하드웨어 접근 계층을 `FrameCaptureProvider` 인터페이스로 물리 분리(`client/src/services/frameCaptureProvider.ts` + `frameCaptureProviderSelect.ios.ts`/`.android.ts`). 롤백은 더 이상 전역 플래그가 아니라 iOS 전용 파일 내부 수정만으로 가능(Android에 영향 없음). Android는 아직 네이티브 Frame Processor 플러그인이 없어 `takePhoto()` 과도기 경로로 동작(`docs/mobile/ios_android_bifurcation_contract.md` §4)
 - raw JPEG bytes → WS 바이너리 프레임(`sendBinary()`, base64 미경유)
 - 서버: `decode_frame_binary()` `cv2.imdecode` `resize(640,640)` ack
 - 카메라 권한 거부(`NotAllowedError`); 소켓 유실 시 타이머/frameProcessor 자원 즉시 해제

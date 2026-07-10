@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.12.0 (2026-07-09 루트 잔류 파일 4건 정리: scripts/ 이동 3건, 빈 파일 삭제 1건)
+> **버전**: v0.13.0 (2026-07-10 iOS/Android 이원화 통합 계약서 추가)
 
 ## 문서 목록
 
@@ -26,6 +26,7 @@
 | 3단계 탐지 설계서     | [stage-guides/stage3_detection_design.md](stage-guides/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
 | 6단계 오케스트레이션 설계서 | [stage-guides/stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
 | **Post-MVP 하이브리드 로드맵** | [research/post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
+| **iOS/Android 이원화 통합 계약서** | [mobile/ios_android_bifurcation_contract.md](mobile/ios_android_bifurcation_contract.md) | **파일 소유권·인터페이스 계약·인프라 거버넌스로 병합 충돌 방지 (kb/dg2 병합 시뮬레이션 근거)** |
 | 보행이론 인사이트 보고서 | [design/behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
 | Changelog 템플릿     | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md)       | 신규 changelog 작성 양식                                           |

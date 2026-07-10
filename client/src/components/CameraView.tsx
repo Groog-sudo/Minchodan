@@ -410,7 +410,7 @@ export function CameraView() {
           (useStreamCapture ? (
             // 프레임 프로세서 경로(기본값, 2026-07-09): AVCapturePhotoOutput을 세션에
             // 붙이지 않아(photo 미지정) 촬영마다 발생하던 AVAudioSessionInterruption을
-            // 원천 제거한다. client/src/config/capture.ts 참조.
+            // 원천 제거한다. 플랫폼별 구현: client/src/services/frameCaptureProviderSelect.ios.ts
             <Camera
               ref={cameraRef}
               device={device!}

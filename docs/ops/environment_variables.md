@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-09
-> **버전**: v0.4.7 (2026-07-09 `TTS_ENGINE` 기본값 piper→supertonic 변경, `SUPERTONIC_VOICE`/`SUPERTONIC_MODEL_DIR`/`SUPERTONIC_TOTAL_STEPS` 신규 추가, `PIPER_*` 변수들을 핫스왑 폴백용으로 재정의 + 이전 v0.4.6 이력 유지)
+> **수정일**: 2026-07-10
+> **버전**: v0.4.8 (2026-07-10 `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향 - ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결이 오탐 종료되는 문제 실측 확인 + 이전 v0.4.7 이력 유지)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -50,7 +50,7 @@
 | **`WS_HOST`** | string | 필수 | `0.0.0.0` | WebSocket 서버 바인드 호스트 | [`api_specification.md`](api_specification.md) 1절 |
 | **`WS_PORT`** | int | 필수 | `8000` | WebSocket 서버 포트 | [`api_specification.md`](api_specification.md) 1절 |
 | **`HEARTBEAT_INTERVAL`** | int | 선택 | (코드 기본값) | 하트비트 송신 주기(초). `server/api/config.py` (2026-07-07 추가 — 기존 명세서에 누락돼 있었음) | `server/api/config.py:30` |
-| **`HEARTBEAT_TIMEOUT`** | int | 선택 | (코드 기본값) | 하트비트 미수신 타임아웃(초) | `server/api/config.py:31` |
+| **`HEARTBEAT_TIMEOUT`** | int | 선택 | `15` | 하트비트 미수신 타임아웃(초). 총 유예 시간은 `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 20초). **2026-07-10 변경**(기존 5): ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료되는 문제를 실기기 LTE 테스트로 확인해 상향 | `server/api/config.py:31` |
 | **`MAX_RECONNECT_ATTEMPTS`** | int | 선택 | (코드 기본값) | 서버 측 재연결 허용 횟수 | `server/api/config.py:32` |
 | **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-09 정정**: 필드는 존재했으나 `server/main.py`가 소비하지 않고 `allow_origins=["*"]`로 고정돼 있던 문제를 연결. 프로덕션 배포 시 반드시 콘솔 실제 도메인으로 override | `server/api/config.py`, `server/main.py` |
 | **`JWT_SECRET_KEY`** | string | 선택 | (코드 기본값) | 관리자/유저 인증 JWT 서명 키 (2026-07-07 추가 — `.env.example`에도 없어 실서비스 배포 전 반드시 별도 설정 필요) | `server/db/security.py:19` |

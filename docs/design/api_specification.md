@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.3 (2026-07-09 guide 메시지 오디오 전송 방식 변경: `audio_mp3_b64` base64 필드 폐기, `transport:"binary"` + WS 바이너리 프레임 방식으로 전환 - §3 client→server 프레임 프로토콜과 동일 패턴 반대 방향 적용 + 이전 v0.4.2 이력 유지)
+> **버전**: v0.4.4 (2026-07-10 §2.4 heartbeat 타임아웃 유예 5→15초 상향 및 서버측 ack/heartbeat 응답 레이스 컨디션 수정 반영 + 이전 v0.4.3 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1+2+3단계 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드(640x640 압축 이미지), ack 응답, 단말 측 Reflex Gate 4단계 피드백(주차센서식 거리 반비례 햅틱/비프음) 정합 확인. `reflex_alert`/`guide`는 6·7단계 범위로 미구현(설계상 정상).
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -93,12 +93,14 @@
 
 ### 2.4 heartbeat
 
-서버가 5초 간격으로 ping을 송신하고 단말은 pong으로 응답합니다.
+서버가 5초 간격(`HEARTBEAT_INTERVAL`)으로 ping을 송신하고 단말은 pong으로 응답합니다. `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 5+15=20초) 동안 ack가 없으면 서버가 세션을 종료합니다.
 
 | 방향 | 메시지 |
 | :--- | :--- |
 | 서버 → 단말 | WebSocket ping 프레임 또는 `{"type":"heartbeat", "ts"}` |
 | 단말 → 서버 | WebSocket pong 프레임 또는 `{"type":"heartbeat_ack", "ts"}` |
+
+> **2026-07-10 정정**: 기존 타임아웃 유예(5+5=10초)는 ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료시켰다(`server/api/heartbeat.py`가 타임아웃 시 `ws.close()`를 호출하는 것과, 메인 루프(`server/api/ws_router.py`)가 동시에 ack/heartbeat 응답을 `ws.send_json()`하려는 시점이 겹치면 `Cannot call "send" once a close message has been sent` 예외로 세션 전체가 끊겼다). `HEARTBEAT_TIMEOUT`을 15초로 상향하고, 메인 루프의 ack/pong/heartbeat_ack 전송을 `contextlib.suppress(Exception)`로 감싸 레이스가 발생해도 세션이 죽지 않도록 방어했다(실제로 끊긴 소켓이면 다음 `ws.receive()`가 `WebSocketDisconnect`로 정상 정리한다).
 
 ### 2.5 error (서버 → 단말)
 

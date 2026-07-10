@@ -1,7 +1,7 @@
 # Minchodan 파이프라인 단계 설계
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.1 (2026-07-09 §5.2 반사 캡처 takePhoto()→Frame Processor 전환, §5.7 TTS 엔진 Piper→Supertonic 교체(Piper는 핫스왑 폴백) 반영 + 이전 v0.3.0 이력 유지)
+> **버전**: v0.3.2 (2026-07-10 §5.2 카메라 캡처 계층 iOS/Android 물리 분리(FrameCaptureProvider) 반영 + 이전 v0.3.1 이력 유지)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -86,7 +86,8 @@ graph LR
 ### 5.2 2단계 - 카메라 화면 전송
 
 - **이중 타이머**: 반사 8~10fps / 인지 1~2fps 분리 (v1.1, 충돌 회피)
-- **2026-07-09 정정**: `takePhoto({qualityPrioritization:'speed'})` 방식은 iOS `AVCapturePhotoOutput`이 촬영마다 오디오 세션을 인터럽트해(실기기 로그로 확인) TTS 안내 음성이 끊기는 근본 원인이었다. 기본 경로를 **Frame Processor**(`useFrameProcessor`, `AVCaptureVideoDataOutput` 기반 연속 스트림)로 전환 - `client/ios/ReflexFrameProcessorPlugin.swift`가 CVPixelBuffer를 크롭/리사이즈/JPEG 인코딩해 base64로 반환, 이후 파이프라인은 무변경. `CAPTURE_ENGINE='takePhoto'`(`client/src/config/capture.ts`)로 구 경로 롤백 가능.
+- **2026-07-09 정정**: `takePhoto({qualityPrioritization:'speed'})` 방식은 iOS `AVCapturePhotoOutput`이 촬영마다 오디오 세션을 인터럽트해(실기기 로그로 확인) TTS 안내 음성이 끊기는 근본 원인이었다. iOS 기본 경로를 **Frame Processor**(`useFrameProcessor`, `AVCaptureVideoDataOutput` 기반 연속 스트림)로 전환 - `client/ios/ReflexFrameProcessorPlugin.swift`가 CVPixelBuffer를 크롭/리사이즈/JPEG 인코딩해 base64로 반환, 이후 파이프라인은 무변경.
+- **2026-07-10 정정**: 캡처 실구현을 `client/src/services/frameCaptureProvider.ts`(공통 인터페이스) + `frameCaptureProviderSelect.ios.ts`/`.android.ts`(Metro 플랫폼 확장자 분기)로 물리 분리했다(`docs/mobile/ios_android_bifurcation_contract.md` §4). Android는 대응 네이티브 플러그인이 아직 없어 `takePhoto()` 과도기 경로로 동작한다.
 - raw JPEG bytes → WS 바이너리 프레임(`sendBinary()`, base64 미경유, 2026-07-07 전환)
 - 서버: `decode_frame_binary()` `cv2.imdecode` `resize(640,640)` ack
 - 출력: 640x640 프레임 (3단계 입력)
