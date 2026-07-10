@@ -371,3 +371,18 @@
 - **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `tests/test_stt_to_llm_bridge_template.py`, `scripts/eval_hitrate.py`, `data/safety_guidelines.json`, `requirements.txt`, `docs/changelogs/jh.md`
 - **검증 결과**: `scripts/eval_hitrate.py` 실행 기준 RAG 평가 루틴 구성 확인, STT 라우터/브리지 연동 코드와 네비게이션 상태 전이 경로 확인 완료. 단, 테스트 실행은 현재 환경에서 `langgraph` 미설치로 수집 단계에서 중단됨
 - **비고**: 이번 항목은 ⑤ navigation 검증을 중심으로 ① RAG 확충, ② 평가 스크립트 정리, ③ STT 의존성 반영, ④ 라우터 마운트 완료 상태까지 함께 묶어 정리한 통합 기록임
+
+---
+
+### 2026-07-10 | DB | detction_guidance_logs 기본틀 및 하드코딩 템플릿 추가
+
+- **커밋**: `db: detction_guidance_logs 기본틀 및 하드코딩 템플릿 추가`
+- **변경 내용**:
+  - `detction_guidance_logs` 테이블 대응 ORM 매핑을 추가하고 `StreamType(reflex/cognitive/unknown)` enum, 인덱스, UNIQUE(event_id), FK(`app_users`/`user_devices`)를 반영함
+  - 로그 저장용 DTO(`DetectionGuidanceLogCreate`, `DetectionGuidanceLogResponse`)를 추가해 DB 입력/응답 스키마 경계를 분리함
+  - Repository 계층에 `DetectionGuidanceLogRepository`를 추가해 event_id 중복 조회 및 저장 경로를 구성함
+  - `DetectionGuidanceLogService`를 신규 추가하고, 바이브/하드코딩 파트를 주석으로 명확히 구분한 템플릿 구조를 적용함
+  - 하드코딩 핵심 구현부는 `NotImplementedError`와 단계별 힌트를 남겨 직접 작성 학습이 가능한 상태로 유지함
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/services/detection_guidance_log_service.py`
+- **검증 결과**: 변경 파일 정적 오류 검사 기준 문법 오류 없음 확인(`models.py`, `schemas.py`, `repositories.py`, `detection_guidance_log_service.py`)
+- **비고**: 본 커밋은 동작 완성본이 아니라 템플릿/골격 커밋이며, HARDCODE PART 구현은 후속 커밋에서 채울 예정임
