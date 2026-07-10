@@ -1318,3 +1318,16 @@
 - **관련 파일**: `server/services/detection_guidance_log_service.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `docker/docker-compose.macos.yml`, `server/detection/detection_pipeline.py`, `server/navigation/manager.py`, `server/navigation/server.py`, `server/stt/stt_to_llm_bridge.py`, `server/stt/stt_config.py`, `client/App.tsx`, `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docs/design/api_specification.md`, `docs/research/sensevoice_stt_feasibility.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 전 항목을 실기기(iPhone, 팀원 "고태현의 iPhone")+실제 서버(Docker macOS CPU 폴백)+실제 팀 공유 DB(Tailscale RPi MariaDB)로 반복 재현·수정·재검증했다(mock 없음). 서버 재시작마다 `docker logs`로 스택트레이스 부재 확인, DB 쿼리로 실제 저장된 행(전사문·안내문 전체) 직접 조회, Metro 클라이언트 로그로 `playGuideAudioBytes`/`speakFallback` 호출 순서 대조. `python3 -c "import py_compile"`로 수정 파일 구문 검증, `npx tsc --noEmit`로 클라이언트 타입 검증(신규 오류 0건). 길댕아 퍼지 매칭은 실측 오인식 변형 전체(길대가/결댕아/길땡아) + 오탐 후보 문장으로 단위 테스트 통과.
 - **비고**: iOS 빌드/실기기 로그 추적은 이번 세션에서도 전담했다(기존 `[[ios_build_ownership]]` 위임 유지). `client/App.tsx`/`CameraView.tsx`/`useSttRecorder.ts`/`DebugTriggerPanel.tsx`/`server/api/ws_router.py`는 세션 시작 시점에 이미 작업 중이던(다른 세션에서 시작된) 변경분이 섞여 있었다(STT 터치 레이어 전체화면 Pressable 전환, 에러 상세 화면 표시 등) - 이번 세션은 그 위에 이어서 작업했다. `docs/design/architecture.md`/`docs/ops/navigation_and_reflex_guide.md`는 STT/네비게이션 관련 서술이 원래 없어 이번 범위에서 신규 작성하지 않았다(후속 과제). 세션 중 발견한 미해결 항목: 컨테이너 재시작 원인(§18), STT 인식률이 VAD+길댕아 퍼지 매칭 이후에도 완전히 만족스럽지는 않다는 사용자 피드백(근본적으로는 모델 자체 한계로 추정 - large-v3-turbo·SenseVoice 둘 다 이번 세션에서 기각됨).
+
+---
+
+### 2026-07-11 | 3단계 | CoreML FP16 재변환 + ANE 가속 활성화 + segmentation 출력 파싱 버그 수정
+
+- **커밋**: `fix(3단계): CoreML FP16 재변환 + ANE 가속 활성화 + segmentation 출력 파싱 버그 수정`
+- **변경 내용**:
+  - 설치된 ultralytics(8.4.82)의 CoreML export가 `half` 인자를 폐기하고 `quantize=16`으로 대체한 것을 실측 확인(과거 변환 시 `--no-half`가 실제로 적용돼 `storagePrecision: Float32`로 굳어 있었음). `scripts/convert_yolo_to_coreml.py` 기본값(`half=True`) 그대로 object_detection/segmentation 모델을 재변환해 `storagePrecision: Float16` 확보(det 300/302, seg 338/341 연산이 FP16으로 전환, Conv/Silu 백본 전량 FP16).
+  - `CoreMLInferenceBridge.swift`의 `MLModelConfiguration.computeUnits`를 `.cpuOnly` 고정에서 `.cpuAndNeuralEngine` 우선 시도 + 실패 시 `.cpuOnly` 폴백(`loadModel(url:)` 신설)으로 변경. 과거 크래시는 `.cpuAndGPU`(GPU/Metal 경로) 조합이었고 ANE 전용 조합은 그동안 미검증 상태였음.
+  - `runDetection()`에서 `prediction.featureNames.first`로 출력 텐서를 무작정 집던 로직을 shape 기반 탐색(`shape.count == 3`)으로 수정. segmentation 모델은 출력이 2개([1,300,38] 박스+마스크계수, [1,32,160,160] 프로토타입 마스크)인데, `featureNames`(Set 기반, 순서 미보장)가 프로토 마스크 텐서를 먼저 반환하면 매 프레임 파싱이 실패해 segmentation 결과가 통째로 유실되던 버그를 해결.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/assets/models/yolo26n/ios/object_detection.mlpackage/*`, `client/assets/models/yolo26n/ios/segmentation.mlpackage/*`, `client/ios/Minchodan/object_detection.mlmodelc/*`, `client/ios/Minchodan/segmentation.mlmodelc/*`, `docs/changelogs/kb.md`
+- **검증 결과**: 실기기("고태현의 iPhone")에 재빌드/재설치 후 수 분간(수백 프레임) 연속 추론 크래시 없음 확인. 총추론 시간 48~70ms → 19~22ms로 약 2.5배 단축(KPI `<80ms` 대비 여유 확대). `[1, 32, 160, 160]` shape 경고 재발 없음, seg 벤치마크(12~18ms) 정상 기록으로 segmentation 파싱 정상 동작 확인.
+- **비고**: segmentation 프로토타입 마스크(`[1, 32, 160, 160]`)는 여전히 픽셀 단위로 조합되지 않고 박스+클래스 목록만 사용 중이다 - 실제 픽셀 단위 마스크가 필요해지면 후속 과제.

@@ -41,33 +41,44 @@ class CoreMLInferenceBridge: NSObject {
     3: "braille_normal"
   ]
 
+  // 2026-07-07 실기기(고태현 iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
+  // 뒤에도 .cpuAndGPU 설정 시 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료,
+  // PID 재기동 반복)가 동일하게 재현됨을 확인함. GPU(Metal) 경로의 MLIR pass manager
+  // failed 문제로 판단됨. 2026-07-11 모델을 FP16으로 재변환한 뒤, GPU를 배제하는
+  // .cpuAndNeuralEngine을 우선 시도하고 실패 시에만 .cpuOnly로 폴백한다.
+  private func loadModel(url: URL) throws -> MLModel {
+    let aneConfig = MLModelConfiguration()
+    aneConfig.computeUnits = .cpuAndNeuralEngine
+    do {
+      let model = try MLModel(contentsOf: url, configuration: aneConfig)
+      print("[CoreMLBridge] \(url.lastPathComponent) - ANE 가속 모드로 로드 완료")
+      return model
+    } catch {
+      print("[CoreMLBridge] \(url.lastPathComponent) - ANE 로드 실패(\(error.localizedDescription)), CPU 전용으로 폴백")
+      let cpuConfig = MLModelConfiguration()
+      cpuConfig.computeUnits = .cpuOnly
+      return try MLModel(contentsOf: url, configuration: cpuConfig)
+    }
+  }
+
   @objc
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
-      let config = MLModelConfiguration()
-      // 2026-07-07 실기기(고태현 iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
-      // 뒤에도 .cpuAndGPU 설정 시 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료,
-      // PID 재기동 반복)가 동일하게 재현됨을 확인함. GPU(Metal) 경로의 MLIR pass manager
-      // failed 문제가 raw tensor 파싱과 무관하게 지속되는 것으로 판단, CPU 전용으로 재확정.
-      config.computeUnits = .cpuOnly
-
       // object_detection (필수) - end2end raw tensor 모델
       guard let detURL = Bundle.main.url(forResource: "object_detection", withExtension: "mlmodelc") else {
         reject("FILE_NOT_FOUND", "object_detection.modelc 에셋을 Bundle에서 찾을 수 없습니다.", nil)
         return
       }
-      self.detModel = try MLModel(contentsOf: detURL, configuration: config)
+      self.detModel = try loadModel(url: detURL)
 
       // segmentation (선택) - 현재 미번들이면 nil로 두고 det만 동작
       // 다음 세션에서 segmentation.mlmodelc 추가 시 자동 활성화
       if let segURL = Bundle.main.url(forResource: "segmentation", withExtension: "mlmodelc") {
-        self.segModel = try MLModel(contentsOf: segURL, configuration: config)
-        print("[CoreMLBridge] segmentation 모델 로드 완료")
+        self.segModel = try loadModel(url: segURL)
       } else {
         print("[CoreMLBridge] segmentation.mlmodelc 미번들 - det-only 모드로 기동")
       }
 
-      print("[CoreMLBridge] object_detection 모델 로드 완료 (CPU 전용 모드, GPU 크래시 회피)")
       let statusDict: [String: Any] = [
         "det": true,
         "seg": self.segModel != nil
@@ -219,10 +230,16 @@ class CoreMLInferenceBridge: NSObject {
     let inputFeature = try prepareInput(cgImage: cgImage, expectedSize: 640)
     let prediction = try model.prediction(from: inputFeature)
 
-    // raw tensor 출력 추출 (출력 이름은 모델마다 상이 - 첫 출력 사용)
-    guard let outputName = prediction.featureNames.first,
-          let outputMultiArray = prediction.featureValue(for: outputName)?.multiArrayValue else {
-      print("[CoreMLBridge] 출력 tensor 추출 실패: \(prediction.featureNames)")
+    // segmentation 모델은 출력이 2개다: [1, 300, 38](박스+마스크계수)와
+    // [1, 32, 160, 160](프로토타입 마스크). featureNames는 Set 기반이라 순서가
+    // 보장되지 않으므로 .first로 집으면 실기기에서 프로토 마스크 텐서를 집어
+    // 파싱이 매 프레임 실패하는 문제가 있었다(2026-07-11 실기기 로그로 확인:
+    // "예상치 못한 출력 shape 차원: [1, 32, 160, 160]" 반복 발생 - seg 결과 전체
+    // 유실). 박스 목록 텐서(3차원)를 이름이 아니라 shape로 명시적으로 찾는다.
+    guard let outputMultiArray = prediction.featureNames.lazy
+      .compactMap({ prediction.featureValue(for: $0)?.multiArrayValue })
+      .first(where: { $0.shape.count == 3 }) else {
+      print("[CoreMLBridge] 박스 목록 tensor(3차원) 탐색 실패: \(prediction.featureNames)")
       return []
     }
 
