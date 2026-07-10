@@ -242,3 +242,15 @@
 - **관련 파일**: `client/src/config/index.ts`, `docs/changelogs/dg.md`
 - **검증 결과**: ngrok 로컬 대시보드 API(`:4040/api/tunnels`) 조회를 통해 포워딩 상태의 활성 터널링 호스트명을 검출 및 적용하였으며, 클라이언트 환경 설정 파일 컴파일 통과 확인.
 
+---
+
+### 2026-07-10 | 연구/문서 | CPU 전용 환경 및 모바일 성능 제약 극복을 위한 최적화 및 리스크 대처 방안 보고서 작성
+
+- **커밋**: `docs: create CPU and mobile performance optimization report`
+- **변경 내용**:
+  - GPU가 없는 CPU 전용 서버(i7-8700) 및 모바일 기기의 다양한 물리 자원 한계로 인한 문제점을 진단하고, 소프트웨어 측면에서 극복할 수 있는 가속 방안 및 이에 따른 부작용 대처 전략을 심층 수립하여 신규 문서로 명문화함.
+  - 신규 보고서 파일: [cpu_and_mobile_performance_optimization_report.md](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/docs/research/cpu_and_mobile_performance_optimization_report.md)
+  - 보고서에는 YOLO ONNX 가속 변환(후처리 Ultralytics 우회), 모바일 Zero-copy TFLite(CPU Delegate Fallback), LLM 스로틀링 및 LRU TTS 캐싱(Reflex Override 우선순위), ngrok 고정 도메인 및 개발자 히든 제스처 모드 등의 상세 기술적 대처 방안을 정리함.
+- **관련 파일**: `docs/research/cpu_and_mobile_performance_optimization_report.md`, `docs/changelogs/dg.md`
+
+
