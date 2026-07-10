@@ -17,7 +17,13 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.db.models import AdminAccount, AdminLoginAudit, AppUser, UserDevice
+from server.db.models import (
+    AdminAccount,
+    AdminLoginAudit,
+    AppUser,
+    DetectionGuidanceLog,
+    UserDevice,
+)
 
 
 # 2. AdminRepository 클래스를 만드세요.
@@ -100,3 +106,38 @@ class DeviceRepository:
         await self.session.commit()
         await self.session.refresh(device)
         return device
+
+
+class DetectionGuidanceLogRepository:
+    """탐지/안내 로그 영속화 전담 Repository."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    # ==========================================
+    # VIBE PART
+    # - 어떤 쿼리를 호출할지 계층 구조를 연결하는 역할
+    # - Service에서 event_id dedup 정책을 호출할 때 재사용
+    # ==========================================
+    async def get_by_event_id(self, event_id: str) -> DetectionGuidanceLog | None:
+        # HARDCODE HINT:
+        # result = await self.session.execute(
+        #     select(DetectionGuidanceLog).where(DetectionGuidanceLog.event_id == event_id)
+        # )
+        # return result.scalars().first()
+        result = await self.session.execute(
+            select(DetectionGuidanceLog).where(DetectionGuidanceLog.event_id == event_id)
+        )
+        return result.scalars().first()
+
+    # ==========================================
+    # HARDCODE PART
+    # - DB 트랜잭션 저장의 핵심 순서(add -> commit -> refresh)
+    # - 아래 핵심 구현은 일부러 비워두고 힌트만 남깁니다.
+    # ==========================================
+    async def create(self, log: DetectionGuidanceLog) -> DetectionGuidanceLog:
+        # HINT 1: self.session.add(log)
+        # HINT 2: await self.session.commit()
+        # HINT 3: await self.session.refresh(log)
+        # HINT 4: return log
+        raise NotImplementedError("HARDCODE PART: DetectionGuidanceLogRepository.create를 구현하세요.")
