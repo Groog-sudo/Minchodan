@@ -154,3 +154,20 @@
 - **검증 결과**:
   - `rg`로 Tailscale 초대 링크, 실제 Host, 실제 DB 사용자명 잔존 여부 확인 완료
   - `git diff --check` 통과
+
+---
+
+### 2026-07-10 | DB | 탐지 및 TTS 안내 로그 테이블 추가
+
+- **커밋**: `db: add detection guidance log table`
+- **변경 내용**:
+  - 클라이언트 프레임 이벤트 기준의 탐지/안내 이력을 저장하기 위해 `detection_guidance_logs` 테이블 DDL을 추가했습니다.
+  - 탐지 시점은 `detected_at`, YOLO 탐지 결과는 `detected_objects_json`, LLM이 사용자에게 출력한 전체 안내 문장은 `tts_text`에 저장하도록 구성했습니다.
+  - 서버/클라이언트 이벤트 추적을 위한 `event_id`, 사용자/기기 연결을 위한 `user_id`, `device_id`, 반사/인지 스트림 구분을 위한 `stream_type`, DB 적재 시각 `created_at`을 함께 추가했습니다.
+  - 로그성 데이터 보존을 위해 `app_users`, `user_devices` 참조는 `ON DELETE SET NULL` 정책으로 연결했습니다.
+  - 기본 확인 설명을 기존 4개 테이블에서 5개 테이블 기준으로 갱신하고, 선택 검증 쿼리에 `SHOW CREATE TABLE detection_guidance_logs;`를 추가했습니다.
+- **관련 파일**: `Minchodan DB.session.sql`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `git diff --check -- 'Minchodan DB.session.sql'` 통과
+  - SQL 파일 내 신규 테이블 DDL 및 선택 검증 쿼리 위치 확인 완료
+  - 실제 MariaDB 실행 검증은 이번 작업 범위에서 수행하지 않았습니다.
