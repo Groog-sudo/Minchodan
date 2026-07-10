@@ -188,3 +188,37 @@
   - `.venv/bin/python -c "from server.db.models import DetectionGuidanceLog; ..."` 기반 ORM import 검증 통과
   - `sqlite3 :memory: ".read server/db/schema.sql" ".tables"` 기반 SQLite DDL 실행 및 `detection_guidance_logs` 생성 확인
   - `git diff --check` 통과
+
+---
+
+### 2026-07-10 | Git | 최신 dev 브랜치 jy 병합 및 DB 충돌 해결
+
+- **커밋**: `Merge remote-tracking branch 'origin/dev' into jy` (`c050a00`)
+- **변경 내용**:
+  - 최신 `origin/dev`(`10f2b12`)를 `jy` 브랜치에 병합하고, 병합 결과를 원격 `origin/jy`에 push했습니다.
+  - `jy`의 기존 `detection_guidance_logs` ORM/migration 커밋(`0c98670`)과 `dev`의 탐지 안내 로그 서비스 확장 작업이 같은 DB 계층 파일을 수정해 발생한 충돌을 해결했습니다.
+  - `server/db/models.py`는 `dev` 기준의 `StreamType`, `detection_guidance_logs` 관계명, MySQL JSON 호환 문자열 저장 구조를 유지하면서 `jy`의 로그 테이블 ORM 정의가 중복되지 않도록 정리했습니다.
+  - `server/db/repositories.py`는 `DetectionGuidanceLogRepository`의 `get_by_event_id()` 중복 조회 메서드와 `create()` 저장 메서드가 모두 남도록 충돌 마커를 제거했습니다.
+  - `server/db/schemas.py`는 중복 정의된 `DetectionGuidanceLogCreate`, `DetectionGuidanceLogResponse`를 제거하고, 서비스 코드와 맞는 `StreamType` 및 JSON 문자열 DTO 기준으로 통일했습니다.
+- **관련 파일**: `server/db/models.py`, `server/db/repositories.py`, `server/db/schemas.py`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `python3 -m py_compile server/db/models.py server/db/repositories.py server/db/schemas.py server/services/detection_guidance_log_service.py` 통과
+  - `git diff --check` 통과
+  - `git rev-parse HEAD origin/jy origin/dev`로 `HEAD == origin/jy == c050a00`, `origin/dev == 10f2b12` 확인
+  - `git log --oneline HEAD..origin/dev` 결과가 비어 있어 `dev`에만 있고 `jy`에 없는 커밋이 없음을 확인
+
+---
+
+### 2026-07-10 | Git | 개인 설정 파일 제외 규칙 문서화
+
+- **커밋**: `docs(git): document local private config ignores`
+- **변경 내용**:
+  - `.gitignore` 하단의 `**/Copy_*` 규칙을 팀원이 이해할 수 있도록 개인 설정 파일 제외 가이드를 추가했습니다.
+  - 이미 Git이 추적 중인 원본 파일은 `.gitignore`만으로 수정 제외되지 않는다는 주의사항을 명시했습니다.
+  - `.xcodebuildmcp/config.yaml`은 공유 템플릿으로 유지하고, `.xcodebuildmcp/Copy_config.yaml`은 개인 설정 복사본으로 사용하는 운영 기준을 정리했습니다.
+  - 커밋 전 `git check-ignore`, `git status`, `git status --ignored` 기반 점검 명령을 문서화했습니다.
+- **관련 파일**: `.gitignore`, `docs/ops/local_private_config_guide.md`, `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `git check-ignore -v .xcodebuildmcp/Copy_config.yaml`로 `**/Copy_*` 규칙 적용 확인
+  - `git status --short --ignored .xcodebuildmcp ...`로 `Copy_config.yaml`이 ignored 상태(`!!`)임을 확인
+  - `git diff --check` 통과

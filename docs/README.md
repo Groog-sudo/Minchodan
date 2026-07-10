@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.13.3 (2026-07-10 dev 브랜치 문서 정합성 점검: 4·5단계 RAG 설계서 설명을 Gemini 캡셔닝으로 정정, 현재 문서 기준선에 Gemini/Supertonic/GPS/MariaDB 반영, 1주차 미결정 표에 TTS·RDB 확정 결과 각주 추가 + 이전 v0.13.2 이력 유지: th 브랜치 병합 문서 폴더 재정리 반영, jy 브랜치 병합의 DB Tailscale 외부망 연결 가이드 추가, iOS/Android 이원화 통합 계약서 추가)
+> **버전**: v0.13.4 (2026-07-10 개인 설정 파일 Git 제외 가이드 추가: `Copy_` 접두어 기반 개인 설정 복사본 규칙과 `.xcodebuildmcp/Copy_config.yaml` 운영 기준 문서화 + 이전 v0.13.3 이력 유지: dev 브랜치 문서 정합성 점검, Gemini/Supertonic/GPS/MariaDB 반영)
 
 ## 문서 목록
 
@@ -18,6 +18,7 @@
 | 파이프라인 단계 설계 | [design/pipeline_stage_design.md](design/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
 | **환경 변수 명세서** | [ops/environment_variables.md](ops/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류**             |
 | **배포 가이드**      | [ops/deployment_guide.md](ops/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
+| **개인 설정 파일 Git 제외 가이드** | [ops/local_private_config_guide.md](ops/local_private_config_guide.md) | **`Copy_` 접두어 기반 로컬 개인 설정 복사본 제외 규칙** |
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
@@ -135,6 +136,7 @@ docs/
 | **Redis Streams 데이터 스키마 명세** | [redis_streams_schema.md](ops/redis_streams_schema.md) | **risk.events 스트림 페이로드 필드 정의 및 중복 알림 TTL 캐시 명세** |
 | **모바일 빌드 트러블슈팅 가이드** | [mobile_build_troubleshooting.md](ops/mobile_build_troubleshooting.md) | **iOS 샌드박싱/Rosetta ffi 및 Android SDK/JDK 버전 충돌 해결 핸드북** |
 | **코드 품질 검증 가이드** | [code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 검증 파이프라인** |
+| **개인 설정 파일 Git 제외 가이드** | [local_private_config_guide.md](ops/local_private_config_guide.md) | **`Copy_` 접두어 기반 로컬 개인 설정 복사본 제외 규칙** |
 | **iOS CoreML ANE 벤치마크** | [ondevice_coreml_benchmark.md](ops/ondevice_coreml_benchmark.md) | **CoreML ANE 온디바이스 추론 지연 벤치마크 및 서버 KPI 비교** |
 | **모델 클래스별 검증 보고서** | [model_class_validation_report.md](ops/model_class_validation_report.md) | **YOLO26n 33클래스(탐지29+세그멘테이션4) 샘플 이미지 탐지 검증 결과** |
 | Git 브랜칭 전략 | [git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조 (`main` / `dev` / 개인), PR 작업 규칙 |

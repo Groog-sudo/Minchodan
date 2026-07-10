@@ -286,3 +286,10 @@ server/models/piper/*.runtime.compat.json
 # Unused alternative model weights (post-MVP 배제 안)
 yolo11n.pt
 yolov8n.pt
+
+# ==========================================
+# Local private config copies
+#   - See docs/ops/local_private_config_guide.md
+#   - Personal paths, device IDs, tokens, and local-only settings
+# ==========================================
+**/Copy_*
