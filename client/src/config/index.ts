@@ -4,7 +4,9 @@
  * 실기기: 서버 LAN IP로 변경 필요
  */
 
-const LAN_IP = "192.168.0.209";
+// 기존 코드
+// const LAN_IP = "192.168.0.136";
+// export const WS_URL = `ws://${LAN_IP}:8000/ws/detect`;
 
 // 변경할 코드 (정적인 따옴표 문자열로 복구 - 안드로이드 백틱 문법 오류로 인해 변경(dgyun94))
 export const WS_URL = "ws://192.168.0.136:8000/ws/detect";
