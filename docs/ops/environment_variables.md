@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-10
-> **버전**: v0.4.9 (2026-07-10 jy 브랜치 병합: Docker Compose에서 Ollama 컨테이너를 제거하고 호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가 + 이전 v0.4.8 이력 유지: `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
+> **버전**: v0.4.10 (2026-07-10 dg2 브랜치 병합: `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영 + 이전 v0.4.9 이력 유지: jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -72,7 +72,7 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TTS_ENGINE`** | string | 필수 | `supertonic` | TTS 엔진. **2026-07-09 변경**: 실기기 청취 검증 결과 Piper의 발음 품질 한계(흔한 음절 누락)가 확인되어 기본값을 `supertonic`으로 교체. `piper`는 핫스왑 폴백으로 여전히 지정 가능(코드 보존). 그 외 값은 경고 로그 후 supertonic으로 강제 폴백. 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
+| **`TTS_ENGINE`** | string | 필수 | `supertonic` | TTS 엔진. **2026-07-09 변경**: 실기기 청취 검증 결과 Piper의 발음 품질 한계(흔한 음절 누락)가 확인되어 기본값을 `supertonic`으로 교체. `piper`는 핫스왑 폴백으로 여전히 지정 가능(코드 보존). **2026-07-10 추가**: `pyttsx3`(OS 내장 SAPI5/espeak, GPU·네트워크 불필요)도 로컬 저사양 대체 옵션으로 지원. 그 외 값은 경고 로그 후 supertonic으로 강제 폴백. 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
 | **`SUPERTONIC_VOICE`** | string | 선택 | `F1` | **2026-07-09 신규.** Supertonic 보이스 스타일 이름(`server/models/supertonic` 웹 콘솔 기준 F1~F5/M1~M5 등) | `server/tts/tts_service.py` |
 | **`SUPERTONIC_MODEL_DIR`** | path | 선택 | (미지정, 라이브러리 기본 `~/.cache/supertonic3`) | **2026-07-09 신규.** 명시적으로 지정하지 않는 것을 권장 - `server/models/` 하위로 지정하면 `docker-compose.yml`의 `../server:/app/server` 볼륨 마운트가 빌드 타임에 받아둔 캐시를 컨테이너 시작 시 호스트 쪽 내용으로 덮어써 버린다(pygoruut와 동일 문제) | `server/tts/tts_service.py` |
 | **`SUPERTONIC_TOTAL_STEPS`** | int | 선택 | `8` | **2026-07-09 신규.** 합성 품질/속도 트레이드오프(5=저품질·고속 ~ 12=고품질·저속) | `server/tts/tts_service.py` |

@@ -169,6 +169,9 @@ export function CameraView() {
       setLastDetect(`서버가이드: ${text} (${risk})`);
     } else if (lastMessage.type === "ack") {
       setLastDetect(`서버추론: 안전 (${lastMessage.decode_ms ?? 0}ms)`);
+    } else if (lastMessage.type === "server_detection") {
+      const serverDets = lastMessage.detections ?? [];
+      setDetections(serverDets);
     }
   }, [lastMessage]);
 
@@ -267,7 +270,11 @@ export function CameraView() {
       reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
       // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
-      setDetectionsRef.current(allDetections);
+
+      // 실기기(REAL) 모드일 때는 온디바이스 입력이 비어 있으므로, 서버의 server_detection 렌더링 결과를 덮어쓰지 않도록 MOCK 모드에만 세팅한다.
+      if (isMockModeRef.current) {
+        setDetectionsRef.current(allDetections);
+      }
 
       // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
       const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
@@ -342,12 +349,14 @@ export function CameraView() {
         void audioEngine.stopBeep();
       }
 
-      const top = [...det, ...seg][0];
-      setLastDetectRef.current(
-        top
-          ? `${top.model}:${top.className} ${(top.confidence * 100).toFixed(0)}% (${dt}ms) seg=${seg.length} det=${det.length}`
-          : `무탐지 (${dt}ms) seg=${seg.length} det=${det.length}`,
-      );
+      if (isMockModeRef.current) {
+        const top = [...det, ...seg][0];
+        setLastDetectRef.current(
+          top
+            ? `${top.model}:${top.className} ${(top.confidence * 100).toFixed(0)}% (${dt}ms) seg=${seg.length} det=${det.length}`
+            : `무탐지 (${dt}ms) seg=${seg.length} det=${det.length}`,
+        );
+      }
       if (isMockModeRef.current) {
         const src = getFrameProvider()?.getPreviewSource?.();
         if (typeof src === "number") setPreviewSrcRef.current(src);
