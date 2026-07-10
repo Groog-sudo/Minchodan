@@ -14,6 +14,7 @@ import {
   useAudioRecorder,
 } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
+import { audioEngine } from "../services/audioEngine";
 
 export type SttCaptureStatus = "idle" | "recording" | "sending";
 
@@ -63,6 +64,8 @@ export function useSttRecorder(
         recorder.record();
         statusRef.current = "recording";
         setStatus("recording");
+        // 시각장애인 사용자에게 실제 녹음 시작 순간을 신호음으로 알림(진입점 안내).
+        void audioEngine.playSttStartCue();
       } catch (err) {
         console.error("[STT] 녹음 시작 실패:", err);
         statusRef.current = "idle";
@@ -84,6 +87,9 @@ export function useSttRecorder(
     setStatus("sending");
     try {
       await recorder.stop();
+      // 실제 녹음이 종료된 직후 신호음으로 알림(종료점 안내). 시작음(단일 고음)과
+      // 구분되는 더블 비프 패턴을 사용해 시각장애인 사용자가 두 시점을 혼동하지 않게 한다.
+      void audioEngine.playSttEndCue();
       const uri = recorder.uri;
       if (!uri) {
         console.warn("[STT] 녹음 파일 URI 없음");

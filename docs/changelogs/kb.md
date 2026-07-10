@@ -1331,3 +1331,16 @@
 - **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/assets/models/yolo26n/ios/object_detection.mlpackage/*`, `client/assets/models/yolo26n/ios/segmentation.mlpackage/*`, `client/ios/Minchodan/object_detection.mlmodelc/*`, `client/ios/Minchodan/segmentation.mlmodelc/*`, `docs/changelogs/kb.md`
 - **검증 결과**: 실기기("고태현의 iPhone")에 재빌드/재설치 후 수 분간(수백 프레임) 연속 추론 크래시 없음 확인. 총추론 시간 48~70ms → 19~22ms로 약 2.5배 단축(KPI `<80ms` 대비 여유 확대). `[1, 32, 160, 160]` shape 경고 재발 없음, seg 벤치마크(12~18ms) 정상 기록으로 segmentation 파싱 정상 동작 확인.
 - **비고**: segmentation 프로토타입 마스크(`[1, 32, 160, 160]`)는 여전히 픽셀 단위로 조합되지 않고 박스+클래스 목록만 사용 중이다 - 실제 픽셀 단위 마스크가 필요해지면 후속 과제.
+
+---
+
+### 2026-07-11 | 7단계 | STT 녹음 진입/종료 신호음 추가
+
+- **커밋**: `feat(7단계): STT 녹음 진입/종료 신호음 추가`
+- **변경 내용**:
+  - 시각장애인 사용자가 화면을 보지 않고도 STT 녹음의 실제 시작/종료 시점을 구분할 수 있도록, 단일 고음 비프(`stt_start.wav`, 1000Hz 120ms)와 더블 비프(`stt_end.wav`, 700Hz 60ms x2)를 신규 생성(mono 44.1kHz 16bit, 기존 `beep.wav`/`silence.wav`와 동일 포맷).
+  - `audioEngine.ts`에 `playSttStartCue()`/`playSttEndCue()` 추가. 에셋 URI를 1회만 리졸브해 캐시하고, 반사 비프(`playBeep`)와는 별개의 일회성 플레이어로 재생해 반사 경로 상태와 간섭하지 않는다.
+  - `useSttRecorder.ts`의 실제 `recorder.record()` 성공 직후(진입점)와 `recorder.stop()` 성공 직후(종료점)에 각각 연결. UI 제스처 이벤트가 아니라 훅 내부의 실제 녹음 상태 전환에 결속해, 권한 거부 등으로 녹음이 실제로 시작되지 않은 경우 오신호를 방지한다. 기존 "네, 말씀하세요" TTS 안내는 그대로 유지.
+- **관련 파일**: `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `client/assets/sounds/stt_start.wav`(신규), `client/assets/sounds/stt_end.wav`(신규), `docs/changelogs/kb.md`
+- **검증 결과**: JS/에셋 변경만 있어 Metro Fast Refresh로 반영. 실기기 청취 검증은 사용자 진행 예정.
+- **비고**: (없음)
