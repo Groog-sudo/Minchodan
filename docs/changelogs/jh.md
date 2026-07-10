@@ -415,3 +415,17 @@
 - **관련 파일**: `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage7_tts_design.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/changelogs/jh.md`
 - **검증 결과**: 문서 상호 참조 및 항목 정합성 점검 완료(코드 동작 검증은 별도 테스트 범위)
 - **비고**: 문서 포맷은 기존 구조를 유지하고 내용 위주로 업데이트함
+
+---
+
+### 2026-07-10 | DB API | detection_guidance_logs 라우터 신규 추가 및 메인 배선
+
+- **커밋**: `feat(api): detection_guidance_logs 라우터 추가 및 main 등록`
+- **변경 내용**:
+  - `server/api/detection_guidance_log_router.py`를 신규 생성해 로그 저장/조회용 REST 엔드포인트 기본틀을 추가함
+  - HARDCODE/VIBE 파트를 분리해 함수/변수/코드 구조 설명과 직접 작성 힌트를 함께 배치함
+  - `POST /api/v1/logs/detection-guidance`, `GET /api/v1/logs/detection-guidance/by-event`, `POST /api/v1/logs/detection-guidance/sample` 경로를 구성함
+  - `server/main.py`에 `detection_guidance_log_router` import 및 `app.include_router(...)` 등록을 추가해 서버 기동 시 라우팅되도록 배선함
+- **관련 파일**: `server/api/detection_guidance_log_router.py`, `server/main.py`, `docs/changelogs/jh.md`
+- **검증 결과**: main 라우터 등록 경로 반영 완료, 라우터 파일 정적 진단 기준 문법 오류 없음
+- **비고**: 학습형 구현 흐름을 위해 일부 HARDCODE 힌트 주석을 유지한 템플릿 형태로 반영함

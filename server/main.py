@@ -26,6 +26,7 @@ if current_dir not in sys.path:
 
 from server.api.admin_router import router as admin_router
 from server.api.config import settings
+from server.api.detection_guidance_log_router import router as detection_guidance_log_router
 from server.api.monitor import router as monitor_router
 from server.api.stt_router import router as stt_router
 from server.api.user_router import router as user_router
@@ -155,6 +156,7 @@ app.include_router(ws_router, prefix="")
 app.include_router(user_router)
 app.include_router(admin_router)
 app.include_router(stt_router)
+app.include_router(detection_guidance_log_router)
 
 # 네비게이션 서브앱 마운트
 app.mount("/navigation", navigation_app)
