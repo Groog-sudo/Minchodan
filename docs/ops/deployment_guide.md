@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.3.0 (2026-07-07 §11 macOS 전용 docker-compose.macos.yml 누락 추가)
+> **버전**: v0.5.0 (2026-07-09 Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동으로 전환)
 > **설계 기준**: [`docs/architecture.md`](architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`docs/environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -10,7 +10,7 @@
 
 ## 1. 목적
 
-본 문서는 Minchodan의 **Docker 기반 배포 절차**를 단일 명세로 정의합니다. 기존 `docker/` 폴더의 DoctorSkin용 스크립트를 Minchodan용(Redis + Ollama + FastAPI 3컨테이너 구성)으로 전면 재작성한 내용을 포함하며, `test_specification.md` TC-SMOKE-004 "Docker 구성" 검증 기준을 충족합니다.
+본 문서는 Minchodan의 **Docker 기반 배포 절차**를 단일 명세로 정의합니다. 기존 `docker/` 폴더의 DoctorSkin용 스크립트를 Minchodan용(Redis + MariaDB + FastAPI 3컨테이너 구성, Ollama는 호스트 로컬 프로세스)으로 전면 재작성한 내용을 포함하며, `test_specification.md` TC-SMOKE-004 "Docker 구성" 검증 기준을 충족합니다.
 
 ---
 
@@ -22,8 +22,9 @@ graph TD
         subgraph Compose ["docker-compose.yml"]
             FastAPI["FastAPI Container<br/>(server/main:app)"]
             Redis["Redis Container<br/>(Streams + TTL)"]
-            Ollama["Ollama Container<br/>(gemma4:e4b, Llava, nomic-embed)"]
+            MariaDB["MariaDB Container<br/>(minchodan_db)"]
         end
+        Ollama["Host Local Ollama<br/>(gemma4:e4b, nomic-embed)"]
         GPU["CUDA 12.8 + cu128 PyTorch<br/>(sm_120 전제)"]
         Volumes["Volumes<br/>data/, server/models/"]
     end
@@ -32,7 +33,8 @@ graph TD
 
     Client -->|"ws://host:8000"| FastAPI
     FastAPI -->|"redis://redis:6379"| Redis
-    FastAPI -->|"http://ollama:11434"| Ollama
+    FastAPI -->|"mysql+aiomysql://mariadb:3306"| MariaDB
+    FastAPI -->|"COMPOSE_OLLAMA_BASE_URL"| Ollama
     FastAPI -.->|"GPU 접근"| GPU
     FastAPI -.->|"마운트"| Volumes
 ```
@@ -43,7 +45,9 @@ graph TD
 | :--- | :--- | :--- | :--- | :--- |
 | **fastapi** | `minchodan-server:latest` (로컬 빌드) | `${WS_PORT:-8000}:8000` | `./server:/app/server`, `./data:/app/data`, `./.env:/app/.env` | FastAPI + uvicorn, WebSocket `/ws/detect`, SSE `/api/v1/monitor/stream` |
 | **redis** | `redis:7-alpine` (공식) | `6379:6379` | `redis_data:/data` | Redis Streams(`risk.events`, `mcp:metrics`) + Track 컨텍스트 TTL(30초) |
-| **ollama** | `ollama/ollama:latest` (공식) | `11434:11434` | `ollama_data:/root/.ollama` | 로컬 LLM(gemma4:e4b, Llava, nomic-embed-text) 추론 |
+| **mariadb** | `mariadb:11.4` (공식) | `${DB_HOST_PORT:-3306}:3306` | `mariadb_data:/var/lib/mysql`, `Minchodan DB.session.sql:/docker-entrypoint-initdb.d/01_minchodan_schema.sql` | 로컬 Compose용 MariaDB. 최초 빈 볼륨 생성 시 `minchodan_db` 스키마 초기화 |
+
+> Ollama는 Compose 서비스가 아닙니다. 호스트에서 `ollama serve`로 실행하고, FastAPI 컨테이너는 `COMPOSE_OLLAMA_BASE_URL` 값을 통해 호스트 Ollama에 접속합니다.
 
 ### 2.2 GPU 접근 가드레일
 
@@ -52,7 +56,7 @@ graph TD
 | **CUDA 요구사항** | CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제). 11.8/12.1 휠은 silent CPU 폴백 발생 |
 | **GPU 검증** | 배포 전 `python scripts/verify_gpu.py`로 `device_capability >= (12,0)` 및 GPU 1 step 연산 검증 |
 | **컨테이너 GPU 전달** | `docker-compose.yml`의 `fastapi` 서비스에 `deploy.resources.reservations.devices`로 GPU 전달 |
-| **Ollama GPU** | Ollama 컨테이너도 동일 GPU 장치를 사용. 로컬 추론 지연 < 80ms 목표 |
+| **Ollama 실행 위치** | Ollama는 호스트 로컬 프로세스로 실행합니다. Docker 컨테이너에 모델 볼륨을 만들지 않습니다. |
 
 ---
 
@@ -64,6 +68,7 @@ graph TD
 | :--- | :--- | :--- |
 | **Docker Engine** | 24.0+ | 컨테이너 런타임 |
 | **Docker Compose** | v2.20+ | 멀티 컨테이너 오케스트레이션 |
+| **Ollama** | 최신 안정 버전 | 호스트 로컬 LLM 및 임베딩 서버 |
 | **NVIDIA Driver** | 550+ | Blackwell GPU 지원 |
 | **NVIDIA Container Toolkit** | 최신 | Docker 컨테이너 GPU 접근 |
 
@@ -80,18 +85,22 @@ Copy-Item .env.example .env
 # macOS / Linux (bash 또는 zsh)
 cp .env.example .env
 # .env 파일을 편집하여 실제 값을 채웁니다.
+# macOS Colima에서 수동 compose 실행 시:
+# COMPOSE_OLLAMA_BASE_URL=http://host.lima.internal:11434
 ```
 
-### 3.3 Ollama 모델 사전 다운로드 (최초 1회)
+### 3.3 호스트 로컬 Ollama 모델 사전 다운로드 (최초 1회)
 
 ```bash
-# 호스트에서 Ollama 컨테이너 기동 후 모델 pull
-docker exec -it minchodan-ollama ollama pull gemma4:e4b
-docker exec -it minchodan-ollama ollama pull llava
-docker exec -it minchodan-ollama ollama pull nomic-embed-text
+# 별도 터미널에서 Ollama 서버 실행
+ollama serve
+
+# 모델 pull
+ollama pull gemma4:e4b
+ollama pull nomic-embed-text
 ```
 
-> 모델 다운로드는 최초 1회만 수행하며, `ollama_data` 볼륨에 영속화됩니다.
+> 모델 다운로드는 최초 1회만 수행하며, 호스트의 Ollama 모델 저장소에 영속화됩니다. 현재 RAG 캡셔닝은 Gemini API 경로가 기준이므로 `llava`는 기본 Docker 실행 절차에서 제외합니다.
 
 ---
 
@@ -110,10 +119,9 @@ Copy-Item .env.example .env
 # 3. Docker 컨테이너 빌드 및 시작
 docker\windows_docker_start.bat
 
-# 4. Ollama 모델 다운로드 (최초 1회)
-docker exec -it minchodan-ollama ollama pull gemma4:e4b
-docker exec -it minchodan-ollama ollama pull llava
-docker exec -it minchodan-ollama ollama pull nomic-embed-text
+# 4. Ollama 모델 다운로드 (최초 1회, 호스트에서 실행)
+ollama pull gemma4:e4b
+ollama pull nomic-embed-text
 
 # 5. RAG 지식베이스 빌드 (최초 1회, 4단계)
 bash scripts/build_chroma.sh
@@ -134,10 +142,9 @@ bash docker/linux_docker_start.sh    # Linux
 # 또는
 bash docker/macos_docker_start.sh    # macOS
 
-# 4. Ollama 모델 다운로드 (최초 1회)
-docker exec -it minchodan-ollama ollama pull gemma4:e4b
-docker exec -it minchodan-ollama ollama pull llava
-docker exec -it minchodan-ollama ollama pull nomic-embed-text
+# 4. Ollama 모델 다운로드 (최초 1회, 호스트에서 실행)
+ollama pull gemma4:e4b
+ollama pull nomic-embed-text
 
 # 5. RAG 지식베이스 빌드 (최초 1회, 4단계)
 bash scripts/build_chroma.sh
@@ -147,16 +154,16 @@ bash scripts/build_chroma.sh
 
 ```bash
 # 빌드
-docker compose -f docker/docker-compose.yml build
+docker compose --env-file .env -f docker/docker-compose.yml build
 
 # 백그라운드 시작
-docker compose -f docker/docker-compose.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
 
 # 로그 확인
-docker compose -f docker/docker-compose.yml logs -f fastapi
+docker compose --env-file .env -f docker/docker-compose.yml logs -f fastapi
 
 # 정지
-docker compose -f docker/docker-compose.yml down
+docker compose --env-file .env -f docker/docker-compose.yml down
 ```
 
 ---
@@ -223,27 +230,29 @@ docker compose -f docker/docker-compose.yml down
 
 | 서비스 | 이미지 | 빌드 컨텍스트 | 의존성 | 재시작 정책 |
 | :--- | :--- | :--- | :--- | :--- |
-| **fastapi** | `minchodan-server:latest` | `..` (프로젝트 루트) | `redis`, `ollama` | `unless-stopped` |
+| **fastapi** | `minchodan-server:latest` | `..` (프로젝트 루트) | `redis`, `mariadb` | `unless-stopped` |
 | **redis** | `redis:7-alpine` | (공식 이미지) | - | `unless-stopped` |
-| **ollama** | `ollama/ollama:latest` | (공식 이미지) | - | `unless-stopped` |
+| **mariadb** | `mariadb:11.4` | (공식 이미지) | - | `unless-stopped` |
 
 ### 7.2 볼륨 정의
 
 | 볼명 | 마운트 대상 | 용도 |
 | :--- | :--- | :--- |
 | `redis_data` | `redis:/data` | Redis 영속화 |
-| `ollama_data` | `ollama:/root/.ollama` | Ollama 모델 영속화 |
+| `mariadb_data` | `mariadb:/var/lib/mysql` | MariaDB 데이터 영속화 |
 
 ### 7.3 네트워크
 
-모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유하며, 서비스 이름으로 상호 참조합니다 (`redis://redis:6379`, `http://ollama:11434`).
+모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유하며, Redis와 MariaDB는 서비스 이름으로 상호 참조합니다 (`redis://redis:6379`, `mariadb:3306`). Ollama는 컨테이너가 아니라 호스트 로컬 프로세스이므로 `COMPOSE_OLLAMA_BASE_URL`로 접속 주소를 별도 주입합니다.
 
-> 주의: `.env` 파일의 `REDIS_URL`과 `OLLAMA_BASE_URL`은 Docker Compose 환경에서 컨테이너 서비스 이름 기반으로 재설정해야 합니다.
+> 주의: `.env` 파일의 `REDIS_URL`, `OLLAMA_BASE_URL`, `DB_HOST`, `DB_PORT`는 Docker Compose 환경에서 컨테이너/호스트 연결 기준으로 재설정해야 합니다. compose 파일은 FastAPI 컨테이너에 대해 이 값을 자동 오버라이드합니다.
 >
 > | 변수 | 로컬 개발 | Docker Compose |
 > | :--- | :--- | :--- |
 > | `REDIS_URL` | `redis://localhost:6379` | `redis://redis:6379` |
-> | `OLLAMA_BASE_URL` | `http://localhost:11434` | `http://ollama:11434` |
+> | `OLLAMA_BASE_URL` | `http://localhost:11434` | `${COMPOSE_OLLAMA_BASE_URL}` |
+> | `DB_HOST` | `.env`의 원격 또는 로컬 호스트 | `mariadb` |
+> | `DB_PORT` | `.env`의 MariaDB 포트 | `3306` |
 
 ---
 
@@ -270,13 +279,13 @@ docker compose -f docker/docker-compose.yml down
 
 ```bash
 # 모든 컨테이너 실행 상태
-docker compose -f docker/docker-compose.yml ps
+docker compose --env-file .env -f docker/docker-compose.yml ps
 
 # 기대 결과:
 # NAME                 STATUS         PORTS
 # minchodan-fastapi    Up             0.0.0.0:8000->8000/tcp
 # minchodan-redis      Up             0.0.0.0:6379->6379/tcp
-# minchodan-ollama     Up             0.0.0.0:11434->11434/tcp
+# minchodan-mariadb    Up             0.0.0.0:3306->3306/tcp
 ```
 
 ### 9.2 엔드포인트 연결 확인
@@ -285,18 +294,20 @@ docker compose -f docker/docker-compose.yml ps
 | :--- | :--- | :--- |
 | FastAPI | `curl http://localhost:8000/docs` | Swagger UI HTML |
 | Redis | `redis-cli ping` | `PONG` |
+| MariaDB | `docker exec -it minchodan-mariadb sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -e "SELECT 1"'` | `1` |
 | Ollama | `curl http://localhost:11434/api/tags` | 모델 목록 JSON |
 
 ### 9.3 TC-SMOKE-004 검증 (Docker 구성)
 
-본 배포 가이드는 [`docs/test_specification.md`](test_specification.md)의 TC-SMOKE-004 "Docker 구성: Redis + Ollama + FastAPI 컨테이너" 검증 기준을 충족합니다.
+본 배포 가이드는 [`docs/test_specification.md`](test_specification.md)의 TC-SMOKE-004 "Docker 구성: Redis + MariaDB + FastAPI 컨테이너 + 호스트 로컬 Ollama 연결" 검증 기준을 충족합니다.
 
 | 검증 항목 | 기준 | 본 가이드 대응 |
 | :--- | :--- | :--- |
-| 컨테이너 3종 기동 | Redis + Ollama + FastAPI 동시 실행 | 7.1절 서비스 정의 |
-| 컨테이너 간 통신 | FastAPI -> Redis, FastAPI -> Ollama | 7.3절 네트워크 (서비스 이름 기반 참조) |
+| 컨테이너 3종 기동 | Redis + MariaDB + FastAPI 동시 실행 | 7.1절 서비스 정의 |
+| 컨테이너 간 통신 | FastAPI -> Redis, FastAPI -> MariaDB | 7.3절 네트워크 (서비스 이름 기반 참조) |
+| 호스트 Ollama 연결 | FastAPI -> 호스트 로컬 Ollama | `COMPOSE_OLLAMA_BASE_URL` 환경 변수 |
 | GPU 접근 | FastAPI 컨테이너에서 CUDA 연산 | 2.2절 GPU 접근 가드레일 |
-| 볼륨 영속화 | Redis 데이터, Ollama 모델 | 7.2절 볼륨 정의 |
+| 볼륨 영속화 | Redis 데이터, MariaDB 데이터 | 7.2절 볼륨 정의 |
 
 ---
 
@@ -304,10 +315,12 @@ docker compose -f docker/docker-compose.yml ps
 
 | 증상 | 원인 | 해결 방법 |
 | :--- | :--- | :--- |
-| FastAPI 컨테이너가 Ollama에 연결 불가 | `OLLAMA_BASE_URL`이 `localhost`로 설정됨 | `.env`에서 `OLLAMA_BASE_URL=http://ollama:11434`로 변경 |
+| FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동 또는 `COMPOSE_OLLAMA_BASE_URL`이 현재 Docker 런타임과 맞지 않음 | 호스트에서 `ollama serve` 실행 후 Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`로 설정 |
 | FastAPI 컨테이너가 Redis에 연결 불가 | `REDIS_URL`이 `localhost`로 설정됨 | `.env`에서 `REDIS_URL=redis://redis:6379`로 변경 |
+| FastAPI 컨테이너가 MariaDB에 연결 불가 | `DB_HOST`가 컨테이너 서비스 이름이 아니거나 MariaDB healthcheck 실패 | compose 환경에서는 `DB_HOST=mariadb`, `DB_PORT=3306` 오버라이드가 적용되는지 확인 |
+| MariaDB 컨테이너가 시작되지 않음 | `COMPOSE_DB_PASSWORD` 또는 `COMPOSE_DB_ROOT_PASSWORD` 누락, 호스트 포트 충돌 | `.env` 값 확인 또는 `DB_HOST_PORT`를 빈 포트로 변경 |
 | GPU 인식 실패 | NVIDIA Container Toolkit 미설치 | `nvidia-container-toolkit` 설치 후 Docker 데몬 재시작 |
-| Ollama 모델 pull 실패 | 디스크 공간 부족 또는 네트워크 | 디스크 여유 공간 확인 (gemma4:e4b 약 9.6GB) |
+| Ollama 모델 pull 실패 | 디스크 공간 부족 또는 네트워크 | 호스트에서 디스크 여유 공간 확인 (gemma4:e4b 약 9.6GB) |
 | 포트 8000 충돌 | 기존 프로세스 사용 중 | `WS_PORT` 환경 변수 변경 또는 기존 프로세스 종료 |
 | `.env` 파일 미발견 | `.env.example`을 `.env`로 복사하지 않음 | `cp .env.example .env` 실행 |
 
@@ -319,8 +332,8 @@ docker compose -f docker/docker-compose.yml ps
 | :--- | :--- | :--- |
 | Dockerfile | [`docker/Dockerfile`](../docker/Dockerfile) | FastAPI 컨테이너 이미지 정의 |
 | docker-compose.yml | [`docker/docker-compose.yml`](../docker/docker-compose.yml) | 3컨테이너 오케스트레이션 (GPU 서버용, `deploy.resources` GPU 예약 포함) |
-| docker-compose.macos.yml | [`docker/docker-compose.macos.yml`](../docker/docker-compose.macos.yml) | **2026-07-07 추가**: macOS 로컬 테스트용 CPU 전용 변형 (GPU `deploy` 블록 없음). `macos_docker_start.sh`/`windows_docker_start.bat`가 실제로 이 파일을 사용함 |
-| .dockerignore | [`docker/.dockerignore`](../docker/.dockerignore) | 빌드 컨텍스트 제외 패턴 |
+| docker-compose.macos.yml | [`docker/docker-compose.macos.yml`](../docker/docker-compose.macos.yml) | macOS 로컬 테스트용 CPU 전용 3컨테이너 변형 (GPU `deploy` 블록 없음). `macos_docker_start.sh`/`windows_docker_start.bat`가 실제로 이 파일을 사용함 |
+| .dockerignore | [`.dockerignore`](../../.dockerignore) | 루트 build context 기준 제외 패턴 |
 | Windows 시작 스크립트 | [`docker/windows_docker_start.bat`](../docker/windows_docker_start.bat) | Windows용 빌드·시작 자동화 |
 | Linux 시작 스크립트 | [`docker/linux_docker_start.sh`](../docker/linux_docker_start.sh) | Linux용 빌드·시작 자동화 |
 | macOS 시작 스크립트 | [`docker/macos_docker_start.sh`](../docker/macos_docker_start.sh) | macOS용 빌드·시작 자동화 |

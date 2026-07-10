@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-06-27 코드 품질 검증 가이드 연동)
+> **버전**: v0.3.1 (2026-07-09 Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 > **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
@@ -57,7 +57,7 @@
 
 ### 인프라
 
-- Container: Docker (Redis + Ollama + FastAPI)
+- Container: Docker (Redis + MariaDB + FastAPI), Ollama는 호스트 로컬 프로세스
 - GPU: CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
 
 ---

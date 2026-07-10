@@ -110,7 +110,7 @@ Minchodan은 **시각장애인 보행 보조 스마트 가이드독 AI 플랫폼
 | `console/`  | React 운영자 모니터링 콘솔                                                 |
 | `data/`     | 학습·RAG 데이터 (원본, 프레임, 캡션, ChromaDB, 반사 클립)                  |
 | `training/` | 모델 학습 (오프라인, Yolo 26N - Object Detection, Yolo 26N - Segmentation) |
-| `docker/`   | Docker 구성 (Redis + Ollama + FastAPI)                                     |
+| `docker/`   | Docker 구성 (Redis + MariaDB + FastAPI, Ollama는 호스트 로컬 프로세스)     |
 
 이중 경로 원칙 (비협상):
 

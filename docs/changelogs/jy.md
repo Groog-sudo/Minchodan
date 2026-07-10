@@ -103,3 +103,71 @@
   - `.venv/bin/python -m py_compile server/db/connection.py` 통과
   - `.venv/bin/python -c "import server.db.connection as c; ..."` 기반 SQLAlchemy URL 마스킹 출력 확인
   - `git diff --check` 통과
+
+---
+
+### 2026-07-09 | Docker | Compose 경량화, MariaDB 컨테이너 연결, 호스트 로컬 Ollama 전환
+
+- **커밋**: `chore(docker): use host-local ollama with compose`
+- **변경 내용**:
+  - 프로젝트 루트 `.dockerignore`를 추가하여 실제 Docker build context에서 `.venv/`, `.env`, `.git/`, `client/`, `docs/`, 캐시·빌드 산출물 등이 제외되도록 정리했습니다.
+  - `docker/.dockerignore`에는 실제 적용 파일이 루트 `.dockerignore`임을 안내하는 주석을 추가해, `docker/` 하위 ignore 파일만 보고 오해하지 않도록 보완했습니다.
+  - `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`에 MariaDB 11.4 서비스를 추가하고, `Minchodan DB.session.sql` 초기화 SQL, `mariadb_data` 볼륨, healthcheck, `COMPOSE_DB_*` 환경 변수를 연결했습니다.
+  - FastAPI 컨테이너의 DB 연결값을 compose 내부 기준(`DB_HOST=mariadb`, `DB_PORT=3306`)으로 오버라이드하여 `docker compose up` 시 로컬 MariaDB 컨테이너에 접속하도록 맞췄습니다.
+  - 회의 결정에 따라 Ollama는 Docker Compose 서비스에서 제거하고, 호스트 로컬 Ollama(`ollama serve`)를 FastAPI 컨테이너가 `COMPOSE_OLLAMA_BASE_URL`로 호출하는 구조로 전환했습니다.
+  - macOS 시작 스크립트는 Colima 실행 시 `host.lima.internal:11434`를 자동 선택하고, Linux/Windows 스크립트는 `host.docker.internal:11434` 기준의 호스트 Ollama 연결 흐름을 안내하도록 수정했습니다.
+  - OS별 Docker 시작 스크립트의 시작 메시지, 모델 pull 안내, 로그/중지 명령을 `Redis + MariaDB + FastAPI` 3컨테이너와 호스트 로컬 Ollama 기준으로 정리했습니다.
+  - `.env.example`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SKILLS.md`, `docs/AGENTS.md`, `docs/README.md`, `docs/ops/environment_variables.md`, `docs/ops/deployment_guide.md`, `docs/ops/ai_model_hardware_setup.md`, `docs/ops/test_specification.md`를 새 Docker 실행 구조에 맞게 동기화했습니다.
+- **관련 파일**: `.dockerignore`, `.env.example`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `SKILLS.md`, `docker/.dockerignore`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docker/linux_docker_start.sh`, `docker/macos_docker_start.sh`, `docker/windows_docker_start.bat`, `docs/AGENTS.md`, `docs/README.md`, `docs/ops/environment_variables.md`, `docs/ops/deployment_guide.md`, `docs/ops/ai_model_hardware_setup.md`, `docs/ops/test_specification.md`
+- **검증 결과**:
+  - `docker compose --env-file .env -f docker/docker-compose.macos.yml config --quiet` 통과
+  - `docker compose --env-file .env -f docker/docker-compose.yml config --quiet` 통과
+  - `bash -n docker/macos_docker_start.sh docker/linux_docker_start.sh` 통과
+  - `git diff --check` 통과
+  - 실제 `docker compose up`은 이미지 빌드·컨테이너 기동 시간이 길 수 있어 이번 정리 작업에서는 실행하지 않았습니다.
+
+---
+
+### 2026-07-09 | iOS | Xcode MCP 로컬 설정 안내 및 스킬 경로 정리
+
+- **커밋**: `docs(ios): document xcodebuildmcp local config`
+- **변경 내용**:
+  - `.xcodebuildmcp/config.yaml`에 남아 있던 개인 Mac 절대경로와 시뮬레이터/실기기 UDID를 제거하고, 각 개발자가 로컬에서 입력해야 할 값(`workspacePath`, `deviceId`, `scheme`, `platform`, `bundleId`)을 안내하는 템플릿 주석으로 정리했습니다.
+  - `.agents/skills/xcode-build-management/SKILL.md`의 iOS 핵심 자산 링크를 특정 사용자 홈 디렉터리의 `file://` 절대경로에서 프로젝트 기준 상대경로로 변경했습니다.
+  - `CoreMLInferenceBridge.swift` 링크를 실제 파일 위치인 `client/ios/CoreMLInferenceBridge.swift` 기준으로 정정했습니다.
+- **관련 파일**: `.xcodebuildmcp/config.yaml`, `.agents/skills/xcode-build-management/SKILL.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `rg --files client/ios | rg "CoreMLInferenceBridge|Minchodan\\.xcworkspace|Podfile$"`로 iOS 핵심 파일 실제 위치 확인 완료
+  - `git diff --check` 통과
+
+---
+
+### 2026-07-10 | DB | MariaDB Tailscale 외부망 연결 가이드 추가
+
+- **커밋**: `docs(db): add tailscale mariadb guide`
+- **변경 내용**:
+  - macOS와 Windows 사용자를 분리한 MariaDB Tailscale 연결 절차 문서를 추가했습니다.
+  - Tailscale DB Host, DB 이름, DB 사용자명은 플레이스홀더 기준으로 DBeaver 설정값과 `.env` 예시를 정리했습니다.
+  - Tailscale 도달성, MariaDB 포트 도달성, DB 인증 실패를 구분하는 점검표와 트러블슈팅 표를 추가했습니다.
+  - `docs/README.md` 문서 인덱스에 새 가이드 링크를 반영했습니다.
+- **관련 파일**: `docs/db_tailscale_guide/README.md`, `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `rg`로 Tailscale 초대 링크, 실제 Host, 실제 DB 사용자명 잔존 여부 확인 완료
+  - `git diff --check` 통과
+
+---
+
+### 2026-07-10 | DB | 탐지 및 TTS 안내 로그 테이블 추가
+
+- **커밋**: `db: add detection guidance log table`
+- **변경 내용**:
+  - 클라이언트 프레임 이벤트 기준의 탐지/안내 이력을 저장하기 위해 `detection_guidance_logs` 테이블 DDL을 추가했습니다.
+  - 탐지 시점은 `detected_at`, YOLO 탐지 결과는 `detected_objects_json`, LLM이 사용자에게 출력한 전체 안내 문장은 `tts_text`에 저장하도록 구성했습니다.
+  - 서버/클라이언트 이벤트 추적을 위한 `event_id`, 사용자/기기 연결을 위한 `user_id`, `device_id`, 반사/인지 스트림 구분을 위한 `stream_type`, DB 적재 시각 `created_at`을 함께 추가했습니다.
+  - 로그성 데이터 보존을 위해 `app_users`, `user_devices` 참조는 `ON DELETE SET NULL` 정책으로 연결했습니다.
+  - 기본 확인 설명을 기존 4개 테이블에서 5개 테이블 기준으로 갱신하고, 선택 검증 쿼리에 `SHOW CREATE TABLE detection_guidance_logs;`를 추가했습니다.
+- **관련 파일**: `Minchodan DB.session.sql`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `git diff --check -- 'Minchodan DB.session.sql'` 통과
+  - SQL 파일 내 신규 테이블 DDL 및 선택 검증 쿼리 위치 확인 완료
+  - 실제 MariaDB 실행 검증은 이번 작업 범위에서 수행하지 않았습니다.

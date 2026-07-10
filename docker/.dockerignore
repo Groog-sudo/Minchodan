@@ -1,5 +1,9 @@
 # Minchodan .dockerignore
 # 상세 명세: docs/deployment_guide.md 8절
+#
+# 주의: docker-compose.yml의 build context는 프로젝트 루트(`..`)이므로
+# 실제 compose 빌드에 적용되는 파일은 루트 `.dockerignore`입니다.
+# 본 파일은 과거 위치의 참고 사본으로 유지합니다.
 
 # Python 캐시
 __pycache__/

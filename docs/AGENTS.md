@@ -51,7 +51,7 @@
 
 ### 인프라
 
-- Container: Docker (Redis + Ollama + FastAPI)
+- Container: Docker (Redis + MariaDB + FastAPI), Ollama는 호스트 로컬 프로세스
 - GPU: CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
 
 ---

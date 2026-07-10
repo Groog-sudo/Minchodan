@@ -1,5 +1,5 @@
 # Minchodan Docker Compose
-# Redis + Ollama + FastAPI 3컨테이너 구성
+# Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
 # 상세 명세: docs/deployment_guide.md 7절
 
 services:
@@ -21,12 +21,20 @@ services:
     env_file:
       - ../.env
     environment:
-      # Docker Compose 환경에서는 컨테이너 서비스 이름 기반으로 재설정
+      # Docker Compose 환경에서는 컨테이너 서비스명과 호스트 Ollama 주소로 재설정
       - REDIS_URL=redis://redis:6379
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - DB_TYPE=mariadb
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_NAME=${COMPOSE_DB_NAME:-minchodan_db}
+      - DB_USER=${COMPOSE_DB_USER:-minchodan_team}
+      - DB_PASSWORD=${COMPOSE_DB_PASSWORD:-minchodan_password}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis
-      # - ollama
+      - ollama
     restart: unless-stopped
     networks:
       - minchodan-net
@@ -50,28 +58,28 @@ services:
     networks:
       - minchodan-net
 
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: minchodan-ollama
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   restart: unless-stopped
-  #   networks:
-  #     - minchodan-net
-  #   # Ollama GPU 접근 (NVIDIA Container Toolkit 필요, GPU가 없는 환경에서는 아래 deploy 블록을 주석 처리하십시오)
-  #   # deploy:
-  #   #   resources:
-  #   #     reservations:
-  #   #       devices:
-  #   #         - driver: nvidia
-  #   #           count: all
-  #   #           capabilities: [gpu]
+  ollama:
+    image: ollama/ollama:latest
+    container_name: minchodan-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+    # Ollama GPU 접근 (NVIDIA Container Toolkit 필요)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   redis_data:
-  # ollama_data:
+  ollama_data:
 
 networks:
   minchodan-net:
