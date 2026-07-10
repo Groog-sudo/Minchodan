@@ -139,3 +139,18 @@
 - **검증 결과**:
   - `rg --files client/ios | rg "CoreMLInferenceBridge|Minchodan\\.xcworkspace|Podfile$"`로 iOS 핵심 파일 실제 위치 확인 완료
   - `git diff --check` 통과
+
+---
+
+### 2026-07-10 | DB | MariaDB Tailscale 외부망 연결 가이드 추가
+
+- **커밋**: `docs(db): add tailscale mariadb guide`
+- **변경 내용**:
+  - macOS와 Windows 사용자를 분리한 MariaDB Tailscale 연결 절차 문서를 추가했습니다.
+  - Tailscale DB Host, DB 이름, DB 사용자명은 플레이스홀더 기준으로 DBeaver 설정값과 `.env` 예시를 정리했습니다.
+  - Tailscale 도달성, MariaDB 포트 도달성, DB 인증 실패를 구분하는 점검표와 트러블슈팅 표를 추가했습니다.
+  - `docs/README.md` 문서 인덱스에 새 가이드 링크를 반영했습니다.
+- **관련 파일**: `docs/db_tailscale_guide/README.md`, `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `rg`로 Tailscale 초대 링크, 실제 Host, 실제 DB 사용자명 잔존 여부 확인 완료
+  - `git diff --check` 통과
