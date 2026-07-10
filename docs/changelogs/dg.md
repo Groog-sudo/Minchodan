@@ -206,15 +206,23 @@
     - **Metro 기동 해결**: `client/app.json`에 `"scheme": "minchodan"` 지정 및 `client/package.json`에 `"start:android": "expo start --scheme minchodan"` 추가하여 강제 딥링크 주입 구동 환경 확보.
 - **관련 파일**: `server/orchestration/llm_client_factory.py`, `.env`, `docker/docker-compose.yml`, `client/app.json`, `client/package.json`
 
+---
 
+### 2026-07-10 | 문서 | 프로젝트 루트의 개발/운영/최적화 계획 및 보고서 문서 정리 및 docs 폴더 이동 완료
 
-
-
-
-
-
-
-
-
-
-
+- **커밋**: `docs: organize and relocate root markdown documents to docs subdirectories`
+- **변경 내용**:
+  - 프로젝트 루트에 방치되어 있던 안드로이드 빌드, 실기기 연동, 최적화 계획 및 보고서 등 총 9개의 마크다운 문서를 분류하고 `docs/`의 적절한 하위 디렉토리(`docs/mobile/`, `docs/ops/`)로 이동하여 폴더 구조를 정돈함.
+  - 파일명을 기존 한글 및 공백 조합에서 CLI 가독성 및 마크다운 링크 파싱의 안정성을 고려하여 영어 소문자 및 언더스코어(`snake_case`) 형식으로 일괄 리네이밍하여 이동 처리함.
+  - Git 트래킹 상태(`git add`)를 최종 확인하여 형상 관리에 정상 포함시킴.
+- **이동 대상 파일 상세**:
+  - `1_Android 온디바이스 TFLite 추론 및 빌드 구성 계획.md` -> `docs/mobile/android_ondevice_tflite_build_plan.md`
+  - `4_안드로이드 스마트폰 앱 객체 탐지 BBOX 누락 수정 계획.md` -> `docs/mobile/android_bbox_missing_fix_plan.md`
+  - `1_Android 온디바이스 TFLite 추론 및 빌드 구성 계획_실행방법.md` -> `docs/ops/android_ondevice_tflite_run_guide.md`
+  - `1_Android 온디바이스 TFLite 추론 및 빌드 구성 계획_작업 완료 보고서.md` -> `docs/ops/android_ondevice_tflite_completion_report.md`
+  - `2_안드로이드 스마트폰 연동 실행 가이드.md` -> `docs/ops/android_device_integration_guide.md`
+  - `3_TTS pyttsx3 교체 작업 결과 보고서.md` -> `docs/ops/tts_pyttsx3_replacement_report.md`
+  - `5_민초단 연동 환경 및 LLM 최적화 최종 결과 보고서.md` -> `docs/ops/minchodan_optimization_final_report.md`
+  - `5_민초단 전체 최적화 계획.md` -> `docs/ops/minchodan_optimization_plan.md`
+  - `5_민초단 최적화 작업 체크리스트.md` -> `docs/ops/minchodan_optimization_checklist.md`
+- **관련 파일**: `docs/changelogs/dg.md`
