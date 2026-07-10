@@ -21,16 +21,28 @@ services:
     env_file:
       - ../.env
     environment:
+      # CPU 폴백 환경에서 YOLO(det/seg) 배치=1 추론이 호출마다 호스트 전체 코어를
+      # 스레드로 점유해(14코어 실측 800~1300% CPU) 반사/인지 두 스트림이 겹칠 때
+      # 스레드 과잉경쟁을 유발하던 문제 완화. 값은 튜닝 여지 있음(비협상 아님).
+      - OMP_NUM_THREADS=4
+      - MKL_NUM_THREADS=4
+      - OPENBLAS_NUM_THREADS=4
+      - NUMEXPR_NUM_THREADS=4
       # Docker Compose 환경에서는 컨테이너 서비스명과 호스트 Ollama 주소로 재설정
       - REDIS_URL=redis://redis:6379
       # macOS에서도 Ollama는 도커 외부 로컬에서 별도로 띄움
       - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # 2026-07-10: 팀 공유 DB는 로컬 mariadb 컨테이너가 아니라 Tailscale로 연결되는
+      # RPi 호스트다(실제 호스트/비밀번호는 .env, docs/db_tailscale_guide/README.md 참조 -
+      # git 추적 파일에 실 자격증명을 남기지 않는다). 로컬 mariadb 서비스는 오프라인
+      # 개발용 폴백으로만 남겨두고, 기본 타깃은 .env의 실제 DB_HOST/DB_PASSWORD가
+      # 그대로 적용되도록 이 환경에서는 재정의하지 않는다(env_file 상속). 오프라인으로
+      # 로컬 컨테이너를 쓰려면 .env에 DB_HOST=mariadb로 직접 바꾼다.
       - DB_TYPE=mariadb
-      - DB_HOST=mariadb
-      - DB_PORT=3306
+      - DB_HOST=${COMPOSE_DB_HOST:-${DB_HOST:-mariadb}}
+      - DB_PORT=${COMPOSE_DB_PORT:-3306}
       - DB_NAME=${COMPOSE_DB_NAME:-minchodan_db}
       - DB_USER=${COMPOSE_DB_USER:-minchodan_team}
-      - DB_PASSWORD=${COMPOSE_DB_PASSWORD:-minchodan_password}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

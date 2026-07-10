@@ -87,6 +87,10 @@ class AudioEngine {
    * iOS 오디오 세션 초기화. 반사 루프 플레이어와 인지 가이드 일회성 플레이어가
    * 동시에 활성화되는 상황이 있어, mixWithOthers를 명시적으로 설정해 두 플레이어가
    * 서로의 재생을 끊거나 덕킹(ducking)하지 않도록 한다.
+   * 2026-07-10 정정: allowsRecording을 false로 고정해두면 expo-audio의
+   * useAudioRecorder().record()가 항상 RecordingDisabledException으로 실패한다
+   * (STT 녹음이 서버에 단 한 번도 도달하지 못한 근본 원인, 실기기 실측 확인).
+   * shouldRouteThroughEarpiece 기본값이 false라 true로 바꿔도 스피커 출력은 유지된다.
    */
   private async ensureSession(): Promise<void> {
     if (this.sessionInitialized) return;
@@ -96,7 +100,7 @@ class AudioEngine {
         playsInSilentMode: true,
         interruptionMode: "mixWithOthers",
         shouldPlayInBackground: false,
-        allowsRecording: false,
+        allowsRecording: true,
       });
       console.log("[AudioEngine] 오디오 세션 설정 완료 (mixWithOthers)");
     } catch (err) {
@@ -428,8 +432,11 @@ class AudioEngine {
    * 서버는 여전히 오디오를 생성하지 못했을 뿐 안내 문장 자체는 만들었으므로,
    * 무음 대신 단말이 직접 말해 안내가 사라지는 체감을 없앤다.)
    */
-  public speakFallback(text: string): void {
-    if (!text || !text.trim()) return;
+  public speakFallback(text: string, onComplete?: () => void): void {
+    if (!text || !text.trim()) {
+      onComplete?.();
+      return;
+    }
 
     // [TEMP DEBUG 2026-07-09] 문장 중간 절단(예: "우측으로 [짤림]아 가세요") 원인 진단용.
     // 동일/중복 guide 메시지가 겹쳐 도착해 speakFallback이 중복 호출되는지 확인한다.
@@ -456,14 +463,17 @@ class AudioEngine {
       onDone: () => {
         console.log(`[AudioEngine][DEBUG] speakFallback onDone id=${callId} ts=${Date.now()}`);
         this.isGuidePlaying = false;
+        onComplete?.();
       },
       onStopped: () => {
         console.log(`[AudioEngine][DEBUG] speakFallback onStopped id=${callId} ts=${Date.now()}`);
         this.isGuidePlaying = false;
+        onComplete?.();
       },
       onError: (err) => {
         console.error(`[AudioEngine] 단말 TTS 폴백 실패 id=${callId}:`, err);
         this.isGuidePlaying = false;
+        onComplete?.();
       },
     });
   }

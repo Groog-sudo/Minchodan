@@ -29,6 +29,7 @@ from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.rag.retriever import get_default_retriever
+from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.tts.realtime_tts import realtime_tts
 from server.tts.suppressor import Alert_suppressor
 
@@ -53,6 +54,9 @@ class DetectionConsumer:
         self._reflex_task: asyncio.Task | None = None
         self._cognitive_task: asyncio.Task | None = None
         self._running = False
+        # DB 로그 저장은 반사/인지 응답 전송 경로를 막지 않도록 fire-and-forget으로
+        # 실행한다 - 참조를 들고 있지 않으면 태스크가 GC되어 조기 취소될 수 있다.
+        self._log_tasks: set[asyncio.Task] = set()
         # device_id별 마지막 인지 가이드 전송 시각(초)과 그 오디오 재생 길이(초).
         # 이전 안내 음성이 끝나기 전에 다음 안내가 겹쳐 재생을 끊는 문제를 막기 위한
         # 간격 쿨다운. 고정값 하나로는 문장 길이에 따라 달라지는 실제 WAV 재생 시간을
@@ -119,7 +123,46 @@ class DetectionConsumer:
                     await task
         self._reflex_task = None
         self._cognitive_task = None
+        for log_task in list(self._log_tasks):
+            log_task.cancel()
         logger.info("[DetectionConsumer] 중지")
+
+    def _schedule_log_persist(
+        self,
+        *,
+        event_id: str | None,
+        stream_type: str,
+        detections: list[dict],
+        tts_text: str,
+    ) -> None:
+        task = asyncio.create_task(
+            self._persist_log_safe(
+                event_id=event_id,
+                stream_type=stream_type,
+                detections=detections,
+                tts_text=tts_text,
+            )
+        )
+        self._log_tasks.add(task)
+        task.add_done_callback(self._log_tasks.discard)
+
+    async def _persist_log_safe(
+        self,
+        *,
+        event_id: str | None,
+        stream_type: str,
+        detections: list[dict],
+        tts_text: str,
+    ) -> None:
+        try:
+            await persist_detection_guidance_log(
+                event_id=event_id,
+                stream_type=stream_type,
+                detections=detections,
+                tts_text=tts_text,
+            )
+        except Exception as e:
+            logger.error(f"[DetectionConsumer] DB 로그 저장 실패: event_id={event_id}, {e}")
 
     async def _consume_loop(self, stream: str) -> None:
         queue = self._select_queue(stream)
@@ -323,6 +366,19 @@ class DetectionConsumer:
                 f"[DetectionConsumer] 반사 알림 전송: "
                 f"device_id={device_id}, alert_id={alert.alert_id}"
             )
+            self._schedule_log_persist(
+                event_id=alert.event_id,
+                stream_type="reflex",
+                detections=[
+                    {
+                        "alert_id": alert.alert_id,
+                        "direction": alert.direction,
+                        "risk_level": alert.risk_level,
+                        "distance": alert.distance,
+                    }
+                ],
+                tts_text=f"[반사 클립] {alert.clip}",
+            )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
 
@@ -443,6 +499,12 @@ class DetectionConsumer:
             detected_classes_str = ", ".join(orch_input["detected_classes"]) or "(없음)"
             logger.info(
                 f'[DetectionConsumer] 탐지 객체: [{detected_classes_str}] -> LLM 응답: "{guidance_text}"'
+            )
+            self._schedule_log_persist(
+                event_id=result.event_id,
+                stream_type="cognitive",
+                detections=orch_input["event"]["detections"],
+                tts_text=guidance_text,
             )
         except Exception as e:
             logger.error(

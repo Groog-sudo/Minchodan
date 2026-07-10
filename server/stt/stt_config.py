@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 import sys
 
@@ -68,7 +67,7 @@ MODEL_NAME_MAP: dict[str, str] = {
 DEFAULT_REQUEST_MODEL = "faster-whisper-medium"
 TRANSCRIBE_LANGUAGE = "ko"
 TRANSCRIBE_BEAM_SIZE = 3
-TRANSCRIBE_VAD_FILTER = False
+TRANSCRIBE_VAD_FILTER = True
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 STT_ORCH_RISK_HINT = "low"

@@ -26,6 +26,7 @@ from server.api.session_manager import manager
 from server.bus.redis_client import redis_bus
 from server.capture.frame_decoder import decode_frame, decode_frame_binary
 from server.capture.stream_splitter import get_default_splitter
+from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.stt.stt_service import SttService
 from server.stt.stt_to_llm_bridge import SttToLlmBridge
 from server.tts.realtime_tts import realtime_tts
@@ -85,6 +86,21 @@ async def _finish_detection(
 
 _stt_bridge = SttToLlmBridge()
 
+# device_id별 STT 처리 직렬화 락. ws_detect 메인 루프는 stt_audio 메시지마다
+# asyncio.create_task로 _handle_stt_audio를 fire-and-forget 실행하는데(하트비트/다른
+# 메시지 처리를 막지 않기 위함, 2026-07-09 도입), 사용자가 응답을 기다리지 않고 연달아
+# 누르면 이전 요청이 처리 중(수 초~10초+)인 동안 새 요청이 동시에 시작돼 nav_manager의
+# 공유 대화 상태(awaiting_question/awaiting_intent/status)를 서로 경쟁적으로 읽고 써서
+# 응답이 직전 발화와 안 맞는 것처럼 보이는 문제가 실기기에서 확인됐다(2026-07-10).
+# STT는 본질적으로 순차 대화이므로 디바이스별로 한 번에 하나씩만 처리하도록 직렬화한다.
+_stt_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_stt_lock(device_id: str) -> asyncio.Lock:
+    if device_id not in _stt_locks:
+        _stt_locks[device_id] = asyncio.Lock()
+    return _stt_locks[device_id]
+
 
 async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
     """STT 음성 명령 메시지를 처리한다: 오디오 저장 -> 전사 -> 네비게이션/LLM 브리지 -> TTS 합성.
@@ -103,6 +119,11 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
         logger.warning(f"[WS] stt_audio 메시지에 audio_b64 없음: device_id={device_id}")
         return
 
+    async with _get_stt_lock(device_id):
+        await _process_stt_audio(ws, device_id, data, audio_b64)
+
+
+async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> None:
     model_name = data.get("model_name")
 
     try:
@@ -120,10 +141,19 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
         stt_result = await asyncio.to_thread(
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
-        bridge_result = await _stt_bridge.invoke_existing_llm(stt_result)
+        bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
         guidance_text = bridge_result.get("guidance_text", "")
 
         audio_mp3_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
+        stt_event_id = f"stt-{device_id}-{now_ts()}"
+
+        # 2026-07-09에 인지 경로(DetectionConsumer._send_cognitive_guide)가 오디오를
+        # audio_mp3_b64(JSON base64)에서 transport:"binary" + 별도 바이너리 프레임으로
+        # 옮기면서 클라이언트(useWebSocket.ts)도 transport!=="binary"면 무조건 단말
+        # TTS(speakFallback)로 즉시 폴백하도록 바뀌었다. 이 STT 경로가 그 마이그레이션에서
+        # 빠져 있어 서버가 합성한 오디오를 클라이언트가 항상 무시하고 있었다(실기기 실측
+        # 확인, 2026-07-10) - 인지 경로와 동일한 전송 방식으로 맞춘다.
+        audio_bytes_out = base64.b64decode(audio_mp3_b64) if audio_mp3_b64 else b""
 
         # 백그라운드 태스크로 분리돼(2026-07-09) 처리 도중 클라이언트가 이미 끊어졌을 수
         # 있다 - 전송 실패는 결과를 못 받는 것 이상의 문제가 아니므로 조용히 무시한다.
@@ -131,20 +161,32 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
             await ws.send_json(
                 {
                     "type": "guide",
-                    "event_id": f"stt-{device_id}-{now_ts()}",
+                    "event_id": stt_event_id,
                     "risk_level": "low",
                     "guidance_text": guidance_text,
-                    "audio_mp3_b64": audio_mp3_b64 or "",
                     "audio_codec": "wav",
                     "duration_ms": duration_ms,
+                    "transport": "binary" if audio_bytes_out else "none",
                     "source": bridge_result.get("source", "stt-bridge"),
                     "ts": now_ts(),
                 }
             )
+            if audio_bytes_out:
+                await ws.send_bytes(audio_bytes_out)
         logger.info(
             f"[WS] stt_audio 처리 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
             f"source={bridge_result.get('source')}"
         )
+        if guidance_text:
+            try:
+                await persist_detection_guidance_log(
+                    event_id=stt_event_id,
+                    stream_type="cognitive",
+                    detections=[{"source": "stt", "transcript": stt_result.text}],
+                    tts_text=guidance_text,
+                )
+            except Exception as e:
+                logger.error(f"[WS] stt_audio DB 로그 저장 실패: device_id={device_id}, {e}")
     except (KeyError, ValueError, RuntimeError) as e:
         logger.error(f"[WS] STT 전사 실패: device_id={device_id}, {e}")
         with contextlib.suppress(Exception):
@@ -154,9 +196,9 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
                     "event_id": f"stt-error-{device_id}-{now_ts()}",
                     "risk_level": "low",
                     "guidance_text": "음성 인식에 실패했습니다. 다시 말씀해 주세요.",
-                    "audio_mp3_b64": "",
                     "audio_codec": "wav",
                     "duration_ms": 0,
+                    "transport": "none",
                     "source": "stt-transcribe-error",
                     "ts": now_ts(),
                 }
@@ -358,6 +400,10 @@ async def ws_detect(
                 )
 
             elif msg_type == "stt_audio":
+                logger.info(
+                    f"[WS] stt_audio 수신: device_id={device_id}, "
+                    f"audio_b64_len={len(data.get('audio_b64', ''))}"
+                )
                 task = asyncio.create_task(_handle_stt_audio(ws, device_id, data))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)

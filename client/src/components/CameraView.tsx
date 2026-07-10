@@ -94,7 +94,7 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
 }
 
 export function CameraView() {
-  const { status, send, sendBinary, lastMessage } = useWebSocket(DEVICE_ID, TOKEN);
+  const { status, send, sendBinary, lastMessage, setSttInteractionActive } = useWebSocket(DEVICE_ID, TOKEN);
   const {
     cameraRef,
     device,
@@ -142,10 +142,33 @@ export function CameraView() {
   }, [isMockMode]);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
-  const { status: sttStatus, startRecording: startSttRecording, stopRecordingAndSend: stopSttRecording } =
-    useSttRecorder((audioB64) => {
+  // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
+  // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
+  const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
+  const {
+    status: sttStatus,
+    startRecording: startSttRecording,
+    stopRecordingAndSend: stopSttRecording,
+    requestPermissionEarly: requestSttPermissionEarly,
+  } = useSttRecorder(
+    (audioB64) => {
+      void hapticEngine.trigger("short");
+      setSttErrorInfo("");
       send({ type: "stt_audio", audio_b64: audioB64 });
-    });
+    },
+    (reason, detail) => {
+      void hapticEngine.trigger("double");
+      setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
+    },
+  );
+
+  // 화면을 누르는 press-and-hold 도중 마이크 권한 다이얼로그가 뜨면 터치가 취소되어
+  // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
+  useEffect(() => {
+    if (isMockMode) return;
+    void requestSttPermissionEarly();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMockMode]);
 
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [lastDetect, setLastDetect] = useState<string>("대기");
@@ -475,17 +498,60 @@ export function CameraView() {
         <BBoxOverlay detections={activeDetections} />
       </View>
 
-      <View style={styles.overlayTop}>
+      {/* 2026-07-10: react-native-vision-camera의 <Camera> 네이티브 뷰가 자체 제스처
+          인식기를 갖고 있어 부모 Pressable로 터치가 버블링되지 않는 문제(실기기 실측
+          확인: onPressIn 미발화)가 있어, 조상(ancestor) 방식 대신 카메라 위에 별도의
+          전체화면 투명 터치 레이어를 형제(sibling)로 얹는다. 아래에 나오는 실제 버튼들
+          (신뢰도 조절, STT 상태 배지, 디버그 패널)은 JSX상 이 레이어보다 뒤에 위치해
+          터치 우선순위를 그대로 가져간다. */}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPressIn={() => {
+          void hapticEngine.trigger("short");
+          // STT 질문 상호작용 시작 - 응답 도착(또는 타임아웃) 전까지 인지 경로 가이드
+          // 음성만 뮤트한다(반사 경로는 안전 비협상 원칙상 그대로 유지, useWebSocket 참조).
+          setSttInteractionActive(true);
+          // 2026-07-10 실기기 실측: 직전 응답 음성이 채 끝나기 전에 바로 녹음을
+          // 시작하면 마이크가 스피커 소리를 그대로 다시 주워들어 STT가 시스템 자신의
+          // 안내 문장을 사용자 발화로 오인식하는 오디오 블리드가 관측됐다("네, 길
+          // 찾아드릴까요?"가 그대로 재인식된 사례). 녹음 전 재생 중인 오디오를 강제
+          // 정지하면 충분하다 - 이전에 넣었던 200ms 인위적 지연은 버튼 반응성만
+          // 떨어뜨리고(실기기 피드백: "터치가 느리다") 블리드 방지에 필수는 아니었다.
+          audioEngine.stopGuideAudio();
+          // 2026-07-10 추가: 시각장애인 사용자는 화면을 봐야 알 수 있는 "듣는 중..."
+          // 텍스트로는 터치가 실제로 인식됐는지 확인할 방법이 없다(짧게 눌렀다 떼서
+          // 녹음이 비어버리는 사례가 반복 관측됨). 짧은 음성 안내로 입력 시작을
+          // 확인시켜준다 - 이 안내 음성 자체가 녹음에 같이 잡히지 않도록(자기 발화를
+          // 자기가 다시 인식하는 오디오 블리드 방지), 안내가 끝난 뒤에 녹음을 시작한다.
+          // [2026-07-10 정정] onDone 콜백이 떠도 실제 스피커 잔향이 방에 남아있어
+          // "네 말씀하세요"가 다음 녹음에 그대로 다시 잡히는 사례가 실기기에서 확인됐다
+          // (소프트웨어 재생 종료 신호와 물리적 잔향 소멸 사이의 시차). onDone 직후
+          // 짧게 여유를 두고서야 녹음을 시작한다.
+          audioEngine.speakFallback("네, 말씀하세요", () => {
+            setTimeout(() => {
+              void startSttRecording();
+            }, 250);
+          });
+        }}
+        onPressOut={() => {
+          void stopSttRecording();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}. 화면을 누르고 있는 동안 음성 명령을 말하세요.`}
+        accessibilityHint="손을 떼면 서버로 전송되어 음성 명령을 인식합니다."
+      />
+
+      <View style={styles.overlayTop} pointerEvents="none">
         <ConnectionStatus status={status} />
       </View>
 
-      <View style={styles.debugOverlay}>
+      <View style={styles.debugOverlay} pointerEvents="none">
         {debugInfo.map((line, i) => (
           <Text key={i} style={styles.debugText}>{line}</Text>
         ))}
       </View>
 
-      <View style={styles.confThresholdRow}>
+      <View style={styles.confThresholdRow} pointerEvents="box-none">
         <Text style={styles.confThresholdLabel}>신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%</Text>
         <View style={styles.confThresholdButtons}>
           <Pressable
@@ -503,30 +569,31 @@ export function CameraView() {
         </View>
       </View>
 
-      <View style={styles.detectionListOverlay}>
+      <View style={styles.detectionListOverlay} pointerEvents="none">
         <Text style={styles.detectionListTitle}>[실시간 감지]</Text>
         <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
       </View>
 
-      <Pressable
+      {/* 2026-07-10 정정: 시각장애인 사용자는 화면 속 작은 버튼 위치를 찾기 어려우므로,
+          STT 트리거는 이 상태 표시용 View가 아니라 최상위 컨테이너(Pressable) 전체가
+          담당한다. 화면 어디를 누르고 있어도 녹음이 시작된다. */}
+      <View
         style={[styles.sttButton, sttStatus !== "idle" && styles.sttButtonActive]}
-        onPressIn={() => {
-          void hapticEngine.trigger("short");
-          void startSttRecording();
-        }}
-        onPressOut={() => {
-          void stopSttRecording();
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="음성 명령 버튼. 누르고 있는 동안 말하세요."
-        accessibilityHint="손을 떼면 서버로 전송되어 음성 명령을 인식합니다."
+        pointerEvents="none"
       >
         <Text style={styles.sttButtonText}>
-          {sttStatus === "recording" ? "듣는 중..." : sttStatus === "sending" ? "전송 중..." : "누르고 말하기"}
+          {sttStatus === "recording" ? "듣는 중..." : sttStatus === "sending" ? "전송 중..." : "화면을 누르고 말하기"}
         </Text>
-      </Pressable>
+        {sttErrorInfo !== "" && (
+          <Text style={styles.sttErrorText}>{sttErrorInfo}</Text>
+        )}
+      </View>
 
-      <View style={styles.panelWrap}>
+      {/* 2026-07-10: bottom:0/left:0/right:0로 화면 하단 전폭을 차지하는 불투명 래퍼라
+          버튼이 아닌 빈 공간을 눌러도 STT 터치 레이어보다 먼저 터치를 가로챘다(실기기
+          실측: 하단을 누르면 STT가 반응하지 않음). box-none으로 자기 자신은 투명 처리하고
+          내부 실제 버튼들만 터치를 받도록 한다. */}
+      <View style={styles.panelWrap} pointerEvents="box-none">
         <DebugTriggerPanel />
       </View>
     </View>
@@ -769,6 +836,13 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 20,
     fontWeight: "700",
+  },
+  sttErrorText: {
+    color: "#FCA5A5",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
+    textAlign: "center",
   },
   bboxLabel: {
     position: "absolute",

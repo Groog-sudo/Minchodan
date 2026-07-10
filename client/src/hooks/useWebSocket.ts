@@ -24,7 +24,15 @@ export interface UseWebSocketReturn {
   /** JPEG raw byte 프레임을 바이너리 WS 프레임으로 전송한다 (base64 미경유). */
   sendBinary: (data: Uint8Array) => void;
   lastMessage: WSMessage | null;
+  /** STT 질문 상호작용(녹음~응답 수신) 구간 동안 인지 경로 가이드 음성을 뮤트한다.
+   * 반사 경로(reflex_alert)는 안전 비협상 원칙에 따라 절대 뮤트하지 않는다.
+   * timeoutMs를 넘기면 해당 시간 뒤 자동 해제(기본은 STT_INTERACTION_TIMEOUT_MS 안전 상한). */
+  setSttInteractionActive: (active: boolean, timeoutMs?: number) => void;
 }
+
+// STT 응답이 오지 않는 예외 상황(네트워크 끊김 등)에서 인지 경로가 무한정 뮤트된 채
+// 남지 않도록 하는 안전 상한(서버 STT+LLM+TTS 실측 지연이 최대 15s대인 것을 감안).
+const STT_INTERACTION_TIMEOUT_MS = 20000;
 
 export function useWebSocket(
   deviceId: string = DEVICE_ID,
@@ -36,6 +44,31 @@ export function useWebSocket(
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<WSStatus>("disconnected");
   const [lastMessage, setLastMessage] = useState<WSMessage | null>(null);
+
+  // STT 상호작용 중 인지 경로 뮤트 상태. ref로 관리해 onmessage 클로저 안에서도
+  // 항상 최신 값을 읽는다(state였다면 connect()가 재실행되지 않는 한 stale closure).
+  const sttInteractionActiveRef = useRef(false);
+  const sttInteractionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 직전에 수신한 "guide" JSON 메시지가 인지(카메라) 출처인지 기록해, 뒤이어 오는
+  // 바이너리 오디오 프레임(ArrayBuffer)도 같은 기준으로 뮤트할지 판단한다.
+  const pendingGuideIsCognitiveRef = useRef(false);
+
+  const setSttInteractionActive = useCallback(
+    (active: boolean, timeoutMs: number = STT_INTERACTION_TIMEOUT_MS) => {
+      sttInteractionActiveRef.current = active;
+      if (sttInteractionTimeoutRef.current) {
+        clearTimeout(sttInteractionTimeoutRef.current);
+        sttInteractionTimeoutRef.current = null;
+      }
+      if (active) {
+        sttInteractionTimeoutRef.current = setTimeout(() => {
+          sttInteractionActiveRef.current = false;
+          sttInteractionTimeoutRef.current = null;
+        }, timeoutMs);
+      }
+    },
+    [],
+  );
 
   const clearHeartbeat = useCallback(() => {
     if (heartbeatTimer.current) {
@@ -74,6 +107,10 @@ export function useWebSocket(
       // guide 오디오 바이너리 프레임: 직전 "guide" JSON 메시지(transport:"binary")에
       // 이어 도착하는 원본 WAV 바이트다. base64 인코딩을 완전히 우회한다(2026-07-09).
       if (event.data instanceof ArrayBuffer) {
+        if (pendingGuideIsCognitiveRef.current && sttInteractionActiveRef.current) {
+          console.log(`[WS] STT 상호작용 중 - 인지 경로 오디오 뮤트(bytes=${event.data.byteLength})`);
+          return;
+        }
         console.log(`[WS] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}`);
         void audioEngine.playGuideAudioBytes(new Uint8Array(event.data));
         return;
@@ -112,7 +149,33 @@ export function useWebSocket(
           // (transport:"binary"). 실제 재생은 위 ArrayBuffer 분기에서 이어서 처리한다.
           // transport가 "binary"가 아니면(서버 TTS 실패) 즉시 단말 TTS로 폴백한다.
           console.log(`[WS] guide 수신: text="${data.guidance_text}", transport=${data.transport}`);
-          if (data.transport !== "binary" && data.guidance_text) {
+
+          // event_id가 "stt-"로 시작하면 STT 질문/네비게이션 응답(항상 재생),
+          // 그 외(카메라 event-*)는 인지 경로 - STT 상호작용 중이면 뮤트 대상이다.
+          const isStt = String(data.event_id ?? "").startsWith("stt-");
+          pendingGuideIsCognitiveRef.current = !isStt;
+          if (isStt) {
+            // 2026-07-10 실기기 실측: 응답 텍스트가 "도착한 순간" 바로 뮤트를 풀면,
+            // 실제 오디오 재생은 그 뒤로도 몇 초 더 이어지는데 그 사이 인지 경로
+            // 메시지가 끼어들어 답변이 중간에 끊기는 문제가 있었다("직진하면 차량을
+            // 건너주세요"가 답변을 끊음). 응답 재생이 끝날 것으로 추정되는 시점까지
+            // 뮤트를 유지한다 - duration_ms(바이너리 WAV 실측 길이)가 있으면 그 값을,
+            // 없으면(speakFallback 폴백) 텍스트 길이로 대략 추정한다.
+            // 2026-07-10 추가 실측: 서버가 보낸 duration_ms가 긴 문장(TTS 청크 분할
+            // 추정)에서 실제 재생 길이보다 훨씬 짧게 나오는 경우가 확인됐다(13초 분량
+            // 오디오인데 duration_ms 기준 홀드가 1.3초 만에 풀려 끊김 재현). 서버 값을
+            // 그대로 신뢰하지 않고 텍스트 길이 추정치와 큰 값을 사용한다(방어적 하한).
+            const guideText = data.guidance_text ?? "";
+            const serverDurationMs =
+              typeof data.duration_ms === "number" && data.duration_ms > 0 ? data.duration_ms : 0;
+            const textEstimateMs = Math.max(guideText.length * 180, 2000);
+            const estimatedMs = Math.max(serverDurationMs, textEstimateMs);
+            setSttInteractionActive(true, estimatedMs + 1200);
+          }
+
+          if (!isStt && sttInteractionActiveRef.current) {
+            console.log("[WS] STT 상호작용 중 - 인지 경로 가이드 텍스트 뮤트");
+          } else if (data.transport !== "binary" && data.guidance_text) {
             console.log("[WS] -> speakFallback(단말 TTS) 경로 진입");
             audioEngine.speakFallback(data.guidance_text);
           }
@@ -176,6 +239,11 @@ export function useWebSocket(
       audioEngine.stopBeep();
       hapticEngine.stopContinuous();
 
+      if (sttInteractionTimeoutRef.current) {
+        clearTimeout(sttInteractionTimeoutRef.current);
+        sttInteractionTimeoutRef.current = null;
+      }
+
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
@@ -184,5 +252,5 @@ export function useWebSocket(
     };
   }, [connect, clearHeartbeat]);
 
-  return { status, send, sendBinary, lastMessage };
+  return { status, send, sendBinary, lastMessage, setSttInteractionActive };
 }

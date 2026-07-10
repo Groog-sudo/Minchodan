@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.6 (2026-07-10 dev 브랜치 문서 정합성 점검: §6.5 realtime_gps 메시지 신규 등재 + 이전 v0.4.5 이력 유지: §6.4 server_detection 메시지 표준 반영 및 등재, §2.4 heartbeat 타임아웃 유예 5→15초 상향 및 서버측 ack/heartbeat 응답 레이스 컨디션 수정)
+> **버전**: v0.4.7 (2026-07-10 STT 실기기 종단 검증: §6.3 stt_audio 응답을 binary transport로 통일, "길댕아" 2단계 웨이크워드·질문 모드·POI 실거리 검색 명령 어휘 등재, device_id 세션 불일치 결함 수정 반영 + 이전 v0.4.6 이력 유지: §6.5 realtime_gps 메시지 신규 등재, §6.4 server_detection 메시지 표준 반영, §2.4 heartbeat 타임아웃 유예 5→15초 상향 및 서버측 ack/heartbeat 응답 레이스 컨디션 수정)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -374,6 +374,32 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
 `guidance_text: "음성 인식에 실패했습니다..."`를 담은 guide 메시지로 응답한다(무응답 방지).
 
+> **비고 (2026-07-10)**: `_handle_stt_audio`(`server/api/ws_router.py`)가 응답 오디오를
+> §6.1의 `transport: "binary"` 규격이 아니라 구버전 `audio_mp3_b64`(JSON base64 필드)로
+> 보내고 있어, 클라이언트(`useWebSocket.ts`)가 `transport !== "binary"` 조건으로 서버
+> TTS 오디오를 항상 무시하고 단말 내장 TTS로만 폴백하던 결함을 실기기 실측으로 발견해
+> 수정했다(§6.1 규격과 동일하게 통일). 자세한 경위는 `docs/changelogs/kb.md` 2026-07-10
+> 항목 참조.
+
+`stt_audio`로 전달되는 발화는 `server/stt/stt_to_llm_bridge.py`가 다음 명령 어휘로
+분기한다(디바이스별 상태는 `NavigationManager`가 `status`/`awaiting_free_question`/
+`awaiting_intent` 3개 독립 플래그로 관리).
+
+| 발화(예시) | 동작 | 비고 |
+| :--- | :--- | :--- |
+| `길댕아` (또는 유사 발음) | 2단계 진입 대기 상태로 전환, "길 찾아드릴까요, 질문 받을까요?" 응답 | 정확 문자열 매칭이 아니라 **편집거리(Levenshtein) ≤1 퍼지 매칭**("길댕"과 비교) - "길대가"/"결댕아"/"길땡아" 등 STT 오인식 변형까지 흡수 |
+| `길찾아줘` (대기 중) | 목적지 대기 상태(`WAITING_FOR_DESTINATION`)로 전환 | 이어지는 발화를 목적지명으로 파싱해 TMAP POI 검색 + 경로 계산 수행 |
+| `물어볼게` (대기 중) | 자유 질의응답 대기 상태로 전환 | 이어지는 발화를 장애물 회피 오케스트레이터가 아닌 순수 LLM 대화로 처리(§ 아래 참조) |
+| `네비게이션 켜줘` / `질문할게` 등 | 위 2단계 웨이크워드 없이 바로 진입하는 기존 단일 트리거(하위 호환 유지) | "네비게이션"/"내비게이션" 표기는 매칭 전 정규화 |
+| 자유 질의(대기 상태에서) | "가까운/근처/주변" + 장소 유형(지하철역·편의점·화장실 등)이 감지되면 TMAP 실거리 검색(`helper_search_nearest_poi`, Haversine 거리순)으로 사실 기반 답변. 그 외는 LLM 자유 대화 | 위치 사실을 LLM에 맡기지 않고 실제 API 조회 결과로만 답해 환각을 방지 |
+
+> **비고 (2026-07-10)**: 목적지 설정 시 `NavigationManager` 세션 키를 `"default_device"`로
+> 하드코딩해뒀던 결함이 있었다 - GPS 갱신(`realtime_gps`)과 턴바이턴 안내 조회
+> (`get_combined_guidance`)는 실제 `device_id`의 세션을 보는데, 목적지만 별도의 가짜
+> 세션에 저장되어 **목적지 설정은 성공해도 실제 길안내 음성이 영구히 나올 수 없는
+> 구조**였다. `invoke_existing_llm(stt_result, device_id)`로 실제 device_id를 그대로
+> 전달하도록 수정.
+
 ### 6.4 server_detection (서버 → 단말, 실시간 BBox 업데이트)
 
 서버에서 실시간 YOLO 및 노면 분할(Segmentation) 추론을 완료할 때마다, 탐지된 모든 사물 및 노면의 BBox/Centroid 정보를 모바일 화면 렌더링용으로 브로드캐스트합니다.
@@ -511,3 +537,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | v0.4.4 | 2026-07-10 | heartbeat 타임아웃 유예 5→15초 상향, 서버측 ack/heartbeat 응답 레이스 컨디션 수정(WS 세션 조기 종료 방지) |
 | v0.4.5 | 2026-07-10 | server_detection(6.4) 신설, dg2 브랜치 병합 반영 |
 | v0.4.6 | 2026-07-10 | realtime_gps(6.5) 신설, 구현 상태를 1~7단계 전체 완료로 갱신 |
+| **v0.4.7** | **2026-07-10** | **stt_audio(6.3) 응답 전송을 audio_mp3_b64→binary transport로 통일(§6.1 규격과 일치), 명령 어휘 표(길댕아 2단계 웨이크워드·질문 모드·POI 실거리 검색) 추가, device_id 세션 불일치 결함(목적지는 설정돼도 길안내 음성이 안 나오던 원인) 수정 반영** |
