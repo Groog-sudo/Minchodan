@@ -6,7 +6,7 @@
  * (docs/mobile/ios_android_bifurcation_contract.md §7.3: 두 상수를 항상 함께 보존한다.)
  */
 
-const NETWORK_MODE: "lan" | "ngrok" = "lan";
+const NETWORK_MODE = "ngrok" as "lan" | "ngrok";
 
 const LAN_IP = "192.168.0.209";
 const NGROK_DOMAIN = "partake-primer-surround.ngrok-free.dev";
