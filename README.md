@@ -6,7 +6,7 @@
 **Minchodan**은 시각장애인 보행 보조를 위한 스마트 가이드독 AI 플랫폼입니다. 스마트폰 카메라로 주변을 인식하고, GPU 서버에서 실시간으로 장애물·노면 상태를 탐지한 뒤, 음성과 햅틱으로 즉시 안내합니다. 안전 대응은 **반사 경로**(즉시 경보)와 **인지 경로**(상세 가이드) 두 갈래로 물리 분리하는 것이 핵심 원칙입니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.3 (2026-07-10 jy 브랜치 병합: Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영 + 이전 v0.2.2 이력 유지: TTS 엔진 Piper→Supertonic 교체, 반사 캡처 takePhoto()→Frame Processor 전환)
+> **버전**: v0.2.4 (2026-07-10 dev 브랜치 문서 정합성 점검: 환경 변수 표의 `CHROMA_COLLECTION`·`TTS_ENGINE` 기본값이 상단 기술 스택 서술과 모순되던 것 정정(구 kokoro/coqui 잔재 제거), 존재하지 않는 env var `RDB` 행 제거, `HEARTBEAT_TIMEOUT`/`TMAP_APP_KEY`/`DB_HOST` 추가, 디렉토리 구조의 존재하지 않는 audioPlayer/reflexClipPlayer/utils 참조 정정 + 이전 v0.2.3 이력 유지: jy 브랜치 병합 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 연동 기준 반영, TTS 엔진 Piper→Supertonic 교체, 반사 캡처 takePhoto()→Frame Processor 전환)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
 
 ---
@@ -109,10 +109,9 @@ Minchodan/
 │
 ├── client/                          # React Native 앱 (thin client)
 │   └── src/
-│       ├── hooks/                   # useWebSocket, useCamera
-│       ├── services/                # frameCapture, audioPlayer, reflexClipPlayer
+│       ├── hooks/                   # useWebSocket, useCamera, useLocation(GPS)
+│       ├── services/                # frameCaptureProvider(iOS/Android 이원화), audioEngine, hapticEngine
 │       ├── components/              # CameraView
-│       └── utils/                   # haptics
 │
 ├── data/                            # 학습·RAG 데이터
 │   ├── raw/                         # AI Hub 보행자 데이터셋 원본
@@ -254,16 +253,18 @@ bash scripts/build_chroma.sh
 | `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
-| `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `minchodan_kb`           |
+| `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `safety_guidelines`      |
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
-| `TTS_ENGINE`        | TTS 엔진 (`kokoro` 또는 `coqui`)          | `kokoro`                 |
+| `TTS_ENGINE`        | TTS 엔진 (`supertonic` 기본, `piper`/`pyttsx3` 핫스왑) | `supertonic` |
+| `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
+| `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키(내비게이션)  | (미설정)                 |
+| `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
 | `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
-| `RDB`               | 비동기 SQLAlchemy                         | MariaDB/PostgreSQL       |
 | `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
 | `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
 

@@ -1,7 +1,7 @@
 ﻿# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.4 (2026-07-10 th 브랜치 병합: 7단계 다이어그램 TTS 라벨을 Piper/pyttsx3 핫스왑 병기로 정리 + 이전 v0.3.3 이력 유지: §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
+> **버전**: v0.4.0 (2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -21,17 +21,20 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 - Ultralytics Yolo 26N - Object Detection, Yolo 26N - Segmentation
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + Track 컨텍스트 TTL=30)
-- LangGraph + LangChain (L1/L2/L3 오케스트레이션)
-- Ollama (Llava 캡셔닝, gemma4-e4b 가이드 생성, nomic-embed-text 임베딩)
+- LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용)
+- Ollama (gemma4-e4b 가이드 생성, nomic-embed-text 임베딩, 호스트 로컬 실행)
+- Gemini API (gemini-2.5-flash-lite, 4단계 오프라인 RAG 빌드 VLM 캡셔닝. 최초 계획 로컬 Llava에서 전환)
 - ChromaDB (로컬 파일 기반 벡터 저장소)
-- pyttsx3(기본) / piper(선택) 로컬 TTS (선택 이력: piper → sherpa-onnx → supertonic 최종 선정안, 코드 반영은 순차 진행)
+- MariaDB (세션/디바이스/탐지-가이드 로그 영속화, `server/services/` 계층)
+- **Supertonic**(기본, `TTS_ENGINE=supertonic`, ONNX 99M 파라미터) 로컬 TTS. **Piper**(`TTS_ENGINE=piper`)와 **pyttsx3**(`TTS_ENGINE=pyttsx3`)는 핫스왑 폴백으로 코드 보존 (선택 이력: piper → supertonic 최종 교체, 2026-07-09 발음 품질 한계 실측 확인)
 - OpenCV (프레임 디코딩)
 
 ### 클라이언트 (단말)
 
 - React Native (iOS/Android)
-- react-native-vision-camera (후면 카메라, 이중 캡처 타이머)
-- Web Audio API (인지 음성 재생)
+- react-native-vision-camera (Frame Processor 기반 연속 캡처, 기본; iOS/Android `FrameCaptureProvider` 인터페이스로 물리 분리)
+- expo-audio (`createAudioPlayer`, 인지 음성 재생. Web Audio API 아님)
+- expo-location (GPS 실시간 전송, `realtime_gps` WS 메시지)
 - Haptics + announceForAccessibility (접근성)
 
 ### 운영 콘솔
@@ -41,7 +44,7 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 
 ### 인프라
 
-- Docker (Redis + Ollama + FastAPI 컨테이너)
+- Docker (Redis + MariaDB + FastAPI 컨테이너. Ollama는 컨테이너가 아닌 호스트 로컬 실행 `OLLAMA_BASE_URL=http://host.docker.internal:11434`)
 - CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
 
 ---
@@ -75,7 +78,7 @@ graph TD
         end
 
         subgraph Rag ["4·5. Vector DB 구축·검색"]
-            Builder["Build (오프라인)<br/>Llava 캡셔닝 + 임베딩"]
+            Builder["Build (오프라인)<br/>Gemini VLM 캡셔닝 + 임베딩"]
             Retriever["Retriever<br/>(similarity_search k=5)"]
             Fallback["Rule Fallback"]
         end
@@ -91,6 +94,11 @@ graph TD
             RealtimeTTS["실시간 TTS<br/>(Supertonic 기본, Piper/pyttsx3 핫스왑)"]
             ClipSender["Reflex Clip Sender<br/>(사전합성 클립)"]
             Suppressor["Suppressor<br/>(Redis setex 60)"]
+        end
+
+        subgraph Nav ["부가 기능. 실시간 내비게이션"]
+            NavManager["NavigationManager<br/>(디바이스별 세션 상태기계)"]
+            Tmap["TMAP 보행자 경로 API<br/>(server/navigation/pedestrian_navigation.py)"]
         end
 
         subgraph Bus ["Redis Bus"]
@@ -131,8 +139,13 @@ graph TD
     Builder --> Chroma
     Chroma --> Retriever
     Retriever --> Fallback
-    RealtimeTTS -->|"base64 MP3 WS"| Phone
+    RealtimeTTS -->|"WAV 바이너리 WS 프레임"| Phone
     Suppressor --> RealtimeTTS
+    Phone -->|"realtime_gps"| NavManager
+    NavManager <--> Tmap
+    RedisStreams -->|"미해결 장애물 캐시"| NavManager
+    NavManager --> RealtimeTTS
+    YOLO -->|"server_detection (전체 BBox)"| Phone
 
     classDef gate fill:#fde,stroke:#c33,stroke-width:2px;
     classDef storage fill:#9cf,stroke:#333,stroke-width:2px;
@@ -157,10 +170,14 @@ graph TD
 | `server/detection/bytetrack_tracker.py`       | ByteTrack `update()` track_id 부여                                         | 3    |
 | `server/detection/gates/reflex_gate.py`       | Reflex Risk Gate (고위험 + 근접 alert_id+방향)                             | 3    |
 | `server/detection/gates/surface_gate.py`      | Surface Fast-Alert Gate (P0 노면 하단 검출 alert_id)                       | 3    |
+| `server/detection/gates/head_level_gate.py`   | 두상 높이 장애물(간판/차양 등) 게이트 판정                                 | 3    |
+| `server/detection/direction.py`               | bbox 기준 좌/우/직진 방향 판정 로직                                        | 3    |
+| `server/detection/risk_rules.py`               | 클래스별 위험도(high/mid/low) 규칙 판정                                    | 3    |
+| `server/detection/detection_pipeline.py`      | 탐지→게이트 전체 파이프라인 조립, `run()` 3-tuple 반환                     | 3    |
 | `server/detection/schemas.py`                 | `DetectionResult`, `SurfaceResult`, `RiskEvent` 타입                       | 3    |
 | `server/rag/build/frame_extractor.py`         | 영상 1fps 프레임 추출                                                      | 4    |
 | `server/rag/build/dedup_phash.py`             | pHash 중복 제거                                                            | 4    |
-| `server/rag/build/gemini_captioner.py`         | Gemini API 관드 한글 캡셔닝 (Llava 로컬 폴백 지원)                  | 4    |
+| `server/rag/build/gemini_captioner.py`        | Gemini API(`gemini-2.5-flash-lite`) 한글 캡셔닝, `GOOGLE_API_KEY` 미설정 시 Mock 폴백 | 4    |
 | `server/rag/build/db_builder.py`              | `Chroma.from_documents(persist_directory)`                                 | 4    |
 | `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)`                                        | 5    |
 | `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열                                     | 5    |
@@ -172,10 +189,10 @@ graph TD
 | `server/orchestration/nodes/l3_validator.py`  | L3 길이·방향 키워드 검증, RETRY(최대 1회)                                  | 6    |
 | `server/orchestration/nodes/fallback_node.py` | 최종 실패 고정 문장                                                        | 6    |
 | `server/orchestration/llm_client_factory.py`  | `BaseChatModel` Ollama(gemma4-e4b) gpt-4o-mini 핫스왑                      | 6    |
-| `server/tts/realtime_tts.py`                  | 인지 경로 Kokoro/Coqui `generate()` base64 MP3                             | 7    |
+| `server/tts/realtime_tts.py`                  | 인지 경로 `TTSService.generate()` 호출, WAV 바이너리 WS 프레임 전송        | 7    |
 | `server/tts/reflex_clip_sender.py`            | 반사 경로 alert_id 사전합성 클립 WS 고우선 전송                            | 7    |
 | `server/tts/suppressor.py`                    | Redis `setex(suppress:…, 60)` 중복 억제                                    | 7    |
-| `server/tts/tts_service.py`                   | `TTSService` 추상화, MP3/WAV 규격 통일                                     | 7    |
+| `server/tts/tts_service.py`                   | `TTSService` 추상화(Supertonic/Piper/Pyttsx3), WAV 규격 통일               | 7    |
 | `server/bus/redis_client.py`                  | aioredis 연결 풀                                                           | 3·6  |
 | `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                                    | 3    |
 | `server/bus/consumer.py`                      | `xread` 구독, orchestration 진입                                           | 6    |
@@ -183,7 +200,7 @@ graph TD
 | `data/raw/`                                   | AI Hub 보행자 데이터셋 원본                                                | 4    |
 | `data/frames/`                                | 영상 1fps 추출 프레임                                                      | 4    |
 | `data/deduped/`                               | pHash 중복 제거 후 프레임                                                  | 4    |
-| `data/captions/`                              | Llava 캡셔닝 결과 JSON                                                     | 4    |
+| `data/captions/`                              | Gemini VLM 캡셔닝 결과 JSON                                                | 4    |
 | `data/chroma_db/`                             | ChromaDB persist 디렉토리                                                  | 4    |
 | `client/assets/sounds/reflex_clips/`          | 사전합성 반사 음성 클립 5종(WAV, direction/유형 기준). **2026-07-09 정정**: 최초 설계는 `data/reflex_clips/`(서버측 MP3)였으나 실제로는 단말 번들 방식으로 구현됨(서버는 clip 경로 문자열만 전달) | 7    |
 | `training/`                                   | 모델 학습 (오프라인)                                                       | 3    |
@@ -192,9 +209,13 @@ graph TD
 | `client/src/services/frameCaptureProvider.ts` | **2026-07-10 정정**: 카메라 하드웨어 접근을 플랫폼별로 분리(iOS/Android 이원화 계약 §4). 공통 인터페이스(`FrameCaptureController`) + `takePhoto()` 공용 크롭 로직(`captureViaTakePhoto`)을 이 파일에 두고, 실제 캡처 방식은 `frameCaptureProviderSelect.ios.ts`/`.android.ts`(Metro 플랫폼 확장자 분기)가 구현 | 2    |
 | `client/src/services/frameCaptureProviderSelect.ios.ts` | 반사 캡처 기본 경로(iOS). `useFrameProcessor` + `client/ios/ReflexFrameProcessorPlugin.swift`(CVPixelBuffer→크롭/리사이즈/JPEG→base64) | 2    |
 | `client/src/services/frameCaptureProviderSelect.android.ts` | 반사 캡처 과도기 경로(Android). 네이티브 Frame Processor 플러그인이 아직 없어 `takePhoto()` 기반 단발 촬영으로 동작(`docs/mobile/ios_android_bifurcation_contract.md` §4.5 참조) | 2    |
-| `client/src/services/audioPlayer.ts`          | `decodeAudioData()` Web Audio 재생                                         | 7    |
-| `client/src/services/audioEngine.ts`          | 반사 비프음 즉시 재생 및 선점 정지                                         | 7    |
+| `client/src/services/audioEngine.ts`          | `expo-audio` 상시 웜 플레이어로 반사/인지 음성 재생 및 선점 정지           | 7    |
 | `client/src/services/hapticEngine.ts`         | Haptics 패턴 실행 및 지속 진동 정리                                        | 7    |
+| `client/src/hooks/useLocation.ts`             | `expo-location` `watchPositionAsync` GPS 실시간 전송(`realtime_gps`)       | -    |
+| `server/navigation/manager.py`                | `NavigationManager`, 디바이스별 세션 상태기계(IDLE/대기/안내중)            | -    |
+| `server/navigation/pedestrian_navigation.py`  | TMAP POI 검색·보행자 경로 API 연동                                        | -    |
+| `server/navigation/navigation_filter.py`      | 경로 이탈·재탐색 필터링                                                    | -    |
+| `server/services/detection_guidance_log_service.py` | 탐지·가이드 로그 MariaDB 영속화                                     | -    |
 | `console/src/`                                | 운영자 모니터링 (DetectionFeed, RiskEventLog, SessionStatus)               | -    |
 
 ---
@@ -234,7 +255,7 @@ graph TD
 ### 5.4 4단계 - 위험 대처 수칙 DB 구축 (RAG 시드, 오프라인 배치)
 
 - 영상/사진 100+ 수집 1fps 프레임 추출 pHash 중복 제거
-- 로컬 VLM(Llava) 한글 캡셔닝 로컬 임베딩(nomic-embed-text, 768d)
+- **Gemini API**(`gemini-2.5-flash-lite`) 한글 캡셔닝(최초 계획 로컬 Llava에서 전환) 로컬 임베딩(nomic-embed-text, 768d)
 - `Document` + 메타etadata(`scene_type`, `risk_level`, `objects`, `guidance_template`) `Chroma.from_documents(persist_directory)`
 - 메타데이터 `objects`·`scene_type`을 3단계 분리 클래스(예: `braille_damaged`)와 일치시켜 검색 정합 확보
 
@@ -314,6 +335,15 @@ graph TD
 | In   | 가이드 문장(String) / `alert_id`(반사) |
 | Out  | 오디오 bytes(ArrayBuffer)              |
 
+### 6.7 부가 기능 인터페이스 (GPS 내비게이션 / 실시간 BBox)
+
+| 방향 | 페이로드                                                                              |
+| ---- | -------------------------------------------------------------------------------------- |
+| In   | `{type:"realtime_gps", lat, lon, heading}`                                            |
+| Out  | `{type:"server_detection", event_id, detections:[{model, className, confidence, bbox}], ts}` |
+
+상세 스키마는 [`api_specification.md`](api_specification.md) §6.4를 참조합니다.
+
 ---
 
 ## 7. 이중 경로 동작 모드
@@ -355,7 +385,7 @@ sequenceDiagram
         L2->>L3: 가이드 문장 (20자/방향)
         L3->>L3: 검증 (위반 시 RETRY 1회)
         L3->>TTS: 가이드 문장
-        TTS-->>Phone: base64 MP3 (Web Audio)
+        TTS-->>Phone: WAV 바이너리 WS 프레임 (expo-audio 재생)
     end
 ```
 
@@ -368,7 +398,7 @@ sequenceDiagram
 | Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
 | LLM Client | ChatOllama(gemma4-e4b)             | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
 | Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상 클래스) |
-| TTS        | pyttsx3(기본) / piper(선택)        | supertonic(최종 선정안, 순차 반영) / OpenAI TTS | `server/tts/tts_service.py`                  |
+| TTS        | supertonic(기본)                   | piper / pyttsx3(핫스왑 폴백) | `server/tts/tts_service.py`                  |
 
 ---
 
@@ -381,15 +411,19 @@ sequenceDiagram
 | `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
 | `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
 | `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4-e4b`             |
-| `LLAVA_MODEL`       | 4단계 캡셔닝 모델                         | `llava`                  |
+| `GOOGLE_API_KEY`    | 4단계 Gemini VLM 캡셔닝(`gemini-2.5-flash-lite`, 오프라인 빌드 전용) 필수 | (미설정) |
 | `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
-| `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `minchodan_kb`           |
+| `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `safety_guidelines`      |
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
-| `TTS_ENGINE`        | TTS 엔진 (`pyttsx3` 기본, `piper` 선택)   | `pyttsx3`                |
+| `TTS_ENGINE`        | TTS 엔진 (`supertonic` 기본, `piper`/`pyttsx3` 핫스왑) | `supertonic` |
+| `HEARTBEAT_INTERVAL`| WS ping 주기(초)                          | `5`                      |
+| `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
+| `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키              | (미설정)                 |
+| `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
 | `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
@@ -434,7 +468,7 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | **6단계 (오케스트레이션)** | **LangSmith Trace MCP** | `StateGraph` 내의 노드 전이 및 실행 지연(Latency)을 시각적으로 추적하고 가드레일 위반 시의 재시도 루프를 감시합니다. |
 | **6단계 (오케스트레이션)** | **System / GPU Monitor MCP** | GPU 자원 사용량과 CUDA 메모리 한계를 모니터링하여 로컬 Ollama 모델 부하 임계치 도달 시 OpenAI GPT-4o-mini로의 핫스왑을 제어합니다. |
-| **7단계 (음성 출력)** | **Audio Validator MCP** | 실시간 생성된 음성 안내(base64 MP3)의 샘플 레이트 규격(24kHz) 준수 여부, 오디오 TTFB 및 무음 구간(Silence)을 검증합니다. |
+| **7단계 (음성 출력)** | **Audio Validator MCP** | 실시간 생성된 음성 안내(WAV 바이너리 WS 프레임)의 샘플 레이트 규격 준수 여부, 오디오 TTFB 및 무음 구간(Silence)을 검증합니다. |
 | **7단계 (음성 출력)** | **Redis Cache Monitor MCP** | 중복 경보 방지를 위한 `suppress:alert_id` 캐시 키와 TTL(60초)의 정밀 상태를 상시 모니터링하고 관리합니다. |
 | **7단계 (음성 출력)** | **Accessibility Simulator MCP** | `announceForAccessibility` 텍스트와 실제 재생되는 오디오 파일 간의 의미 정합성을 시각장애인 접근성 관점에서 비교 검증합니다. |
 | **공통 (경보)** | **Slack Notification MCP** | L3 가드레일 최종 실패(Fallback 작동) 및 추론 서버 크리티컬 예외 발생 시 실시간으로 개발팀 채널에 즉시 에러 로그를 전송합니다. |
@@ -506,9 +540,9 @@ sequenceDiagram
 | **MCPManager (공통 기반)** | 공통 | `server/mcp/manager.py` | **구현 완료** | 6종 MCP 공통 Redis Streams 컨슈머 + SSE 브로드캐스트 백본 |
 | **Slack Notification MCP** | 공통 | `scripts/slack_publisher.py` (standalone) | **부분 구현** | 일반 발행 스크립트로 도입, `server/mcp/` 통합 미완 |
 | **LangSmith Trace MCP** | 6단계 | - | 미구현 | `LANGCHAIN_API_KEY` 필수, 설계상 "선택적" 명시 |
-| **Audio Validator MCP** | 7단계 | - | 미구현 | 7단계 TTS 미구현, base64 MP3 검증 대상 없음 |
-| **Redis Cache Monitor MCP** | 7단계 | - | 미구현 | 7단계 `suppress:alert_id` 캐시 미생성 |
-| **Accessibility Simulator MCP** | 7단계 | - | 미구현 | 7단계 `announceForAccessibility` 텍스트 미생성 |
+| **Audio Validator MCP** | 7단계 | - | 미구현 | **2026-07-10 갱신**: 7단계 TTS(Supertonic 기본) 자체는 구현 완료됐으나, `server/mcp/`에 검증 전용 모듈은 미착수 |
+| **Redis Cache Monitor MCP** | 7단계 | - | 미구현 | `suppress:alert_id` 캐시는 `server/tts/suppressor.py`로 실사용 중이나, 별도 MCP 모니터 모듈은 미착수 |
+| **Accessibility Simulator MCP** | 7단계 | - | 미구현 | `announceForAccessibility` 연동은 클라이언트에 존재하나, 별도 MCP 대조 모듈은 미착수 |
 
 2. **단계적 착수 원칙**
    - **6단계 완료 시점**: 6단계 전용 MCP(GPU Monitor) + 공통 인프라(MCPManager) 우선 구현 완료.

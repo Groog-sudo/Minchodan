@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.13.2 (2026-07-10 th 브랜치 병합: 문서 폴더 재정리 반영 + 이전 v0.13.1 이력 유지: jy 브랜치 병합의 DB Tailscale 외부망 연결 가이드 추가, iOS/Android 이원화 통합 계약서 추가)
+> **버전**: v0.13.3 (2026-07-10 dev 브랜치 문서 정합성 점검: 4·5단계 RAG 설계서 설명을 Gemini 캡셔닝으로 정정, 현재 문서 기준선에 Gemini/Supertonic/GPS/MariaDB 반영, 1주차 미결정 표에 TTS·RDB 확정 결과 각주 추가 + 이전 v0.13.2 이력 유지: th 브랜치 병합 문서 폴더 재정리 반영, jy 브랜치 병합의 DB Tailscale 외부망 연결 가이드 추가, iOS/Android 이원화 통합 계약서 추가)
 
 ## 문서 목록
 
@@ -82,7 +82,7 @@ docs/
 | 1단계 WebSocket 설계서 | [stage1_websocket_design.md](stage-guides/stage1_websocket_design.md) | FastAPI 커넥션 생명주기, SessionManager, heartbeat 제어 |
 | 2단계 캡처 설계서 | [stage2_capture_design.md](stage-guides/stage2_capture_design.md) | FastAPI 이중 스트림, asyncio.Queue, 디코딩 가드레일 |
 | 3단계 탐지 설계서 | [stage3_detection_design.md](stage-guides/stage3_detection_design.md) | Mock 폴백, 이중 게이트(Reflex+Surface), 추상화 |
-| 4·5단계 RAG 설계서 | [stage4_5_rag_design.md](stage-guides/stage4_5_rag_design.md) | Llava 캡셔닝 + nomic-embed + ChromaDB 빌드 설계 |
+| 4·5단계 RAG 설계서 | [stage4_5_rag_design.md](stage-guides/stage4_5_rag_design.md) | Gemini VLM 캡셔닝(최초 계획 Llava에서 전환) + nomic-embed + ChromaDB 빌드 설계 |
 | 4·5단계 데이터 교체 가이드 | [stage4_5_data_replacement_guide.md](stage-guides/stage4_5_data_replacement_guide.md) | 실데이터 교체 및 RAG 재빌드 절차 |
 | 4·5단계 디렉토리 가이드 | [stage4_5_directory_guide.md](stage-guides/stage4_5_directory_guide.md) | RAG 백엔드 폴더 및 파일 구조 |
 | 4·5단계 구현 이력 로그 | [stage4_5_implementation_log.md](stage-guides/stage4_5_implementation_log.md) | 수정 행동 이력 및 의사결정 기록 |
@@ -209,6 +209,10 @@ docs/
 - **Whisper는 STT 전용**이며 7단계(가이드 출력)에 등장하지 않습니다. 사용자 음성 명령(STT) 경로는 본 골격 범위 밖입니다.
 - **Vector DB는 ChromaDB 로컬 파일 기반**(`data/chroma_db/`)이며, `VectorDBFactory`로 Qdrant 핫스왑을 대비합니다.
 - **LLM은 로컬 Ollama(gemma4:e4b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
+- **4단계 캡셔닝은 Gemini API**(`gemini-2.5-flash-lite`, 최초 계획 로컬 Llava에서 전환)입니다.
+- **7단계 TTS는 Supertonic 기본**(`TTS_ENGINE=supertonic`)이며, Piper/pyttsx3는 핫스왑 폴백입니다.
+- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다.
+- **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
 - **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.
 
@@ -225,3 +229,5 @@ docs/
 | 통신 프로토콜  | WS·REST·SSE·Redis  | WebRTC/gRPC 등         |
 | TTS            | Kokoro/Coqui       | OpenAI TTS             |
 | RDB            | 비동기 SQLAlchemy  | MariaDB/PostgreSQL     |
+
+> **2026-07-10 확정 반영**: 위 표는 1주차 시점의 잠정 기본값이며 현재는 확정 상태입니다. **TTS**는 Kokoro/Coqui가 아닌 **Supertonic**(기본, Piper/pyttsx3 핫스왑)으로 구현됐고, **RDB**는 비동기 SQLAlchemy 계층 위에서 **MariaDB**로 확정됐습니다. 상세는 [`design/architecture.md`](design/architecture.md) §2·§5.7, [`design/backend_db_architecture.md`](design/backend_db_architecture.md)를 참조합니다.

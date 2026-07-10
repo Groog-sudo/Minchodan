@@ -1,9 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.5 (2026-07-10 dg2 브랜치 병합: §6.4 server_detection 메시지 표준 반영 및 등재 + 이전 v0.4.4 이력 유지: §2.4 heartbeat 타임아웃 유예 5→15초 상향 및 서버측 ack/heartbeat 응답 레이스 컨디션 수정)
+> **버전**: v0.4.6 (2026-07-10 dev 브랜치 문서 정합성 점검: §6.5 realtime_gps 메시지 신규 등재 + 이전 v0.4.5 이력 유지: §6.4 server_detection 메시지 표준 반영 및 등재, §2.4 heartbeat 타임아웃 유예 5→15초 상향 및 서버측 ack/heartbeat 응답 레이스 컨디션 수정)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
-> **구현 상태**: 1+2+3단계 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드(640x640 압축 이미지), ack 응답, 단말 측 Reflex Gate 4단계 피드백(주차센서식 거리 반비례 햅틱/비프음) 정합 확인. `reflex_alert`/`guide`는 6·7단계 범위로 미구현(설계상 정상).
+> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
 
 ---
@@ -416,6 +416,29 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 
 ---
 
+### 6.5 realtime_gps (단말 → 서버, GPS 내비게이션, 2026-07-10 신설)
+
+단말이 `expo-location`의 `watchPositionAsync`로 수신한 좌표를 실시간 전송하면, 서버는 `NavigationManager`(`server/navigation/manager.py`)의 디바이스별 세션에 현재 위치를 갱신합니다. 응답 메시지는 없다(fire-and-forget).
+
+```json
+{
+  "type": "realtime_gps",
+  "lat": 37.5665,
+  "lon": 126.9780,
+  "heading": 45.0
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `lat` | 위도 (필수) |
+| `lon` | 경도 (필수) |
+| `heading` | 방위각(도, 0~360). 선택, 미제공 시 `None`으로 처리 |
+
+`lat`/`lon` 중 하나라도 누락되면 서버는 조용히 무시한다(에러 응답 없음). TMAP 보행자 경로 안내(`server/navigation/pedestrian_navigation.py`)와 결합되어 실시간 TTS로 안내 문장이 발화된다.
+
+---
+
 ## 7. 탐지 결과 상세 (3단계, 내부/콘솔용)
 
 탐지 결과는 서버 내부 `DetectionResult` 스키마이며 운영자 콘솔에 SSE/WS로 전달될 수 있습니다.
@@ -485,3 +508,6 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | v0.4.0 | 2026-07-07 | detection 프레임 바이너리 전송 프로토콜 추가, base64는 구버전 호환 경로로 격하 |
 | v0.4.1 | 2026-07-09 | guide 메시지에 `audio_codec`, `duration_ms` 필드 추가 |
 | **v0.4.2** | **2026-07-09** | **stt_audio(6.3) 신설 / reflex_alert clip·alert_id 사전 정의(4.2)를 실제 게이트 3곳 출력값으로 정정 / head_level_warning.wav 클립 추가** |
+| v0.4.4 | 2026-07-10 | heartbeat 타임아웃 유예 5→15초 상향, 서버측 ack/heartbeat 응답 레이스 컨디션 수정(WS 세션 조기 종료 방지) |
+| v0.4.5 | 2026-07-10 | server_detection(6.4) 신설, dg2 브랜치 병합 반영 |
+| v0.4.6 | 2026-07-10 | realtime_gps(6.5) 신설, 구현 상태를 1~7단계 전체 완료로 갱신 |
