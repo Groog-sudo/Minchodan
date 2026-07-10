@@ -226,3 +226,19 @@
   - `5_민초단 전체 최적화 계획.md` -> `docs/ops/minchodan_optimization_plan.md`
   - `5_민초단 최적화 작업 체크리스트.md` -> `docs/ops/minchodan_optimization_checklist.md`
 - **관련 파일**: `docs/changelogs/dg.md`
+
+---
+
+### 2026-07-10 | 네트워크 | ngrok 보안 터널을 이용한 안드로이드 스마트폰 외부망(LTE/5G/핫스팟) 무선 연동 설정 적용
+
+- **커밋**: `feat: update config to use ngrok wss url for external network testing`
+- **변경 내용**:
+  - 외부망(LTE/5G 모바일 데이터 또는 핫스팟) 환경에서 USB 케이블 연결이 차단된 상태로도 안드로이드 실기기와 PC 추론 서버 간 실시간 양방향 통신이 가능하도록 웹소켓 연결 구성을 변경함.
+  - `client/src/config/index.ts`: 기존에 로컬 LAN IP로 고정되어 있던 `WS_URL` 주소를 현재 구동 중인 ngrok 퍼블릭 외부 도메인 보안 웹소켓 주소(`wss://partake-primer-surround.ngrok-free.dev/ws/detect`)로 전격 업데이트함.
+  - 외부망 테스트 기법 명문화:
+    - 1) USB 연결 하에 외부망 웹소켓을 테스트하는 하이브리드 디버깅법
+    - 2) 동일 핫스팟 AP 기반의 완전 무선 Metro + ngrok WSS 결합 테스트법
+    - 3) 릴리즈/캐싱 번들 환경에서 단말의 순수 데이터망을 활용한 독립 야외 보행 테스트 시나리오를 정립함.
+- **관련 파일**: `client/src/config/index.ts`, `docs/changelogs/dg.md`
+- **검증 결과**: ngrok 로컬 대시보드 API(`:4040/api/tunnels`) 조회를 통해 포워딩 상태의 활성 터널링 호스트명을 검출 및 적용하였으며, 클라이언트 환경 설정 파일 컴파일 통과 확인.
+

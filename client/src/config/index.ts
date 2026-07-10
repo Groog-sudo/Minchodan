@@ -9,7 +9,7 @@
 // export const WS_URL = `ws://${LAN_IP}:8000/ws/detect`;
 
 // 변경할 코드 (정적인 따옴표 문자열로 복구 - 안드로이드 백틱 문법 오류로 인해 변경(dgyun94))
-export const WS_URL = "ws://192.168.0.136:8000/ws/detect";
+export const WS_URL = "wss://partake-primer-surround.ngrok-free.dev/ws/detect";
 export const DEVICE_ID = "dev-001";
 export const TOKEN = "token-abc-001";
 export const REFLEX_FPS = 4;
