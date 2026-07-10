@@ -1344,3 +1344,17 @@
 - **관련 파일**: `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `client/assets/sounds/stt_start.wav`(신규), `client/assets/sounds/stt_end.wav`(신규), `docs/changelogs/kb.md`
 - **검증 결과**: JS/에셋 변경만 있어 Metro Fast Refresh로 반영. 실기기 청취 검증은 사용자 진행 예정.
 - **비고**: (없음)
+
+---
+
+### 2026-07-11 | 6+7단계 | STT 녹음 오디오 블리드 근본 수정 + hotwords 배선 + ANE 선택헤드 이관 실험(롤백) + 문서 정합화
+
+- **커밋**: `fix(7단계): STT 녹음 오디오 블리드 근본 수정 + 즉시 녹음 시작 전환`, `feat(6단계): STT hotwords 배선`, `fix(3단계): ANE 선택헤드 Swift 이관 실험 코드 보존(raw-head, 실측 성능 회귀로 롤백)`, `docs: CoreML ANE 벤치마크·iOS 구현 설계서 정합화`
+- **변경 내용**:
+  - **STT "입력이 없어" 근본 원인 규명**: 디버그 오디오 파일을 서버에 임시 저장해 `afinfo`/파형 진폭 분석으로 직접 까본 결과, 녹음이 실제로는 몇 초씩 진행됐는데도(JS 타이머로 `recorder.record()`~`stop()` 3.5초 측정) 인코딩된 파일에는 0.2~0.7초 분량만 담기는 현상을 확인. 원인은 두 겹이었다: ① 기존 "네, 말씀하세요" TTS가 끝난 뒤에야 녹음을 시작하는 순차 구조에서, 사용자가 짧게 말하고 바로 손을 떼면 `pendingStartRef` 동기화 때문에 `recorder.record()` 직후 곧바로 `stop()`이 뒤따라 녹음 구간이 잘림 → 버튼을 누르는 즉시 `recorder.record()`를 호출하도록 전환(`useSttRecorder.ts`, `CameraView.tsx`). ② 신호음(비프)을 녹음 활성 중에 병행 재생하면 스피커 소리가 마이크에 그대로 다시 잡히는 음향 블리드가 발생(하드웨어 에코 제거 없이는 회피 불가) → 시작 신호음 재생 자체를 제거하고 진입점 안내는 기존 haptic이 전담하도록 변경, 종료 신호음(`playSttEndCue`)은 `recorder.stop()` 완료 이후에만 재생되므로 그대로 유지.
+  - **faster-whisper `hotwords` 배선**: `stt_config.py`에 `TRANSCRIBE_HOTWORDS` 상수 추가(`stt_to_llm_bridge.py`에 이미 정의된 실제 명령어 어휘 — 길댕이/길찾아줘/물어볼게/POI 카테고리 등 — 기반 초안), `stt_service.py`의 `model.transcribe()` 호출에 `hotwords=` 인자로 연결. 신조어 웨이크워드("길댕아") 오인식 완화 목적(opus 제안 0순위, faster-whisper 1.2.1이 `hotwords`/`initial_prompt`를 지원함을 실측 확인). 실제 어휘 목록 최종 확정은 담당자 검토 필요(`stt_config.py` 정책값 - 하드코딩 영역).
+  - **ANE 선택헤드(TopK/Gather) Swift 이관 실험 및 롤백**: `scripts/convert_yolo_to_coreml.py`에 `--raw-head` 옵션 추가(Detect 헤드 `postprocess()`를 identity로 몽키패치, end2end 유지). 검증 결과 op histogram에서 TopK/GatherNd/GatherAlongAxis가 0개로 완전히 제거됐으나(100% ANE 호환), 출력 텐서가 `[1,300,6]`→`[1,8400,33]`(154배)로 커지면서 ANE→CPU 메모리 복사 비용이 커져 det 지연이 6~14ms→34~53ms로 오히려 3~5배 악화됨을 실측 확인, 배포본은 롤백(커밋된 end2end 후처리 버전 유지). `--raw-head` 옵션 자체는 기본값 `False`로 스크립트에 보존.
+  - **문서 정합화**: [`docs/ops/ondevice_coreml_benchmark.md`](../ops/ondevice_coreml_benchmark.md)를 FP16+ANE 실측치·Instruments 검증·raw-head 실험 기록으로 갱신(v1.4.0), [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md) §9.2를 ANE 가속 실측 달성 상태로 갱신(v0.1.1).
+- **관련 파일**: `client/src/hooks/useSttRecorder.ts`, `client/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `client/assets/sounds/stt_start.wav`(삭제 - 오디오 블리드로 사용 중단), `server/stt/stt_config.py`, `server/stt/stt_service.py`, `scripts/convert_yolo_to_coreml.py`, `docs/ops/ondevice_coreml_benchmark.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 실기기 재현 테스트로 STT 녹음 길이가 1.2초 이상으로 정상화, VAD가 무음을 0초 제거하고 전체 구간을 발화로 인식, `text_len` 양수 및 서버 응답이 `stt-bridge`(정상)로 전환됨을 서버 로그(`faster_whisper` VAD/duration 로그, `stt_audio 처리 완료`)로 직접 확인. ANE raw-head 실험은 빌드 성공·무크래시였으나 벤치마크 로그로 성능 회귀를 확인하고 롤백.
+- **비고**: hotwords 실제 어휘 목록은 초안 상태 - 담당자가 실사용 명령 패턴에 맞춰 확정 필요. STT 인식 자체의 정확도(퍼지 매칭 이후에도 완전 만족스럽지 않다는 기존 피드백, §17 참조)는 이번 세션 범위 밖이라 사용자가 별도로 다루기로 함. `client/ios/CoreMLInferenceBridge.swift`의 `runDetection()`이 shape 기반으로 3차원 텐서를 탐색하도록 되어 있어(이전 항목 §segmentation 파싱 수정) raw-head 출력([1,8400,33], 3차원 유지)과도 호환되는 것을 이번 실험에서 재확인했다.
