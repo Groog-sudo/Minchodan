@@ -12,10 +12,17 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.db.models import AdminAccountStatus, AdminRole, DevicePlatform, UserStatus
+from server.db.models import (
+    AdminAccountStatus,
+    AdminRole,
+    DetectionStreamType,
+    DevicePlatform,
+    UserStatus,
+)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -116,6 +123,34 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class DetectionGuidanceLogCreate(BaseModel):
+    """탐지 및 안내 로그 생성 요청 DTO."""
+
+    event_id: str | None = Field(default=None, max_length=64)
+    user_id: int | None = Field(default=None, ge=1)
+    device_id: int | None = Field(default=None, ge=1)
+    detected_at: datetime
+    stream_type: DetectionStreamType = DetectionStreamType.UNKNOWN
+    detected_objects_json: list[dict[str, Any]] = Field(..., min_length=1)
+    tts_text: str = Field(..., min_length=1)
+
+
+class DetectionGuidanceLogResponse(BaseModel):
+    """탐지 및 안내 로그 응답 DTO."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    log_id: int
+    event_id: str | None
+    user_id: int | None
+    device_id: int | None
+    detected_at: datetime
+    stream_type: DetectionStreamType
+    detected_objects_json: list[dict[str, Any]]
+    tts_text: str
+    created_at: datetime
+
+
 __all__ = [
     "AdminAccountCreate",
     "AdminAccountResponse",
@@ -123,6 +158,8 @@ __all__ = [
     "AdminLoginAuditResponse",
     "AppUserCreate",
     "AppUserResponse",
+    "DetectionGuidanceLogCreate",
+    "DetectionGuidanceLogResponse",
     "TokenResponse",
     "UserDeviceCreate",
     "UserDeviceResponse",

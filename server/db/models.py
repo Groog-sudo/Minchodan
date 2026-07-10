@@ -14,6 +14,7 @@ from __future__ import annotations
 import sys
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -22,7 +23,9 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -78,6 +81,14 @@ class AdminAccountStatus(StrEnum):
     INACTIVE = "inactive"
     LOCKED = "locked"
     DELETED = "deleted"
+
+
+class DetectionStreamType(StrEnum):
+    """탐지 로그 스트림 구분."""
+
+    REFLEX = "reflex"
+    COGNITIVE = "cognitive"
+    UNKNOWN = "unknown"
 
 
 def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
@@ -148,6 +159,11 @@ class AppUser(Base):
         passive_deletes="all",
     )
 
+    guidance_logs: Mapped[list[DetectionGuidanceLog]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+    )
+
 
 class UserDevice(Base):
     """사용자 등록 단말."""
@@ -203,6 +219,65 @@ class UserDevice(Base):
     # 따라서 UserDevice -> AppUser는 N:1 관계이고, 타입은 list가 아닌 단일 "AppUser"입니다.
     # back_populates 값은 AppUser.devices와 서로 맞물려 양방향 탐색을 가능하게 합니다.
     user: Mapped[AppUser] = relationship(back_populates="devices")
+
+    guidance_logs: Mapped[list[DetectionGuidanceLog]] = relationship(
+        back_populates="device",
+        passive_deletes=True,
+    )
+
+
+class DetectionGuidanceLog(Base):
+    """YOLO 탐지 결과와 LLM/TTS 안내 문장 로그."""
+
+    __tablename__ = "detection_guidance_logs"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="UK_DETECTION_GUIDANCE_LOGS_EVENT_ID"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT", "detected_at"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_USER_ID", "user_id"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_DEVICE_ID", "device_id"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_STREAM_TYPE", "stream_type"),
+        {"sqlite_autoincrement": True},
+    )
+
+    log_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    user_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK,
+        ForeignKey("app_users.user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK,
+        ForeignKey("user_devices.device_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    stream_type: Mapped[DetectionStreamType] = mapped_column(
+        SQLEnum(
+            DetectionStreamType,
+            name="detection_stream_type",
+            values_callable=_enum_values,
+            native_enum=False,
+            create_constraint=True,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=DetectionStreamType.UNKNOWN,
+        server_default=DetectionStreamType.UNKNOWN.value,
+    )
+    detected_objects_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    tts_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+
+    user: Mapped[AppUser | None] = relationship(back_populates="guidance_logs")
+    device: Mapped[UserDevice | None] = relationship(back_populates="guidance_logs")
 
 
 class AdminAccount(Base):
@@ -287,6 +362,8 @@ __all__ = [
     "AdminRole",
     "AppUser",
     "Base",
+    "DetectionGuidanceLog",
+    "DetectionStreamType",
     "DevicePlatform",
     "UserDevice",
     "UserStatus",

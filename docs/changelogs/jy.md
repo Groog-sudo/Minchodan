@@ -171,3 +171,20 @@
   - `git diff --check -- 'Minchodan DB.session.sql'` 통과
   - SQL 파일 내 신규 테이블 DDL 및 선택 검증 쿼리 위치 확인 완료
   - 실제 MariaDB 실행 검증은 이번 작업 범위에서 수행하지 않았습니다.
+
+---
+
+### 2026-07-10 | DB | 탐지 안내 로그 ORM 및 migration 파일 추가
+
+- **커밋**: `db: add detection guidance ORM migration`
+- **변경 내용**:
+  - `detection_guidance_logs` 테이블을 SQLAlchemy ORM 기준 정의에 추가하고, `DetectionStreamType` enum과 사용자/기기 역방향 관계를 연결했습니다.
+  - 탐지 안내 로그 생성/응답용 Pydantic DTO와 Repository 저장/조회 메서드를 추가했습니다.
+  - SQLite 검증용 `server/db/schema.sql`에도 동일한 로그 테이블과 인덱스/FK 구조를 반영했습니다.
+  - 운영 변경 이력 폴더 `server/db/migrations/`와 `20260710_001_add_detection_guidance_logs.sql` 증분 SQL 파일을 추가했습니다.
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/README.md`, `server/db/migrations/20260710_001_add_detection_guidance_logs.sql`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `.venv/bin/python -m py_compile server/db/models.py server/db/schemas.py server/db/repositories.py` 통과
+  - `.venv/bin/python -c "from server.db.models import DetectionGuidanceLog; ..."` 기반 ORM import 검증 통과
+  - `sqlite3 :memory: ".read server/db/schema.sql" ".tables"` 기반 SQLite DDL 실행 및 `detection_guidance_logs` 생성 확인
+  - `git diff --check` 통과

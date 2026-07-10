@@ -17,7 +17,13 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.db.models import AdminAccount, AdminLoginAudit, AppUser, UserDevice
+from server.db.models import (
+    AdminAccount,
+    AdminLoginAudit,
+    AppUser,
+    DetectionGuidanceLog,
+    UserDevice,
+)
 
 
 # 2. AdminRepository 클래스를 만드세요.
@@ -100,3 +106,20 @@ class DeviceRepository:
         await self.session.commit()
         await self.session.refresh(device)
         return device
+
+
+class DetectionGuidanceLogRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, log: DetectionGuidanceLog) -> DetectionGuidanceLog:
+        self.session.add(log)
+        await self.session.commit()
+        await self.session.refresh(log)
+        return log
+
+    async def get_by_event_id(self, event_id: str) -> DetectionGuidanceLog | None:
+        result = await self.session.execute(
+            select(DetectionGuidanceLog).where(DetectionGuidanceLog.event_id == event_id)
+        )
+        return result.scalars().first()
