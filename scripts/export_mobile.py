@@ -41,9 +41,9 @@ if os.path.exists(env_path):
 
 MODELS = {
     "object_detection": os.path.join(
-        project_root, "server", "models", "yolo26n", "object_detection.pt"
+        project_root, "server", "models", "yolo26n", "best_20260705.pt"
     ),
-    "segmentation": os.path.join(project_root, "server", "models", "yolo26n", "segmentation.pt"),
+    "segmentation": os.path.join(project_root, "server", "models", "yolo26n", "best.pt"),
 }
 
 OUTPUT_DIR = os.path.join(project_root, "client", "assets", "models", "yolo26n")

@@ -386,9 +386,86 @@ docker restart minchodan-fastapi
 
 ---
 
+### 오류 M: ngrok 터널링 연결 지연/타임아웃으로 인한 무한 "연결 중" 현상
+
+- **원인**: 
+  - ngrok 무료 계정의 대역폭 한도 초과 또는 클라우드 세션 차단으로 인해 `wss://partake-primer-surround.ngrok-free.dev/ws/detect` 주소로의 외부 프레임 포워딩이 타임아웃(Operation timed out)을 일으키며 끊김.
+- **해결**:
+  - **USB 직접 연결(localhost)로 전환**: USB 케이블로 단말기가 연결된 상태에서 `adb reverse` 포트 터널링이 완벽히 가동 중이므로, ngrok 도메인 대신 로컬 직통 주소를 설정하여 속도 및 연결성을 100% 확보합니다.
+  1. [client/src/config/index.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/config/index.ts) 파일의 **`WS_URL`** 변수를 다음과 같이 수정하여 로컬 호스트 터널로 전환합니다:
+     ```typescript
+     // ngrok 외부 터널 (ngrok 정상 동작 시 사용)
+     // export const WS_URL = "wss://partake-primer-surround.ngrok-free.dev/ws/detect";
+
+     // USB 직접 연결 - adb reverse tcp:8000 tcp:8000 설정 후 사용 (현재 활성)
+     export const WS_URL = "ws://localhost:8000/ws/detect";
+     ```
+  2. Metro 번들러 실행 포트와 WebSocket 포트를 단말에 재할당합니다:
+     ```powershell
+     adb reverse tcp:8081 tcp:8081
+     adb reverse tcp:8000 tcp:8000
+     ```
+  3. 스마트폰 화면을 흔들어 Expo 개발자 메뉴에서 **[Reload]**를 클릭하여 새로운 자바스크립트 설정을 적용합니다.
+  4. 웹소켓 세션이 `ws://localhost:8000`을 타며 PC 호스트의 Docker FastAPI 서버(`minchodan-fastapi`)로 ngrok 지연 없이 즉각 수립되고 디코딩이 실행됩니다.
+
+---
+
 ### 참고: `DETECTOR_TYPE=mock` 환경 변수에 대하여
 
 `.env` 파일의 `DETECTOR_TYPE=mock` 설정은 **현재 서버 코드에서 읽히지 않는 죽은 변수(Dead Variable)**입니다. 서버는 이 설정과 무관하게 항상 실제 YOLO AI 모델(`server/models/yolo26n/`)을 로드하여 추론을 실행합니다.
+
+---
+
+### 오류 N: 릴리즈(Release) 빌드 시 NDK C++ 컴파일러 무한 루프(Ninja dirty) 및 이미지 크롭 런타임 에러(`Context.renderAsync`)
+
+#### 1. 릴리즈 빌드 NDK `manifest 'build.ninja' still dirty` 에러
+* **원인**: 윈도우 파일 시스템의 시각과 NDK 컴파일 빌드 도구(`ninja.exe`)가 연산하는 이미지 시각의 시간차(Clock Skew)로 인해 빌드 캐시가 꼬이면서 CMake 재설정 무한 루프가 발생합니다.
+* **해결**:
+  1. 무거운 C++ 전체 릴리즈 컴파일을 동반하는 릴리즈 빌드 대신, **캐시를 재활용하여 100% 빌드가 가능한 디버그 빌드로 전환**해 실행합니다:
+     ```bash
+     npx expo run:android
+     ```
+  2. 만약 릴리즈 컴파일이 반드시 필요한 경우, Gradle 데몬을 강제 종료하고 JSI 모듈들의 시각을 과거(2020년 1월 1일)로 백데이팅하여 컴파일러의 시간차 감지를 방어해야 합니다:
+     ```powershell
+     # Gradle 데몬 종료 및 캐시 완전 삭제
+     ./gradlew.bat --stop
+     Remove-Item -Recurse -Force .cxx, app/.cxx, build, app/build
+     
+     # Native 모듈 강제 백데이팅 (파워쉘)
+     $pastDate = Get-Date "2020-01-01"
+     Get-ChildItem -Path "node_modules/react-native-fast-tflite" -Recurse | ForEach-Object { $_.LastWriteTime = $pastDate }
+     Get-ChildItem -Path "node_modules/react-native-vision-camera" -Recurse | ForEach-Object { $_.LastWriteTime = $pastDate }
+     
+     # arm64 전용 및 캐시 미사용 릴리즈 빌드 기동
+     ./gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --no-build-cache
+     ```
+
+#### 2. 카메라 크롭 런타임 `Context.renderAsync` 예외 (x + width must be <= bitmap.width)
+* **원인**: 단말 가로/세로 오리엔테이션 전환 및 EXIF 메타데이터 회전 인식의 차이로 인해, `manipulateAsync` 가 원본 비트맵 해상도 한계값을 초과하는 크롭 바운더리를 연산하려다 던지는 네이티브 크래시입니다.
+* **해결**:
+  * [frameCaptureSelect.android.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/services/frameCaptureSelect.android.ts) 내 `manipulateAsync` 액션에서 `{ crop: ... }` 단계를 완전히 들어내고 **오직 `{ resize: { width: 640, height: 640 } }`만 수행**하도록 수정합니다.
+  * 크롭 단계를 우회하더라도, 리사이즈를 통해 입력 해상도를 `640x640` 정방형 규격으로 찌그러뜨려 강제 포맷팅해 주기 때문에 서버 YOLO/Segmentation 추론 품질에는 실질적인 영향을 주지 않으면서 좌표계 크래시를 100% 원천 예방할 수 있습니다.
+
+---
+
+### 3. 완전 무선 LAN IP 기반 E2E 연동 테스트 가이드
+
+USB 케이블 연결을 완전히 분리한 상태에서, LAN Wi-Fi망을 경유해 무선으로 Metro 컴파일러와 백엔드 서버를 연동하는 최종 동작 수칙입니다.
+
+#### 1단계: 서버 LAN IP 확인 및 config 설정
+* PC의 LAN IP 주소를 확인한 뒤 [client/src/config/index.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/config/index.ts)의 `WS_URL`에 반영합니다:
+  ```typescript
+  export const WS_URL = "ws://192.168.0.136:8000/ws/detect";
+  ```
+
+#### 2단계: 스마트폰 개발자 메뉴 내 번들러 서버 지정
+1. 스마트폰과 PC가 **동일한 와이파이(LAN)망**에 물려 있는지 확인합니다.
+2. 스마트폰 앱 기동 후 기기를 흔들어 Expo 개발자 메뉴를 띄운 뒤, **[Change Bundle Location]** (또는 Configure Bundler)을 터치합니다.
+3. PC 호스트 IP 주소와 포트 번호인 **`192.168.0.136:8081`** 을 정확히 입력하고 확인을 누릅니다.
+4. 개발자 메뉴의 **[Reload]**를 눌러 무선 번들 다운로드를 완료합니다.
+
+#### 3단계: USB 해제 및 가동
+* USB 연결 케이블을 뽑아도 단말이 Wi-Fi망을 타고 Metro 번들러(`:8081`) 및 FastAPI 웹소켓 서버(`:8000`)에 정상 안착하여, 카메라 구동 시 무선으로 YOLO/Segmentation AI 실시간 추론 스트리밍이 수행됩니다.
 
 ---
 

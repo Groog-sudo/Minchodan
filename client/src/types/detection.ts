@@ -26,6 +26,20 @@ export type MessageType =
   | "error"
   | "server_detection";
 
+export interface BBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface ServerDetectionResult {
+  model: "object_detection" | "segmentation";
+  className: string;
+  confidence: number;
+  bbox: BBox;
+}
+
 export interface WSMessage {
   type: MessageType;
   device_id?: string;
@@ -50,7 +64,7 @@ export interface WSMessage {
   guidance_text?: string;
   audio_mp3_b64?: string;
   duration_ms?: number;
-  detections?: any[];
+  detections?: ServerDetectionResult[];
 }
 
 export interface DetectionPayload {

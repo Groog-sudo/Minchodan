@@ -1,51 +1,32 @@
-/**
- * 프레임 캡처 및 전송 서비스.
- * 캡처한 base64 프레임을 detection 이벤트로 조립하여 WS 전송.
- * API 명세서 v0.2.0 기준 페이로드 구성.
- */
+import type { StreamType } from "../types/detection";
 
-import { DEVICE_ID } from "../config";
-import type { DetectionEvent, StreamType } from "../types/detection";
-
-let frameCounter = 0;
-
-export function generateEventId(): string {
-  const ts = Date.now();
-  const rand = Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, "0");
-  return `evt-${ts}-${rand}`;
+export interface FrameData {
+  float32: Float32Array;
+  stream: StreamType;
+  // CoreML 네이티브 브릿지 호출용 (RN 브릿지는 JSON 직렬화 가능 타입만 인자로 받으므로 base64 유지 필요)
+  base64: string | null;
+  // 서버 WS 전송용 raw JPEG 바이트 (base64 미경유, 바이너리 프레임으로 직접 전송)
+  jpegBytes: Uint8Array | null;
 }
 
-export function buildDetectionEvent(
-  base64: string,
-  deviceId: string,
-  stream: StreamType,
-): DetectionEvent {
-  frameCounter += 1;
-  return {
-    type: "detection",
-    payload: {
-      event_id: generateEventId(),
-      device_id: deviceId,
-      ts: Date.now(),
-      frame_id: frameCounter,
-      stream,
-      thumbnail_jpeg_b64: base64,
-    },
-  };
+export interface FrameCaptureProvider {
+  /**
+   * 연속 스트림 캡처 시작 (프레임 프로세서 기반, 플랫폼 네이티브가 프레임을 밀어 넣는 방식).
+   * supportsStream이 true인 플랫폼에서만 실제로 동작합니다.
+   */
+  startStream(onFrame: (frame: FrameData) => void, intervalMs: number): boolean;
+
+  /**
+   * 단발 촬영 기반 캡처 (레거시/폴백 경로).
+   * supportsStream이 false인 플랫폼의 기본 캡처 경로입니다.
+   */
+  capturePhoto(stream: StreamType): Promise<FrameData | null>;
+
+  /** 스트림 캡처 지원 여부 (상위 훅이 타이머 루프를 돌릴지 결정하는 데 사용) */
+  readonly supportsStream: boolean;
+
+  /** 캡처 리소스 해제 및 중지 */
+  stop(): void;
 }
 
-export function sendFrame(
-  base64: string,
-  stream: StreamType,
-  deviceId: string = DEVICE_ID,
-  send: (data: object) => void,
-): void {
-  const event = buildDetectionEvent(base64, deviceId, stream);
-  send(event);
-  const sizeKB = Math.round((base64.length * 0.75) / 1024);
-  console.log(
-    `[Frame] stream=${stream}, frame_id=${frameCounter}, size≈${sizeKB}KB`,
-  );
-}
+export { useFrameCaptureProvider } from "./frameCaptureSelect";

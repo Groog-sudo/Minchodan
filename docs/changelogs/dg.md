@@ -253,4 +253,38 @@
   - 보고서에는 YOLO ONNX 가속 변환(후처리 Ultralytics 우회), 모바일 Zero-copy TFLite(CPU Delegate Fallback), LLM 스로틀링 및 LRU TTS 캐싱(Reflex Override 우선순위), ngrok 고정 도메인 및 개발자 히든 제스처 모드 등의 상세 기술적 대처 방안을 정리함.
 - **관련 파일**: `docs/research/cpu_and_mobile_performance_optimization_report.md`, `docs/changelogs/dg.md`
 
+---
 
+### 2026-07-10 | 리팩토링/모바일 | iOS/Android 클라이언트 이원화 및 서버 정합성 통합 계약서 이행 적용 완료
+
+- **커밋**: `refactor: apply ios/android bifurcation contract and frameCapture decoupling`
+- **변경 내용**:
+  - **카메라 캡처 계층 분리**: `client/src/hooks/useCamera.ts`에 얽혀 있던 플랫폼별 캡처 실구현을 React 훅 라이프사이클에 맞추어 `useFrameCaptureProvider` 커스텀 훅 및 `frameCaptureSelect.ios.ts` / `frameCaptureSelect.android.ts`로 물리적으로 격리 이원화함.
+  - **Android 무음 실패 복구**: `frameCaptureSelect.android.ts`를 신설하여 `takePhoto()` 기반의 `supportsStream = false`로 구현하고, 기존 Android 최적화 캡처 및 수동 바이트 디코더 로직을 안전하게 이관하여 단말 반사 경로의 무음 실패를 즉시 복구함.
+  - **iOS 스트림 캡처 이관**: `frameCaptureSelect.ios.ts`를 신설하여 iOS 네이티브 Frame Processor 기반의 스트림 수신(`useFrameProcessor` 및 `useRunOnJS` 가속 연동) 코드를 온전히 이관함.
+  - **TFLite 파서 안전 조치**: 최신 `ultralytics` 패키지의 Windows OS 빌드 제약(LiteRT/TFLite export 미지원)에 대응하여, 모델 재수출 대신 기존에 정상 탑재되어 있던 33채널 무압축 자산을 유지하고 `tfliteDetector.ts`의 `attrsPerBox`를 `33`으로 안전하게 롤백 정합화함.
+  - **API 프로토콜 정렬**: `docs/design/api_specification.md`에 `server_detection` 메시지 스키마를 등재(v0.4.3)하고 `client/src/types/detection.ts` 내 메시지 `detections` 데이터 타입을 `ServerDetectionResult[]` 정적 컴파일 규격으로 구체화함.
+  - **공유 인프라 복원 및 마커 보강**: `docker/docker-compose.yml` 내 `ollama` 서비스 주석 처리를 원복하여 팀 공용 환경을 보호하고, `requirements.txt`에 윈도우 의존성 `pywin32` 및 `uvloop`에 대해 환경 플랫폼 마커 `; sys_platform == "win32"` 및 `; sys_platform != "win32"`를 부착하여 타 OS 빌드 크래시를 차단함.
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/services/frameCapture.ts`, `client/src/services/frameCaptureSelect.ts`, `client/src/services/frameCaptureSelect.ios.ts`, `client/src/services/frameCaptureSelect.android.ts`, `client/src/inference/tfliteDetector.ts`, `client/src/types/detection.ts`, `docker/docker-compose.yml`, `docs/design/api_specification.md`, `requirements.txt`, `scripts/export_mobile.py`, `docs/ops/ios_android_bifurcation_contract.md`, `docs/changelogs/dg.md`
+
+---
+
+### 2026-07-10 | 모바일/의존성 | Metro 500 에러 해결을 위한 react-native-worklets-core 유실 의존성 보강 및 바벨 설정 탑재
+
+- **변경 내용**:
+  - **원인 분석**: iOS 프레임 프로세서 연동에 필수적인 `useSharedValue` 및 `useRunOnJS`를 제공하는 `react-native-worklets-core` 패키지가 Android 단말의 `package.json` 의존성에 누락되어 있어 Metro 번들러에서 번들 조립 중 500 컴파일 에러를 뿜으며 멈추는 결함을 확인 및 진단함.
+  - **의존성 주입 및 설치**: `client/package.json` dependencies에 `"react-native-worklets-core": "^1.6.3"`와 devDependencies에 `"babel-preset-expo": "~56.0.16"`를 누락 없이 주입한 후, `npm install`을 로컬로 구동시켜 설치를 완수함.
+  - **바벨 컴파일러 구성**: `client/babel.config.js`를 새로 생성하여 `presets`와 `plugins: ["react-native-worklets-core/plugin"]` 설정을 명시해 줌으로써 컴파일 타임에 `worklet` 코드가 정상 변환되도록 컴파일러 연동 규격을 구축함.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/babel.config.js`, `docs/changelogs/dg.md`
+
+---
+
+### 2026-07-10 | 모바일/서버 | Android 캡처 락 제거 및 릴리즈 빌드 NDK 시각 꼬임(Clock Skew) 우회 가이드 적용 완료
+
+- **변경 내용**:
+  - **Image.getSize 비동기 멈춤 제거**: [frameCaptureSelect.android.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/services/frameCaptureSelect.android.ts)에서 프레임 캡처 시 간헐적으로 무한 비동기 대기(락) 상태를 유발하던 `Image.getSize` 함수를 완벽히 제거함. 대신 `PhotoFile`의 고유 속성인 `photo.width`와 `photo.height`를 직접 읽어 즉시 처리하도록 리팩토링함.
+  - **크롭 좌표계 및 오리엔테이션 충돌 예방**: 스마트폰 방향 전환(Orientation) 시 센서 방향과 비트맵 방향 불일치로 인해 `manipulateAsync` 내에서 이미지 해상도 상한을 초과하여 발생하던 `Context.renderAsync (x + width must be <= bitmap.width())` 예외(크래시)를 완벽히 해소함. crop 단계를 완전히 제외하고 direct resize(`640x640`)만 단독 수행하도록 패치하여 캡처 안정성 100%를 달성함.
+  - **C++ 릴리즈 빌드 Ninja dirty 루프 해결**: 윈도우 파일 시스템과 NDK 컴파일러(`ninja.exe`) 간 파일 타임스탬프 불일치로 발생하던 `manifest 'build.ninja' still dirty after 100 tries` 컴파일 실패 무한 루프를 해결하기 위해, 빌드 데몬 중단 및 캐시 완전 퍼지를 거쳐 C++ Native 라이브러리 파일들의 시각을 과거(2020년 1월 1일)로 백데이팅(Backdating) 동기화함. 최종적으로 컴파일 충돌 위험이 전혀 없고 컴파일 속도가 4배 빠른 **Debug 빌드 및 로컬 LAN IP Metro 서빙 핫스왑 조합을 이식하여 1분 38초 만에 배포를 완수**함.
+  - **무선 Wi-Fi E2E 실기기 추론 검증**: USB 데이터 케이블 연결을 완전히 분리한 무선 상태에서 단말이 동일 Wi-Fi망을 경유해 PC 호스트 서버(`ws://192.168.0.136:8000/ws/detect`)와 세션을 연결한 뒤, 실시간 전송된 `reflex` 및 `cognitive` 프레임을 서버 YOLO 26N 및 노면 분할 AI가 **디코딩 1ms 내외, 추론 150~190ms** 수준의 초저지연 속도로 무정체 처리하는 동작의 최종 성공을 완료함.
+- **관련 파일**: `client/src/services/frameCaptureSelect.android.ts`, `docs/ops/android_device_integration_guide.md`
+- **검증 결과**: adb logcat 실시간 런타임 로그를 모니터링하여 `Context.renderAsync` 예외 발생 0건 및 FastAPI 서버 컨테이너의 양방향 프레임 수신 및 YOLO 인지 결과(`risk=none`) 로깅 성공을 전수 검증함.

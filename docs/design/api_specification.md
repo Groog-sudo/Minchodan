@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.2 (2026-07-09 감사 항목 보완: stt_audio 메시지 신설, reflex_alert clip/alert_id 사전 정의를 실제 게이트 출력값으로 정정, head_level_gate 신규 clip 추가 + 이전 v0.4.1 이력 유지)
+> **버전**: v0.4.3 (2026-07-10 server_detection 메시지 표준 반영 및 등재)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1+2+3단계 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드(640x640 압축 이미지), ack 응답, 단말 측 Reflex Gate 4단계 피드백(주차센서식 거리 반비례 햅틱/비프음) 정합 확인. `reflex_alert`/`guide`는 6·7단계 범위로 미구현(설계상 정상).
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -354,6 +354,46 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 응답은 별도 신규 타입이 아니라 기존 **6.1 guide** 메시지로 온다(클라이언트가 이미
 `audio_mp3_b64` 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
 `guidance_text: "음성 인식에 실패했습니다..."`를 담은 guide 메시지로 응답한다(무응답 방지).
+
+### 6.4 server_detection (서버 → 단말, 실시간 BBox 업데이트)
+
+서버에서 실시간 YOLO 및 노면 분할(Segmentation) 추론을 완료할 때마다, 탐지된 모든 사물 및 노면의 BBox/Centroid 정보를 모바일 화면 렌더링용으로 브로드캐스트합니다.
+
+```json
+{
+  "type": "server_detection",
+  "event_id": "uuid",
+  "detections": [
+    {
+      "model": "object_detection",
+      "className": "scooter",
+      "confidence": 0.87,
+      "bbox": {
+        "x": 120,
+        "y": 200,
+        "w": 160,
+        "h": 160
+      }
+    },
+    {
+      "model": "segmentation",
+      "className": "caution",
+      "confidence": 0.92,
+      "bbox": {
+        "x": 280,
+        "y": 540,
+        "w": 80,
+        "h": 80
+      }
+    }
+  ],
+  "ts": 1719216000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `detections` | 모바일 화면 렌더링용 BBox 정보 배열. 노면 분할(`segmentation`) 결과의 centroid 좌표는 서버 단에서 80x80 크기의 가상 BBox로 변환하여 동일 포맷으로 전달 |
 
 ---
 
