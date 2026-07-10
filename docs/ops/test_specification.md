@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.2 (2026-07-09 반사 클립 파일 부재 미해결 항목 해소로 상태 갱신, STT 종단 연결 완료 반영 + 이전 v0.6.1 이력 유지)
+> **버전**: v0.6.3 (2026-07-09 Docker Compose TC-SMOKE-004를 Redis + MariaDB + FastAPI 컨테이너와 호스트 로컬 Ollama 연결 기준으로 정정)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -79,7 +79,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 - GPU: Blackwell sm_120 (RTX 5090 / 5070 Ti), CUDA 12.8 + cu128 PyTorch 휠
 - 서버 루트: `./Minchodan`
 - Vector Store: 로컬 `data/chroma_db/`
-- 외부 의존성: Ollama(gemma4-e4b, Llava, nomic-embed-text), Redis, Kokoro/Coqui TTS
+- 외부 의존성: 호스트 로컬 Ollama(gemma4:e4b, nomic-embed-text), Redis, MariaDB, Piper TTS
 
 ---
 
@@ -259,7 +259,7 @@ GPU, Ollama, Redis, 실제 카메라가 필요한 흐름은 통합 smoke로 분�
 | TC-SMOKE-001 | 종단 반사 지연 | 실제 카메라 + GPU, 목표 <300ms     | 대기 |
 | TC-SMOKE-002 | 종단 인지 흐름 | 카메라탐지RAGLangGraphTTS 왕복     | 대기 |
 | TC-SMOKE-003 | GPU 환경 검증  | `verify_gpu.py` sm_120 + CUDA 12.8 | 대기 |
-| TC-SMOKE-004 | Docker 구성    | Redis + Ollama + FastAPI 컨테이너  | 대기 |
+| TC-SMOKE-004 | Docker 구성    | Redis + MariaDB + FastAPI 컨테이너 + 호스트 Ollama 연결 | 대기 |
 | TC-SMOKE-005 | RAG DB 빌드    | `build_chroma.sh` 오프라인 전체    | 대기 |
 
 ---

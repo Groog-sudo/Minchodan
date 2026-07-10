@@ -2,7 +2,7 @@
 
 ###############################################################################
 # Minchodan Docker Build and Start - macOS
-# Redis + Ollama + FastAPI 3컨테이너 구성
+# Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
 # 상세 명세: docs/deployment_guide.md
 #
 # 주의: macOS는 Apple Silicon(M1/M2/M3) 또는 Intel 칩셋을 사용합니다.
@@ -116,7 +116,7 @@ print_header
 # 1. Docker 데몬 실행 여부 확인
 if ! docker info >/dev/null 2>&1; then
   echo "[ERROR] Docker is not running."
-  echo "Please start Docker Desktop and try again."
+  echo "Please start Colima or another Docker daemon and try again."
   pause_if_interactive
   exit 1
 fi
@@ -141,9 +141,25 @@ if env_port="$(read_env_value_first "WS_PORT")"; then
   fi
 fi
 
+# Docker 컨테이너에서 호스트 로컬 Ollama로 접속할 주소 결정
+if env_ollama_url="$(read_env_value_first "COMPOSE_OLLAMA_BASE_URL")"; then
+  if [[ -n "$(trim "$env_ollama_url")" ]]; then
+    export COMPOSE_OLLAMA_BASE_URL="$(trim "$env_ollama_url")"
+  fi
+fi
+
+if command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1; then
+  if [[ -z "${COMPOSE_OLLAMA_BASE_URL:-}" ]] ||
+     [[ "${COMPOSE_OLLAMA_BASE_URL}" == "http://host.docker.internal:11434" ]]; then
+    export COMPOSE_OLLAMA_BASE_URL="http://host.lima.internal:11434"
+  fi
+elif [[ -z "${COMPOSE_OLLAMA_BASE_URL:-}" ]]; then
+  export COMPOSE_OLLAMA_BASE_URL="http://host.docker.internal:11434"
+fi
+
 # 3. docker compose 설정 유효성 검사
 echo "[1/4] Checking Docker Compose config..."
-if ! docker compose -f "$COMPOSE_FILE" config --quiet; then
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --quiet; then
   echo
   echo "[ERROR] docker-compose.yml or .env has a configuration problem."
   pause_if_interactive
@@ -153,7 +169,7 @@ fi
 # 4. Docker 이미지 빌드
 echo
 echo "[2/4] Building Docker image (FastAPI)..."
-if ! docker compose -f "$COMPOSE_FILE" build fastapi; then
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build fastapi; then
   echo
   echo "[ERROR] Docker image build failed."
   pause_if_interactive
@@ -162,8 +178,8 @@ fi
 
 # 5. 컨테이너 시작
 echo
-echo "[3/4] Starting containers (Redis + Ollama + FastAPI)..."
-if ! docker compose -f "$COMPOSE_FILE" up -d; then
+echo "[3/4] Starting containers (Redis + MariaDB + FastAPI)..."
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d; then
   echo
   echo "[ERROR] Failed to start containers."
   pause_if_interactive
@@ -193,21 +209,24 @@ echo "========================================"
 echo
 echo "FastAPI URL: http://127.0.0.1:${WS_PORT}/docs"
 echo "Ollama URL:  http://127.0.0.1:11434/api/tags"
+echo "FastAPI -> Ollama: ${COMPOSE_OLLAMA_BASE_URL}"
 echo
 
 URL="http://127.0.0.1:${WS_PORT}/docs"
-open_url "$URL"
+if [[ "${MINCHODAN_OPEN_BROWSER:-0}" == "1" ]]; then
+  open_url "$URL"
+fi
 
 echo "Next steps (first run only):"
-echo "  docker exec -it minchodan-ollama ollama pull gemma2:9b"
-echo "  docker exec -it minchodan-ollama ollama pull llava"
-echo "  docker exec -it minchodan-ollama ollama pull nomic-embed-text"
+echo "  ollama serve"
+echo "  ollama pull gemma4:e4b"
+echo "  ollama pull nomic-embed-text"
 echo
 echo "Logs:"
-echo "  docker compose -f $COMPOSE_FILE logs -f fastapi"
+echo "  docker compose --env-file $ENV_FILE -f $COMPOSE_FILE logs -f fastapi"
 echo
 echo "Stop:"
-echo "  docker compose -f $COMPOSE_FILE down"
+echo "  docker compose --env-file $ENV_FILE -f $COMPOSE_FILE down"
 echo
 
 pause_if_interactive

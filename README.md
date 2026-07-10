@@ -6,7 +6,7 @@
 **Minchodan**은 시각장애인 보행 보조를 위한 스마트 가이드독 AI 플랫폼입니다. 스마트폰 카메라로 주변을 인식하고, GPU 서버에서 실시간으로 장애물·노면 상태를 탐지한 뒤, 음성과 햅틱으로 즉시 안내합니다. 안전 대응은 **반사 경로**(즉시 경보)와 **인지 경로**(상세 가이드) 두 갈래로 물리 분리하는 것이 핵심 원칙입니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.2 (2026-07-09 TTS 엔진 Piper→Supertonic 교체, 반사 캡처 takePhoto()→Frame Processor 전환 반영 + 이전 v0.2.1 이력 유지)
+> **버전**: v0.2.3 (2026-07-10 jy 브랜치 병합: Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영 + 이전 v0.2.2 이력 유지: TTS 엔진 Piper→Supertonic 교체, 반사 캡처 takePhoto()→Frame Processor 전환)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
 
 ---
@@ -82,7 +82,7 @@
 
 ### 인프라
 
-- Docker (Redis + Ollama + FastAPI 컨테이너 구성)
+- Docker (Redis + MariaDB + FastAPI 컨테이너 구성, Ollama는 호스트 로컬 프로세스로 실행)
 - CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
 
 ---
@@ -198,9 +198,10 @@ python scripts/verify_gpu.py
 
 > CUDA 12.8 + cu128 PyTorch 휠이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 
-### 4. Docker 구성 (Redis + Ollama + FastAPI)
+### 4. Docker 구성 (Redis + MariaDB + FastAPI + 호스트 로컬 Ollama)
 
 > 상세 배포 절차는 [`docs/ops/deployment_guide.md`](docs/ops/deployment_guide.md)를 참조하십시오.
+> Ollama는 Docker 컨테이너에 포함하지 않고 호스트에서 `ollama serve`로 실행합니다.
 
 #### Windows (PowerShell)
 
@@ -246,6 +247,7 @@ bash scripts/build_chroma.sh
 | ------------------- | ----------------------------------------- | ------------------------ |
 | `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
 | `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
+| `COMPOSE_OLLAMA_BASE_URL` | Docker FastAPI 컨테이너에서 호스트 Ollama로 접속할 주소 | `http://host.docker.internal:11434` |
 | `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4:e4b`             |
 | `GOOGLE_API_KEY`    | 4단계 캡셔닝(Gemini) API 키               | (필수, 미설정 시 빌드 실패) |
 | `LLAVA_MODEL`       | (미사용, 구 로컬 Llava 계획 잔재)         | `llava`                  |
