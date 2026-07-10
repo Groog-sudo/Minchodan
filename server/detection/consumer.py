@@ -311,6 +311,10 @@ class DetectionConsumer:
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
             )
+            detected_classes_str = ", ".join(orch_input["detected_classes"]) or "(없음)"
+            logger.info(
+                f'[DetectionConsumer] 탐지 객체: [{detected_classes_str}] -> LLM 응답: "{guidance_text}"'
+            )
         except Exception as e:
             logger.error(
                 f"[DetectionConsumer] guide 생성/전송 실패: device_id={device_id}, event_id={result.event_id}, {e}"
