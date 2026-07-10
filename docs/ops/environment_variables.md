@@ -1,8 +1,8 @@
-# Minchodan 환경 변수 명세서
+﻿# Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-09
-> **버전**: v0.4.7 (2026-07-09 Docker Compose에서 Ollama 컨테이너를 제거하고 호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가)
+> **수정일**: 2026-07-10
+> **버전**: v0.4.11 (2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -51,7 +51,7 @@
 | **`WS_HOST`** | string | 필수 | `0.0.0.0` | WebSocket 서버 바인드 호스트 | [`api_specification.md`](api_specification.md) 1절 |
 | **`WS_PORT`** | int | 필수 | `8000` | WebSocket 서버 포트 | [`api_specification.md`](api_specification.md) 1절 |
 | **`HEARTBEAT_INTERVAL`** | int | 선택 | (코드 기본값) | 하트비트 송신 주기(초). `server/api/config.py` (2026-07-07 추가 — 기존 명세서에 누락돼 있었음) | `server/api/config.py:30` |
-| **`HEARTBEAT_TIMEOUT`** | int | 선택 | (코드 기본값) | 하트비트 미수신 타임아웃(초) | `server/api/config.py:31` |
+| **`HEARTBEAT_TIMEOUT`** | int | 선택 | `15` | 하트비트 미수신 타임아웃(초). 총 유예 시간은 `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 20초). **2026-07-10 변경**(기존 5): ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료되는 문제를 실기기 LTE 테스트로 확인해 상향 | `server/api/config.py:31` |
 | **`MAX_RECONNECT_ATTEMPTS`** | int | 선택 | (코드 기본값) | 서버 측 재연결 허용 횟수 | `server/api/config.py:32` |
 | **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-09 정정**: 필드는 존재했으나 `server/main.py`가 소비하지 않고 `allow_origins=["*"]`로 고정돼 있던 문제를 연결. 프로덕션 배포 시 반드시 콘솔 실제 도메인으로 override | `server/api/config.py`, `server/main.py` |
 | **`JWT_SECRET_KEY`** | string | 선택 | (코드 기본값) | 관리자/유저 인증 JWT 서명 키 (2026-07-07 추가 — `.env.example`에도 없어 실서비스 배포 전 반드시 별도 설정 필요) | `server/db/security.py:19` |
@@ -61,7 +61,7 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - Object Detection 신뢰도 임계값 | [`stage3_detection_design.md`](stage3_detection_design.md) 5절 |
-| **`DETECTOR_TYPE`** | string | 미사용 | `mock` | **2026-07-08 확인: 코드 어디에서도 `os.getenv`로 읽히지 않는 죽은 변수.** 실제 Mock/YOLO 분기는 `server/detection/config.py`의 `get_detector()`/`get_segmentor()`가 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 파일의 존재 여부만으로 결정한다 | `server/detection/config.py` |
+| **`DETECTOR_TYPE`** | string | 선택 | `mock` | **2026-07-09 정정**: `server/detection/config.py`가 실제로 읽는다. `mock`이면 노트북/데모 환경에서 `MockDetector`/`MockSegmentor`를 강제 사용하고, `yolo`이면 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 로드 시도를 수행한다. 미지원 값은 안전 폴백으로 `mock` 처리 | `server/detection/config.py` |
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
@@ -72,10 +72,15 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TTS_ENGINE`** | string | 필수 | `piper` | TTS 엔진. **2026-07-07 정정**: `piper`만 실제 지원(`kokoro`/`coqui` 미구현, 지정 시 경고 로그 후 piper로 강제 폴백). 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
-| **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부. **2026-07-09 추가**: 상주 프로세스화(아래 참고)로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
-| **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위 | `server/tts/tts_service.py` |
-| **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.9` | 인지 경로 실시간 합성 기본 속도. **2026-07-08 추가**: 모델 원 설정(`phoneme_type=pygoruut`)을 실제로 지원하지 않는 `piper-tts==1.4.2`에서 발생한 속도 이상(정상 대비 약 2.5~3배 느림)을 `pygoruut` 사전 음소화 도입으로 해소한 뒤의 정상 범위 값 | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
+| **`TTS_ENGINE`** | string | 필수 | `supertonic` | TTS 엔진. **2026-07-09 변경**: 실기기 청취 검증 결과 Piper의 발음 품질 한계(흔한 음절 누락)가 확인되어 기본값을 `supertonic`으로 교체. `piper`는 핫스왑 폴백으로 여전히 지정 가능(코드 보존). **2026-07-10 추가**: `pyttsx3`(OS 내장 SAPI5/espeak, GPU·네트워크 불필요)도 로컬 저사양 대체 옵션으로 지원. 그 외 값은 경고 로그 후 supertonic으로 강제 폴백. 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
+| **`SUPERTONIC_VOICE`** | string | 선택 | `F1` | **2026-07-09 신규.** Supertonic 보이스 스타일 이름(`server/models/supertonic` 웹 콘솔 기준 F1~F5/M1~M5 등) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_MODEL_DIR`** | path | 선택 | (미지정, 라이브러리 기본 `~/.cache/supertonic3`) | **2026-07-09 신규.** 명시적으로 지정하지 않는 것을 권장 - `server/models/` 하위로 지정하면 `docker-compose.yml`의 `../server:/app/server` 볼륨 마운트가 빌드 타임에 받아둔 캐시를 컨테이너 시작 시 호스트 쪽 내용으로 덮어써 버린다(pygoruut와 동일 문제) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_TOTAL_STEPS`** | int | 선택 | `8` | **2026-07-09 신규.** 합성 품질/속도 트레이드오프(5=저품질·고속 ~ 12=고품질·저속) | `server/tts/tts_service.py` |
+| **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부(핫스왑 폴백용, `TTS_ENGINE=piper`일 때만 사용). **2026-07-09 정정**: 상주 프로세스화로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
+| **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위(핫스왑 폴백용) | `server/tts/tts_service.py` |
+| **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.9` | Piper 핫스왑 경로 사용 시 기본 속도. **2026-07-08 추가**: 모델 원 설정(`phoneme_type=pygoruut`)을 실제로 지원하지 않는 `piper-tts==1.4.2`에서 발생한 속도 이상(정상 대비 약 2.5~3배 느림)을 `pygoruut` 사전 음소화 도입으로 해소한 뒤의 정상 범위 값 | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
+
+> **TTS 엔진 선택 이력**: piper → **supertonic(최종 선정, 2026-07-09 코드 반영 완료)**. 현재 코드 런타임(`get_tts_service()`)은 `supertonic`(기본)·`piper`·`pyttsx3` 3종 모두 구현되어 있으며, 미지원 값 입력 시 경고 로그 후 `supertonic`으로 강제 폴백합니다.
 
 ### 2.7 데이터 경로 (4단계 RAG 빌드·7단계 반사 클립)
 
@@ -136,6 +141,12 @@
 | **`COMPOSE_DB_ROOT_PASSWORD`** | string | 선택 | `minchodan_root_password` | Docker Compose 로컬 MariaDB 컨테이너의 root 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
 | **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI 컨테이너 내부 연결은 항상 `mariadb:3306`을 사용합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 
+### 2.13 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
+
+| 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **`.env.example`에 아직 등재되어 있지 않아 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38` |
+
 ---
 
 ## 3. 환경 변수 로드 패턴
@@ -184,6 +195,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 6 | **`LANGCHAIN_*` 누락** | `architecture.md` 13.4절에만 산재 | 본 명세서 2.9절에 통합 |
 | 7 | **`NGROK_AUTHTOKEN` 누락** | 야외 도로 테스트용 터널 인증 변수가 `.env.example`에만 존재 | 본 명세서 2.11절에 통합 |
 | 8 | **DB 환경 변수 누락** | `.env.example`에는 `DB_*` 6종이 있으나 본 명세서에는 누락 | 본 명세서 2.12절에 통합하고 `DB_NAME=minchodan_db` 기준으로 정합 |
+| 9 | **`TMAP_APP_KEY` 누락** | 코드(`server/navigation/`)에서 실사용되나 본 명세서·`.env.example` 모두 누락 | 본 명세서 2.13절에 신규 명세(`.env.example` 반영은 미완, 담당자 확인 필요) |
 
 ---
 
@@ -210,6 +222,6 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 3 | Redis 연결 | `redis-cli ping` | `PONG` |
 | 4 | Ollama 연결 | `curl $OLLAMA_BASE_URL/api/tags` | 모델 목록 JSON |
 | 5 | Docker 컨테이너의 호스트 Ollama 연결 | `docker exec minchodan-fastapi python -c "import os; print(os.getenv('OLLAMA_BASE_URL'))"` | `COMPOSE_OLLAMA_BASE_URL` 값 |
-| 6 | 가중치 파일 존재 | `Test-Path server/models/yolo26n/object_detection.pt` | `True` |
+| 6 | 가중치 파일 존재 | `Test-Path server/models/yolo26n/det_best_20260705.pt` | `True` |
 | 7 | ChromaDB 경로 존재 | `Test-Path data/chroma_db` | `True` (4단계 빌드 후) |
 | 8 | DB 대상명 확인 | `python -c "from dotenv import load_dotenv; load_dotenv(); import os; print(os.getenv('DB_NAME'))"` | `minchodan_db` |

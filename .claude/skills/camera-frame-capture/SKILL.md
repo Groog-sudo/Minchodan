@@ -9,9 +9,13 @@ description: |
 # Camera Frame Capture (2단계: 카메라 화면 전송)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.0 (2026-07-07 detection 프레임 전송을 base64→바이너리(raw JPEG) 기본으로 정정)
-> **설계 기준**: `docs/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 9, 16, 17.2
+> **버전**: v0.5.0 (2026-07-10 카메라 캡처 계층을 iOS/Android 물리 분리 구조로 리팩터링 - CAPTURE_ENGINE 전역 플래그 제거, FrameCaptureProvider 인터페이스 도입)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영), [`docs/mobile/ios_android_bifurcation_contract.md`](../../../docs/mobile/ios_android_bifurcation_contract.md) §4(카메라 캡처 계층 재설계)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 9, 16, 17.2
+
+> **2026-07-10 정정 (파일 구조 변경)**: `client/src/config/capture.ts`의 `CAPTURE_ENGINE` 전역 상수가 **삭제**됐다. 카메라 하드웨어 접근은 `client/src/hooks/useCamera.ts`에서 완전히 분리되어 `client/src/services/frameCaptureProvider.ts`(공통 인터페이스 `FrameCaptureController` + `takePhoto()` 공용 크롭 로직 `captureViaTakePhoto`)와 Metro 플랫폼 확장자 분기 파일(`frameCaptureProviderSelect.ios.ts`/`.android.ts`/`.ts`)로 이동했다. `useCamera.ts`는 타이머·동적 FPS·Mock 분기 등 플랫폼 무관 오케스트레이션만 담당한다. iOS는 `frameCaptureProviderSelect.ios.ts`가 아래 §2026-07-09 정정의 Frame Processor 경로를 그대로 구현하고, Android는 네이티브 Frame Processor 플러그인이 아직 없어 `frameCaptureProviderSelect.android.ts`가 `takePhoto()` 과도기 구현(Android 실기기의 `File.bytes()` 실패 우회 포함)을 담당한다. 상세 설계와 파일 소유권 규칙은 [`docs/mobile/ios_android_bifurcation_contract.md`](../../../docs/mobile/ios_android_bifurcation_contract.md) §4 참조.
+
+> **2026-07-09 정정 (중요, 캡처 메커니즘 자체 변경)**: 반사 캡처가 `cameraRef.current.takePhoto()`(정지사진 반복 촬영)를 쓰던 방식에서 **VisionCamera Frame Processor**(`AVCaptureVideoDataOutput` 기반 연속 비디오 스트림)로 전환됐다(iOS 기본 경로). 근본 원인: 실기기 시스템 로그(`log collect --device`) 분석 결과, iOS의 `AVCapturePhotoOutput.capturePhoto()`가 `enableShutterSound:false`로도 촬영마다 `AVAudioSessionInterruption`을 유발해(반사 fps 간격과 정확히 일치하는 ~300~400ms 주기, 3분간 80회) 동시 재생 중인 TTS 안내 음성을 순간 끊는 것이 확인됐다. `photo={true}` 대신 `video={true} frameProcessor={...}`로 `<Camera>`를 구동해 `AVCapturePhotoOutput`을 세션에서 완전히 배제한다. 아래 본문의 `takePhoto()` 기반 코드 예시(단계 2-1)는 **2026-07-10부로 `client/src/services/frameCaptureProviderSelect.android.ts`(Android 과도기 경로) 및 `frameCaptureProviderSelect.ts`(기본 폴백)로 이관**됐다. 신규 파일: `client/ios/ReflexFrameProcessorPlugin.swift`(+`.m`, 등록명 `reflexFrameCapture`) - CVPixelBuffer를 기존과 동일한 규칙(중앙 정사각형 크롭+640x640 리사이즈+JPEG quality 0.5)으로 가공해 base64 반환, 기존 `CoreMLInferenceBridge.detectFrame(base64)`는 무변경 재사용. 신규 의존성 `react-native-worklets-core`. 상세: `docs/changelogs/kb.md`(2026-07-09, 2026-07-10), `docs/design/api_specification.md`.
 
 > **2026-07-07 정정**: detection 프레임 전송 규격이 **바이너리(raw JPEG 바이트) 전송을 기본**으로 전환됐다(2단 전송: `transport:"binary"` 메타 JSON 텍스트 → 곧바로 raw JPEG 바이너리 프레임). 아래 본문의 base64(`thumbnail_jpeg_b64`) 방식은 **구버전 호환·Mock 경로용 폴백**으로만 유지된다. 클라이언트는 `File(uri).bytes()`로 raw `Uint8Array`를 읽어 `sendBinary()`로 보내고, 서버는 `decode_frame_binary()`로 디코딩한다. 하트비트/핑퐁 등 제어 메시지는 여전히 JSON 텍스트다. 상세: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)(v0.4.0), [`docs/stage-guides/stage2_capture_design.md`](../../../docs/stage-guides/stage2_capture_design.md).
 
@@ -68,7 +72,7 @@ description: |
 
 | 구분 | 기술 | 용도 |
 |------|------|------|
-| 모바일 카메라 | react-native-vision-camera v4 | 후면 카메라 이중 캡처 |
+| 모바일 카메라 | react-native-vision-camera v4 | 후면 카메라 이중 캡처. **2026-07-09**: 기본 캡처 경로는 Frame Processor(`useFrameProcessor`, `react-native-worklets-core` 필요) - `AVCapturePhotoOutput` 미사용 |
 | 이미지 인코딩 | base64 (JPEG) | 바이너리텍스트 변환 (WS 전송용) |
 | 서버 이미지 처리 | OpenCV (cv2) + NumPy | JPEG 디코딩 + 리사이징 |
 | 전송 프로토콜 | WebSocket (1단계 연결 재사용) | 프레임 데이터 전송 |
@@ -83,9 +87,12 @@ client/src/
 │   └── CameraView.tsx          # 카메라 컴포넌트 (UI)
 ├── hooks/
 │   ├── useWebSocket.ts         # 1단계에서 구현한 WS 훅
-│   ├── useCamera.ts            # 단일 캡처 타이머 + 스트림 분할 훅
+│   ├── useCamera.ts            # 타이머·동적 FPS·Mock 분기 오케스트레이션 (플랫폼 무관)
 ├── services/
-│   └── frameCapture.ts         # takePhoto  base64  send
+│   ├── frameCaptureProvider.ts            # 공통 인터페이스 + takePhoto() 공용 크롭 로직
+│   ├── frameCaptureProviderSelect.ios.ts  # iOS: Frame Processor 스트림 캡처
+│   ├── frameCaptureProviderSelect.android.ts # Android: takePhoto 과도기 캡처
+│   └── frameCaptureProviderSelect.ts      # tsc 정적 분석용 기본 폴백 (Metro는 미사용)
 ├── utils/
 │   └── haptics.ts              # Haptics + 접근성
 └── types/
@@ -395,8 +402,9 @@ async def route_frame(processed: ProcessedFrame):
 |------|-----------|-----------|
 | 카메라 권한 요청 | 승인 다이얼로그 | Android/iOS 모두 |
 | 후면 카메라 활성화 | isActive=true | device !== null |
-| 반사 캡처 8~10fps | setInterval 주기 확인 | ±100ms 오차 |
-| 인지 캡처 1~2fps | setInterval 주기 확인 | ±100ms 오차 |
+| 반사 캡처 8~10fps | Frame Processor worklet throttle 주기 확인 | ±100ms 오차 |
+| 인지 캡처 1~2fps | Frame Processor worklet throttle 주기 확인 | ±100ms 오차 |
+| **오디오 세션 인터럽션 없음 (2026-07-09 신규)** | `log collect --device`로 3분+ 캡처 중 `AVAudioSessionInterruption` 카운트 | **0건** (구 `takePhoto()` 경로는 80회/3분) |
 | base64 변환 | JPEG base64 문자열 | 30~50KB 범위 |
 | 서버 수신 | 프레임 디코딩 성공 | frame.shape == (640, 640, 3) |
 | **캡처수신 지연** | 전체 파이프라인 | **< 50ms** |
@@ -406,5 +414,5 @@ async def route_frame(processed: ProcessedFrame):
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md)
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)
 - react-native-vision-camera 공식 문서: https://react-native-vision-camera.com/

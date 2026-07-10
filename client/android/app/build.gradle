@@ -130,6 +130,10 @@ android {
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
+
+    aaptOptions {
+        noCompress "tflite"
+    }
 }
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`

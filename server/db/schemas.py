@@ -12,15 +12,14 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.db.models import (
     AdminAccountStatus,
     AdminRole,
-    DetectionStreamType,
     DevicePlatform,
+    StreamType,
     UserStatus,
 )
 
@@ -116,27 +115,20 @@ class AdminLoginAuditResponse(BaseModel):
     created_at: datetime
 
 
-class TokenResponse(BaseModel):
-    """OAuth2 액세스 토큰 응답 DTO."""
-
-    access_token: str
-    token_type: str = "bearer"
-
-
 class DetectionGuidanceLogCreate(BaseModel):
-    """탐지 및 안내 로그 생성 요청 DTO."""
+    """탐지/안내 로그 생성 요청 DTO."""
 
     event_id: str | None = Field(default=None, max_length=64)
     user_id: int | None = Field(default=None, ge=1)
     device_id: int | None = Field(default=None, ge=1)
     detected_at: datetime
-    stream_type: DetectionStreamType = DetectionStreamType.UNKNOWN
-    detected_objects_json: list[dict[str, Any]] = Field(..., min_length=1)
+    stream_type: StreamType = StreamType.UNKNOWN
+    detected_objects_json: str = Field(..., min_length=2)
     tts_text: str = Field(..., min_length=1)
 
 
 class DetectionGuidanceLogResponse(BaseModel):
-    """탐지 및 안내 로그 응답 DTO."""
+    """탐지/안내 로그 응답 DTO."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -145,10 +137,17 @@ class DetectionGuidanceLogResponse(BaseModel):
     user_id: int | None
     device_id: int | None
     detected_at: datetime
-    stream_type: DetectionStreamType
-    detected_objects_json: list[dict[str, Any]]
+    stream_type: StreamType
+    detected_objects_json: str
     tts_text: str
     created_at: datetime
+
+
+class TokenResponse(BaseModel):
+    """OAuth2 액세스 토큰 응답 DTO."""
+
+    access_token: str
+    token_type: str = "bearer"
 
 
 __all__ = [

@@ -6,6 +6,7 @@ DetectionPipeline을 실행한 뒤, 반사 알림은 WebSocket 고우선 채널�
 """
 
 import asyncio
+import base64
 import contextlib
 import logging
 import sys
@@ -61,6 +62,15 @@ class DetectionConsumer:
         self._last_guide_duration_sec: dict[str, float] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
+        self._last_status: dict[str, str | float | int | None] = {
+            "stream": None,
+            "event_id": None,
+            "device_id": None,
+            "result_type": None,
+            "risk_hint": None,
+            "updated_at": None,
+            "error": None,
+        }
 
     def _required_guide_gap_sec(self, device_id: str) -> float:
         """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다."""
@@ -68,6 +78,10 @@ class DetectionConsumer:
         return max(
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
+
+    def get_runtime_status(self) -> dict[str, str | float | int | None]:
+        """최근 DetectionConsumer 처리 상태를 반환한다."""
+        return dict(self._last_status)
 
     async def _ensure_pipeline(self) -> DetectionPipeline:
         if self._pipeline is None:
@@ -132,11 +146,22 @@ class DetectionConsumer:
                 f"[DetectionConsumer] pipeline 미초기화, skip: "
                 f"event_id={processed.event_id}, stream={stream}"
             )
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": processed.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "pipeline_uninitialized",
+                    "risk_hint": None,
+                    "updated_at": now_ts(),
+                    "error": None,
+                }
+            )
             return
 
         frame: np.ndarray = processed.frame
         try:
-            result = await self._pipeline.run(
+            result, detections, surfaces = await self._pipeline.run(
                 frame=frame,
                 stream=stream,
                 event_id=processed.event_id,
@@ -146,11 +171,49 @@ class DetectionConsumer:
             logger.error(
                 f"[DetectionConsumer] pipeline.run 실패: event_id={processed.event_id}, {e}"
             )
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": processed.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "pipeline_error",
+                    "risk_hint": None,
+                    "updated_at": now_ts(),
+                    "error": str(e),
+                }
+            )
             return
 
+        # 서버 YOLO 추론 결과를 BBox 렌더링용으로 단말에 실시간 송신
+        await self._send_server_detection(
+            processed.device_id, processed.event_id, detections, surfaces
+        )
+
         if isinstance(result, ReflexAlert):
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": result.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "reflex_alert",
+                    "risk_hint": result.risk_level,
+                    "updated_at": now_ts(),
+                    "error": None,
+                }
+            )
             await self._send_reflex_alert(processed.device_id, result)
         elif isinstance(result, DetectionResult):
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": result.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": "detection_result",
+                    "risk_hint": result.risk_hint,
+                    "updated_at": now_ts(),
+                    "error": None,
+                }
+            )
             if result.risk_hint in ("mid", "low"):
                 await self._send_cognitive_guide(processed.device_id, result)
             logger.debug(
@@ -159,6 +222,73 @@ class DetectionConsumer:
             )
         else:
             logger.warning(f"[DetectionConsumer] 예상치 못한 결과 타입: {type(result)}")
+            self._last_status.update(
+                {
+                    "stream": stream,
+                    "event_id": processed.event_id,
+                    "device_id": processed.device_id,
+                    "result_type": type(result).__name__,
+                    "risk_hint": None,
+                    "updated_at": now_ts(),
+                    "error": "unexpected_result_type",
+                }
+            )
+
+    async def _send_server_detection(
+        self,
+        device_id: str,
+        event_id: str,
+        detections: list,
+        surfaces: list,
+    ) -> None:
+        """YOLO 및 Segmentation 탐지 결과를 BBox 표시용으로 실시간 전송한다."""
+        payload_detections = []
+        for det in detections:
+            payload_detections.append(
+                {
+                    "model": "object_detection",
+                    "className": det.class_name,
+                    "confidence": float(det.confidence),
+                    "bbox": {
+                        "x": float(det.bbox.x),
+                        "y": float(det.bbox.y),
+                        "w": float(det.bbox.w),
+                        "h": float(det.bbox.h),
+                    },
+                }
+            )
+
+        for surf in surfaces:
+            # Segmentation centroid 주변에 가상의 80x80 BBox 구성
+            if surf.centroid and len(surf.centroid) >= 2:
+                cx, cy = surf.centroid[0], surf.centroid[1]
+                payload_detections.append(
+                    {
+                        "model": "segmentation",
+                        "className": surf.class_name,
+                        "confidence": 1.0,
+                        "bbox": {
+                            "x": float(cx - 40),
+                            "y": float(cy - 40),
+                            "w": 80.0,
+                            "h": 80.0,
+                        },
+                    }
+                )
+
+        payload = {
+            "type": "server_detection",
+            "event_id": event_id,
+            "detections": payload_detections,
+            "ts": time.time(),
+        }
+
+        try:
+            await manager.send_json(device_id, payload)
+        except Exception as e:
+            logger.error(
+                f"[DetectionConsumer] server_detection 송신 실패: device_id={device_id}, {e}"
+            )
 
     async def _send_reflex_alert(self, device_id: str, alert: ReflexAlert) -> None:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
@@ -287,19 +417,32 @@ class DetectionConsumer:
             self._last_guide_ts[device_id] = send_now
             self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
 
+            # [2026-07-09 도입] guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는
+            # 대신, 메타데이터(JSON) 전송 직후 원본 바이트를 바이너리 프레임으로 이어
+            # 보낸다(카메라 프레임 client->server 전송에 이미 적용된 패턴을 반대
+            # 방향에도 적용). 실기기에서 문장 중간 음절이 산발적으로 사라지는 현상의
+            # 원인 후보(base64 팽창/RN 구 브릿지 대용량 문자열 처리)를 제거하기 위함.
+            audio_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
+
             payload = {
                 "type": "guide",
                 "event_id": result.event_id,
                 "risk_level": result.risk_hint,
                 "guidance_text": guidance_text,
-                "audio_mp3_b64": audio_b64 or "",
                 "audio_codec": "wav",
                 "duration_ms": duration_ms,
+                "transport": "binary" if audio_bytes else "none",
                 "ts": now_ts(),
             }
             await manager.send_json(device_id, payload)
+            if audio_bytes:
+                await manager.send_bytes(device_id, audio_bytes)
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
+            )
+            detected_classes_str = ", ".join(orch_input["detected_classes"]) or "(없음)"
+            logger.info(
+                f'[DetectionConsumer] 탐지 객체: [{detected_classes_str}] -> LLM 응답: "{guidance_text}"'
             )
         except Exception as e:
             logger.error(

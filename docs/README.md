@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.13.0 (2026-07-10 DB Tailscale 외부망 연결 가이드 추가)
+> **버전**: v0.13.3 (2026-07-10 dev 브랜치 문서 정합성 점검: 4·5단계 RAG 설계서 설명을 Gemini 캡셔닝으로 정정, 현재 문서 기준선에 Gemini/Supertonic/GPS/MariaDB 반영, 1주차 미결정 표에 TTS·RDB 확정 결과 각주 추가 + 이전 v0.13.2 이력 유지: th 브랜치 병합 문서 폴더 재정리 반영, jy 브랜치 병합의 DB Tailscale 외부망 연결 가이드 추가, iOS/Android 이원화 통합 계약서 추가)
 
 ## 문서 목록
 
@@ -27,6 +27,7 @@
 | 3단계 탐지 설계서     | [stage-guides/stage3_detection_design.md](stage-guides/stage3_detection_design.md) | 3단계 백엔드 FastAPI 구현 설계 (Mock 폴백, 이중 게이트, 추상화) |
 | 6단계 오케스트레이션 설계서 | [stage-guides/stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
 | **Post-MVP 하이브리드 로드맵** | [research/post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
+| **iOS/Android 이원화 통합 계약서** | [mobile/ios_android_bifurcation_contract.md](mobile/ios_android_bifurcation_contract.md) | **파일 소유권·인터페이스 계약·인프라 거버넌스로 병합 충돌 방지 (kb/dg2 병합 시뮬레이션 근거)** |
 | 보행이론 인사이트 보고서 | [design/behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
 | Changelog 템플릿     | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md)       | 신규 changelog 작성 양식                                           |
@@ -44,8 +45,12 @@ docs/
 ├── mobile/          # 모바일 앱 구현 계획서 (iOS/Android)
 ├── research/        # 분석 보고서 및 Post-MVP 검토
 ├── ops/             # 운영·개발 환경 설정 및 절차
+│   └── reports/     # 단발성 운영 보고서
 ├── db_tailscale_guide/ # MariaDB Tailscale 외부망 연결 가이드
-├── dev-guides/      # 코딩 표준, 에이전트 프롬프트, 참고 예시
+├── dev-guides/      # 코딩 표준 및 개발 참고 자료
+│   ├── prompts/     # 1회성 에이전트 작업 프롬프트 아카이브
+│   ├── templates/   # 설계서 예시/템플릿
+│   └── integration/ # 콘솔·서버 통합 지침서
 └── changelogs/      # 팀원별 작업 변경 내역
 ```
 
@@ -77,7 +82,7 @@ docs/
 | 1단계 WebSocket 설계서 | [stage1_websocket_design.md](stage-guides/stage1_websocket_design.md) | FastAPI 커넥션 생명주기, SessionManager, heartbeat 제어 |
 | 2단계 캡처 설계서 | [stage2_capture_design.md](stage-guides/stage2_capture_design.md) | FastAPI 이중 스트림, asyncio.Queue, 디코딩 가드레일 |
 | 3단계 탐지 설계서 | [stage3_detection_design.md](stage-guides/stage3_detection_design.md) | Mock 폴백, 이중 게이트(Reflex+Surface), 추상화 |
-| 4·5단계 RAG 설계서 | [stage4_5_rag_design.md](stage-guides/stage4_5_rag_design.md) | Llava 캡셔닝 + nomic-embed + ChromaDB 빌드 설계 |
+| 4·5단계 RAG 설계서 | [stage4_5_rag_design.md](stage-guides/stage4_5_rag_design.md) | Gemini VLM 캡셔닝(최초 계획 Llava에서 전환) + nomic-embed + ChromaDB 빌드 설계 |
 | 4·5단계 데이터 교체 가이드 | [stage4_5_data_replacement_guide.md](stage-guides/stage4_5_data_replacement_guide.md) | 실데이터 교체 및 RAG 재빌드 절차 |
 | 4·5단계 디렉토리 가이드 | [stage4_5_directory_guide.md](stage-guides/stage4_5_directory_guide.md) | RAG 백엔드 폴더 및 파일 구조 |
 | 4·5단계 구현 이력 로그 | [stage4_5_implementation_log.md](stage-guides/stage4_5_implementation_log.md) | 수정 행동 이력 및 의사결정 기록 |
@@ -139,19 +144,29 @@ docs/
 
 ## 6. dev-guides/ — 코딩 표준 및 참고 자료
 
-> 코딩 패턴·함수 시그니처 표준, 에이전트 프롬프트 아카이브, 설계서 예시.
+> 코딩 패턴·함수 시그니처 표준, 에이전트 프롬프트 아카이브, 설계서 예시, 통합 지침서.
 
 | 문서 | 파일 | 설명 |
 | :--- | :--- | :--- |
 | **코딩 패턴 기준** | [course_codebase_guide.md](dev-guides/course_codebase_guide.md) | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
-| 에이전트 작업 지시서 | [antigravity_agent_prompt__4_5_final.md](dev-guides/antigravity_agent_prompt__4_5_final.md) | Antigravity 에이전트 4·5단계 RAG 작업 지시서 (최종 병합본) |
-| 설계서 예시 | [신규_설계서_예시_2.md](dev-guides/신규_설계서_예시_2.md) | 장애물 탐지 설계 참고 예시 문서 |
-| **관제 UI 연동 지침서** | [관제_UI_및_시나리오_연동_지침서.md](dev-guides/관제_UI_및_시나리오_연동_지침서.md) | **관제 콘솔 실시간 지도 iframe 임베딩 및 대화형 길안내 시나리오 연동 가이드** |
-| **서버 통합 기술 지침서** | [서버_및_시스템_통합_기술_지침서.md](dev-guides/서버_및_시스템_통합_기술_지침서.md) | **네비게이션 백엔드 모듈 배치, 의존성, 핵심 5대 소스코드 결합 사양** |
+| 에이전트 작업 지시서 | [antigravity_agent_prompt__4_5_final.md](dev-guides/prompts/antigravity_agent_prompt__4_5_final.md) | Antigravity 에이전트 4·5단계 RAG 작업 지시서 (최종 병합본) |
+| 설계서 예시 | [신규_설계서_예시_2.md](dev-guides/templates/신규_설계서_예시_2.md) | 장애물 탐지 설계 참고 예시 문서 |
+| **관제 UI 연동 지침서** | [관제_UI_및_시나리오_연동_지침서.md](dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md) | **관제 콘솔 실시간 지도 iframe 임베딩 및 대화형 길안내 시나리오 연동 가이드** |
+| **서버 통합 기술 지침서** | [서버_및_시스템_통합_기술_지침서.md](dev-guides/integration/서버_및_시스템_통합_기술_지침서.md) | **네비게이션 백엔드 모듈 배치, 의존성, 핵심 5대 소스코드 결합 사양** |
 
 ---
 
-## 7. changelogs/ — 팀원별 작업 변경 내역
+## 7. ops/reports/ — 단발성 운영 보고서
+
+> 운영 규칙 그 자체가 아니라, 특정 통합 작업의 결과를 남기는 보고서 모음.
+
+| 문서 | 파일 | 설명 |
+| :--- | :--- | :--- |
+| 역할 C 연동 완료 보고서 | [역할_C_TTS_반사경로_Navigation_가이드_기준_연동_적용_완료_보고서.md](ops/reports/역할_C_TTS_반사경로_Navigation_가이드_기준_연동_적용_완료_보고서.md) | TTS·반사경로·Navigation 연동 수정 및 검증 기록 |
+
+---
+
+## 8. changelogs/ — 팀원별 작업 변경 내역
 
 | 문서 | 파일 | 설명 |
 | :--- | :--- | :--- |
@@ -194,6 +209,10 @@ docs/
 - **Whisper는 STT 전용**이며 7단계(가이드 출력)에 등장하지 않습니다. 사용자 음성 명령(STT) 경로는 본 골격 범위 밖입니다.
 - **Vector DB는 ChromaDB 로컬 파일 기반**(`data/chroma_db/`)이며, `VectorDBFactory`로 Qdrant 핫스왑을 대비합니다.
 - **LLM은 로컬 Ollama(gemma4:e4b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
+- **4단계 캡셔닝은 Gemini API**(`gemini-2.5-flash-lite`, 최초 계획 로컬 Llava에서 전환)입니다.
+- **7단계 TTS는 Supertonic 기본**(`TTS_ENGINE=supertonic`)이며, Piper/pyttsx3는 핫스왑 폴백입니다.
+- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다.
+- **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
 - **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.
 
@@ -210,3 +229,5 @@ docs/
 | 통신 프로토콜  | WS·REST·SSE·Redis  | WebRTC/gRPC 등         |
 | TTS            | Kokoro/Coqui       | OpenAI TTS             |
 | RDB            | 비동기 SQLAlchemy  | MariaDB/PostgreSQL     |
+
+> **2026-07-10 확정 반영**: 위 표는 1주차 시점의 잠정 기본값이며 현재는 확정 상태입니다. **TTS**는 Kokoro/Coqui가 아닌 **Supertonic**(기본, Piper/pyttsx3 핫스왑)으로 구현됐고, **RDB**는 비동기 SQLAlchemy 계층 위에서 **MariaDB**로 확정됐습니다. 상세는 [`design/architecture.md`](design/architecture.md) §2·§5.7, [`design/backend_db_architecture.md`](design/backend_db_architecture.md)를 참조합니다.

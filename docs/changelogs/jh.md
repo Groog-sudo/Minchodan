@@ -371,3 +371,47 @@
 - **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `tests/test_stt_to_llm_bridge_template.py`, `scripts/eval_hitrate.py`, `data/safety_guidelines.json`, `requirements.txt`, `docs/changelogs/jh.md`
 - **검증 결과**: `scripts/eval_hitrate.py` 실행 기준 RAG 평가 루틴 구성 확인, STT 라우터/브리지 연동 코드와 네비게이션 상태 전이 경로 확인 완료. 단, 테스트 실행은 현재 환경에서 `langgraph` 미설치로 수집 단계에서 중단됨
 - **비고**: 이번 항목은 ⑤ navigation 검증을 중심으로 ① RAG 확충, ② 평가 스크립트 정리, ③ STT 의존성 반영, ④ 라우터 마운트 완료 상태까지 함께 묶어 정리한 통합 기록임
+
+---
+
+### 2026-07-10 | DB | detction_guidance_logs 기본틀 및 하드코딩 템플릿 추가
+
+- **커밋**: `db: detction_guidance_logs 기본틀 및 하드코딩 템플릿 추가`
+- **변경 내용**:
+  - `detction_guidance_logs` 테이블 대응 ORM 매핑을 추가하고 `StreamType(reflex/cognitive/unknown)` enum, 인덱스, UNIQUE(event_id), FK(`app_users`/`user_devices`)를 반영함
+  - 로그 저장용 DTO(`DetectionGuidanceLogCreate`, `DetectionGuidanceLogResponse`)를 추가해 DB 입력/응답 스키마 경계를 분리함
+  - Repository 계층에 `DetectionGuidanceLogRepository`를 추가해 event_id 중복 조회 및 저장 경로를 구성함
+  - `DetectionGuidanceLogService`를 신규 추가하고, 바이브/하드코딩 파트를 주석으로 명확히 구분한 템플릿 구조를 적용함
+  - 하드코딩 핵심 구현부는 `NotImplementedError`와 단계별 힌트를 남겨 직접 작성 학습이 가능한 상태로 유지함
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/services/detection_guidance_log_service.py`
+- **검증 결과**: 변경 파일 정적 오류 검사 기준 문법 오류 없음 확인(`models.py`, `schemas.py`, `repositories.py`, `detection_guidance_log_service.py`)
+- **비고**: 본 커밋은 동작 완성본이 아니라 템플릿/골격 커밋이며, HARDCODE PART 구현은 후속 커밋에서 채울 예정임
+
+---
+
+### 2026-07-10 | DB | detection_guidance_logs 4개 파일 정합화 및 저장 서비스 동작 구현
+
+- **커밋**: `feat(db): detection_guidance_logs 4개 파일 정합화 및 저장 서비스 동작 구현`
+- **변경 내용**:
+  - `server/db/models.py`에서 테이블명/인덱스명을 `detection_guidance_logs` 기준으로 정렬하고 `detected_objects_json`을 MySQL JSON(with sqlite fallback)으로 맞춤
+  - `server/db/models.py`, `server/db/schemas.py`에서 타임스탬프 필드명을 `created_at`으로 통일함
+  - `server/db/repositories.py`의 `DetectionGuidanceLogRepository.create()`를 add → commit → refresh 순서로 구현해 저장 경로를 완성함
+  - `server/services/detection_guidance_log_service.py`의 `create_log()`를 구현해 event_id 중복 조회, 신규 저장, Response 변환 흐름을 동작 상태로 전환함
+  - `build_detected_objects_json()`을 `json.dumps(..., ensure_ascii=False)`로 구현해 한글 JSON 직렬화가 유지되도록 반영함
+- **관련 파일**: `server/db/models.py`, `server/db/repositories.py`, `server/db/schemas.py`, `server/services/detection_guidance_log_service.py`
+- **검증 결과**: 변경 4개 파일 기준 정적 오류 검사에서 오류 없음 확인
+- **비고**: 이력/관계 보존 정책(FK ON DELETE SET NULL)과 event_id 중복 방지 정책을 코드에 반영한 정합화 커밋임
+
+---
+
+### 2026-07-10 | 문서 | TTS/STT 문서 정합화 및 STT 통합 가이드 추가
+
+- **커밋**: `docs: TTS/STT 문서 정합화 및 STT 통합 가이드 추가`
+- **변경 내용**:
+  - `docs/design/architecture.md`의 TTS 엔진/표기 내용을 현재 선택 이력(`pyttsx3` 기본, `piper` 선택, `supertonic` 최종 선정안) 기준으로 정리함
+  - `docs/ops/environment_variables.md`에 TTS 엔진 선택 이력 및 현재 런타임 반영 범위를 보강함
+  - `docs/stage-guides/stage7_tts_design.md` 버전을 `v0.4.0`으로 올리고 TTS 엔진 현황 및 환경 변수 설명을 최신화함
+  - `docs/stage-guides/stage_stt_integration_guide.md`를 신규 추가해 `stt_audio -> STT -> Bridge -> TTS -> guide` 흐름, 메시지 계약, 가드레일, 테스트 체크리스트를 문서화함
+- **관련 파일**: `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage7_tts_design.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/changelogs/jh.md`
+- **검증 결과**: 문서 상호 참조 및 항목 정합성 점검 완료(코드 동작 검증은 별도 테스트 범위)
+- **비고**: 문서 포맷은 기존 구조를 유지하고 내용 위주로 업데이트함

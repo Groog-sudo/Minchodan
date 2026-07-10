@@ -18,6 +18,7 @@ import { DebugTriggerPanel } from "./DebugTriggerPanel";
 import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS } from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
+import { useLocation, type GpsCoords } from "../hooks/useLocation";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
 import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -106,9 +107,39 @@ export function CameraView() {
     stopCapture,
     requestCameraPermission,
     reportInferenceLatency,
+    useStreamCapture,
+    frameProcessor,
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
+  const { requestLocationPermission, startWatching, stopWatching } = useLocation();
+
+  // GPS 전송: 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
+  // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
+  // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
+  useEffect(() => {
+    if (isMockMode) return;
+    let cancelled = false;
+
+    (async () => {
+      const granted = await requestLocationPermission();
+      if (cancelled || !granted) return;
+      await startWatching((coords: GpsCoords) => {
+        send({
+          type: "realtime_gps",
+          lat: coords.lat,
+          lon: coords.lon,
+          heading: coords.heading,
+        });
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      stopWatching();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMockMode]);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   const { status: sttStatus, startRecording: startSttRecording, stopRecordingAndSend: stopSttRecording } =
@@ -138,6 +169,9 @@ export function CameraView() {
       setLastDetect(`서버가이드: ${text} (${risk})`);
     } else if (lastMessage.type === "ack") {
       setLastDetect(`서버추론: 안전 (${lastMessage.decode_ms ?? 0}ms)`);
+    } else if (lastMessage.type === "server_detection") {
+      const serverDets = lastMessage.detections ?? [];
+      setDetections(serverDets);
     }
   }, [lastMessage]);
 
@@ -236,7 +270,11 @@ export function CameraView() {
       reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
       // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
-      setDetectionsRef.current(allDetections);
+
+      // 실기기(REAL) 모드일 때는 온디바이스 입력이 비어 있으므로, 서버의 server_detection 렌더링 결과를 덮어쓰지 않도록 MOCK 모드에만 세팅한다.
+      if (isMockModeRef.current) {
+        setDetectionsRef.current(allDetections);
+      }
 
       // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
       const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
@@ -311,12 +349,14 @@ export function CameraView() {
         void audioEngine.stopBeep();
       }
 
-      const top = [...det, ...seg][0];
-      setLastDetectRef.current(
-        top
-          ? `${top.model}:${top.className} ${(top.confidence * 100).toFixed(0)}% (${dt}ms) seg=${seg.length} det=${det.length}`
-          : `무탐지 (${dt}ms) seg=${seg.length} det=${det.length}`,
-      );
+      if (isMockModeRef.current) {
+        const top = [...det, ...seg][0];
+        setLastDetectRef.current(
+          top
+            ? `${top.model}:${top.className} ${(top.confidence * 100).toFixed(0)}% (${dt}ms) seg=${seg.length} det=${det.length}`
+            : `무탐지 (${dt}ms) seg=${seg.length} det=${det.length}`,
+        );
+      }
       if (isMockModeRef.current) {
         const src = getFrameProvider()?.getPreviewSource?.();
         if (typeof src === "number") setPreviewSrcRef.current(src);
@@ -404,7 +444,22 @@ export function CameraView() {
             resizeMode="cover"
           />
         ) : (
-          !isMockMode && (
+          !isMockMode &&
+          (useStreamCapture ? (
+            // 프레임 프로세서 경로(기본값, 2026-07-09): AVCapturePhotoOutput을 세션에
+            // 붙이지 않아(photo 미지정) 촬영마다 발생하던 AVAudioSessionInterruption을
+            // 원천 제거한다. 플랫폼별 구현: client/src/services/frameCaptureProviderSelect.ios.ts
+            <Camera
+              ref={cameraRef}
+              device={device!}
+              isActive={true}
+              video={true}
+              audio={false}
+              pixelFormat="yuv"
+              frameProcessor={frameProcessor}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : (
             <Camera
               ref={cameraRef}
               device={device!}
@@ -413,7 +468,7 @@ export function CameraView() {
               audio={false}
               style={StyleSheet.absoluteFill}
             />
-          )
+          ))
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}

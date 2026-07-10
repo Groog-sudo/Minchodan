@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 
 if TYPE_CHECKING:
     from piper import PiperVoice
+    from supertonic import TTS as SupertonicTTS
+    from supertonic import Style as SupertonicStyle
 
 # ============================================================
 # [모듈 헤더]
@@ -183,6 +185,24 @@ class PiperTTSService(TTSService):
             self._pygoruut = Pygoruut(writeable_bin_dir="")
 
         raw = str(self._pygoruut.phonemize(language="Korean", sentence=text))
+
+        # [2026-07-09 실측 수정] pygoruut(goruut 0.8.1 포함)의 한국어 사전이
+        # 불완전해 흔한 음절('측', '직', '걸', '볼', '밑' 등)을 구두점(PrePunct)으로
+        # 오분류하고 발음에서 통째로 누락시킨다. 예: '우측으로 돌아가세요' ->
+        # '측uɯɾo toɾagasɛjo' (IPA 표기, 측 발음 소실 -> 재생 시 "우으로"로 들려 사용자가  # noqa: RUF003
+        # 음성 짤림으로 체감). 결과 문자열에 한글이 남아 있으면 누락이 발생한
+        # 것이므로, 표준 발음법 기반 규칙 변환기(korean_g2p)로 문장 전체를 대체
+        # 변환한다. 정상 변환된 문장은 모델 학습 분포(pygoruut 출력)를 그대로 쓴다.
+        if any("가" <= c <= "힣" for c in raw):
+            from server.tts.korean_g2p import phonemize_korean
+
+            fallback = phonemize_korean(text)
+            logger.warning(
+                f"[PiperTTS] pygoruut 음절 누락 감지 -> 규칙 기반 G2P 대체: "
+                f"text={text!r}, pygoruut={raw!r}, g2p={fallback!r}"
+            )
+            raw = fallback
+
         valid = self._valid_phonemes or set()
         return "".join(c for c in raw if c in valid or c == " ")
 
@@ -246,10 +266,206 @@ class PiperTTSService(TTSService):
             return None
 
 
+class SupertonicTTSService(TTSService):
+    """Supertonic(supertone-inc) ONNX 기반 한국어 TTS 서비스.
+
+    [도입 경위, 2026-07-09] PiperTTSService(piper-kss-korean 모델)는 pygoruut/자체
+    규칙 기반 G2P/espeak 등 어떤 음소화 경로를 쓰더라도 실기기 청취 검증에서
+    부자연스러운 발음이 확인됐다(문장 중간 음절 누락 및 조음 이상, 모델 자체
+    품질 한계로 판단). Supertonic 3(99M 파라미터, MIT 라이선스, 31개 언어,
+    ONNX Runtime 기반)으로 교체 검증한 결과 동일 문장에서 자연스러운 한국어
+    발음이 확인되어(사용자 청취 승인, 2026-07-09) 신규 엔진으로 추가한다.
+    PiperTTSService는 TTSService 추상화의 핫스왑 설계 의도대로 코드에 남겨두고
+    TTS_ENGINE 환경 변수로 선택한다.
+
+    [모델 캐시 경로 주의] 모델 자산(~380MB)을 server/models/ 하위에 두면
+    docker-compose.yml의 `../server:/app/server` 볼륨 마운트가 컨테이너 시작 시
+    빌드 타임에 받아둔 내용을 호스트 쪽 내용으로 덮어써 버려(pygoruut 사례와 동일
+    문제), 빌드 타임 사전 다운로드가 무의미해진다. 라이브러리 기본 캐시 경로
+    (~/.cache/supertonic3, /app 바깥)를 그대로 사용해 이 문제를 피한다.
+    """
+
+    def __init__(self) -> None:
+        model_dir_env = os.getenv("SUPERTONIC_MODEL_DIR", "").strip()
+        self.model_dir = model_dir_env or None
+        self.voice_name = os.getenv("SUPERTONIC_VOICE", "F1")
+        self.total_steps = int(os.getenv("SUPERTONIC_TOTAL_STEPS", "8"))
+        self.speed_min = float(os.getenv("SUPERTONIC_SPEED_MIN", "0.7"))
+        self.speed_max = float(os.getenv("SUPERTONIC_SPEED_MAX", "2.0"))
+        self._tts: SupertonicTTS | None = None
+        self._style: SupertonicStyle | None = None
+        self._load_lock = asyncio.Lock()
+        # [2026-07-09 실측 수정] tts.synthesize()가 스레드 안전하다는 보장이 없어(Piper의
+        # onnxruntime InferenceSession.run()과 달리 공식 문서화된 바 없음), 인지 경로
+        # 연속 안내 요청이 asyncio.to_thread로 겹쳐 실행될 때 서로 다른 문장인데도
+        # b64len/duration이 완전히 동일한 오디오가 나오는 결함이 실기기 청취 검증으로
+        # 확인됐다(내부 파이프라인 버퍼 경합으로 추정). 합성 호출 자체를 직렬화한다.
+        self._synthesize_lock = asyncio.Lock()
+
+    def _load_sync(self) -> tuple[SupertonicTTS, SupertonicStyle]:
+        """블로킹 ONNX 세션 로드 및 보이스 스타일 로드를 동기 함수로 분리한다."""
+        from supertonic import TTS
+
+        tts = TTS(model_dir=self.model_dir, auto_download=True)
+        style = tts.get_voice_style(voice_name=self.voice_name)
+        logger.info(f"[SupertonicTTS] 모델 로드 완료 (voice={self.voice_name})")
+        return tts, style
+
+    async def _ensure_loaded(self) -> tuple[SupertonicTTS, SupertonicStyle]:
+        if self._tts is not None and self._style is not None:
+            return self._tts, self._style
+        async with self._load_lock:
+            if self._tts is None:
+                self._tts, self._style = await asyncio.to_thread(self._load_sync)
+        return self._tts, self._style
+
+    def _synthesize_sync(
+        self, tts: SupertonicTTS, style: SupertonicStyle, text: str, speed: float
+    ) -> bytes | None:
+        """블로킹 합성 실행 및 float32 파형 -> 16bit PCM WAV 변환을 동기 함수로 분리한다."""
+        import numpy as np
+
+        wav, _duration = tts.synthesize(
+            text=text,
+            lang="ko",
+            voice_style=style,
+            total_steps=self.total_steps,
+            speed=speed,
+        )
+        samples = np.clip(np.asarray(wav).squeeze(), -1.0, 1.0)
+        # [2026-07-09] 페이로드 크기(44.1kHz vs 22.05kHz 데시메이션) 축소 테스트로는
+        # 실기기 절단 현상이 재현/해소되지 않아 크기 자체는 원인이 아님을 확인했다.
+        # base64 전송을 WS 바이너리 프레임으로 전환하는 것으로 원인을 좁히는 중이라,
+        # 품질 저하 없는 원본 44.1kHz로 되돌린다.
+        pcm16 = (samples * 32767.0).astype(np.int16)
+
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(44100)
+            wav_file.writeframes(pcm16.tobytes())
+
+        audio_bytes = buffer.getvalue()
+        if not audio_bytes:
+            logger.error("[SupertonicTTS] 합성 결과 오디오가 비어 있습니다.")
+            return None
+        return audio_bytes
+
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
+        if not text or not text.strip():
+            logger.warning("[SupertonicTTS] 빈 텍스트는 합성하지 않습니다.")
+            return None
+
+        try:
+            tts, style = await self._ensure_loaded()
+            clamped_speed = max(self.speed_min, min(self.speed_max, speed))
+
+            # asyncio 이벤트 루프 블로킹 방지를 위해 동기 실행을 스레드로 위임하되,
+            # 합성 자체는 _synthesize_lock으로 직렬화해 겹쳐 실행되지 않게 한다.
+            async with self._synthesize_lock:
+                return await asyncio.to_thread(
+                    self._synthesize_sync, tts, style, text, clamped_speed
+                )
+        except Exception as e:
+            logger.error(f"[SupertonicTTS] 합성 중 오류 발생: {e}")
+            return None
+
+
 # ============================================================
-# [파트 3] get_tts_service() 팩토리 함수
+# [파트 3] Pyttsx3TTSService 클래스
+# - pyttsx3 기반 OS 내장형 한글 TTS 엔진 구현체
+# ============================================================
+
+
+class Pyttsx3TTSService(TTSService):
+    """
+    pyttsx3 기반 한국어 TTS 서비스.
+    임시 파일에 음성을 WAV 포맷으로 저장한 뒤, 파일 바이트 데이터를 읽어 반환합니다.
+    """
+
+    def __init__(self) -> None:
+        logger.info("[Pyttsx3TTS] pyttsx3 서비스가 준비되었습니다.")
+
+    def _synthesize_sync(self, text: str, output_path: str, speed: float) -> bytes | None:
+        import pyttsx3
+
+        is_windows = sys.platform == "win32"
+        if is_windows:
+            import pythoncom
+
+            pythoncom.CoInitialize()
+
+        try:
+            # 호출 단위로 독립된 pyttsx3 엔진 생성
+            engine = pyttsx3.init()
+
+            # 발화 속도 설정 (기본 속도에 배율 적용)
+            rate = engine.getProperty("rate")
+            engine.setProperty("rate", int(rate * speed))
+
+            # 한국어 목소리 설정 시도
+            voices = engine.getProperty("voices")
+            for voice in voices:
+                name_lower = voice.name.lower()
+                languages = getattr(voice, "languages", [])
+                langs_lower = [str(lang).lower() for lang in languages]
+
+                is_korean = (
+                    "korean" in name_lower
+                    or "ko" in name_lower
+                    or any("ko" in lang for lang in langs_lower)
+                )
+                if is_korean:
+                    engine.setProperty("voice", voice.id)
+                    break
+
+            # 파일로 저장 후 대기
+            engine.save_to_file(text, output_path)
+            engine.runAndWait()
+
+            # 생성된 음성 파일 로드
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                with open(output_path, "rb") as f:
+                    return f.read()
+            else:
+                logger.error(f"[Pyttsx3TTS] 음성 파일 저장 실패 또는 크기가 0입니다: {output_path}")
+                return None
+        except Exception as e:
+            logger.error(f"[Pyttsx3TTS] 동기 합성 중 에러 발생: {e}")
+            return None
+        finally:
+            if is_windows:
+                pythoncom.CoUninitialize()
+
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
+        if not text or not text.strip():
+            logger.warning("[Pyttsx3TTS] 빈 텍스트는 합성하지 않습니다.")
+            return None
+
+        # 임시 파일 경로를 생성하고, 합성이 완료되면 바이트를 반환 후 삭제
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            temp_path = temp_file.name
+
+        try:
+            # asyncio 이벤트 루프의 블로킹 방지를 위해 비동기 스레드 실행
+            audio_data = await asyncio.to_thread(self._synthesize_sync, text, temp_path, speed)
+            return audio_data
+        except Exception as e:
+            logger.error(f"[Pyttsx3TTS] generate 에러 발생: {e}")
+            return None
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except Exception as e:
+                    logger.warning(f"[Pyttsx3TTS] 임시 파일 삭제 실패: {e}")
+
+
+# ============================================================
+# [파트 4] get_tts_service() 팩토리 함수
 # - 환경 변수에 따라 어떤 TTS 구현체를 사용할지 결정
-# - 현재 지원: piper (기본)
+# - 현재 지원: supertonic (기본), piper, pyttsx3
 # - 클라이언트(react-native-tts) 사용 시에도 이 팩토리는 유지될 수 있음
 #   (단, 이 경우 실제 audio bytes 생성은 클라이언트가 담당)
 # ============================================================
@@ -258,24 +474,26 @@ class PiperTTSService(TTSService):
 def get_tts_service() -> TTSService:
     """
     현재 설정에 맞는 음성 합성 서비스 객체를 만들어서 돌려준다.
-    환경 변수 TTS_ENGINE (piper, 기본 piper)에 따라 결정.
+    환경 변수 TTS_ENGINE (supertonic, piper, pyttsx3. 기본 supertonic)에 따라 결정.
     docs/environment_variables.md, pipeline_stage_design.md, architecture.md 준수.
+
+    supertonic이 기본값인 이유는 2026-07-09 실기기 청취 검증 결과 발음 품질이
+    가장 우수했기 때문이다(CLAUDE.md §2). pyttsx3는 GPU/네트워크 없이 로컬
+    개발 환경(특히 Windows)에서 즉시 구동 가능한 저사양 대체 옵션으로 보존한다.
     """
+    engine = os.getenv("TTS_ENGINE", "supertonic").lower().strip()
 
-    # ------------------------------------------------------------
-    # [변수] engine : 사용할 TTS 엔진 종류 결정
-    # - os.getenv로 환경 변수 읽기 (기본값 "piper")
-    # - .lower().strip()으로 대소문자/공백 정규화
-    # ------------------------------------------------------------
-    engine = os.getenv("TTS_ENGINE", "piper").lower().strip()
-
-    if engine not in {"", "default", "piper"}:
-        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(piper) 사용.")
+    if engine not in {"", "default", "supertonic", "piper", "pyttsx3"}:
+        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(supertonic) 사용.")
 
     try:
-        return PiperTTSService()
+        if engine == "piper":
+            return PiperTTSService()
+        if engine == "pyttsx3":
+            return Pyttsx3TTSService()
+        return SupertonicTTSService()
     except Exception as e:
-        logger.error(f"[TTS] PiperTTSService 초기화 실패: {e}")
+        logger.error(f"[TTS] TTS 서비스 초기화 실패 (engine={engine}): {e}")
         return NullTTSService()
 
 

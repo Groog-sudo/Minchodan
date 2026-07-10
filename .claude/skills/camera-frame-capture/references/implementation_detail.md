@@ -1,5 +1,14 @@
 # Camera Frame Capture — 상세 구현 레퍼런스
 
+> **2026-07-09 정정**: 아래 `takePhoto()` 기반 파이프라인은 반사 캡처의 **기본 경로가 아니게 됐다**.
+> 실기기 시스템 로그 분석 결과 `AVCapturePhotoOutput.capturePhoto()`가 촬영마다 iOS 오디오
+> 세션을 인터럽트해(`enableShutterSound:false`로도 발생) 동시 재생 중인 TTS 안내 음성을
+> 순간 끊는 근본 원인으로 확인됐다. 기본 경로는 VisionCamera Frame Processor(연속 비디오
+> 스트림, `AVCapturePhotoOutput` 미사용)로 전환됐다 - `../SKILL.md`의 2026-07-09 정정
+> 노트와 `docs/changelogs/kb.md` 참조. 이 문서의 `takePhoto()` 코드는
+> `CAPTURE_ENGINE='takePhoto'` 롤백 경로(`client/src/hooks/useCamera.ts`의
+> `captureRealFramePhoto`)로만 유효하다.
+
 ## 1. 이미지 파이프라인 상세
 
 ### 1.1 전체 데이터 흐름
