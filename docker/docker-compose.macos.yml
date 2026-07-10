@@ -23,16 +23,7 @@ services:
     environment:
       # Docker Compose 환경에서는 컨테이너 서비스명과 호스트 Ollama 주소로 재설정
       - REDIS_URL=redis://redis:6379
-      # macOS에서도 Ollama는 도커 외부 로컬에서 별도로 띄움
-      - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - DB_TYPE=mariadb
-      - DB_HOST=mariadb
-      - DB_PORT=3306
-      - DB_NAME=${COMPOSE_DB_NAME:-minchodan_db}
-      - DB_USER=${COMPOSE_DB_USER:-minchodan_team}
-      - DB_PASSWORD=${COMPOSE_DB_PASSWORD:-minchodan_password}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       redis:
         condition: service_started

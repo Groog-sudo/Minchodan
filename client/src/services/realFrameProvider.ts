@@ -8,7 +8,8 @@
  */
 
 import jpeg from "jpeg-js";
-import { FRAME_SIZE } from "./frameProvider";
+
+const FRAME_SIZE = 640;
 
 export function decodeBase64JpegToChw(base64: string): Float32Array {
   try {

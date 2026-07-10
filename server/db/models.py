@@ -23,6 +23,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -30,6 +31,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SQLEnum,
 )
+from sqlalchemy.dialects.mysql import JSON as MySQLJSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -78,6 +80,14 @@ class AdminAccountStatus(StrEnum):
     INACTIVE = "inactive"
     LOCKED = "locked"
     DELETED = "deleted"
+
+
+class StreamType(StrEnum):
+    """탐지 스트림 유형 (반사/인지/미분류)."""
+
+    REFLEX = "reflex"
+    COGNITIVE = "cognitive"
+    UNKNOWN = "unknown"
 
 
 def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
@@ -148,6 +158,14 @@ class AppUser(Base):
         passive_deletes="all",
     )
 
+    # 발표 포인트:
+    # app_users.user_id를 참조하는 로그 테이블(1:N) 관계입니다.
+    # user가 삭제되면 로그의 user_id는 NULL로 남겨 이력 보존이 가능합니다.
+    detection_guidance_logs: Mapped[list[DetectionGuidanceLog]] = relationship(
+        back_populates="user",
+        passive_deletes="all",
+    )
+
 
 class UserDevice(Base):
     """사용자 등록 단말."""
@@ -203,6 +221,14 @@ class UserDevice(Base):
     # 따라서 UserDevice -> AppUser는 N:1 관계이고, 타입은 list가 아닌 단일 "AppUser"입니다.
     # back_populates 값은 AppUser.devices와 서로 맞물려 양방향 탐색을 가능하게 합니다.
     user: Mapped[AppUser] = relationship(back_populates="devices")
+
+    # 발표 포인트:
+    # user_devices.device_id를 참조하는 로그 테이블(1:N) 관계입니다.
+    # 기기 삭제 시 로그는 남고 device_id만 NULL 처리됩니다.
+    detection_guidance_logs: Mapped[list[DetectionGuidanceLog]] = relationship(
+        back_populates="device",
+        passive_deletes="all",
+    )
 
 
 class AdminAccount(Base):
@@ -280,6 +306,71 @@ class AdminLoginAudit(Base):
     )
 
 
+class DetectionGuidanceLog(Base):
+    """탐지/안내 결과 영속 로그 테이블 매핑.
+
+    주의:
+    - 머지(5cd8372) 기준 테이블명은 detection_guidance_logs 입니다.
+    - event_id는 NULL 허용 + UNIQUE입니다(MySQL은 NULL을 여러 건 허용).
+    - user/device 삭제 시 FK는 SET NULL로 이력 보존합니다.
+    - detected_objects_json은 MySQL JSON 타입, created_at은 6자리 마이크로초입니다.
+    """
+
+    __tablename__ = "detection_guidance_logs"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="UK_DETECTION_GUIDANCE_LOGS_EVENT_ID"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_USER_ID", "user_id"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_DEVICE_ID", "device_id"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT", "detected_at"),
+        Index("IDX_DETECTION_GUIDANCE_LOGS_STREAM_TYPE", "stream_type"),
+        {"sqlite_autoincrement": True},
+    )
+
+    log_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK,
+        ForeignKey("app_users.user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK,
+        ForeignKey("user_devices.device_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    stream_type: Mapped[StreamType] = mapped_column(
+        SQLEnum(
+            StreamType,
+            name="stream_type",
+            values_callable=_enum_values,
+            native_enum=False,
+            create_constraint=True,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=StreamType.UNKNOWN,
+        server_default=StreamType.UNKNOWN.value,
+    )
+    # detected_objects_json: MySQL JSON 타입으로 저장합니다.
+    # SQLite 환경에서는 Text로 폴백됩니다(with_variant).
+    detected_objects_json: Mapped[str] = mapped_column(
+        Text().with_variant(MySQLJSON, "mysql"),
+        nullable=False,
+    )
+    tts_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # created_at: DB 레코드 적재 시각 (마이크로초 6자리)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+
+    user: Mapped[AppUser | None] = relationship(back_populates="detection_guidance_logs")
+    device: Mapped[UserDevice | None] = relationship(back_populates="detection_guidance_logs")
+
+
 __all__ = [
     "AdminAccount",
     "AdminAccountStatus",
@@ -287,7 +378,9 @@ __all__ = [
     "AdminRole",
     "AppUser",
     "Base",
+    "DetectionGuidanceLog",
     "DevicePlatform",
+    "StreamType",
     "UserDevice",
     "UserStatus",
 ]

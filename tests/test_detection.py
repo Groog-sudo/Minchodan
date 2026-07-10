@@ -262,7 +262,7 @@ class TestPipeline:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(None, "test", "evt-1", "dev-1")
+        result, _, _ = await pipeline.run(None, "test", "evt-1", "dev-1")
         assert isinstance(result, DetectionResult)
         assert result.risk_hint == "none"
 
@@ -275,7 +275,7 @@ class TestPipeline:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-2", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-2", "dev-1")
         assert isinstance(result, DetectionResult)
         assert result.risk_hint == "none"
         assert result.inference_ms >= 0
@@ -293,7 +293,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-det-fail", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-det-fail", "dev-1")
         assert isinstance(result, DetectionResult)
         assert result.detections == []
         assert len(result.surface) == 1
@@ -317,7 +317,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-seg-fail", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-seg-fail", "dev-1")
         assert isinstance(result, DetectionResult)
         assert len(result.detections) == 1
         assert result.surface == []
@@ -346,7 +346,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-reflex", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-reflex", "dev-1")
         assert isinstance(result, ReflexAlert)
         assert result.alert_id == "high_car_front"
         assert result.direction == "front"
@@ -363,7 +363,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-surface", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-surface", "dev-1")
         assert isinstance(result, ReflexAlert)
         assert result.alert_id == "surface_caution"
         assert result.direction == "front"
@@ -383,7 +383,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-roadway", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-roadway", "dev-1")
         assert isinstance(result, DetectionResult)
         assert result.risk_hint == "mid"
 
@@ -396,7 +396,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-empty", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-empty", "dev-1")
         assert isinstance(result, DetectionResult)
         assert result.risk_hint == "none"
 
@@ -418,7 +418,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-mid", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-mid", "dev-1")
         assert isinstance(result, DetectionResult)
         assert result.risk_hint == "mid"
         mock_redis_bus.publish_event.assert_called_once()
@@ -459,7 +459,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result = await pipeline.run(frame, "test", "evt-track-fail", "dev-1")
+        result, _, _ = await pipeline.run(frame, "test", "evt-track-fail", "dev-1")
         assert isinstance(result, DetectionResult)
         assert result.risk_hint == "mid"
 

@@ -247,35 +247,116 @@ class PiperTTSService(TTSService):
 
 
 # ============================================================
-# [파트 3] get_tts_service() 팩토리 함수
+# [파트 3] Pyttsx3TTSService 클래스
+# - pyttsx3 기반 OS 내장형 한글 TTS 엔진 구현체
+# ============================================================
+
+
+class Pyttsx3TTSService(TTSService):
+    """
+    pyttsx3 기반 한국어 TTS 서비스.
+    임시 파일에 음성을 WAV 포맷으로 저장한 뒤, 파일 바이트 데이터를 읽어 반환합니다.
+    """
+
+    def __init__(self) -> None:
+        logger.info("[Pyttsx3TTS] pyttsx3 서비스가 준비되었습니다.")
+
+    def _synthesize_sync(self, text: str, output_path: str, speed: float) -> bytes | None:
+        import pyttsx3
+        is_windows = sys.platform == "win32"
+        if is_windows:
+            import pythoncom
+            pythoncom.CoInitialize()
+
+        try:
+            # 호출 단위로 독립된 pyttsx3 엔진 생성
+            engine = pyttsx3.init()
+            
+            # 발화 속도 설정 (기본 속도에 배율 적용)
+            rate = engine.getProperty('rate')
+            engine.setProperty('rate', int(rate * speed))
+            
+            # 한국어 목소리 설정 시도
+            voices = engine.getProperty('voices')
+            for voice in voices:
+                name_lower = voice.name.lower()
+                languages = getattr(voice, 'languages', [])
+                langs_lower = [str(l).lower() for l in languages]
+                
+                is_korean = (
+                    "korean" in name_lower or 
+                    "ko" in name_lower or 
+                    any("ko" in lang for lang in langs_lower)
+                )
+                if is_korean:
+                    engine.setProperty('voice', voice.id)
+                    break
+            
+            # 파일로 저장 후 대기
+            engine.save_to_file(text, output_path)
+            engine.runAndWait()
+            
+            # 생성된 음성 파일 로드
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                with open(output_path, "rb") as f:
+                    return f.read()
+            else:
+                logger.error(f"[Pyttsx3TTS] 음성 파일 저장 실패 또는 크기가 0입니다: {output_path}")
+                return None
+        except Exception as e:
+            logger.error(f"[Pyttsx3TTS] 동기 합성 중 에러 발생: {e}")
+            return None
+        finally:
+            if is_windows:
+                pythoncom.CoUninitialize()
+
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
+        if not text or not text.strip():
+            logger.warning("[Pyttsx3TTS] 빈 텍스트는 합성하지 않습니다.")
+            return None
+
+        # 임시 파일 경로를 생성하고, 합성이 완료되면 바이트를 반환 후 삭제
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            temp_path = temp_file.name
+
+        try:
+            # asyncio 이벤트 루프의 블로킹 방지를 위해 비동기 스레드 실행
+            audio_data = await asyncio.to_thread(self._synthesize_sync, text, temp_path, speed)
+            return audio_data
+        except Exception as e:
+            logger.error(f"[Pyttsx3TTS] generate 에러 발생: {e}")
+            return None
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except Exception as e:
+                    logger.warning(f"[Pyttsx3TTS] 임시 파일 삭제 실패: {e}")
+
+
+# ============================================================
+# [파트 4] get_tts_service() 팩토리 함수
 # - 환경 변수에 따라 어떤 TTS 구현체를 사용할지 결정
-# - 현재 지원: piper (기본)
-# - 클라이언트(react-native-tts) 사용 시에도 이 팩토리는 유지될 수 있음
-#   (단, 이 경우 실제 audio bytes 생성은 클라이언트가 담당)
 # ============================================================
 
 
 def get_tts_service() -> TTSService:
     """
     현재 설정에 맞는 음성 합성 서비스 객체를 만들어서 돌려준다.
-    환경 변수 TTS_ENGINE (piper, 기본 piper)에 따라 결정.
-    docs/environment_variables.md, pipeline_stage_design.md, architecture.md 준수.
+    환경 변수 TTS_ENGINE (기본값: pyttsx3)에 따라 결정.
     """
+    engine = os.getenv("TTS_ENGINE", "pyttsx3").lower().strip()
 
-    # ------------------------------------------------------------
-    # [변수] engine : 사용할 TTS 엔진 종류 결정
-    # - os.getenv로 환경 변수 읽기 (기본값 "piper")
-    # - .lower().strip()으로 대소문자/공백 정규화
-    # ------------------------------------------------------------
-    engine = os.getenv("TTS_ENGINE", "piper").lower().strip()
-
-    if engine not in {"", "default", "piper"}:
-        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(piper) 사용.")
+    if engine not in {"", "default", "piper", "pyttsx3"}:
+        logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(pyttsx3) 사용.")
 
     try:
-        return PiperTTSService()
+        if engine == "piper":
+            return PiperTTSService()
+        else:
+            return Pyttsx3TTSService()
     except Exception as e:
-        logger.error(f"[TTS] PiperTTSService 초기화 실패: {e}")
+        logger.error(f"[TTS] TTS 서비스 초기화 실패 (engine={engine}): {e}")
         return NullTTSService()
 
 

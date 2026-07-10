@@ -95,18 +95,19 @@ class DetectionPipeline:
         stream: str,
         event_id: str,
         device_id: str,
-    ) -> DetectionResult | ReflexAlert:
+    ) -> tuple[DetectionResult | ReflexAlert, list[Detection], list[SurfaceResult]]:
         start_ts = time.time()
 
         if frame is None:
             logger.warning(f"[Pipeline] 프레임 None: event_id={event_id}")
-            return DetectionResult(
+            res = DetectionResult(
                 event_id=event_id,
                 detections=[],
                 surface=[],
                 risk_hint="none",
                 inference_ms=0.0,
             )
+            return res, [], []
 
         height, width = frame.shape[:2]
 
@@ -129,21 +130,21 @@ class DetectionPipeline:
             reflex_alert.event_id = event_id
             reflex_alert.ts = time.time()
             logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
-            return reflex_alert
+            return reflex_alert, detections, surfaces
 
         head_level_alert = self._evaluate_head_level(detections, height, width)
         if head_level_alert is not None:
             head_level_alert.event_id = event_id
             head_level_alert.ts = time.time()
             logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
-            return head_level_alert
+            return head_level_alert, detections, surfaces
 
         surface_alert = self._evaluate_surface(surfaces, height)
         if surface_alert is not None:
             surface_alert.event_id = event_id
             surface_alert.ts = time.time()
             logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
-            return surface_alert
+            return surface_alert, detections, surfaces
 
         risk_hint = self._classify_risk(detections, surfaces)
         inference_ms = (time.time() - start_ts) * 1000
@@ -151,13 +152,14 @@ class DetectionPipeline:
         if risk_hint in ("mid", "low"):
             await self._publish_cognitive(event_id, detections, surfaces, risk_hint)
 
-        return DetectionResult(
+        res = DetectionResult(
             event_id=event_id,
             detections=detections,
             surface=surfaces,
             risk_hint=risk_hint,
             inference_ms=inference_ms,
         )
+        return res, detections, surfaces
 
     @staticmethod
     def _evaluate_reflex(

@@ -3,6 +3,7 @@
     "name": "Minchodan",
     "slug": "minchodan",
     "version": "1.0.0",
+    "scheme": "minchodan",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

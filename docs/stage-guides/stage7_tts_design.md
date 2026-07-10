@@ -1,7 +1,7 @@
-# Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
+﻿# Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
 
 > **작성일**: 2026-07-01
-> **버전**: v0.3.0 (2026-07-09 §2 각 항목에 실제 구현 상태 표기 추가: reflex_clip_sender.py가 사실은 어디서도 호출되지 않는 죽은 코드였음을 정정, 클라이언트 클립 번들·단말 TTS 폴백 구현 완료 반영 + 이전 v0.2.0 이력 유지)
+> **버전**: v0.4.0 (2026-07-10 TTS 엔진 선택 이력 추가: piper → sherpa-onnx → supertonic 최종 선정안. 현재 코드 반영: pyttsx3 기본 / piper 선택. 이전 v0.3.0 이력 유지)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 7단계, [`docs/architecture.md`](architecture.md) 5.7절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md) 5.7절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 3, 17.2
 > **스킬 참조**: [`.agents/skills/tts-voice-streamer/SKILL.md`](../.agents/skills/tts-voice-streamer/SKILL.md)
@@ -29,7 +29,7 @@
 
 - **[완료]** 반사 경로: direction/유형 기준 사전합성 클립 즉시 재생 + 선점 + 중복 억제. **2026-07-09 정정**: 실제 전송 경로는 `server/detection/consumer.py`의 `_send_reflex_alert()`가 게이트(`reflex_gate.py`/`surface_gate.py`/`head_level_gate.py`)가 채운 `ReflexAlert.clip`을 그대로 사용한다 — `server/tts/reflex_clip_sender.py`(아래 참조)는 실제로는 어디서도 호출되지 않는 죽은 코드였다.
 - **[완료]** 인지 경로: LangGraph L3 검증 통과 가이드 문장 → 서버 실시간 TTS(Piper, `TTS_ENGINE=piper`) → base64 **WAV**(필드명은 `audio_mp3_b64`이나 실제 포맷은 WAV) WS 전송 → 단말 `expo-audio` 재생(Web Audio API 아님, React Native 환경 제약)
-- **[부분 완료]** TTSService 추상화 계층 (현재 구현: Piper만 지원. Kokoro/Coqui는 미구현 - 핫스왑 대비 설계만 존재, 2026-07-09 기준 이번 범위에서 제외 확인됨)
+- **[부분 완료]** TTSService 추상화 계층 (현재 구현: pyttsx3 기본 + piper 선택 지원. 엔진 선택 이력: piper → sherpa-onnx → **supertonic 최종 선정안** — supertonic은 코드 미반영, 순차 전환 예정)
 - **[완료]** 중복 억제 (Suppressor, Redis SETEX 60초)
 - **[부분 완료]** 햅틱·접근성 연동 (Haptics 연동 완료, `announceForAccessibility` 별도 확인 필요)
 - **[완료, 2026-07-09]** 클라이언트 번들 클립 관리: 최초 설계(`data/reflex_clips/` → `client/assets/reflex_clips/`)와 실제 경로가 다르다 — 실제로는 `client/assets/sounds/reflex_clips/`(기존 `beep.wav`와 같은 `sounds/` 하위 규칙 준수)에 WAV 5종(direction 3종 + surface_caution + head_level_warning)으로 번들됨. `audioEngine.playReflexClip()` 신규 구현.
@@ -58,7 +58,7 @@
 - `client/src/utils/haptics.ts`: Haptics + announceForAccessibility
 
 ### 환경 변수 (docs/environment_variables.md 참조)
-- `TTS_ENGINE`: piper (기본, 유일하게 지원) — `kokoro`/`coqui` 지정 시 `tts_service.py`가 경고 로그를 남기고 piper로 강제 폴백
+- `TTS_ENGINE`: `pyttsx3` (기본, OS 내장) 또는 `piper` (선택) — 최종 선정 엔진은 supertonic이며 순차 반영 예정. `kokoro`/`coqui` 지정 시 pyttsx3로 폴백
 - `DATA_REFLEX_CLIPS`: data/reflex_clips
 
 ### 테스트

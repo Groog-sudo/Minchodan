@@ -23,7 +23,8 @@ export type MessageType =
   | "ack"
   | "reflex_alert"
   | "guide"
-  | "error";
+  | "error"
+  | "server_detection";
 
 export interface WSMessage {
   type: MessageType;
@@ -49,6 +50,7 @@ export interface WSMessage {
   guidance_text?: string;
   audio_mp3_b64?: string;
   duration_ms?: number;
+  detections?: any[];
 }
 
 export interface DetectionPayload {

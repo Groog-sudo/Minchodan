@@ -160,7 +160,7 @@ class DetectionConsumer:
 
         frame: np.ndarray = processed.frame
         try:
-            result = await self._pipeline.run(
+            result, detections, surfaces = await self._pipeline.run(
                 frame=frame,
                 stream=stream,
                 event_id=processed.event_id,
@@ -182,6 +182,9 @@ class DetectionConsumer:
                 }
             )
             return
+
+        # 서버 YOLO 추론 결과를 BBox 렌더링용으로 단말에 실시간 송신
+        await self._send_server_detection(processed.device_id, processed.event_id, detections, surfaces)
 
         if isinstance(result, ReflexAlert):
             self._last_status.update(
@@ -226,6 +229,62 @@ class DetectionConsumer:
                     "updated_at": now_ts(),
                     "error": "unexpected_result_type",
                 }
+            )
+
+    async def _send_server_detection(
+        self,
+        device_id: str,
+        event_id: str,
+        detections: list,
+        surfaces: list,
+    ) -> None:
+        """YOLO 및 Segmentation 탐지 결과를 BBox 표시용으로 실시간 전송한다."""
+        payload_detections = []
+        for det in detections:
+            payload_detections.append(
+                {
+                    "model": "object_detection",
+                    "className": det.class_name,
+                    "confidence": float(det.confidence),
+                    "bbox": {
+                        "x": float(det.bbox.x),
+                        "y": float(det.bbox.y),
+                        "w": float(det.bbox.w),
+                        "h": float(det.bbox.h),
+                    },
+                }
+            )
+
+        for surf in surfaces:
+            # Segmentation centroid 주변에 가상의 80x80 BBox 구성
+            if surf.centroid and len(surf.centroid) >= 2:
+                cx, cy = surf.centroid[0], surf.centroid[1]
+                payload_detections.append(
+                    {
+                        "model": "segmentation",
+                        "className": surf.class_name,
+                        "confidence": 1.0,
+                        "bbox": {
+                            "x": float(cx - 40),
+                            "y": float(cy - 40),
+                            "w": 80.0,
+                            "h": 80.0,
+                        },
+                    }
+                )
+
+        payload = {
+            "type": "server_detection",
+            "event_id": event_id,
+            "detections": payload_detections,
+            "ts": time.time(),
+        }
+
+        try:
+            await manager.send_json(device_id, payload)
+        except Exception as e:
+            logger.error(
+                f"[DetectionConsumer] server_detection 송신 실패: device_id={device_id}, {e}"
             )
 
     async def _send_reflex_alert(self, device_id: str, alert: ReflexAlert) -> None:

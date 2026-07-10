@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Image } from "react-native";
 import {
   Camera,
   type CameraDevice,
@@ -192,14 +193,26 @@ export function useCamera(
         // ImageFixOrientationTransformer로 EXIF 회전을 이미지에 반영하므로, 세로로 촬영해
         // 90/270도 보정이 필요한 경우(orientation === landscape-left/right) 크롭 좌표계에서는
         // 가로/세로 축이 서로 뒤바뀐다. 이를 보정하지 않으면 크롭 영역이 이미지 경계를 벗어난다.
-        const isRotated90 =
-          photo.orientation === "landscape-left" ||
-          photo.orientation === "landscape-right";
-        const correctedWidth = isRotated90 ? photo.height : photo.width;
-        const correctedHeight = isRotated90 ? photo.width : photo.height;
+        // 이미지 파일의 실제 픽셀 가로/세로 크기를 런타임에 직접 획득하여 orientation 오차 원천 방지
+        const imgSize = await getImageSize(path);
+        const correctedWidth = imgSize.width;
+        const correctedHeight = imgSize.height;
         const cropSize = Math.min(correctedWidth, correctedHeight);
-        const originX = Math.floor((correctedWidth - cropSize) / 2);
-        const originY = Math.floor((correctedHeight - cropSize) / 2);
+        let originX = Math.floor((correctedWidth - cropSize) / 2);
+        let originY = Math.floor((correctedHeight - cropSize) / 2);
+
+        // 음수 좌표 방지 가드
+        if (originX < 0) originX = 0;
+        if (originY < 0) originY = 0;
+
+        // 가로 경계 가드 (x + width <= bitmap.width)
+        if (originX + cropSize > correctedWidth) {
+          originX = Math.max(0, correctedWidth - cropSize);
+        }
+        // 세로 경계 가드 (y + height <= bitmap.height)
+        if (originY + cropSize > correctedHeight) {
+          originY = Math.max(0, correctedHeight - cropSize);
+        }
 
         // expo-image-manipulator 기기 네이티브 GPU 가속 크롭/리사이징/압축 기동
         const manipResult = await manipulateAsync(
@@ -216,10 +229,12 @@ export function useCamera(
         // (실기기에서는 서버로 raw JPEG 바이트만 전송하여 GPU 추론 서버에서 디코딩 및 검출을 전담 처리함)
         const float32 = new Float32Array(0);
 
-        // 서버 WS 전송용 raw JPEG 바이트 (base64 미경유). CoreML 네이티브 브릿지 호출은
-        // RN 구 브릿지가 JSON 직렬화 가능 타입만 인자로 받을 수 있어 base64 문자열이 불가피하지만,
-        // 서버로의 WS 전송은 이 바이트를 그대로 바이너리 프레임으로 보내 33% 오버헤드를 제거한다.
-        const jpegBytes = null; // Fallback to base64 string
+        // 안드로이드 실기기에서 new File(path).bytes()의 readAsStringAsync rejected 에러 우회를 위해
+        // FileSystem.readAsStringAsync를 통해 직접 base64 문자열을 읽은 후 수동 바이트 디코딩 처리 적용
+        const rawBase64 = await FileSystem.readAsStringAsync(manipResult.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const jpegBytes = base64ToUint8Array(rawBase64);
 
         if (!audioEngine.isGuidePlaying) {
           console.log(`[Camera/Real] ${stream} 프레임 압축완료: 원본경로=${path} -> base64len(CoreML용)=${base64.length} float32len=${float32.length}`);
@@ -333,3 +348,49 @@ export function useCamera(
 
 // FRAME_TENSOR_LENGTH re-export (사용처 참고용)
 export { FRAME_TENSOR_LENGTH };
+
+// 이미지의 실제 가로/세로 해상도를 비동기로 획득하는 헬퍼 함수
+function getImageSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(
+      uri,
+      (width, height) => resolve({ width, height }),
+      (err) => reject(err)
+    );
+  });
+}
+
+// 순수 JS 기반의 초고속 Base64 to Uint8Array 디코더 (Hermes 환경 최적화)
+function base64ToUint8Array(base64: string): Uint8Array {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const lookup = new Uint8Array(256);
+  for (let i = 0; i < chars.length; i++) {
+    lookup[chars.charCodeAt(i)] = i;
+  }
+  
+  let bufferLength = base64.length * 0.75;
+  if (base64[base64.length - 1] === "=") {
+    bufferLength--;
+    if (base64[base64.length - 2] === "=") {
+      bufferLength--;
+    }
+  }
+  
+  const bytes = new Uint8Array(bufferLength);
+  let p = 0;
+  for (let i = 0; i < base64.length; i += 4) {
+    const base64x = lookup[base64.charCodeAt(i)];
+    const base64y = lookup[base64.charCodeAt(i + 1)];
+    const base64z = lookup[base64.charCodeAt(i + 2)];
+    const base64w = lookup[base64.charCodeAt(i + 3)];
+    
+    bytes[p++] = (base64x << 2) | (base64y >> 4);
+    if (p < bufferLength) {
+      bytes[p++] = ((base64y & 15) << 4) | (base64z >> 2);
+    }
+    if (p < bufferLength) {
+      bytes[p++] = ((base64z & 3) << 6) | (base64w & 63);
+    }
+  }
+  return bytes;
+}
