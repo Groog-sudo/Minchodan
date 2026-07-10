@@ -100,7 +100,7 @@ export function useMonitorStream(token: string | null = null) {
       connection: "connecting",
     }));
 
-    /*
+    /*ㅋㄹ
      * 발표/면접 대응 포인트:
      * - EventSource는 브라우저 내장 SSE 클라이언트입니다.
      * - 별도 라이브러리 없이 HTTP 연결을 유지하며 서버 이벤트를 계속 수신합니다.

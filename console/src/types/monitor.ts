@@ -48,6 +48,23 @@ export interface DetectionFeedItem {
   ts: string;
 }
 
+// 발표/면접 포인트:
+// - DetectionGuidanceLogRow는 detection_guidance_logs 테이블/응답 컬럼 구조를
+//   React에서 그대로 받기 위한 최소 타입입니다.
+// - 지금 단계에서는 화면 가공용 별도 DTO를 만들지 않고,
+//   백엔드 컬럼명과 1:1로 맞춰 추후 조회 API 연결 시 수정 범위를 줄입니다.
+export interface DetectionGuidanceLogRow {
+  log_id: number;
+  event_id: string | null;
+  user_id: number | null;
+  device_id: number | null;
+  detected_at: string;
+  stream_type: "reflex" | "cognitive" | "unknown";
+  detected_objects_json: string;
+  tts_text: string;
+  created_at: string;
+}
+
 export interface AiPipelineStatus {
   reflex_bypass?: boolean;
   llm_provider?: string;

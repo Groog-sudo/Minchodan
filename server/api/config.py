@@ -34,7 +34,11 @@ class Settings(BaseSettings):
     MAX_RECONNECT_ATTEMPTS: int = int(os.getenv("MAX_RECONNECT_ATTEMPTS", "3"))
     # 운영자 콘솔(React) 개발 서버 기본 출처만 허용. 프로덕션 배포 시 .env의
     # CORS_ORIGINS(JSON 배열 문자열, 예: ["https://console.example.com"])로 반드시 override.
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ]
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
