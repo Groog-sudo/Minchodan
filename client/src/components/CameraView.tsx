@@ -18,6 +18,7 @@ import { DebugTriggerPanel } from "./DebugTriggerPanel";
 import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS } from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
+import { useLocation, type GpsCoords } from "../hooks/useLocation";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
 import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -111,6 +112,34 @@ export function CameraView() {
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
+  const { requestLocationPermission, startWatching, stopWatching } = useLocation();
+
+  // GPS 전송: 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
+  // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
+  // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
+  useEffect(() => {
+    if (isMockMode) return;
+    let cancelled = false;
+
+    (async () => {
+      const granted = await requestLocationPermission();
+      if (cancelled || !granted) return;
+      await startWatching((coords: GpsCoords) => {
+        send({
+          type: "realtime_gps",
+          lat: coords.lat,
+          lon: coords.lon,
+          heading: coords.heading,
+        });
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      stopWatching();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMockMode]);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   const { status: sttStatus, startRecording: startSttRecording, stopRecordingAndSend: stopSttRecording } =

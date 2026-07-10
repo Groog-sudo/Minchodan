@@ -12,6 +12,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "보행 보조를 위해 카메라 접근이 필요합니다.",
         "NSMicrophoneUsageDescription": "음성 안내를 위해 마이크 접근이 필요합니다.",
+        "NSLocationWhenInUseUsageDescription": "도보 경로 안내를 위해 위치 정보 접근이 필요합니다.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         }
@@ -20,6 +21,8 @@
     "android": {
       "package": "com.minchodan.app",
       "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
         "CAMERA",
         "INTERNET",
         "RECORD_AUDIO"
@@ -41,7 +44,8 @@
       ],
       "react-native-fast-tflite",
       "expo-splash-screen",
-      "expo-audio"
+      "expo-audio",
+      "expo-location"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

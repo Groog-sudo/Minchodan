@@ -375,6 +375,10 @@ async def ws_detect(
                         float(lon),
                         float(heading) if heading is not None else None,
                     )
+                    logger.debug(
+                        f"[WS] realtime_gps 수신: device_id={device_id}, "
+                        f"lat={lat}, lon={lon}, heading={heading}"
+                    )
 
             else:
                 logger.warning(f"[WS] 알 수 없는 메시지 타입: {msg_type}")
