@@ -1,5 +1,5 @@
 # Minchodan Docker Compose (macOS CPU Fallback)
-# Redis + FastAPI 3컨테이너 구성 (macOS 로컬 테스트용)
+# Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
 # 상세 명세: docs/deployment_guide.md 및 docker/macos_docker_start.sh
 
 services:
@@ -21,11 +21,23 @@ services:
     env_file:
       - ../.env
     environment:
-      # Docker Compose 환경에서는 컨테이너 서비스 이름 기반으로 재설정
+      # Docker Compose 환경에서는 컨테이너 서비스명과 호스트 Ollama 주소로 재설정
       - REDIS_URL=redis://redis:6379
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # macOS에서도 Ollama는 도커 외부 로컬에서 별도로 띄움
+      - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - DB_TYPE=mariadb
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_NAME=${COMPOSE_DB_NAME:-minchodan_db}
+      - DB_USER=${COMPOSE_DB_USER:-minchodan_team}
+      - DB_PASSWORD=${COMPOSE_DB_PASSWORD:-minchodan_password}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      mariadb:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - minchodan-net
@@ -41,9 +53,39 @@ services:
     networks:
       - minchodan-net
 
+  mariadb:
+    image: mariadb:11.4
+    container_name: minchodan-mariadb
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${DB_HOST_PORT:-3306}:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - "../Minchodan DB.session.sql:/docker-entrypoint-initdb.d/01_minchodan_schema.sql:ro"
+    environment:
+      MARIADB_DATABASE: ${COMPOSE_DB_NAME:-minchodan_db}
+      MARIADB_USER: ${COMPOSE_DB_USER:-minchodan_team}
+      MARIADB_PASSWORD: ${COMPOSE_DB_PASSWORD:-minchodan_password}
+      MARIADB_ROOT_PASSWORD: ${COMPOSE_DB_ROOT_PASSWORD:-minchodan_root_password}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mariadb-admin ping -h 127.0.0.1 -u$${MARIADB_USER} -p$${MARIADB_PASSWORD} --silent",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - minchodan-net
 
 volumes:
   redis_data:
+  mariadb_data:
 
 networks:
   minchodan-net:

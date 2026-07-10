@@ -2,7 +2,7 @@
 setlocal
 
 rem Minchodan Docker Build and Start - Windows
-rem Redis + Ollama + FastAPI 3컨테이너 구성
+rem Redis + MariaDB + FastAPI 3컨테이너 구성 + host-local Ollama
 rem 상세 명세: docs/deployment_guide.md
 
 cd /d "%~dp0\.."
@@ -17,7 +17,7 @@ rem 1. Docker 데몬 실행 여부 확인
 docker info >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Docker is not running.
-    echo Please start Docker Desktop and try again.
+    echo Please start Docker Desktop or another Docker daemon and try again.
     echo.
     pause
     exit /b 1
@@ -55,7 +55,7 @@ echo.
 
 rem 4. docker compose 설정 유효성 검사
 echo [1/4] Checking Docker Compose config...
-docker compose -f %COMPOSE_FILE% config --quiet
+docker compose --env-file .env -f %COMPOSE_FILE% config --quiet
 if errorlevel 1 (
     echo.
     echo [ERROR] %COMPOSE_FILE% or .env has a configuration problem.
@@ -68,7 +68,7 @@ if errorlevel 1 (
 rem 5. Docker 이미지 빌드
 echo.
 echo [2/4] Building Docker images (FastAPI)...
-docker compose -f %COMPOSE_FILE% build fastapi
+docker compose --env-file .env -f %COMPOSE_FILE% build fastapi
 if errorlevel 1 (
     echo.
     echo [ERROR] Docker image build failed.
@@ -79,8 +79,8 @@ if errorlevel 1 (
 
 rem 6. 컨테이너 시작
 echo.
-echo [3/4] Starting containers (Redis + Ollama + FastAPI)...
-docker compose -f %COMPOSE_FILE% up -d
+echo [3/4] Starting containers (Redis + MariaDB + FastAPI)...
+docker compose --env-file .env -f %COMPOSE_FILE% up -d
 if errorlevel 1 (
     echo.
     echo [ERROR] Failed to start containers.
@@ -117,15 +117,15 @@ echo Ollama URL:
 echo http://127.0.0.1:11434/api/tags
 echo.
 echo Next steps (first run only):
-echo   docker exec -it minchodan-ollama ollama pull gemma4:e4b
-echo   docker exec -it minchodan-ollama ollama pull llava
-echo   docker exec -it minchodan-ollama ollama pull nomic-embed-text
+echo   ollama serve
+echo   ollama pull gemma4:e4b
+echo   ollama pull nomic-embed-text
 echo.
 echo Logs:
-echo   docker compose -f %COMPOSE_FILE% logs -f fastapi
+echo   docker compose --env-file .env -f %COMPOSE_FILE% logs -f fastapi
 echo.
 echo Stop:
-echo   docker compose -f %COMPOSE_FILE% down
+echo   docker compose --env-file .env -f %COMPOSE_FILE% down
 echo.
 
 pause

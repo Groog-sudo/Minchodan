@@ -127,7 +127,7 @@ docs/
 | **환경 변수 명세서** | [environment_variables.md](ops/environment_variables.md) | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류** |
 | **배포 가이드** | [deployment_guide.md](ops/deployment_guide.md) | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동** |
 | **실기기 무선 연동 가이드** | [wireless_test_guide.md](ops/wireless_test_guide.md) | **실기기(LTE) 및 Docker 연동 구조, 터널링, 트러블슈팅 상세 가이드** |
-| **AI 모델 및 하드웨어 구성 지침** | [ai_model_hardware_setup.md](ops/ai_model_hardware_setup.md) | **GPU 요구사항(verify_gpu) 및 Ollama 로컬 모델(gemma4:e4b/llava/nomic) 풀링 가이드** |
+| **AI 모델 및 하드웨어 구성 지침** | [ai_model_hardware_setup.md](ops/ai_model_hardware_setup.md) | **GPU 요구사항(verify_gpu) 및 호스트 로컬 Ollama 모델(gemma4:e4b/nomic) 풀링 가이드** |
 | **Redis Streams 데이터 스키마 명세** | [redis_streams_schema.md](ops/redis_streams_schema.md) | **risk.events 스트림 페이로드 필드 정의 및 중복 알림 TTL 캐시 명세** |
 | **모바일 빌드 트러블슈팅 가이드** | [mobile_build_troubleshooting.md](ops/mobile_build_troubleshooting.md) | **iOS 샌드박싱/Rosetta ffi 및 Android SDK/JDK 버전 충돌 해결 핸드북** |
 | **코드 품질 검증 가이드** | [code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 검증 파이프라인** |
