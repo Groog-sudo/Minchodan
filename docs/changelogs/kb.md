@@ -1504,3 +1504,17 @@
 - **관련 파일**: `server/db/security.py`, `server/api/auth.py`, `server/api/ws_router.py`, `client/src/config/index.ts`, `.env.example`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/changelogs/kb.md`
 - **검증 결과**: (1) `APP_ENV=production` + `JWT_SECRET_KEY` 미설정에서 security 모듈 임포트 시 `RuntimeError` 기동 거부 확인, (2) production에서 `DEVICE_STATIC_TOKENS` 미설정 시 정적 토큰 목록 빈 값 확인, (3) `DEVICE_STATIC_TOKENS` 오버라이드 파싱 확인, (4) `pytest tests/test_api_ws.py tests/test_risk_ssot.py` 7건 통과(개발 기본 토큰 하위 호환 유지), (5) 클라이언트 `tsc --noEmit` 통과. `tests/test_ws_echo.py` 6건 실패는 라이브 서버(localhost:8000) 필요 테스트로 변경 전 기준선에서도 동일 실패함을 대조 확인(회귀 아님).
 - **비고**: dev 계획서 §2/§5의 KB 확인 항목 전부 착수 완료. 잔여: `mcp:metrics` producer 구현(TH·Backend), 기기 고유 인증·관리자 bootstrap 절차(JY·TH), ngrok 대체 고정 도메인+TLS(팀 인프라 결정 필요).
+
+---
+
+### 2026-07-11 | 클라이언트+iOS 네이티브 | LiDAR 실거리 프로브 프로토타입 (Mitos 로드맵 §2 거리 휴리스틱)
+
+- **커밋**: `feat(client): LiDAR 실거리 프로브 프로토타입 - DepthProbeBridge + 거리측정 모드`
+- **변경 내용**:
+  - **배경**: 현재 거리 판정은 단안 휴리스틱 3종(단말 `0.22/sqrt(areaRatio)`, 서버 `bbox_area_ratio`, 반사 게이트 bbox 하단 y)뿐이라 "전방 3m"가 아닌 "크게 보임" 수준. 테스트 기기(iPhone 14 Pro Max)의 LiDAR + `AVCaptureDepthDataOutput`으로 실거리 검증 경로를 만든다(1단계 프로토타입).
+  - **DepthProbeBridge 네이티브 모듈 신규**: `builtInLiDARDepthCamera` 자체 세션(vga640x480, 심도 전용)으로 최신 심도 맵을 유지하고, 정규화 좌표(portrait) 목록의 실거리(m)를 3x3 미디언으로 샘플링해 반환(`startProbe`/`stopProbe`/`probe`). `isFilteringEnabled`로 저반사 표면 홀 필링, `depthDataAccuracy`(absolute=LiDAR 실측) 노출. project.pbxproj 4개 섹션 수동 등록.
+  - **단말 거리측정 모드**: CameraView에 "거리측정" 토글 신규. 켜면 vision-camera를 내리고(`isActive=false`, **두 세션이 후면 카메라를 동시 점유할 수 없는 프로토타입 제약** - 탐지·경보 일시 정지) 500ms 폴링으로 화면 3지점(중앙/전방 하단/발밑) 실거리를 오버레이 표시. 줄자 실측 대조용 계측 화면.
+  - **2단계(후속) 방향 문서화**: vision-camera 세션에 depth 출력을 통합해 bbox+실거리 상시 융합, bbox 휴리스틱은 depth 신뢰도 낮을 때 fallback으로 강등(Mitos 로드맵 §2, risk_ssot_contract §3 수렴 방향과 일치). Android는 LiDAR 부재로 대칭 구현 없음(이원화 계약 v1.1.3 등재).
+- **관련 파일**: `client/ios/DepthProbeBridge.swift`(신규), `client/ios/DepthProbeBridge.mm`(신규), `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/src/services/depthProbe.ts`(신규), `client/src/components/CameraView.tsx`, `docs/design/architecture.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과, iOS 시뮬레이터 Debug 빌드 BUILD SUCCEEDED + DepthProbeBridge 오브젝트 파일(Swift/mm) 생성 확인. 실기기 검증(LiDAR 실측 정확도 - 줄자 대조 1/2/3/5m, 저반사 표면, 야외 직사광, 탐지 모드 복귀 시 카메라 재점유)은 후속. 시뮬레이터는 LiDAR가 없어 "LiDAR 심도 카메라 없음" 에러 표출이 정상.
+- **비고**: 접근성 주의 - 거리측정 모드 동안 반사 경보가 정지되므로 운영자/계측 전용 기능임(종단 사용자 UX 아님). 토글 진입 시 이 사실이 오버레이 첫 줄("탐지 일시정지")에 표기됨.

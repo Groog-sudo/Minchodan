@@ -23,6 +23,12 @@ import { useLocation, type GpsCoords } from "../hooks/useLocation";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
 import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
+import {
+  probeDepth,
+  startDepthProbe,
+  stopDepthProbe,
+  type DepthProbeResult,
+} from "../services/depthProbe";
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
@@ -33,6 +39,15 @@ const FRAME_SIZE = 640;
 
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
+
+// 2026-07-11 LiDAR 실거리 프로브(프로토타입) 샘플링 지점: 세로 화면 정규화 좌표.
+// bbox 휴리스틱 거리의 기준점(중앙/하단)과 대응시켜 줄자 실측 대조가 쉽게 한다.
+const DEPTH_PROBE_POINTS = [
+  { label: "중앙", x: 0.5, y: 0.5 },
+  { label: "전방 하단", x: 0.5, y: 0.72 },
+  { label: "발밑", x: 0.5, y: 0.9 },
+];
+const DEPTH_PROBE_INTERVAL_MS = 500;
 
 // 29클래스 중 이동체(충돌 접근 속도가 빠른 대상) - 조기 경보 임계치를 낮게 적용
 const HIGH_HAZARDS = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "scooter", "wheelchair", "stroller", "carrier"];
@@ -203,6 +218,55 @@ export function CameraView() {
   const [mapVisible, setMapVisible] = useState(false);
   const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
   const lastMapPosTsRef = useRef(0);
+
+  // 2026-07-11 LiDAR 실거리 프로브 모드(프로토타입, iOS Pro 계열 전용, Mitos 로드맵 §2):
+  // 켜면 vision-camera를 내리고(isActive=false, 두 세션이 후면 카메라를 공유할 수 없는
+  // 프로토타입 제약) 자체 심도 세션으로 화면 3지점의 실거리를 표시한다. bbox 휴리스틱
+  // 거리와의 교차 검증(줄자 실측 대조)용 계측 화면이며, 탐지·경보는 이 모드 동안 정지한다.
+  const [depthMode, setDepthMode] = useState(false);
+  const [depthResult, setDepthResult] = useState<DepthProbeResult | null>(null);
+  const [depthError, setDepthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!depthMode) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    (async () => {
+      // vision-camera가 isActive=false 렌더로 세션을 놓을 시간을 준 뒤 프로브를 켠다.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (cancelled) return;
+      const started = await startDepthProbe();
+      if (cancelled) {
+        void stopDepthProbe();
+        return;
+      }
+      if (!started.ok) {
+        setDepthError(started.error ?? "프로브 시작 실패");
+        return;
+      }
+      setDepthError(null);
+      timer = setInterval(async () => {
+        const result = await probeDepth(DEPTH_PROBE_POINTS);
+        if (!cancelled && result) {
+          setDepthResult(result);
+          // 실측 기록용(Release 빌드에서는 미출력) - 시나리오 기록은 화면 판독으로 수행
+          console.log(
+            `[DepthProbe] acc=${result.accuracy} ` +
+              result.samples
+                .map((s, i) => `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m`)
+                .join(", "),
+          );
+        }
+      }, DEPTH_PROBE_INTERVAL_MS);
+    })();
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      void stopDepthProbe();
+      setDepthResult(null);
+      setDepthError(null);
+    };
+  }, [depthMode]);
 
   // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트
   useEffect(() => {
@@ -515,7 +579,8 @@ export function CameraView() {
             <Camera
               ref={cameraRef}
               device={device!}
-              isActive={true}
+              // 거리 측정(LiDAR 프로브) 모드 동안은 세션을 놓아준다(동시 점유 불가).
+              isActive={!depthMode}
               video={true}
               audio={false}
               pixelFormat="yuv"
@@ -526,7 +591,7 @@ export function CameraView() {
             <Camera
               ref={cameraRef}
               device={device!}
-              isActive={true}
+              isActive={!depthMode}
               photo={true}
               audio={false}
               style={StyleSheet.absoluteFill}
@@ -663,6 +728,39 @@ export function CameraView() {
           accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
         >
           <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+        </Pressable>
+      </View>
+
+      {/* 2026-07-11 LiDAR 실거리 프로브(프로토타입, 운영자/계측용): 켜면 카메라
+          탐지·경보가 일시 정지되고 화면 3지점의 LiDAR 실거리를 표시한다. */}
+      {depthMode && (
+        <View style={styles.depthOverlay} pointerEvents="none">
+          <Text style={styles.depthTitle}>
+            LiDAR 실거리 (탐지 일시정지, 정확도: {depthResult?.accuracy ?? "-"})
+          </Text>
+          {depthError ? (
+            <Text style={styles.depthError}>{depthError}</Text>
+          ) : (
+            DEPTH_PROBE_POINTS.map((point, i) => {
+              const sample = depthResult?.samples?.[i];
+              return (
+                <Text key={point.label} style={styles.depthRow}>
+                  {point.label}:{" "}
+                  {sample && sample.meters != null ? `${sample.meters.toFixed(2)} m` : "측정 불가"}
+                </Text>
+              );
+            })
+          )}
+        </View>
+      )}
+      <View style={styles.depthToggleWrap} pointerEvents="box-none">
+        <Pressable
+          style={styles.mapToggleButton}
+          onPress={() => setDepthMode((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel={depthMode ? "거리 측정 끄기" : "거리 측정 켜기"}
+        >
+          <Text style={styles.mapToggleText}>{depthMode ? "거리측정 끄기" : "거리측정"}</Text>
         </Pressable>
       </View>
     </View>
@@ -899,6 +997,37 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 222,
     right: 12,
+  },
+  depthToggleWrap: {
+    position: "absolute",
+    bottom: 262,
+    right: 12,
+  },
+  depthOverlay: {
+    position: "absolute",
+    top: "32%",
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.72)",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minWidth: 220,
+  },
+  depthTitle: {
+    color: "#7FDBFF",
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  depthRow: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+    lineHeight: 24,
+  },
+  depthError: {
+    color: "#FF6B6B",
+    fontSize: 13,
   },
   mapToggleButton: {
     paddingVertical: 6,
