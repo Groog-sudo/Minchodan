@@ -105,9 +105,8 @@ def _get_stt_lock(device_id: str) -> asyncio.Lock:
 async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
     """STT 음성 명령 메시지를 처리한다: 오디오 저장 -> 전사 -> 네비게이션/LLM 브리지 -> TTS 합성.
 
-    응답은 기존 인지 경로 클라이언트 핸들러가 이미 처리 가능한 "guide" 타입으로 보낸다
-    (client/src/hooks/useWebSocket.ts가 audio_mp3_b64 수신 시 자동 재생하므로 클라이언트
-    쪽에 별도 신규 메시지 타입 처리를 추가할 필요가 없다).
+    응답은 기존 인지 경로 클라이언트 핸들러가 이미 처리 가능한 "guide" 타입으로 보낸다.
+    JSON 메타데이터 직후 raw WAV 바이너리 프레임을 전송하므로 별도 신규 메시지 타입은 없다.
 
     2026-07-09: server/stt/*.py(SttService, SttToLlmBridge)는 완성돼 있었으나 어떤
     라우터에서도 호출되지 않아 서버가 STT 요청을 받을 경로 자체가 없었다(main.py에는
@@ -132,21 +131,6 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         logger.error(f"[WS] stt_audio base64 디코딩 실패: device_id={device_id}, {e}")
         return
 
-    # [STT_DEBUG] 임시 디버깅 블록(테스트 후 제거): 수신 오디오를 보존해
-    # 마이크 입력을 호스트에서 직접 재생·검증할 수 있게 한다.
-    stt_debug_ts = now_ts()
-    try:
-        stt_debug_dir = Path("data/stt_debug")
-        stt_debug_dir.mkdir(parents=True, exist_ok=True)
-        stt_debug_wav = stt_debug_dir / f"{device_id}-{stt_debug_ts}.wav"
-        stt_debug_wav.write_bytes(audio_bytes)
-        logger.info(
-            f"[STT_DEBUG] 오디오 수신: device_id={device_id}, "
-            f"bytes={len(audio_bytes)}, saved={stt_debug_wav}"
-        )
-    except Exception as e:
-        logger.warning(f"[STT_DEBUG] 오디오 보존 실패: {e}")
-
     saved_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
@@ -156,11 +140,8 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         stt_result = await asyncio.to_thread(
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
-        # [STT_DEBUG] 임시 디버깅(테스트 후 제거): 전사 원문 확인용.
-        # 운영 로그 원문 비노출 정책 예외이므로 검증 종료 후 반드시 삭제한다.
         logger.info(
-            f"[STT_DEBUG] 전사 결과: device_id={device_id}, ts={stt_debug_ts}, "
-            f"transcript={stt_result.text!r}"
+            f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}"
         )
         bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
         guidance_text = bridge_result.get("guidance_text", "")
@@ -170,14 +151,13 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         # 응답을 보내지 않고 조용히 종료한다 (메아리 루프 방지).
         if bridge_source == "stt-echo-detected":
             logger.info(
-                f"[STT_DEBUG] 에코 감지 - 응답 스킵: device_id={device_id}, ts={stt_debug_ts}"
+                f"[WS] STT 에코 감지 - 응답 스킵: device_id={device_id}"
             )
             return
 
-        # [STT_DEBUG] 임시 디버깅(테스트 후 제거): 안내문 생성 결과 확인용.
         logger.info(
-            f"[STT_DEBUG] 안내문: device_id={device_id}, ts={stt_debug_ts}, "
-            f"guidance={guidance_text!r}, source={bridge_source}"
+            f"[WS] STT 안내 생성: device_id={device_id}, "
+            f"guidance_len={len(guidance_text)}, source={bridge_source}"
         )
 
         # 2026-07-11: 클라이언트에 전송할 안내문을 에코 감지용 메모리에 기록한다
@@ -185,16 +165,16 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         if guidance_text:
             _stt_bridge._record_guidance(device_id, guidance_text)
 
-        audio_mp3_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
+        audio_wav_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
         stt_event_id = f"stt-{device_id}-{now_ts()}"
 
         # 2026-07-09에 인지 경로(DetectionConsumer._send_cognitive_guide)가 오디오를
-        # audio_mp3_b64(JSON base64)에서 transport:"binary" + 별도 바이너리 프레임으로
+        # JSON base64 오디오에서 transport:"binary" + 별도 바이너리 프레임으로
         # 옮기면서 클라이언트(useWebSocket.ts)도 transport!=="binary"면 무조건 단말
         # TTS(speakFallback)로 즉시 폴백하도록 바뀌었다. 이 STT 경로가 그 마이그레이션에서
         # 빠져 있어 서버가 합성한 오디오를 클라이언트가 항상 무시하고 있었다(실기기 실측
         # 확인, 2026-07-10) - 인지 경로와 동일한 전송 방식으로 맞춘다.
-        audio_bytes_out = base64.b64decode(audio_mp3_b64) if audio_mp3_b64 else b""
+        audio_bytes_out = base64.b64decode(audio_wav_b64) if audio_wav_b64 else b""
 
         # 백그라운드 태스크로 분리돼(2026-07-09) 처리 도중 클라이언트가 이미 끊어졌을 수
         # 있다 - 전송 실패는 결과를 못 받는 것 이상의 문제가 아니므로 조용히 무시한다.
@@ -223,7 +203,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                 await persist_detection_guidance_log(
                     event_id=stt_event_id,
                     stream_type="cognitive",
-                    detections=[{"source": "stt", "transcript": stt_result.text}],
+                    detections=[{"source": "stt", "text_length": len(stt_result.text)}],
                     tts_text=guidance_text,
                 )
             except Exception as e:

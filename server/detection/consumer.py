@@ -360,7 +360,13 @@ class DetectionConsumer:
             "ts": alert.ts or now_ts(),
         }
         try:
-            await manager.send_json(device_id, payload)
+            sent = await manager.send_json(device_id, payload)
+            if not sent:
+                logger.warning(
+                    f"[DetectionConsumer] 반사 알림 미전송: "
+                    f"device_id={device_id}, alert_id={alert.alert_id}, websocket=disconnected"
+                )
+                return
             await Alert_suppressor.mark_as_sent(device_id, alert.alert_id)
             logger.info(
                 f"[DetectionConsumer] 반사 알림 전송: "

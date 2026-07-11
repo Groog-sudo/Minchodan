@@ -145,6 +145,8 @@ export function CameraView() {
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
   // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
   const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
+  const sttPressActiveRef = useRef(false);
+  const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     status: sttStatus,
     startRecording: startSttRecording,
@@ -169,6 +171,16 @@ export function CameraView() {
     void requestSttPermissionEarly();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
+
+  useEffect(() => {
+    return () => {
+      sttPressActiveRef.current = false;
+      if (delayedSttStartTimerRef.current) {
+        clearTimeout(delayedSttStartTimerRef.current);
+        delayedSttStartTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [lastDetect, setLastDetect] = useState<string>("대기");
@@ -514,6 +526,11 @@ export function CameraView() {
       <Pressable
         style={StyleSheet.absoluteFill}
         onPressIn={() => {
+          sttPressActiveRef.current = true;
+          if (delayedSttStartTimerRef.current) {
+            clearTimeout(delayedSttStartTimerRef.current);
+            delayedSttStartTimerRef.current = null;
+          }
           void hapticEngine.trigger("short");
           // STT 질문 상호작용 시작 - 응답 도착(또는 타임아웃) 전까지 인지 경로 가이드
           // 음성만 뮤트한다(반사 경로는 안전 비협상 원칙상 그대로 유지, useWebSocket 참조).
@@ -525,12 +542,23 @@ export function CameraView() {
           // 시작한다 (서버 측 자기-에코 필터와 이중 방어).
           if (audioEngine.isGuidePlaying) {
             audioEngine.stopGuideAudio();
-            setTimeout(() => void startSttRecording(), 150);
+            delayedSttStartTimerRef.current = setTimeout(() => {
+              delayedSttStartTimerRef.current = null;
+              if (sttPressActiveRef.current) {
+                void startSttRecording();
+              }
+            }, 150);
           } else {
             void startSttRecording();
           }
         }}
         onPressOut={() => {
+          sttPressActiveRef.current = false;
+          if (delayedSttStartTimerRef.current) {
+            clearTimeout(delayedSttStartTimerRef.current);
+            delayedSttStartTimerRef.current = null;
+            setSttInteractionActive(false);
+          }
           void stopSttRecording();
         }}
         accessibilityRole="button"

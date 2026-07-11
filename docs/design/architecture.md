@@ -218,7 +218,7 @@ graph TD
 | `server/stt/stt_service.py`                   | faster-whisper 기반 음성 전사 (`transcribe_file`)                          | -    |
 | `server/stt/stt_to_llm_bridge.py`             | STT 전사 결과 → 네비게이션/LLM 브리지. 자기-에코 감지(`_check_self_echo`), 인텐트 분기, 자유 질의응답 | -    |
 | `server/stt/stt_config.py`                    | STT 모델·VAD·hotwords 정책 (하드코딩 영역)                                  | -    |
-| `server/services/detection_guidance_log_service.py` | 탐지·가이드 로그 MariaDB 영속화                                     | -    |
+| `server/services/detection_guidance_log_service.py` | 탐지·가이드 로그 MariaDB 영속화. STT는 전사문 대신 `text_length` 비식별 메타만 저장 | -    |
 | `console/src/`                                | 운영자 모니터링 (DetectionFeed, RiskEventLog, SessionStatus)               | -    |
 
 ---

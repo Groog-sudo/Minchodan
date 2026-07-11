@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.8 (2026-07-11 STT 자기-에코 필터·인텐트 체크 순서 변경·폴백 모드 BBox 표시·WS 송신 실패 스팸 방지 4건 수정 반영: §6.3 자기-에코 감지 비고·인텐트 순서 비고 추가, §6.4 폴백 모드 BBox 비고 추가, §2.4 WebSocketState 가드 비고 추가 + 이전 v0.4.7 이력 유지)
+> **버전**: v0.4.9 (2026-07-11 STT 민감정보 비보존·플랫폼별 녹음 검증·반사 경보 송신 성공 확인 반영 + 이전 v0.4.8 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -108,6 +108,10 @@
 > 끊어진 뒤에도 `active_connections`에서 즉시 제거되지 않는 경쟁 창(consumer 태스크가
 > 독립적으로 실행 중)에서 `send`를 시도하면 동일한 `Cannot call send...` 에러가 스팸으로
 > 발생했던 문제(13:26:47~52 로그, 17회 반복)를 원천 차단한다.
+
+> **2026-07-11 추가 정정**: `SessionManager.send_json()`/`send_bytes()`는 실제 송신 성공
+> 여부를 boolean으로 반환합니다. 반사 경보는 반환값이 `true`인 경우에만 60초 중복 억제를
+> 기록하므로, 연결 종료 경쟁 구간에서 전달되지 않은 경보가 전송 완료로 처리되지 않습니다.
 
 ### 2.5 error (서버 → 단말)
 
@@ -374,7 +378,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `audio_b64` | 녹음된 오디오 파일 전체를 base64 인코딩한 값 (필수). 컨테이너 포맷은 서버의 `av` 기반 디코더가 처리하므로 특정 포맷에 종속되지 않음(iOS `RecordingPresets.HIGH_QUALITY` 기준 m4a) |
+| `audio_b64` | 녹음된 오디오 파일 전체를 base64 인코딩한 값 (필수). 현재 iOS는 44.1kHz mono 16bit Linear PCM WAV, Android는 MPEG-4/AAC를 사용하며 서버의 `av` 기반 디코더가 처리합니다. |
 | `model_name` | 선택. 미지정 시 `server/stt/stt_config.py`의 `DEFAULT_REQUEST_MODEL`(`faster-whisper-medium`) 사용 |
 
 응답은 별도 신규 타입이 아니라 기존 **6.1 guide** 메시지로 온다(클라이언트가 이미
@@ -422,6 +426,12 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > 변경했다(이전: wake 재호출이 최우선). "길댕아 길찾아줘"라고 말하면 wake 매칭이 먼저
 > True가 되어 인텐트 매칭 전에 리턴해버려, 목적지 대기 상태로 진입하지 못하고 같은
 > 안내만 반복하던 문제(5회 반복 로그 확인)를 해결.
+
+> **비고 (2026-07-11) - 민감정보와 플랫폼별 검증**: 서버는 STT 원본 오디오와 전사문을
+> 영구 파일, INFO 로그, DB에 저장하지 않습니다. 요청 단위 임시 파일은 전사 후 즉시
+> 삭제하며 DB에는 `text_length` 같은 비식별 메타만 남깁니다. 클라이언트의 캡처 길이
+> 검사는 비압축 PCM인 iOS에만 적용하고, Android MPEG-4/AAC에는 PCM 바이트 공식을
+> 적용하지 않습니다.
 
 ### 6.4 server_detection (서버 → 단말, 실시간 BBox 업데이트)
 
@@ -569,3 +579,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | v0.4.6 | 2026-07-10 | realtime_gps(6.5) 신설, 구현 상태를 1~7단계 전체 완료로 갱신 |
 | **v0.4.7** | **2026-07-10** | **stt_audio(6.3) 응답 전송을 audio_mp3_b64→binary transport로 통일(§6.1 규격과 일치), 명령 어휘 표(길댕아 2단계 웨이크워드·질문 모드·POI 실거리 검색) 추가, device_id 세션 불일치 결함(목적지는 설정돼도 길안내 음성이 안 나오던 원인) 수정 반영** |
 | **v0.4.8** | **2026-07-11** | **§6.3 자기-에코 감지(TTS 안내문 재녹음 무시, 서버+클라이언트 이중 방어)·인텐트 체크 순서 변경(nav/question > wake 재호출) 비고 추가, §6.4 폴백 모드 온디바이스 BBox 표시 비고 추가, §2.4 SessionManager WebSocketState 가드(WS 종료 후 송신 실패 스팸 방지) 비고 추가** |
+| **v0.4.9** | **2026-07-11** | **STT 원본·전사문 비보존, iOS PCM·Android AAC 플랫폼별 캡처 검증, SessionManager 송신 성공 boolean 및 반사 경보 억제 조건 정합화** |

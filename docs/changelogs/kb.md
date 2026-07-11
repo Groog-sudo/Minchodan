@@ -1373,3 +1373,19 @@
 - **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `server/api/ws_router.py`, `server/api/session_manager.py`, `client/src/components/CameraView.tsx`, `client/src/hooks/useSttRecorder.ts`, `docs/design/api_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `docs/design/architecture.md`, `docs/ops/test_specification.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 서버 Docker 재빌드 후 health 정상, 클라이언트 실기기 빌드/설치/실행 성공. WebSocket 연결 정상(`dev-001`, 현재 접속 1명). `server_detection 송신 실패` 에러 재발 없음(WebSocketState 가드 적용 확인). STT 에코 필터/인텐트 순서 변경/폴백 BBox 표시에 대한 실기기 사용자 검증은 후속 진행 예정.
 - **비고**: 클로드(Claude Code) 세션에서 STT 3건 문제 분석을 위임받아 이어서 작업. `.xcodebuildmcp/config.yaml`은 개인 로컬 환경값(workspacePath, deviceId)으로 업데이트된 상태 - 커밋 시 개인 정보 노출 주의.
+
+---
+
+### 2026-07-11 | 1+3+6+7단계 | dev 병합 전 kb 신규 커밋 안전성 결함 8건 수정
+
+- **커밋**: (이번 커밋)
+- **변경 내용**:
+  - **Android STT 캡처 판정 정정**: iOS Linear PCM에만 바이트 길이 기반 캡처 검증을 적용하고, Android MPEG-4/AAC는 압축 오디오이므로 해당 검증에서 제외했습니다. 공통 확장자도 iOS `.wav`, 그 외 `.m4a`로 분리하고 `RecordingOptions.web` 필수 설정을 추가했습니다.
+  - **지연 녹음 경쟁 상태 제거**: 안내 음성 중 150ms 잔향 대기 타이머와 press 상태를 추적하여 사용자가 먼저 손을 떼면 예약 녹음을 취소하고 STT 인지 가이드 뮤트를 즉시 해제하도록 수정했습니다.
+  - **반사 경보 송신 성공 확인**: `SessionManager.send_json()`/`send_bytes()`가 실제 송신 성공 여부를 boolean으로 반환하게 하고, 반사 경보가 전달된 경우에만 60초 중복 억제를 기록하도록 수정했습니다.
+  - **STT 개인정보 최소화**: `data/stt_debug/` 원본 WAV 영구 저장과 INFO 로그의 전사문·안내문 본문 출력을 제거했습니다. DB에는 전사문 대신 입력 길이만 저장하며 요청 단위 임시 파일은 기존 `finally` 정리 경로에서 즉시 삭제합니다.
+  - **STT 계약·테스트 정합화**: REST STT 브리지에도 실제 `device_id`를 전달하고, WS 응답 테스트를 `transport: "binary"`와 raw WAV 프레임 기준으로 갱신했습니다. 자기-에코 감지, 인텐트 우선순위, 연결 종료 시 반사 경보 비억제 테스트를 추가했습니다.
+  - **문서·줄바꿈 정합화**: API 명세, STT 통합 가이드, 테스트 명세, 아키텍처, WebSocket 스킬을 구현과 맞추고 `.gitignore`를 LF로 정규화했습니다.
+- **관련 파일**: `client/src/hooks/useSttRecorder.ts`, `client/src/components/CameraView.tsx`, `server/api/session_manager.py`, `server/api/stt_router.py`, `server/api/ws_router.py`, `server/detection/consumer.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_session_manager.py`, `tests/test_detection.py`, `tests/test_ws_router_stt.py`, `tests/test_stt_router_nonblocking.py`, `tests/test_stt_service_template.py`, `tests/test_stt_to_llm_bridge_template.py`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/ops/test_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `.gitignore`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest` 변경 영향 포함 전체 테스트 130건 통과·2건 건너뜀(`test_ws_echo.py`, 기존 비결정적 RAG E2E 제외), `tsc --noEmit`, 변경 Python 파일 `py_compile`, iOS 기기용 Debug 무서명 빌드, `git diff --check` 통과. 전체 테스트에서 변경 범위 밖 `tests/test_e2e_pipeline.py` 1건은 Mock 캡셔닝이 킥보드 문구 대신 일반 안내를 반환해 기존 실패가 재현되었습니다.
+- **비고**: `dev` 병합과 원격 push는 수행하지 않고 로컬 `kb` 수정 커밋만 생성합니다.

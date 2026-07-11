@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.3 (2026-07-09 Docker Compose TC-SMOKE-004를 Redis + MariaDB + FastAPI 컨테이너와 호스트 로컬 Ollama 연결 기준으로 정정)
+> **버전**: v0.6.4 (2026-07-11 STT 회귀 테스트 실구현·플랫폼별 녹음·반사 경보 미전송 검증 반영)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -41,7 +41,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 - 부하 테스트
 - 보안 취약점 진단
 - 셀룰러/실환경 on-device 반사 레이어 (post-MVP)
-- ~~사용자 음성 명령(STT) 경로 (본 골격 범위 밖)~~ **2026-07-09 정정**: 7단계 골격 범위 밖이라는 서술은 유효하나, 실제로 STT는 2026-07-09에 `server/api/ws_router.py`의 `stt_audio` 핸들러로 종단 연결 및 실기동 검증까지 완료됨. **2026-07-11 추가**: STT 자기-에코 감지·인텐트 체크 순서 변경 검증 TC는 `docs/stage-guides/stage_stt_integration_guide.md` §6(TC-STT-006/007)에 등재. 상세는 §7(변경 이력) 및 `docs/changelogs/kb.md` 참조
+- ~~사용자 음성 명령(STT) 경로 (본 골격 범위 밖)~~ **2026-07-09 정정**: 7단계 골격 범위 밖이라는 서술은 유효하나, 실제로 STT는 2026-07-09에 `server/api/ws_router.py`의 `stt_audio` 핸들러로 종단 연결 및 실기동 검증까지 완료됨. **2026-07-11 추가**: 자기-에코 감지·인텐트 우선순위는 `tests/test_stt_to_llm_bridge_template.py`, 바이너리 응답 계약은 `tests/test_ws_router_stt.py`, 반사 경보 미전송 비억제는 `tests/test_detection.py`에서 자동 검증합니다. 플랫폼별 녹음과 지연 시작 취소 기준은 `docs/stage-guides/stage_stt_integration_guide.md` §6(TC-STT-008/009)을 따릅니다.
 - 단말 UI 픽셀 단위 디자인 검수
 
 ---

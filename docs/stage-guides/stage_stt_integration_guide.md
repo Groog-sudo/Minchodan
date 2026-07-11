@@ -1,7 +1,7 @@
 # Minchodan STT 음성명령 연동 가이드
 
 > **작성일**: 2026-07-10
-> **버전**: v0.2.0 (2026-07-11 자기-에코 필터·인텐트 체크 순서 변경·추가 TC 반영)
+> **버전**: v0.2.1 (2026-07-11 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
 > **범위**: 7단계 골격 외 입력 경로(STT) 운영 가이드
 > **관련 코드**: `server/api/ws_router.py`, `server/stt/stt_service.py`, `server/stt/stt_to_llm_bridge.py`
 
@@ -54,13 +54,16 @@ flowchart TD
   "type": "guide",
   "event_id": "stt-device123-1720574000",
   "guidance_text": "횡단보도는 30m 앞입니다.",
-  "audio_mp3_b64": "UklGR...",
   "audio_codec": "wav",
   "duration_ms": 1540,
+  "transport": "binary",
   "source": "stt-bridge",
   "ts": 1720574000
 }
 ```
+
+`transport`가 `binary`이면 위 JSON 직후 raw WAV 바이너리 프레임이 이어집니다.
+서버 TTS가 오디오를 만들지 못하면 `transport: "none"`을 보내고 단말 TTS로 폴백합니다.
 
 ---
 
@@ -68,7 +71,7 @@ flowchart TD
 
 | 계층    | 파일                              | 핵심 책임                                                |
 | :------ | :-------------------------------- | :------------------------------------------------------- |
-| Router  | `server/api/ws_router.py`         | `stt_audio` 수신, 임시 파일 저장, 백그라운드 태스크 분리 |
+| Router  | `server/api/ws_router.py`         | `stt_audio` 수신, 요청 단위 임시 파일 생성·즉시 삭제, 백그라운드 태스크 분리 |
 | Service | `server/stt/stt_service.py`       | 오디오 전사 수행                                         |
 | Bridge  | `server/stt/stt_to_llm_bridge.py` | 전사 결과를 기존 가이드 흐름으로 변환                    |
 | TTS     | `server/tts/realtime_tts.py`      | 안내 문장 합성 및 오디오 직렬화                          |
@@ -82,7 +85,8 @@ flowchart TD
 | **연결 안정성** | STT 처리 중 heartbeat 타임아웃이 발생하지 않도록 백그라운드 태스크 사용 |
 | **예외 처리**   | 전사 실패 시 고정 fallback 문장 송신                                    |
 | **경로 분리**   | STT는 인지 경로 전용, 반사 경로 미연동                                  |
-| **민감정보**    | 업로드 음성 파일은 처리 후 즉시 삭제                                    |
+| **민감정보**    | 업로드 음성은 요청 단위 임시 파일만 사용하고 즉시 삭제합니다. 원본 WAV와 전사문은 파일·INFO 로그·DB에 저장하지 않으며, DB에는 입력 길이 등 비식별 메타만 저장합니다. |
+| **플랫폼별 캡처 검증** | iOS Linear PCM만 바이트 길이로 캡처 시간을 검증합니다. Android MPEG-4/AAC는 압축 오디오이므로 PCM 길이 공식을 적용하지 않고 서버 디코더와 VAD에 맡깁니다. |
 | **자기-에코 감지** | TTS 안내문이 마이크로 재녹음된 경우 전사 결과와 최근 안내문(`_recent_guidance`, TTL 10초)을 비교해 에코로 판정, 응답 스킵(`source=stt-echo-detected`). 클라이언트는 TTS 재생 중 녹음 시 `stopGuideAudio()` 후 150ms 대기 (서버+클라이언트 이중 방어) |
 | **인텐트 우선순위** | `awaiting_intent` 대기 상태에서 `nav intent -> question intent -> wake 재호출 -> else(재질문)` 순서로 분기. wake 재호출이 인텐트 매칭보다 우선하면 "길댕아 길찾아줘"가 wake로만 처리되는 문제 방지 |
 
@@ -99,6 +103,8 @@ flowchart TD
 | TC-STT-005 | 예외 폴백   | 실패 시 안내 문장 송신             |
 | TC-STT-006 | 자기-에코 감지 | 안내문 재녹음 시 `source=stt-echo-detected` 반환, 클라이언트에 응답 미송신 |
 | TC-STT-007 | 인텐트 우선순위 | `awaiting_intent`에서 "길댕아 길찾아줘" → `WAITING_FOR_DESTINATION` 전환 (wake 재호출이 아닌 nav intent로 처리) |
+| TC-STT-008 | Android 압축 오디오 | MPEG-4/AAC 녹음에 PCM 바이트 길이 판정을 적용하지 않고 서버로 전송 |
+| TC-STT-009 | 지연 녹음 취소 | 150ms 잔향 대기 중 손을 떼면 예약 녹음을 취소하고 STT 뮤트를 해제 |
 
 ---
 

@@ -481,7 +481,7 @@ class TestReflexAlertSuppression:
     async def test_suppressed_alert_is_not_sent(self, monkeypatch):
         import server.detection.consumer as consumer_module
 
-        send_mock = AsyncMock()
+        send_mock = AsyncMock(return_value=True)
         should_suppress_mock = AsyncMock(return_value=True)
         mark_as_sent_mock = AsyncMock()
         monkeypatch.setattr(consumer_module.manager, "send_json", send_mock)
@@ -529,3 +529,29 @@ class TestReflexAlertSuppression:
 
         send_mock.assert_awaited_once()
         mark_as_sent_mock.assert_awaited_once_with("device-1", "high_front")
+
+    @pytest.mark.asyncio
+    async def test_disconnected_alert_is_not_marked_as_sent(self, monkeypatch):
+        import server.detection.consumer as consumer_module
+
+        send_mock = AsyncMock(return_value=False)
+        should_suppress_mock = AsyncMock(return_value=False)
+        mark_as_sent_mock = AsyncMock()
+        monkeypatch.setattr(consumer_module.manager, "send_json", send_mock)
+        monkeypatch.setattr(
+            consumer_module.Alert_suppressor, "should_suppress", should_suppress_mock
+        )
+        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_as_sent", mark_as_sent_mock)
+
+        consumer = consumer_module.DetectionConsumer()
+        alert = ReflexAlert(
+            event_id="evt-disconnected",
+            alert_id="high_front",
+            direction="front",
+            clip="reflex_clips/high_front.mp3",
+            ts=0.0,
+        )
+        await consumer._send_reflex_alert("device-1", alert)
+
+        send_mock.assert_awaited_once()
+        mark_as_sent_mock.assert_not_awaited()

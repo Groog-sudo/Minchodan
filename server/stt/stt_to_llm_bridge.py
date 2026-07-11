@@ -262,7 +262,7 @@ class SttToLlmBridge:
         if self._check_self_echo(device_id, normalized_text):
             print(
                 f"[STT BRIDGE] 자기-에코 감지(안내문 재녹음), 무시: "
-                f"device_id={device_id}, transcript={normalized_text!r}"
+                f"device_id={device_id}, text_len={len(normalized_text)}"
             )
             return {
                 "guidance_text": "",

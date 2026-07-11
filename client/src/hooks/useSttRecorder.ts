@@ -16,6 +16,8 @@ import {
   type RecordingOptions,
 } from "expo-audio";
 import * as FileSystem from "expo-file-system/legacy";
+import { Platform } from "react-native";
+
 import { audioEngine } from "../services/audioEngine";
 
 // [TEMP DEBUG 2026-07-11] "입력이 없어" 재현 진단용: recorder.record()~stop()이
@@ -23,7 +25,7 @@ import { audioEngine } from "../services/audioEngine";
 // 분량만 담기는 현상을 실기기 실측(afinfo)으로 확인했다. AAC 하드웨어 인코더
 // 세션 자체의 문제인지 격리하기 위해 Linear PCM(무압축)으로 임시 전환한다.
 const STT_RECORDING_OPTIONS: RecordingOptions = {
-  extension: ".wav",
+  extension: Platform.OS === "ios" ? ".wav" : ".m4a",
   sampleRate: 44100,
   numberOfChannels: 1,
   bitRate: 128000,
@@ -37,6 +39,10 @@ const STT_RECORDING_OPTIONS: RecordingOptions = {
   android: {
     outputFormat: "mpeg4",
     audioEncoder: "aac",
+  },
+  web: {
+    mimeType: "audio/webm",
+    bitsPerSecond: 128000,
   },
 };
 
@@ -140,34 +146,37 @@ export function useSttRecorder(
       const audioB64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      // 2026-07-11: 캡처 결함 감지. LINEARPCM 44.1kHz mono 16bit 기준으로 base64
-      // 길이에서 실제 캡처 길이(초)를 역산해 홀드 시간과 대조한다(WAV 헤더 44바이트
-      // 는 오차 범위). 수 초를 눌렀는데 캡처가 절반 미만이면 오디오 세션 인터럽션
-      // 으로 잘린 파일이므로, 서버에 보내 "입력 없음" 왕복을 만드는 대신 단말에서
-      // 즉시 재시도를 안내한다.
+      // iOS LINEARPCM 44.1kHz mono 16bit만 base64 길이로 캡처 시간을 역산할 수 있다.
+      // Android MPEG-4/AAC는 압축률이 달라 같은 공식을 적용하면 정상 녹음도 잘린 파일로
+      // 오판하므로, Android는 서버 디코더/VAD 검증에 맡긴다.
       const holdMs =
         recordStartTsRef.current > 0 ? Date.now() - recordStartTsRef.current : 0;
-      const capturedSec = Math.max(0, (audioB64.length * 0.75 - 44) / (44100 * 2));
-      console.log(
-        `[STT] 녹음 완료: hold=${(holdMs / 1000).toFixed(2)}s, captured=${capturedSec.toFixed(2)}s`,
-      );
-      if (holdMs >= 800 && capturedSec < (holdMs / 1000) * 0.5) {
-        console.warn(
-          `[STT] 캡처 결함 감지(세션 인터럽션 의심): hold=${(holdMs / 1000).toFixed(2)}s, ` +
-            `captured=${capturedSec.toFixed(2)}s - 서버 전송 생략, 재시도 안내`,
+      if (Platform.OS === "ios") {
+        const capturedSec = Math.max(0, (audioB64.length * 0.75 - 44) / (44100 * 2));
+        console.log(
+          `[STT] 녹음 완료(iOS PCM): hold=${(holdMs / 1000).toFixed(2)}s, captured=${capturedSec.toFixed(2)}s`,
         );
-        onError?.(
-          "capture_truncated",
-          `hold=${(holdMs / 1000).toFixed(2)}s captured=${capturedSec.toFixed(2)}s`,
-        );
-        audioEngine.speakFallback("다시 말씀해 주세요");
-        return;
+        if (holdMs >= 800 && capturedSec < (holdMs / 1000) * 0.5) {
+          console.warn(
+            `[STT] 캡처 결함 감지(세션 인터럽션 의심): hold=${(holdMs / 1000).toFixed(2)}s, ` +
+              `captured=${capturedSec.toFixed(2)}s - 서버 전송 생략, 재시도 안내`,
+          );
+          onError?.(
+            "capture_truncated",
+            `hold=${(holdMs / 1000).toFixed(2)}s captured=${capturedSec.toFixed(2)}s`,
+          );
+          audioEngine.speakFallback("다시 말씀해 주세요");
+          return;
+        }
+      } else {
+        console.log(`[STT] 녹음 완료(${Platform.OS} 압축 오디오): hold=${(holdMs / 1000).toFixed(2)}s`);
       }
       onAudioReady(audioB64);
     } catch (err) {
       console.error("[STT] 녹음 종료/전송 실패:", err);
       onError?.("start_failed", err instanceof Error ? err.message : String(err));
     } finally {
+      recordStartTsRef.current = 0;
       statusRef.current = "idle";
       setStatus("idle");
     }
