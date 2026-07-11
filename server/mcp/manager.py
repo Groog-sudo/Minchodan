@@ -86,7 +86,17 @@ class MCPManager:
 
         url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
         try:
-            self._redis_client = aioredis.from_url(url, encoding="utf-8", decode_responses=True)
+            # XREAD를 block=1000(ms)으로 호출하므로, 클라이언트 소켓 타임아웃이 그보다
+            # 짧으면 이벤트 루프가 YOLO 추론/TTS 합성 등 다른 코루틴 처리로 잠깐 지연될
+            # 때마다 서버 응답을 기다리던 소켓이 먼저 타임아웃나 버린다(redis-py의
+            # 흔한 함정). block 시간보다 넉넉한 여유를 두어 오탐 타임아웃을 방지한다.
+            self._redis_client = aioredis.from_url(
+                url,
+                encoding="utf-8",
+                decode_responses=True,
+                socket_timeout=10.0,
+                socket_connect_timeout=5.0,
+            )
             logger.info(f"[MCP MANAGER] Redis Connection Successful: {url}")
         except Exception as e:
             logger.error(f"[MCP MANAGER] Redis Connection Failed: {e!s}")

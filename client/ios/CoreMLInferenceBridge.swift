@@ -41,33 +41,44 @@ class CoreMLInferenceBridge: NSObject {
     3: "braille_normal"
   ]
 
+  // 2026-07-07 실기기(고태현 iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
+  // 뒤에도 .cpuAndGPU 설정 시 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료,
+  // PID 재기동 반복)가 동일하게 재현됨을 확인함. GPU(Metal) 경로의 MLIR pass manager
+  // failed 문제로 판단됨. 2026-07-11 모델을 FP16으로 재변환한 뒤, GPU를 배제하는
+  // .cpuAndNeuralEngine을 우선 시도하고 실패 시에만 .cpuOnly로 폴백한다.
+  private func loadModel(url: URL) throws -> MLModel {
+    let aneConfig = MLModelConfiguration()
+    aneConfig.computeUnits = .cpuAndNeuralEngine
+    do {
+      let model = try MLModel(contentsOf: url, configuration: aneConfig)
+      print("[CoreMLBridge] \(url.lastPathComponent) - ANE 가속 모드로 로드 완료")
+      return model
+    } catch {
+      print("[CoreMLBridge] \(url.lastPathComponent) - ANE 로드 실패(\(error.localizedDescription)), CPU 전용으로 폴백")
+      let cpuConfig = MLModelConfiguration()
+      cpuConfig.computeUnits = .cpuOnly
+      return try MLModel(contentsOf: url, configuration: cpuConfig)
+    }
+  }
+
   @objc
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
-      let config = MLModelConfiguration()
-      // 2026-07-07 실기기(고태현 iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
-      // 뒤에도 .cpuAndGPU 설정 시 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료,
-      // PID 재기동 반복)가 동일하게 재현됨을 확인함. GPU(Metal) 경로의 MLIR pass manager
-      // failed 문제가 raw tensor 파싱과 무관하게 지속되는 것으로 판단, CPU 전용으로 재확정.
-      config.computeUnits = .cpuOnly
-
       // object_detection (필수) - end2end raw tensor 모델
       guard let detURL = Bundle.main.url(forResource: "object_detection", withExtension: "mlmodelc") else {
         reject("FILE_NOT_FOUND", "object_detection.modelc 에셋을 Bundle에서 찾을 수 없습니다.", nil)
         return
       }
-      self.detModel = try MLModel(contentsOf: detURL, configuration: config)
+      self.detModel = try loadModel(url: detURL)
 
       // segmentation (선택) - 현재 미번들이면 nil로 두고 det만 동작
       // 다음 세션에서 segmentation.mlmodelc 추가 시 자동 활성화
       if let segURL = Bundle.main.url(forResource: "segmentation", withExtension: "mlmodelc") {
-        self.segModel = try MLModel(contentsOf: segURL, configuration: config)
-        print("[CoreMLBridge] segmentation 모델 로드 완료")
+        self.segModel = try loadModel(url: segURL)
       } else {
         print("[CoreMLBridge] segmentation.mlmodelc 미번들 - det-only 모드로 기동")
       }
 
-      print("[CoreMLBridge] object_detection 모델 로드 완료 (CPU 전용 모드, GPU 크래시 회피)")
       let statusDict: [String: Any] = [
         "det": true,
         "seg": self.segModel != nil
@@ -219,10 +230,16 @@ class CoreMLInferenceBridge: NSObject {
     let inputFeature = try prepareInput(cgImage: cgImage, expectedSize: 640)
     let prediction = try model.prediction(from: inputFeature)
 
-    // raw tensor 출력 추출 (출력 이름은 모델마다 상이 - 첫 출력 사용)
-    guard let outputName = prediction.featureNames.first,
-          let outputMultiArray = prediction.featureValue(for: outputName)?.multiArrayValue else {
-      print("[CoreMLBridge] 출력 tensor 추출 실패: \(prediction.featureNames)")
+    // segmentation 모델은 출력이 2개다: [1, 300, 38](박스+마스크계수)와
+    // [1, 32, 160, 160](프로토타입 마스크). featureNames는 Set 기반이라 순서가
+    // 보장되지 않으므로 .first로 집으면 실기기에서 프로토 마스크 텐서를 집어
+    // 파싱이 매 프레임 실패하는 문제가 있었다(2026-07-11 실기기 로그로 확인:
+    // "예상치 못한 출력 shape 차원: [1, 32, 160, 160]" 반복 발생 - seg 결과 전체
+    // 유실). 박스 목록 텐서(3차원)를 이름이 아니라 shape로 명시적으로 찾는다.
+    guard let outputMultiArray = prediction.featureNames.lazy
+      .compactMap({ prediction.featureValue(for: $0)?.multiArrayValue })
+      .first(where: { $0.shape.count == 3 }) else {
+      print("[CoreMLBridge] 박스 목록 tensor(3차원) 탐색 실패: \(prediction.featureNames)")
       return []
     }
 
@@ -271,8 +288,16 @@ class CoreMLInferenceBridge: NSObject {
     return try MLDictionaryFeatureProvider(dictionary: [inputName: featureValue])
   }
 
-  // YOLO end2end raw tensor [1, 300, attrsPerBox] 파싱
-  // 각 행의 구조: (중앙x, 중앙y, 너비, 높이, 신뢰도, 클래스ID)
+  // YOLO 출력 파싱. 두 가지 포맷을 지원한다:
+  // 1) end2end 후처리 포맷 [1, 300, 6 또는 38] - (중앙x, 중앙y, 너비, 높이, 신뢰도, 클래스ID)
+  //    (segmentation 모델, object_detection의 구 버전)
+  // 2) 밀집(dense) raw 포맷 [1, numAnchors, 4+nc] - (x1, y1, x2, y2, class0..classN 확률)
+  //    2026-07-11 opus 2순위: CoreML 그래프에서 TopK/Gather(ANE 미지원)를 제거하기 위해
+  //    object_detection 모델의 top-k 선택 헤드를 export 시점에 빼고 밀집 텐서로 내보냄
+  //    (scripts/convert_yolo_to_coreml.py --raw-head). 이미 anchor 디코딩·sigmoid까지
+  //    끝난 절대좌표(x1,y1,x2,y2)이므로, 여기서는 클래스별 최댓값 확인 + 임계값 필터링 +
+  //    신뢰도 정렬만 하면 된다(one2one 헤드가 NMS-free로 학습돼 있어 별도 IoU-NMS 불필요 -
+  //    ultralytics postprocess()도 동일하게 단순 top-k만 수행).
   private func parseYoloOutput(multiArray: MLMultiArray, modelType: String) -> [[String: Any]] {
     let shape = multiArray.shape.map { $0.intValue }
     guard shape.count == 3 else {
@@ -281,60 +306,98 @@ class CoreMLInferenceBridge: NSObject {
     }
 
     let attrsPerBox = shape[2]
-    guard attrsPerBox == 6 || attrsPerBox == 38 else {
-      print("[CoreMLBridge] 예상치 못한 출력 attrsPerBox: \(attrsPerBox)")
-      return []
-    }
-
     let numBoxes = shape[1]
     let ptr = UnsafeMutablePointer<Float32>(multiArray.dataPointer.assumingMemoryBound(to: Float32.self))
     let strides = multiArray.strides.map { $0.intValue }
 
-    var results: [[String: Any]] = []
-
     let activeClassNames = (modelType == "segmentation") ? segClassNames : classNames
     let numClasses = activeClassNames.count
 
-    for i in 0..<numBoxes {
-      // [1, i, col] 인덱스 계산 (strides[0]은 텐서의 바운딩 박스 단위 이동폭)
-      let baseOffset = i * strides[1]
-      let cx = Double(ptr[baseOffset + 0 * strides[2]])
-      let cy = Double(ptr[baseOffset + 1 * strides[2]])
-      let w = Double(ptr[baseOffset + 2 * strides[2]])
-      let h = Double(ptr[baseOffset + 3 * strides[2]])
-      let confidence = Double(ptr[baseOffset + 4 * strides[2]])
-      let classId = Int(ptr[baseOffset + 5 * strides[2]].rounded())
+    var results: [[String: Any]] = []
 
-      // confidence 임계값 필터링 (패딩 박스 제거)
-      if confidence < confThreshold { continue }
-      if classId < 0 || classId >= numClasses { continue }
+    if attrsPerBox == 4 + numClasses {
+      // 밀집 raw 포맷: (x1, y1, x2, y2, class0..classN 확률)
+      for i in 0..<numBoxes {
+        let baseOffset = i * strides[1]
+        var bestClassId = -1
+        var bestScore: Float32 = -1
+        for c in 0..<numClasses {
+          let score = ptr[baseOffset + (4 + c) * strides[2]]
+          if score > bestScore {
+            bestScore = score
+            bestClassId = c
+          }
+        }
+        let confidence = Double(bestScore)
+        if confidence < confThreshold { continue }
 
-      // 클라이언트(CameraView.tsx)는 bbox 전체(x,y,w,h)를 640x640 픽셀 단위로 취급하여
-      // FRAME_SIZE(640)로 나눠 화면 비율(%)과 위험도 area ratio를 계산한다.
-      // x,y만 정규화하고 w,h는 원본 픽셀값으로 남기면 단위가 섞여 박스 위치가 다 뭉치므로,
-      // (cx, cy, w, h) 중심점 좌표를 좌상단 기준 (x, y, w, h)로만 변환하고 픽셀 단위를 유지한다.
-      let x = cx - w / 2.0
-      let y = cy - h / 2.0
-      let className = activeClassNames[classId] ?? "unknown"
+        let x1 = Double(ptr[baseOffset + 0 * strides[2]])
+        let y1 = Double(ptr[baseOffset + 1 * strides[2]])
+        let x2 = Double(ptr[baseOffset + 2 * strides[2]])
+        let y2 = Double(ptr[baseOffset + 3 * strides[2]])
+        let className = activeClassNames[bestClassId] ?? "unknown"
 
-      results.append([
-        "model": modelType,
-        "className": className,
-        "confidence": confidence,
-        "bbox": [
-          "x": x,
-          "y": y,
-          "w": w,
-          "h": h
-        ]
-      ])
+        results.append([
+          "model": modelType,
+          "className": className,
+          "confidence": confidence,
+          "bbox": [
+            "x": x1,
+            "y": y1,
+            "w": x2 - x1,
+            "h": y2 - y1
+          ]
+        ])
+      }
+    } else if attrsPerBox == 6 || attrsPerBox == 38 {
+      // end2end 후처리 포맷: (중앙x, 중앙y, 너비, 높이, 신뢰도, 클래스ID) [+ 마스크계수 32개]
+      for i in 0..<numBoxes {
+        let baseOffset = i * strides[1]
+        let cx = Double(ptr[baseOffset + 0 * strides[2]])
+        let cy = Double(ptr[baseOffset + 1 * strides[2]])
+        let w = Double(ptr[baseOffset + 2 * strides[2]])
+        let h = Double(ptr[baseOffset + 3 * strides[2]])
+        let confidence = Double(ptr[baseOffset + 4 * strides[2]])
+        let classId = Int(ptr[baseOffset + 5 * strides[2]].rounded())
+
+        if confidence < confThreshold { continue }
+        if classId < 0 || classId >= numClasses { continue }
+
+        // 클라이언트(CameraView.tsx)는 bbox 전체(x,y,w,h)를 640x640 픽셀 단위로 취급하여
+        // FRAME_SIZE(640)로 나눠 화면 비율(%)과 위험도 area ratio를 계산한다.
+        // (cx, cy, w, h) 중심점 좌표를 좌상단 기준 (x, y, w, h)로만 변환하고 픽셀 단위를 유지한다.
+        let x = cx - w / 2.0
+        let y = cy - h / 2.0
+        let className = activeClassNames[classId] ?? "unknown"
+
+        results.append([
+          "model": modelType,
+          "className": className,
+          "confidence": confidence,
+          "bbox": [
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h
+          ]
+        ])
+      }
+    } else {
+      print("[CoreMLBridge] 예상치 못한 출력 attrsPerBox: \(attrsPerBox)")
+      return []
     }
 
-    // 신뢰도 기준 역순 정렬
+    // 신뢰도 기준 역순 정렬 (raw 포맷은 top-k 선택이 아직 안 됐으므로 여기서 사실상 수행됨)
     results.sort { (a, b) -> Bool in
       let confA = a["confidence"] as? Double ?? 0.0
       let confB = b["confidence"] as? Double ?? 0.0
       return confA > confB
+    }
+
+    // raw 포맷은 8400개 앵커 전부를 훑으므로 임계값 통과 건수가 많을 수 있어 상한을 둔다
+    // (postprocess()의 max_det=300과 동일한 상한).
+    if attrsPerBox == 4 + numClasses && results.count > 300 {
+      results.removeLast(results.count - 300)
     }
 
     return results

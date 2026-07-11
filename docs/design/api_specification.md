@@ -1,9 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.2 (2026-07-09 감사 항목 보완: stt_audio 메시지 신설, reflex_alert clip/alert_id 사전 정의를 실제 게이트 출력값으로 정정, head_level_gate 신규 clip 추가 + 이전 v0.4.1 이력 유지)
+> **버전**: v0.4.9 (2026-07-11 STT 민감정보 비보존·플랫폼별 녹음 검증·반사 경보 송신 성공 확인 반영 + 이전 v0.4.8 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
-> **구현 상태**: 1+2+3단계 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드(640x640 압축 이미지), ack 응답, 단말 측 Reflex Gate 4단계 피드백(주차센서식 거리 반비례 햅틱/비프음) 정합 확인. `reflex_alert`/`guide`는 6·7단계 범위로 미구현(설계상 정상).
+> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
 
 ---
@@ -93,12 +93,25 @@
 
 ### 2.4 heartbeat
 
-서버가 5초 간격으로 ping을 송신하고 단말은 pong으로 응답합니다.
+서버가 5초 간격(`HEARTBEAT_INTERVAL`)으로 ping을 송신하고 단말은 pong으로 응답합니다. `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 5+15=20초) 동안 ack가 없으면 서버가 세션을 종료합니다.
 
 | 방향 | 메시지 |
 | :--- | :--- |
 | 서버 → 단말 | WebSocket ping 프레임 또는 `{"type":"heartbeat", "ts"}` |
 | 단말 → 서버 | WebSocket pong 프레임 또는 `{"type":"heartbeat_ack", "ts"}` |
+
+> **2026-07-10 정정**: 기존 타임아웃 유예(5+5=10초)는 ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료시켰다(`server/api/heartbeat.py`가 타임아웃 시 `ws.close()`를 호출하는 것과, 메인 루프(`server/api/ws_router.py`)가 동시에 ack/heartbeat 응답을 `ws.send_json()`하려는 시점이 겹치면 `Cannot call "send" once a close message has been sent` 예외로 세션 전체가 끊겼다). `HEARTBEAT_TIMEOUT`을 15초로 상향하고, 메인 루프의 ack/pong/heartbeat_ack 전송을 `contextlib.suppress(Exception)`로 감싸 레이스가 발생해도 세션이 죽지 않도록 방어했다(실제로 끊긴 소켓이면 다음 `ws.receive()`가 `WebSocketDisconnect`로 정상 정리한다).
+
+> **2026-07-11 정정**: 위 메인 루프의 `contextlib.suppress`와 별개로,
+> `SessionManager.send_json()`/`send_bytes()`/`is_connected()`(`server/api/session_manager.py`)
+> 자체에도 `ws.application_state == WebSocketState.CONNECTED` 가드를 추가했다. WS 연결이
+> 끊어진 뒤에도 `active_connections`에서 즉시 제거되지 않는 경쟁 창(consumer 태스크가
+> 독립적으로 실행 중)에서 `send`를 시도하면 동일한 `Cannot call send...` 에러가 스팸으로
+> 발생했던 문제(13:26:47~52 로그, 17회 반복)를 원천 차단한다.
+
+> **2026-07-11 추가 정정**: `SessionManager.send_json()`/`send_bytes()`는 실제 송신 성공
+> 여부를 boolean으로 반환합니다. 반사 경보는 반환값이 `true`인 경우에만 60초 중복 억제를
+> 기록하므로, 연결 종료 경쟁 구간에서 전달되지 않은 경보가 전송 완료로 처리되지 않습니다.
 
 ### 2.5 error (서버 → 단말)
 
@@ -290,27 +303,44 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 ### 6.1 guide (서버 → 단말)
 
+**2026-07-09 변경**: guide 오디오는 더 이상 `audio_mp3_b64`(base64 JSON 필드)로 전송되지
+않는다. §3의 client→server 바이너리 프레임 프로토콜과 동일한 방식을 반대 방향(server→client)에
+적용해, JSON 메타데이터 메시지 직후 raw WAV 바이트를 별도 WS **바이너리 프레임**으로 전송한다.
+실기기 실측 결과 base64 인코딩/디코딩 경로 자체가 원인은 아니었으나(§ 아래 비고 참조), 카메라
+프레임 전송과 동일한 아키텍처로 통일해 페이로드 크기와 처리 오버헤드를 줄인다.
+
 ```json
 {
   "type": "guide",
   "event_id": "uuid",
   "risk_level": "mid",
   "guidance_text": "전방 킥보드, 우측으로 한 발 물러서세요",
-  "audio_mp3_b64": "SUQzBAAAA...",
   "audio_codec": "wav",
   "duration_ms": 4820.5,
+  "transport": "binary",
   "sources": [{ "citation_number": 1, "label": "VEC_0", "role": "vector" }],
   "ts": 1719216000000
 }
 ```
 
+위 텍스트 메시지 직후, 별도의 WS **바이너리 프레임**으로 raw WAV 바이트(합성 실패 시 프레임
+없이 `transport: "none"`)를 전송한다(JSON 필드 아님, base64 인코딩 없음). 클라이언트
+(`client/src/hooks/useWebSocket.ts`)는 `ws.binaryType = "arraybuffer"`로 수신해
+`audioEngine.playGuideAudioBytes(Uint8Array)`에 그대로 전달한다.
+
 | 필드 | 설명 |
 | :--- | :--- |
 | `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함) |
-| `audio_mp3_b64` | 실시간 TTS 합성 base64 오디오 (`audio_codec` 참조, 실제 구현은 WAV) |
 | `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
-| `duration_ms` | 합성된 오디오 재생 길이(ms). **2026-07-09 추가**: 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
+| `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
+| `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |
 | `sources` | RAG 근거 인용 (선택) |
+
+> **비고 (2026-07-09)**: 실기기에서 안내 음성이 문장 중간에 끊기던 근본 원인은 base64
+> 전송 방식이 아니라 (1) 서버 TTS 엔진(Piper) 자체의 발음 품질 한계와 (2) 반사 캡처가
+> `takePhoto()`(정지사진 반복 촬영)를 써서 촬영마다 iOS 오디오 세션을 인터럽트하던
+> 문제였다. 자세한 경위는 `docs/stage-guides/stage7_tts_design.md` §TTS 엔진, `docs/changelogs/kb.md`
+> 참조. 바이너리 전송 전환 자체는 페이로드 최적화 목적으로 유지한다.
 
 ### 6.2 status (서버 → 단말, 진행 알림)
 
@@ -348,12 +378,130 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `audio_b64` | 녹음된 오디오 파일 전체를 base64 인코딩한 값 (필수). 컨테이너 포맷은 서버의 `av` 기반 디코더가 처리하므로 특정 포맷에 종속되지 않음(iOS `RecordingPresets.HIGH_QUALITY` 기준 m4a) |
+| `audio_b64` | 녹음된 오디오 파일 전체를 base64 인코딩한 값 (필수). 현재 iOS는 44.1kHz mono 16bit Linear PCM WAV, Android는 MPEG-4/AAC를 사용하며 서버의 `av` 기반 디코더가 처리합니다. |
 | `model_name` | 선택. 미지정 시 `server/stt/stt_config.py`의 `DEFAULT_REQUEST_MODEL`(`faster-whisper-medium`) 사용 |
 
 응답은 별도 신규 타입이 아니라 기존 **6.1 guide** 메시지로 온다(클라이언트가 이미
-`audio_mp3_b64` 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
+guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
 `guidance_text: "음성 인식에 실패했습니다..."`를 담은 guide 메시지로 응답한다(무응답 방지).
+
+> **비고 (2026-07-10)**: `_handle_stt_audio`(`server/api/ws_router.py`)가 응답 오디오를
+> §6.1의 `transport: "binary"` 규격이 아니라 구버전 `audio_mp3_b64`(JSON base64 필드)로
+> 보내고 있어, 클라이언트(`useWebSocket.ts`)가 `transport !== "binary"` 조건으로 서버
+> TTS 오디오를 항상 무시하고 단말 내장 TTS로만 폴백하던 결함을 실기기 실측으로 발견해
+> 수정했다(§6.1 규격과 동일하게 통일). 자세한 경위는 `docs/changelogs/kb.md` 2026-07-10
+> 항목 참조.
+
+`stt_audio`로 전달되는 발화는 `server/stt/stt_to_llm_bridge.py`가 다음 명령 어휘로
+분기한다(디바이스별 상태는 `NavigationManager`가 `status`/`awaiting_free_question`/
+`awaiting_intent` 3개 독립 플래그로 관리).
+
+| 발화(예시) | 동작 | 비고 |
+| :--- | :--- | :--- |
+| `길댕아` (또는 유사 발음) | 2단계 진입 대기 상태로 전환, "길 찾아드릴까요, 질문 받을까요?" 응답 | 정확 문자열 매칭이 아니라 **편집거리(Levenshtein) ≤1 퍼지 매칭**("길댕"과 비교) - "길대가"/"결댕아"/"길땡아" 등 STT 오인식 변형까지 흡수 |
+| `길찾아줘` (대기 중) | 목적지 대기 상태(`WAITING_FOR_DESTINATION`)로 전환 | 이어지는 발화를 목적지명으로 파싱해 TMAP POI 검색 + 경로 계산 수행 |
+| `물어볼게` (대기 중) | 자유 질의응답 대기 상태로 전환 | 이어지는 발화를 장애물 회피 오케스트레이터가 아닌 순수 LLM 대화로 처리(§ 아래 참조) |
+| `네비게이션 켜줘` / `질문할게` 등 | 위 2단계 웨이크워드 없이 바로 진입하는 기존 단일 트리거(하위 호환 유지) | "네비게이션"/"내비게이션" 표기는 매칭 전 정규화 |
+| 자유 질의(대기 상태에서) | "가까운/근처/주변" + 장소 유형(지하철역·편의점·화장실 등)이 감지되면 TMAP 실거리 검색(`helper_search_nearest_poi`, Haversine 거리순)으로 사실 기반 답변. 그 외는 LLM 자유 대화 | 위치 사실을 LLM에 맡기지 않고 실제 API 조회 결과로만 답해 환각을 방지 |
+
+> **비고 (2026-07-10)**: 목적지 설정 시 `NavigationManager` 세션 키를 `"default_device"`로
+> 하드코딩해뒀던 결함이 있었다 - GPS 갱신(`realtime_gps`)과 턴바이턴 안내 조회
+> (`get_combined_guidance`)는 실제 `device_id`의 세션을 보는데, 목적지만 별도의 가짜
+> 세션에 저장되어 **목적지 설정은 성공해도 실제 길안내 음성이 영구히 나올 수 없는
+> 구조**였다. `invoke_existing_llm(stt_result, device_id)`로 실제 device_id를 그대로
+> 전달하도록 수정.
+
+> **비고 (2026-07-11) - 자기-에코 감지**: TTS 안내문이 스피커로 재생되는 도중 사용자가
+> 녹음 버튼을 누르면 마이크가 안내문을 주워듣고 Whisper가 전사한다. 이 전사에 웨이크업
+> 키워드가 포함되면 메아리 루프(안내문 -> 재녹음 -> 전사 -> 웨이크업 재발동 -> 동일
+> 안내문)가 발생한다(실기기 13:24:07 로그로 확인). 서버(`stt_to_llm_bridge.py`)는
+> device_id별 최근 안내문을 10초간 보관(`_recent_guidance`)하고, 전사 결과가 이 안내문과
+> 유사하면 `source: "stt-echo-detected"`로 빈 응답을 반환해 클라이언트에 응답을 보내지
+> 않는다(`ws_router._process_stt_audio`에서 스킵). 클라이언트(`CameraView.tsx`)는 TTS
+> 재생 중 녹음 시작 시 `stopGuideAudio()` 후 150ms 대기해 스피커 잔향이 멈춘 뒤 마이크를
+> 활성화하는 이중 방어를 적용한다.
+
+> **비고 (2026-07-11) - 인텐트 대기 상태 체크 순서**: `awaiting_intent` 대기 상태에서
+> 발화 분기 우선순위를 `nav intent -> question intent -> wake 재호출 -> else(재질문)`로
+> 변경했다(이전: wake 재호출이 최우선). "길댕아 길찾아줘"라고 말하면 wake 매칭이 먼저
+> True가 되어 인텐트 매칭 전에 리턴해버려, 목적지 대기 상태로 진입하지 못하고 같은
+> 안내만 반복하던 문제(5회 반복 로그 확인)를 해결.
+
+> **비고 (2026-07-11) - 민감정보와 플랫폼별 검증**: 서버는 STT 원본 오디오와 전사문을
+> 영구 파일, INFO 로그, DB에 저장하지 않습니다. 요청 단위 임시 파일은 전사 후 즉시
+> 삭제하며 DB에는 `text_length` 같은 비식별 메타만 남깁니다. 클라이언트의 캡처 길이
+> 검사는 비압축 PCM인 iOS에만 적용하고, Android MPEG-4/AAC에는 PCM 바이트 공식을
+> 적용하지 않습니다.
+
+### 6.4 server_detection (서버 → 단말, 실시간 BBox 업데이트)
+
+서버에서 실시간 YOLO 및 노면 분할(Segmentation) 추론을 완료할 때마다, 탐지된 모든 사물 및 노면의 BBox/Centroid 정보를 모바일 화면 렌더링용으로 브로드캐스트합니다.
+
+```json
+{
+  "type": "server_detection",
+  "event_id": "uuid",
+  "detections": [
+    {
+      "model": "object_detection",
+      "className": "scooter",
+      "confidence": 0.87,
+      "bbox": {
+        "x": 120,
+        "y": 200,
+        "w": 160,
+        "h": 160
+      }
+    },
+    {
+      "model": "segmentation",
+      "className": "caution",
+      "confidence": 0.92,
+      "bbox": {
+        "x": 280,
+        "y": 540,
+        "w": 80,
+        "h": 80
+      }
+    }
+  ],
+  "ts": 1719216000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `detections` | 모바일 화면 렌더링용 BBox 정보 배열. 노면 분할(`segmentation`) 결과의 centroid 좌표는 서버 단에서 80x80 크기의 가상 BBox로 변환하여 동일 포맷으로 전달 |
+
+> **비고 (2026-07-11) - 폴백 모드 BBox 표시**: WS 재연결 한계 도달 후 폴백 모드
+> (`status === "fallback"`)에서는 `server_detection`이 수신되지 않는다. 이때 단말은
+> 온디바이스 CoreML 추론 결과(det + seg)를 `CameraView.tsx`에서 직접 `detections`
+> 상태에 반영해 BBox를 표시한다(`isMockModeRef.current || wsStatusRef.current ===
+> "fallback"` 조건). 정상 연결 시에는 서버 결과를 온디바이스 결과가 덮어쓰지 않도록
+> 폴백 모드에서만 온디바이스 결과를 사용한다.
+
+---
+
+### 6.5 realtime_gps (단말 → 서버, GPS 내비게이션, 2026-07-10 신설)
+
+단말이 `expo-location`의 `watchPositionAsync`로 수신한 좌표를 실시간 전송하면, 서버는 `NavigationManager`(`server/navigation/manager.py`)의 디바이스별 세션에 현재 위치를 갱신합니다. 응답 메시지는 없다(fire-and-forget).
+
+```json
+{
+  "type": "realtime_gps",
+  "lat": 37.5665,
+  "lon": 126.9780,
+  "heading": 45.0
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `lat` | 위도 (필수) |
+| `lon` | 경도 (필수) |
+| `heading` | 방위각(도, 0~360). 선택, 미제공 시 `None`으로 처리 |
+
+`lat`/`lon` 중 하나라도 누락되면 서버는 조용히 무시한다(에러 응답 없음). TMAP 보행자 경로 안내(`server/navigation/pedestrian_navigation.py`)와 결합되어 실시간 TTS로 안내 문장이 발화된다.
 
 ---
 
@@ -426,3 +574,9 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | v0.4.0 | 2026-07-07 | detection 프레임 바이너리 전송 프로토콜 추가, base64는 구버전 호환 경로로 격하 |
 | v0.4.1 | 2026-07-09 | guide 메시지에 `audio_codec`, `duration_ms` 필드 추가 |
 | **v0.4.2** | **2026-07-09** | **stt_audio(6.3) 신설 / reflex_alert clip·alert_id 사전 정의(4.2)를 실제 게이트 3곳 출력값으로 정정 / head_level_warning.wav 클립 추가** |
+| v0.4.4 | 2026-07-10 | heartbeat 타임아웃 유예 5→15초 상향, 서버측 ack/heartbeat 응답 레이스 컨디션 수정(WS 세션 조기 종료 방지) |
+| v0.4.5 | 2026-07-10 | server_detection(6.4) 신설, dg2 브랜치 병합 반영 |
+| v0.4.6 | 2026-07-10 | realtime_gps(6.5) 신설, 구현 상태를 1~7단계 전체 완료로 갱신 |
+| **v0.4.7** | **2026-07-10** | **stt_audio(6.3) 응답 전송을 audio_mp3_b64→binary transport로 통일(§6.1 규격과 일치), 명령 어휘 표(길댕아 2단계 웨이크워드·질문 모드·POI 실거리 검색) 추가, device_id 세션 불일치 결함(목적지는 설정돼도 길안내 음성이 안 나오던 원인) 수정 반영** |
+| **v0.4.8** | **2026-07-11** | **§6.3 자기-에코 감지(TTS 안내문 재녹음 무시, 서버+클라이언트 이중 방어)·인텐트 체크 순서 변경(nav/question > wake 재호출) 비고 추가, §6.4 폴백 모드 온디바이스 BBox 표시 비고 추가, §2.4 SessionManager WebSocketState 가드(WS 종료 후 송신 실패 스팸 방지) 비고 추가** |
+| **v0.4.9** | **2026-07-11** | **STT 원본·전사문 비보존, iOS PCM·Android AAC 플랫폼별 캡처 검증, SessionManager 송신 성공 boolean 및 반사 경보 억제 조건 정합화** |

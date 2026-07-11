@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 import time
@@ -111,14 +112,17 @@ class DetectionPipeline:
 
         height, width = frame.shape[:2]
 
+        # to_thread로 워커 스레드에 위임: predict()는 동기 블로킹 호출이라 그대로 await하면
+        # 추론 중(150~300ms) WS 수신 루프/하트비트/Redis 통신까지 이벤트 루프 전체가 멈춘다
+        # (2026-07-10 실기기 테스트에서 반사 큐 드랍 + Redis xadd 타임아웃으로 실측 확인).
         try:
-            detections = self.detector.predict(frame)
+            detections = await asyncio.to_thread(self.detector.predict, frame)
         except Exception as e:
             logger.error(f"[Pipeline] Detector 추론 실패: {e}")
             detections = []
 
         try:
-            surfaces = self.segmentor.predict(frame)
+            surfaces = await asyncio.to_thread(self.segmentor.predict, frame)
         except Exception as e:
             logger.error(f"[Pipeline] Segmentor 추론 실패: {e}")
             surfaces = []

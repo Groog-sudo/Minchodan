@@ -87,12 +87,23 @@ def test_transcribe_production_returns_result(
         duration = 1.5
 
     class FakeModel:
-        def transcribe(self, path: str, language: str, beam_size: int, vad_filter: bool):
+        def transcribe(
+            self,
+            path: str,
+            language: str,
+            beam_size: int,
+            vad_filter: bool,
+            hotwords: str,
+        ):
             assert path == str(wav_path)
             assert language == "ko"
             assert beam_size == 3
-            assert vad_filter is False
-            return [FakeSegment(0.0, 0.5, "안녕 "), FakeSegment(0.5, 1.0, " 하세요")], FakeInfo()
+            assert vad_filter is stt_service_module.TRANSCRIBE_VAD_FILTER
+            assert hotwords == stt_service_module.TRANSCRIBE_HOTWORDS
+            return [
+                FakeSegment(0.0, 0.5, "안녕 "),
+                FakeSegment(0.5, 1.0, " 하세요"),
+            ], FakeInfo()
 
     monkeypatch.setattr(SttService, "get_model", classmethod(lambda cls, model_name: FakeModel()))
 

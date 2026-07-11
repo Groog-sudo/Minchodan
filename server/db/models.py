@@ -230,7 +230,6 @@ class UserDevice(Base):
         passive_deletes="all",
     )
 
-
 class AdminAccount(Base):
     """운영자 콘솔 관리자 계정."""
 

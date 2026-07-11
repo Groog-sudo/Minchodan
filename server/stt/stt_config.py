@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 import sys
 
@@ -60,6 +59,13 @@ if hasattr(sys.stdout, "reconfigure"):
 #   - STT 입력을 나타내는 가상 클래스명 (예: voice_command)
 #   - 공백 없는 snake_case 권장
 #   - 분석/로그 집계를 위해 일관된 단일 값 사용 권장
+# - TRANSCRIBE_HOTWORDS:
+#   - faster-whisper 1.2.1이 지원하는 도메인 어휘 바이어싱 문자열(공백 구분)
+#   - "길댕아" 등 사전에 없는 신조어 웨이크워드 오인식 완화 목적
+#   - 담당자가 직접 확정하는 값이다 - 아래는 stt_to_llm_bridge.py에 이미 정의된
+#     실제 명령어 어휘(GILDAENG_ROOT, *_INTENT_KEYWORDS, POI_CATEGORY_KEYWORDS)에서
+#     그대로 가져온 초안이며, 실사용 명령 패턴에 맞춰 조정해야 한다(2026-07-11 opus 제안,
+#     실측 검증 전).
 
 MODEL_NAME_MAP: dict[str, str] = {
     "faster-whisper-medium": "medium",
@@ -68,7 +74,11 @@ MODEL_NAME_MAP: dict[str, str] = {
 DEFAULT_REQUEST_MODEL = "faster-whisper-medium"
 TRANSCRIBE_LANGUAGE = "ko"
 TRANSCRIBE_BEAM_SIZE = 3
-TRANSCRIBE_VAD_FILTER = False
+TRANSCRIBE_VAD_FILTER = True
+TRANSCRIBE_HOTWORDS = (
+    "길댕이 길댕아 길찾아줘 네비게이션 길안내 시작 물어볼게 질문할게 "
+    "가까운 근처 주변 지하철역 버스정류장 편의점 화장실 약국 병원 카페 은행 주차장"
+)
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 STT_ORCH_RISK_HINT = "low"

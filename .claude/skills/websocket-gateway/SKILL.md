@@ -9,9 +9,9 @@ description: |
 # WebSocket Gateway (1단계: 서버와 실시간 통신망 연결)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 1단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16.3, 17.2, 17.3
+> **버전**: v0.2.1 (2026-07-09 guide 메시지의 `audio_mp3_b64` 필드 폐기, `transport`+WS 바이너리 프레임 방식으로 정정)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 1단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 8, 16.3, 17.2, 17.3
 
 ## 개요
 
@@ -501,7 +501,7 @@ export function useWebSocket(deviceId: string, token: string) {
 | In (detection) | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream, thumbnail_jpeg_b64}}` |
 | Out (ack) | `{type:"ack", event_id, received_at}` |
 | Out (reflex_alert) | `{type:"reflex_alert", event_id, alert_id, direction, risk_level, clip, haptic, ts}` |
-| Out (guide) | `{type:"guide", event_id, risk_level, guidance_text, audio_mp3_b64, ts}` |
+| Out (guide) | `{type:"guide", event_id, risk_level, guidance_text, transport, ts}` + `transport:"binary"`일 때 직후 WS 바이너리 프레임(raw WAV bytes, 2026-07-09부터 `audio_mp3_b64` 필드 폐기) |
 
 ## 테스트 체크리스트
 
@@ -528,6 +528,6 @@ export function useWebSocket(deviceId: string, token: string) {
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md)
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)
 - FastAPI WebSocket 공식 문서: https://fastapi.tiangolo.com/advanced/websockets/
 - Redis Streams 공식 문서: https://redis.io/docs/data-types/streams/

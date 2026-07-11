@@ -1,10 +1,10 @@
 # iOS CoreML 온디바이스 추론 지연 벤치마크 명세
 
 > **작성일**: 2026-07-05
-> **버전**: v1.3.0 (2026-07-07 실기기 재검증: `.cpuAndGPU` 크래시 재현 확인 및 `.cpuOnly` 실측 벤치마크 갱신. §1·§2·§4·§5·§6·§7 갱신)
+> **버전**: v1.4.0 (2026-07-11 ANE 가속 재활성화: FP16 재변환 + `computeUnits = .cpuAndNeuralEngine` 폴백 패턴 전환, Xcode Instruments Core ML 템플릿으로 ANE 하드웨어 활동 직접 검증, segmentation 출력 파싱 버그 수정, 선택헤드(TopK/Gather) Swift 이관 실험 및 성능 회귀로 인한 롤백 기록 추가 + 이전 v1.3.1(2026-07-09 Frame Processor 전환 정정) / v1.3.0(2026-07-07 `.cpuAndGPU` 크래시 재현 및 `.cpuOnly` 벤치마크) 이력 유지)
 > **기준 문서**: [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) (3단계 KPI), [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](../mobile/ondevice_inference_engine_isolation_plan.md)
-> **코드 참조**: `client/ios/CoreMLInferenceBridge.swift`(유일한 실제 Xcode 빌드 타겟 — 2026-07-07 미사용 사본 `client/ios/Minchodan/CoreMLInferenceBridge.swift` 삭제)
-> **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md), [`docs/ops/model_class_validation_report.md`](model_class_validation_report.md)
+> **코드 참조**: `client/ios/CoreMLInferenceBridge.swift`(유일한 실제 Xcode 빌드 타겟), `scripts/convert_yolo_to_coreml.py`(FP16/`--raw-head` 변환 스크립트)
+> **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md) §9.2, [`docs/ops/model_class_validation_report.md`](model_class_validation_report.md)
 
 ---
 
@@ -12,9 +12,9 @@
 
 본 문서는 Minchodan iOS 클라이언트의 **CoreML 온디바이스 추론 성능**을 벤치마크하고, 서버 측 Detection KPI(**< 80ms**)와 비교 분석하기 위한 명세서이다.
 
-> **2026-07-07 현황**: 하드웨어는 Apple Neural Engine(ANE)을 내장하고 있으나, `computeUnits = .cpuAndGPU`(GPU/Metal 경로) 전환 시 실기기에서 `MLIR pass manager failed` 크래시가 반복 재현되어(§4 참조) **현재는 `computeUnits = .cpuOnly`로 CPU 전용 추론만 수행** 중이다. 즉 아래 수치는 ANE/GPU 가속 수치가 아니라 **CPU 전용 CoreML 추론** 실측치다. ANE/GPU 가속은 향후 크래시 근본 원인 규명 후 재도전 과제로 남는다.
+> **2026-07-11 현황(최신)**: `.cpuOnly` 고정의 근본 원인은 크래시 자체가 아니라 **모델이 FP32로 굳어 있었던 것**으로 재진단되었다(ultralytics의 CoreML export가 `half` 인자를 폐기하고 `quantize=16`으로 대체한 것을 과거 변환 시 놓쳤음). object_detection/segmentation 모델을 FP16으로 재변환한 뒤, `computeUnits`를 `.cpuOnly` 고정에서 **`.cpuAndNeuralEngine` 우선 시도 + 실패 시 `.cpuOnly` 폴백**으로 전환했다. 과거 크래시는 `.cpuAndGPU`(GPU/Metal 경로) 조합이었고 ANE 전용 조합(GPU 미경유)은 이번에 처음 검증했다 — 실기기에서 수백 프레임 연속 무크래시를 확인했다. Xcode Instruments의 **Core ML 템플릿으로 15초 트레이스를 떠서 ANE 하드웨어 활동(`ane-hw-intervals-internal`) 247건을 직접 확인**했으며(§4.4), 이는 로그 문자열이 아니라 ANE 칩 자체의 하드웨어 카운터 기록이다. 아래 §4.1의 수치는 이 FP16+ANE 폴백 구성의 실측치다. 다만 end2end 선택 헤드(TopK/Gather, ANE 미지원 연산 5개)는 설계상 여전히 CPU로 폴백되며, 이를 완전히 없애는 실험(§4.5)은 오히려 성능을 악화시켜 롤백했다.
 
-시각장애인 보행 보조 시나리오에서 **반사 경로(Reflex Path)** 의 종단 지연은 사용자 안전에 직결되므로, 온디바이스 CPU 추론이 서버 추론 대비 얼마나 우월한지 정량적으로 검증한다.
+시각장애인 보행 보조 시나리오에서 **반사 경로(Reflex Path)** 의 종단 지연은 사용자 안전에 직결되므로, 온디바이스 추론이 서버 추론 대비 얼마나 우월한지 정량적으로 검증한다.
 
 ---
 
@@ -22,12 +22,13 @@
 
 | 항목 | 내용 |
 |:---|:---|
-| **하드웨어** | 고태현 iPhone (애플 실리콘 탑재, Apple Neural Engine 내장) |
-| **OS** | iOS 16.4+ |
+| **하드웨어** | 고태현 iPhone (iPhone 14 Pro Max, Apple Neural Engine 내장) |
+| **OS** | iOS 26.5 |
 | **추론 엔진** | CoreML `MLModel` 직접 호출 + raw tensor 수동 파싱 (2026-07-06부로 Vision Framework/`VNCoreMLRequest` 제거) |
-| **컴퓨팅 유닛** | `config.computeUnits = .cpuOnly` — GPU(Metal) 경로에서도 `MLIR pass manager failed` 크래시가 재현되어(end2end NMS 연산의 Metal 컴파일 실패 추정) CPU 전용으로 하향 |
+| **컴퓨팅 유닛** | `config.computeUnits = .cpuAndNeuralEngine` 우선 시도, 로드 실패 시에만 `.cpuOnly` 폴백(`CoreMLInferenceBridge.swift`의 `loadModel(url:)`). 과거 크래시는 `.cpuAndGPU`(GPU/Metal 경로)였고 ANE 전용 조합은 2026-07-11 최초 검증, 무크래시 확인 |
+| **모델 정밀도** | **FP16** (`storagePrecision: Float16`) — 2026-07-11 재변환. 이전엔 ultralytics의 `half` 인자 폐기(`quantize=16`으로 대체)를 놓쳐 FP32로 굳어 있었음 |
 | **모델 포맷** | `.mlmodelc` (Xcode 컴파일 완료 바이너리) |
-| **모델 파일** | `object_detection.mlmodelc` (커스텀 Object Detection **29클래스**, `det_best_20260705.pt` 파인튜닝, end2end raw tensor `[1, 300, 6]` 출력), `segmentation.mlmodelc` (커스텀 노면 Segmentation **4클래스**) — 두 모델 모두 80클래스 COCO 원본이 아닌 재학습 가중치 |
+| **모델 파일** | `object_detection.mlmodelc` (커스텀 Object Detection **29클래스**, `det_best_20260705.pt` 파인튜닝, end2end raw tensor `[1, 300, 6]` 출력, FP16), `segmentation.mlmodelc` (커스텀 노면 Segmentation **4클래스**, FP16) — 두 모델 모두 80클래스 COCO 원본이 아닌 재학습 가중치 |
 | **번들 상태** | `object_detection.mlpackage` 필수 번들, `segmentation.mlpackage`는 선택(optional) 번들 — 미번들 시 det-only 모드로 자동 기동 |
 | **입력 해상도** | 640x640 RGB (`CVPixelBuffer`, `kCVPixelFormatType_32BGRA`) |
 | **프레임 압축** | JPEG 50% 품질, base64 인코딩 (원본 3.4MB → 12KB, 1/45 압축) |
@@ -86,53 +87,84 @@ React Native로 반환되는 JSON:
 
 ## 4. 벤치마크 결과
 
-> **2026-07-07 재검증 경과**: raw tensor 파싱 아키텍처(§2)에서도 `computeUnits = .cpuAndGPU`로 전환해 실기기(고태현 iPhone) 재현 테스트를 진행했다. 앱 재실행마다 CoreML 모델 로드(`det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료` 로그)까지는 성공했으나, 반사 프레임 1장 처리 직후 화면이 흰 화면으로 전환되며 프로세스가 종료(PID 1178→1210→1218로 반복 재기동)되는 크래시가 3회 연속 재현되었다. 이후 `computeUnits = .cpuOnly`로 되돌려 재빌드한 결과 509프레임 연속 무크래시 동작을 확인했다. 아래 §4.1~§4.3 수치는 이 **`.cpuOnly` 재검증 실측치**(2026-07-07)로 갱신한 것이며, 기존 2026-07-05 수치(Vision Framework + COCO 80클래스 + ANE 가속 가정 기준, 현재 아키텍처와 불일치)는 §부록에 구 데이터로만 보존한다.
+> **2026-07-11 재검증 경과**: 모델을 FP16으로 재변환하고 `computeUnits = .cpuAndNeuralEngine`(실패 시 `.cpuOnly` 폴백)로 전환한 뒤 실기기(고태현 iPhone) 재검증을 진행했다. 콘솔에 `object_detection.mlmodelc - ANE 가속 모드로 로드 완료`, `segmentation.mlmodelc - ANE 가속 모드로 로드 완료` 로그(폴백 미발동)를 확인했고, 수백 프레임 연속 무크래시로 동작했다. 과거 크래시(§4의 구 버전 기록, 2026-07-07)는 `.cpuAndGPU` 조합이었으며 GPU(Metal) 경로 특유의 `MLIR pass manager failed` 문제였다 — ANE 전용 조합(GPU 미경유)은 별개이며 이번이 최초 검증이다. 아래 §4.1~§4.3 수치는 이 **FP16 + `.cpuAndNeuralEngine` 실측치**(2026-07-11)로 갱신한 것이며, 기존 `.cpuOnly`(2026-07-07)/구 아키텍처(2026-07-05) 수치는 §부록에 구 데이터로 보존한다.
 
-### 4.1 추론 지연 측정값 (2026-07-07 실기기 측정, `.cpuOnly`, raw tensor 아키텍처)
+### 4.1 추론 지연 측정값 (2026-07-11 실기기 측정, FP16 + `.cpuAndNeuralEngine`)
 
-| 측정 항목 | 평균값 | 최소값 | 최대값 | 서버 KPI 목표 | 비교 결과 |
-|:---|:---|:---|:---|:---|:---|
-| **det (탐지)** | **~24.11ms** | 21.33ms | 30.75ms | < 80ms | **통과 (3.3배 여유)** |
-| **seg (분할)** | **~18.86ms** | 16.58ms | 23.96ms | - | 정상 동작 |
-| **total (총추론)** | **~42.97ms** | 38.47ms | 51.67ms | - | det + seg 합산 |
-| **서버 Detection** | - | - | < 80ms | GPU 서버 기준 | - |
-
-> **측정 조건**: 2026-07-07 고태현 iPhone(iOS 26.5), `computeUnits = .cpuOnly`, 640x640 입력, 509프레임 연속 측정(Metro 로그 `[CoreMLBenchmark]` 라인 집계)
-
-### 4.2 서버 대비 CPU 추론 비교
-
-| 비교 항목 | 서버 (GPU) | 단말 (CoreML CPU) | 비고 |
+| 측정 항목 | 대표 범위 | 서버 KPI 목표 | 비교 결과 |
 |:---|:---|:---|:---|
-| **추론 환경** | FastAPI + CUDA GPU | iOS CPU 전용 (`.cpuOnly`) | 서버는 RTT 포함, 단말은 ANE/GPU 미가속 |
-| **Detection 지연** | < 80ms (추론만) | ~24.11ms (평균) | **약 3.3배 빠름** |
-| **Segmentation 지연** | - | ~18.86ms (평균) | 온디바이스 CPU |
-| **WS RTT** | < 100ms | N/A (온디바이스) | RTT 불필요 |
-| **반사 종단** | < 300ms (목표) | < 60ms (추정 ~50ms) | 캡처+추론+게이트+피드백 |
+| **det (탐지)** | **~6~14ms** | < 80ms | **통과 (약 6~13배 여유)** |
+| **seg (분할)** | **~5~12ms** | - | 정상 동작(§4.6 segmentation 파싱 버그 수정 후) |
+| **씬분류(scene)** | **~8~17ms** | - | Vision `VNClassifyImageRequest` 기반, 실내/실외 판정 |
+| **total (det+seg+scene)** | **~19~35ms** | - | 이전(`.cpuOnly`, ~42.97ms) 대비 약 2.5배 단축 |
+
+> **측정 조건**: 2026-07-11 고태현 iPhone(iOS 26.5), `computeUnits = .cpuAndNeuralEngine`, 640x640 입력, 수백 프레임 연속 측정(Metro 로그 `[CoreMLBridge] 벤치마크` 라인 집계)
+
+### 4.2 이전(`.cpuOnly`) 대비 비교
+
+| 비교 항목 | 이전 (`.cpuOnly`, FP32) | 현재 (`.cpuAndNeuralEngine`, FP16) | 비고 |
+|:---|:---|:---|:---|
+| **Detection 지연** | ~24.11ms (평균) | ~6~14ms | 약 2~4배 단축 |
+| **Segmentation 지연** | ~18.86ms (평균) | ~5~12ms | 약 2~3배 단축(파싱 버그 수정 포함, §4.6) |
+| **총추론** | ~42.97ms (평균) | ~19~35ms | 약 2.5배 단축 |
+| **서버 Detection 대비** | 약 3.3배 빠름 | **약 6~13배 빠름** | 서버 KPI(80ms) 기준 |
 
 ### 4.3 가속 배율 분석
 
-서버 측 Yolo 추론 목표(< 80ms) 대비, 단말 CPU 전용 추론(~24.11ms)은 **약 3.3배 빠르다**. ANE/GPU 가속이 크래시 없이 활성화되면 이 배율은 더 커질 잠재력이 있으나(§1 참조), 현재는 CPU 전용 수치 기준이다.
+서버 측 Yolo 추론 목표(< 80ms) 대비, 단말 FP16+ANE 추론(~6~14ms)은 **약 6~13배 빠르다**.
 
 ```
-가속 배율 = 서버 KPI / 단말 CPU det = 80ms / 24.11ms ≈ 3.3배
+가속 배율 = 서버 KPI / 단말 det = 80ms / (6~14ms) ≈ 6~13배
 ```
 
-WS RTT(< 100ms)까지 포함한 서버 종단(< 300ms) 대비, 온디바이스 반사 종단(~50ms 추정)은 **약 6배 빠르다**.
+### 4.4 ANE 하드웨어 활동 직접 검증 (Xcode Instruments)
+
+2026-07-11 `xcrun xctrace record --template 'Core ML'`로 실기기 앱을 15초간 트레이스하여, 로그 문자열이 아닌 **ANE 하드웨어 자체의 활동 기록**을 직접 확인했다.
+
+| 항목 | 값 |
+|:---|:---|
+| **ANE Prediction 이벤트 수** | 247건 |
+| **건당 지속시간** | 최소 0.44ms / 평균 3.74ms / 최대 9.29ms |
+| **트레이스 전체 시간 중 ANE 활성 비율** | 약 5.6%(924.9ms / 16.65s) — 앱이 초당 2~4프레임만 추론하는 구조라 프레임 사이 유휴 시간이 대부분인 게 정상 |
+
+> **재현 방법**: `xcrun xctrace record --template 'Core ML' --device <UDID> --attach <프로세스명> --time-limit 15s --output trace.trace` 로 기록 후, `xcrun xctrace export --input trace.trace --xpath '/trace-toc/run[@number="1"]/data/table[@schema="ane-hw-intervals-internal"]'`로 `Apple Neural Engine` / `Neural Engine Prediction` / `Active` 구간을 추출한다.
+
+### 4.5 선택 헤드(TopK/Gather) Swift 이관 실험 — 롤백 기록
+
+YOLO26n의 end2end 선택 헤드(TopK 2개, GatherNd 1개, GatherAlongAxis 2개)는 ANE가 지원하지 않아 `.cpuAndNeuralEngine`에서도 CPU로 폴백된다. 이를 완전히 제거하기 위해 `scripts/convert_yolo_to_coreml.py --raw-head`(Detect 헤드의 `postprocess()`를 identity로 몽키패치, `end2end=True`는 유지해 NMS-free로 학습된 one2one 헤드 그대로 사용)로 밀집(dense) 출력 `[1, 8400, 33]`을 내보내는 실험을 진행했다.
+
+| 항목 | end2end 후처리(`[1,300,6]`) | raw-head 밀집 출력(`[1,8400,33]`) |
+|:---|:---|:---|
+| **ANE 미지원 연산** | 5개(Topk 2, GatherNd 1, GatherAlongAxis 2) | **0개** |
+| **det 지연** | ~6~14ms | **~34~53ms(악화)** |
+| **총추론** | ~19~35ms | ~49~83ms(KPI 80ms 턱걸이/초과) |
+
+그래프는 100% ANE 호환이 되었지만, 출력 텐서가 300개→8400개(약 154배)로 커지면서 ANE 메모리에서 Swift로 결과를 복사하는 비용이 원래 TopK/Gather가 CPU에서 300개로 추려주던 이득보다 커졌다. **실측 결과에 따라 롤백**했고, 현재 배포본은 §4.1의 end2end 후처리 구성이다. `--raw-head` 스크립트 옵션 자체는 기본값 `False`로 보존되어 있다(향후 재검토용).
+
+### 4.6 segmentation 출력 파싱 버그 수정
+
+segmentation 모델은 CoreML 출력이 2개([1,300,38] 박스+마스크계수, [1,32,160,160] 프로토타입 마스크)인데, `prediction.featureNames`(Set 기반, 순서 미보장)를 `.first`로 집던 기존 로직이 프로토 마스크 텐서를 집으면 매 프레임 파싱이 실패해(`예상치 못한 출력 shape 차원: [1, 32, 160, 160]` 경고 반복) segmentation 결과가 통째로 유실되고 있었다. `runDetection()`에서 shape(`shape.count == 3`) 기반으로 명시적으로 탐색하도록 수정해 해결했다(§4.1 seg 수치는 수정 후 실측).
+
+WS RTT(< 100ms)까지 포함한 서버 종단(< 300ms) 대비, 온디바이스 반사 종단(~50ms 추정, §5 참조)은 크게 빠르다.
 
 ---
 
 ## 5. Reflex Gate 온디바이스 종단 분석
 
-### 5.1 반사 경로 전체 흐름 (2026-07-07 `.cpuOnly` 실측 기준)
+### 5.1 반사 경로 전체 흐름 (2026-07-11 FP16 + `.cpuAndNeuralEngine` 실측 기준)
+
+> **2026-07-09 정정 유지**: "1. 카메라 캡처" 수치는 `takePhoto()`(구 경로) 기준이며, 반사 캡처
+> 기본 경로는 Frame Processor로 전환됐다(원인: `AVCapturePhotoOutput`의 오디오 세션
+> 인터럽션, `docs/design/architecture.md` §5.2 참조). 캡처 단계 재측정은 여전히 후속 과제다.
 
 | 단계 | 소요 시간 | 비고 |
 |:---|:---|:---|
-| 1. 카메라 캡처 | ~5ms | `takePhoto({qualityPrioritization:'speed'})` |
+| 1. 카메라 캡처 | ~5ms | `takePhoto({qualityPrioritization:'speed'})` (구 경로, 위 정정 참조) |
 | 2. Base64 압축 | < 1ms | JPEG 50%, 640x640, 12KB |
-| 3. CoreML CPU 추론 | ~42.97ms (평균) | det(24.11ms) + seg(18.86ms) 순차 |
+| 3. CoreML FP16+ANE 추론 | ~19~35ms | det(~6~14ms) + seg(~5~12ms) + 씬분류(~8~17ms) |
 | 4. Reflex Gate 판정 | < 1ms | 룰베이스, LLM 미경유 |
 | 5. 비프음/훅틱 출력 | 0ms | 로컬 오디오 엔진 |
-| **종합** | **~49ms** | **반사 종단 < 300ms 충분 달성** |
+| **종합** | **~25~41ms** | **반사 종단 < 300ms 충분 달성** |
 
 ### 5.2 서버 경로 대비 비교
 
@@ -146,10 +178,10 @@ graph LR
         S1 --> S2 --> S3 --> S4
     end
 
-    subgraph Device ["단말 CPU 추론"]
+    subgraph Device ["단말 FP16+ANE 추론"]
         D1["캡처<br/>~5ms"]
         D2["Base64 압축<br/>~1ms"]
-        D3["CoreML CPU<br/>~43ms"]
+        D3["CoreML FP16+ANE<br/>~19~35ms"]
         D4["Reflex Gate<br/>즉시 판정"]
         D5["비프음/햅틱<br/>0ms"]
         D1 --> D2 --> D3 --> D4 --> D5
@@ -157,8 +189,8 @@ graph LR
 ```
 
 - 서버 경로: 프레임 전송(~50ms) + WS RTT(~100ms) + 추론(~80ms) = **약 230ms**
-- 단말 CPU 경로: 캡처(~5ms) + 압축(~1ms) + 추론(~43ms) + 판정(< 1ms) = **약 49ms**
-- **차이: 약 4.7배 빠름** (서버 RTT 불필요, ANE/GPU 가속 시 추가 개선 여지 있음)
+- 단말 FP16+ANE 경로: 캡처(~5ms) + 압축(~1ms) + 추론(~19~35ms) + 판정(< 1ms) = **약 25~41ms**
+- **차이: 약 6~9배 빠름** (서버 RTT 불필요)
 
 ---
 
@@ -186,29 +218,29 @@ graph LR
 5. 10회 이상 반복 측정 후 평균값 기록
 6. `[CoreMLBenchmark] det=... seg=... total=...` (JS) 또는 `[CoreMLBridge] 벤치마크` (Swift) 로그로 실측 확인
 
-### 6.3 모델 로드 확인 (현재 CPU 전용)
+### 6.3 모델 로드 확인 (현재 FP16 + ANE 우선)
 
-모델 로드 시 다음과 같이 출력된다:
-
-```
-[CoreMLBridge] object_detection 모델 로드 완료 (CPU 전용 모드, GPU 크래시 회피)
-[CoreMLBridge] segmentation 모델 로드 완료
-```
-
-JS 측(`localDetectorSelect.ios.ts`)에서는 다음과 같이 출력된다:
+모델 로드 시 다음과 같이 출력된다(ANE 로드 성공 시):
 
 ```
-[CoreMLDetector] det=CoreML(CPU) / seg=CoreML(CPU) 기동 완료
+[CoreMLBridge] object_detection.mlmodelc - ANE 가속 모드로 로드 완료
+[CoreMLBridge] segmentation.mlmodelc - ANE 가속 모드로 로드 완료
+```
+
+ANE 로드 실패 시(폴백 발동, 정상 동작이나 성능 저하):
+
+```
+[CoreMLBridge] object_detection.mlmodelc - ANE 로드 실패(...), CPU 전용으로 폴백
 ```
 
 또는 segmentation 미번들 시:
 
 ```
-[CoreMLBridge] object_detection 모델 로드 완료 (CPU 전용 모드, GPU 크래시 회피)
+[CoreMLBridge] object_detection.mlmodelc - ANE 가속 모드로 로드 완료
 [CoreMLBridge] segmentation.mlmodelc 미번들 - det-only 모드로 기동
 ```
 
-> **현황**: `segmentation.mlpackage`는 Xcode Resources 빌드 단계에 등록 완료되어 있으므로, 정상적인 빌드에서는 `segmentation 모델 로드 완료` 로그가 출력되어야 한다. `미번들` 로그가 출력되면 Xcode 프로젝트 설정을 확인한다. `ANE`/`Neural Engine 활성화` 문구는 2026-07-07부로 CPU 전용 로그로 교체되었다(§1 참조) — 과거 캡처된 스크린샷·문서에 남은 `ANE` 표기는 모두 이 시점 이전 것이다.
+> **현황**: `segmentation.mlpackage`는 Xcode Resources 빌드 단계에 등록 완료되어 있으므로, 정상적인 빌드에서는 `segmentation.mlmodelc - ANE 가속 모드로 로드 완료` 로그가 출력되어야 한다. `미번들` 로그가 출력되면 Xcode 프로젝트 설정을 확인한다.
 
 ---
 
@@ -216,12 +248,12 @@ JS 측(`localDetectorSelect.ios.ts`)에서는 다음과 같이 출력된다:
 
 | 검증 항목 | 통과 기준 | 실측 결과 | 비고 |
 |:---|:---|:---|:---|
-| **ANE/GPU 가속** | `computeUnits = .cpuAndGPU` 이상에서 무크래시 | **미통과** | 2026-07-07 실기기 재현: 첫 프레임 추론 직후 크래시 3회 연속 재현. `.cpuOnly`로 되돌림 |
-| **CPU 전용 안정성** | 크래시 없이 연속 추론 가능 | **통과** | 2026-07-07 509프레임 연속 무크래시 확인 |
-| **Detection 지연** | **det < 80ms** | **통과 (24.11ms 평균)** | 서버 KPI 기준 충족 (CPU 전용 기준) |
-| **Segmentation 동작** | seg 결과 정상 반환 | **통과 (18.86ms 평균)** | 클래스: `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (4개) |
-| **반사 종단** | **종단 < 300ms** | **통과 (~49ms 추정)** | 캡처~피드백 전체 합산 |
+| **ANE 가속** | `computeUnits = .cpuAndNeuralEngine`에서 무크래시 + 로드 성공 | **통과** | 2026-07-11: 폴백 미발동, 수백 프레임 연속 무크래시. Instruments Core ML 템플릿으로 ANE 하드웨어 활동 247건 직접 확인(§4.4) |
+| **Detection 지연** | **det < 80ms** | **통과 (~6~14ms)** | 서버 KPI 기준 대비 약 6~13배 여유 |
+| **Segmentation 동작** | seg 결과 정상 반환 | **통과 (~5~12ms)** | 클래스: `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (4개). 출력 파싱 버그 수정 후(§4.6) |
+| **반사 종단** | **종단 < 300ms** | **통과 (~25~41ms 추정)** | 캡처~피드백 전체 합산 |
 | **출력 정합** | `benchmark.det_ms` 필드 유효 | **통과** | JSON 응답에 벤치마크 데이터 포함 |
+| **선택헤드 완전 ANE 이관** | TopK/Gather 제거 후 성능 유지 또는 개선 | **미통과(롤백)** | 2026-07-11: 그래프는 100% ANE 호환이 됐으나 출력 154배 증가로 det 3~5배 느려져 롤백(§4.5) |
 
 ---
 
@@ -229,8 +261,9 @@ JS 측(`localDetectorSelect.ios.ts`)에서는 다음과 같이 출력된다:
 
 | 항목 | 내용 |
 |:---|:---|
-| **CoreML 벤치마크 코드 (유일한 실제 빌드 타겟)** | `client/ios/CoreMLInferenceBridge.swift` — det/seg 독립 측정, raw tensor 파싱, `computeUnits = .cpuOnly` (2026-07-07 미사용 사본 `client/ios/Minchodan/CoreMLInferenceBridge.swift` 삭제 완료) |
-| **JS 측 로드/로그 코드** | `client/src/inference/localDetectorSelect.ios.ts` — 2026-07-07 `ANE` 표기를 `CoreML(CPU)`로 정정 |
+| **CoreML 벤치마크 코드 (유일한 실제 빌드 타겟)** | `client/ios/CoreMLInferenceBridge.swift` — det/seg 독립 측정, raw tensor 파싱, `computeUnits = .cpuAndNeuralEngine`(실패 시 `.cpuOnly` 폴백) |
+| **변환 스크립트** | `scripts/convert_yolo_to_coreml.py` — 기본 FP16(`quantize=16`), `--raw-head` 옵션(기본 False, §4.5 실험용) |
+| **JS 측 로드/로그 코드** | `client/src/inference/localDetectorSelect.ios.ts` |
 | **서버 KPI 기준** | [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) §4 종단 지연 목표 |
 | **온디바이스 격리 설계** | [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](../mobile/ondevice_inference_engine_isolation_plan.md) |
 | **iOS 구현 설계서** | [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md) §1.5 하이브리드 아키텍처 |

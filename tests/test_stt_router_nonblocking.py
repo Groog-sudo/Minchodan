@@ -75,7 +75,8 @@ async def test_transcribe_and_guide_does_not_block_event_loop(
         stt_router_module.SttService, "transcribe_file", classmethod(_slow_transcribe_file)
     )
 
-    async def _fake_invoke(self, stt_result):
+    async def _fake_invoke(self, stt_result, device_id):
+        assert device_id == "rest-test"
         return {"guidance_text": "안내문", "used_fallback_llm": True, "source": "stt-bridge"}
 
     monkeypatch.setattr(stt_router_module.SttToLlmBridge, "invoke_existing_llm", _fake_invoke)
@@ -91,7 +92,11 @@ async def test_transcribe_and_guide_does_not_block_event_loop(
     heartbeat_task = asyncio.create_task(_heartbeat_counter())
     try:
         upload = await _make_upload_file()
-        result = await stt_router_module.transcribe_and_guide(audio=upload, model_name=None)
+        result = await stt_router_module.transcribe_and_guide(
+            audio=upload,
+            model_name=None,
+            device_id="rest-test",
+        )
     finally:
         heartbeat_task.cancel()
 

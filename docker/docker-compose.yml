@@ -41,14 +41,14 @@ services:
     restart: unless-stopped
     networks:
       - minchodan-net
-    # GPU 접근 (NVIDIA Container Toolkit 필요, GPU가 없는 환경에서는 아래 deploy 블록을 주석 처리하십시오)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    # GPU 접근 (NVIDIA Container Toolkit 필요)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   redis:
     image: redis:7-alpine

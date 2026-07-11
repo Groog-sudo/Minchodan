@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     WS_PORT: int = int(os.getenv("WS_PORT", "8000"))
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
     HEARTBEAT_INTERVAL: int = int(os.getenv("HEARTBEAT_INTERVAL", "5"))
-    HEARTBEAT_TIMEOUT: int = int(os.getenv("HEARTBEAT_TIMEOUT", "5"))
+    # ngrok 등 공인망 릴레이 경유 시 왕복 지연이 커질 수 있어, 기존 5초(총 유예 10초)는
+    # 무선 환경에서 정상 연결도 오탐 종료시켰다(2026-07-10 실기기 LTE/ngrok 테스트로 확인).
+    HEARTBEAT_TIMEOUT: int = int(os.getenv("HEARTBEAT_TIMEOUT", "15"))
     MAX_RECONNECT_ATTEMPTS: int = int(os.getenv("MAX_RECONNECT_ATTEMPTS", "3"))
     # 운영자 콘솔(React) 개발 서버 기본 출처만 허용. 프로덕션 배포 시 .env의
     # CORS_ORIGINS(JSON 배열 문자열, 예: ["https://console.example.com"])로 반드시 override.

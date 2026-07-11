@@ -6,6 +6,7 @@ DetectionPipeline을 실행한 뒤, 반사 알림은 WebSocket 고우선 채널�
 """
 
 import asyncio
+import base64
 import contextlib
 import logging
 import sys
@@ -28,6 +29,7 @@ from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.rag.retriever import get_default_retriever
+from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.tts.realtime_tts import realtime_tts
 from server.tts.suppressor import Alert_suppressor
 
@@ -52,6 +54,9 @@ class DetectionConsumer:
         self._reflex_task: asyncio.Task | None = None
         self._cognitive_task: asyncio.Task | None = None
         self._running = False
+        # DB 로그 저장은 반사/인지 응답 전송 경로를 막지 않도록 fire-and-forget으로
+        # 실행한다 - 참조를 들고 있지 않으면 태스크가 GC되어 조기 취소될 수 있다.
+        self._log_tasks: set[asyncio.Task] = set()
         # device_id별 마지막 인지 가이드 전송 시각(초)과 그 오디오 재생 길이(초).
         # 이전 안내 음성이 끝나기 전에 다음 안내가 겹쳐 재생을 끊는 문제를 막기 위한
         # 간격 쿨다운. 고정값 하나로는 문장 길이에 따라 달라지는 실제 WAV 재생 시간을
@@ -118,7 +123,46 @@ class DetectionConsumer:
                     await task
         self._reflex_task = None
         self._cognitive_task = None
+        for log_task in list(self._log_tasks):
+            log_task.cancel()
         logger.info("[DetectionConsumer] 중지")
+
+    def _schedule_log_persist(
+        self,
+        *,
+        event_id: str | None,
+        stream_type: str,
+        detections: list[dict],
+        tts_text: str,
+    ) -> None:
+        task = asyncio.create_task(
+            self._persist_log_safe(
+                event_id=event_id,
+                stream_type=stream_type,
+                detections=detections,
+                tts_text=tts_text,
+            )
+        )
+        self._log_tasks.add(task)
+        task.add_done_callback(self._log_tasks.discard)
+
+    async def _persist_log_safe(
+        self,
+        *,
+        event_id: str | None,
+        stream_type: str,
+        detections: list[dict],
+        tts_text: str,
+    ) -> None:
+        try:
+            await persist_detection_guidance_log(
+                event_id=event_id,
+                stream_type=stream_type,
+                detections=detections,
+                tts_text=tts_text,
+            )
+        except Exception as e:
+            logger.error(f"[DetectionConsumer] DB 로그 저장 실패: event_id={event_id}, {e}")
 
     async def _consume_loop(self, stream: str) -> None:
         queue = self._select_queue(stream)
@@ -184,7 +228,9 @@ class DetectionConsumer:
             return
 
         # 서버 YOLO 추론 결과를 BBox 렌더링용으로 단말에 실시간 송신
-        await self._send_server_detection(processed.device_id, processed.event_id, detections, surfaces)
+        await self._send_server_detection(
+            processed.device_id, processed.event_id, detections, surfaces
+        )
 
         if isinstance(result, ReflexAlert):
             self._last_status.update(
@@ -314,11 +360,30 @@ class DetectionConsumer:
             "ts": alert.ts or now_ts(),
         }
         try:
-            await manager.send_json(device_id, payload)
+            sent = await manager.send_json(device_id, payload)
+            if not sent:
+                logger.warning(
+                    f"[DetectionConsumer] 반사 알림 미전송: "
+                    f"device_id={device_id}, alert_id={alert.alert_id}, websocket=disconnected"
+                )
+                return
             await Alert_suppressor.mark_as_sent(device_id, alert.alert_id)
             logger.info(
                 f"[DetectionConsumer] 반사 알림 전송: "
                 f"device_id={device_id}, alert_id={alert.alert_id}"
+            )
+            self._schedule_log_persist(
+                event_id=alert.event_id,
+                stream_type="reflex",
+                detections=[
+                    {
+                        "alert_id": alert.alert_id,
+                        "direction": alert.direction,
+                        "risk_level": alert.risk_level,
+                        "distance": alert.distance,
+                    }
+                ],
+                tts_text=f"[반사 클립] {alert.clip}",
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
@@ -414,19 +479,38 @@ class DetectionConsumer:
             self._last_guide_ts[device_id] = send_now
             self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
 
+            # [2026-07-09 도입] guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는
+            # 대신, 메타데이터(JSON) 전송 직후 원본 바이트를 바이너리 프레임으로 이어
+            # 보낸다(카메라 프레임 client->server 전송에 이미 적용된 패턴을 반대
+            # 방향에도 적용). 실기기에서 문장 중간 음절이 산발적으로 사라지는 현상의
+            # 원인 후보(base64 팽창/RN 구 브릿지 대용량 문자열 처리)를 제거하기 위함.
+            audio_bytes = base64.b64decode(audio_b64) if audio_b64 else b""
+
             payload = {
                 "type": "guide",
                 "event_id": result.event_id,
                 "risk_level": result.risk_hint,
                 "guidance_text": guidance_text,
-                "audio_mp3_b64": audio_b64 or "",
                 "audio_codec": "wav",
                 "duration_ms": duration_ms,
+                "transport": "binary" if audio_bytes else "none",
                 "ts": now_ts(),
             }
             await manager.send_json(device_id, payload)
+            if audio_bytes:
+                await manager.send_bytes(device_id, audio_bytes)
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
+            )
+            detected_classes_str = ", ".join(orch_input["detected_classes"]) or "(없음)"
+            logger.info(
+                f'[DetectionConsumer] 탐지 객체: [{detected_classes_str}] -> LLM 응답: "{guidance_text}"'
+            )
+            self._schedule_log_persist(
+                event_id=result.event_id,
+                stream_type="cognitive",
+                detections=orch_input["event"]["detections"],
+                tts_text=guidance_text,
             )
         except Exception as e:
             logger.error(

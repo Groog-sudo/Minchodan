@@ -43,11 +43,13 @@ export function DebugTriggerPanel() {
   };
 
   return (
-    <View style={styles.container}>
+    // 2026-07-10: 화면 전체 STT 터치 레이어(CameraView) 도입에 맞춰, 이 패널의 라벨/여백
+    // 영역은 터치를 그대로 통과시키고 실제 버튼만 반응하도록 box-none 처리한다.
+    <View style={styles.container} pointerEvents="box-none">
       <Text style={styles.title}>DEBUG 트리거 패널</Text>
 
       <Text style={styles.label}>패닝: {panning.toFixed(2)}</Text>
-      <View style={styles.row}>
+      <View style={styles.row} pointerEvents="box-none">
         {PAN_PRESETS.map((p) => (
           <Pressable
             key={p.label}
@@ -59,7 +61,7 @@ export function DebugTriggerPanel() {
         ))}
       </View>
 
-      <View style={styles.row}>
+      <View style={styles.row} pointerEvents="box-none">
         {RISK_LEVELS.map((lvl) => (
           <Pressable
             key={lvl.label}
@@ -71,7 +73,7 @@ export function DebugTriggerPanel() {
         ))}
       </View>
 
-      <View style={styles.row}>
+      <View style={styles.row} pointerEvents="box-none">
         <Pressable
           style={[styles.btn, styles.stopBtn]}
           onPress={() => {

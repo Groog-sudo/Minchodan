@@ -159,6 +159,15 @@ app.include_router(stt_router)
 # 네비게이션 서브앱 마운트
 app.mount("/navigation", navigation_app)
 
+@app.get("/")
+async def root():
+    return {
+        "service": "Minchodan GPU Inference Server",
+        "status": "running",
+        "health": "/health",
+        "docs": "/docs",
+        "websocket": "/ws/detect",
+    }
 
 @app.get("/health")
 async def health_check():

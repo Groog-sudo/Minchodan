@@ -148,6 +148,7 @@ async def transcribe_audio(
 async def transcribe_and_guide(
     audio: UploadFile = File(..., description="음성 파일 (wav/mp3 등)"),
     model_name: str | None = Form(default=DEFAULT_REQUEST_MODEL),
+    device_id: str = Form(default="rest-stt"),
 ) -> SttGuideResponse:
     """
     [바이브 코딩 부분]
@@ -177,7 +178,7 @@ async def transcribe_and_guide(
         # 3) 기존 오케스트레이션 브리지 재사용
         #    (라우터에서 LLM 직접 호출 대신, 도메인 어댑터를 통해 일관된 정책 유지)
         bridge = SttToLlmBridge()
-        bridge_result = await bridge.invoke_existing_llm(stt_result)
+        bridge_result = await bridge.invoke_existing_llm(stt_result, device_id)
 
         # 4) 브리지 응답 dict를 명시적 응답 스키마로 고정
         #    get 기본값은 키 누락 시에도 API 계약을 안정적으로 유지하기 위한 가드레일

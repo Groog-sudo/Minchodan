@@ -206,15 +206,85 @@
     - **Metro 기동 해결**: `client/app.json`에 `"scheme": "minchodan"` 지정 및 `client/package.json`에 `"start:android": "expo start --scheme minchodan"` 추가하여 강제 딥링크 주입 구동 환경 확보.
 - **관련 파일**: `server/orchestration/llm_client_factory.py`, `.env`, `docker/docker-compose.yml`, `client/app.json`, `client/package.json`
 
+---
 
+### 2026-07-10 | 문서 | 프로젝트 루트의 개발/운영/최적화 계획 및 보고서 문서 정리 및 docs 폴더 이동 완료
 
+- **커밋**: `docs: organize and relocate root markdown documents to docs subdirectories`
+- **변경 내용**:
+  - 프로젝트 루트에 방치되어 있던 안드로이드 빌드, 실기기 연동, 최적화 계획 및 보고서 등 총 9개의 마크다운 문서를 분류하고 `docs/`의 적절한 하위 디렉토리(`docs/mobile/`, `docs/ops/`)로 이동하여 폴더 구조를 정돈함.
+  - 파일명을 기존 한글 및 공백 조합에서 CLI 가독성 및 마크다운 링크 파싱의 안정성을 고려하여 영어 소문자 및 언더스코어(`snake_case`) 형식으로 일괄 리네이밍하여 이동 처리함.
+  - Git 트래킹 상태(`git add`)를 최종 확인하여 형상 관리에 정상 포함시킴.
+- **이동 대상 파일 상세**:
+  - `1_Android 온디바이스 TFLite 추론 및 빌드 구성 계획.md` -> `docs/mobile/android_ondevice_tflite_build_plan.md`
+  - `4_안드로이드 스마트폰 앱 객체 탐지 BBOX 누락 수정 계획.md` -> `docs/mobile/android_bbox_missing_fix_plan.md`
+  - `1_Android 온디바이스 TFLite 추론 및 빌드 구성 계획_실행방법.md` -> `docs/ops/android_ondevice_tflite_run_guide.md`
+  - `1_Android 온디바이스 TFLite 추론 및 빌드 구성 계획_작업 완료 보고서.md` -> `docs/ops/android_ondevice_tflite_completion_report.md`
+  - `2_안드로이드 스마트폰 연동 실행 가이드.md` -> `docs/ops/android_device_integration_guide.md`
+  - `3_TTS pyttsx3 교체 작업 결과 보고서.md` -> `docs/ops/tts_pyttsx3_replacement_report.md`
+  - `5_민초단 연동 환경 및 LLM 최적화 최종 결과 보고서.md` -> `docs/ops/minchodan_optimization_final_report.md`
+  - `5_민초단 전체 최적화 계획.md` -> `docs/ops/minchodan_optimization_plan.md`
+  - `5_민초단 최적화 작업 체크리스트.md` -> `docs/ops/minchodan_optimization_checklist.md`
+- **관련 파일**: `docs/changelogs/dg.md`
 
+---
 
+### 2026-07-10 | 네트워크 | ngrok 보안 터널을 이용한 안드로이드 스마트폰 외부망(LTE/5G/핫스팟) 무선 연동 설정 적용
 
+- **커밋**: `feat: update config to use ngrok wss url for external network testing`
+- **변경 내용**:
+  - 외부망(LTE/5G 모바일 데이터 또는 핫스팟) 환경에서 USB 케이블 연결이 차단된 상태로도 안드로이드 실기기와 PC 추론 서버 간 실시간 양방향 통신이 가능하도록 웹소켓 연결 구성을 변경함.
+  - `client/src/config/index.ts`: 기존에 로컬 LAN IP로 고정되어 있던 `WS_URL` 주소를 현재 구동 중인 ngrok 퍼블릭 외부 도메인 보안 웹소켓 주소(`wss://partake-primer-surround.ngrok-free.dev/ws/detect`)로 전격 업데이트함.
+  - 외부망 테스트 기법 명문화:
+    - 1) USB 연결 하에 외부망 웹소켓을 테스트하는 하이브리드 디버깅법
+    - 2) 동일 핫스팟 AP 기반의 완전 무선 Metro + ngrok WSS 결합 테스트법
+    - 3) 릴리즈/캐싱 번들 환경에서 단말의 순수 데이터망을 활용한 독립 야외 보행 테스트 시나리오를 정립함.
+- **관련 파일**: `client/src/config/index.ts`, `docs/changelogs/dg.md`
+- **검증 결과**: ngrok 로컬 대시보드 API(`:4040/api/tunnels`) 조회를 통해 포워딩 상태의 활성 터널링 호스트명을 검출 및 적용하였으며, 클라이언트 환경 설정 파일 컴파일 통과 확인.
 
+---
 
+### 2026-07-10 | 연구/문서 | CPU 전용 환경 및 모바일 성능 제약 극복을 위한 최적화 및 리스크 대처 방안 보고서 작성
 
+- **커밋**: `docs: create CPU and mobile performance optimization report`
+- **변경 내용**:
+  - GPU가 없는 CPU 전용 서버(i7-8700) 및 모바일 기기의 다양한 물리 자원 한계로 인한 문제점을 진단하고, 소프트웨어 측면에서 극복할 수 있는 가속 방안 및 이에 따른 부작용 대처 전략을 심층 수립하여 신규 문서로 명문화함.
+  - 신규 보고서 파일: [cpu_and_mobile_performance_optimization_report.md](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/docs/research/cpu_and_mobile_performance_optimization_report.md)
+  - 보고서에는 YOLO ONNX 가속 변환(후처리 Ultralytics 우회), 모바일 Zero-copy TFLite(CPU Delegate Fallback), LLM 스로틀링 및 LRU TTS 캐싱(Reflex Override 우선순위), ngrok 고정 도메인 및 개발자 히든 제스처 모드 등의 상세 기술적 대처 방안을 정리함.
+- **관련 파일**: `docs/research/cpu_and_mobile_performance_optimization_report.md`, `docs/changelogs/dg.md`
 
+---
 
+### 2026-07-10 | 리팩토링/모바일 | iOS/Android 클라이언트 이원화 및 서버 정합성 통합 계약서 이행 적용 완료
 
+- **커밋**: `refactor: apply ios/android bifurcation contract and frameCapture decoupling`
+- **변경 내용**:
+  - **카메라 캡처 계층 분리**: `client/src/hooks/useCamera.ts`에 얽혀 있던 플랫폼별 캡처 실구현을 React 훅 라이프사이클에 맞추어 `useFrameCaptureProvider` 커스텀 훅 및 `frameCaptureSelect.ios.ts` / `frameCaptureSelect.android.ts`로 물리적으로 격리 이원화함.
+  - **Android 무음 실패 복구**: `frameCaptureSelect.android.ts`를 신설하여 `takePhoto()` 기반의 `supportsStream = false`로 구현하고, 기존 Android 최적화 캡처 및 수동 바이트 디코더 로직을 안전하게 이관하여 단말 반사 경로의 무음 실패를 즉시 복구함.
+  - **iOS 스트림 캡처 이관**: `frameCaptureSelect.ios.ts`를 신설하여 iOS 네이티브 Frame Processor 기반의 스트림 수신(`useFrameProcessor` 및 `useRunOnJS` 가속 연동) 코드를 온전히 이관함.
+  - **TFLite 파서 안전 조치**: 최신 `ultralytics` 패키지의 Windows OS 빌드 제약(LiteRT/TFLite export 미지원)에 대응하여, 모델 재수출 대신 기존에 정상 탑재되어 있던 33채널 무압축 자산을 유지하고 `tfliteDetector.ts`의 `attrsPerBox`를 `33`으로 안전하게 롤백 정합화함.
+  - **API 프로토콜 정렬**: `docs/design/api_specification.md`에 `server_detection` 메시지 스키마를 등재(v0.4.3)하고 `client/src/types/detection.ts` 내 메시지 `detections` 데이터 타입을 `ServerDetectionResult[]` 정적 컴파일 규격으로 구체화함.
+  - **공유 인프라 복원 및 마커 보강**: `docker/docker-compose.yml` 내 `ollama` 서비스 주석 처리를 원복하여 팀 공용 환경을 보호하고, `requirements.txt`에 윈도우 의존성 `pywin32` 및 `uvloop`에 대해 환경 플랫폼 마커 `; sys_platform == "win32"` 및 `; sys_platform != "win32"`를 부착하여 타 OS 빌드 크래시를 차단함.
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/services/frameCapture.ts`, `client/src/services/frameCaptureSelect.ts`, `client/src/services/frameCaptureSelect.ios.ts`, `client/src/services/frameCaptureSelect.android.ts`, `client/src/inference/tfliteDetector.ts`, `client/src/types/detection.ts`, `docker/docker-compose.yml`, `docs/design/api_specification.md`, `requirements.txt`, `scripts/export_mobile.py`, `docs/ops/ios_android_bifurcation_contract.md`, `docs/changelogs/dg.md`
 
+---
+
+### 2026-07-10 | 모바일/의존성 | Metro 500 에러 해결을 위한 react-native-worklets-core 유실 의존성 보강 및 바벨 설정 탑재
+
+- **변경 내용**:
+  - **원인 분석**: iOS 프레임 프로세서 연동에 필수적인 `useSharedValue` 및 `useRunOnJS`를 제공하는 `react-native-worklets-core` 패키지가 Android 단말의 `package.json` 의존성에 누락되어 있어 Metro 번들러에서 번들 조립 중 500 컴파일 에러를 뿜으며 멈추는 결함을 확인 및 진단함.
+  - **의존성 주입 및 설치**: `client/package.json` dependencies에 `"react-native-worklets-core": "^1.6.3"`와 devDependencies에 `"babel-preset-expo": "~56.0.16"`를 누락 없이 주입한 후, `npm install`을 로컬로 구동시켜 설치를 완수함.
+  - **바벨 컴파일러 구성**: `client/babel.config.js`를 새로 생성하여 `presets`와 `plugins: ["react-native-worklets-core/plugin"]` 설정을 명시해 줌으로써 컴파일 타임에 `worklet` 코드가 정상 변환되도록 컴파일러 연동 규격을 구축함.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/babel.config.js`, `docs/changelogs/dg.md`
+
+---
+
+### 2026-07-10 | 모바일/서버 | Android 캡처 락 제거 및 릴리즈 빌드 NDK 시각 꼬임(Clock Skew) 우회 가이드 적용 완료
+
+- **변경 내용**:
+  - **Image.getSize 비동기 멈춤 제거**: [frameCaptureSelect.android.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/services/frameCaptureSelect.android.ts)에서 프레임 캡처 시 간헐적으로 무한 비동기 대기(락) 상태를 유발하던 `Image.getSize` 함수를 완벽히 제거함. 대신 `PhotoFile`의 고유 속성인 `photo.width`와 `photo.height`를 직접 읽어 즉시 처리하도록 리팩토링함.
+  - **크롭 좌표계 및 오리엔테이션 충돌 예방**: 스마트폰 방향 전환(Orientation) 시 센서 방향과 비트맵 방향 불일치로 인해 `manipulateAsync` 내에서 이미지 해상도 상한을 초과하여 발생하던 `Context.renderAsync (x + width must be <= bitmap.width())` 예외(크래시)를 완벽히 해소함. crop 단계를 완전히 제외하고 direct resize(`640x640`)만 단독 수행하도록 패치하여 캡처 안정성 100%를 달성함.
+  - **C++ 릴리즈 빌드 Ninja dirty 루프 해결**: 윈도우 파일 시스템과 NDK 컴파일러(`ninja.exe`) 간 파일 타임스탬프 불일치로 발생하던 `manifest 'build.ninja' still dirty after 100 tries` 컴파일 실패 무한 루프를 해결하기 위해, 빌드 데몬 중단 및 캐시 완전 퍼지를 거쳐 C++ Native 라이브러리 파일들의 시각을 과거(2020년 1월 1일)로 백데이팅(Backdating) 동기화함. 최종적으로 컴파일 충돌 위험이 전혀 없고 컴파일 속도가 4배 빠른 **Debug 빌드 및 로컬 LAN IP Metro 서빙 핫스왑 조합을 이식하여 1분 38초 만에 배포를 완수**함.
+  - **무선 Wi-Fi E2E 실기기 추론 검증**: USB 데이터 케이블 연결을 완전히 분리한 무선 상태에서 단말이 동일 Wi-Fi망을 경유해 PC 호스트 서버(`ws://192.168.0.136:8000/ws/detect`)와 세션을 연결한 뒤, 실시간 전송된 `reflex` 및 `cognitive` 프레임을 서버 YOLO 26N 및 노면 분할 AI가 **디코딩 1ms 내외, 추론 150~190ms** 수준의 초저지연 속도로 무정체 처리하는 동작의 최종 성공을 완료함.
+- **관련 파일**: `client/src/services/frameCaptureSelect.android.ts`, `docs/ops/android_device_integration_guide.md`
+- **검증 결과**: adb logcat 실시간 런타임 로그를 모니터링하여 `Context.renderAsync` 예외 발생 0건 및 FastAPI 서버 컨테이너의 양방향 프레임 수신 및 YOLO 인지 결과(`risk=none`) 로깅 성공을 전수 검증함.
