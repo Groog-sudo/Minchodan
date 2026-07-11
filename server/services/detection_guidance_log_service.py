@@ -94,12 +94,27 @@ class DetectionGuidanceLogService:
             stream_type=payload.stream_type,
             detected_objects_json=payload.detected_objects_json,
             tts_text=payload.tts_text,
+            frame_path=payload.frame_path,
         )
 
         saved = await self.log_repo.create(log)
         return DetectionGuidanceLogResponse.model_validate(saved)
 
         # raise NotImplementedError("HARDCODE PART: create_log()를 직접 구현하세요.")
+
+    async def list_logs(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[DetectionGuidanceLogResponse]:
+        """콘솔 이력 조회용 최신 로그 목록을 응답 DTO 리스트로 반환합니다."""
+        rows = await self.log_repo.list_recent(limit=limit, offset=offset)
+        return [DetectionGuidanceLogResponse.model_validate(row) for row in rows]
+
+    async def get_log_by_event_id(self, event_id: str) -> DetectionGuidanceLogResponse | None:
+        """event_id로 단건 로그를 조회합니다. 프레임 이미지 서빙 검증에 사용합니다."""
+        row = await self.log_repo.get_by_event_id(event_id)
+        if row is None:
+            return None
+        return DetectionGuidanceLogResponse.model_validate(row)
 
 
 # ==========================================
@@ -136,6 +151,7 @@ async def persist_detection_guidance_log(
     tts_text: str,
     user_id: int | None = None,
     device_id: int | None = None,
+    frame_path: str | None = None,
 ) -> DetectionGuidanceLogResponse:
     """FastAPI Depends(get_db) 요청 컨텍스트 밖(WS 컨슈머 등)에서 로그를 저장하는 헬퍼.
 
@@ -151,6 +167,7 @@ async def persist_detection_guidance_log(
         stream_type=stream_type,
         detected_objects_json=build_detected_objects_json(detections),
         tts_text=tts_text,
+        frame_path=frame_path,
     )
     async with async_sessionmaker_factory() as session:
         service = DetectionGuidanceLogService(session)

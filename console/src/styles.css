@@ -321,6 +321,71 @@ td {
   margin-top: 10px;
 }
 
+/* 이벤트 프레임 이미지 (오탐 검증용 상황 이미지) */
+.frame-thumb {
+  border-radius: 6px;
+  display: block;
+  height: 48px;
+  object-fit: cover;
+  width: 64px;
+}
+
+.row-selected td {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.frame-detail {
+  border-top: 1px solid #2a3140;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.frame-detail-meta {
+  color: #9da7ba;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.frame-detail-meta strong {
+  color: #edf2fb;
+}
+
+.frame-overlay-wrap {
+  display: inline-block;
+  max-width: 640px;
+  position: relative;
+  width: 100%;
+}
+
+.frame-overlay-image {
+  border-radius: 8px;
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.frame-overlay-box {
+  border: 2px solid #f59e0b;
+  border-radius: 3px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.frame-overlay-label {
+  background: rgba(245, 158, 11, 0.9);
+  color: #111827;
+  font-size: 11px;
+  font-weight: 800;
+  left: -2px;
+  padding: 1px 5px;
+  position: absolute;
+  top: -18px;
+  white-space: nowrap;
+}
+
 @media (max-width: 1180px) {
   .dashboard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

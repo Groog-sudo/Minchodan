@@ -5,6 +5,7 @@ import { SessionStatus } from "./components/SessionStatus";
 import { StatusBadge } from "./components/StatusBadge";
 import { SystemMetrics } from "./components/SystemMetrics";
 import { useMonitorStream } from "./api/useMonitorStream";
+import { useDetectionLogs } from "./api/useDetectionLogs";
 import { OperatorLiveMap } from "./components/OperatorLiveMap";
 import { DetectionGuidanceLogTable } from "./components/DetectionGuidanceLogTable";
 import type { DetectionGuidanceLogRow } from "./types/monitor";
@@ -21,6 +22,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     stream_type: "reflex",
     detected_objects_json: '[{"class_name":"pole","confidence":0.91}]',
     tts_text: "전방에 기둥이 있습니다.",
+    frame_path: null,
     created_at: "2026-07-10T10:15:12Z",
   },
 ];
@@ -35,9 +37,12 @@ export default function App() {
   // MVP 단계에서는 토큰을 브라우저 저장소가 아닌 메모리에만 보관한다.
   const [token, setToken] = useState<string | null>(null);
   const { state, streamUrl, injectDemoEvents } = useMonitorStream(token);
+  // 사후 이력 로그는 REST 폴링으로 조회한다 (frame_path 이미지 포함).
+  const { rows: fetchedLogs } = useDetectionLogs(token);
   const isDemoMode =
     import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_DATA === "true";
-  const detectionGuidanceLogs = isDemoMode ? DEMO_GUIDANCE_LOGS : [];
+  const detectionGuidanceLogs =
+    isDemoMode && fetchedLogs.length === 0 ? DEMO_GUIDANCE_LOGS : fetchedLogs;
 
   // 토큰이 없으면 무조건 로그인 화면만 띄움!
   if(!token){
@@ -86,7 +91,7 @@ export default function App() {
           DetectionFeed는 실시간 스트림 모니터링,
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
-      <DetectionGuidanceLogTable rows={detectionGuidanceLogs} />
+      <DetectionGuidanceLogTable rows={detectionGuidanceLogs} token={token} />
       <RiskEventLog events={state.risks} />
     </main>
   );

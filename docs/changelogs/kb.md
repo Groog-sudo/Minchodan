@@ -1518,3 +1518,19 @@
 - **관련 파일**: `client/ios/DepthProbeBridge.swift`(신규), `client/ios/DepthProbeBridge.mm`(신규), `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/src/services/depthProbe.ts`(신규), `client/src/components/CameraView.tsx`, `docs/design/architecture.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `tsc --noEmit` 통과, iOS 시뮬레이터 Debug 빌드 BUILD SUCCEEDED + DepthProbeBridge 오브젝트 파일(Swift/mm) 생성 확인. 실기기 검증(LiDAR 실측 정확도 - 줄자 대조 1/2/3/5m, 저반사 표면, 야외 직사광, 탐지 모드 복귀 시 카메라 재점유)은 후속. 시뮬레이터는 LiDAR가 없어 "LiDAR 심도 카메라 없음" 에러 표출이 정상.
 - **비고**: 접근성 주의 - 거리측정 모드 동안 반사 경보가 정지되므로 운영자/계측 전용 기능임(종단 사용자 UX 아님). 토글 진입 시 이 사실이 오버레이 첫 줄("탐지 일시정지")에 표기됨.
+
+---
+
+### 2026-07-12 | 서버+콘솔 | 이벤트 프레임 보존 및 콘솔 상황 이미지 렌더링 (오탐 검증 기반)
+
+- **커밋**: `feat(서버+콘솔): 이벤트 프레임 보존(frame_path) 및 콘솔 사후 이력 이미지 렌더링`
+- **변경 내용**:
+  - **배경**: `detection_guidance_logs`에는 bbox·클래스 등 텍스트 메타데이터만 남고 발생 시점 프레임 이미지는 어디에도 영속되지 않아, 콘솔에서 오탐 여부 판별이나 안내 발화 당시 상황 확인이 불가능했다. 이미지 파일 + DB 경로 참조 방식으로 보존 체계를 신설한다(BLOB 저장은 반사 이벤트 유입량에 DB 비대화로 배제).
+  - **이벤트 프레임 저장소 신설** (`server/services/event_frame_store.py`): 로그 적재 이벤트만 원본 프레임을 JPEG(품질 80)으로 `data/event_frames/YYYYMMDD/{event_id}.jpg`에 저장. event_id 화이트리스트(`[A-Za-z0-9._-]{1,64}`)·저장소 밖 경로 해석 차단(resolve 검증)·보존 기간(`EVENT_FRAME_RETENTION_DAYS` 기본 7일) 초과 날짜 폴더 기동 시 삭제. 저장 실패 시 `frame_path=NULL`로 로그 적재는 계속(방어적 코딩).
+  - **반사 경로 무영향 저장**: JPEG 인코딩·디스크 쓰기는 기존 `_schedule_log_persist` 백그라운드 태스크 내부에서 `asyncio.to_thread`로만 수행. `_process_frame`이 보유한 프레임을 `_send_reflex_alert`/`_send_cognitive_guide`에 전달하고, 실제 전송 성사 후에만 저장이 예약된다(중복 억제·쿨다운으로 걸러진 프레임은 미저장 - 용량 통제).
+  - **DB 스키마**: `detection_guidance_logs.frame_path VARCHAR(255) NULL` 추가(models/schemas/schema.sql), 마이그레이션 `20260712_001_add_frame_path_to_detection_guidance_logs.sql` 신설. 인지 로그의 `detected_objects_json`에 bbox 좌표(좌상단 x,y+w,h, 프레임 픽셀) 포함 - 콘솔 오버레이용이며 LLM 오케스트레이터 입력에는 기존대로 미포함(프롬프트 오염 방지).
+  - **조회 API 신설** (`server/api/detection_log_router.py`): `GET /api/v1/admin/detection-logs`(목록, limit 1~200) + `GET /api/v1/admin/event-frames/{event_id}`(JPEG 서빙). 인증은 `get_current_admin`(헤더 또는 쿼리 토큰 - `<img>` 태그 제약상 SSE와 동일한 쿼리 우회). DB 등록 경로만 서빙해 임의 파일 접근을 차단. Repository에 `list_recent`(detected_at 내림차순) 추가.
+  - **콘솔 상황 이미지 렌더링**: `useDetectionLogs` 훅 신설(REST 30초 폴링, `VITE_API_BASE_URL`). Detection Guidance Log 테이블에 썸네일 컬럼 추가, 행 클릭 시 상세 뷰에서 원본 이미지 위에 bbox·클래스·신뢰도를 비율 좌표 오버레이로 표시(이미지에 굽지 않음 - 원본 보존으로 임계값/모델 교체 재검증 가능). 데모 데이터는 실조회 결과 없을 때만 폴백.
+- **관련 파일**: `server/services/event_frame_store.py`(신규), `server/api/detection_log_router.py`(신규), `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/20260712_001_add_frame_path_to_detection_guidance_logs.sql`(신규), `server/services/detection_guidance_log_service.py`, `server/detection/consumer.py`, `server/main.py`, `console/src/api/useDetectionLogs.ts`(신규), `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/types/monitor.ts`, `console/src/App.tsx`, `console/src/styles.css`, `console/.env.example`, `.env.example`, `tests/test_event_frame_store.py`(신규), `docs/design/api_specification.md`(v0.4.13 §8.5), `docs/design/architecture.md`(v0.4.5 §13.3.1), `docs/ops/environment_variables.md`(v0.4.14), `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/test_event_frame_store.py tests/test_ws_router_stt.py tests/test_admin_service_login.py tests/test_risk_ssot.py` 18건 통과(저장/경로 탈출 차단/보존 정리 + 기존 회귀), 변경 모듈 전체 임포트 무결성 확인, ruff 통과, 콘솔 `npm run build`(tsc --noEmit 포함) 통과. 실제 탐지 이벤트로 이미지 저장·콘솔 표시 왕복은 서버+실기기 기동 환경에서 후속 확인.
+- **비고**: 보행 중 촬영 이미지는 행인 등 개인정보 포함 가능성이 있어 기간 한정 보존(기본 7일)으로 설계했으며, 보존 기간 정책은 팀 확정 필요(STT WAV 제거 전례 참조). MariaDB 운영 DB에는 마이그레이션 SQL 수동 반영 필요. 후속 확장 후보: 오탐 판정 컬럼(`false_positive`)+콘솔 판정 버튼 - (이미지, 오탐 라벨) 쌍은 재학습 데이터로 재사용 가능.

@@ -30,6 +30,7 @@ from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.rag.retriever import get_default_retriever
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
+from server.services.event_frame_store import save_event_frame
 from server.tts.realtime_tts import realtime_tts
 from server.tts.suppressor import Alert_suppressor
 
@@ -134,6 +135,7 @@ class DetectionConsumer:
         stream_type: str,
         detections: list[dict],
         tts_text: str,
+        frame: np.ndarray | None = None,
     ) -> None:
         task = asyncio.create_task(
             self._persist_log_safe(
@@ -141,6 +143,7 @@ class DetectionConsumer:
                 stream_type=stream_type,
                 detections=detections,
                 tts_text=tts_text,
+                frame=frame,
             )
         )
         self._log_tasks.add(task)
@@ -153,13 +156,21 @@ class DetectionConsumer:
         stream_type: str,
         detections: list[dict],
         tts_text: str,
+        frame: np.ndarray | None = None,
     ) -> None:
+        # 프레임 저장(JPEG 인코딩+디스크 쓰기)은 백그라운드 로그 태스크 안에서만
+        # 수행한다. 반사/인지 실시간 전송이 끝난 뒤 실행되므로 경로 지연에 영향 없다.
+        # 저장 실패 시 frame_path=None으로 로그 적재는 계속한다(방어적 코딩).
+        frame_path: str | None = None
+        if frame is not None and event_id:
+            frame_path = await asyncio.to_thread(save_event_frame, event_id, frame)
         try:
             await persist_detection_guidance_log(
                 event_id=event_id,
                 stream_type=stream_type,
                 detections=detections,
                 tts_text=tts_text,
+                frame_path=frame_path,
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] DB 로그 저장 실패: event_id={event_id}, {e}")
@@ -244,7 +255,7 @@ class DetectionConsumer:
                     "error": None,
                 }
             )
-            await self._send_reflex_alert(processed.device_id, result)
+            await self._send_reflex_alert(processed.device_id, result, frame=frame)
         elif isinstance(result, DetectionResult):
             self._last_status.update(
                 {
@@ -258,7 +269,7 @@ class DetectionConsumer:
                 }
             )
             if result.risk_hint in ("mid", "low"):
-                await self._send_cognitive_guide(processed.device_id, result)
+                await self._send_cognitive_guide(processed.device_id, result, frame=frame)
             logger.debug(
                 f"[DetectionConsumer] 인지 결과: event_id={result.event_id}, "
                 f"risk={result.risk_hint}, inference_ms={result.inference_ms:.1f}"
@@ -333,10 +344,13 @@ class DetectionConsumer:
                 f"[DetectionConsumer] server_detection 송신 실패: device_id={device_id}, {e}"
             )
 
-    async def _send_reflex_alert(self, device_id: str, alert: ReflexAlert) -> None:
+    async def _send_reflex_alert(
+        self, device_id: str, alert: ReflexAlert, frame: np.ndarray | None = None
+    ) -> None:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
 
         동일 device_id+alert_id 조합이 60초 이내 재발행되면 억제한다(중복 스팸 방지).
+        frame은 전송 성사 후 백그라운드 로그 태스크에서만 저장한다(반사 지연 무영향).
         """
         if await Alert_suppressor.should_suppress(device_id, alert.alert_id):
             logger.debug(
@@ -384,11 +398,14 @@ class DetectionConsumer:
                     }
                 ],
                 tts_text=f"[반사 클립] {alert.clip}",
+                frame=frame,
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
 
-    async def _send_cognitive_guide(self, device_id: str, result: DetectionResult) -> None:
+    async def _send_cognitive_guide(
+        self, device_id: str, result: DetectionResult, frame: np.ndarray | None = None
+    ) -> None:
         """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
         if not result.detections:
             return
@@ -506,11 +523,28 @@ class DetectionConsumer:
             logger.info(
                 f'[DetectionConsumer] 탐지 객체: [{detected_classes_str}] -> LLM 응답: "{guidance_text}"'
             )
+            # DB 로그에는 콘솔 오탐 검증용 bbox 오버레이를 위해 좌표를 함께 남긴다.
+            # (LLM 입력 orch_input에는 bbox를 넣지 않는다 - 프롬프트 오염 방지)
+            log_detections = [
+                {
+                    "class_name": det.class_name,
+                    "confidence": float(det.confidence),
+                    "direction": det.direction,
+                    "bbox": {
+                        "x": float(det.bbox.x),
+                        "y": float(det.bbox.y),
+                        "w": float(det.bbox.w),
+                        "h": float(det.bbox.h),
+                    },
+                }
+                for det in result.detections
+            ]
             self._schedule_log_persist(
                 event_id=result.event_id,
                 stream_type="cognitive",
-                detections=orch_input["event"]["detections"],
+                detections=log_detections,
                 tts_text=guidance_text,
+                frame=frame,
             )
         except Exception as e:
             logger.error(

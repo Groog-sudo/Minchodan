@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-11
-> **버전**: v0.4.13 (2026-07-11 인증 기본값 분리 반영 - §2.4 `APP_ENV`/`DEVICE_STATIC_TOKENS` 신설·`JWT_SECRET_KEY` 운영 필수(fail-closed) 강화·`.env.example` 등재, §2.14 클라이언트·콘솔 공개 변수(EXPO_PUBLIC_*/VITE_*) 신설 + 이전 v0.4.12 이력 유지: §2.13 `TMAP_APP_KEY` 용도 확장 반영 - 하단 지도 패널용 `nav_route` WS 메시지의 `app_key`로 단말에 전달, `server/api/ws_router.py` 참조 추가 + 이전 v0.4.11 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
+> **버전**: v0.4.14 (2026-07-12 §2.7 `EVENT_FRAMES_DIR`/`EVENT_FRAME_RETENTION_DAYS`/`EVENT_FRAME_JPEG_QUALITY` 신설 - 콘솔 오탐 검증용 이벤트 프레임 보존, §2.14 `VITE_API_BASE_URL` 추가 + 이전 v0.4.13 이력 유지: 2026-07-11 인증 기본값 분리 반영 - §2.4 `APP_ENV`/`DEVICE_STATIC_TOKENS` 신설·`JWT_SECRET_KEY` 운영 필수(fail-closed) 강화·`.env.example` 등재, §2.14 클라이언트·콘솔 공개 변수(EXPO_PUBLIC_*/VITE_*) 신설 + 이전 v0.4.12 이력 유지: §2.13 `TMAP_APP_KEY` 용도 확장 반영 - 하단 지도 패널용 `nav_route` WS 메시지의 `app_key`로 단말에 전달, `server/api/ws_router.py` 참조 추가 + 이전 v0.4.11 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -93,6 +93,9 @@
 | **`DATA_DEDUPED`** | path | 필수 | `data/deduped` | pHash 중복 제거 후 프레임 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_CAPTIONS`** | path | 필수 | `data/captions` | 캡셔닝 결과 JSON (Llava 또는 Gemini API 사용에 따라 동일 경로에 저장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_REFLEX_CLIPS`** | path | 미사용(폐기) | `data/reflex_clips` | **2026-07-09 정정**: 코드 어디서도 소비되지 않는 죽은 변수. 반사 음성 클립은 서버 `data/`가 아니라 단말 번들(`client/assets/sounds/reflex_clips/`, WAV 5종)로 실제 구현됨 | [`reflex_audio_specification.md`](../design/reflex_audio_specification.md) §4 |
+| **`EVENT_FRAMES_DIR`** | path | 선택 | `data/event_frames` | 이벤트 프레임 이미지 저장소 루트(2026-07-12 신설). 탐지/안내 로그 적재 이벤트의 발생 시점 프레임 JPEG을 날짜 폴더로 보관 | `server/services/event_frame_store.py`, [`api_specification.md`](../design/api_specification.md) §8.5 |
+| **`EVENT_FRAME_RETENTION_DAYS`** | int | 선택 | `7` | 이벤트 프레임 보존 기간(일). 초과 날짜 폴더는 서버 기동 시 삭제. `0` 이하는 정리 비활성. 보행 중 촬영 이미지는 개인정보 포함 가능성으로 기간 한정 보존 | `server/services/event_frame_store.py` |
+| **`EVENT_FRAME_JPEG_QUALITY`** | int | 선택 | `80` | 이벤트 프레임 JPEG 품질(용량 통제 우선) | `server/services/event_frame_store.py` |
 
 ### 2.8 Slack Integration (공통 경보)
 
@@ -163,6 +166,7 @@
 | **`VITE_MONITOR_STREAM_URL`** | string | 선택 | `http://localhost:8000/api/v1/monitor/stream` | 콘솔 SSE 스트림 주소 | `console/src/api/useMonitorStream.ts`, `console/.env.example` |
 | **`VITE_ENABLE_DEMO_DATA`** | string | 선택 | `false` | 콘솔 데모 데이터 주입(개발 빌드 전용, api_specification §8.4) | `console/src/App.tsx` |
 | **`VITE_NAV_MAP_URL`** | string | 선택 | `http://localhost:8000/navigation/?embed=true` | 관제 지도 iframe 주소(2026-07-11 신설) | `console/src/components/OperatorLiveMap.tsx` |
+| **`VITE_API_BASE_URL`** | string | 선택 | `http://localhost:8000` | 콘솔 REST API 기본 주소(2026-07-12 신설). 사후 이력 로그 조회·이벤트 프레임 이미지 서빙에 사용 | `console/src/api/useDetectionLogs.ts`, api_specification §8.5 |
 
 ---
 

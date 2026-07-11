@@ -1,7 +1,7 @@
 ﻿# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.4 (2026-07-11 LiDAR 실거리 프로브 프로토타입 - `DepthProbeBridge` 네이티브 브릿지 + 단말 거리측정 모드(탐지와 배타 전환) 신규 + 이전 v0.4.3 이력 유지: STT 녹음 구간 AEC 도입 - `AudioSessionBridge` 네이티브 브릿지로 iOS voiceChat 세션 전환, AEC 확인 시 녹음 시작 신호음 복원 + 이전 v0.4.2 이력 유지: WS 재연결 정책 변경 - 무한 지수 백오프 + 폴백 전환/복구 음성 고지, 오프라인 내성 항목 갱신 + 이전 v0.4.1 이력 유지: 2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
+> **버전**: v0.4.5 (2026-07-12 §13.3.1 이벤트 프레임 보존 신설 - 로그 적재 이벤트 프레임 JPEG 보존(frame_path), 콘솔 사후 이력 REST 조회·bbox 오버레이, 반사 경로 무영향 백그라운드 저장, 보존 기본 7일 + 이전 v0.4.4 이력 유지: 2026-07-11 LiDAR 실거리 프로브 프로토타입 - `DepthProbeBridge` 네이티브 브릿지 + 단말 거리측정 모드(탐지와 배타 전환) 신규 + 이전 v0.4.3 이력 유지: STT 녹음 구간 AEC 도입 - `AudioSessionBridge` 네이티브 브릿지로 iOS voiceChat 세션 전환, AEC 확인 시 녹음 시작 신호음 복원 + 이전 v0.4.2 이력 유지: WS 재연결 정책 변경 - 무한 지수 백오프 + 폴백 전환/복구 음성 고지, 오프라인 내성 항목 갱신 + 이전 v0.4.1 이력 유지: 2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -521,6 +521,21 @@ sequenceDiagram
    - **audio_validation**: `{"alert_id": "ref_alert_001", "ttfb_ms": 120, "is_valid": true}`
    - **cache_suppression**: `{"suppressed_keys": ["suppress:ref_alert_001"], "ttl_seconds": 45}`
    - **system_error**: `{"error_message": "Ollama connection timeout, hot-swapping to OpenAI", "severity": "warning"}`
+
+### 13.3.1 사후 이력 조회와 이벤트 프레임 보존 (2026-07-12 신설)
+
+실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다.
+
+| 항목 | 내용 |
+| :--- | :--- |
+| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 (`server/services/event_frame_store.py`) |
+| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임만 (JPEG, `data/event_frames/YYYYMMDD/{event_id}.jpg`) |
+| **DB 연결** | `detection_guidance_logs.frame_path` 컬럼에 상대 경로만 기록 (BLOB 미사용) |
+| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO는 `asyncio.to_thread`로 로그 태스크 내부에서만 수행 (반사 <300ms 비협상 원칙 유지) |
+| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지, bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
+| **보존 정책** | 기본 7일(`EVENT_FRAME_RETENTION_DAYS`), 서버 기동 시 만료 폴더 삭제 (개인정보 기간 한정 보존) |
+
+상세 계약은 [`api_specification.md`](api_specification.md) §8.5를 참조하십시오.
 
 ### 13.4 MCP별 자격 증명 및 API 키 요구사항
 

@@ -138,6 +138,21 @@ class DetectionGuidanceLogRepository:
         return result.scalars().first()
 
     # ==========================================
+    # VIBE PART - list_recent 설명
+    # - 콘솔 이력 조회용으로 최신 로그부터 페이지 단위로 반환합니다.
+    # - detected_at 내림차순 정렬에 IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT
+    #   인덱스가 사용됩니다.
+    # ==========================================
+    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[DetectionGuidanceLog]:
+        result = await self.session.execute(
+            select(DetectionGuidanceLog)
+            .order_by(DetectionGuidanceLog.detected_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    # ==========================================
     # HARDCODE PART - create 설명 및 작성 조건
     #
     # [기능 설명]

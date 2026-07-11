@@ -125,6 +125,7 @@ class DetectionGuidanceLogCreate(BaseModel):
     stream_type: StreamType = StreamType.UNKNOWN
     detected_objects_json: str = Field(..., min_length=2)
     tts_text: str = Field(..., min_length=1)
+    frame_path: str | None = Field(default=None, max_length=255)
 
 
 class DetectionGuidanceLogResponse(BaseModel):
@@ -140,6 +141,7 @@ class DetectionGuidanceLogResponse(BaseModel):
     stream_type: StreamType
     detected_objects_json: str
     tts_text: str
+    frame_path: str | None
     created_at: datetime
 
 

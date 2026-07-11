@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.12 (2026-07-11 §8 SSE 계약 고정 - 실발행/예약 이벤트 분리·payload 필드 고정·mcp:metrics producer 부재 명시, event_id 형식 구조화 + 이전 v0.4.11 이력 유지: §6.4 폴백 모드 비고에 클라이언트 재연결 정책 변경(무한 지수 백오프 + 폴백/복구 음성 고지) 반영 + 이전 v0.4.10 이력 유지: nav_route(6.6) 신설 - 하단 지도 패널용 경로 좌표 전송·재접속 복원, realtime_gps(6.5) 수신 시점 길안내 직접 평가로 카메라 무탐지 시 무음 결함 수정, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드 반영)
+> **버전**: v0.4.13 (2026-07-12 §8.5 사후 이력 조회 REST 신설 - detection-logs 목록·event-frames 이미지 서빙, 이벤트 프레임 저장 계약(frame_path·보존 7일·백그라운드 저장), 인지 로그 detected_objects_json에 bbox 포함 + 이전 v0.4.12 이력 유지: §8 SSE 계약 고정 - 실발행/예약 이벤트 분리·payload 필드 고정·mcp:metrics producer 부재 명시, event_id 형식 구조화)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -621,7 +621,34 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 
 ### 8.4 데모 데이터 분리
 
-콘솔의 데모 데이터는 SSE로 수신되는 것이 아니라, **개발 빌드에서만**(`import.meta.env.DEV && VITE_ENABLE_DEMO_DATA === "true"`) 콘솔 로컬에서 주입됩니다(`console/src/App.tsx`). 운영 빌드에서는 원천 차단되므로 §8.2~8.3의 실이벤트와 혼동하지 않습니다.
+콘솔의 데모 데이터는 SSE로 수신되는 것이 아니라, **개발 빌드에서만**(`import.meta.env.DEV && VITE_ENABLE_DEMO_DATA === "true"`) 콘솔 로컬에서 주입됩니다(`console/src/App.tsx`). 운영 빌드에서는 원천 차단되므로 §8.2~8.3의 실이벤트와 혼동하지 않습니다. 단, 사후 이력 로그(§8.5)는 실조회 결과가 있으면 데모 데이터 대신 실데이터를 우선 표시합니다.
+
+### 8.5 사후 이력 조회 REST (2026-07-12 신설)
+
+콘솔의 Detection Guidance Log 테이블은 SSE가 아니라 REST 폴링(기본 30초, `console/src/api/useDetectionLogs.ts`)으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 **이벤트 발생 시점 프레임 이미지**를 함께 제공합니다.
+
+| 항목 | 값 |
+| :--- | :--- |
+| 로그 목록 | `GET /api/v1/admin/detection-logs?limit=50&offset=0` (limit 1~200) |
+| 프레임 이미지 | `GET /api/v1/admin/event-frames/{event_id}` (JPEG 반환) |
+| 인증 | 관리자 JWT (`Depends(get_current_admin)`) — 목록은 `Authorization` 헤더, 이미지는 `<img>` 태그 제약상 `?token=` 쿼리 허용(SSE와 동일 우회) |
+| 라우터 | `server/api/detection_log_router.py` |
+
+**로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `created_at`
+
+**프레임 이미지 저장 계약** (`server/services/event_frame_store.py`):
+
+| 항목 | 값 |
+| :--- | :--- |
+| 저장 트리거 | 반사 알림/인지 가이드가 **실제 전송 성사**되어 DB 로그가 적재되는 이벤트만 (전 프레임 아님) |
+| 저장 위치 | `data/event_frames/YYYYMMDD/{event_id}.jpg`, DB에는 상대 경로(`frame_path`)만 기록 |
+| 실시간 경로 영향 | 없음 — JPEG 인코딩·파일 쓰기는 백그라운드 로그 태스크 안에서 `asyncio.to_thread`로 수행 (반사 <300ms 목표 무영향) |
+| bbox 표시 | 이미지에 굽지 않음 — `detected_objects_json`의 bbox(좌상단 x,y + w,h, 프레임 픽셀 좌표)를 콘솔이 오버레이 렌더링. 원본 보존으로 임계값/모델 교체 재검증 가능 |
+| 보존 정책 | `EVENT_FRAME_RETENTION_DAYS`(기본 7일) 초과 날짜 폴더를 서버 기동 시 삭제. 보행 중 촬영 이미지는 행인 등 개인정보 포함 가능성으로 기간 한정 보존 |
+| 실패 처리 | 저장 실패 시 `frame_path=NULL`로 로그는 적재. STT 이벤트 등 프레임 없는 로그도 NULL |
+| 경로 방어 | event_id 화이트리스트(`[A-Za-z0-9._-]{1,64}`) + DB 등록 경로만 서빙 + 저장소 밖 경로 해석 차단 이중 검증 |
+
+> 인지 로그의 `detected_objects_json`에는 2026-07-12부터 bbox 좌표가 포함됩니다(콘솔 오버레이용). LLM 오케스트레이터 입력에는 기존대로 bbox를 넣지 않습니다(프롬프트 오염 방지).
 
 ---
 
@@ -662,3 +689,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.10** | **2026-07-11** | **nav_route(6.6) 신설(경로 좌표 전송·해제·재접속 복원, TMap appKey 서버 환경변수 전달), §6.5 realtime_gps 수신 시점 길안내 직접 평가 비고 추가(카메라 무탐지 시 무음 결함 수정), §6.3 STT 기본 모델 `faster-whisper-small` 전환·프리로드 반영** |
 | **v0.4.11** | **2026-07-11** | **§6.4 폴백 모드 비고 갱신 - 클라이언트 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, 폴백 상태 welcome 수신 시 해제) 반영** |
 | **v0.4.12** | **2026-07-11** | **§8 SSE 계약 고정 - 실발행(8.2)/예약 브리지(8.3) 이벤트 분리, payload 필드를 콘솔 파서 기준으로 고정, `mcp:metrics` producer 부재 사실 명시(기존 "risk.events 실시간 뷰" 오기 정정), 데모 데이터 분리(8.4). §1 공통 필드 event_id 형식 구조화 반영** |
+| **v0.4.13** | **2026-07-12** | **§8.5 사후 이력 조회 REST 신설 - `GET /api/v1/admin/detection-logs` 목록, `GET /api/v1/admin/event-frames/{event_id}` 프레임 JPEG 서빙, 이벤트 프레임 저장 계약(frame_path 컬럼, data/event_frames/ 날짜 폴더, 보존 기본 7일, 백그라운드 저장으로 반사 경로 무영향), 인지 로그 detected_objects_json에 bbox 좌표 포함(콘솔 오탐 검증 오버레이용)** |

@@ -62,6 +62,9 @@ export interface DetectionGuidanceLogRow {
   stream_type: "reflex" | "cognitive" | "unknown";
   detected_objects_json: string;
   tts_text: string;
+  // 이벤트 발생 시점 프레임 이미지 상대 경로 (서버 data/event_frames/ 기준).
+  // NULL이면 이미지 미보존 (STT 이벤트, 저장 실패, 보존 기간 만료 등).
+  frame_path: string | null;
   created_at: string;
 }
 

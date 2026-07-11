@@ -230,6 +230,7 @@ class UserDevice(Base):
         passive_deletes="all",
     )
 
+
 class AdminAccount(Base):
     """운영자 콘솔 관리자 계정."""
 
@@ -358,6 +359,9 @@ class DetectionGuidanceLog(Base):
         nullable=False,
     )
     tts_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # frame_path: 이벤트 발생 시점 프레임 이미지의 상대 경로 (data/event_frames/ 기준).
+    # 이미지 저장 실패 또는 프레임 없는 이벤트(STT 등)는 NULL로 두고 로그는 적재합니다.
+    frame_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # created_at: DB 레코드 적재 시각 (마이크로초 6자리)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
