@@ -266,6 +266,12 @@ export function CameraView() {
   // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
   const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
     const now = Date.now();
+    // 2026-07-11 event_id 구조화(dev 개선 계획서 §3): 기존 `event-${now}`는 ms 단위라
+    // 반사/인지 두 캡처 타이머가 같은 ms에 발화하면 event_id가 충돌했고, 서버 DB의
+    // event_id UNIQUE + 중복 저장 방지 로직(detection_guidance_log_service)이 두 번째
+    // 프레임 로그를 조용히 버렸다. device_id와 stream을 포함해 충돌을 제거한다.
+    const frameStream = frame.stream ?? "reflex";
+    const eventId = `event-${DEVICE_ID}-${frameStream}-${now}`;
 
     // 로컬 추론 엔진 적재 여부와 관계없이 서버로 프레임 전송 수행 (WebSocket)
     // raw JPEG 바이트가 있으면(실기기) base64를 경유하지 않고 메타데이터(JSON) + 바이너리
@@ -275,10 +281,10 @@ export function CameraView() {
       sendRef.current({
         type: "detection",
         payload: {
-          event_id: `event-${now}`,
+          event_id: eventId,
           device_id: DEVICE_ID,
           frame_id: now,
-          stream: frame.stream ?? "reflex",
+          stream: frameStream,
           transport: "binary",
         }
       });
@@ -288,11 +294,11 @@ export function CameraView() {
       sendRef.current({
         type: "detection",
         payload: {
-          event_id: `event-${now}`,
+          event_id: eventId,
           device_id: DEVICE_ID,
           frame_id: now,
           thumbnail_jpeg_b64: frame.base64,
-          stream: frame.stream ?? "reflex",
+          stream: frameStream,
         }
       });
     }

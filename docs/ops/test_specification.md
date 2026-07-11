@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.4 (2026-07-11 STT 회귀 테스트 실구현·플랫폼별 녹음·반사 경보 미전송 검증 반영)
+> **버전**: v0.6.5 (2026-07-11 TC-DET-011 반사 위험도 SSOT 정합 테스트 신설(`tests/test_risk_ssot.py`) + 이전 v0.6.4 이력 유지: STT 회귀 테스트 실구현·플랫폼별 녹음·반사 경보 미전송 검증 반영)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -140,6 +140,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | **TC-DET-008** | mid/low 발행 | `xadd("risk.events")` 정상 | 완료 |
 | **TC-DET-009** | 무탐지 빈 리스트 | 에러 없이 빈 리스트 반환 | 완료 |
 | **TC-DET-010** | 노면 클래스 분리 (C2) | `braille_damaged` 독립 클래스 검출 | 완료 |
+| **TC-DET-011** | 반사 위험도 SSOT 정합 | 서버 `HIGH_RISK_CLASSES`와 단말 `CLASS_MIN_CONFIDENCE`의 고위험 5종 값 일치 (`tests/test_risk_ssot.py`, 계약: `docs/design/risk_ssot_contract.md`) | 완료 (2026-07-11 신설) |
 
 ### 5.4 4단계 - RAG 지식베이스 구축
 

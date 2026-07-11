@@ -1473,3 +1473,17 @@
 - **관련 파일**: `docs/README.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 병합 전 `git merge-tree --write-tree` 충돌 0건 확인, 병합 후 정리 문서 상대 링크 경로 존재 확인. 코드 변경 없음.
 - **비고**: 두 계획 문서(dev 계획서 + Mitos 로드맵)는 관점이 달라(전자: dev 통합 감사 기반 P0/P1, 후자: 실기기 검증 기반 사용자 안전) 병존시키고 교차 참조로 연결.
+
+---
+
+### 2026-07-11 | 통합 정합화 | KB 담당 확인 항목 이행: 지침서 정정, 콘솔 지도 복구, event_id 구조화, 위험도 SSOT 계약
+
+- **커밋**: `feat(통합): 지침서 정정, 콘솔 지도 연동 복구, event_id 구조화, 위험도 SSOT 계약 초안`
+- **변경 내용**:
+  - **통합 지침서 2종 정정 (v2.3.0)**: KB 담당 확인 결과 코드보다 뒤처진 서술을 갱신. 서버 통합 기술 지침서 - §3.2 GPS 수신을 detection 페이로드 필드가 아닌 실제 구현(`realtime_gps` 전용 메시지)으로 정정, §3.2에 GPS 수신 시점 길안내 직접 평가(2026-07-11) 추가, §3.4 nav_route 신설, 지도 웹페이지용 ws와 단말 `/ws/detect` 채널 구분 명시, 로컬 절대 경로 제거. 관제 UI 지침서 - §1에 "길댕아" 2단계 웨이크워드·질문 모드·첫 방향 지시 멘트 반영, 반사 경로 비협상 원칙(고위험 경보는 네비 멘트와 미융합) 명시, §3에 콘솔 지도와 단말 NavMapPanel이 별개 화면임을 명시.
+  - **콘솔 지도 임베딩 복구**: `OperatorLiveMap.tsx`가 구버전 8001 독립 포트로 하드코딩된 채 `App.tsx`에서 주석 처리되어 있던 것을, 8000 서브앱 경로(`VITE_NAV_MAP_URL` 환경변수, 기본 `http://localhost:8000/navigation/?embed=true`)로 수정하고 재활성화. `console/.env.example`에 변수 등재. 콘솔은 공유 영역이므로 TH 확인 요망.
+  - **event_id 구조화 (dev 계획서 §3)**: 단말 detection event_id를 `event-{epoch_ms}`에서 `event-{device_id}-{stream}-{epoch_ms}`로 변경(`CameraView.tsx`). 기존 형식은 반사(4fps)/인지(2fps) 타이머가 같은 ms에 발화하면 충돌했고, DB의 event_id UNIQUE + 중복 저장 방지 로직이 두 번째 프레임 로그를 조용히 유실시키는 실결함이었다. 서버는 event_id를 파싱하지 않고 통과시키며(전수 확인), DB 컬럼 String(64) 대비 신규 형식 약 38자로 안전. api_specification 공통 필드 표에 형식 명세 반영.
+  - **반사 위험도 SSOT 계약 초안 (dev 계획서 §2, 1단계)**: `docs/design/risk_ssot_contract.md` 신설 - 서버/단말이 반드시 일치시켜야 하는 고위험 5종+confidence를 SSOT로 고정하고, 단말 전용 실내 오탐 확장 7종과 거리 산식 불일치(서버 bbox 하단 y vs 단말 면적 기반)는 인지된 기술 부채로 명시. 회귀 테스트 `tests/test_risk_ssot.py` 신설(서버는 import 대조, 단말은 TSX 텍스트 파싱 대조, 파싱 실패 시 명시적 실패) - 복제 불일치가 커밋 단계에서 차단됨. 공통 데이터 계약 소스 통합(2단계)은 TH·Mobile 합의 대기.
+- **관련 파일**: `docs/dev-guides/integration/서버_및_시스템_통합_기술_지침서.md`, `docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md`, `console/src/components/OperatorLiveMap.tsx`, `console/src/App.tsx`, `console/.env.example`, `client/src/components/CameraView.tsx`, `docs/design/risk_ssot_contract.md`(신규), `tests/test_risk_ssot.py`(신규), `docs/design/api_specification.md`, `docs/ops/test_specification.md`(TC-DET-011), `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/test_risk_ssot.py` 3건 통과, 클라이언트/콘솔 `tsc --noEmit` 각각 통과. 콘솔 지도 iframe 실표시와 event_id 실기기 왕복은 서버 기동 환경에서 후속 확인.
+- **비고**: KB 담당 핵심 원칙(내비게이션의 반사 경로 미경유) 코드 검증 완료 - 반사 경로 3개 파일에 navigation 참조 0건, 길안내 발화 3경로 전부 인지 채널(guide). 검토 상세는 이 엔트리 직전 대화 기준.

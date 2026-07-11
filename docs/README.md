@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-11
-> **버전**: v0.13.8 (2026-07-11 dev 병합 정리: dev 통합 개선 실행 계획서를 문서 목록·§5 ops 표에 등재하고 말미 중복 §9 섹션(ops/reports 표기 불일치) 제거 + 이전: Mitos 보완 로드맵 `docs/research/` 이동, Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
+> **버전**: v0.13.9 (2026-07-11 반사 위험도 SSOT 계약 초안(design/risk_ssot_contract.md) 등재 + 이전 v0.13.8 이력 유지: dev 병합 정리: dev 통합 개선 실행 계획서를 문서 목록·§5 ops 표에 등재하고 말미 중복 §9 섹션(ops/reports 표기 불일치) 제거 + 이전: Mitos 보완 로드맵 `docs/research/` 이동, Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
 
 ## 문서 목록
 
@@ -73,6 +73,7 @@ docs/
 | 보행이론 인사이트 | [behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
 | **실내 오탐 완화 2차 설계서** | [indoor_fp_mitigation_design.md](design/indoor_fp_mitigation_design.md) | **물리적 타당성 필터 + VNClassifyImageRequest 씬 분류기 게이트 설계** |
 | **씬 분류기 게이트 해설(팀 학습용)** | [scene_classifier_gate_guide.md](design/scene_classifier_gate_guide.md) | **VNClassifyImageRequest 게이트 기법을 배경·원리·코드 위치·FAQ로 풀어 쓴 학습용 문서** |
+| **반사 위험도 SSOT 계약 (초안)** | [risk_ssot_contract.md](design/risk_ssot_contract.md) | **서버/단말 고위험 클래스·confidence 단일 계약, 회귀 테스트(`tests/test_risk_ssot.py`) 연동 (TH·Mobile 합의 전 초안)** |
 
 ---
 

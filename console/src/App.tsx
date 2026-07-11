@@ -77,10 +77,10 @@ export default function App() {
         <DetectionFeed items={state.detections} />
       </section>
 
-      {/* TH HARDCODE AREA:
-          8001 지도 서버 미실행 상태에서는 iframe load fail이 발생하므로
-          OperatorLiveMap은 임시 비활성화합니다. */}
-      {/* <OperatorLiveMap /> */}
+      {/* 2026-07-11 재활성화: 지도 서브앱이 8001 독립 포트에서 메인 서버(8000)
+          하위 /navigation 마운트로 통합되어 iframe load fail 원인이 해소됨.
+          주소는 VITE_NAV_MAP_URL로 재정의 가능(기본 localhost:8000). */}
+      <OperatorLiveMap />
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,

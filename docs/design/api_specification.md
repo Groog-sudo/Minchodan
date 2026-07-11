@@ -43,7 +43,7 @@
 | 필드 | 설명 |
 | :--- | :--- |
 | `type` | 메시지 타입 (hello, welcome, detection, ack, reflex_alert, guide, heartbeat, error) |
-| `event_id` | 이벤트 추적 식별자 (UUID) |
+| `event_id` | 이벤트 추적 식별자. 단말 detection 프레임은 `event-{device_id}-{stream}-{epoch_ms}` 형식(**2026-07-11 구조화** - 기존 `event-{epoch_ms}`는 반사/인지 타이머가 같은 ms에 발화하면 충돌해 DB UNIQUE 중복 방지 로직이 두 번째 로그를 유실), 서버 발신은 `stt-`/`nav-` 접두 또는 UUID |
 | `device_id` | 단말 식별자 |
 | `ts` | 타임스탬프 (epoch ms) |
 | `payload` | 타입별 페이로드 |
