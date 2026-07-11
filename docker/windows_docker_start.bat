@@ -37,7 +37,19 @@ if not exist ".env" (
     exit /b 1
 )
 
-rem 3. 실행 모드 선택 (GPU vs CPU Only)
+rem 3. NGROK_AUTHTOKEN 설정 여부 확인 (경고만, 중단 없음)
+set NGROK_TOKEN_SET=
+for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+    if /i "%%A"=="NGROK_AUTHTOKEN" if not "%%B"=="" set "NGROK_TOKEN_SET=1"
+)
+if not defined NGROK_TOKEN_SET (
+    echo.
+    echo [WARN] .env에 NGROK_AUTHTOKEN 이 비어있습니다.
+    echo        ngrok 컨테이너가 인증 오류로 종료됩니다.
+    echo        https://dashboard.ngrok.com 에서 토큰 발급 후 .env에 입력하십시오.
+    echo.
+)
+
 echo ========================================
 echo Choose Hardware Execution Mode:
 echo   [1] GPU Mode (NVIDIA GPU + CUDA/WSL2 required)
@@ -53,7 +65,7 @@ if "%MODE%"=="2" (
 echo Using config: %COMPOSE_FILE%
 echo.
 
-rem 4. docker compose 설정 유효성 검사
+rem 5. docker compose 설정 유효성 검사
 echo [1/4] Checking Docker Compose config...
 docker compose --env-file .env -f %COMPOSE_FILE% config --quiet
 if errorlevel 1 (
@@ -65,7 +77,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem 5. Docker 이미지 빌드
+rem 6. Docker 이미지 빌드
 echo.
 echo [2/4] Building Docker images (FastAPI)...
 docker compose --env-file .env -f %COMPOSE_FILE% build fastapi
@@ -77,7 +89,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem 6. 컨테이너 시작
+rem 7. 컨테이너 시작
 echo.
 echo [3/4] Starting containers (Redis + MariaDB + FastAPI)...
 docker compose --env-file .env -f %COMPOSE_FILE% up -d
@@ -89,7 +101,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem 7. FastAPI 포트 대기 (최대 60초)
+rem 8. FastAPI 포트 대기 (최대 60초)
 echo.
 echo [4/4] Waiting for FastAPI server (port 8000)...
 set WS_PORT=8000
@@ -110,19 +122,27 @@ echo ========================================
 echo Done!
 echo ========================================
 echo.
-echo FastAPI URL:
-echo http://127.0.0.1:%WS_PORT%/docs
+echo [FastAPI] WebSocket:
+echo   ws://127.0.0.1:%WS_PORT%/ws/detect
+echo   Swagger: http://127.0.0.1:%WS_PORT%/docs
 echo.
-echo Ollama URL:
-echo http://127.0.0.1:11434/api/tags
+echo [ngrok] 터널 URL 확인 (외부 접속용):
+echo   http://127.0.0.1:4040
+echo   (터널 https://xxxx.ngrok-free.app 을 앱 WS_URL 환경변수에 입력)
 echo.
-echo Next steps (first run only):
+echo [Expo] 호스트 PC에서 별도 실행 필요:
+echo   cd client
+echo   npx expo start --tunnel
+echo   (스마트폰 Expo Go 앱에서 QR 코드 스캔)
+echo.
+echo [Ollama] 호스트 로컬에서 별도 실행 필요:
 echo   ollama serve
-echo   ollama pull gemma4:e4b
-echo   ollama pull nomic-embed-text
+echo   (최초 1회) ollama pull gemma4:e4b
+echo   (최초 1회) ollama pull nomic-embed-text
 echo.
 echo Logs:
 echo   docker compose --env-file .env -f %COMPOSE_FILE% logs -f fastapi
+echo   docker compose --env-file .env -f %COMPOSE_FILE% logs -f ngrok
 echo.
 echo Stop:
 echo   docker compose --env-file .env -f %COMPOSE_FILE% down
