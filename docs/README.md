@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-11
-> **버전**: v0.13.6 (Mitos 보완 로드맵 기준선 유지 + Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
+> **버전**: v0.13.7 (2026-07-11 Mitos 보완 로드맵을 루트에서 `docs/research/mitos_improvement_roadmap.md`로 이동, v0.3.0 코드 대조 검증 정정본 반영 + 이전: Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
 
 ## 문서 목록
 
@@ -22,7 +22,7 @@
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
-| **프로젝트 보완점: Mitos** | [../PROJECT_IMPROVEMENTS_MITOS.md](../PROJECT_IMPROVEMENTS_MITOS.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵과 해결 상태** |
+| **프로젝트 보완점: Mitos (정정본)** | [research/mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵. v0.3.0 코드 대조 검증 기록 포함 (루트에서 이동)** |
 | **백엔드 DB 아키텍처** | [design/backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
 | 2단계 캡처 설계서     | [stage-guides/stage2_capture_design.md](stage-guides/stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 
@@ -121,6 +121,7 @@ docs/
 | Post-MVP 온디바이스 타당성 | [post_mvp_ondevice_feasibility.md](research/post_mvp_ondevice_feasibility.md) | 엣지 TFLite 추론 가능성 검증서 |
 | Post-MVP 하이브리드 로드맵 | [post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | 하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP) |
 | SenseVoice-Small STT 검토 | [sensevoice_stt_feasibility.md](research/sensevoice_stt_feasibility.md) | 음성 명령(STT) 경로용 SenseVoice-Small 도입 정당성(지연·로딩·한국어 정확도) |
+| **프로젝트 보완점: Mitos (정정본)** | [mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **안전성·음성 UX·신뢰성·검증 체계·제품화 보완 로드맵. v0.3.0에서 코드 대조 검증 기록(§10) 추가, 루트 `PROJECT_IMPROVEMENTS_MITOS.md`에서 이동** |
 
 ---
 

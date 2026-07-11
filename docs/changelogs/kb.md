@@ -1403,3 +1403,16 @@
 - **관련 파일**: `server/stt/stt_config.py`, `server/main.py`, `server/tts/realtime_tts.py`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `client/src/components/NavMapPanel.tsx`, `client/src/components/CameraView.tsx`, `client/src/types/detection.ts`, `client/package.json`, `client/ios/Podfile.lock`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `tsc --noEmit` 통과, 변경 Python `py_compile` 통과, FastAPI 재시작 후 health 정상 및 "Whisper 모델 프리로드 완료: faster-whisper-small" 로그 확인, iOS Release 실기기 빌드/설치/실행 성공(WS 프레임 수신 확인). small 모델 인식 품질, GPS 기반 길안내 발화, 지도 패널 표시에 대한 실기기 사용자 검증은 후속 진행.
 - **비고**: TMap appKey는 클라이언트 하드코딩 대신 서버 환경변수(`TMAP_APP_KEY`)를 nav_route 메시지로 전달하는 방식이라 저장소에 키가 남지 않는다. 다만 앱 런타임에는 노출되므로 TMap 콘솔에서 키 사용 제한 설정 권장. `react-native-webview`는 클라이언트 신규 의존성(팀 공유 필요).
+
+---
+
+### 2026-07-11 | 문서 | Mitos 보완 로드맵 코드 대조 검증 및 정정본 docs/ 이동
+
+- **커밋**: `docs: Mitos 보완 로드맵 v0.3.0 정정본, docs/research/로 이동`
+- **변경 내용**:
+  - **코드 전수 대조 검증**: Mitos 로드맵의 주장 17건을 실제 코드·changelog·설계 문서와 대조했다. 결과: 13건 정확(신호등 미인식, crosswalk 부재, Seg 마스크 미활용, bbox 거리 휴리스틱, 카메라 프레임 기준 방향, 패닝 비프, AEC 미적용, ngrok/정적 토큰/재연결 3회, exit 0 재시작 미규명, 반사 4fps, 골든셋 부재, 웨이크워드, 무고지 폴백), 2건 이미 해소("정지하세요" 문구는 `072e990`에서 수정, 전사문 DB 저장은 dev 병합 개인정보 정책으로 제거), 1건 부분 해소(STT 왕복 지연 - `4ff207b` small 전환·프리로드·TTS 캐시), 뉘앙스 보정 2건(폴백 모드는 온디바이스 반사 기능 유지, "길댕아 길찾아줘" 1턴 결합은 처리 가능).
+  - **정정본 반영 (v0.3.0)**: 신호등 클래스가 `MID_RISK_CLASSES`에서 제외되어 안내에 미사용인 사실 보강, 각 표의 근거를 코드 파일 기준으로 구체화, STT 지연 항목을 부분 해소로 갱신, 우선순위 표에 부분 해소 행 추가(연결 끊김 고지가 실질적 최우선), 부록 §10 코드 대조 검증 기록 신설.
+  - **위치 이동**: `git mv`로 루트 `PROJECT_IMPROVEMENTS_MITOS.md`를 `docs/research/mitos_improvement_roadmap.md`로 이동(이력 보존, jy가 정리한 단일 정본 원칙 유지 - 중복본 미생성). `docs/README.md` 인덱스 2곳 갱신(v0.13.7).
+- **관련 파일**: `docs/research/mitos_improvement_roadmap.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 검증 근거는 문서 부록 §10에 주장별 코드 위치로 기록. 저장소 내 `PROJECT_IMPROVEMENTS_MITOS.md` 잔여 참조는 jy changelog 과거 이력 서술뿐으로 정정 불필요.
+- **비고**: 로드맵의 기존 최우선 과제(STT 정지 문구)는 완료 상태이므로, 실질적 다음 액션은 연결 끊김 음성 고지 + 무한 백오프 재연결이다.
