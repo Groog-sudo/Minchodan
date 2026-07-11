@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.13.4 (2026-07-10 개인 설정 파일 Git 제외 가이드 추가: `Copy_` 접두어 기반 개인 설정 복사본 규칙과 `.xcodebuildmcp/Copy_config.yaml` 운영 기준 문서화 + 이전 v0.13.3 이력 유지: dev 브랜치 문서 정합성 점검, Gemini/Supertonic/GPS/MariaDB 반영)
+> **버전**: v0.13.5 (2026-07-11 루트 Mitos 보완 로드맵을 정본으로 등록하고 해결 항목·잔여 과제 정합화 + 이전 v0.13.4 개인 설정 파일 Git 제외 가이드 이력 유지)
 
 ## 문서 목록
 
@@ -22,6 +22,7 @@
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
+| **프로젝트 보완점: Mitos** | [../PROJECT_IMPROVEMENTS_MITOS.md](../PROJECT_IMPROVEMENTS_MITOS.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵과 해결 상태** |
 | **백엔드 DB 아키텍처** | [design/backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
 | 2단계 캡처 설계서     | [stage-guides/stage2_capture_design.md](stage-guides/stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 

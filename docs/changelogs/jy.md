@@ -229,18 +229,15 @@
 
 - **커밋**: `15cb978` (`iOS: 실기기 빌드 의존성 및 루트 응답 정리`)
 - **변경 내용**:
-  - iOS 실기기 Debug 빌드가 React Native 카메라 프레임 처리 경로를 포함할 수 있도록 `react-native-worklets-core`를 클라이언트 의존성에 추가했습니다.
-  - `client/package-lock.json`에 `react-native-worklets-core`와 하위 의존성 `string-hash-64` 잠금 정보를 반영하여 팀원별 설치 결과가 달라지지 않도록 고정했습니다.
-  - `Podfile.lock`에 `react-native-worklets-core`, `VisionCamera/FrameProcessors`, `TextToSpeech`, `ExpoSpeech` Pod 연결 정보를 반영했습니다.
-  - VisionCamera가 FrameProcessors 서브스펙을 포함하도록 CocoaPods 잠금 결과를 갱신하여 카메라 프레임 처리 기반 기능의 iOS 네이티브 링크 누락 가능성을 줄였습니다.
-  - Xcode 프로젝트 파일을 최신 Xcode 저장 형식 기준으로 갱신하면서 `objectVersion`, `preferredProjectObjectVersion`, Shell Script Build Phase 표현, 빌드 구성 표시명이 재정렬되었습니다.
-  - iOS 실기기 코드사이닝을 위해 `Minchodan` 타깃의 Debug/Release `DEVELOPMENT_TEAM` 값을 현재 로컬 개발팀 기준으로 갱신했습니다.
+  - 실기기 빌드 과정에서 미사용 `react-native-tts`, CocoaPods 1.17 잠금 결과, Xcode 26 프로젝트 자동 재작성, 개인 `DEVELOPMENT_TEAM` 값이 함께 반영되었습니다.
+  - 후속 dev 병합 전 정합성 검토에서 `react-native-worklets-core`는 이미 기준선에 존재했고 `react-native-tts`는 런타임 import가 없음을 확인했습니다.
+  - Xcode 26이 `shellScript`를 배열로 저장한 프로젝트 파일은 CocoaPods 1.17.0/xcodeproj 1.28.1의 깨끗한 `pod install`과 호환되지 않는 것도 확인했습니다.
   - FastAPI 서버 기본 경로(`/`)에 서비스 상태, 헬스체크 경로, Swagger 문서 경로, WebSocket 경로를 반환하는 루트 응답을 추가했습니다.
-  - 실기기 확인과 세션 로그를 바탕으로 안전 판단 공백, 음성 상호작용 지연, 연결 신뢰성, 안내 품질 검증, 제품화 과제를 정리한 `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md` 보완점 문서를 추가했습니다.
+  - 실기기 확인과 세션 로그를 바탕으로 안전 판단 공백, 음성 상호작용 지연, 연결 신뢰성, 안내 품질 검증, 제품화 과제를 정리한 Mitos 보완점 문서를 추가했습니다.
 - **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `server/main.py`, `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`, `docs/changelogs/jy.md`
 - **검증 결과**:
   - `client/ios/build-device-debug.log` 기준 `xcodebuild -workspace client/ios/Minchodan.xcworkspace -scheme Minchodan -configuration Debug -destination platform=iOS,id=... build` 실기기 Debug 빌드 성공 확인
-  - 빌드 로그에서 `ExpoSpeech`, `TextToSpeech`, `VisionCamera`, `react-native-worklets-core`, `react-native-fast-tflite` 네이티브 타깃 의존성 연결 확인
+  - 기존 Pods가 남아 있던 로컬 빌드 로그에서는 `BUILD SUCCEEDED`를 확인했으나, 후속 깨끗한 `pod install` 검증에서 Xcode 프로젝트 저장 형식 호환 실패를 확인
   - 빌드 로그 마지막 결과 `BUILD SUCCEEDED` 확인
   - `python3 -m py_compile server/main.py` 통과
   - `git diff --check` 통과
@@ -252,7 +249,7 @@
 
 ### 2026-07-11 | 문서 | macOS Xcode 빌드 공유 가이드 문서화
 
-- **커밋**: 미커밋
+- **커밋**: `6d38ae3` (`docs: macOS Xcode 빌드 공유 가이드 추가`)
 - **변경 내용**:
   - `.vscode/xcode_mcp_setup_guide.md`의 Xcode MCP 설정 절차를 팀 공유 문서로 복사하여 `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`를 추가했습니다.
   - `.vscode/ios_device_build_iteration_guide.md`의 iOS 실기기 빌드 및 수정 반복 절차를 공유 문서로 복사하여 `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`를 추가했습니다.
@@ -265,3 +262,17 @@
   - `rg`로 `file:///`, `/Users/jjun`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
   - `git diff --check -- docs/macOS_xcode_build docs/changelogs/jy.md` 통과
   - 기존 미추적 빌드 로그 `client/ios/build-device-debug.log`는 이번 문서 커밋 대상에서 제외했습니다.
+
+---
+
+### 2026-07-11 | iOS/문서 | dev 병합 전 정합성 차단 사항 정리
+
+- **커밋**: (이번 커밋)
+- **변경 내용**:
+  - `client/ios/Minchodan.xcodeproj/project.pbxproj`, `Podfile.lock`, `package.json`, `package-lock.json`을 `origin/dev` 기준으로 복구하여 Xcode 26 자동 재작성, 개인 Signing Team, 미사용 `react-native-tts`와 잠금 파일 노이즈를 제거했습니다.
+  - 루트 `PROJECT_IMPROVEMENTS_MITOS.md`를 v0.2.0으로 갱신하여 `3e7ab52`에서 해결된 STT 위험 문구와 전사문 저장 문제를 완료 상태로 분리했습니다.
+  - 중복된 `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`를 제거하고 `docs/README.md`가 루트 정본을 가리키도록 수정했습니다.
+  - 과거 iOS 작업과 macOS 가이드 changelog를 실제 diff와 커밋 해시에 맞게 정정했습니다.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `PROJECT_IMPROVEMENTS_MITOS.md`, `docs/README.md`, `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`, `docs/changelogs/jy.md`
+- **검증 결과**: `npm ci`, `tsc --noEmit`, `server/main.py`·`server/db/models.py` `py_compile`, `git diff --check` 통과. CocoaPods 1.17.0은 복구된 Xcode 프로젝트를 정상 파싱하고 autolinking까지 완료했으며, `pod install --deployment`는 저장소 기준 1.16.2와 로컬 1.17.0의 4개 Pod 체크섬·도구 버전 차이만 보고했습니다.
+- **비고**: `client/ios/build-device-debug.log`는 기존 미추적 상태로 유지하며 커밋에 포함하지 않습니다.
