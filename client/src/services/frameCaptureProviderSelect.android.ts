@@ -23,7 +23,15 @@
 
 import { useCallback, useRef } from "react";
 import { Image } from "react-native";
-import { type Camera, type PhotoFile } from "react-native-vision-camera";
+import {
+  type Camera,
+  type PhotoFile,
+  type Frame,
+  type FrameProcessorPlugin,
+  useFrameProcessor,
+  VisionCameraProxy,
+} from "react-native-vision-camera";
+import { useRunOnJS } from "react-native-worklets-core";
 import * as FileSystem from "expo-file-system/legacy";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
@@ -34,6 +42,9 @@ import type {
   FrameData,
 } from "./frameCaptureProvider";
 import { audioEngine } from "./audioEngine";
+
+const reflexFrameProcessorPlugin: FrameProcessorPlugin | undefined =
+  VisionCameraProxy.initFrameProcessorPlugin("reflexFrameCapture", {});
 
 /** 캡처 파이프라인 전체가 이 시간을 넘기면 강제 취소한다(무한 대기 방지). */
 const CAPTURE_TIMEOUT_MS = 3000;
@@ -166,8 +177,29 @@ async function captureViaTakePhotoAndroid(
 export function useFrameCaptureProvider(
   params: FrameCaptureProviderParams,
 ): FrameCaptureController {
-  const { cameraRef } = params;
+  const { cameraRef, intervalSharedValue, lastCaptureTsShared, onStreamFrameBase64 } = params;
   const isCapturingRef = useRef(false);
+
+  const onFrameBase64 = useRunOnJS(
+    (base64: string) => onStreamFrameBase64(base64),
+    [onStreamFrameBase64],
+  );
+
+  const frameProcessor = useFrameProcessor(
+    (frame: Frame) => {
+      "worklet";
+      if (reflexFrameProcessorPlugin == null) return;
+      const now = Date.now();
+      if (now - lastCaptureTsShared.value < intervalSharedValue.value) return;
+      lastCaptureTsShared.value = now;
+
+      const result = reflexFrameProcessorPlugin.call(frame);
+      if (typeof result === "string" && result.length > 0) {
+        onFrameBase64(result);
+      }
+    },
+    [onFrameBase64],
+  );
 
   const capturePhoto = useCallback(
     (stream: StreamType): Promise<FrameData | null> =>
@@ -176,8 +208,8 @@ export function useFrameCaptureProvider(
   );
 
   return {
-    supportsStream: false,
-    frameProcessor: undefined,
+    supportsStream: reflexFrameProcessorPlugin != null,
+    frameProcessor,
     capturePhoto,
   };
 }

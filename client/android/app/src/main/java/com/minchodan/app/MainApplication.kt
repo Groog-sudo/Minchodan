@@ -13,6 +13,8 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ExpoReactHostFactory
+import com.mrousavy.camera.frameprocessors.FrameProcessorPluginRegistry
+
 
 class MainApplication : Application(), ReactApplication {
 
@@ -23,6 +25,7 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
+          add(MinchodanCustomPackage())
         }
     )
   }
@@ -35,6 +38,10 @@ class MainApplication : Application(), ReactApplication {
       ReleaseLevel.STABLE
     }
     loadReactNative(this)
+    // Register VisionCamera Frame Processor Plugin
+    FrameProcessorPluginRegistry.registerFrameProcessorPlugin("reflexFrameCapture") { proxy, options ->
+      ReflexFrameProcessorPlugin(proxy, options)
+    }
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 
