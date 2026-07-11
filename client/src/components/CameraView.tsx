@@ -15,6 +15,7 @@ import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
+import { NavMapPanel, type NavMapWaypoint } from "./NavMapPanel";
 import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS } from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
@@ -94,7 +95,7 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
 }
 
 export function CameraView() {
-  const { status, send, sendBinary, lastMessage, setSttInteractionActive } = useWebSocket(DEVICE_ID, TOKEN);
+  const { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive } = useWebSocket(DEVICE_ID, TOKEN);
   const {
     cameraRef,
     device,
@@ -131,6 +132,12 @@ export function CameraView() {
           lon: coords.lon,
           heading: coords.heading,
         });
+        // 지도 마커 갱신은 2초 스로틀(WebView 주입 빈도 제한, 성능 합의 사항).
+        const nowTs = Date.now();
+        if (nowTs - lastMapPosTsRef.current >= 2000) {
+          lastMapPosTsRef.current = nowTs;
+          setMapPos({ lat: coords.lat, lon: coords.lon });
+        }
       });
     })();
 
@@ -188,6 +195,14 @@ export function CameraView() {
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
   const [confThreshold, setConfThreshold] = useState(0.40);
+
+  // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
+  // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
+  // 경로 데이터(navRoute)는 useWebSocket이 전용 상태로 직접 보존한다
+  // (lastMessage 경유 시 고빈도 메시지에 덮여 유실 - 실기기 확인).
+  const [mapVisible, setMapVisible] = useState(false);
+  const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
+  const lastMapPosTsRef = useRef(0);
 
   // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트
   useEffect(() => {
@@ -621,6 +636,29 @@ export function CameraView() {
       <View style={styles.panelWrap} pointerEvents="box-none">
         <DebugTriggerPanel />
       </View>
+
+      {/* 2026-07-11 하단 T맵 지도 패널: 정적 표시 전용(pointerEvents none이라 STT
+          press-and-hold 터치가 그대로 통과), 토글 켜짐일 때만 WebView 마운트.
+          켜면 하단 디버그 패널 위를 덮는다(발표·모니터링 용도 전제). */}
+      {mapVisible && (
+        <View style={styles.navMapWrap} pointerEvents="none">
+          <NavMapPanel
+            appKey={navRoute?.appKey ?? ""}
+            waypoints={navRoute?.waypoints ?? []}
+            current={mapPos}
+          />
+        </View>
+      )}
+      <View style={styles.mapToggleWrap} pointerEvents="box-none">
+        <Pressable
+          style={styles.mapToggleButton}
+          onPress={() => setMapVisible((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+        >
+          <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -841,6 +879,31 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+  },
+  navMapWrap: {
+    position: "absolute",
+    bottom: 6,
+    left: 12,
+    right: 12,
+    height: 210,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  mapToggleWrap: {
+    position: "absolute",
+    bottom: 222,
+    right: 12,
+  },
+  mapToggleButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  mapToggleText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
   },
   sttButton: {
     position: "absolute",

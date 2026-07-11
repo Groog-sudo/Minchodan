@@ -18,12 +18,21 @@ import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 import type { WSMessage, WSStatus } from "../types/detection";
 
+export interface NavRouteData {
+  appKey: string;
+  waypoints: { lat: number; lon: number }[];
+}
+
 export interface UseWebSocketReturn {
   status: WSStatus;
   send: (data: object) => void;
   /** JPEG raw byte 프레임을 바이너리 WS 프레임으로 전송한다 (base64 미경유). */
   sendBinary: (data: Uint8Array) => void;
   lastMessage: WSMessage | null;
+  /** 지도 패널용 경로. lastMessage는 초당 수십 건의 ack/탐지 메시지에 덮여
+   * 저빈도 이벤트가 React 배칭으로 유실될 수 있어(guide 오디오와 동일한 이유)
+   * nav_route는 전용 상태로 직접 보존한다. null = 경로 미설정/해제. */
+  navRoute: NavRouteData | null;
   /** STT 질문 상호작용(녹음~응답 수신) 구간 동안 인지 경로 가이드 음성을 뮤트한다.
    * 반사 경로(reflex_alert)는 안전 비협상 원칙에 따라 절대 뮤트하지 않는다.
    * timeoutMs를 넘기면 해당 시간 뒤 자동 해제(기본은 STT_INTERACTION_TIMEOUT_MS 안전 상한). */
@@ -44,6 +53,7 @@ export function useWebSocket(
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<WSStatus>("disconnected");
   const [lastMessage, setLastMessage] = useState<WSMessage | null>(null);
+  const [navRoute, setNavRoute] = useState<NavRouteData | null>(null);
 
   // STT 상호작용 중 인지 경로 뮤트 상태. ref로 관리해 onmessage 클로저 안에서도
   // 항상 최신 값을 읽는다(state였다면 connect()가 재실행되지 않는 한 stale closure).
@@ -180,6 +190,16 @@ export function useWebSocket(
             audioEngine.speakFallback(data.guidance_text);
           }
           setLastMessage(data as WSMessage);
+        } else if (data.type === "nav_route") {
+          // 지도 경로: lastMessage 경유 시 고빈도 ack/탐지 메시지에 덮여 유실되므로
+          // 전용 상태로 직접 반영한다.
+          const wps = data.waypoints ?? [];
+          console.log(`[WS] nav_route 수신: waypoints=${wps.length}`);
+          setNavRoute(
+            wps.length > 0
+              ? { appKey: data.app_key ?? "", waypoints: wps }
+              : null,
+          );
         } else {
           setLastMessage(data);
         }
@@ -252,5 +272,5 @@ export function useWebSocket(
     };
   }, [connect, clearHeartbeat]);
 
-  return { status, send, sendBinary, lastMessage, setSttInteractionActive };
+  return { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive };
 }

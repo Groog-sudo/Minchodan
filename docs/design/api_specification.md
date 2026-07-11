@@ -1,9 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.9 (2026-07-11 STT 민감정보 비보존·플랫폼별 녹음 검증·반사 경보 송신 성공 확인 반영 + 이전 v0.4.8 이력 유지)
+> **버전**: v0.4.10 (2026-07-11 nav_route(6.6) 신설 - 하단 지도 패널용 경로 좌표 전송·재접속 복원, realtime_gps(6.5) 수신 시점 길안내 직접 평가로 카메라 무탐지 시 무음 결함 수정, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드 반영 + 이전 v0.4.9 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
-> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps 정합 확인.
+> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
 
 ---
@@ -379,7 +379,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | 필드 | 설명 |
 | :--- | :--- |
 | `audio_b64` | 녹음된 오디오 파일 전체를 base64 인코딩한 값 (필수). 현재 iOS는 44.1kHz mono 16bit Linear PCM WAV, Android는 MPEG-4/AAC를 사용하며 서버의 `av` 기반 디코더가 처리합니다. |
-| `model_name` | 선택. 미지정 시 `server/stt/stt_config.py`의 `DEFAULT_REQUEST_MODEL`(`faster-whisper-medium`) 사용 |
+| `model_name` | 선택. 미지정 시 `server/stt/stt_config.py`의 `DEFAULT_REQUEST_MODEL`(`faster-whisper-small`) 사용. **2026-07-11 기본 모델 medium→small 전환**: macOS Docker CPU 폴백 환경 실측에서 medium은 2초 발화 전사 2.3초·콜드스타트 로딩 8~10초로 STT 왕복 지연의 주 병목이었다. 명령어 위주 짧은 발화 + hotwords 바이어싱 조합 전제이며, 인식 품질 회귀 시 상수 1개만 medium으로 롤백한다. 콜드스타트는 `server/main.py` lifespan에서 백그라운드 스레드 프리로드로 별도 제거 |
 
 응답은 별도 신규 타입이 아니라 기존 **6.1 guide** 메시지로 온다(클라이언트가 이미
 guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요). 전사 실패 시에도
@@ -503,6 +503,50 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 
 `lat`/`lon` 중 하나라도 누락되면 서버는 조용히 무시한다(에러 응답 없음). TMAP 보행자 경로 안내(`server/navigation/pedestrian_navigation.py`)와 결합되어 실시간 TTS로 안내 문장이 발화된다.
 
+> **비고 (2026-07-11) - 길안내 무음 결함 수정**: 기존에는 턴바이턴 멘트 조회
+> (`get_combined_guidance`)가 `DetectionConsumer._send_cognitive_guide` 내부에만 있어
+> 카메라 탐지가 없는 빈 장면에서는 NAVIGATING 상태여도 안내가 전혀 발화되지 않았다
+> (실기기 실측: 경로 113 웨이포인트 설정 후 무음). 길안내는 위치 이벤트가 본질이므로
+> `realtime_gps` 수신 시점에 서버가 직접 안내를 평가하고 `_send_nav_guidance()`
+> (`server/api/ws_router.py`)로 TTS 합성·전송하도록 분리했다. 응답 형식은 §6.1 guide와
+> 동일하다(`event_id`는 `nav-` 접두, `source`는 nav_filter 이벤트 타입). 중복 발화는
+> nav_filter의 announced_cache/silence_interval이 탐지 경로와 공용으로 차단하며, 조회는
+> 수신 루프에서 동기로 수행(중복 판정 원자성)하고 합성·전송만 백그라운드 태스크로
+> 분리한다.
+
+---
+
+### 6.6 nav_route (서버 → 단말, 지도 경로 표시, 2026-07-11 신설)
+
+목적지 설정으로 보행 경로가 수립되거나 해제될 때, 서버가 경로 좌표 목록을 단말 하단 T맵 지도 패널(`client/src/components/NavMapPanel.tsx`, 운영자/데모용)에 전달합니다.
+
+```json
+{
+  "type": "nav_route",
+  "waypoints": [
+    { "lat": 37.5665, "lon": 126.9780 },
+    { "lat": 37.5670, "lon": 126.9791 }
+  ],
+  "app_key": "TMAP JS API appKey",
+  "ts": 1720574000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `waypoints` | 경로 폴리라인용 좌표 목록. **빈 배열이면 경로 해제**(지도 패널의 폴리라인 제거). 좌표 외 상세 정보(설명 문구 등)는 전송하지 않는다 |
+| `app_key` | TMap JS API appKey. 클라이언트 하드코딩 대신 서버 환경변수 `TMAP_APP_KEY`를 재사용해 저장소에 키가 남지 않도록 한다(앱 런타임에는 노출되므로 TMap 콘솔에서 키 사용 제한 권장) |
+
+전송 시점은 3곳이다.
+
+| 시점 | 발생 위치 | 비고 |
+| :--- | :--- | :--- |
+| 경로 수립 성공 | `stt_to_llm_bridge.py` `navigation-setup-success` → `ws_router._process_stt_audio` | `nav_waypoints` 좌표 목록 포함 |
+| 네비게이션 종료 | `navigation-setup-shutdown` | `waypoints: []`로 경로 해제 |
+| WS 재접속(인증 직후) | `ws_router.ws_detect` | 서버 세션이 NAVIGATING이고 웨이포인트가 살아 있으면 재전송. 앱 재시작으로 단말 메모리의 경로가 사라져도 지도를 복원한다(실기기 확인 결함 수정) |
+
+클라이언트는 `nav_route`를 `lastMessage` 경유가 아닌 **전용 상태(`navRoute`)** 로 보존한다(고빈도 ack/탐지 메시지의 React 배칭에 저빈도 이벤트가 덮여 유실되는 문제 - guide 오디오와 동일한 이유). 지도 패널은 토글 켜짐일 때만 WebView를 마운트하고, 현재 위치 마커 갱신은 2초 스로틀을 적용한다.
+
 ---
 
 ## 7. 탐지 결과 상세 (3단계, 내부/콘솔용)
@@ -580,3 +624,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.7** | **2026-07-10** | **stt_audio(6.3) 응답 전송을 audio_mp3_b64→binary transport로 통일(§6.1 규격과 일치), 명령 어휘 표(길댕아 2단계 웨이크워드·질문 모드·POI 실거리 검색) 추가, device_id 세션 불일치 결함(목적지는 설정돼도 길안내 음성이 안 나오던 원인) 수정 반영** |
 | **v0.4.8** | **2026-07-11** | **§6.3 자기-에코 감지(TTS 안내문 재녹음 무시, 서버+클라이언트 이중 방어)·인텐트 체크 순서 변경(nav/question > wake 재호출) 비고 추가, §6.4 폴백 모드 온디바이스 BBox 표시 비고 추가, §2.4 SessionManager WebSocketState 가드(WS 종료 후 송신 실패 스팸 방지) 비고 추가** |
 | **v0.4.9** | **2026-07-11** | **STT 원본·전사문 비보존, iOS PCM·Android AAC 플랫폼별 캡처 검증, SessionManager 송신 성공 boolean 및 반사 경보 억제 조건 정합화** |
+| **v0.4.10** | **2026-07-11** | **nav_route(6.6) 신설(경로 좌표 전송·해제·재접속 복원, TMap appKey 서버 환경변수 전달), §6.5 realtime_gps 수신 시점 길안내 직접 평가 비고 추가(카메라 무탐지 시 무음 결함 수정), §6.3 STT 기본 모델 `faster-whisper-small` 전환·프리로드 반영** |

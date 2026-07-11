@@ -217,7 +217,7 @@ docs/
 - **LLM은 로컬 Ollama(gemma4:e4b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
 - **4단계 캡셔닝은 Gemini API**(`gemini-2.5-flash-lite`, 최초 계획 로컬 Llava에서 전환)입니다.
 - **7단계 TTS는 Supertonic 기본**(`TTS_ENGINE=supertonic`)이며, Piper/pyttsx3는 핫스왑 폴백입니다.
-- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다.
+- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다. 길안내 발화는 `realtime_gps` 수신 시점에 직접 평가하며(카메라 탐지와 분리, 2026-07-11), 경로 좌표는 `nav_route` 메시지로 단말 하단 T맵 지도 패널(운영자/데모용)에 전달됩니다.
 - **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
 - **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.

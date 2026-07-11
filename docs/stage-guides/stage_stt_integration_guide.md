@@ -1,7 +1,7 @@
 # Minchodan STT 음성명령 연동 가이드
 
 > **작성일**: 2026-07-10
-> **버전**: v0.2.1 (2026-07-11 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
+> **버전**: v0.2.2 (2026-07-11 STT 응답 지연 개선 3건 반영 - 기본 모델 `faster-whisper-small` 전환, 서버 기동 시 모델 프리로드, TTS 합성 결과 캐시 + 이전 v0.2.1 이력 유지: 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
 > **범위**: 7단계 골격 외 입력 경로(STT) 운영 가이드
 > **관련 코드**: `server/api/ws_router.py`, `server/stt/stt_service.py`, `server/stt/stt_to_llm_bridge.py`
 
@@ -47,6 +47,18 @@ flowchart TD
 }
 ```
 
+`model_name` 생략 시 `DEFAULT_REQUEST_MODEL`(`faster-whisper-small`)이 사용됩니다.
+
+> **비고 (2026-07-11) - 기본 모델 small 전환 및 지연 개선**: macOS Docker CPU 폴백 환경
+> 실측에서 STT 왕복이 정상 3.8초, 컨테이너 재시작 후 첫 요청 10초 이상으로 측정되어
+> 다음 3건을 적용했습니다. (a) 기본 모델을 `faster-whisper-medium`에서
+> `faster-whisper-small`로 전환(`stt_config.py`, hotwords 바이어싱 유지. 인식 품질 회귀
+> 시 `DEFAULT_REQUEST_MODEL` 상수 1개만 롤백). (b) `server/main.py` lifespan에서 Whisper
+> 모델을 백그라운드 스레드로 프리로드해 콜드스타트 8~10초 제거(실패 시 기존 지연 로딩
+> 폴백, 서버 기동은 차단하지 않음). (c) `realtime_tts.py`에 (text, voice, speed) 키
+> FIFO 캐시(64건)를 추가해 웨이크업/재시도 등 고정 안내문 재합성 1.4~1.9초를 2회째부터
+> 제거.
+
 ### 3.2 출력 (`guide`)
 
 ```json
@@ -74,7 +86,7 @@ flowchart TD
 | Router  | `server/api/ws_router.py`         | `stt_audio` 수신, 요청 단위 임시 파일 생성·즉시 삭제, 백그라운드 태스크 분리 |
 | Service | `server/stt/stt_service.py`       | 오디오 전사 수행                                         |
 | Bridge  | `server/stt/stt_to_llm_bridge.py` | 전사 결과를 기존 가이드 흐름으로 변환                    |
-| TTS     | `server/tts/realtime_tts.py`      | 안내 문장 합성 및 오디오 직렬화                          |
+| TTS     | `server/tts/realtime_tts.py`      | 안내 문장 합성 및 오디오 직렬화. 동일 (text, voice, speed) 재합성은 FIFO 캐시(64건)로 회피 |
 
 ---
 

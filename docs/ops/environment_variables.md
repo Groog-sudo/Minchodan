@@ -1,8 +1,8 @@
 ﻿# Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-10
-> **버전**: v0.4.11 (2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
+> **수정일**: 2026-07-11
+> **버전**: v0.4.12 (2026-07-11 §2.13 `TMAP_APP_KEY` 용도 확장 반영 - 하단 지도 패널용 `nav_route` WS 메시지의 `app_key`로 단말에 전달, `server/api/ws_router.py` 참조 추가 + 이전 v0.4.11 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -145,7 +145,7 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **`.env.example`에 아직 등재되어 있지 않아 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38` |
+| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **`.env.example`에 아직 등재되어 있지 않아 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38`, `server/api/ws_router.py` |
 
 ---
 

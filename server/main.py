@@ -74,7 +74,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"DetectionConsumer 시작 실패 (큐는 유지): {e}")
 
+    # 3. Whisper 모델 프리로드 (2026-07-11 실측: 지연 로딩 상태에서 재시작 후 첫
+    # STT 요청이 모델 로딩 8~10초를 그대로 떠안아 사용자 체감 지연이 컸다).
+    # 이벤트 루프를 막지 않도록 스레드로 위임하고, 실패해도 기존 지연 로딩으로
+    # 동작하므로 서버 기동은 막지 않는다.
+    from server.stt.stt_config import DEFAULT_REQUEST_MODEL
+    from server.stt.stt_service import SttService
+
+    def _preload_whisper() -> None:
+        try:
+            SttService.get_model(DEFAULT_REQUEST_MODEL)
+            logger.info(f"Whisper 모델 프리로드 완료: {DEFAULT_REQUEST_MODEL}")
+        except Exception as e:
+            logger.error(f"Whisper 모델 프리로드 실패 (지연 로딩으로 폴백): {e}")
+
+    stt_preload_task = asyncio.create_task(asyncio.to_thread(_preload_whisper))
+
     yield
+
+    stt_preload_task.cancel()
 
     logger.info("Minchodan API Server 종료 중...")
     # 3. DetectionConsumer 중지
@@ -159,6 +177,7 @@ app.include_router(stt_router)
 # 네비게이션 서브앱 마운트
 app.mount("/navigation", navigation_app)
 
+
 @app.get("/")
 async def root():
     return {
@@ -168,6 +187,7 @@ async def root():
         "docs": "/docs",
         "websocket": "/ws/detect",
     }
+
 
 @app.get("/health")
 async def health_check():

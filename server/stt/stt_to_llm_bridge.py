@@ -408,6 +408,8 @@ class SttToLlmBridge:
                 "guidance_text": "네비게이션 안내를 종료합니다.",
                 "used_fallback_llm": True,
                 "source": "navigation-setup-shutdown",
+                # 지도 패널의 경로 폴리라인 제거용(빈 배열 = 경로 해제).
+                "nav_waypoints": [],
             }
 
         elif is_question_trigger:
@@ -477,10 +479,28 @@ class SttToLlmBridge:
                         # 작성법: 상태를 먼저 바꾸면 route 비어있는 구간이 생길 수 있으므로 현재 순서를 유지한다.
                         nav_manager.update_route(device_id, session_waypoints)
                         nav_manager.set_status(device_id, "NAVIGATING")
+                        # 2026-07-11 추가: 안내 시작 직후 첫 행동 지시가 없어 사용자가
+                        # 어디로 출발할지 알 수 없었다(거리 트리거는 50m/15m 근접 시에만
+                        # 발화). 경로의 첫 유의미 웨이포인트 설명을 시작 멘트에 붙인다.
+                        first_direction = ""
+                        for wp in session_waypoints:
+                            desc = (wp.get("description") or "").strip()
+                            if desc and "출발" not in desc:
+                                first_direction = f" 먼저, {desc}"
+                                break
                         return {
-                            "guidance_text": f"{destination}까지 보행 경로 안내를 시작합니다.",
+                            "guidance_text": (
+                                f"{destination}까지 보행 경로 안내를 시작합니다."
+                                f"{first_direction}"
+                            ),
                             "used_fallback_llm": True,
                             "source": "navigation-setup-success",
+                            # 2026-07-11 지도 표시용: 클라이언트 하단 지도 패널이 경로
+                            # 폴리라인을 그릴 수 있도록 좌표만 추려 전달한다(ws_router가
+                            # nav_route 메시지로 변환). 좌표 외 상세 정보는 보내지 않는다.
+                            "nav_waypoints": [
+                                {"lat": wp["lat"], "lon": wp["lon"]} for wp in session_waypoints
+                            ],
                         }
             except Exception as ex:
                 # [바이브 코딩 부분] 경로 수립 예외는 음성 재입력을 유도해 세션 지속성을 지킨다.
