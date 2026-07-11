@@ -9,16 +9,13 @@ load_dotenv()
 
 
 # 3단계 Yolo 26N - Object Detection & Segmentation 탐지 클래스명 단일 표준화 정의 (SSOT)
-KICKBOARD = "kickboard"
+SCOOTER = "scooter"
 BOLLARD = "bollard"
-BRAILLE_DAMAGED = "braille_damaged"
-STAIRS = "stairs"
-CROSSWALK = "crosswalk"
-MANHOLE = "manhole"
-GRATING = "grating"
+CAUTION = "caution"
+ROADWAY = "roadway"
 
 # 전체 표준 클래스 리스트 정의
-ALL_CLASSES = [KICKBOARD, BOLLARD, BRAILLE_DAMAGED, STAIRS, CROSSWALK, MANHOLE, GRATING]
+ALL_CLASSES = [SCOOTER, BOLLARD, CAUTION, ROADWAY]
 
 if __name__ == "__main__":
     print("Minchodan RAG 라벨 SSOT 로딩 테스트 완료")

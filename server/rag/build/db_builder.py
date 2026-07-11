@@ -18,11 +18,7 @@ from server.rag.build.frame_extractor import extract_frames
 from server.rag.build.gemini_captioner import generate_caption
 
 # 로컬 모듈 임포트
-from server.rag.shared.labels import (
-    BOLLARD,
-    BRAILLE_DAMAGED,
-    KICKBOARD,
-)
+from server.rag.shared.labels import BOLLARD, CAUTION, ROADWAY, SCOOTER
 
 load_dotenv()
 
@@ -87,9 +83,14 @@ def build_database(
     #       이후 실시간 검색 시 LLM이 절대 엉뚱한 대처법을 지어내지 못하도록 원천 차단하는 설계입니다.
     # =========================================================================
 
-    # 담당자님, 여기에 29개 주요 클래스 혹은 위험 상황에 대한 안전 대처 수칙 딕셔너리(dummy_guidance_templates)를 직접 타이핑해주세요!
+    # TH HARD CODE AREA:
+    # 현재는 실데이터 전면 정리 전 단계라서 화면/데모/면접 대응에 필요한 최소 라벨만 먼저 고정합니다.
+    # 발표/면접 포인트: "RAG 품질보다 먼저 taxonomy 정합과 안내 문구 일관성을 우선 맞췄습니다."
     dummy_guidance_templates = {
-        # 예: KICKBOARD: "전방에 킥보드가 무단 방치되어 있습니다. 킥보드 충돌 방지를 위해 보행 속도를 줄이고, 좌측 혹은 우측으로 한 보 이상 비껴 안전거리를 확보하며 서행하세요.",
+        SCOOTER: "전방에 전동 킥보드가 놓여 있습니다. 좌우 공간을 확인하며 천천히 비껴가세요.",
+        BOLLARD: "전방에 볼라드가 있습니다. 정면 충돌을 피하도록 옆으로 돌아가세요.",
+        CAUTION: "전방 바닥 위험 구간입니다. 발끝 높낮이를 확인하며 천천히 이동하세요.",
+        ROADWAY: "차도와 가까운 구간입니다. 보도 안쪽으로 위치를 조정하세요.",
     }
     
     # =========================================================================
@@ -103,19 +104,19 @@ def build_database(
             # 캡션 Mocking
             if i % 3 == 0:
                 caption = "길가 한가운데 전동 킥보드가 쓰러져 있고 통행을 방해하는 화면입니다."
-                scene_type = KICKBOARD
+                scene_type = SCOOTER
                 risk_level = "mid"
-                objects = [KICKBOARD]
+                objects = [SCOOTER]
             elif i % 3 == 1:
                 caption = "화강암 재질의 볼라드가 인도 보도블록 위에 불쑥 솟아 있는 모습입니다."
                 scene_type = BOLLARD
                 risk_level = "mid"
                 objects = [BOLLARD]
             else:
-                caption = "파편이 깨지고 마모되어 형태가 어지러운 노란색 파손 점자블록이 보입니다."
-                scene_type = BRAILLE_DAMAGED
+                caption = "바닥 높낮이가 불규칙하고 주의가 필요한 위험 구간이 전방에 보입니다."
+                scene_type = CAUTION
                 risk_level = "high"
-                objects = [BRAILLE_DAMAGED]
+                objects = [CAUTION]
         else:
             try:
                 caption = generate_caption(frame_path)
@@ -123,18 +124,18 @@ def build_database(
                 scene_type = "unknown"
                 risk_level = "low"
                 objects = []
-                for cls in [KICKBOARD, BOLLARD, BRAILLE_DAMAGED]:
-                    if cls in caption or (cls == BRAILLE_DAMAGED and "점자" in caption):
+                for cls in [SCOOTER, BOLLARD, CAUTION, ROADWAY]:
+                    if cls in caption:
                         scene_type = cls
-                        risk_level = "high" if cls == BRAILLE_DAMAGED else "mid"
+                        risk_level = "high" if cls == CAUTION else "mid"
                         objects.append(cls)
                         break
             except Exception as e:
-                print(f"[DB Builder] {frame_path} 캡셔닝 실패: {e}. 기본 킥보드로 폴백합니다.")
-                caption = "킥보드가 방치된 화면입니다."
-                scene_type = KICKBOARD
+                print(f"[DB Builder] {frame_path} 캡셔닝 실패: {e}. 기본 scooter로 폴백합니다.")
+                caption = "전동 킥보드가 방치된 화면입니다."
+                scene_type = SCOOTER
                 risk_level = "mid"
-                objects = [KICKBOARD]
+                objects = [SCOOTER]
 
         # 문서 조립
         guidance = dummy_guidance_templates.get(scene_type, "주의하여 서행해 주세요.")
@@ -203,7 +204,7 @@ if __name__ == "__main__":
         print(f"빌드 성공 여부 확인: {db is not None}")
 
         # 검색 동작 테스트
-        results = db.similarity_search("킥보드 수칙", k=1)
+        results = db.similarity_search("전동 킥보드 수칙", k=1)
         if results:
             print("성공적인 조회 결과:")
             print(f"- 내용: {results[0].page_content}")
