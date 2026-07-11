@@ -1,10 +1,13 @@
 # AI Coding & Communication Guidelines (Minchodan)
 
+> [!IMPORTANT]
+> **2026-07-07 정정**: 본 문서(v0.1.0, 2026-06-24)는 프로젝트 루트의 [`CLAUDE.md`](../CLAUDE.md)/[`AGENTS.md`](../AGENTS.md)(v0.3.0)보다 오래된 중복 사본이며 갱신되지 않고 있었다. **최신 기준은 루트 `CLAUDE.md`/`AGENTS.md`이며, 본 파일은 이력 참고용으로만 남긴다.** 아래 `console/` 디렉토리 참조와 상대경로 문서 링크(`git_branching_strategy.md` 등)는 더 이상 유효하지 않다(실제 경로는 `docs/ops/git_branching_strategy.md`).
+
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.1.0
-> **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
+> **버전**: v0.1.0 (2026-07-07부로 deprecated — 루트 `CLAUDE.md`/`AGENTS.md` 참조)
+> **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 
 ---
 
@@ -38,7 +41,7 @@
 
 - Framework: React Native (iOS/Android)
 - Camera: react-native-vision-camera
-- Audio: Web Audio API, react-native-tts (예비)
+- Audio: Web Audio API, expo-av, expo-haptics
 - Accessibility: Haptics, announceForAccessibility
 
 ### 운영 콘솔
@@ -48,7 +51,7 @@
 
 ### 인프라
 
-- Container: Docker (Redis + Ollama + FastAPI)
+- Container: Docker (Redis + MariaDB + FastAPI), Ollama는 호스트 로컬 프로세스
 - GPU: CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
 
 ---
@@ -72,6 +75,7 @@
   - `orchestration/`: LangGraph L1/L2/L3 (nodes/)
   - `tts/`: 실시간 TTS, 반사 클립 전송, 중복 억제
   - `bus/`: Redis Streams 인터페이스
+  - `db/`: RDB ORM/DTO/DDL (사용자, 단말, 관리자, 감사 로그)
   - `models/`: 사전학습 가중치 Git 추적 (yolo26n/*.pt), 커스텀 학습 가중치 git-ignore
 - `client/`: React Native thin client
 - `console/`: React 운영자 모니터링 콘솔
@@ -114,9 +118,9 @@
 - Branches: 3계층 구조 (`master` 또는 `main` / `dev` / `[이니셜]`)를 엄격히 준수.
 - Roles:
   - `master` 또는 `main`: 운영 기준선. 직접 push 금지.
-  - `dev`: 통합 개발 및 머지 브랜치. 직접 push 금지.
+  - `dev`: 통합 개발 및 머지 브랜치. 로컬 직접 병합 후 push 허용.
   - `dg`, `jh`, `jy`, `kb`, `th`: 개별 개발 브랜치.
-- Compliance: 상세 내용은 [`docs/git_branching_strategy.md`](git_branching_strategy.md)를 참조하고, 모든 작업은 PR(Pull Request) 기반으로 진행.
+- Compliance: 상세 내용은 [`docs/git_branching_strategy.md`](git_branching_strategy.md)를 참조하고, 모든 작업은 직접 병합 및 push 기반으로 진행.
 
 ---
 

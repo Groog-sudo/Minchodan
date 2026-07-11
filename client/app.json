@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Minchodan",
+    "slug": "minchodan",
+    "version": "1.0.0",
+    "scheme": "minchodan",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.minchodan.app.kwanbum",
+      "infoPlist": {
+        "NSCameraUsageDescription": "보행 보조를 위해 카메라 접근이 필요합니다.",
+        "NSMicrophoneUsageDescription": "음성 안내를 위해 마이크 접근이 필요합니다.",
+        "NSLocationWhenInUseUsageDescription": "도보 경로 안내를 위해 위치 정보 접근이 필요합니다.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.minchodan.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "INTERNET",
+        "RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      [
+        "react-native-vision-camera",
+        {
+          "enableFrameProcessors": true
+        }
+      ],
+      "react-native-fast-tflite",
+      "expo-splash-screen",
+      "expo-audio",
+      "expo-location",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "2.1.20"
+          }
+        }
+      ]
+    ],
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

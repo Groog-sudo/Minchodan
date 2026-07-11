@@ -33,6 +33,11 @@ class YoloSegmentor(SegmentorInterface):
             return False
 
     def predict(self, frame: np.ndarray) -> list[SurfaceResult]:
+        # =========================================================================
+        # 🤖 VIBE CODE 영역 (세그멘테이션 추론 및 예외 처리) 🤖
+        # 💡 [설계 의도] Segmentation은 Object Detection보다 연산량이 크므로 CUDA OOM 발생 확률이 높습니다.
+        # 에러 발생 시 예외를 먹고 빈 결과를 반환하거나, CPU로 안전하게 폴백하여 파이프라인 영속성을 보장합니다.
+        # =========================================================================
         if self.model is None:
             logger.warning("[YoloSegmentor] 모델이 로드되지 않았습니다.")
             return []
@@ -76,6 +81,15 @@ class YoloSegmentor(SegmentorInterface):
 
     @staticmethod
     def _compute_centroid(mask_xy) -> list[float]:
+        # =========================================================================
+        # 👨‍💻 HARD CODE 영역 시작 (마스크 무게중심 계산 로직) 👨‍💻
+        # 💡 [면접 대비 주석]
+        # 질문: Segmentation 결과인 폴리곤 면적(Mask)을 SurfaceResult(점 데이터)로 단순화한 이유는?
+        # 답변: 보도블럭이나 계단 등 노면 상태의 전체 폴리곤 좌표를 하위 시스템으로 넘기면 통신/직렬화 오버헤드가 큽니다.
+        # 따라서 Numpy의 mean() 연산을 통해 다각형의 무게중심(Centroid) '단일 점 좌표(cx, cy)'로 압축 치환했습니다.
+        # 이를 통해 2단계 게이트(Surface Gate)에서 점이 안전선(Threshold) 아래에 있는지만
+        # O(1)에 가깝게 비교할 수 있어 극단적인 Low Latency를 달성했습니다.
+        # =========================================================================
         try:
             pts = np.concatenate(mask_xy, axis=0)
             cx = float(np.mean(pts[:, 0]))

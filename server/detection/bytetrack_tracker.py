@@ -30,11 +30,17 @@ class ByteTrackTracker:
         for det in detections:
             try:
                 if det.track_id is None:
-                    updated.append(det.model_copy(update={"speed": 0.0, "direction": "unknown"}))
+                    # track_id가 없으면(Mock 등) 연속성을 확인할 수 없으므로 단발성(hit_count=1)으로 취급
+                    updated.append(
+                        det.model_copy(
+                            update={"speed": 0.0, "direction": "unknown", "hit_count": 1}
+                        )
+                    )
                     continue
 
                 prev = await redis_bus.get_track_context(det.track_id)
                 speed, direction = self._compute_motion(prev, det.bbox)
+                hit_count = self._compute_hit_count(prev)
 
                 await redis_bus.set_track_context(
                     det.track_id,
@@ -44,13 +50,30 @@ class ByteTrackTracker:
                         "direction": direction,
                         "class_name": det.class_name,
                         "updated_at": str(time.time()),
+                        "hit_count": str(hit_count),
                     },
                 )
-                updated.append(det.model_copy(update={"speed": speed, "direction": direction}))
+                updated.append(
+                    det.model_copy(
+                        update={"speed": speed, "direction": direction, "hit_count": hit_count}
+                    )
+                )
             except Exception as e:
                 logger.warning(f"[ByteTrackTracker] track 업데이트 실패: {e}")
-                updated.append(det.model_copy(update={"speed": 0.0, "direction": "unknown"}))
+                updated.append(
+                    det.model_copy(update={"speed": 0.0, "direction": "unknown", "hit_count": 1})
+                )
         return updated
+
+    @staticmethod
+    def _compute_hit_count(prev: dict) -> int:
+        """동일 track_id가 이전 컨텍스트에도 존재했다면 +1, 아니면(신규 track) 1부터 시작한다."""
+        if not prev or "hit_count" not in prev:
+            return 1
+        try:
+            return int(prev["hit_count"]) + 1
+        except (TypeError, ValueError):
+            return 1
 
     @staticmethod
     def _compute_motion(prev: dict, bbox: BBox) -> tuple[float, str]:

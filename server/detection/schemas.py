@@ -21,6 +21,9 @@ class Detection(BaseModel):
     speed: float | None = None
     direction: str | None = None
     risk: str | None = None  # "high" | "mid" | "low"
+    # 2026-07-07 추가: 동일 track_id가 연속으로 몇 프레임 유지됐는지(ByteTrackTracker가 채움).
+    # 실내 오탐 완화용 - reflex_gate가 이 값을 확인해 한 프레임짜리 순간 오탐을 걸러낸다.
+    hit_count: int = 0
 
 
 class SurfaceResult(BaseModel):
@@ -52,4 +55,8 @@ class ReflexAlert(BaseModel):
     risk_level: str = "high"
     clip: str
     haptic: bool = True
+    panning: float = 0.0
+    distance: float = 1.0
+    beep_interval_ms: int = 250
+    haptic_pattern: str = "double"
     ts: float

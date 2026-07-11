@@ -73,6 +73,9 @@ ignore = [
 "server/main.py" = [
     "E402",  # sys.path 조작 후 로컬 import (guide 3.3 패턴)
 ]
+"server/db/schemas.py" = [
+    "S105",  # OAuth2 표준 응답 필드 token_type="bearer" 오탐 (최신 ruff 0.15.x 기준)
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["server"]

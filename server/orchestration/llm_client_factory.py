@@ -48,8 +48,8 @@ class SimpleOllamaClient:
     def __init__(self, model_name: str, base_url: str):
         self.model_name = model_name
         self.base_url = base_url
-        # AsyncClient 인스턴스 생성
-        self.client = ollama.AsyncClient(host=base_url)
+        # AsyncClient 인스턴스 생성 (CPU 환경의 Ollama Gemma4 추론 지연을 고려하여 타임아웃을 120초로 대폭 상향)
+        self.client = ollama.AsyncClient(host=base_url, timeout=120.0)
 
     async def ainvoke(self, messages: list) -> LLMResponse:
         """
@@ -67,10 +67,14 @@ class SimpleOllamaClient:
             formatted_messages.append({"role": role, "content": content})
 
         logger.info(f"Ollama async chat invocation: model={self.model_name}")
+        # think=False: gemma4:e4b는 추론(thinking) 모드가 기본 활성화된 모델이라,
+        # 이를 끄지 않으면 응답 토큰 예산(num_predict)을 내부 추론에서 전부 소진해
+        # content가 항상 빈 문자열로 반환되는 문제가 있었다(2026-07-08 실측 확인).
         response = await self.client.chat(
             model=self.model_name,
             messages=formatted_messages,
-            options={"temperature": 0.3, "num_predict": 50},
+            options={"temperature": 0.3, "num_predict": 100},
+            think=False,
         )
         content = response.get("message", {}).get("content", "").strip()
         return LLMResponse(content)
@@ -120,6 +124,76 @@ class SimpleOpenAIClient:
         return LLMResponse(content)
 
 
+class SimpleGeminiClient:
+    """
+    httpx를 활용한 비동기 Google Gemini API 호출 클라이언트.
+    """
+
+    def __init__(self, model_name: str, api_key: str):
+        self.model_name = model_name
+        self.api_key = api_key
+        if not self.api_key:
+            raise ValueError("GOOGLE_API_KEY가 비어 있습니다.")
+
+    async def ainvoke(self, messages: list) -> LLMResponse:
+        """
+        SystemMessage, HumanMessage 리스트를 Gemini API에 맞는 메시지 형식으로 변환하여 비동기 호출합니다.
+        """
+        contents = []
+        system_instruction_text = ""
+
+        for msg in messages:
+            if hasattr(msg, "type"):
+                role_type = msg.type
+                content = msg.content
+            else:
+                role_type = msg.get("role", "user")
+                content = msg.get("content", "")
+
+            if role_type == "system":
+                # Gemini API v1beta에서는 system_instruction을 별도 필드로 설정하거나 
+                # 또는 대화의 처음에 포함할 수 있음. 여기서는 system_instruction 텍스트로 보관.
+                system_instruction_text = content
+            else:
+                # Gemini 역할은 'user'와 'model'만 허용됨
+                role = "user" if role_type in ("user", "human") else "model"
+                contents.append({
+                    "role": role,
+                    "parts": [{"text": content}]
+                })
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
+        
+        payload = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 100,
+            }
+        }
+        
+        if system_instruction_text:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_instruction_text}]
+            }
+
+        headers = {"Content-Type": "application/json"}
+
+        logger.info(f"Gemini API async invocation: model={self.model_name}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=headers, timeout=10.0)
+            response.raise_for_status()
+            res_data = response.json()
+
+        try:
+            content = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except (KeyError, IndexError) as e:
+            logger.error(f"Gemini API 응답 파싱 실패: {e}, 응답: {res_data}")
+            content = ""
+            
+        return LLMResponse(content)
+
+
 class LLMClientFactory:
     """
     BaseChatModel과 호환되는 클라이언트의 싱글톤 인스턴스를 동적으로 핫스왑 관리하는 팩토리 클래스.
@@ -127,6 +201,7 @@ class LLMClientFactory:
 
     _ollama: SimpleOllamaClient = None
     _openai: SimpleOpenAIClient = None
+    _gemini: SimpleGeminiClient = None
     _current_provider: str = "ollama"
     _monitor_task: asyncio.Task = None
     _gpu_monitor = None
@@ -135,7 +210,7 @@ class LLMClientFactory:
     def get_ollama(cls) -> SimpleOllamaClient:
         if cls._ollama is None:
             base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            model_name = os.getenv("GEMMA_MODEL", "gemma4-e4b")
+            model_name = os.getenv("GEMMA_MODEL", "gemma4:e4b")
             cls._ollama = SimpleOllamaClient(model_name=model_name, base_url=base_url)
         return cls._ollama
 
@@ -147,6 +222,16 @@ class LLMClientFactory:
                 raise ValueError("OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
             cls._openai = SimpleOpenAIClient(model_name="gpt-4o-mini", api_key=api_key)
         return cls._openai
+
+    @classmethod
+    def get_gemini(cls) -> SimpleGeminiClient:
+        if cls._gemini is None:
+            api_key = os.getenv("GOOGLE_API_KEY", "")
+            if not api_key:
+                raise ValueError("GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.")
+            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+            cls._gemini = SimpleGeminiClient(model_name=model_name, api_key=api_key)
+        return cls._gemini
 
     @classmethod
     def start_gpu_monitor(cls, interval_seconds: float = 2.0):
@@ -193,7 +278,7 @@ class LLMClientFactory:
         지정된 provider 또는 환경변수 설정을 확인해 적절한 클라이언트를 반환합니다.
         """
         # start_gpu_monitor가 아직 호출되지 않았다면 기본값 기준 설정
-        target_provider = provider or cls._current_provider
+        target_provider = (provider or cls._current_provider).lower()
 
         if target_provider == "openai":
             try:
@@ -201,6 +286,14 @@ class LLMClientFactory:
             except ValueError as e:
                 sys.stderr.write(
                     f"[WARN] OpenAI Client init failed: {e!s}. Falling back to Ollama.\n"
+                )
+                return cls.get_ollama()
+        elif target_provider == "gemini":
+            try:
+                return cls.get_gemini()
+            except ValueError as e:
+                sys.stderr.write(
+                    f"[WARN] Gemini Client init failed: {e!s}. Falling back to Ollama.\n"
                 )
                 return cls.get_ollama()
         return cls.get_ollama()
