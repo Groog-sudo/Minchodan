@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-06-24
-> **버전**: v0.13.1 (2026-07-10 문서 폴더 재정리 유지 + DB Tailscale 외부망 연결 가이드 추가)
+> **버전**: v0.13.2 (2026-07-10 Android 무선 테스트 가이드 및 STT 통합 가이드 인덱스 반영)
 
 ## 문서 목록
 
@@ -88,6 +88,7 @@ docs/
 | 4·5단계 테스트 가이드 | [stage4_5_test_guide.md](stage-guides/stage4_5_test_guide.md) | RAG 백엔드 단위 테스트 실행 가이드 |
 | 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | LangGraph L1/L2/L3, LLM 핫스왑, 가드레일 |
 | 7단계 TTS 설계서 | [stage7_tts_design.md](stage-guides/stage7_tts_design.md) | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점 재생 설계 |
+| STT 통합 가이드 | [stage_stt_integration_guide.md](stage-guides/stage_stt_integration_guide.md) | `stt_audio -> STT -> Bridge -> TTS -> guide` 흐름, 메시지 계약, 테스트 체크리스트 |
 | **3단계 YOLO 코드 리뷰** | [stage3_detection_code_review.md](stage-guides/stage3_detection_code_review.md) | **3단계 탐지 파이프라인 코드 분석, 준수 점검, 종합 평가 및 개선 제안** |
 
 ---
@@ -129,6 +130,8 @@ docs/
 | **환경 변수 명세서** | [environment_variables.md](ops/environment_variables.md) | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류** |
 | **배포 가이드** | [deployment_guide.md](ops/deployment_guide.md) | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동** |
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
+| **Android 빌드 및 무선 테스트 가이드** | [android_build_and_wireless_test_guide.md](ops/android_build_and_wireless_test_guide.md) | **Android 개발 빌드, adb reverse, 무선 연동 기본 절차** |
+| **Android 무선 테스트 가이드 v2** | [android_wireless_test_guide_v2.md](ops/android_wireless_test_guide_v2.md) | **실기기 테스트 중 Metro 연결 끊김, adb 데드락, reverse 복구 절차 상세판** |
 | **실기기 무선 연동 가이드** | [wireless_test_guide.md](ops/wireless_test_guide.md) | **실기기(LTE) 및 Docker 연동 구조, 터널링, 트러블슈팅 상세 가이드** |
 | **AI 모델 및 하드웨어 구성 지침** | [ai_model_hardware_setup.md](ops/ai_model_hardware_setup.md) | **GPU 요구사항(verify_gpu) 및 호스트 로컬 Ollama 모델(gemma4:e4b/nomic) 풀링 가이드** |
 | **Redis Streams 데이터 스키마 명세** | [redis_streams_schema.md](ops/redis_streams_schema.md) | **risk.events 스트림 페이로드 필드 정의 및 중복 알림 TTL 캐시 명세** |
