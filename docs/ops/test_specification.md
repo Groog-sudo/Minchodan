@@ -41,7 +41,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 - 부하 테스트
 - 보안 취약점 진단
 - 셀룰러/실환경 on-device 반사 레이어 (post-MVP)
-- ~~사용자 음성 명령(STT) 경로 (본 골격 범위 밖)~~ **2026-07-09 정정**: 7단계 골격 범위 밖이라는 서술은 유효하나, 실제로 STT는 2026-07-09에 `server/api/ws_router.py`의 `stt_audio` 핸들러로 종단 연결 및 실기동 검증까지 완료됨. 상세는 §7(변경 이력) 및 `docs/changelogs/kb.md` 참조 — 이 문서의 테스트 케이스 목록에는 아직 별도 TC 미추가
+- ~~사용자 음성 명령(STT) 경로 (본 골격 범위 밖)~~ **2026-07-09 정정**: 7단계 골격 범위 밖이라는 서술은 유효하나, 실제로 STT는 2026-07-09에 `server/api/ws_router.py`의 `stt_audio` 핸들러로 종단 연결 및 실기동 검증까지 완료됨. **2026-07-11 추가**: STT 자기-에코 감지·인텐트 체크 순서 변경 검증 TC는 `docs/stage-guides/stage_stt_integration_guide.md` §6(TC-STT-006/007)에 등재. 상세는 §7(변경 이력) 및 `docs/changelogs/kb.md` 참조
 - 단말 UI 픽셀 단위 디자인 검수
 
 ---
@@ -98,9 +98,11 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-WS-005 | 5초 ping/pong 하트비트     | ping/pong 루프 정상                      | 완료 |
 | TC-WS-006 | `WebSocketDisconnect` 정리 | 소켓 close + 리소스 해제                 | 완료 |
 | TC-WS-007 | detection 바이너리 전송 프로토콜 | JSON 메타(`transport:"binary"`) + `send_bytes()` 바이너리 프레임 → ack 정상 응답, 메타 없는 고아 바이너리 프레임 무시 | 완료 |
+| TC-WS-008 | WS 종료 후 송신 시도 무시 | `SessionManager.send_json/send_bytes`가 `application_state != CONNECTED`일 때 송신 스킵 (consumer 태스크 독립 실행 중 에러 스팸 방지) | 완료 |
 
-> **1단계 비고 (2026-07-01)**: 백그라운드 uvicorn 기동 하에 `tests/test_ws_echo.py` 6개 케이스 전체 검증 통과 완료.
+> **1단계 비고 (2026-07-01)**: 백그라운드 uvicorn 기동 하하 `tests/test_ws_echo.py` 6개 케이스 전체 검증 통과 완료.
 > **1단계 비고 (2026-07-07)**: TC-WS-007은 `tests/test_api_ws.py`(`TestClient.websocket_connect`, 실기기/uvicorn 기동 불필요)에서 실제 `/ws/detect` 라우터 코드 경로를 통해 검증됨.
+> **1단계 비고 (2026-07-11)**: TC-WS-008은 `SessionManager`에 `WebSocketState.CONNECTED` 가드를 추가해 WS 종료 후 DetectionConsumer가 독립 태스크로 `send` 시도할 때 발생하던 `Cannot call send once a close message has been sent` 에러 스팸(17회 반복)을 원천 차단. 서버 로그로 에러 소멸 확인.
 
 
 ### 5.2 2단계 - 카메라 화면 전송

@@ -189,6 +189,7 @@ import logging
 import sys
 from typing import Dict
 from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
@@ -212,12 +213,20 @@ class SessionManager:
             logger.info(f"[해제] device_id={device_id}, 현재 접속: {len(self.active_connections)}명")
 
     async def send_json(self, device_id: str, data: dict):
+        # WebSocketState.CONNECTED 가드: WS 종료 후 consumer 태스크가 독립 실행 중일 때
+        # send 시도로 "Cannot call send once a close message has been sent" 에러 스팸 방지.
         ws = self.active_connections.get(device_id)
-        if ws:
+        if ws and ws.application_state == WebSocketState.CONNECTED:
             await ws.send_json(data)
 
+    async def send_bytes(self, device_id: str, data: bytes):
+        ws = self.active_connections.get(device_id)
+        if ws and ws.application_state == WebSocketState.CONNECTED:
+            await ws.send_bytes(data)
+
     def is_connected(self, device_id: str) -> bool:
-        return device_id in self.active_connections
+        ws = self.active_connections.get(device_id)
+        return ws is not None and ws.application_state == WebSocketState.CONNECTED
 
 manager = SessionManager()
 ```

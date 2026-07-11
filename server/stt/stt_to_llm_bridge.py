@@ -1,4 +1,6 @@
 import sys
+import time
+from typing import ClassVar
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -54,6 +56,43 @@ def _is_gildaeng_wake(text: str) -> bool:
         window = text[i : i + root_len]
         if _levenshtein(window, GILDAENG_ROOT) <= GILDAENG_FUZZY_MAX_DISTANCE:
             return True
+    return False
+
+
+# 2026-07-11 추가: 자기-에코(앱 자신의 TTS 안내문이 마이크로 다시 들어가 전사되는 현상)
+# 방지용 short-term 메모리. device_id별로 최근 전송한 안내문과 시각을 보관한다.
+ECHO_MEMORY_TTL_SEC = 10.0
+ECHO_SIMILARITY_THRESHOLD = 0.6
+
+
+def _is_self_echo(transcript: str, recent_guidance: str) -> bool:
+    """전사 결과가 앱이 방금 재생한 안내문과 유사한지 판정한다.
+
+    TTS 안내문이 스피커로 재생되는 도중 사용자가 녹음 버튼을 누르면 마이크가 그
+    안내문을 그대로 주워들어 Whisper가 전사한다 - 이 전사가 웨이크업/인텐트 키워드를
+    포함하면 메아리 루프(안내문 -> 녹음 -> 전사 -> 웨이크업 재발동 -> 동일 안내문)가
+    발생한다(실기기 13:24:07 로그로 확인).
+
+    판정 기준: 안내문의 핵심 키워드 구간이 전사 결과에 포함되어 있으면 에코로 인정한다.
+    전사는 Whisper의 오인식이 섞일 수 있으므로, 편집거리가 짧은 부분 문자열 매칭을
+    사용한다 (전사가 안내문보다 짧거나 중간에 끊길 수 있으므로 안내문의 부분이 전사에
+    있는지 확인한다).
+    """
+    if not recent_guidance or not transcript:
+        return False
+    # 안내문이 전사에 거의 그대로 포함되어 있으면 확정 에코
+    if recent_guidance in transcript:
+        return True
+    # 전사가 안내문의 접두사/접미사인 경우 (끊겨 녹음)
+    if transcript in recent_guidance and len(transcript) >= 4:
+        return True
+    # 안내문의 핵심 구간(처음 10자)이 전사에 편집거리 2 이내로 포함되어 있으면 에코
+    key_fragment = recent_guidance[:10]
+    if len(key_fragment) >= 3:
+        for i in range(len(transcript) - len(key_fragment) + 1):
+            window = transcript[i : i + len(key_fragment)]
+            if _levenshtein(window, key_fragment) <= 2:
+                return True
     return False
 
 
@@ -126,6 +165,28 @@ def _extract_poi_category(text: str) -> str | None:
 
 
 class SttToLlmBridge:
+    # 2026-07-11: device_id별 최근 전송 안내문 캐시 (자기-에코 감지용).
+    # {device_id: (guidance_text, timestamp_monotonic)}
+    _recent_guidance: ClassVar[dict[str, tuple[str, float]]] = {}
+
+    @classmethod
+    def _record_guidance(cls, device_id: str, guidance_text: str) -> None:
+        """클라이언트에 전송할 안내문을 에코 감지용 메모리에 기록한다."""
+        if guidance_text:
+            cls._recent_guidance[device_id] = (guidance_text, time.monotonic())
+
+    @classmethod
+    def _check_self_echo(cls, device_id: str, transcript: str) -> bool:
+        """전사 결과가 최근 안내문의 에코인지 확인한다. TTL 경과 시 자동 정리."""
+        entry = cls._recent_guidance.get(device_id)
+        if not entry:
+            return False
+        guidance_text, ts = entry
+        if time.monotonic() - ts > ECHO_MEMORY_TTL_SEC:
+            del cls._recent_guidance[device_id]
+            return False
+        return _is_self_echo(transcript, guidance_text)
+
     @staticmethod
     def build_orch_input(stt_result: SttTranscribeResult) -> dict:
         """
@@ -187,9 +248,26 @@ class SttToLlmBridge:
         # [하드 코딩 부분 - 핵심] 입력 없음은 안전 우선 안내로 즉시 종료한다.
         if not normalized_text:
             return {
-                "guidance_text": "입력이 없어 정지하세요",
+                "guidance_text": "음성이 인식되지 않았어요. 다시 말씀해 주세요.",
                 "used_fallback_llm": True,
                 "source": "stt-bridge-empty",
+            }
+
+        # 2026-07-11 추가: 자기-에코 감지. TTS 안내문이 재생되는 도중 사용자가 녹음
+        # 버튼을 누르면 스피커 소리가 마이크로 다시 들어가 전사된다(음향 블리드). 이
+        # 전사가 웨이크업/인텐트 키워드를 포함하면 메아리 루프가 발생한다(실기기
+        # 13:24:07 로그 확인: "길찾아줘 또는 물어볼게 중 하나로 다시 말씀해주세요"
+        # 안내문이 통째로 전사됨). 최근 전송한 안내문과 유사하면 에코로 판정해
+        # 클라이언트에 응답을 보내지 않는다(ws_router에서 source별 스킵).
+        if self._check_self_echo(device_id, normalized_text):
+            print(
+                f"[STT BRIDGE] 자기-에코 감지(안내문 재녹음), 무시: "
+                f"device_id={device_id}, transcript={normalized_text!r}"
+            )
+            return {
+                "guidance_text": "",
+                "used_fallback_llm": True,
+                "source": "stt-echo-detected",
             }
 
         # 2026-07-10 정정(실기기 실측): device_id를 "default_device"로 하드코딩했더니
@@ -230,16 +308,11 @@ class SttToLlmBridge:
             is_question_intent = any(
                 kw in normalized_text for kw in GILDAENG_QUESTION_INTENT_KEYWORDS
             )
-            # 2026-07-10 정정(실기기 실측): 이미 대기 중인데 "길댕아"를 또 말하면
-            # (재확인 습관) "길찾아줘/물어볼게로 다시 말씀해주세요" 오류 메시지가 나가
-            # 혼란스러웠다. 재호출 wake는 같은 안내를 반복하며 대기를 유지한다
-            # (질문 모드 재트리거 수정과 동일 원칙).
-            if _is_gildaeng_wake(normalized_text):
-                return {
-                    "guidance_text": "네, 길 찾아드릴까요, 질문 받을까요?",
-                    "used_fallback_llm": True,
-                    "source": "intent-mode-wakeup",
-                }
+            # 2026-07-11 정정(실기기 실측): wake 재호출 체크가 nav/question intent보다
+            # 먼저였던 것을 뒤로 이동했다. 사용자가 "길댕아 길찾아줘"라고 말하면
+            # _is_gildaeng_wake가 True가 되어 intent 매칭 전에 리턴해버려, 목적지
+            # 대기 상태로 진입하지 못하고 같은 안내만 반복하는 문제(5회 반복 로그
+            # 확인)가 있었다. 실제 인텐트 키워드가 포함되어 있으면 그것을 우선 처리한다.
             if is_nav_intent:
                 nav_manager.set_awaiting_intent(device_id, False)
                 nav_manager.set_status(device_id, "WAITING_FOR_DESTINATION")
@@ -255,6 +328,16 @@ class SttToLlmBridge:
                     "guidance_text": "네, 질문해 주세요.",
                     "used_fallback_llm": True,
                     "source": "question-mode-wakeup",
+                }
+            # 2026-07-10 정정(실기기 실측): 이미 대기 중인데 "길댕아"를 또 말하면
+            # (재확인 습관) "길찾아줘/물어볼게로 다시 말씀해주세요" 오류 메시지가 나가
+            # 혼란스러웠다. 재호출 wake는 같은 안내를 반복하며 대기를 유지한다
+            # (질문 모드 재트리거 수정과 동일 원칙).
+            elif _is_gildaeng_wake(normalized_text):
+                return {
+                    "guidance_text": "네, 길 찾아드릴까요, 질문 받을까요?",
+                    "used_fallback_llm": True,
+                    "source": "intent-mode-wakeup",
                 }
             else:
                 # 옵션 A: 추측하지 않고 대기 상태를 유지한 채 정확한 재입력을 유도한다.
@@ -532,7 +615,7 @@ class SttToLlmBridge:
         """
         if not stt_result.has_input:
             return {
-                "guidance_text": "입력이 없어 정지하세요",
+                "guidance_text": "음성이 인식되지 않았어요. 다시 말씀해 주세요.",
                 "used_fallback_llm": True,
                 "source": "stt-template",
             }

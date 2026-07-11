@@ -1,7 +1,7 @@
 # Minchodan STT 음성명령 연동 가이드
 
 > **작성일**: 2026-07-10
-> **버전**: v0.1.0 (신규)
+> **버전**: v0.2.0 (2026-07-11 자기-에코 필터·인텐트 체크 순서 변경·추가 TC 반영)
 > **범위**: 7단계 골격 외 입력 경로(STT) 운영 가이드
 > **관련 코드**: `server/api/ws_router.py`, `server/stt/stt_service.py`, `server/stt/stt_to_llm_bridge.py`
 
@@ -26,8 +26,11 @@ flowchart TD
     A["Client stt_audio 전송"] --> B["ws_router._handle_stt_audio"]
     B --> C["SttService.transcribe_file"]
     C --> D["SttToLlmBridge.invoke_existing_llm"]
-    D --> E["realtime_tts.synthesize"]
+    D --> ECHO{"자기-에코 감지<br/>(_check_self_echo)"}
+    ECHO -->|"에코 (안내문 재녹음)"| SKIP["응답 스킵<br/>source=stt-echo-detected"]
+    ECHO -->|"정상 발화"| E["realtime_tts.synthesize"]
     E --> F["guide 메시지 송신"]
+    F --> REC["_record_guidance<br/>(안내문 캐시에 기록)"]
 ```
 
 ---
@@ -80,6 +83,8 @@ flowchart TD
 | **예외 처리**   | 전사 실패 시 고정 fallback 문장 송신                                    |
 | **경로 분리**   | STT는 인지 경로 전용, 반사 경로 미연동                                  |
 | **민감정보**    | 업로드 음성 파일은 처리 후 즉시 삭제                                    |
+| **자기-에코 감지** | TTS 안내문이 마이크로 재녹음된 경우 전사 결과와 최근 안내문(`_recent_guidance`, TTL 10초)을 비교해 에코로 판정, 응답 스킵(`source=stt-echo-detected`). 클라이언트는 TTS 재생 중 녹음 시 `stopGuideAudio()` 후 150ms 대기 (서버+클라이언트 이중 방어) |
+| **인텐트 우선순위** | `awaiting_intent` 대기 상태에서 `nav intent -> question intent -> wake 재호출 -> else(재질문)` 순서로 분기. wake 재호출이 인텐트 매칭보다 우선하면 "길댕아 길찾아줘"가 wake로만 처리되는 문제 방지 |
 
 ---
 
@@ -92,6 +97,8 @@ flowchart TD
 | TC-STT-003 | 브리지 연동 | guidance_text 생성                 |
 | TC-STT-004 | 오디오 생성 | `audio_codec=wav`, `duration_ms>0` |
 | TC-STT-005 | 예외 폴백   | 실패 시 안내 문장 송신             |
+| TC-STT-006 | 자기-에코 감지 | 안내문 재녹음 시 `source=stt-echo-detected` 반환, 클라이언트에 응답 미송신 |
+| TC-STT-007 | 인텐트 우선순위 | `awaiting_intent`에서 "길댕아 길찾아줘" → `WAITING_FOR_DESTINATION` 전환 (wake 재호출이 아닌 nav intent로 처리) |
 
 ---
 

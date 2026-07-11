@@ -56,11 +56,18 @@ export interface UseSttRecorderReturn {
  */
 export function useSttRecorder(
   onAudioReady: (audioB64: string) => void,
-  onError?: (reason: "permission_denied" | "start_failed", detail?: string) => void,
+  onError?: (
+    reason: "permission_denied" | "start_failed" | "capture_truncated",
+    detail?: string,
+  ) => void,
 ): UseSttRecorderReturn {
   const recorder = useAudioRecorder(STT_RECORDING_OPTIONS);
   const [status, setStatus] = useState<SttCaptureStatus>("idle");
   const statusRef = useRef<SttCaptureStatus>("idle");
+  // 2026-07-11: press-and-hold 시간 대비 실제 캡처된 오디오 길이를 대조해
+  // 오디오 세션 인터럽션으로 인한 캡처 결함(수 초 홀드에 0.1~0.7초 무음 파일)을
+  // 서버 왕복 전에 단말에서 감지하기 위한 기준 시각.
+  const recordStartTsRef = useRef<number>(0);
   // 2026-07-10: press-and-hold를 짧게(탭에 가깝게) 하면 recorder.record()가 실제로
   // 끝나기 전에 onPressOut이 먼저 도착해 stopRecordingAndSend가 "recording이 아님"으로
   // 조용히 무시되는 경쟁 상태를 실기기에서 확인했다 - 진행 중인 시작 작업을 참조해두고
@@ -95,6 +102,10 @@ export function useSttRecorder(
         // recorder.stop() 완료 이후에만 재생되므로 이 문제가 없다.
         await recorder.prepareToRecordAsync();
         recorder.record();
+        recordStartTsRef.current = Date.now();
+        console.log(
+          `[STT] 녹음 시작: guidePlaying=${audioEngine.isGuidePlaying}, ts=${recordStartTsRef.current}`,
+        );
         statusRef.current = "recording";
         setStatus("recording");
       } catch (err) {
@@ -129,6 +140,29 @@ export function useSttRecorder(
       const audioB64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
+      // 2026-07-11: 캡처 결함 감지. LINEARPCM 44.1kHz mono 16bit 기준으로 base64
+      // 길이에서 실제 캡처 길이(초)를 역산해 홀드 시간과 대조한다(WAV 헤더 44바이트
+      // 는 오차 범위). 수 초를 눌렀는데 캡처가 절반 미만이면 오디오 세션 인터럽션
+      // 으로 잘린 파일이므로, 서버에 보내 "입력 없음" 왕복을 만드는 대신 단말에서
+      // 즉시 재시도를 안내한다.
+      const holdMs =
+        recordStartTsRef.current > 0 ? Date.now() - recordStartTsRef.current : 0;
+      const capturedSec = Math.max(0, (audioB64.length * 0.75 - 44) / (44100 * 2));
+      console.log(
+        `[STT] 녹음 완료: hold=${(holdMs / 1000).toFixed(2)}s, captured=${capturedSec.toFixed(2)}s`,
+      );
+      if (holdMs >= 800 && capturedSec < (holdMs / 1000) * 0.5) {
+        console.warn(
+          `[STT] 캡처 결함 감지(세션 인터럽션 의심): hold=${(holdMs / 1000).toFixed(2)}s, ` +
+            `captured=${capturedSec.toFixed(2)}s - 서버 전송 생략, 재시도 안내`,
+        );
+        onError?.(
+          "capture_truncated",
+          `hold=${(holdMs / 1000).toFixed(2)}s captured=${capturedSec.toFixed(2)}s`,
+        );
+        audioEngine.speakFallback("다시 말씀해 주세요");
+        return;
+      }
       onAudioReady(audioB64);
     } catch (err) {
       console.error("[STT] 녹음 종료/전송 실패:", err);

@@ -203,6 +203,9 @@ export function CameraView() {
   const detectFrameRef = useRef(detectFrame);
   const isModelsLoadedRef = useRef(isModelsLoaded);
   const isMockModeRef = useRef(isMockMode);
+  // 2026-07-11: WS 연결 상태를 ref로 추적해 handleFrame 클로저 안에서 최신값을 읽는다.
+  // 폴백 모드에서 온디바이스 추론 결과를 BBox로 표시하기 위해 필요하다.
+  const wsStatusRef = useRef(status);
   const sendRef = useRef(send);
   const sendBinaryRef = useRef(sendBinary);
   const setLastDetectRef = useRef(setLastDetect);
@@ -214,6 +217,7 @@ export function CameraView() {
   useEffect(() => { detectFrameRef.current = detectFrame; }, [detectFrame]);
   useEffect(() => { isModelsLoadedRef.current = isModelsLoaded; }, [isModelsLoaded]);
   useEffect(() => { isMockModeRef.current = isMockMode; }, [isMockMode]);
+  useEffect(() => { wsStatusRef.current = status; }, [status]);
   useEffect(() => { sendRef.current = send; }, [send]);
   useEffect(() => { sendBinaryRef.current = sendBinary; }, [sendBinary]);
   useEffect(() => { confThresholdRef.current = confThreshold; }, [confThreshold]);
@@ -294,8 +298,11 @@ export function CameraView() {
       // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
 
-      // 실기기(REAL) 모드일 때는 온디바이스 입력이 비어 있으므로, 서버의 server_detection 렌더링 결과를 덮어쓰지 않도록 MOCK 모드에만 세팅한다.
-      if (isMockModeRef.current) {
+      // 2026-07-11 수정: 폴백 모드(서버 연결 끊김)에서는 server_detection이 들어오지
+      // 않으므로 온디바이스 추론 결과로 BBox를 표시한다. 정상 연결 시에는 온디바이스
+      // det 결과가 비어 있을 수 있어 서버 결과를 덮어쓰지 않도록 한다(원래 의도 유지).
+      // Mock 모드는 항상 온디바이스 결과를 사용한다.
+      if (isMockModeRef.current || wsStatusRef.current === "fallback") {
         setDetectionsRef.current(allDetections);
       }
 
@@ -511,27 +518,17 @@ export function CameraView() {
           // STT 질문 상호작용 시작 - 응답 도착(또는 타임아웃) 전까지 인지 경로 가이드
           // 음성만 뮤트한다(반사 경로는 안전 비협상 원칙상 그대로 유지, useWebSocket 참조).
           setSttInteractionActive(true);
-          // 2026-07-10 실기기 실측: 직전 응답 음성이 채 끝나기 전에 바로 녹음을
-          // 시작하면 마이크가 스피커 소리를 그대로 다시 주워들어 STT가 시스템 자신의
-          // 안내 문장을 사용자 발화로 오인식하는 오디오 블리드가 관측됐다("네, 길
-          // 찾아드릴까요?"가 그대로 재인식된 사례). 녹음 전 재생 중인 오디오를 강제
-          // 정지하면 충분하다 - 이전에 넣었던 200ms 인위적 지연은 버튼 반응성만
-          // 떨어뜨리고(실기기 피드백: "터치가 느리다") 블리드 방지에 필수는 아니었다.
-          audioEngine.stopGuideAudio();
-          // 2026-07-11 실기기 실측: "네, 말씀하세요" 안내가 끝난 뒤에야 녹음을
-          // 시작하는 순차 구조에서는, 사용자가 짧게 말하고 바로 손을 떼는 실제
-          // 사용 패턴상 onPressOut이 녹음 시작 지연 체인이 끝나기 전에 도착하는
-          // 경우가 잦았다. useSttRecorder의 pendingStartRef 동기화 때문에 이 경우
-          // recorder.record() 호출 직후 곧바로 recorder.stop()이 뒤따라 실제
-          // 녹음 구간이 0.2~0.3초로 잘려, 서버가 "입력 없음"으로 응답하는 문제를
-          // 디버그 오디오 파일 직접 분석(afinfo)으로 확인했다. 안내 음성/신호음을
-          // 기다리지 않고 버튼을 누르는 즉시 녹음을 시작해 이 경쟁 상태를 없앤다.
-          // [2026-07-11 정정] 위 트레이드오프가 실제로 재현됐다: 실기기 STT 원문 로그에서
-          // 사용자가 "길찾아줘"라고 말했는데도 "네 말씀", "네 말씀 드릴게요"처럼 이
-          // TTS 문장 자체가 인식된 사례를 확인했다("네, 말씀하세요"가 녹음에 그대로
-          // 다시 잡힘). 문장 안내 대신 useSttRecorder가 재생하는 신호음(비언어 신호,
-          // Whisper가 발화로 오인식할 위험이 훨씬 낮음)만으로 "녹음 시작됨"을 알린다.
-          void startSttRecording();
+          // 2026-07-11 실기기 실측(메아리 버그 수정): TTS 응답 음성이 재생되는 도중
+          // 버튼을 누르면 stopGuideAudio()로 중단하더라도 잔여 스피커 출력이 마이크에
+          // 잡혀 안내문 통째로 전사되는 음향 블리드가 발생한다(13:24:07 로그 확인).
+          // stopGuideAudio 후 150ms 대기해 스피커가 물리적으로 완전히 멈춘 뒤 녹음을
+          // 시작한다 (서버 측 자기-에코 필터와 이중 방어).
+          if (audioEngine.isGuidePlaying) {
+            audioEngine.stopGuideAudio();
+            setTimeout(() => void startSttRecording(), 150);
+          } else {
+            void startSttRecording();
+          }
         }}
         onPressOut={() => {
           void stopSttRecording();

@@ -132,6 +132,21 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         logger.error(f"[WS] stt_audio base64 디코딩 실패: device_id={device_id}, {e}")
         return
 
+    # [STT_DEBUG] 임시 디버깅 블록(테스트 후 제거): 수신 오디오를 보존해
+    # 마이크 입력을 호스트에서 직접 재생·검증할 수 있게 한다.
+    stt_debug_ts = now_ts()
+    try:
+        stt_debug_dir = Path("data/stt_debug")
+        stt_debug_dir.mkdir(parents=True, exist_ok=True)
+        stt_debug_wav = stt_debug_dir / f"{device_id}-{stt_debug_ts}.wav"
+        stt_debug_wav.write_bytes(audio_bytes)
+        logger.info(
+            f"[STT_DEBUG] 오디오 수신: device_id={device_id}, "
+            f"bytes={len(audio_bytes)}, saved={stt_debug_wav}"
+        )
+    except Exception as e:
+        logger.warning(f"[STT_DEBUG] 오디오 보존 실패: {e}")
+
     saved_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
@@ -141,8 +156,34 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         stt_result = await asyncio.to_thread(
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
+        # [STT_DEBUG] 임시 디버깅(테스트 후 제거): 전사 원문 확인용.
+        # 운영 로그 원문 비노출 정책 예외이므로 검증 종료 후 반드시 삭제한다.
+        logger.info(
+            f"[STT_DEBUG] 전사 결과: device_id={device_id}, ts={stt_debug_ts}, "
+            f"transcript={stt_result.text!r}"
+        )
         bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
         guidance_text = bridge_result.get("guidance_text", "")
+        bridge_source = bridge_result.get("source", "")
+
+        # 2026-07-11: 자기-에코 감지(안내문이 마이크로 재녹음된 경우)면 클라이언트에
+        # 응답을 보내지 않고 조용히 종료한다 (메아리 루프 방지).
+        if bridge_source == "stt-echo-detected":
+            logger.info(
+                f"[STT_DEBUG] 에코 감지 - 응답 스킵: device_id={device_id}, ts={stt_debug_ts}"
+            )
+            return
+
+        # [STT_DEBUG] 임시 디버깅(테스트 후 제거): 안내문 생성 결과 확인용.
+        logger.info(
+            f"[STT_DEBUG] 안내문: device_id={device_id}, ts={stt_debug_ts}, "
+            f"guidance={guidance_text!r}, source={bridge_source}"
+        )
+
+        # 2026-07-11: 클라이언트에 전송할 안내문을 에코 감지용 메모리에 기록한다
+        # (다음 STT 입력이 이 안내문의 에코인지 판정하기 위함).
+        if guidance_text:
+            _stt_bridge._record_guidance(device_id, guidance_text)
 
         audio_mp3_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
         stt_event_id = f"stt-{device_id}-{now_ts()}"

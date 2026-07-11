@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.7 (2026-07-10 STT 실기기 종단 검증: §6.3 stt_audio 응답을 binary transport로 통일, "길댕아" 2단계 웨이크워드·질문 모드·POI 실거리 검색 명령 어휘 등재, device_id 세션 불일치 결함 수정 반영 + 이전 v0.4.6 이력 유지: §6.5 realtime_gps 메시지 신규 등재, §6.4 server_detection 메시지 표준 반영, §2.4 heartbeat 타임아웃 유예 5→15초 상향 및 서버측 ack/heartbeat 응답 레이스 컨디션 수정)
+> **버전**: v0.4.8 (2026-07-11 STT 자기-에코 필터·인텐트 체크 순서 변경·폴백 모드 BBox 표시·WS 송신 실패 스팸 방지 4건 수정 반영: §6.3 자기-에코 감지 비고·인텐트 순서 비고 추가, §6.4 폴백 모드 BBox 비고 추가, §2.4 WebSocketState 가드 비고 추가 + 이전 v0.4.7 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -101,6 +101,13 @@
 | 단말 → 서버 | WebSocket pong 프레임 또는 `{"type":"heartbeat_ack", "ts"}` |
 
 > **2026-07-10 정정**: 기존 타임아웃 유예(5+5=10초)는 ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료시켰다(`server/api/heartbeat.py`가 타임아웃 시 `ws.close()`를 호출하는 것과, 메인 루프(`server/api/ws_router.py`)가 동시에 ack/heartbeat 응답을 `ws.send_json()`하려는 시점이 겹치면 `Cannot call "send" once a close message has been sent` 예외로 세션 전체가 끊겼다). `HEARTBEAT_TIMEOUT`을 15초로 상향하고, 메인 루프의 ack/pong/heartbeat_ack 전송을 `contextlib.suppress(Exception)`로 감싸 레이스가 발생해도 세션이 죽지 않도록 방어했다(실제로 끊긴 소켓이면 다음 `ws.receive()`가 `WebSocketDisconnect`로 정상 정리한다).
+
+> **2026-07-11 정정**: 위 메인 루프의 `contextlib.suppress`와 별개로,
+> `SessionManager.send_json()`/`send_bytes()`/`is_connected()`(`server/api/session_manager.py`)
+> 자체에도 `ws.application_state == WebSocketState.CONNECTED` 가드를 추가했다. WS 연결이
+> 끊어진 뒤에도 `active_connections`에서 즉시 제거되지 않는 경쟁 창(consumer 태스크가
+> 독립적으로 실행 중)에서 `send`를 시도하면 동일한 `Cannot call send...` 에러가 스팸으로
+> 발생했던 문제(13:26:47~52 로그, 17회 반복)를 원천 차단한다.
 
 ### 2.5 error (서버 → 단말)
 
@@ -400,6 +407,22 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > 구조**였다. `invoke_existing_llm(stt_result, device_id)`로 실제 device_id를 그대로
 > 전달하도록 수정.
 
+> **비고 (2026-07-11) - 자기-에코 감지**: TTS 안내문이 스피커로 재생되는 도중 사용자가
+> 녹음 버튼을 누르면 마이크가 안내문을 주워듣고 Whisper가 전사한다. 이 전사에 웨이크업
+> 키워드가 포함되면 메아리 루프(안내문 -> 재녹음 -> 전사 -> 웨이크업 재발동 -> 동일
+> 안내문)가 발생한다(실기기 13:24:07 로그로 확인). 서버(`stt_to_llm_bridge.py`)는
+> device_id별 최근 안내문을 10초간 보관(`_recent_guidance`)하고, 전사 결과가 이 안내문과
+> 유사하면 `source: "stt-echo-detected"`로 빈 응답을 반환해 클라이언트에 응답을 보내지
+> 않는다(`ws_router._process_stt_audio`에서 스킵). 클라이언트(`CameraView.tsx`)는 TTS
+> 재생 중 녹음 시작 시 `stopGuideAudio()` 후 150ms 대기해 스피커 잔향이 멈춘 뒤 마이크를
+> 활성화하는 이중 방어를 적용한다.
+
+> **비고 (2026-07-11) - 인텐트 대기 상태 체크 순서**: `awaiting_intent` 대기 상태에서
+> 발화 분기 우선순위를 `nav intent -> question intent -> wake 재호출 -> else(재질문)`로
+> 변경했다(이전: wake 재호출이 최우선). "길댕아 길찾아줘"라고 말하면 wake 매칭이 먼저
+> True가 되어 인텐트 매칭 전에 리턴해버려, 목적지 대기 상태로 진입하지 못하고 같은
+> 안내만 반복하던 문제(5회 반복 로그 확인)를 해결.
+
 ### 6.4 server_detection (서버 → 단말, 실시간 BBox 업데이트)
 
 서버에서 실시간 YOLO 및 노면 분할(Segmentation) 추론을 완료할 때마다, 탐지된 모든 사물 및 노면의 BBox/Centroid 정보를 모바일 화면 렌더링용으로 브로드캐스트합니다.
@@ -439,6 +462,13 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | 필드 | 설명 |
 | :--- | :--- |
 | `detections` | 모바일 화면 렌더링용 BBox 정보 배열. 노면 분할(`segmentation`) 결과의 centroid 좌표는 서버 단에서 80x80 크기의 가상 BBox로 변환하여 동일 포맷으로 전달 |
+
+> **비고 (2026-07-11) - 폴백 모드 BBox 표시**: WS 재연결 한계 도달 후 폴백 모드
+> (`status === "fallback"`)에서는 `server_detection`이 수신되지 않는다. 이때 단말은
+> 온디바이스 CoreML 추론 결과(det + seg)를 `CameraView.tsx`에서 직접 `detections`
+> 상태에 반영해 BBox를 표시한다(`isMockModeRef.current || wsStatusRef.current ===
+> "fallback"` 조건). 정상 연결 시에는 서버 결과를 온디바이스 결과가 덮어쓰지 않도록
+> 폴백 모드에서만 온디바이스 결과를 사용한다.
 
 ---
 
@@ -538,3 +568,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | v0.4.5 | 2026-07-10 | server_detection(6.4) 신설, dg2 브랜치 병합 반영 |
 | v0.4.6 | 2026-07-10 | realtime_gps(6.5) 신설, 구현 상태를 1~7단계 전체 완료로 갱신 |
 | **v0.4.7** | **2026-07-10** | **stt_audio(6.3) 응답 전송을 audio_mp3_b64→binary transport로 통일(§6.1 규격과 일치), 명령 어휘 표(길댕아 2단계 웨이크워드·질문 모드·POI 실거리 검색) 추가, device_id 세션 불일치 결함(목적지는 설정돼도 길안내 음성이 안 나오던 원인) 수정 반영** |
+| **v0.4.8** | **2026-07-11** | **§6.3 자기-에코 감지(TTS 안내문 재녹음 무시, 서버+클라이언트 이중 방어)·인텐트 체크 순서 변경(nav/question > wake 재호출) 비고 추가, §6.4 폴백 모드 온디바이스 BBox 표시 비고 추가, §2.4 SessionManager WebSocketState 가드(WS 종료 후 송신 실패 스팸 방지) 비고 추가** |
