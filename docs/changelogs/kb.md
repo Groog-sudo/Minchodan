@@ -1459,3 +1459,17 @@
 - **관련 파일**: `CLAUDE.md`, `AGENTS.md`, `docs/design/api_specification.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `.claude/skills/websocket-gateway/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/rag-realtime-search/SKILL.md`, `.claude/skills/xcode-build-management/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `diff -rq .agents/skills .claude/skills` 무차이 확인. 코드 변경 없음(문서 전용 커밋).
 - **비고**: Directory_Structure.md는 "계획된 물리적 폴더 구조" 문서(설계 초안 보존 목적)로 판단해 이번 정합화 범위에서 제외.
+
+---
+
+### 2026-07-11 | 병합 | 최신 dev(d490a65) 병합 및 문서 정합성 정리
+
+- **커밋**: `merge: 최신 dev를 kb에 통합` + `docs: dev 병합 후 README 중복 섹션 정리 및 계획 문서 교차 참조`
+- **변경 내용**:
+  - **dev 병합**: dev 신규 커밋 1건(d490a65, TH의 "dev 통합 개선 실행 계획서 추가") 병합. `git merge-tree` 사전 시뮬레이션으로 텍스트 충돌 0건 확인 후 클린 머지(kb 코드 변경과 겹침 없음, 문서 전용).
+  - **README 중복 섹션 정리 (v0.13.8)**: dev가 말미에 추가한 `## 9. ops/reports/ - 감사·개선 보고서` 섹션은 기존 §7(ops/reports)과 주제 중복 + 실제 파일 위치(`docs/ops/`)와 섹션명 불일치 + 비번호 섹션들 뒤에 위치하는 3중 문제가 있어 제거하고, 계획서 인덱스 행을 상단 문서 목록과 §5(ops) 표로 이관.
+  - **계획서 정합 노트 (v1.0.1)**: `dev_8b2f606_improvement_plan.md`에 kb 반영 현황 노트 추가(원본 본문 무변경) - §5 설계 원본 갱신은 kb에서 상당 부분 완료, §2 인증/반사 억제·§5 환경변수는 Mitos 로드맵과 스코프 중복(교차 확인 안내), §4 품질 수치는 병합 후 재측정 필요.
+  - **Mitos 로드맵 교차 참조 (v0.3.3)**: §7 우선순위에 dev 계획서 교차 참조 블록 추가(중복 스코프 3건 명시).
+- **관련 파일**: `docs/README.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 병합 전 `git merge-tree --write-tree` 충돌 0건 확인, 병합 후 정리 문서 상대 링크 경로 존재 확인. 코드 변경 없음.
+- **비고**: 두 계획 문서(dev 계획서 + Mitos 로드맵)는 관점이 달라(전자: dev 통합 감사 기반 P0/P1, 후자: 실기기 검증 기반 사용자 안전) 병존시키고 교차 참조로 연결.
