@@ -306,3 +306,16 @@
 - **관련 파일**: `docs/README.md`, `docs/changelogs/th.md`
 - **검증 결과**:
   - `docs/README.md` 내 신규 문서 링크 경로 존재 여부 확인 완료
+
+---
+
+### 2026-07-11 | 운영자 콘솔 | dev 사전 병합 정합성 보완
+
+- **변경 내용**:
+  - 로그인 응답과 앱 상태에서 JWT를 출력하던 디버그 로그를 제거했습니다.
+  - SSE effect가 로그인 token 변경에 반응하도록 의존성을 보완하고 query parameter를 안전하게 인코딩했습니다.
+  - 비밀번호 원문을 보존하고 관리자 사번에만 `trim()`을 적용했습니다.
+  - 샘플 이벤트와 탐지 안내 mock 이력은 개발 환경의 `VITE_ENABLE_DEMO_DATA=true`에서만 활성화하도록 격리했습니다.
+  - 최신 dev를 통합하면서 `docs/README.md`의 Mitos 기준선과 th 문서 인덱스를 모두 보존했습니다.
+- **관련 파일**: `console/src/App.tsx`, `console/src/api/useMonitorStream.ts`, `console/src/components/Login.tsx`, `console/.env.example`, `console/README.md`, `docs/README.md`
+- **검증 기준**: `npm run build`, 관리자 로그인 테스트, `git diff --check`

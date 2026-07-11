@@ -90,8 +90,7 @@ export function useMonitorStream(token: string | null = null) {
    */
 
   useEffect(() => {
-    // 💡 [면접 대비 주석 - 연결 방어]
-    // 토큰이 없으면 아예 백엔드에 헛된 연결 시도(401 에러)를 하지 않도록 막습니다!
+    // 토큰이 없으면 인증되지 않은 SSE 연결을 만들지 않는다.
     if (!token) return;
 
     // 1. useEffect 안에서 new EventSource(resolvedUrl) 생성 
@@ -100,13 +99,15 @@ export function useMonitorStream(token: string | null = null) {
       connection: "connecting",
     }));
 
-    /*ㅋㄹ
+    /*
      * 발표/면접 대응 포인트:
      * - EventSource는 브라우저 내장 SSE 클라이언트입니다.
      * - 별도 라이브러리 없이 HTTP 연결을 유지하며 서버 이벤트를 계속 수신합니다.
      * - 연결 생성은 컴포넌트 생명주기에 맞춰 useEffect 안에서 한 번 수행합니다.
      */
-    const urlWithToken = `${resolvedUrl}?token=${token}`;
+    const separator = resolvedUrl.includes("?") ? "&" : "?";
+    const tokenQuery = new URLSearchParams({ token }).toString();
+    const urlWithToken = `${resolvedUrl}${separator}${tokenQuery}`;
     const source = new EventSource(urlWithToken);
     
     // 2. source.onopen에서 connection="connected" 처리
@@ -175,7 +176,7 @@ export function useMonitorStream(token: string | null = null) {
       }));
     };
 
-  }, [resolvedUrl])
+  }, [resolvedUrl, token])
 
   /*
    * TH HARDCODE AREA 2: 이벤트 분기
@@ -447,7 +448,7 @@ export function useMonitorStream(token: string | null = null) {
               
             }
           }
-          // 💡 [면접 대비 주석 - 프론트 주도 데모 계약]
+          // [면접 대비 주석 - 프론트 주도 데모 계약]
           // Q. 백엔드에서 아직 안 쏴주는 이벤트(llm_status 등)를 프론트에서 먼저 정의한 이유는?
           // A. "애자일 개발을 위해 프론트-백엔드 간 '데모/확장 계약'을 먼저 체결했습니다.
           //    백엔드 Producer(6, 7단계)가 아직 없지만 프론트는 주입(Inject) 함수로 UI를 미리 검증할 수 있습니다."
@@ -455,7 +456,7 @@ export function useMonitorStream(token: string | null = null) {
           case "llm_status" : 
           case "rag_result" :
           case "tts_status" :
-          // case "stt_status" : {  // ❌ STT는 7단계 파이프라인 범위 밖이므로 제외 (삭제)
+          // case "stt_status" : {  // STT는 7단계 파이프라인 범위 밖이므로 제외
           {
             /*
              * 발표/면접 대응 포인트:

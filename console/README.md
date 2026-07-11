@@ -24,7 +24,10 @@ npm run dev
 
 ```txt
 VITE_MONITOR_STREAM_URL=http://localhost:8000/api/v1/monitor/stream
+VITE_ENABLE_DEMO_DATA=false
 ```
+
+`VITE_ENABLE_DEMO_DATA=true`는 개발 환경에서만 샘플 이벤트 버튼과 탐지 안내 mock 이력을 활성화합니다. 운영 빌드에서는 이 값과 관계없이 데모 데이터가 비활성화됩니다.
 
 ---
 
