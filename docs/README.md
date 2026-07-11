@@ -237,3 +237,11 @@ docs/
 | RDB            | 비동기 SQLAlchemy  | MariaDB/PostgreSQL     |
 
 > **2026-07-10 확정 반영**: 위 표는 1주차 시점의 잠정 기본값이며 현재는 확정 상태입니다. **TTS**는 Kokoro/Coqui가 아닌 **Supertonic**(기본, Piper/pyttsx3 핫스왑)으로 구현됐고, **RDB**는 비동기 SQLAlchemy 계층 위에서 **MariaDB**로 확정됐습니다. 상세는 [`design/architecture.md`](design/architecture.md) §2·§5.7, [`design/backend_db_architecture.md`](design/backend_db_architecture.md)를 참조합니다.
+
+---
+
+## 9. ops/reports/ — 감사·개선 보고서
+
+| 문서 | 파일 | 설명 |
+| :--- | :--- | :--- |
+| dev 통합 개선 실행 계획서 | [dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | dev 8b2f606 감사 결과 기반 P0/P1 개선 순서와 완료 기준 |
