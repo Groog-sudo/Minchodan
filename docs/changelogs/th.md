@@ -319,3 +319,14 @@
   - 최신 dev를 통합하면서 `docs/README.md`의 Mitos 기준선과 th 문서 인덱스를 모두 보존했습니다.
 - **관련 파일**: `console/src/App.tsx`, `console/src/api/useMonitorStream.ts`, `console/src/components/Login.tsx`, `console/.env.example`, `console/README.md`, `docs/README.md`
 - **검증 기준**: `npm run build`, 관리자 로그인 테스트, `git diff --check`
+
+---
+
+### 2026-07-11 | 문서 | dev 8b2f606 개선 실행 계획서 작성
+
+- **변경 내용**:
+  - 팀 제공 감사 결과를 바탕으로 P0 안전성, 인지 경로·RAG 정합성, 품질 게이트, 운영·문서 개선 순서를 정리했습니다.
+  - 각 항목에 담당 영역, 검증 방법, 완료 기준을 명시했습니다.
+  - 코드·환경변수·설정 파일은 수정하지 않았습니다.
+- **관련 파일**: `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/th.md`
+- **검증 기준**: 문서 링크 경로 존재 여부 확인
