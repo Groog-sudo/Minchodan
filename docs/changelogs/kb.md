@@ -1487,3 +1487,20 @@
 - **관련 파일**: `docs/dev-guides/integration/서버_및_시스템_통합_기술_지침서.md`, `docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md`, `console/src/components/OperatorLiveMap.tsx`, `console/src/App.tsx`, `console/.env.example`, `client/src/components/CameraView.tsx`, `docs/design/risk_ssot_contract.md`(신규), `tests/test_risk_ssot.py`(신규), `docs/design/api_specification.md`, `docs/ops/test_specification.md`(TC-DET-011), `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `pytest tests/test_risk_ssot.py` 3건 통과, 클라이언트/콘솔 `tsc --noEmit` 각각 통과. 콘솔 지도 iframe 실표시와 event_id 실기기 왕복은 서버 기동 환경에서 후속 확인.
 - **비고**: KB 담당 핵심 원칙(내비게이션의 반사 경로 미경유) 코드 검증 완료 - 반사 경로 3개 파일에 navigation 참조 0건, 길안내 발화 3경로 전부 인지 채널(guide). 검토 상세는 이 엔트리 직전 대화 기준.
+
+---
+
+### 2026-07-11 | 통합 정합화 2차 | SSE·콘솔 이벤트 계약 고정, 인증 기본값 제거
+
+- **커밋**: `feat(보안+계약): SSE 이벤트 계약 고정 및 인증 기본값 환경 분리(fail-closed)`
+- **변경 내용**:
+  - **SSE·콘솔 이벤트 계약 고정 (dev 계획서 §5)**: api_specification §8을 전면 개편(v0.4.12). 실발행 이벤트(connection_established/ping)와 예약 브리지 이벤트(system_metrics·risk_event·session_status·detection_event·llm/rag/tts/stt_status)를 분리하고, payload 필드를 콘솔 파서(`useMonitorStream.ts`) 기준으로 고정. **실측 사실 명시**: `mcp:metrics` 스트림에 실데이터를 발행하는 producer가 현재 저장소에 없음(탐지 파이프라인 실발행은 `risk.events`, 두 스트림 미연결) - 기존 명세의 "risk.events 실시간 뷰" 오기를 정정하고 producer 구현을 후속 과제로 등재. 데모 데이터는 DEV 빌드+`VITE_ENABLE_DEMO_DATA` 이중 가드로 이미 분리되어 있음을 §8.4에 명문화.
+  - **인증 기본값 제거 (dev 계획서 §2)**:
+    - `server/db/security.py`: `APP_ENV=production`에서 `JWT_SECRET_KEY` 미설정 시 `RuntimeError`로 기동 거부(fail-closed). 개발 환경만 임시 키 폴백(테스트 하위 호환).
+    - `server/api/auth.py`: 정적 디바이스 토큰 하드코딩을 `DEVICE_STATIC_TOKENS`(`id:token` 쉼표 목록) 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록(JWT 디바이스 토큰만 인정).
+    - `server/api/ws_router.py`: 토큰 검증 실패 로그의 토큰 원문 출력을 제거(길이만 기록).
+    - `client/src/config/index.ts`: NETWORK_MODE/LAN_IP/NGROK_DOMAIN/DEVICE_ID/TOKEN을 `EXPO_PUBLIC_*` 환경 변수 우선으로 전환(기존 상수는 개발 폴백 유지 - 이원화 계약 §7.3 상수 보존 규칙 준수, 계약 v1.1.2로 규칙 확장 반영). EXPO_PUBLIC 값은 번들에 평문 포함되므로 비밀키 용도 금지를 주석으로 명시.
+    - `.env.example`에 `APP_ENV`/`JWT_SECRET_KEY`/`DEVICE_STATIC_TOKENS` 등재, environment_variables.md v0.4.13(§2.4 갱신, §2.14 클라이언트·콘솔 공개 변수 신설).
+- **관련 파일**: `server/db/security.py`, `server/api/auth.py`, `server/api/ws_router.py`, `client/src/config/index.ts`, `.env.example`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: (1) `APP_ENV=production` + `JWT_SECRET_KEY` 미설정에서 security 모듈 임포트 시 `RuntimeError` 기동 거부 확인, (2) production에서 `DEVICE_STATIC_TOKENS` 미설정 시 정적 토큰 목록 빈 값 확인, (3) `DEVICE_STATIC_TOKENS` 오버라이드 파싱 확인, (4) `pytest tests/test_api_ws.py tests/test_risk_ssot.py` 7건 통과(개발 기본 토큰 하위 호환 유지), (5) 클라이언트 `tsc --noEmit` 통과. `tests/test_ws_echo.py` 6건 실패는 라이브 서버(localhost:8000) 필요 테스트로 변경 전 기준선에서도 동일 실패함을 대조 확인(회귀 아님).
+- **비고**: dev 계획서 §2/§5의 KB 확인 항목 전부 착수 완료. 잔여: `mcp:metrics` producer 구현(TH·Backend), 기기 고유 인증·관리자 bootstrap 절차(JY·TH), ngrok 대체 고정 도메인+TLS(팀 인프라 결정 필요).

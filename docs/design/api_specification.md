@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.11 (2026-07-11 §6.4 폴백 모드 비고에 클라이언트 재연결 정책 변경(무한 지수 백오프 + 폴백/복구 음성 고지) 반영 + 이전 v0.4.10 이력 유지: nav_route(6.6) 신설 - 하단 지도 패널용 경로 좌표 전송·재접속 복원, realtime_gps(6.5) 수신 시점 길안내 직접 평가로 카메라 무탐지 시 무음 결함 수정, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드 반영)
+> **버전**: v0.4.12 (2026-07-11 §8 SSE 계약 고정 - 실발행/예약 이벤트 분리·payload 필드 고정·mcp:metrics producer 부재 명시, event_id 형식 구조화 + 이전 v0.4.11 이력 유지: §6.4 폴백 모드 비고에 클라이언트 재연결 정책 변경(무한 지수 백오프 + 폴백/복구 음성 고지) 반영 + 이전 v0.4.10 이력 유지: nav_route(6.6) 신설 - 하단 지도 패널용 경로 좌표 전송·재접속 복원, realtime_gps(6.5) 수신 시점 길안내 직접 평가로 카메라 무탐지 시 무음 결함 수정, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드 반영)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -583,13 +583,45 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 
 ## 8. 운영자 콘솔 구독 SSE (`/api/v1/monitor/stream`)
 
-운영자 모니터링 콘솔은 별도 SSE 스트리밍 채널을 사용합니다.
+운영자 모니터링 콘솔은 별도 SSE 스트리밍 채널을 사용합니다. **2026-07-11 계약 고정**(dev 개선 계획서 §5): 실발행 이벤트와 예약(확장) 이벤트를 분리하고, payload 필드를 콘솔 파서(`console/src/api/useMonitorStream.ts`) 기준으로 고정합니다.
 
-| 이벤트 타입 | 설명 |
+### 8.1 전송 규격
+
+| 항목 | 값 |
 | :--- | :--- |
-| `connection_established` | 최초 연결 수립 확인 |
-| `ping` | Keep-Alive 하트비트 (1초 간격) |
-| MCP 메트릭 이벤트 | Redis Streams `risk.events` 실시간 뷰 |
+| 엔드포인트 | `GET /api/v1/monitor/stream` |
+| 인증 | 관리자 JWT 필수 (`Depends(get_current_admin)`, `server/api/monitor.py`) |
+| 서버 소비원 | Redis Stream `mcp:metrics` (`server/mcp/manager.py` MCPManager가 xread 후 리스너 큐로 브로드캐스트, `event_type` 누락 시 `system_status`로 폴백) |
+| 메시지 형식 | `data: {"event_type": "...", "payload": {...}, "ts": ...}\n\n` |
+
+### 8.2 실발행 이벤트 (서버 코드가 직접 생성)
+
+| event_type | payload | 주기 |
+| :--- | :--- | :--- |
+| `connection_established` | `{status: "ok"}` | 연결 직후 1회 |
+| `ping` | 없음 | 큐 1초 타임아웃마다 (keep-alive) |
+
+### 8.3 브리지 이벤트 계약 (Redis `mcp:metrics` 경유, 예약)
+
+> **중요 (2026-07-11 실측)**: 현재 저장소에는 `mcp:metrics` 스트림에 실데이터를
+> 발행(xadd)하는 producer가 **없습니다**(스트림 생성용 init dummy 제외). 탐지
+> 파이프라인의 실발행 스트림은 `risk.events`이며 `mcp:metrics`와 연결되어 있지
+> 않습니다. 따라서 아래 이벤트는 **콘솔이 소비 준비를 마친 예약 계약**이고,
+> producer 구현(`risk.events`→`mcp:metrics` 브리지 또는 직접 발행)이 후속
+> 과제입니다(dev 개선 계획서 §5 "SSE 계약 정리"). producer 구현 시 반드시 아래
+> 필드명을 그대로 사용해야 콘솔 수정 없이 표시됩니다.
+
+| event_type | payload 필드 (콘솔 파서 기준) | 콘솔 처리 |
+| :--- | :--- | :--- |
+| `system_metrics` / `gpu_status` / `system_status` / `system_error` | `gpu_usage_pct:number`, `memory_used_mb:number`, `current_provider:string`, `network_rtt_ms:number`, `queue_depth:number`, `dropped_frames:number`, `error_message:string` (전부 선택) | 시스템 상태 덮어쓰기 |
+| `risk_event` | `event_id:string`, `risk_level:"high"\|"mid"\|"low"`, `class_name:string`, `confidence:number`, `direction:string`, `guidance_text:string` | 최근 80건 누적 로그 |
+| `session_status` | `device_id:string`, `platform:string`, `status:"connected"\|"disconnected"`, `rtt_ms:number` | device_id 기준 upsert |
+| `detection_event` | `event_id`, `device_id`, `stream:"reflex"\|"cognitive"`, `class_name`, `confidence`, `inference_ms` | 최근 80건 누적 피드 |
+| `llm_status` / `rag_result` / `tts_status` / `stt_status` | `llm_provider`, `rag_query`, `rag_score`, `tts_engine`, `stt_status`, `last_guidance`/`guidance_text`, `inference_ms`, `reflex_bypass`, `surface` | AI 파이프라인 상태 갱신 |
+
+### 8.4 데모 데이터 분리
+
+콘솔의 데모 데이터는 SSE로 수신되는 것이 아니라, **개발 빌드에서만**(`import.meta.env.DEV && VITE_ENABLE_DEMO_DATA === "true"`) 콘솔 로컬에서 주입됩니다(`console/src/App.tsx`). 운영 빌드에서는 원천 차단되므로 §8.2~8.3의 실이벤트와 혼동하지 않습니다.
 
 ---
 
@@ -629,3 +661,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.9** | **2026-07-11** | **STT 원본·전사문 비보존, iOS PCM·Android AAC 플랫폼별 캡처 검증, SessionManager 송신 성공 boolean 및 반사 경보 억제 조건 정합화** |
 | **v0.4.10** | **2026-07-11** | **nav_route(6.6) 신설(경로 좌표 전송·해제·재접속 복원, TMap appKey 서버 환경변수 전달), §6.5 realtime_gps 수신 시점 길안내 직접 평가 비고 추가(카메라 무탐지 시 무음 결함 수정), §6.3 STT 기본 모델 `faster-whisper-small` 전환·프리로드 반영** |
 | **v0.4.11** | **2026-07-11** | **§6.4 폴백 모드 비고 갱신 - 클라이언트 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, 폴백 상태 welcome 수신 시 해제) 반영** |
+| **v0.4.12** | **2026-07-11** | **§8 SSE 계약 고정 - 실발행(8.2)/예약 브리지(8.3) 이벤트 분리, payload 필드를 콘솔 파서 기준으로 고정, `mcp:metrics` producer 부재 사실 명시(기존 "risk.events 실시간 뷰" 오기 정정), 데모 데이터 분리(8.4). §1 공통 필드 event_id 형식 구조화 반영** |

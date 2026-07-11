@@ -17,7 +17,11 @@
 > `tests/test_risk_ssot.py`(TC-DET-011)로 복제 불일치 차단까지 진행(공통 데이터 계약
 > 소스 통합은 TH·Mobile 합의 대기). §3 "이벤트 ID 개선"은 단말 detection event_id를
 > `event-{device_id}-{stream}-{epoch_ms}`로 구조화해 반사/인지 동일 ms 충돌 제거.
-> §5 SSE·콘솔 계약 정리와 인증 기본값 제거는 미착수.
+> §5 "SSE 계약 정리"는 api_specification §8에 실발행/예약 이벤트 분리와 payload 필드
+> 고정으로 완료(`mcp:metrics` producer 부재 사실 명시 - producer 구현은 잔여 후속).
+> §2 "인증 기본값 제거"는 `APP_ENV=production` fail-closed(JWT_SECRET_KEY 필수,
+> 정적 토큰 경로 비활성화), `DEVICE_STATIC_TOKENS` 환경 분리, 토큰 원문 로그 제거,
+> 단말 `EXPO_PUBLIC_*` 분리까지 완료(기기 고유 인증·bootstrap 절차는 JY·TH 협업 잔여).
 
 ---
 

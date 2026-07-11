@@ -1,7 +1,7 @@
 # iOS/Android 클라이언트 이원화 및 서버 정합성 통합 계약서
 
 > **작성일**: 2026-07-10
-> **버전**: v1.1.1 (2026-07-11 §3 소유권 매트릭스에 iOS 오디오 세션(AEC) 브릿지 `AudioSessionBridge.swift/.mm`(iOS 전용)과 TS 래퍼 `audioSessionBridge.ts`(공유 계약, Android no-op) 등재 + 이전 v1.1.0 이력 유지: 2026-07-10 §4 카메라 캡처 계층 iOS 측 구현 완료 반영 - 실제 파일명을 `frameCaptureProvider*.ts`로 확정, §7.3 NETWORK_MODE 플래그 구현 완료)
+> **버전**: v1.1.2 (2026-07-11 §7.3 확장 - 네트워크 상수·디바이스 토큰의 `EXPO_PUBLIC_*` 환경 변수 우선 규칙 추가(상수는 개발 폴백으로 보존) + 이전 v1.1.1 이력 유지: §3 소유권 매트릭스에 iOS 오디오 세션(AEC) 브릿지 `AudioSessionBridge.swift/.mm`(iOS 전용)과 TS 래퍼 `audioSessionBridge.ts`(공유 계약, Android no-op) 등재 + 이전 v1.1.0 이력 유지: 2026-07-10 §4 카메라 캡처 계층 iOS 측 구현 완료 반영 - 실제 파일명을 `frameCaptureProvider*.ts`로 확정, §7.3 NETWORK_MODE 플래그 구현 완료)
 > **설계 기준**: [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](ondevice_inference_engine_isolation_plan.md)(추론 계층 격리, 본 문서의 §5는 이 문서를 계승·확정한다), [`docs/design/api_specification.md`](../design/api_specification.md)(WS 프로토콜 단일 명세)
 > **근거**: kb 브랜치(iOS 작업, `bbfe812` 기준) ↔ dg2 브랜치(Android 작업, `249f51a` 기준) `git merge-tree` 실병합 시뮬레이션 결과 (2026-07-10 분석)
 > **적용 대상**: iOS 작업자(kb 계열 브랜치)와 Android 작업자(dg2 계열 브랜치)는 신규 작업 착수 전 본 문서를 먼저 읽고, 본 문서가 정의한 파일 소유권과 인터페이스 계약을 벗어나는 변경을 하지 않는다.
@@ -203,7 +203,7 @@ dg2가 추가한 `server_detection` 메시지(서버 YOLO/Seg 결과를 BBox 오
 
 ### 7.3 네트워크 접속 설정 (`client/src/config/index.ts`, 완료)
 
-`LAN_IP`(로컬 Wi-Fi 직결)와 `NGROK_DOMAIN`(외부망) 두 상수를 **둘 다 유지**하고, `NETWORK_MODE: "lan" | "ngrok"` 플래그로 `WS_URL`을 전환하도록 구현했다(2026-07-10). 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다. ngrok 고정 도메인(`partake-primer-surround.ngrok-free.dev`)은 무료 티어라 **동시에 한 프로세스만** 터널을 열 수 있다(`ERR_NGROK_334` 충돌 실제 발생 이력 있음) — LTE/외부망 테스트 일정은 팀 채널에서 사전 조율한다.
+`LAN_IP`(로컬 Wi-Fi 직결)와 `NGROK_DOMAIN`(외부망) 두 상수를 **둘 다 유지**하고, `NETWORK_MODE: "lan" | "ngrok"` 플래그로 `WS_URL`을 전환하도록 구현했다(2026-07-10). 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다. **2026-07-11 확장**: 두 상수와 `NETWORK_MODE`/`DEVICE_ID`/`TOKEN`은 `EXPO_PUBLIC_*` 환경 변수(빌드 시 인라인)가 있으면 그 값이 우선하고, 기존 상수는 개발 폴백으로 유지된다(인증 기본값 분리 - `docs/ops/environment_variables.md` §2.14). 상수 보존 규칙은 그대로 유효하다. ngrok 고정 도메인(`partake-primer-surround.ngrok-free.dev`)은 무료 티어라 **동시에 한 프로세스만** 터널을 열 수 있다(`ERR_NGROK_334` 충돌 실제 발생 이력 있음) — LTE/외부망 테스트 일정은 팀 채널에서 사전 조율한다.
 
 ### 7.4 `requirements.txt` 플랫폼 마커
 

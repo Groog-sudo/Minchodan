@@ -338,9 +338,12 @@ async def ws_detect(
         token = hello_data.get("token", "")
         is_valid = await verify_device(device_id, token)
         if not is_valid:
-            logger.warning(f"[WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token: {token}")
+            # 토큰 원문은 로그에 남기지 않는다(2026-07-11, dev 개선 계획서 §2 보안 기준).
+            logger.warning(
+                f"[WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token_len: {len(token)}"
+            )
             print(
-                f"[DEBUG_WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token: {token}",
+                f"[DEBUG_WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token_len: {len(token)}",
                 flush=True,
             )
             await ws.send_json(
