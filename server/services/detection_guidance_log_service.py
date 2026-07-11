@@ -1,10 +1,11 @@
-﻿import json
+import json
 import sys
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.db.models import DetectionGuidanceLog
+from server.db.connection import async_sessionmaker_factory
+from server.db.models import DetectionGuidanceLog, StreamType
 from server.db.repositories import DetectionGuidanceLogRepository
 from server.db.schemas import DetectionGuidanceLogCreate, DetectionGuidanceLogResponse
 
@@ -29,7 +30,6 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 # - 클라이언트 재전송(retry) 등 중복 요청으로 인한 데이터 오염을 막기 위한 설계입니다.
 # ==========================================
 class DetectionGuidanceLogService:
-
     def __init__(self, session: AsyncSession):
         # VIBE: AsyncSession을 주입받아 Repository에 넘깁니다.
         # 세션은 FastAPI의 Depends(get_db)에서 생성되고 요청이 끝나면 자동으로 닫힙니다.
@@ -81,7 +81,7 @@ class DetectionGuidanceLogService:
         # saved = await self.log_repo.create(log)
         # return DetectionGuidanceLogResponse.model_validate(saved)
 
-        if payload.event_id :
+        if payload.event_id:
             existed = await self.log_repo.get_by_event_id(payload.event_id)
             if existed is not None:
                 return DetectionGuidanceLogResponse.model_validate(existed)
@@ -126,6 +126,35 @@ def build_detected_objects_json(detections: list[dict]) -> str:
     # raise NotImplementedError("HARDCODE PART: build_detected_objects_json()을 직접 구현하세요.")
 
     return json.dumps(detections, ensure_ascii=False)
+
+
+async def persist_detection_guidance_log(
+    *,
+    event_id: str | None,
+    stream_type: StreamType | str,
+    detections: list[dict],
+    tts_text: str,
+    user_id: int | None = None,
+    device_id: int | None = None,
+) -> DetectionGuidanceLogResponse:
+    """FastAPI Depends(get_db) 요청 컨텍스트 밖(WS 컨슈머 등)에서 로그를 저장하는 헬퍼.
+
+    async_sessionmaker_factory로 세션을 직접 열고 닫는다. 호출부(DetectionConsumer,
+    ws_router)는 반사/인지 경로의 실시간 응답을 막지 않도록 이 호출을 background task로
+    감싸고 예외를 흡수해야 한다(이 함수 자체는 예외를 그대로 전파한다).
+    """
+    payload = DetectionGuidanceLogCreate(
+        event_id=event_id,
+        user_id=user_id,
+        device_id=device_id,
+        detected_at=datetime.now(UTC),
+        stream_type=stream_type,
+        detected_objects_json=build_detected_objects_json(detections),
+        tts_text=tts_text,
+    )
+    async with async_sessionmaker_factory() as session:
+        service = DetectionGuidanceLogService(session)
+        return await service.create_log(payload)
 
 
 # ==========================================

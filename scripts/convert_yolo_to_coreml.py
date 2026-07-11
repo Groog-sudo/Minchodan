@@ -44,7 +44,24 @@ except ImportError:
     sys.exit(1)
 
 
-def convert_model(model_name: str, imgsz: int, half: bool, nms: bool) -> str:
+def patch_raw_head(model: "YOLO") -> None:
+    """[2026-07-11 opus 2순위 제안] Detect/Segment 헤드의 postprocess()(TopK+Gather 선택)를
+    identity로 몽키패치해, ANE가 지원하지 않는 이 연산들을 CoreML 그래프에서 아예 제거한다.
+    end2end 자체는 True로 유지해(one2one 헤드 = NMS-free로 학습된 브랜치를 그대로 사용)
+    postprocess 호출만 건너뛴다 - 그 결과 CoreML 출력이 [1, 300, N] 대신 밀집(dense)
+    [1, num_anchors(8400), 4+nc] 텐서가 되며, top-k 선택은 클라이언트(Swift)가 담당한다.
+    실측 확인(scripts/convert_yolo_to_coreml.py 실험): 이미 디코딩된 절대좌표(x1,y1,x2,y2)
+    + sigmoid 클래스 확률이라 Swift 쪽은 앵커 디코딩 없이 임계값 필터링+정렬만 하면 된다.
+    """
+    head = model.model.model[-1]
+    head.export = True
+    head.postprocess = lambda preds: preds
+    print(
+        f"[raw-head] {type(head).__name__}.postprocess를 identity로 패치(end2end={head.end2end} 유지)"
+    )
+
+
+def convert_model(model_name: str, imgsz: int, half: bool, nms: bool, raw_head: bool) -> str:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, ".."))
 
@@ -58,7 +75,7 @@ def convert_model(model_name: str, imgsz: int, half: bool, nms: bool) -> str:
 
     print(f"변환 대상 모델 경로: {src_path}")
     print(f"출력 대상 경로: {dst_path}")
-    print(f"매개변수: imgsz={imgsz}, half={half}, nms={nms}")
+    print(f"매개변수: imgsz={imgsz}, half={half}, nms={nms}, raw_head={raw_head}")
     print(
         "CoreML 포맷으로 모델 변환(Export)을 시작합니다. 이 작업은 다소 시간이 소요될 수 있습니다..."
     )
@@ -72,6 +89,12 @@ def convert_model(model_name: str, imgsz: int, half: bool, nms: bool) -> str:
         effective_nms = nms and task == "detect"
         if nms and not effective_nms:
             print(f"[주의] task={task} 모델에는 NMS 옵션이 지원되지 않음 - nms=False로 변환")
+
+        if raw_head:
+            if effective_nms:
+                print("[주의] raw_head=True와 nms=True는 함께 쓸 수 없음 - nms=False로 강제")
+                effective_nms = False
+            patch_raw_head(model)
 
         # CoreML export (imgsz=640, FP16 half, NMS 옵션)
         exported_path = model.export(format="coreml", imgsz=imgsz, half=half, nms=effective_nms)
@@ -169,10 +192,19 @@ def main():
     parser.add_argument(
         "--no-nms", dest="nms", action="store_false", help="NMS 후처리 미적용 (raw tensor 산출)"
     )
+    parser.add_argument(
+        "--raw-head",
+        action="store_true",
+        default=False,
+        help=(
+            "TopK/Gather 선택 헤드를 CoreML 그래프에서 제거하고 밀집(dense) 텐서를 산출 "
+            "(ANE 완전 호환, top-k 선택은 Swift에서 수행 - 2026-07-11 opus 2순위)"
+        ),
+    )
     args = parser.parse_args()
 
-    mlpackage_path = convert_model(args.model, args.imgsz, args.half, args.nms)
-    verify_model(mlpackage_path, args.model, expect_nms=args.nms)
+    mlpackage_path = convert_model(args.model, args.imgsz, args.half, args.nms, args.raw_head)
+    verify_model(mlpackage_path, args.model, expect_nms=args.nms and not args.raw_head)
     print("\n모든 변환 작업이 완료되었습니다.")
     print("다음 단계: Xcode에서 .mlpackage를 타겟 리소스로 추가 (빌드 시 .mlmodelc로 자동 컴파일)")
 

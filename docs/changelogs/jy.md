@@ -276,3 +276,16 @@
 - **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `PROJECT_IMPROVEMENTS_MITOS.md`, `docs/README.md`, `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`, `docs/changelogs/jy.md`
 - **검증 결과**: `npm ci`, `tsc --noEmit`, `server/main.py`·`server/db/models.py` `py_compile`, `git diff --check` 통과. CocoaPods 1.17.0은 복구된 Xcode 프로젝트를 정상 파싱하고 autolinking까지 완료했으며, `pod install --deployment`는 저장소 기준 1.16.2와 로컬 1.17.0의 4개 Pod 체크섬·도구 버전 차이만 보고했습니다.
 - **비고**: `client/ios/build-device-debug.log`는 기존 미추적 상태로 유지하며 커밋에 포함하지 않습니다.
+
+---
+
+### 2026-07-11 | Git | 최신 dev 병합 및 정합성 충돌 해소
+
+- **커밋**: (이번 병합 커밋)
+- **변경 내용**:
+  - `origin/dev`(`3e7ab52`)를 `jy`에 일반 병합하여 STT·반사 경보 안전 패치와 CoreML FP16+ANE 변경을 통합했습니다.
+  - 유일한 명시적 충돌인 `.gitignore`는 `dev`의 LF 버전과 `.zcode/`, `.claude/`, 에이전트 스크립트 제외 규칙을 유지하고 `jy`의 `**/Copy_*` 규칙을 추가하는 방식으로 해소했습니다.
+  - CocoaPods 1.17.0으로 네이티브 의존성을 재생성하여 미사용 `TextToSpeech` Pod 제거와 96개 Pod 설치를 확인한 뒤, 추적 `Podfile.lock`은 저장소 기준 1.16.2 체크섬으로 유지했습니다.
+- **관련 파일**: `.gitignore`, `docs/changelogs/jy.md` 및 `origin/dev`의 신규 커밋 전체
+- **검증 결과**: 서버 테스트 130건 통과·2건 건너뜀(`test_ws_echo.py`, 기존 비결정적 RAG E2E 제외), `tsc --noEmit`, SQLite 5개 테이블 생성, 변경 Python 파일 `py_compile`, CocoaPods 설치, iOS 기기용 Debug 무서명 빌드, `git diff --check` 통과.
+- **비고**: `dev` 브랜치와 `origin/dev`에는 아직 `jy`를 병합하지 않았습니다. 본 커밋과 `origin/jy` push 이후 별도 승인 단계로 진행합니다.

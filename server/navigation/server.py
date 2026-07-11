@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import math
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -136,6 +137,74 @@ def helper_search_poi(keyword):
         return None
     except Exception as e:
         print(f"[ERROR] POI helper exception: {e}")
+        return None
+
+
+def _haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """두 좌표 간 대권거리(직선거리, 미터)를 계산한다."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float, count: int = 5):
+    """TMAP POI 검색 결과 후보 중 center_lat/center_lon에서 가장 가까운 POI를 계산해 반환한다.
+
+    helper_search_poi(count=1)는 T맵 relevance 기준 최상위 1건만 반환해 "가장 가까운"을
+    보장하지 못한다. 여러 후보(count)를 받아 직접 거리 계산 후 최소값을 골라야
+    "가까운 지하철역이 어디야" 같은 근접 질의에 정확히 답할 수 있다.
+    """
+    if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
+        print("[ERROR] TMAP API Key가 유효하지 않아 검색할 수 없습니다.")
+        return None
+
+    url = "https://apis.openapi.sk.com/tmap/pois"
+    params = {
+        "version": 1,
+        "searchKeyword": keyword,
+        "count": count,
+        "reqCoordType": "WGS84GEO",
+        "resCoordType": "WGS84GEO",
+        "format": "json",
+        "appKey": APP_KEY,
+        "centerLon": center_lon,
+        "centerLat": center_lat,
+    }
+    headers = {"Accept": "application/json"}
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return None
+        pois = response.json().get("searchPoiInfo", {}).get("pois", {}).get("poi", [])
+        if not pois:
+            return None
+
+        nearest = None
+        nearest_dist = None
+        for poi in pois:
+            try:
+                poi_lat = float(poi.get("noorLat"))
+                poi_lon = float(poi.get("noorLon"))
+            except (TypeError, ValueError):
+                continue
+            dist = _haversine_distance_m(center_lat, center_lon, poi_lat, poi_lon)
+            if nearest_dist is None or dist < nearest_dist:
+                nearest = poi
+                nearest_dist = dist
+
+        if nearest is None:
+            return None
+        return {
+            "name": nearest.get("name"),
+            "x": nearest.get("noorLon"),
+            "y": nearest.get("noorLat"),
+            "distance_m": nearest_dist,
+        }
+    except Exception as e:
+        print(f"[ERROR] Nearest POI helper exception: {e}")
         return None
 
 

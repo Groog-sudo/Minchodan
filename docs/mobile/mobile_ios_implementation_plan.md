@@ -1,7 +1,7 @@
 # Minchodan 온디바이스 모바일 앱 구현 설계서 — iOS (1+2단계)
 
 > **작성일**: 2026-06-30
-> **버전**: v0.1.0
+> **버전**: v0.1.1 (2026-07-11 §9.2 ANE 가속 정상 작동 실측 검증 완료 반영 — 이전 v0.1.0 이력 유지)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 1·2단계 (v1.1 이중 스트림 반영)
 > **API 명세 기준**: [`docs/api_specification.md`](api_specification.md) v0.2.0 (필드 정합 최우선)
 > **통합 계획서 참조**: [`docs/mobile_app_implementation_plan.md`](mobile_app_implementation_plan.md) (분리 전 원본)
@@ -550,12 +550,25 @@ graph LR
 
 ### 9.2 ANE 가속 정상 여부 판정 기준
 
-- **정상 작동 (ANE 가속 성공)**:
-  - 총합 추론 지연시간이 **15ms ~ 25ms 내외**로 유지됩니다.
-  - 기기 컴파일 시점에 `LOG [CoreMLDetector] det=CoreML ANE / seg=CoreML ANE 완전 가속 기동 완료` 로그가 출력됩니다.
-- **비정상 작동 (CPU/GPU Fallback 발생)**:
-  - 총합 추론 지연시간이 **150ms ~ 500ms 이상**으로 지연됩니다.
-  - 모델 내부에 ANE가 지원하지 않는 연산자가 섞여 있거나 컴파일 충돌 시 발생합니다.
+> **2026-07-11 갱신**: 아래 판정 기준은 실제로 달성되어 실측 검증까지 완료되었다. 모델을
+> FP16으로 재변환하고(과거엔 ultralytics `half` 인자 폐기로 FP32에 굳어 있었음)
+> `MLModelConfiguration.computeUnits = .cpuAndNeuralEngine`(실패 시 `.cpuOnly` 폴백)로
+> 전환한 뒤, 실기기(고태현 iPhone)에서 총추론 ~19~35ms를 확인했다. Xcode Instruments의
+> Core ML 템플릿으로 ANE 하드웨어 활동(`ane-hw-intervals-internal`) 247건을 직접
+> 확인해(로그 문자열이 아닌 하드웨어 카운터 기록) ANE 가속이 실제로 사용됨을 증명했다.
+> 실제 로그 문구는 `det=CoreML ANE`가 아니라 `[CoreMLBridge] object_detection.mlmodelc -
+> ANE 가속 모드로 로드 완료`(그리고 `segmentation.mlmodelc` 동일)이다. 상세 벤치마크는
+> [`docs/ops/ondevice_coreml_benchmark.md`](../ops/ondevice_coreml_benchmark.md) §4 참조.
+
+- **정상 작동 (ANE 가속 성공)** — 2026-07-11 실측으로 달성 확인:
+  - 총합 추론 지연시간이 **~19ms ~ 35ms** 수준으로 유지됩니다(det+seg+씬분류 합산).
+  - 모델 로드 시 `[CoreMLBridge] object_detection.mlmodelc - ANE 가속 모드로 로드 완료`,
+    `segmentation.mlmodelc - ANE 가속 모드로 로드 완료` 로그가 출력됩니다(폴백 미발동).
+- **비정상 작동 (CPU Fallback 발생)**:
+  - `loadModel(url:)`이 ANE 설정 로드 실패 시 `.cpuOnly`로 자동 폴백하며,
+    `[CoreMLBridge] ... ANE 로드 실패(...), CPU 전용으로 폴백` 로그가 출력됩니다.
+  - 과거(2026-07-07) `.cpuAndGPU`(GPU/Metal 경로) 조합에서는 `MLIR pass manager failed`
+    크래시가 재현됐으나, ANE 전용 조합(GPU 미경유)에서는 재현되지 않았다.
 
 ---
 

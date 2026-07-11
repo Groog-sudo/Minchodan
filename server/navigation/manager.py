@@ -32,6 +32,14 @@ class NavigationSession:
         # 네비게이션 동작 상태 기계 (IDLE: 꺼짐, WAITING_FOR_DESTINATION: 목적지 음성 대기, NAVIGATING: 안내 중)
         self.status: Literal["IDLE", "WAITING_FOR_DESTINATION", "NAVIGATING"] = "IDLE"
 
+        # 자유 질의응답 모드 대기 플래그. status(네비게이션 상태)와 독립적으로 관리해
+        # NAVIGATING 중에도 "질문할게" 후 자유 질문을 받을 수 있게 한다.
+        self.awaiting_free_question: bool = False
+
+        # 2026-07-10 추가: "길댕아" wake-word 이후 "길찾아줘"/"물어볼게" 중 무엇을
+        # 고를지 대기하는 플래그. awaiting_free_question과 마찬가지로 status와 독립.
+        self.awaiting_intent: bool = False
+
         # Redis Stream 등으로부터 수신된 미해결 장애물 이벤트 캐시
         self.pending_obstacles: list[dict[str, Any]] = []
         self.last_announced_obstacle_time: float = 0.0
@@ -71,6 +79,22 @@ class NavigationManager:
     def get_status(self, device_id: str) -> str:
         session = self._get_or_create_session(device_id)
         return session.status
+
+    def set_awaiting_question(self, device_id: str, waiting: bool) -> None:
+        session = self._get_or_create_session(device_id)
+        session.awaiting_free_question = waiting
+
+    def is_awaiting_question(self, device_id: str) -> bool:
+        session = self._get_or_create_session(device_id)
+        return session.awaiting_free_question
+
+    def set_awaiting_intent(self, device_id: str, waiting: bool) -> None:
+        session = self._get_or_create_session(device_id)
+        session.awaiting_intent = waiting
+
+    def is_awaiting_intent(self, device_id: str) -> bool:
+        session = self._get_or_create_session(device_id)
+        return session.awaiting_intent
 
     def update_route(self, device_id: str, waypoints: list[dict[str, Any]]) -> None:
         """

@@ -288,6 +288,14 @@ yolo11n.pt
 yolov8n.pt
 
 # ==========================================
+# AI Agent / IDE Local Artifacts
+# ==========================================
+.zcode/
+.claude/
+scripts/agent_tasks/
+scripts/launch_agents.sh
+
+# ==========================================
 # Local private config copies
 #   - See docs/ops/local_private_config_guide.md
 #   - Personal paths, device IDs, tokens, and local-only settings

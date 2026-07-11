@@ -215,7 +215,10 @@ graph TD
 | `server/navigation/manager.py`                | `NavigationManager`, 디바이스별 세션 상태기계(IDLE/대기/안내중)            | -    |
 | `server/navigation/pedestrian_navigation.py`  | TMAP POI 검색·보행자 경로 API 연동                                        | -    |
 | `server/navigation/navigation_filter.py`      | 경로 이탈·재탐색 필터링                                                    | -    |
-| `server/services/detection_guidance_log_service.py` | 탐지·가이드 로그 MariaDB 영속화                                     | -    |
+| `server/stt/stt_service.py`                   | faster-whisper 기반 음성 전사 (`transcribe_file`)                          | -    |
+| `server/stt/stt_to_llm_bridge.py`             | STT 전사 결과 → 네비게이션/LLM 브리지. 자기-에코 감지(`_check_self_echo`), 인텐트 분기, 자유 질의응답 | -    |
+| `server/stt/stt_config.py`                    | STT 모델·VAD·hotwords 정책 (하드코딩 영역)                                  | -    |
+| `server/services/detection_guidance_log_service.py` | 탐지·가이드 로그 MariaDB 영속화. STT는 전사문 대신 `text_length` 비식별 메타만 저장 | -    |
 | `console/src/`                                | 운영자 모니터링 (DetectionFeed, RiskEventLog, SessionStatus)               | -    |
 
 ---
@@ -568,7 +571,7 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | **클라이언트 역할** | thin client (카메라 캡처 + 음성/햡틱 재생) | 온디바이스 추론 엔진 추가 (반사 루프) |
 | **추론 위치** | 서버 GPU에서 **모든** 추론 수행 | **엣지(반사)** + **클라우드(인지)** 이중 추론 |
 | **반사 경로 처리** | 서버 `Reflex Gate` → 사전합성 클립 WS 전송 | 단말 NPU 즉시 추론 → 햅틱 (네트워크 RTT 0ms) |
-| **오프라인 내성** | 없음 (서버 단절 시 전체 정지) | 최소 반사 기능(충돌 방지) 오프라인 작동 |
+| **오프라인 내성** | **부분**: WS 단절(폴백 모드) 시 온디바이스 CoreML 추론으로 BBox 표시·반사 햅틱/비프는 유지, 서버 인지 가이드·길안내는 정지 | 최소 반사 기능(충돌 방지) 온디바이스 전환 |
 
 ### 14.2 도입 시기
 

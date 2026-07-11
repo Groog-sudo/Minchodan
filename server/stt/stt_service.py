@@ -18,6 +18,7 @@ from .stt_config import (
     DEFAULT_REQUEST_MODEL,
     MODEL_NAME_MAP,
     TRANSCRIBE_BEAM_SIZE,
+    TRANSCRIBE_HOTWORDS,
     TRANSCRIBE_LANGUAGE,
     TRANSCRIBE_VAD_FILTER,
     WHISPER_COMPUTE_TYPE,
@@ -150,6 +151,7 @@ class SttService:
                 language=TRANSCRIBE_LANGUAGE,
                 beam_size=TRANSCRIBE_BEAM_SIZE,
                 vad_filter=TRANSCRIBE_VAD_FILTER,
+                hotwords=TRANSCRIBE_HOTWORDS,
             )
             segments = list(segments_iter)
             full_text = " ".join(segment.text.strip() for segment in segments).strip()
