@@ -222,3 +222,28 @@
   - `git check-ignore -v .xcodebuildmcp/Copy_config.yaml`로 `**/Copy_*` 규칙 적용 확인
   - `git status --short --ignored .xcodebuildmcp ...`로 `Copy_config.yaml`이 ignored 상태(`!!`)임을 확인
   - `git diff --check` 통과
+
+---
+
+### 2026-07-11 | iOS/서버 | 실기기 빌드 의존성 및 FastAPI 루트 응답 정리
+
+- **커밋**: 미커밋
+- **변경 내용**:
+  - iOS 실기기 Debug 빌드가 React Native 카메라 프레임 처리 경로를 포함할 수 있도록 `react-native-worklets-core`를 클라이언트 의존성에 추가했습니다.
+  - `client/package-lock.json`에 `react-native-worklets-core`와 하위 의존성 `string-hash-64` 잠금 정보를 반영하여 팀원별 설치 결과가 달라지지 않도록 고정했습니다.
+  - `Podfile.lock`에 `react-native-worklets-core`, `VisionCamera/FrameProcessors`, `TextToSpeech`, `ExpoSpeech` Pod 연결 정보를 반영했습니다.
+  - VisionCamera가 FrameProcessors 서브스펙을 포함하도록 CocoaPods 잠금 결과를 갱신하여 카메라 프레임 처리 기반 기능의 iOS 네이티브 링크 누락 가능성을 줄였습니다.
+  - Xcode 프로젝트 파일을 최신 Xcode 저장 형식 기준으로 갱신하면서 `objectVersion`, `preferredProjectObjectVersion`, Shell Script Build Phase 표현, 빌드 구성 표시명이 재정렬되었습니다.
+  - iOS 실기기 코드사이닝을 위해 `Minchodan` 타깃의 Debug/Release `DEVELOPMENT_TEAM` 값을 현재 로컬 개발팀 기준으로 갱신했습니다.
+  - FastAPI 서버 기본 경로(`/`)에 서비스 상태, 헬스체크 경로, Swagger 문서 경로, WebSocket 경로를 반환하는 루트 응답을 추가했습니다.
+  - 실기기 확인과 세션 로그를 바탕으로 안전 판단 공백, 음성 상호작용 지연, 연결 신뢰성, 안내 품질 검증, 제품화 과제를 정리한 `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md` 보완점 문서를 추가했습니다.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `server/main.py`, `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `client/ios/build-device-debug.log` 기준 `xcodebuild -workspace client/ios/Minchodan.xcworkspace -scheme Minchodan -configuration Debug -destination platform=iOS,id=... build` 실기기 Debug 빌드 성공 확인
+  - 빌드 로그에서 `ExpoSpeech`, `TextToSpeech`, `VisionCamera`, `react-native-worklets-core`, `react-native-fast-tflite` 네이티브 타깃 의존성 연결 확인
+  - 빌드 로그 마지막 결과 `BUILD SUCCEEDED` 확인
+  - `python3 -m py_compile server/main.py` 통과
+  - `git diff --check` 통과
+  - `server/main.py` 루트 응답은 정적 코드 diff 기준으로 확인했으며, 서버 기동 후 HTTP 요청 검증은 이번 작업 범위에서 아직 수행하지 않았습니다.
+- **비고**:
+  - `client/ios/build-device-debug.log`는 빌드 성공 근거로 확인했지만 현재 미추적 파일 상태이므로, 커밋 포함 여부는 커밋 직전에 별도 판단이 필요합니다.

@@ -17,6 +17,7 @@
     "react": "19.2.3",
     "react-native": "0.85.3",
     "react-native-fast-tflite": "^3.0.1",
+    "react-native-tts": "^1.4.0",
     "react-native-vision-camera": "^4.7.3",
     "react-native-worklets-core": "^1.6.3"
   },
