@@ -1444,3 +1444,18 @@
 - **관련 파일**: `client/ios/AudioSessionBridge.swift`(신규), `client/ios/AudioSessionBridge.mm`(신규), `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/src/services/audioSessionBridge.ts`(신규), `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `client/assets/sounds/stt_start.wav`(신규), `docs/design/architecture.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `tsc --noEmit` 통과, `plutil -lint` pbxproj 무결성 통과, iOS 시뮬레이터 Debug 빌드 성공(BUILD SUCCEEDED), 산출물 `Minchodan.debug.dylib`에서 AudioSessionBridge 심볼 50개 및 `setVoiceProcessing:resolver:rejecter:` 시그니처 확인(컴파일·RN 모듈 등록 정합). 실기기 청취 검증은 후속: (1) 녹음 중 반사 비프가 전사에 안 섞이는지, (2) 시작 신호음 자기 녹음 여부, (3) voiceChat 전환 후 스피커 라우팅·음량 실용성, (4) 캡처 절단 가드 미발동 확인.
 - **비고**: AEC 실효성은 시뮬레이터에서 검증 불가(실제 스피커-마이크 음향 결합 필요). Android는 `audioSessionBridge.ts`가 no-op이라 동작 변화 없음(후속: AcousticEchoCanceler). Info.plist 권한 변경 없음(기존 마이크 권한 그대로).
+
+---
+
+### 2026-07-11 | 문서 | 세션 구현분 문서 전수 정합화 및 스킬 트리 동기화
+
+- **커밋**: `docs: 세션 구현분(STT small·지도 패널·재연결·AEC) 문서 전수 정합화 + 스킬 트리 동기화`
+- **변경 내용**:
+  - **CLAUDE.md v0.3.5 / AGENTS.md v0.3.2**: §2 기술 스택에 STT(faster-whisper-small)·Navigation(TMAP)·react-native-webview 지도 패널·STT 녹음 구간 AEC(AudioSessionBridge) 등재. AGENTS.md의 구식 표기 2건 정정(LangChain 병기 → 래퍼 미사용, Web Audio API 개념 규격 → 미사용 명시, 온디바이스 추론 누락 보완).
+  - **api_specification.md v0.4.11**: §6.4 폴백 모드 비고를 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, welcome 수신 시 해제) 기준으로 갱신.
+  - **ios_android_bifurcation_contract.md v1.1.1**: §3 소유권 매트릭스에 `AudioSessionBridge.swift/.mm`(iOS 전용), `audioSessionBridge.ts`(공유 계약, Android no-op - 인터페이스 유지 필수) 등재.
+  - **stage_stt_integration_guide.md v0.2.4**: §6 테스트 체크리스트에 AEC 실기기 검증 항목 TC-STT-010(voiceChat 세션 유지 로그), TC-STT-011(시작 신호음 비오염) 추가.
+  - **websocket-gateway 스킬 정정 + 스킬 트리 전수 동기화**: SKILL.md의 useWebSocket 예시에 재연결 정책 정정 노트 추가, 검증 매트릭스의 "3회 이내 성공"을 무한 백오프+음성 고지 기준으로 갱신. 점검 중 `.claude/skills/`가 `.agents/skills/` 대비 5개 파일 뒤처져 있음을 발견(websocket-gateway v0.2.1 잔존, 4개 스킬의 docs 재편성 이전 경로 잔존) - `.agents/` 최신본으로 전수 동기화 완료(두 트리 diff 0건).
+- **관련 파일**: `CLAUDE.md`, `AGENTS.md`, `docs/design/api_specification.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `.claude/skills/websocket-gateway/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/rag-realtime-search/SKILL.md`, `.claude/skills/xcode-build-management/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `diff -rq .agents/skills .claude/skills` 무차이 확인. 코드 변경 없음(문서 전용 커밋).
+- **비고**: Directory_Structure.md는 "계획된 물리적 폴더 구조" 문서(설계 초안 보존 목적)로 판단해 이번 정합화 범위에서 제외.

@@ -1,7 +1,7 @@
 # Minchodan STT 음성명령 연동 가이드
 
 > **작성일**: 2026-07-10
-> **버전**: v0.2.3 (2026-07-11 STT 녹음 구간 AEC 도입 - iOS voiceChat 세션 전환(`AudioSessionBridge`), AEC 확인 시 시작 신호음 복원 + 이전 v0.2.2 이력 유지: STT 응답 지연 개선 3건 반영 - 기본 모델 `faster-whisper-small` 전환, 서버 기동 시 모델 프리로드, TTS 합성 결과 캐시 + 이전 v0.2.1 이력 유지: 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
+> **버전**: v0.2.4 (2026-07-11 §6 테스트 체크리스트에 AEC 실기기 검증 항목 TC-STT-010/011 추가 + 이전 v0.2.3 이력 유지: STT 녹음 구간 AEC 도입 - iOS voiceChat 세션 전환(`AudioSessionBridge`), AEC 확인 시 시작 신호음 복원 + 이전 v0.2.2 이력 유지: STT 응답 지연 개선 3건 반영 - 기본 모델 `faster-whisper-small` 전환, 서버 기동 시 모델 프리로드, TTS 합성 결과 캐시 + 이전 v0.2.1 이력 유지: 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
 > **범위**: 7단계 골격 외 입력 경로(STT) 운영 가이드
 > **관련 코드**: `server/api/ws_router.py`, `server/stt/stt_service.py`, `server/stt/stt_to_llm_bridge.py`
 
@@ -118,6 +118,8 @@ flowchart TD
 | TC-STT-007 | 인텐트 우선순위 | `awaiting_intent`에서 "길댕아 길찾아줘" → `WAITING_FOR_DESTINATION` 전환 (wake 재호출이 아닌 nav intent로 처리) |
 | TC-STT-008 | Android 압축 오디오 | MPEG-4/AAC 녹음에 PCM 바이트 길이 판정을 적용하지 않고 서버로 전송 |
 | TC-STT-009 | 지연 녹음 취소 | 150ms 잔향 대기 중 손을 떼면 예약 녹음을 취소하고 STT 뮤트를 해제 |
+| TC-STT-010 | AEC 세션 유지 (실기기) | 녹음 시작 후 `[STT][AEC]` 로그에서 `mode=voiceChat`, `aec=true` 유지 확인 (expo-audio가 세션을 덮으면 경고 로그 + 시작 신호음 생략) |
+| TC-STT-011 | 시작 신호음 비오염 (실기기) | AEC 활성 상태에서 시작 신호음 재생 후에도 전사에 신호음이 섞이지 않고 캡처 절단 가드(`capture_truncated`)가 발동하지 않음 |
 
 ---
 

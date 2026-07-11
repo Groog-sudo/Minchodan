@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.10 (2026-07-11 nav_route(6.6) 신설 - 하단 지도 패널용 경로 좌표 전송·재접속 복원, realtime_gps(6.5) 수신 시점 길안내 직접 평가로 카메라 무탐지 시 무음 결함 수정, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드 반영 + 이전 v0.4.9 이력 유지)
+> **버전**: v0.4.11 (2026-07-11 §6.4 폴백 모드 비고에 클라이언트 재연결 정책 변경(무한 지수 백오프 + 폴백/복구 음성 고지) 반영 + 이전 v0.4.10 이력 유지: nav_route(6.6) 신설 - 하단 지도 패널용 경로 좌표 전송·재접속 복원, realtime_gps(6.5) 수신 시점 길안내 직접 평가로 카메라 무탐지 시 무음 결함 수정, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드 반영)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -473,12 +473,15 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | :--- | :--- |
 | `detections` | 모바일 화면 렌더링용 BBox 정보 배열. 노면 분할(`segmentation`) 결과의 centroid 좌표는 서버 단에서 80x80 크기의 가상 BBox로 변환하여 동일 포맷으로 전달 |
 
-> **비고 (2026-07-11) - 폴백 모드 BBox 표시**: WS 재연결 한계 도달 후 폴백 모드
-> (`status === "fallback"`)에서는 `server_detection`이 수신되지 않는다. 이때 단말은
+> **비고 (2026-07-11) - 폴백 모드 BBox 표시**: WS 연속 3회 재연결 실패로 폴백 모드
+> (`status === "fallback"`)에 진입하면 `server_detection`이 수신되지 않는다. 이때 단말은
 > 온디바이스 CoreML 추론 결과(det + seg)를 `CameraView.tsx`에서 직접 `detections`
 > 상태에 반영해 BBox를 표시한다(`isMockModeRef.current || wsStatusRef.current ===
 > "fallback"` 조건). 정상 연결 시에는 서버 결과를 온디바이스 결과가 덮어쓰지 않도록
-> 폴백 모드에서만 온디바이스 결과를 사용한다.
+> 폴백 모드에서만 온디바이스 결과를 사용한다. **2026-07-11 정책 변경**: 폴백 진입
+> 후에도 재연결을 포기하지 않고 지수 백오프(1s~30s)로 무한 재시도하며, 폴백 전환과
+> 복구를 각각 음성으로 고지한다. 폴백 상태는 백그라운드 재시도 중에도 유지되고
+> welcome 수신 시에만 해제된다(`useWebSocket.ts`).
 
 ---
 
@@ -625,3 +628,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.8** | **2026-07-11** | **§6.3 자기-에코 감지(TTS 안내문 재녹음 무시, 서버+클라이언트 이중 방어)·인텐트 체크 순서 변경(nav/question > wake 재호출) 비고 추가, §6.4 폴백 모드 온디바이스 BBox 표시 비고 추가, §2.4 SessionManager WebSocketState 가드(WS 종료 후 송신 실패 스팸 방지) 비고 추가** |
 | **v0.4.9** | **2026-07-11** | **STT 원본·전사문 비보존, iOS PCM·Android AAC 플랫폼별 캡처 검증, SessionManager 송신 성공 boolean 및 반사 경보 억제 조건 정합화** |
 | **v0.4.10** | **2026-07-11** | **nav_route(6.6) 신설(경로 좌표 전송·해제·재접속 복원, TMap appKey 서버 환경변수 전달), §6.5 realtime_gps 수신 시점 길안내 직접 평가 비고 추가(카메라 무탐지 시 무음 결함 수정), §6.3 STT 기본 모델 `faster-whisper-small` 전환·프리로드 반영** |
+| **v0.4.11** | **2026-07-11** | **§6.4 폴백 모드 비고 갱신 - 클라이언트 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, 폴백 상태 welcome 수신 시 해제) 반영** |

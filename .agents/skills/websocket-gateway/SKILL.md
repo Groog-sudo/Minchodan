@@ -430,6 +430,12 @@ uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 
 ### useWebSocket.ts
 
+> **2026-07-11 정정**: 아래 예시의 재연결 로직은 초기 구현 기준이다. 실제 구현
+> (`client/src/hooks/useWebSocket.ts`)은 재연결을 포기하지 않고 **지수 백오프(1s에서
+> 2배씩, 최대 30s)로 무한 재시도**하며, `MAX_RECONNECT`(3회)는 중단 횟수가 아니라
+> **폴백 모드 전환 + 음성 고지 문턱값**이다. 폴백 상태는 백그라운드 재시도 중에도
+> 유지되고, welcome 수신 시 해제되며 복구 음성 고지가 나간다.
+
 ```typescript
 // client/src/hooks/useWebSocket.ts
 import { useRef, useCallback, useEffect, useState } from 'react';
@@ -527,7 +533,7 @@ export function useWebSocket(deviceId: string, token: string) {
 | hello/인증 | auth_ok 응답 | 토큰 일치 시 성공 |
 | 하트비트 | pingpong 왕복 | 5초 간격, RTT < 100ms |
 | 메시지 echo | 앱서버앱 왕복 | **RTT < 100ms** |
-| 연결 끊김 복구 | 자동 재연결 | 3회 이내 성공 |
+| 연결 끊김 복구 | 무한 백오프 자동 재연결 | 3회 연속 실패 시 폴백 전환 + 음성 고지, 서버 복구 시 재접속 + 복구 고지 |
 | Redis 발행 | xadd 성공 | 메시지 ID 반환 |
 | WebSocketDisconnect | 소켓 close + 리소스 해제 | 예외 없이 정리 |
 
