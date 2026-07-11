@@ -1,7 +1,7 @@
 ﻿# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.1 (2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
+> **버전**: v0.4.2 (2026-07-11 WS 재연결 정책 변경 - 무한 지수 백오프 + 폴백 전환/복구 음성 고지, 오프라인 내성 항목 갱신 + 이전 v0.4.1 이력 유지: 2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -581,7 +581,7 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | **클라이언트 역할** | thin client (카메라 캡처 + 음성/햡틱 재생) | 온디바이스 추론 엔진 추가 (반사 루프) |
 | **추론 위치** | 서버 GPU에서 **모든** 추론 수행 | **엣지(반사)** + **클라우드(인지)** 이중 추론 |
 | **반사 경로 처리** | 서버 `Reflex Gate` → 사전합성 클립 WS 전송 | 단말 NPU 즉시 추론 → 햅틱 (네트워크 RTT 0ms) |
-| **오프라인 내성** | **부분**: WS 단절(폴백 모드) 시 온디바이스 CoreML 추론으로 BBox 표시·반사 햅틱/비프는 유지, 서버 인지 가이드·길안내는 정지 | 최소 반사 기능(충돌 방지) 온디바이스 전환 |
+| **오프라인 내성** | **부분**: WS 단절(폴백 모드) 시 온디바이스 CoreML 추론으로 BBox 표시·반사 햅틱/비프는 유지, 서버 인지 가이드·길안내는 정지. **2026-07-11 보강**: 재연결은 지수 백오프(1s~30s)로 무한 반복하며, 연속 3회 실패 시 폴백 전환을 음성으로 고지("기본 경보 모드로 전환")하고 복구 시에도 음성 고지한다(`useWebSocket.ts`) | 최소 반사 기능(충돌 방지) 온디바이스 전환 |
 
 ### 14.2 도입 시기
 

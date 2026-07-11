@@ -11,6 +11,7 @@ import {
   HEARTBEAT_INTERVAL,
   MAX_RECONNECT,
   RECONNECT_DELAY,
+  RECONNECT_DELAY_MAX,
   TOKEN,
   WS_URL,
 } from "../config";
@@ -59,6 +60,9 @@ export function useWebSocket(
   // 항상 최신 값을 읽는다(state였다면 connect()가 재실행되지 않는 한 stale closure).
   const sttInteractionActiveRef = useRef(false);
   const sttInteractionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 폴백 모드 진입 음성 고지를 단절 1회당 한 번만 내보내기 위한 플래그.
+  // true인 동안 재연결이 성공하면 복구 고지를 내보내고 다시 false로 돌린다.
+  const fallbackAnnouncedRef = useRef(false);
   // 직전에 수신한 "guide" JSON 메시지가 인지(카메라) 출처인지 기록해, 뒤이어 오는
   // 바이너리 오디오 프레임(ArrayBuffer)도 같은 기준으로 뮤트할지 판단한다.
   const pendingGuideIsCognitiveRef = useRef(false);
@@ -97,10 +101,15 @@ export function useWebSocket(
     // 수신 시 Blob이 아닌 ArrayBuffer로 받아 동기적으로 다루기 쉽게 한다.
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
-    setStatus("connecting");
+    // 폴백 모드 중의 백그라운드 재시도가 상태를 "connecting"으로 덮으면 온디바이스
+    // 경보/BBox 표시(CameraView의 fallback 판정)가 시도할 때마다 꺼졌다 켜진다.
+    // 폴백은 실제 재연결 성공(welcome)까지 유지한다.
+    setStatus((prev) => (prev === "fallback" ? prev : "connecting"));
 
     ws.onopen = () => {
-      reconnectCount.current = 0;
+      // 주의: 재연결 카운터는 여기(TCP 연결)가 아니라 welcome(핸드셰이크 성공)에서
+      // 리셋한다. 인증 실패 등으로 "연결 직후 끊김"이 반복되는 경우에도 백오프가
+      // 계속 자라고 폴백 고지가 정상 동작해야 하기 때문이다.
       ws.send(
         JSON.stringify({ type: "hello", device_id: deviceId, token }),
       );
@@ -132,7 +141,14 @@ export function useWebSocket(
         if (data.type === "welcome") {
           setLastMessage(data);
           setStatus("connected");
+          reconnectCount.current = 0;
           console.log(`[WS] 연결 성공, 세션 ID: ${data.session_id}`);
+          // 폴백 모드 고지 이후의 복구는 사용자에게 반드시 알린다. 사용자는 화면을
+          // 볼 수 없으므로 음성 고지가 유일한 상태 전달 수단이다(Mitos 로드맵).
+          if (fallbackAnnouncedRef.current) {
+            fallbackAnnouncedRef.current = false;
+            audioEngine.speakFallback("서버 연결이 복구되었습니다. 상세 안내를 다시 시작합니다.");
+          }
         } else if (data.type === "heartbeat") {
           ws.send(
             JSON.stringify({ type: "heartbeat_ack", ts: Date.now() }),
@@ -209,7 +225,8 @@ export function useWebSocket(
     };
 
     ws.onclose = () => {
-      setStatus("disconnected");
+      // 폴백 모드는 재연결 성공까지 유지한다(위 connecting 주석과 동일한 이유).
+      setStatus((prev) => (prev === "fallback" ? prev : "disconnected"));
       clearHeartbeat();
       console.log("[WS] 연결 종료");
 
@@ -217,12 +234,32 @@ export function useWebSocket(
       audioEngine.stopBeep();
       hapticEngine.stopContinuous();
 
-      if (reconnectCount.current < MAX_RECONNECT) {
-        reconnectCount.current += 1;
-        reconnectTimer.current = setTimeout(() => connect(), RECONNECT_DELAY);
-      } else {
+      // 2026-07-11 정책 변경(Mitos 로드맵 우선순위 2): 재연결을 포기하지 않는다.
+      // 지수 백오프(1s -> 2s -> 4s ... 최대 RECONNECT_DELAY_MAX)로 무한 재시도하고,
+      // MAX_RECONNECT회 연속 실패 시점에 폴백 모드로 전환하며 음성으로 고지한다.
+      // 폴백 모드에서도 온디바이스 탐지/반사 경보는 계속 동작하므로(CameraView),
+      // 사용자에게는 "기본 경보만 제공"임을 알리는 것이 핵심이다.
+      reconnectCount.current += 1;
+      const backoffMs = Math.min(
+        RECONNECT_DELAY * 2 ** (reconnectCount.current - 1),
+        RECONNECT_DELAY_MAX,
+      );
+      reconnectTimer.current = setTimeout(() => connect(), backoffMs);
+      console.log(
+        `[WS] 재연결 예약: ${reconnectCount.current}회차, ${backoffMs}ms 후`,
+      );
+
+      if (reconnectCount.current >= MAX_RECONNECT) {
         setStatus("fallback");
-        console.warn(`[WS] 재연결 시도(${MAX_RECONNECT}회) 실패로 중단.`);
+        if (!fallbackAnnouncedRef.current) {
+          fallbackAnnouncedRef.current = true;
+          audioEngine.speakFallback(
+            "서버 연결이 끊겨 기본 경보 모드로 전환합니다. 연결은 계속 시도합니다.",
+          );
+          console.warn(
+            `[WS] 연속 ${reconnectCount.current}회 실패 - 폴백 모드 전환 및 음성 고지(재시도는 계속).`,
+          );
+        }
       }
     };
 

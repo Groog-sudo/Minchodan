@@ -1416,3 +1416,17 @@
 - **관련 파일**: `docs/research/mitos_improvement_roadmap.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 검증 근거는 문서 부록 §10에 주장별 코드 위치로 기록. 저장소 내 `PROJECT_IMPROVEMENTS_MITOS.md` 잔여 참조는 jy changelog 과거 이력 서술뿐으로 정정 불필요.
 - **비고**: 로드맵의 기존 최우선 과제(STT 정지 문구)는 완료 상태이므로, 실질적 다음 액션은 연결 끊김 음성 고지 + 무한 백오프 재연결이다.
+
+---
+
+### 2026-07-11 | 클라이언트 | 연결 끊김 음성 고지 + 무한 지수 백오프 재연결 (Mitos 우선순위 2)
+
+- **커밋**: `feat(client): WS 무한 지수 백오프 재연결 + 폴백 전환/복구 음성 고지`
+- **변경 내용**:
+  - **재연결 정책 변경**: 기존 `MAX_RECONNECT=3`회 1초 간격 재시도 후 콘솔 경고만 남기고 영구 포기하던 구조를, 지수 백오프(1s에서 2배씩, 상한 `RECONNECT_DELAY_MAX=30s`) 무한 재시도로 전환. `MAX_RECONNECT`는 "중단 횟수"에서 "폴백 모드 전환 + 음성 고지 문턱값"으로 의미 재정의(`config/index.ts` 주석 반영).
+  - **음성 고지 2종**: 연속 3회 실패 시 "서버 연결이 끊겨 기본 경보 모드로 전환합니다. 연결은 계속 시도합니다."(단절 1회당 1번, `fallbackAnnouncedRef` 가드), 재연결 성공(welcome) 시 "서버 연결이 복구되었습니다. 상세 안내를 다시 시작합니다.". 사용자가 화면을 볼 수 없으므로 음성이 유일한 상태 전달 수단이라는 로드맵 지적을 반영. 출력은 기존 `audioEngine.speakFallback`(expo-speech, 반사 비프/햅틱과 독립 채널)을 재사용.
+  - **폴백 상태 유지(sticky)**: 백그라운드 재시도가 상태를 `connecting`/`disconnected`로 덮으면 CameraView의 폴백 판정(`wsStatusRef.current === "fallback"`)이 시도할 때마다 꺼졌다 켜져 온디바이스 BBox/경보 표시가 깜빡이는 문제를 함수형 setState로 차단. 폴백은 실제 welcome 수신까지 유지.
+  - **재연결 카운터 리셋 시점 이동**: onopen(TCP 연결)에서 welcome(핸드셰이크 성공)으로 이동. 인증 실패 등 "연결 직후 끊김" 반복 시에도 백오프가 계속 자라고 폴백 고지가 동작하도록 보강(기존에는 onopen 리셋 때문에 1초 간격 무한 재시도 + 고지 없음).
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/config/index.ts`, `docs/design/architecture.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과. 실기기 시나리오 검증(서버 중단 후 폴백 고지 발화 - 30초 상한 백오프 지속 - 서버 재기동 후 복구 고지 발화)은 후속 진행(기존 실기기 검증 대기 3건에 추가).
+- **비고**: 문서 반영 - architecture.md v0.4.2(오프라인 내성 항목), mitos_improvement_roadmap.md v0.3.1(§4 해소, §7 완료, §10 부록 갱신). 서버 측 변경 없음(클라이언트 단독 패치).

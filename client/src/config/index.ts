@@ -20,5 +20,9 @@ export const TOKEN = "token-abc-001";
 export const REFLEX_FPS = 4;
 export const COGNITIVE_FPS = 2;
 export const HEARTBEAT_INTERVAL = 5000;
+// 2026-07-11 재연결 정책 변경(Mitos 로드맵 우선순위 2): 재연결은 포기하지 않고
+// 지수 백오프로 무한 반복한다. MAX_RECONNECT는 "중단 횟수"가 아니라 이 횟수만큼
+// 연속 실패하면 폴백 모드(온디바이스 경보 전용)로 전환 + 음성 고지하는 문턱값이다.
 export const MAX_RECONNECT = 3;
 export const RECONNECT_DELAY = 1000;
+export const RECONNECT_DELAY_MAX = 30000;
