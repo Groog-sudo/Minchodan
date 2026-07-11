@@ -286,3 +286,11 @@ server/models/piper/*.runtime.compat.json
 # Unused alternative model weights (post-MVP 배제 안)
 yolo11n.pt
 yolov8n.pt
+
+# ==========================================
+# AI Agent / IDE Local Artifacts
+# ==========================================
+.zcode/
+.claude/
+scripts/agent_tasks/
+scripts/launch_agents.sh
