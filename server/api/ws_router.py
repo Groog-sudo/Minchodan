@@ -11,6 +11,7 @@ import base64
 import contextlib
 import json
 import logging
+import os
 import sys
 import tempfile
 import time
@@ -122,6 +123,42 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
         await _process_stt_audio(ws, device_id, data, audio_b64)
 
 
+async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> None:
+    """GPS 갱신 시점에 평가된 길안내 멘트를 TTS 합성해 guide 메시지로 전송한다.
+
+    2026-07-11 도입: 길안내를 카메라 탐지 여부와 분리하기 위한 전용 전송 경로.
+    메시지 형식은 STT/인지 경로 guide와 동일해 클라이언트 수정이 필요 없다
+    (event_id가 "stt-"로 시작하지 않으므로 STT 상호작용 중에는 뮤트 대상 - 의도된 동작).
+    """
+    text = nav_event.get("text", "")
+    if not text:
+        return
+
+    audio_b64_out, duration_ms = await realtime_tts.synthesize(text=text)
+    audio_bytes_out = base64.b64decode(audio_b64_out) if audio_b64_out else b""
+
+    with contextlib.suppress(Exception):
+        await ws.send_json(
+            {
+                "type": "guide",
+                "event_id": f"nav-{device_id}-{now_ts()}",
+                "risk_level": "mid" if nav_event.get("is_danger") else "low",
+                "guidance_text": text,
+                "audio_codec": "wav",
+                "duration_ms": duration_ms,
+                "transport": "binary" if audio_bytes_out else "none",
+                "source": nav_event.get("type", "nav-guidance"),
+                "ts": now_ts(),
+            }
+        )
+        if audio_bytes_out:
+            await ws.send_bytes(audio_bytes_out)
+    logger.info(
+        f"[WS] 길안내 전송: device_id={device_id}, text={text!r}, "
+        f"type={nav_event.get('type')}, waypoint_idx={nav_event.get('active_waypoint_idx')}"
+    )
+
+
 async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> None:
     model_name = data.get("model_name")
 
@@ -140,9 +177,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         stt_result = await asyncio.to_thread(
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
-        logger.info(
-            f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}"
-        )
+        logger.info(f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}")
         bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
         guidance_text = bridge_result.get("guidance_text", "")
         bridge_source = bridge_result.get("source", "")
@@ -150,9 +185,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         # 2026-07-11: 자기-에코 감지(안내문이 마이크로 재녹음된 경우)면 클라이언트에
         # 응답을 보내지 않고 조용히 종료한다 (메아리 루프 방지).
         if bridge_source == "stt-echo-detected":
-            logger.info(
-                f"[WS] STT 에코 감지 - 응답 스킵: device_id={device_id}"
-            )
+            logger.info(f"[WS] STT 에코 감지 - 응답 스킵: device_id={device_id}")
             return
 
         logger.info(
@@ -194,6 +227,26 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             )
             if audio_bytes_out:
                 await ws.send_bytes(audio_bytes_out)
+
+        # 2026-07-11 지도 패널용: 경로 설정/해제 시 좌표 목록을 nav_route 메시지로
+        # 전달한다. TMap appKey는 클라이언트 하드코딩 대신 서버 환경변수를 재사용해
+        # 저장소에 키가 남지 않게 한다(키 노출 범위는 동일하므로 TMap 콘솔에서
+        # 키 사용 제한을 걸어둘 것).
+        if "nav_waypoints" in bridge_result:
+            with contextlib.suppress(Exception):
+                await ws.send_json(
+                    {
+                        "type": "nav_route",
+                        "waypoints": bridge_result["nav_waypoints"],
+                        "app_key": os.getenv("TMAP_APP_KEY", ""),
+                        "ts": now_ts(),
+                    }
+                )
+            logger.info(
+                f"[WS] nav_route 전송: device_id={device_id}, "
+                f"waypoints={len(bridge_result['nav_waypoints'])}"
+            )
+
         logger.info(
             f"[WS] stt_audio 처리 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
             f"source={bridge_result.get('source')}"
@@ -304,6 +357,33 @@ async def ws_detect(
         print(f"[DEBUG_WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}", flush=True)
         await ws.send_json({"type": "auth_ok", "device_id": device_id})
         await redis_bus.connect()
+
+        # 2026-07-11: 재접속 시 지도 경로 복원. nav_route는 원래 경로 설정 순간에만
+        # 전송되는데, 앱을 재시작하면 클라이언트 메모리의 경로가 사라져 서버 세션이
+        # NAVIGATING인데도 지도 패널이 비어 있었다(실기기 확인). 서버 세션에 살아
+        # 있는 웨이포인트를 인증 직후 재전송해 단말 재시작에도 지도를 복원한다.
+        try:
+            from server.navigation.manager import nav_manager
+
+            if nav_manager.get_status(device_id) == "NAVIGATING":
+                nav_session = nav_manager._get_or_create_session(device_id)
+                if nav_session.waypoints:
+                    await ws.send_json(
+                        {
+                            "type": "nav_route",
+                            "waypoints": [
+                                {"lat": wp["lat"], "lon": wp["lon"]} for wp in nav_session.waypoints
+                            ],
+                            "app_key": os.getenv("TMAP_APP_KEY", ""),
+                            "ts": now_ts(),
+                        }
+                    )
+                    logger.info(
+                        f"[WS] nav_route 재전송(재접속 복원): device_id={device_id}, "
+                        f"waypoints={len(nav_session.waypoints)}"
+                    )
+        except Exception as e:
+            logger.error(f"[WS] nav_route 재전송 실패: device_id={device_id}, {e}")
 
         heartbeat = HeartbeatManager(
             ws,
@@ -446,6 +526,24 @@ async def ws_detect(
                         f"[WS] realtime_gps 수신: device_id={device_id}, "
                         f"lat={lat}, lon={lon}, heading={heading}"
                     )
+                    # 2026-07-11 길안내 무음 수정: 기존에는 길안내 멘트 조회가
+                    # DetectionConsumer._send_cognitive_guide 안에만 있어 카메라 탐지가
+                    # 없으면(빈 장면) NAVIGATING 상태여도 안내가 전혀 나가지 않았다
+                    # (실기기 실측: 경로 113 웨이포인트 설정 후 무음). 길안내는 위치
+                    # 이벤트가 본질이므로 GPS 갱신 시점에 직접 평가한다. 중복 발화는
+                    # nav_filter의 announced_cache/silence_interval이 양쪽 경로 공용으로
+                    # 차단한다. 조회는 동기(중복 판정 원자성 보장), 합성·전송만 태스크로
+                    # 분리해 수신 루프를 막지 않는다.
+                    if nav_manager.get_status(device_id) == "NAVIGATING":
+                        try:
+                            nav_event = nav_manager.get_combined_guidance(device_id)
+                        except Exception as e:
+                            logger.error(f"[WS] 길안내 조회 실패: device_id={device_id}, {e}")
+                            nav_event = None
+                        if nav_event and nav_event.get("text"):
+                            task = asyncio.create_task(_send_nav_guidance(ws, device_id, nav_event))
+                            background_tasks.add(task)
+                            task.add_done_callback(background_tasks.discard)
 
             else:
                 logger.warning(f"[WS] 알 수 없는 메시지 타입: {msg_type}")

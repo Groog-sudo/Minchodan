@@ -9,7 +9,7 @@ description: |
 
 > **작성일**: 2026-07-05
 > **버전**: v1.0.0
-> **설계 기준**: `docs/minchodan_design_note.md` 및 iOS thin client 아키텍처
+> **설계 기준**: `docs/design/minchodan_design_note.md` 및 iOS thin client 아키텍처
 > **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md)
 
 ---
@@ -37,10 +37,10 @@ iOS 빌드 및 시뮬레이션 제어를 위해 에이전트 환경(macOS)에서
 
 | 경로 | 역할 |
 |---|---|
-| [`client/ios/`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios) | iOS 네이티브 프로젝트 및 CocoaPods 설정 경로 |
-| [`client/ios/Minchodan.xcworkspace`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Minchodan.xcworkspace) | Xcode 작업 공간 파일 (빌드 대상) |
-| [`client/ios/Podfile`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Podfile) | CocoaPods 의존성 명세 |
-| [`client/ios/Minchodan/CoreMLInferenceBridge.swift`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/client/ios/Minchodan/CoreMLInferenceBridge.swift) | 온디바이스 CoreML 추론 브릿지 소스코드 |
+| [`client/ios/`](../../../client/ios/) | iOS 네이티브 프로젝트 및 CocoaPods 설정 경로 |
+| [`client/ios/Minchodan.xcworkspace`](../../../client/ios/Minchodan.xcworkspace) | Xcode 작업 공간 파일 (빌드 대상) |
+| [`client/ios/Podfile`](../../../client/ios/Podfile) | CocoaPods 의존성 명세 |
+| [`client/ios/CoreMLInferenceBridge.swift`](../../../client/ios/CoreMLInferenceBridge.swift) | 온디바이스 CoreML 추론 브릿지 소스코드 |
 
 ---
 

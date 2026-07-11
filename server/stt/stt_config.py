@@ -69,9 +69,15 @@ if hasattr(sys.stdout, "reconfigure"):
 
 MODEL_NAME_MAP: dict[str, str] = {
     "faster-whisper-medium": "medium",
+    "faster-whisper-small": "small",
 }
 
-DEFAULT_REQUEST_MODEL = "faster-whisper-medium"
+# 2026-07-11 기본 모델 medium -> small 전환(실측 근거): macOS Docker CPU 폴백
+# 환경에서 medium은 2초 발화 전사에 2.3초, 콜드스타트 로딩에 8~10초가 걸려
+# STT 왕복 체감 지연의 주 병목이었다. 명령어 위주 짧은 발화 + hotwords 바이어싱
+# 조합에서는 small로도 인식 품질이 유지되는지 실기기 검증 후, 회귀가 확인되면
+# 이 값만 medium으로 되돌린다(GPU 서버 배포 시에도 재평가).
+DEFAULT_REQUEST_MODEL = "faster-whisper-small"
 TRANSCRIBE_LANGUAGE = "ko"
 TRANSCRIBE_BEAM_SIZE = 3
 TRANSCRIBE_VAD_FILTER = True

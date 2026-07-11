@@ -44,10 +44,18 @@ class RealtimeTTS:
 
     DEFAULT_TTL = 60
 
+    # 2026-07-11 합성 결과 캐시 상한. 안내문 대부분이 고정 문구(웨이크업/재시도/
+    # 빈입력 등)라 동일 텍스트 재합성이 반복되는데, CPU 폴백 환경에서 합성이
+    # 1.4~1.9초를 차지해 STT 왕복 체감 지연의 주요인이었다(실기기 실측).
+    CACHE_MAX_ENTRIES = 64
+
     def __init__(self, tts_service=None):
         # 전달받은 유효시간을 인스턴스 변수에 저장
         # 기본값은 클래스 상수인 60초를 사용
         self.tts = tts_service or get_tts_service()
+        # (text, voice, speed) -> (b64_audio, duration_ms). 삽입 순서 유지되는
+        # dict를 FIFO로 운용해 상한 초과 시 가장 오래된 항목부터 제거한다.
+        self._cache: dict[tuple[str, str, float], tuple[str, float]] = {}
 
     async def synthesize(self, text, voice="ko", speed=DEFAULT_SPEED):
         """
@@ -73,6 +81,12 @@ class RealtimeTTS:
             logger.warning("음성 합성할 텍스트가 비어 있습니다.")
             return None, 0.0
 
+        # 동일 문구 재합성 회피: 고정 안내문은 첫 합성 결과를 재사용한다.
+        cache_key = (text, voice, float(speed))
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             audio_bytes = await asyncio.wait_for(
                 self.tts.generate(text=text, voice=voice, speed=speed), timeout=15.0
@@ -82,7 +96,11 @@ class RealtimeTTS:
                 # 바이트 데이터를 베이스64 문자열로 변환
                 # 웹소켓 전송을 위해 문자열 형태로 만들어야 함
                 b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
-                return b64_audio, _wav_duration_ms(audio_bytes)
+                duration_ms = _wav_duration_ms(audio_bytes)
+                if len(self._cache) >= self.CACHE_MAX_ENTRIES:
+                    self._cache.pop(next(iter(self._cache)))
+                self._cache[cache_key] = (b64_audio, duration_ms)
+                return b64_audio, duration_ms
             else:
                 # 음성 데이터가 비어있는 경우 None 반환
                 return None, 0.0

@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-11
-> **버전**: v0.13.6 (Mitos 보완 로드맵 기준선 유지 + Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
+> **버전**: v0.13.8 (2026-07-11 dev 병합 정리: dev 통합 개선 실행 계획서를 문서 목록·§5 ops 표에 등재하고 말미 중복 §9 섹션(ops/reports 표기 불일치) 제거 + 이전: Mitos 보완 로드맵 `docs/research/` 이동, Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
 
 ## 문서 목록
 
@@ -22,7 +22,8 @@
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
-| **프로젝트 보완점: Mitos** | [../PROJECT_IMPROVEMENTS_MITOS.md](../PROJECT_IMPROVEMENTS_MITOS.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵과 해결 상태** |
+| **dev 통합 개선 실행 계획서** | [ops/dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 기반 P0/P1 개선 순서와 완료 기준** |
+| **프로젝트 보완점: Mitos (정정본)** | [research/mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵. v0.3.0 코드 대조 검증 기록 포함 (루트에서 이동)** |
 | **백엔드 DB 아키텍처** | [design/backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
 | 2단계 캡처 설계서     | [stage-guides/stage2_capture_design.md](stage-guides/stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 
@@ -121,6 +122,7 @@ docs/
 | Post-MVP 온디바이스 타당성 | [post_mvp_ondevice_feasibility.md](research/post_mvp_ondevice_feasibility.md) | 엣지 TFLite 추론 가능성 검증서 |
 | Post-MVP 하이브리드 로드맵 | [post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | 하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP) |
 | SenseVoice-Small STT 검토 | [sensevoice_stt_feasibility.md](research/sensevoice_stt_feasibility.md) | 음성 명령(STT) 경로용 SenseVoice-Small 도입 정당성(지연·로딩·한국어 정확도) |
+| **프로젝트 보완점: Mitos (정정본)** | [mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **안전성·음성 UX·신뢰성·검증 체계·제품화 보완 로드맵. v0.3.0에서 코드 대조 검증 기록(§10) 추가, 루트 `PROJECT_IMPROVEMENTS_MITOS.md`에서 이동** |
 
 ---
 
@@ -145,6 +147,7 @@ docs/
 | **모델 클래스별 검증 보고서** | [model_class_validation_report.md](ops/model_class_validation_report.md) | **YOLO26n 33클래스(탐지29+세그멘테이션4) 샘플 이미지 탐지 검증 결과** |
 | Git 브랜칭 전략 | [git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조 (`main` / `dev` / 개인), PR 작업 규칙 |
 | 테스트 명세서 | [test_specification.md](ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
+| **dev 통합 개선 실행 계획서** | [dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 결과 기반 P0/P1 개선 순서와 완료 기준 (Mitos 로드맵과 교차 참조)** |
 
 ---
 
@@ -217,7 +220,7 @@ docs/
 - **LLM은 로컬 Ollama(gemma4:e4b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
 - **4단계 캡셔닝은 Gemini API**(`gemini-2.5-flash-lite`, 최초 계획 로컬 Llava에서 전환)입니다.
 - **7단계 TTS는 Supertonic 기본**(`TTS_ENGINE=supertonic`)이며, Piper/pyttsx3는 핫스왑 폴백입니다.
-- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다.
+- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다. 길안내 발화는 `realtime_gps` 수신 시점에 직접 평가하며(카메라 탐지와 분리, 2026-07-11), 경로 좌표는 `nav_route` 메시지로 단말 하단 T맵 지도 패널(운영자/데모용)에 전달됩니다.
 - **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
 - **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.

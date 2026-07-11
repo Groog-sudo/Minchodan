@@ -19,6 +19,12 @@ import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
 
 import { audioEngine } from "../services/audioEngine";
+import { getSessionInfo, setVoiceProcessing } from "../services/audioSessionBridge";
+
+// 2026-07-11 AEC 검증(Mitos 로드맵 우선순위 4): AEC(voiceChat 세션) 활성이 확인된
+// 경우에 한해 녹음 시작 신호음을 복원한다. 실기기 검증에서 신호음이 다시 전사에
+// 섞이는 회귀가 확인되면 이 플래그만 false로 되돌린다(AEC 전환 자체는 유지).
+const STT_START_CUE_WITH_AEC = true;
 
 // [TEMP DEBUG 2026-07-11] "입력이 없어" 재현 진단용: recorder.record()~stop()이
 // JS에서는 2.6~3.6초로 측정되는데도 실제 인코딩된 .m4a(AAC) 파일에는 0.2~0.7초
@@ -103,9 +109,17 @@ export function useSttRecorder(
         // 에코 제거 없이는 회피 불가). 실제로 "입력 없음" 응답이 반복된 녹음 파일들을
         // 0.05초 단위로 파형 분석한 결과, 신호음이 재생되는 100~250ms 구간에만 짧게
         // 진폭이 있고 그 뒤로는 끝까지 무음이었다 - 사용자의 발화가 아니라 신호음
-        // 자체가 녹음되고 있었다. 시작 신호음은 녹음 중 재생 자체를 하지 않는다
-        // (진입점 안내는 이미 있는 haptic 피드백이 담당). 종료 신호음은
-        // recorder.stop() 완료 이후에만 재생되므로 이 문제가 없다.
+        // 자체가 녹음되고 있었다.
+        // 2026-07-11 AEC 대책: 녹음 구간에서 세션을 voiceChat 모드로 전환하면 iOS가
+        // VoiceProcessingIO의 AEC를 켜 스피커 출력을 마이크 입력에서 상쇄한다.
+        // 시작 신호음은 아래에서 AEC 활성이 "확인된" 경우에만 복원 재생한다.
+        // 전환은 prepare 전에 수행한다(녹음 시작 후 세션 변경은 캡처 절단 위험).
+        const aecInfo = await setVoiceProcessing(true);
+        if (aecInfo) {
+          console.log(
+            `[STT][AEC] 세션 전환: mode=${aecInfo.mode}, aec=${aecInfo.voiceProcessingActive}, route=${aecInfo.outputRoute}`,
+          );
+        }
         await recorder.prepareToRecordAsync();
         recorder.record();
         recordStartTsRef.current = Date.now();
@@ -114,10 +128,30 @@ export function useSttRecorder(
         );
         statusRef.current = "recording";
         setStatus("recording");
+
+        // 검증 계측: expo-audio recorder가 record() 시점에 세션 모드를 덮는지 확인.
+        // voiceChat이 유지된 경우에만 시작 신호음을 재생한다(AEC 상쇄 전제).
+        const postInfo = await getSessionInfo();
+        const aecActive = postInfo?.voiceProcessingActive === true;
+        if (postInfo) {
+          console.log(
+            `[STT][AEC] record() 후 세션: mode=${postInfo.mode}, aec=${aecActive}`,
+          );
+        }
+        if (postInfo && !aecActive) {
+          console.warn(
+            "[STT][AEC] record() 후 voiceChat 모드가 풀림(expo-audio 세션 재설정 추정) - 시작 신호음 생략",
+          );
+        }
+        if (STT_START_CUE_WITH_AEC && aecActive && statusRef.current === "recording") {
+          void audioEngine.playSttStartCue();
+        }
       } catch (err) {
         console.error("[STT] 녹음 시작 실패:", err);
         statusRef.current = "idle";
         setStatus("idle");
+        // 녹음 시작 실패 시 voiceChat 세션이 남지 않도록 복구한다(실패해도 무해).
+        void setVoiceProcessing(false);
         onError?.("start_failed", err instanceof Error ? err.message : String(err));
       }
     })();
@@ -135,6 +169,9 @@ export function useSttRecorder(
     setStatus("sending");
     try {
       await recorder.stop();
+      // 녹음이 끝났으므로 voiceChat(AEC) 세션을 원래 설정으로 복구한다. voiceChat
+      // 유지 시 재생 음질/음량이 저하되므로 종료 신호음 재생 전에 복구한다.
+      await setVoiceProcessing(false);
       // 녹음이 완전히 끝난 뒤라 마이크와 무관하다 - 종료 신호음(더블 비프)을 재생한다.
       void audioEngine.playSttEndCue();
       const uri = recorder.uri;
@@ -174,6 +211,8 @@ export function useSttRecorder(
       onAudioReady(audioB64);
     } catch (err) {
       console.error("[STT] 녹음 종료/전송 실패:", err);
+      // stop() 실패 경로에서도 voiceChat 세션이 남지 않도록 복구한다.
+      void setVoiceProcessing(false);
       onError?.("start_failed", err instanceof Error ? err.message : String(err));
     } finally {
       recordStartTsRef.current = 0;

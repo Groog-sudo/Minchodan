@@ -24,7 +24,8 @@ export type MessageType =
   | "reflex_alert"
   | "guide"
   | "error"
-  | "server_detection";
+  | "server_detection"
+  | "nav_route";
 
 export interface BBox {
   x: number;
@@ -66,6 +67,10 @@ export interface WSMessage {
   transport?: "binary" | "none";
   duration_ms?: number;
   detections?: ServerDetectionResult[];
+  /** nav_route 메시지: 하단 지도 패널의 경로 폴리라인용 좌표 목록 (빈 배열 = 경로 해제) */
+  waypoints?: { lat: number; lon: number }[];
+  /** nav_route 메시지: TMap JS API appKey (서버 환경변수 재사용) */
+  app_key?: string;
 }
 
 export interface DetectionPayload {

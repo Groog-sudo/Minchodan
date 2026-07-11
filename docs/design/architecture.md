@@ -1,7 +1,7 @@
 ﻿# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.0 (2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
+> **버전**: v0.4.3 (2026-07-11 STT 녹음 구간 AEC 도입 - `AudioSessionBridge` 네이티브 브릿지로 iOS voiceChat 세션 전환, AEC 확인 시 녹음 시작 신호음 복원 + 이전 v0.4.2 이력 유지: WS 재연결 정책 변경 - 무한 지수 백오프 + 폴백 전환/복구 음성 고지, 오프라인 내성 항목 갱신 + 이전 v0.4.1 이력 유지: 2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -35,6 +35,7 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 - react-native-vision-camera (Frame Processor 기반 연속 캡처, 기본; iOS/Android `FrameCaptureProvider` 인터페이스로 물리 분리)
 - expo-audio (`createAudioPlayer`, 인지 음성 재생. Web Audio API 아님)
 - expo-location (GPS 실시간 전송, `realtime_gps` WS 메시지)
+- react-native-webview (하단 T맵 지도 패널 `NavMapPanel.tsx`, TMap JS API. 운영자/데모용, 2026-07-11 추가)
 - Haptics + announceForAccessibility (접근성)
 
 ### 운영 콘솔
@@ -145,6 +146,7 @@ graph TD
     NavManager <--> Tmap
     RedisStreams -->|"미해결 장애물 캐시"| NavManager
     NavManager --> RealtimeTTS
+    NavManager -->|"nav_route (경로 좌표,<br/>지도 패널용)"| Phone
     YOLO -->|"server_detection (전체 BBox)"| Phone
 
     classDef gate fill:#fde,stroke:#c33,stroke-width:2px;
@@ -189,7 +191,7 @@ graph TD
 | `server/orchestration/nodes/l3_validator.py`  | L3 길이·방향 키워드 검증, RETRY(최대 1회)                                  | 6    |
 | `server/orchestration/nodes/fallback_node.py` | 최종 실패 고정 문장                                                        | 6    |
 | `server/orchestration/llm_client_factory.py`  | `BaseChatModel` Ollama(gemma4-e4b) gpt-4o-mini 핫스왑                      | 6    |
-| `server/tts/realtime_tts.py`                  | 인지 경로 `TTSService.generate()` 호출, WAV 바이너리 WS 프레임 전송        | 7    |
+| `server/tts/realtime_tts.py`                  | 인지 경로 `TTSService.generate()` 호출, WAV 바이너리 WS 프레임 전송. (text, voice, speed) 키 FIFO 캐시(64건)로 고정 안내문 재합성 회피(2026-07-11, CPU 폴백 환경 합성 1.4~1.9초 실측 근거) | 7    |
 | `server/tts/reflex_clip_sender.py`            | 반사 경로 alert_id 사전합성 클립 WS 고우선 전송                            | 7    |
 | `server/tts/suppressor.py`                    | Redis `setex(suppress:…, 60)` 중복 억제                                    | 7    |
 | `server/tts/tts_service.py`                   | `TTSService` 추상화(Supertonic/Piper/Pyttsx3), WAV 규격 통일               | 7    |
@@ -210,14 +212,17 @@ graph TD
 | `client/src/services/frameCaptureProviderSelect.ios.ts` | 반사 캡처 기본 경로(iOS). `useFrameProcessor` + `client/ios/ReflexFrameProcessorPlugin.swift`(CVPixelBuffer→크롭/리사이즈/JPEG→base64) | 2    |
 | `client/src/services/frameCaptureProviderSelect.android.ts` | 반사 캡처 과도기 경로(Android). 네이티브 Frame Processor 플러그인이 아직 없어 `takePhoto()` 기반 단발 촬영으로 동작(`docs/mobile/ios_android_bifurcation_contract.md` §4.5 참조) | 2    |
 | `client/src/services/audioEngine.ts`          | `expo-audio` 상시 웜 플레이어로 반사/인지 음성 재생 및 선점 정지           | 7    |
+| `client/src/services/audioSessionBridge.ts`   | iOS AVAudioSession voiceChat(AEC) 전환 TS 래퍼. STT 녹음 구간에서 스피커 출력의 마이크 유입(음향 블리드)을 상쇄(2026-07-11 신규, Android는 no-op) | -    |
+| `client/ios/AudioSessionBridge.swift`         | AVAudioSession `.playAndRecord`+`.voiceChat` 전환 네이티브 브릿지(`.defaultToSpeaker` 유지, 이전 세션 저장/복구, 검증용 `getSessionInfo`) | -    |
 | `client/src/services/hapticEngine.ts`         | Haptics 패턴 실행 및 지속 진동 정리                                        | 7    |
 | `client/src/hooks/useLocation.ts`             | `expo-location` `watchPositionAsync` GPS 실시간 전송(`realtime_gps`)       | -    |
+| `client/src/components/NavMapPanel.tsx`       | 하단 T맵 지도 패널(WebView + TMap JS API). `nav_route` 좌표 폴리라인 + 현재 위치 마커(2초 스로틀), 토글 꺼짐 시 미마운트. 운영자/데모용(2026-07-11 신규) | -    |
 | `server/navigation/manager.py`                | `NavigationManager`, 디바이스별 세션 상태기계(IDLE/대기/안내중)            | -    |
 | `server/navigation/pedestrian_navigation.py`  | TMAP POI 검색·보행자 경로 API 연동                                        | -    |
 | `server/navigation/navigation_filter.py`      | 경로 이탈·재탐색 필터링                                                    | -    |
 | `server/stt/stt_service.py`                   | faster-whisper 기반 음성 전사 (`transcribe_file`)                          | -    |
 | `server/stt/stt_to_llm_bridge.py`             | STT 전사 결과 → 네비게이션/LLM 브리지. 자기-에코 감지(`_check_self_echo`), 인텐트 분기, 자유 질의응답 | -    |
-| `server/stt/stt_config.py`                    | STT 모델·VAD·hotwords 정책 (하드코딩 영역)                                  | -    |
+| `server/stt/stt_config.py`                    | STT 모델·VAD·hotwords 정책 (하드코딩 영역). 기본 모델 `faster-whisper-small`(2026-07-11 medium에서 전환, CPU 폴백 지연 실측 근거. 서버 기동 시 `main.py` lifespan에서 백그라운드 프리로드) | -    |
 | `server/services/detection_guidance_log_service.py` | 탐지·가이드 로그 MariaDB 영속화. STT는 전사문 대신 `text_length` 비식별 메타만 저장 | -    |
 | `console/src/`                                | 운영자 모니터링 (DetectionFeed, RiskEventLog, SessionStatus)               | -    |
 
@@ -344,8 +349,15 @@ graph TD
 | ---- | -------------------------------------------------------------------------------------- |
 | In   | `{type:"realtime_gps", lat, lon, heading}`                                            |
 | Out  | `{type:"server_detection", event_id, detections:[{model, className, confidence, bbox}], ts}` |
+| Out  | `{type:"nav_route", waypoints:[{lat, lon}], app_key, ts}` (경로 수립/해제/재접속 복원 시, 지도 패널용. 2026-07-11 신설) |
 
-상세 스키마는 [`api_specification.md`](api_specification.md) §6.4를 참조합니다.
+상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6을 참조합니다.
+
+> **2026-07-11 길안내 발화 경로 분리**: 턴바이턴 멘트 조회가 `DetectionConsumer` 내부에만
+> 있어 카메라 탐지가 없으면 NAVIGATING 상태여도 무음이던 결함을 수정했다. `realtime_gps`
+> 수신 시점에 `ws_router`가 `nav_manager.get_combined_guidance()`를 직접 평가하고
+> `_send_nav_guidance()`로 guide 메시지를 전송한다. 중복 발화는 nav_filter의
+> announced_cache/silence_interval이 탐지 경로와 공용으로 차단한다.
 
 ---
 
@@ -425,7 +437,7 @@ sequenceDiagram
 | `TTS_ENGINE`        | TTS 엔진 (`supertonic` 기본, `piper`/`pyttsx3` 핫스왑) | `supertonic` |
 | `HEARTBEAT_INTERVAL`| WS ping 주기(초)                          | `5`                      |
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
-| `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키              | (미설정)                 |
+| `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키. `nav_route` 메시지 `app_key`로 단말 지도 패널에도 전달(2026-07-11) | (미설정)                 |
 | `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
 | `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
@@ -571,7 +583,7 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | **클라이언트 역할** | thin client (카메라 캡처 + 음성/햡틱 재생) | 온디바이스 추론 엔진 추가 (반사 루프) |
 | **추론 위치** | 서버 GPU에서 **모든** 추론 수행 | **엣지(반사)** + **클라우드(인지)** 이중 추론 |
 | **반사 경로 처리** | 서버 `Reflex Gate` → 사전합성 클립 WS 전송 | 단말 NPU 즉시 추론 → 햅틱 (네트워크 RTT 0ms) |
-| **오프라인 내성** | **부분**: WS 단절(폴백 모드) 시 온디바이스 CoreML 추론으로 BBox 표시·반사 햅틱/비프는 유지, 서버 인지 가이드·길안내는 정지 | 최소 반사 기능(충돌 방지) 온디바이스 전환 |
+| **오프라인 내성** | **부분**: WS 단절(폴백 모드) 시 온디바이스 CoreML 추론으로 BBox 표시·반사 햅틱/비프는 유지, 서버 인지 가이드·길안내는 정지. **2026-07-11 보강**: 재연결은 지수 백오프(1s~30s)로 무한 반복하며, 연속 3회 실패 시 폴백 전환을 음성으로 고지("기본 경보 모드로 전환")하고 복구 시에도 음성 고지한다(`useWebSocket.ts`) | 최소 반사 기능(충돌 방지) 온디바이스 전환 |
 
 ### 14.2 도입 시기
 

@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.4 (2026-07-10 jy 브랜치 병합: Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영 + 이전 v0.3.3 이력 유지: §2 TTS 엔진 Piper→Supertonic 교체(Piper는 핫스왑 폴백으로 보존), 반사 캡처 방식 takePhoto()→Frame Processor 전환)
+> **버전**: v0.3.5 (2026-07-11 kb 브랜치 반영: §2 서버 스택에 STT(faster-whisper-small)·Navigation(TMAP) 등재, 클라이언트 스택에 react-native-webview 지도 패널·STT 녹음 구간 AEC(voiceChat 세션 전환) 반영 + 이전 v0.3.4 이력 유지: 2026-07-10 jy 브랜치 병합: Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영, §2 TTS 엔진 Piper→Supertonic 교체(Piper는 핫스왑 폴백으로 보존), 반사 캡처 방식 takePhoto()→Frame Processor 전환)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -40,6 +40,8 @@
 - Local LLM/Embedding: Ollama (gemma4:e4b, nomic-embed-text)
 - VLM Captioning (오프라인 RAG 빌드): Gemini API (gemini-2.5-flash-lite, 최초 계획 로컬 Llava에서 전환)
 - TTS: Supertonic 3 (로컬, ONNX, MIT 라이선스, 99M 파라미터; 기본 엔진, 2026-07-09 Piper에서 교체 - 발음 품질 한계 실측 확인). Piper(piper-kss-korean.onnx)는 핫스왑 폴백으로 코드 보존(`TTS_ENGINE=piper`). 최초 계획 Kokoro/Coqui는 미구현
+- STT (부가, 음성 명령): faster-whisper (기본 `faster-whisper-small`, 2026-07-11 medium에서 전환 - CPU 폴백 지연 실측 근거; hotwords 바이어싱, 서버 기동 시 프리로드). 단말 온디바이스 STT 미사용
+- Navigation (부가, GPS 길안내): TMAP 보행자 경로 API + NavigationManager (디바이스별 세션 상태기계, `realtime_gps` 수신 시점 길안내 평가)
 - Message Bus: Redis (Streams + 컨텍스트 TTL)
 - Image: OpenCV
 
@@ -48,7 +50,8 @@
 - Framework: React Native (iOS/Android)
 - Camera: react-native-vision-camera (Frame Processor 기반 연속 캡처, 기본; 2026-07-09 takePhoto()에서 전환 - AVCapturePhotoOutput의 오디오 세션 인터럽션 회피)
 - On-device Inference: CoreML(iOS) / TFLite(Android) - 반사 경로 온디바이스 탐지
-- Audio: expo-audio (createAudioPlayer; Web Audio API 아님), react-native-tts (예비)
+- Audio: expo-audio (createAudioPlayer; Web Audio API 아님), react-native-tts (예비). STT 녹음 구간은 AVAudioSession voiceChat(AEC) 전환 (`client/ios/AudioSessionBridge.swift`, 2026-07-11 - 음향 블리드 상쇄)
+- Map Panel (운영자/데모): react-native-webview + TMap JS API (`NavMapPanel.tsx`, 서버 `nav_route` 메시지 좌표 표시)
 - Accessibility: Haptics, announceForAccessibility
 
 ### 운영 콘솔

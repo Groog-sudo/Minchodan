@@ -1389,3 +1389,87 @@
 - **관련 파일**: `client/src/hooks/useSttRecorder.ts`, `client/src/components/CameraView.tsx`, `server/api/session_manager.py`, `server/api/stt_router.py`, `server/api/ws_router.py`, `server/detection/consumer.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_session_manager.py`, `tests/test_detection.py`, `tests/test_ws_router_stt.py`, `tests/test_stt_router_nonblocking.py`, `tests/test_stt_service_template.py`, `tests/test_stt_to_llm_bridge_template.py`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/ops/test_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `.gitignore`, `docs/changelogs/kb.md`
 - **검증 결과**: `pytest` 변경 영향 포함 전체 테스트 130건 통과·2건 건너뜀(`test_ws_echo.py`, 기존 비결정적 RAG E2E 제외), `tsc --noEmit`, 변경 Python 파일 `py_compile`, iOS 기기용 Debug 무서명 빌드, `git diff --check` 통과. 전체 테스트에서 변경 범위 밖 `tests/test_e2e_pipeline.py` 1건은 Mock 캡셔닝이 킥보드 문구 대신 일반 안내를 반환해 기존 실패가 재현되었습니다.
 - **비고**: `dev` 병합과 원격 push는 수행하지 않고 로컬 `kb` 수정 커밋만 생성합니다.
+
+---
+
+### 2026-07-11 | 6+7단계+클라이언트 | STT 응답 지연 개선, 길안내 무음 수정, 하단 T맵 지도 패널 추가
+
+- **커밋**: `feat(6+7단계): STT 응답 지연 개선, 길안내 무음 수정, T맵 지도 패널 추가 및 문서 정합화`
+- **변경 내용**:
+  - **STT 응답 지연 개선 3건 (실측 근거)**: macOS Docker CPU 폴백 환경에서 STT 왕복이 정상 3.8초, 컨테이너 재시작 후 첫 요청 10초+로 측정되었다. (a) Whisper 기본 모델을 `faster-whisper-medium`에서 `faster-whisper-small`로 전환(`stt_config.py`, hotwords 바이어싱 유지, 회귀 시 상수 1개 롤백). (b) `main.py` lifespan에서 Whisper 모델을 백그라운드 스레드로 프리로드해 콜드스타트 8~10초 제거. (c) `realtime_tts.py`에 (text, voice, speed) 키 FIFO 캐시(64건)를 추가해 고정 안내문 재합성 1.4~1.9초를 2회째부터 0초로 단축.
+  - **[결함] 길안내(turn-by-turn) 무음 수정**: 길안내 멘트 조회(`get_combined_guidance`)가 `DetectionConsumer._send_cognitive_guide` 안에만 있어 카메라 탐지가 없으면 NAVIGATING 상태여도 안내가 전혀 나가지 않았다(실기기 실측: 경로 113 웨이포인트 설정 후 무음). `ws_router.py`의 `realtime_gps` 수신 시점에 NAVIGATING이면 길안내를 직접 평가하고 `_send_nav_guidance()`로 TTS 합성·전송하도록 분리. 중복 발화는 기존 nav_filter의 announced_cache/silence_interval이 양쪽 경로 공용으로 차단. 경로 설정 성공 멘트에 첫 유의미 웨이포인트 지시("먼저, ...")를 덧붙여 시작 직후 방향 공백도 해소.
+  - **하단 T맵 지도 패널 신규 (운영자/데모용)**: "정적 지도 + 주기 갱신" 합의 사양으로 구현. `NavMapPanel.tsx` 신규(WebView + TMap JS API, 지도 인터랙션 전면 차단, 경로 폴리라인 + 현재 위치 마커). 마커 갱신은 2초 스로틀, 토글 꺼짐 시 WebView 미마운트로 부하 0. 서버는 경로 설정/해제 시 `nav_route` 메시지(좌표 목록 + TMap appKey)를 전송(`stt_to_llm_bridge.py` nav_waypoints, `ws_router.py`). `react-native-webview` 13.16.1 의존성 추가(pod install 완료).
+  - **문서 정합화**: `api_specification.md` v0.4.10(nav_route §6.6 신설, §6.5 길안내 직접 평가 비고, §6.3 기본 모델 small), `architecture.md` v0.4.1(기술 스택·구성도·디렉토리 매핑·§6.7 인터페이스·§10 환경 변수), `environment_variables.md` v0.4.12(`TMAP_APP_KEY` 용도 확장), `stage_stt_integration_guide.md` v0.2.2(지연 개선 3건), `docs/README.md`(내비게이션 요약)를 이번 변경 기준으로 갱신.
+- **관련 파일**: `server/stt/stt_config.py`, `server/main.py`, `server/tts/realtime_tts.py`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `client/src/components/NavMapPanel.tsx`, `client/src/components/CameraView.tsx`, `client/src/types/detection.ts`, `client/package.json`, `client/ios/Podfile.lock`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과, 변경 Python `py_compile` 통과, FastAPI 재시작 후 health 정상 및 "Whisper 모델 프리로드 완료: faster-whisper-small" 로그 확인, iOS Release 실기기 빌드/설치/실행 성공(WS 프레임 수신 확인). small 모델 인식 품질, GPS 기반 길안내 발화, 지도 패널 표시에 대한 실기기 사용자 검증은 후속 진행.
+- **비고**: TMap appKey는 클라이언트 하드코딩 대신 서버 환경변수(`TMAP_APP_KEY`)를 nav_route 메시지로 전달하는 방식이라 저장소에 키가 남지 않는다. 다만 앱 런타임에는 노출되므로 TMap 콘솔에서 키 사용 제한 설정 권장. `react-native-webview`는 클라이언트 신규 의존성(팀 공유 필요).
+
+---
+
+### 2026-07-11 | 문서 | Mitos 보완 로드맵 코드 대조 검증 및 정정본 docs/ 이동
+
+- **커밋**: `docs: Mitos 보완 로드맵 v0.3.0 정정본, docs/research/로 이동`
+- **변경 내용**:
+  - **코드 전수 대조 검증**: Mitos 로드맵의 주장 17건을 실제 코드·changelog·설계 문서와 대조했다. 결과: 13건 정확(신호등 미인식, crosswalk 부재, Seg 마스크 미활용, bbox 거리 휴리스틱, 카메라 프레임 기준 방향, 패닝 비프, AEC 미적용, ngrok/정적 토큰/재연결 3회, exit 0 재시작 미규명, 반사 4fps, 골든셋 부재, 웨이크워드, 무고지 폴백), 2건 이미 해소("정지하세요" 문구는 `072e990`에서 수정, 전사문 DB 저장은 dev 병합 개인정보 정책으로 제거), 1건 부분 해소(STT 왕복 지연 - `4ff207b` small 전환·프리로드·TTS 캐시), 뉘앙스 보정 2건(폴백 모드는 온디바이스 반사 기능 유지, "길댕아 길찾아줘" 1턴 결합은 처리 가능).
+  - **정정본 반영 (v0.3.0)**: 신호등 클래스가 `MID_RISK_CLASSES`에서 제외되어 안내에 미사용인 사실 보강, 각 표의 근거를 코드 파일 기준으로 구체화, STT 지연 항목을 부분 해소로 갱신, 우선순위 표에 부분 해소 행 추가(연결 끊김 고지가 실질적 최우선), 부록 §10 코드 대조 검증 기록 신설.
+  - **위치 이동**: `git mv`로 루트 `PROJECT_IMPROVEMENTS_MITOS.md`를 `docs/research/mitos_improvement_roadmap.md`로 이동(이력 보존, jy가 정리한 단일 정본 원칙 유지 - 중복본 미생성). `docs/README.md` 인덱스 2곳 갱신(v0.13.7).
+- **관련 파일**: `docs/research/mitos_improvement_roadmap.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 검증 근거는 문서 부록 §10에 주장별 코드 위치로 기록. 저장소 내 `PROJECT_IMPROVEMENTS_MITOS.md` 잔여 참조는 jy changelog 과거 이력 서술뿐으로 정정 불필요.
+- **비고**: 로드맵의 기존 최우선 과제(STT 정지 문구)는 완료 상태이므로, 실질적 다음 액션은 연결 끊김 음성 고지 + 무한 백오프 재연결이다.
+
+---
+
+### 2026-07-11 | 클라이언트 | 연결 끊김 음성 고지 + 무한 지수 백오프 재연결 (Mitos 우선순위 2)
+
+- **커밋**: `feat(client): WS 무한 지수 백오프 재연결 + 폴백 전환/복구 음성 고지`
+- **변경 내용**:
+  - **재연결 정책 변경**: 기존 `MAX_RECONNECT=3`회 1초 간격 재시도 후 콘솔 경고만 남기고 영구 포기하던 구조를, 지수 백오프(1s에서 2배씩, 상한 `RECONNECT_DELAY_MAX=30s`) 무한 재시도로 전환. `MAX_RECONNECT`는 "중단 횟수"에서 "폴백 모드 전환 + 음성 고지 문턱값"으로 의미 재정의(`config/index.ts` 주석 반영).
+  - **음성 고지 2종**: 연속 3회 실패 시 "서버 연결이 끊겨 기본 경보 모드로 전환합니다. 연결은 계속 시도합니다."(단절 1회당 1번, `fallbackAnnouncedRef` 가드), 재연결 성공(welcome) 시 "서버 연결이 복구되었습니다. 상세 안내를 다시 시작합니다.". 사용자가 화면을 볼 수 없으므로 음성이 유일한 상태 전달 수단이라는 로드맵 지적을 반영. 출력은 기존 `audioEngine.speakFallback`(expo-speech, 반사 비프/햅틱과 독립 채널)을 재사용.
+  - **폴백 상태 유지(sticky)**: 백그라운드 재시도가 상태를 `connecting`/`disconnected`로 덮으면 CameraView의 폴백 판정(`wsStatusRef.current === "fallback"`)이 시도할 때마다 꺼졌다 켜져 온디바이스 BBox/경보 표시가 깜빡이는 문제를 함수형 setState로 차단. 폴백은 실제 welcome 수신까지 유지.
+  - **재연결 카운터 리셋 시점 이동**: onopen(TCP 연결)에서 welcome(핸드셰이크 성공)으로 이동. 인증 실패 등 "연결 직후 끊김" 반복 시에도 백오프가 계속 자라고 폴백 고지가 동작하도록 보강(기존에는 onopen 리셋 때문에 1초 간격 무한 재시도 + 고지 없음).
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/config/index.ts`, `docs/design/architecture.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과. 실기기 시나리오 검증(서버 중단 후 폴백 고지 발화 - 30초 상한 백오프 지속 - 서버 재기동 후 복구 고지 발화)은 후속 진행(기존 실기기 검증 대기 3건에 추가).
+- **비고**: 문서 반영 - architecture.md v0.4.2(오프라인 내성 항목), mitos_improvement_roadmap.md v0.3.1(§4 해소, §7 완료, §10 부록 갱신). 서버 측 변경 없음(클라이언트 단독 패치).
+
+---
+
+### 2026-07-11 | 클라이언트+iOS 네이티브 | STT 녹음 구간 AEC 도입 (Mitos 우선순위 4)
+
+- **커밋**: `feat(client): STT 녹음 구간 AEC(voiceChat 세션) 도입 + 시작 신호음 조건부 복원`
+- **변경 내용**:
+  - **AudioSessionBridge 네이티브 모듈 신규**: STT 녹음 구간에서 AVAudioSession을 `.playAndRecord` + `.voiceChat` 모드로 전환해 iOS VoiceProcessingIO의 AEC(에코 캔슬레이션)를 활성화한다. 녹음 중 스피커 출력(반사 비프, 신호음)이 마이크에 되잡히는 음향 블리드(2026-07-11 파형 분석으로 확인된 STT 오염 원인)의 하드웨어 수준 대책. `.defaultToSpeaker` 필수 적용(voiceChat 기본 라우팅은 수화부라 미적용 시 경보 음량 급감), `.allowBluetooth`(HFP)로 골전도/오픈이어 헤드셋 마이크 허용. 전환 직전 세션 설정(expo-audio의 mixWithOthers 등)을 저장했다가 녹음 종료 시 복구. 파일은 기존 함정 회피를 위해 `client/ios/` 루트에 배치(CoreMLInferenceBridge 주석 참조), project.pbxproj 4개 섹션에 수동 등록.
+  - **녹음 시작 신호음 조건부 복원**: 음향 블리드 때문에 제거했던 시작 신호음(단일 상승 비프 120ms, `stt_start.wav` 신규 생성 - 종료 더블 비프와 구분)을 AEC 활성이 세션 조회(`getSessionInfo`)로 확인된 경우에 한해 복원. 두꺼운 옷/추운 날 햅틱만으로는 녹음 시작을 인지하기 어렵다는 로드맵 지적 반영. 회귀 시 `STT_START_CUE_WITH_AEC` 플래그만 false로 롤백(AEC 전환 자체는 유지). 기존 캡처 절단 가드(hold 대비 captured 길이 대조)가 회귀 감지망 역할.
+  - **검증 계측**: voiceChat 전환을 prepare 전에 수행(녹음 시작 후 세션 변경은 캡처 절단 위험)하고, record() 직후 세션 모드를 재조회해 expo-audio가 모드를 덮는지 로그로 확인(`[STT][AEC]` 태그). 덮인 경우 시작 신호음을 생략하고 경고 로그.
+  - **예외 복구**: 녹음 시작 실패/종료 실패 경로 모두에서 voiceChat 세션이 잔류하지 않도록 복구 호출. 종료 신호음은 세션 복구 후 재생(voiceChat 유지 시 재생 음질/음량 저하 회피).
+- **관련 파일**: `client/ios/AudioSessionBridge.swift`(신규), `client/ios/AudioSessionBridge.mm`(신규), `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/src/services/audioSessionBridge.ts`(신규), `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `client/assets/sounds/stt_start.wav`(신규), `docs/design/architecture.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과, `plutil -lint` pbxproj 무결성 통과, iOS 시뮬레이터 Debug 빌드 성공(BUILD SUCCEEDED), 산출물 `Minchodan.debug.dylib`에서 AudioSessionBridge 심볼 50개 및 `setVoiceProcessing:resolver:rejecter:` 시그니처 확인(컴파일·RN 모듈 등록 정합). 실기기 청취 검증은 후속: (1) 녹음 중 반사 비프가 전사에 안 섞이는지, (2) 시작 신호음 자기 녹음 여부, (3) voiceChat 전환 후 스피커 라우팅·음량 실용성, (4) 캡처 절단 가드 미발동 확인.
+- **비고**: AEC 실효성은 시뮬레이터에서 검증 불가(실제 스피커-마이크 음향 결합 필요). Android는 `audioSessionBridge.ts`가 no-op이라 동작 변화 없음(후속: AcousticEchoCanceler). Info.plist 권한 변경 없음(기존 마이크 권한 그대로).
+
+---
+
+### 2026-07-11 | 문서 | 세션 구현분 문서 전수 정합화 및 스킬 트리 동기화
+
+- **커밋**: `docs: 세션 구현분(STT small·지도 패널·재연결·AEC) 문서 전수 정합화 + 스킬 트리 동기화`
+- **변경 내용**:
+  - **CLAUDE.md v0.3.5 / AGENTS.md v0.3.2**: §2 기술 스택에 STT(faster-whisper-small)·Navigation(TMAP)·react-native-webview 지도 패널·STT 녹음 구간 AEC(AudioSessionBridge) 등재. AGENTS.md의 구식 표기 2건 정정(LangChain 병기 → 래퍼 미사용, Web Audio API 개념 규격 → 미사용 명시, 온디바이스 추론 누락 보완).
+  - **api_specification.md v0.4.11**: §6.4 폴백 모드 비고를 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, welcome 수신 시 해제) 기준으로 갱신.
+  - **ios_android_bifurcation_contract.md v1.1.1**: §3 소유권 매트릭스에 `AudioSessionBridge.swift/.mm`(iOS 전용), `audioSessionBridge.ts`(공유 계약, Android no-op - 인터페이스 유지 필수) 등재.
+  - **stage_stt_integration_guide.md v0.2.4**: §6 테스트 체크리스트에 AEC 실기기 검증 항목 TC-STT-010(voiceChat 세션 유지 로그), TC-STT-011(시작 신호음 비오염) 추가.
+  - **websocket-gateway 스킬 정정 + 스킬 트리 전수 동기화**: SKILL.md의 useWebSocket 예시에 재연결 정책 정정 노트 추가, 검증 매트릭스의 "3회 이내 성공"을 무한 백오프+음성 고지 기준으로 갱신. 점검 중 `.claude/skills/`가 `.agents/skills/` 대비 5개 파일 뒤처져 있음을 발견(websocket-gateway v0.2.1 잔존, 4개 스킬의 docs 재편성 이전 경로 잔존) - `.agents/` 최신본으로 전수 동기화 완료(두 트리 diff 0건).
+- **관련 파일**: `CLAUDE.md`, `AGENTS.md`, `docs/design/api_specification.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `.claude/skills/websocket-gateway/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/rag-realtime-search/SKILL.md`, `.claude/skills/xcode-build-management/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `diff -rq .agents/skills .claude/skills` 무차이 확인. 코드 변경 없음(문서 전용 커밋).
+- **비고**: Directory_Structure.md는 "계획된 물리적 폴더 구조" 문서(설계 초안 보존 목적)로 판단해 이번 정합화 범위에서 제외.
+
+---
+
+### 2026-07-11 | 병합 | 최신 dev(d490a65) 병합 및 문서 정합성 정리
+
+- **커밋**: `merge: 최신 dev를 kb에 통합` + `docs: dev 병합 후 README 중복 섹션 정리 및 계획 문서 교차 참조`
+- **변경 내용**:
+  - **dev 병합**: dev 신규 커밋 1건(d490a65, TH의 "dev 통합 개선 실행 계획서 추가") 병합. `git merge-tree` 사전 시뮬레이션으로 텍스트 충돌 0건 확인 후 클린 머지(kb 코드 변경과 겹침 없음, 문서 전용).
+  - **README 중복 섹션 정리 (v0.13.8)**: dev가 말미에 추가한 `## 9. ops/reports/ - 감사·개선 보고서` 섹션은 기존 §7(ops/reports)과 주제 중복 + 실제 파일 위치(`docs/ops/`)와 섹션명 불일치 + 비번호 섹션들 뒤에 위치하는 3중 문제가 있어 제거하고, 계획서 인덱스 행을 상단 문서 목록과 §5(ops) 표로 이관.
+  - **계획서 정합 노트 (v1.0.1)**: `dev_8b2f606_improvement_plan.md`에 kb 반영 현황 노트 추가(원본 본문 무변경) - §5 설계 원본 갱신은 kb에서 상당 부분 완료, §2 인증/반사 억제·§5 환경변수는 Mitos 로드맵과 스코프 중복(교차 확인 안내), §4 품질 수치는 병합 후 재측정 필요.
+  - **Mitos 로드맵 교차 참조 (v0.3.3)**: §7 우선순위에 dev 계획서 교차 참조 블록 추가(중복 스코프 3건 명시).
+- **관련 파일**: `docs/README.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 병합 전 `git merge-tree --write-tree` 충돌 0건 확인, 병합 후 정리 문서 상대 링크 경로 존재 확인. 코드 변경 없음.
+- **비고**: 두 계획 문서(dev 계획서 + Mitos 로드맵)는 관점이 달라(전자: dev 통합 감사 기반 P0/P1, 후자: 실기기 검증 기반 사용자 안전) 병존시키고 교차 참조로 연결.
