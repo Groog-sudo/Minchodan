@@ -1430,3 +1430,17 @@
 - **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/config/index.ts`, `docs/design/architecture.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `tsc --noEmit` 통과. 실기기 시나리오 검증(서버 중단 후 폴백 고지 발화 - 30초 상한 백오프 지속 - 서버 재기동 후 복구 고지 발화)은 후속 진행(기존 실기기 검증 대기 3건에 추가).
 - **비고**: 문서 반영 - architecture.md v0.4.2(오프라인 내성 항목), mitos_improvement_roadmap.md v0.3.1(§4 해소, §7 완료, §10 부록 갱신). 서버 측 변경 없음(클라이언트 단독 패치).
+
+---
+
+### 2026-07-11 | 클라이언트+iOS 네이티브 | STT 녹음 구간 AEC 도입 (Mitos 우선순위 4)
+
+- **커밋**: `feat(client): STT 녹음 구간 AEC(voiceChat 세션) 도입 + 시작 신호음 조건부 복원`
+- **변경 내용**:
+  - **AudioSessionBridge 네이티브 모듈 신규**: STT 녹음 구간에서 AVAudioSession을 `.playAndRecord` + `.voiceChat` 모드로 전환해 iOS VoiceProcessingIO의 AEC(에코 캔슬레이션)를 활성화한다. 녹음 중 스피커 출력(반사 비프, 신호음)이 마이크에 되잡히는 음향 블리드(2026-07-11 파형 분석으로 확인된 STT 오염 원인)의 하드웨어 수준 대책. `.defaultToSpeaker` 필수 적용(voiceChat 기본 라우팅은 수화부라 미적용 시 경보 음량 급감), `.allowBluetooth`(HFP)로 골전도/오픈이어 헤드셋 마이크 허용. 전환 직전 세션 설정(expo-audio의 mixWithOthers 등)을 저장했다가 녹음 종료 시 복구. 파일은 기존 함정 회피를 위해 `client/ios/` 루트에 배치(CoreMLInferenceBridge 주석 참조), project.pbxproj 4개 섹션에 수동 등록.
+  - **녹음 시작 신호음 조건부 복원**: 음향 블리드 때문에 제거했던 시작 신호음(단일 상승 비프 120ms, `stt_start.wav` 신규 생성 - 종료 더블 비프와 구분)을 AEC 활성이 세션 조회(`getSessionInfo`)로 확인된 경우에 한해 복원. 두꺼운 옷/추운 날 햅틱만으로는 녹음 시작을 인지하기 어렵다는 로드맵 지적 반영. 회귀 시 `STT_START_CUE_WITH_AEC` 플래그만 false로 롤백(AEC 전환 자체는 유지). 기존 캡처 절단 가드(hold 대비 captured 길이 대조)가 회귀 감지망 역할.
+  - **검증 계측**: voiceChat 전환을 prepare 전에 수행(녹음 시작 후 세션 변경은 캡처 절단 위험)하고, record() 직후 세션 모드를 재조회해 expo-audio가 모드를 덮는지 로그로 확인(`[STT][AEC]` 태그). 덮인 경우 시작 신호음을 생략하고 경고 로그.
+  - **예외 복구**: 녹음 시작 실패/종료 실패 경로 모두에서 voiceChat 세션이 잔류하지 않도록 복구 호출. 종료 신호음은 세션 복구 후 재생(voiceChat 유지 시 재생 음질/음량 저하 회피).
+- **관련 파일**: `client/ios/AudioSessionBridge.swift`(신규), `client/ios/AudioSessionBridge.mm`(신규), `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/src/services/audioSessionBridge.ts`(신규), `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `client/assets/sounds/stt_start.wav`(신규), `docs/design/architecture.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과, `plutil -lint` pbxproj 무결성 통과, iOS 시뮬레이터 Debug 빌드 성공(BUILD SUCCEEDED), 산출물 `Minchodan.debug.dylib`에서 AudioSessionBridge 심볼 50개 및 `setVoiceProcessing:resolver:rejecter:` 시그니처 확인(컴파일·RN 모듈 등록 정합). 실기기 청취 검증은 후속: (1) 녹음 중 반사 비프가 전사에 안 섞이는지, (2) 시작 신호음 자기 녹음 여부, (3) voiceChat 전환 후 스피커 라우팅·음량 실용성, (4) 캡처 절단 가드 미발동 확인.
+- **비고**: AEC 실효성은 시뮬레이터에서 검증 불가(실제 스피커-마이크 음향 결합 필요). Android는 `audioSessionBridge.ts`가 no-op이라 동작 변화 없음(후속: AcousticEchoCanceler). Info.plist 권한 변경 없음(기존 마이크 권한 그대로).

@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		032BC27755E52F228790816E /* ReflexFrameProcessorPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = C9E22D51B3661C9BF2C1D436 /* ReflexFrameProcessorPlugin.m */; };
+		AEC5B10D20260711000000B1 /* AudioSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */; };
+		AEC5B10D20260711000000B2 /* AudioSessionBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		569D46ACA729BE0C9D7D9C3B /* libPods-Minchodan.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6F5C63C68FCCE506EF7045C0 /* libPods-Minchodan.a */; };
@@ -29,6 +31,8 @@
 		579841D21C3D1F17A9EF2E27 /* Pods-Minchodan.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Minchodan.release.xcconfig"; path = "Target Support Files/Pods-Minchodan/Pods-Minchodan.release.xcconfig"; sourceTree = "<group>"; };
 		6F5C63C68FCCE506EF7045C0 /* libPods-Minchodan.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Minchodan.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		75E04FC32FF8F4760067928C /* CoreMLInferenceBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CoreMLInferenceBridge.mm; sourceTree = "<group>"; };
+		AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionBridge.swift; sourceTree = "<group>"; };
+		AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioSessionBridge.mm; sourceTree = "<group>"; };
 		75E04FC52FF8F48E0067928C /* CoreMLInferenceBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLInferenceBridge.swift; sourceTree = "<group>"; };
 		75F330BA2FF93C42002CBEB3 /* segmentation.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = segmentation.mlpackage; sourceTree = "<group>"; };
 		8E0686B7E8E7316C6EA4626F /* ReflexFrameProcessorPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReflexFrameProcessorPlugin.swift; sourceTree = "<group>"; };
@@ -64,6 +68,8 @@
 				75E04FC32FF8F4760067928C /* CoreMLInferenceBridge.mm */,
 				8E0686B7E8E7316C6EA4626F /* ReflexFrameProcessorPlugin.swift */,
 				C9E22D51B3661C9BF2C1D436 /* ReflexFrameProcessorPlugin.m */,
+				AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */,
+				AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */,
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
 				F11748442D0722820044C1D9 /* Minchodan-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
@@ -369,6 +375,8 @@
 				75E04FC42FF8F4760067928C /* CoreMLInferenceBridge.mm in Sources */,
 				65C62B6C62A0C9ED18E8BF80 /* ReflexFrameProcessorPlugin.swift in Sources */,
 				032BC27755E52F228790816E /* ReflexFrameProcessorPlugin.m in Sources */,
+				AEC5B10D20260711000000B1 /* AudioSessionBridge.swift in Sources */,
+				AEC5B10D20260711000000B2 /* AudioSessionBridge.mm in Sources */,
 				94886D699F70B815631A72EC /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

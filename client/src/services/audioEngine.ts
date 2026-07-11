@@ -89,6 +89,12 @@ class AudioEngine {
   // 완료 이후에만 재생되므로 이 문제가 없다.
   private readonly STT_END_CUE_SRC: number = require("../../assets/sounds/stt_end.wav");
   private sttEndCueUri: string | null = null;
+  // STT 녹음 시작 신호음(단일 상승 비프, 종료 더블 비프와 구분). 2026-07-11 음향
+  // 블리드 때문에 제거했던 시작 신호음을 AEC(voiceChat 세션) 활성이 확인된 경우에
+  // 한해 복원한다 - AEC가 스피커 출력을 마이크 입력에서 상쇄하므로 녹음 오염이
+  // 없다는 가설의 검증 대상(useSttRecorder가 세션 모드 확인 후에만 호출).
+  private readonly STT_START_CUE_SRC: number = require("../../assets/sounds/stt_start.wav");
+  private sttStartCueUri: string | null = null;
   // guideWarmPlayer와 동일한 이유(재생 "시작" 이벤트를 만들지 않기 위해)로 무음
   // placeholder를 상시 재생해두고 소스만 교체하는 상시 플레이어를 사용한다.
   private sttCueWarmPlayer: AudioPlayer | null = null;
@@ -614,6 +620,44 @@ class AudioEngine {
     } catch (err) {
       console.error("[AudioEngine] STT 신호음 상시 재생 플레이어 생성 실패:", err);
       return null;
+    }
+  }
+
+  /** STT 시작 신호음 로컬 번들 자산 URI를 1회만 리졸브하고 캐시한다. */
+  private async resolveSttStartCueUri(): Promise<string | null> {
+    if (this.sttStartCueUri) return this.sttStartCueUri;
+
+    const asset = Asset.fromModule(this.STT_START_CUE_SRC);
+    if (!asset.localUri) {
+      await asset.downloadAsync();
+    }
+    const uri = asset.localUri || asset.uri;
+    if (!uri) return null;
+    this.sttStartCueUri = uri;
+    return uri;
+  }
+
+  /**
+   * STT 녹음 시작 신호음(단일 상승 비프). 반드시 AEC(voiceChat 세션) 활성이 확인된
+   * 뒤에만 호출할 것 - AEC 없이 녹음 중 재생하면 신호음이 마이크에 그대로 녹음되어
+   * "입력 없음" 회귀가 재발한다(2026-07-11 파형 분석으로 확인된 음향 블리드).
+   */
+  public async playSttStartCue(): Promise<void> {
+    const uri = await this.resolveSttStartCueUri();
+    if (!uri) {
+      console.warn("[AudioEngine] STT 시작 신호음 에셋 없음");
+      return;
+    }
+    try {
+      await this.ensureSession();
+      const player = await this.ensureSttCueWarmPlayer();
+      if (!player) return;
+      player.loop = false;
+      player.replace({ uri });
+      player.volume = 1.0;
+      player.play();
+    } catch (err) {
+      console.error("[AudioEngine] STT 시작 신호음 재생 실패:", err);
     }
   }
 

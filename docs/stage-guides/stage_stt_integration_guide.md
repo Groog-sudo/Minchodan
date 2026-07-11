@@ -1,7 +1,7 @@
 # Minchodan STT 음성명령 연동 가이드
 
 > **작성일**: 2026-07-10
-> **버전**: v0.2.2 (2026-07-11 STT 응답 지연 개선 3건 반영 - 기본 모델 `faster-whisper-small` 전환, 서버 기동 시 모델 프리로드, TTS 합성 결과 캐시 + 이전 v0.2.1 이력 유지: 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
+> **버전**: v0.2.3 (2026-07-11 STT 녹음 구간 AEC 도입 - iOS voiceChat 세션 전환(`AudioSessionBridge`), AEC 확인 시 시작 신호음 복원 + 이전 v0.2.2 이력 유지: STT 응답 지연 개선 3건 반영 - 기본 모델 `faster-whisper-small` 전환, 서버 기동 시 모델 프리로드, TTS 합성 결과 캐시 + 이전 v0.2.1 이력 유지: 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
 > **범위**: 7단계 골격 외 입력 경로(STT) 운영 가이드
 > **관련 코드**: `server/api/ws_router.py`, `server/stt/stt_service.py`, `server/stt/stt_to_llm_bridge.py`
 
@@ -100,6 +100,7 @@ flowchart TD
 | **민감정보**    | 업로드 음성은 요청 단위 임시 파일만 사용하고 즉시 삭제합니다. 원본 WAV와 전사문은 파일·INFO 로그·DB에 저장하지 않으며, DB에는 입력 길이 등 비식별 메타만 저장합니다. |
 | **플랫폼별 캡처 검증** | iOS Linear PCM만 바이트 길이로 캡처 시간을 검증합니다. Android MPEG-4/AAC는 압축 오디오이므로 PCM 길이 공식을 적용하지 않고 서버 디코더와 VAD에 맡깁니다. |
 | **자기-에코 감지** | TTS 안내문이 마이크로 재녹음된 경우 전사 결과와 최근 안내문(`_recent_guidance`, TTL 10초)을 비교해 에코로 판정, 응답 스킵(`source=stt-echo-detected`). 클라이언트는 TTS 재생 중 녹음 시 `stopGuideAudio()` 후 150ms 대기 (서버+클라이언트 이중 방어) |
+| **AEC(에코 캔슬레이션)** | 2026-07-11 도입: STT 녹음 구간에서 iOS 세션을 `voiceChat` 모드로 전환(`client/ios/AudioSessionBridge.swift`, `client/src/services/audioSessionBridge.ts`)해 스피커 출력(반사 비프 등)의 마이크 유입을 하드웨어 수준에서 상쇄. `.defaultToSpeaker`로 스피커 라우팅 유지, 녹음 종료 시 이전 세션으로 복구. AEC 활성이 세션 조회로 확인된 경우에만 녹음 시작 신호음 재생(`STT_START_CUE_WITH_AEC` 플래그, 회귀 시 플래그만 롤백). Android는 no-op(후속: AcousticEchoCanceler) |
 | **인텐트 우선순위** | `awaiting_intent` 대기 상태에서 `nav intent -> question intent -> wake 재호출 -> else(재질문)` 순서로 분기. wake 재호출이 인텐트 매칭보다 우선하면 "길댕아 길찾아줘"가 wake로만 처리되는 문제 방지 |
 
 ---
