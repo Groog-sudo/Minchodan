@@ -2,8 +2,6 @@
 
 > 이 파일은 **dg(대근)**의 작업 내역을 시간순으로 누적 기록합니다.
 > 새 항목은 파일 하단에 추가됩니다.
-<<<<<<< HEAD
-=======
 
 ---
 
@@ -290,4 +288,23 @@
   - **무선 Wi-Fi E2E 실기기 추론 검증**: USB 데이터 케이블 연결을 완전히 분리한 무선 상태에서 단말이 동일 Wi-Fi망을 경유해 PC 호스트 서버(`ws://192.168.0.136:8000/ws/detect`)와 세션을 연결한 뒤, 실시간 전송된 `reflex` 및 `cognitive` 프레임을 서버 YOLO 26N 및 노면 분할 AI가 **디코딩 1ms 내외, 추론 150~190ms** 수준의 초저지연 속도로 무정체 처리하는 동작의 최종 성공을 완료함.
 - **관련 파일**: `client/src/services/frameCaptureSelect.android.ts`, `docs/ops/android_device_integration_guide.md`
 - **검증 결과**: adb logcat 실시간 런타임 로그를 모니터링하여 `Context.renderAsync` 예외 발생 0건 및 FastAPI 서버 컨테이너의 양방향 프레임 수신 및 YOLO 인지 결과(`risk=none`) 로깅 성공을 전수 검증함.
->>>>>>> 8ee1cb3d1c691c4ccf2d27aa8cb4ba4cca754ff2
+
+---
+
+### 2026-07-12 | 모바일/인프라 | EAS 개발 빌드 클라우드 조립 최종 성공 및 실기기 완전 무선 하이브리드 연동 완료
+
+- **커밋**: `fix: resolve VisionCamera v4 kotlin compilation errors and fix metro loopback binding via custom uri scheme`
+- **변경 내용**:
+  - **코틀린 네이티브 소스 수술 (v4 규격 부합화)**: 
+    - [MainApplication.kt](file:///client/android/app/src/main/java/com/minchodan/app/MainApplication.kt) 내에서 최신 SDK v4에서 폐기(Deprecated)된 네이티브 플러그인 등록 메서드인 `registerFrameProcessorPlugin` 호출 인터페이스를 공식 신규 규격인 `addFrameProcessorPlugin` 체계로 전면 개정하여 바인딩 정합성을 맞춤[cite: 4, 12].
+    - [ReflexFrameProcessorPlugin.kt](file:///client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt) 내에서 기존에 카메라 화면 회전 처리를 위해 일반 `String` 상수로 단순 대입 처리하던 불안정한 코드를, 컴파일러가 요구하는 정식 `Orientation Enum` 매핑 구조로 원시 타입을 격상하여 그레이들 컴파일 에러를 해결함[cite: 4, 12].
+  - **Localhost 루프백 바인딩 탈출 및 네트워크 정상화**:
+    - 앱 기동 시 고유 주소 이름표(URI Scheme) 부재로 인해 무선 인터넷 터널망(ngrok)의 외부 통신용 주소가 아닌 PC 내부용 루프백 주소(`localhost / 127.0.0.1:8081`)를 강제로 주입받아 연결이 거부되던 버그를 진단함[cite: 12].
+    - 기존 서버 세션을 종료하고 Expo 엔진에게 고유 식별 명칭을 주입하는 `npx expo start --tunnel --scheme minchodan` 명령 체계로 전환하여 진짜 외부 인터넷 연동 주소가 내장된 정상 무선 터널 QR 코드를 새로 발행하고 동기화함[cite: 12].
+  - **실기기 E2E 무선 텔레메트리 확립 (최종 성과)**:
+    - 독립 개발 빌드 앱(`.apk`)을 스마트폰 실기기에 안착시킨 후, 도커 가상 백엔드 서버(FastAPI) 컨테이너 그룹과 원격 터널 브릿지를 경유한 양방향 소켓 교신에 최종 성공함 (`WS: connected`)[cite: 12].
+    - 커스텀 네이티브 프레임 프로세서 플러그인이 에러 없이 작동하여 `ON (반사 4fps 동적)` 스트리밍 가속을 수행하며, 보행 환경 분석 인공지능 모델이 단 **1.47ms** 만에 서버 추론 결과를 무정체 실시간 피드백하고 있음을 대시보드를 통해 최종 검증함[cite: 12].
+  - **학원 PC 개발 환경 동기화 인프라 구축**:
+    - 학원 PC 내 기존 레거시 USB 디버깅 잔재로 인한 파일 시스템 권한 오류(`EPERM`) 및 컴파일 캐시 충돌 리스크를 선제 방어하기 위해, 구형 빌드 캐시(`.gradle`, `build`) 및 구형 모듈(`node_modules`)을 물리적으로 완전히 갈아엎고 시작하도록 강제 명령하는 '학원 AI 에이전트용 통합 제어 프롬프트 지침서' 수립 완료[cite: 12].
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/MainApplication.kt`, `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt`, `client/app.json`, `docs/ops/minchodan_final_wireless_integration_guide.pdf`, `docs/ops/minchodan_academy_sync_agent_guide.pdf`
+- **검증 결과**: EAS 개발 클라이언트 빌드 정상 finished 상태 확인 완료 및 스마트폰 실기기 무선 터널 연동 대시보드 내 백엔드 데이터 송수신 실시간 텔레메트리 연동 성공 검증 완료[cite: 12].
