@@ -8,6 +8,7 @@ import android.graphics.Rect
 import android.graphics.YuvImage
 import android.media.Image
 import android.util.Base64
+import com.mrousavy.camera.core.types.Orientation
 import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
 import com.mrousavy.camera.frameprocessors.VisionCameraProxy
@@ -26,10 +27,10 @@ class ReflexFrameProcessorPlugin(proxy: VisionCameraProxy, options: Map<String, 
             val matrix = Matrix()
             // frame.orientation (portrait, landscape 등)에 맞춰 각도 매핑
             val rotationDegrees = when (frame.orientation) {
-                "portrait" -> 90f
-                "portrait-upside-down" -> 270f
-                "landscape-left" -> 180f
-                "landscape-right" -> 0f
+                Orientation.PORTRAIT -> 90f
+                Orientation.PORTRAIT_UPSIDE_DOWN -> 270f
+                Orientation.LANDSCAPE_LEFT -> 180f
+                Orientation.LANDSCAPE_RIGHT -> 0f
                 else -> 0f
             }
             if (rotationDegrees != 0f) {

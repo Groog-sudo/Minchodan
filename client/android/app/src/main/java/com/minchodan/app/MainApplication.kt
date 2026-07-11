@@ -39,7 +39,7 @@ class MainApplication : Application(), ReactApplication {
     }
     loadReactNative(this)
     // Register VisionCamera Frame Processor Plugin
-    FrameProcessorPluginRegistry.registerFrameProcessorPlugin("reflexFrameCapture") { proxy, options ->
+    FrameProcessorPluginRegistry.addFrameProcessorPlugin("reflexFrameCapture") { proxy, options ->
       ReflexFrameProcessorPlugin(proxy, options)
     }
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
