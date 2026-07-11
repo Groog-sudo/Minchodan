@@ -1290,3 +1290,217 @@
 - **관련 파일**: `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/README.md`, `README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 각 정정 사항은 문서 수정 전 실제 코드(`grep`/`find`)로 근거를 먼저 확인한 뒤 반영했다 - `server/tts/tts_service.py`의 `get_tts_service()` 기본값, `.env.example`의 `CHROMA_COLLECTION`, `server/detection/config.py`의 `DETECTOR_TYPE` 실사용 여부, `client/src/services/` 실제 파일 목록, `server/navigation/`의 `TMAP_APP_KEY` 실사용 위치를 각각 대조. 수정한 mermaid 다이어그램은 신규 노드/엣지 전부 큰따옴표 라벨 규칙을 지켜 작성(구문 오류 없음, 프로젝트 Mermaid 표준 준수).
 - **비고**: 이번 검토는 5개 핵심 설계 문서로 범위를 한정했다 - `docs/stage-guides/`, `docs/mobile/`, `docs/ops/deployment_guide.md` 등 나머지 문서군은 이번 범위 밖이며, 유사한 "부분 정정 후 다른 섹션 누락" 패턴이 남아있을 가능성이 있다. `docs/design/api_specification.md` 변경 이력 표에는 여전히 v0.4.3 행이 비어있다(어떤 변경이었는지 문서상 근거를 찾지 못해 추측 기입을 피했다).
+
+---
+
+### 2026-07-10 | 6+7단계 | 실기기 STT/네비게이션 종단 테스트로 결함 다수 발견·수정 + DB 로그 영속화 배선 + CPU 과부하 완화
+
+- **커밋**: (대기 중)
+- **변경 내용**: 자리를 옮겨 Docker/ngrok/Metro를 새로 띄우고 실기기 종단 테스트를 진행하며 로그 추적과 빌드를 전담했다. "가장 시급한 것은 iOS 앱→서버→DB 로그 저장"이라는 요청에서 시작해, 실제로 화면을 누르고 말하며 반복 재현·수정·재검증하는 과정에서 정적 분석으로는 드러나지 않는 실결함을 다수 발견했다. 아래 순서는 실제 발견 순서를 따른다.
+  1. **[결함] DetectionGuidanceLog DB 영속화 미배선**: `server/db/models.py`/`repositories.py`/`services/detection_guidance_log_service.py`는 이미 완성돼 있었으나 실제 탐지 파이프라인(`DetectionConsumer`) 어디서도 호출되지 않아 로그가 전혀 DB에 쌓이지 않는 상태였다. `detection_guidance_log_service.py`에 요청 컨텍스트 밖(WS 백그라운드)에서도 쓸 수 있는 `persist_detection_guidance_log()`를 신설하고, `server/detection/consumer.py`의 `_send_reflex_alert`/`_send_cognitive_guide`와 `server/api/ws_router.py`의 `_handle_stt_audio` 3곳에 fire-and-forget 태스크로 연결(반사 경로 지연에 영향 없도록 `asyncio.create_task`, 실패는 로깅만 하고 파이프라인은 계속 진행).
+  2. **팀 공유 DB(Tailscale RPi)로 기본 타깃 전환**: 로컬 `docker-compose.macos.yml`의 `mariadb` 컨테이너로 로그가 쌓이고 있었으나, 사용자가 실제 팀 DB는 `minchodan-rpi-db.tail77994d.ts.net`(100.105.221.31)라고 확인해줬다. `docker-compose.macos.yml`의 `fastapi` 서비스 `DB_HOST`/`DB_PASSWORD` 기본값을 로컬 컨테이너에서 Tailscale 실주소로 전환(`COMPOSE_DB_HOST` 등으로 오프라인 개발 시 로컬 컨테이너로 되돌릴 수 있는 여지는 유지). 전환 전후 실제 INSERT/DELETE로 연결·쓰기 검증.
+  3. **[성능] 반사 큐 드랍 + CPU 800~1300% 과부하 완화**: 실기기 테스트 중 `[StreamSplitter] 큐 가득참` 경고가 반사 스트림에서 지속 발생하고 Redis `xadd` 타임아웃까지 겹치는 것을 실측. 원인 2가지를 함께 수정: (a) `YoloDetector`/`YoloSegmentor`가 배치=1 CPU 추론마다 호스트 전체 코어(14코어)를 스레드로 점유해 반사·인지 스트림이 겹칠 때 과잉 경쟁을 유발 → `docker-compose.macos.yml`에 `OMP_NUM_THREADS`/`MKL_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`NUMEXPR_NUM_THREADS=4` 추가. (b) `DetectionPipeline.run()`이 `detector.predict()`/`segmentor.predict()`를 동기 블로킹으로 직접 호출해 추론 중(150~300ms) WS 수신 루프·하트비트·Redis 통신 전체가 멈춤 → `asyncio.to_thread`로 워커 스레드에 위임. 적용 후 CPU 1300%→400%대, 큐 드랍 재발 없음을 30초 단위 반복 측정으로 확인.
+  4. **[결함] STT 응답 오디오가 클라이언트에서 항상 무시됨**: "STT 목적지 설정 성공 문구는 나오는데 서버 TTS 음성이 안 들린다"는 것을 조사한 결과, 2026-07-09에 인지 경로(`_send_cognitive_guide`)가 오디오 전송을 `audio_mp3_b64`(JSON base64)에서 `transport:"binary"`+바이너리 프레임으로 이미 전환했고 클라이언트(`useWebSocket.ts`)도 `transport!=="binary"`면 무조건 단말 TTS로 즉시 폴백하도록 바뀌었는데, `_handle_stt_audio`(`ws_router.py`)만 이 마이그레이션에서 빠져 여전히 `audio_mp3_b64` 필드로 보내고 있었다. 인지 경로와 동일한 방식(`transport` 필드 + `ws.send_bytes()`)으로 통일.
+  5. **[결함] STT 녹음 자체가 항상 실패**: 화면을 눌러도 `RecordingDisabledException`으로 녹음이 시작조차 못 하는 것을 발견. `client/App.tsx`의 최상단 `setAudioModeAsync({allowsRecording: false, ...})`가 앱 마운트 시점에 `audioEngine.ensureSession()`의 `allowsRecording:true` 설정보다 먼저 실행되어 세션을 덮어쓰고 있었다(그 파일 자체에 이미 원인이 주석으로 남아있었으나 반영이 안 된 상태). `App.tsx`도 `true`로 통일.
+  6. **[결함] STT 요청 병렬 처리로 인한 상태 경쟁**: 사용자가 응답을 기다리지 않고 연달아 누르면 이전 `_handle_stt_audio` 백그라운드 태스크가 처리 중(수 초~10초+)인데 새 요청이 동시에 시작돼 `NavigationManager`의 공유 대화 상태(`status`/`awaiting_free_question`/`awaiting_intent`)를 서로 경쟁적으로 읽고 써 응답이 직전 발화와 안 맞는 현상("1:1로 대응이 안 된다")을 재현·확인. `ws_router.py`에 device_id별 `asyncio.Lock`(`_get_stt_lock`)을 도입해 STT 처리를 디바이스별로 완전히 직렬화.
+  7. **[결함] 목적지는 설정되는데 실제 길안내 음성이 영구히 안 나옴**: `SttToLlmBridge.invoke_existing_llm()`이 `device_id = "default_device"`로 하드코딩돼 있어, 목적지 설정(`WAITING_FOR_DESTINATION`/`NAVIGATING`)은 이 가짜 세션에 저장되는데 GPS 갱신(`realtime_gps`)과 턴바이턴 조회(`DetectionConsumer._send_cognitive_guide`→`get_combined_guidance`)는 실제 `device_id`("dev-001") 세션을 봐서 영원히 매칭될 수 없는 구조였다. `invoke_existing_llm(stt_result, device_id)`로 시그니처를 바꿔 호출측(`ws_router.py`)의 실제 device_id를 그대로 전달.
+  8. **"네비게이션"/"내비게이션" 표기 정규화 + 재트리거 함정 수정**: Whisper가 같은 발화를 매번 다르게 전사(네비게이션/내비게이션)해 키워드 매칭이 불안정하던 것을, 매칭 전 `normalized_text.replace("내비게이션","네비게이션")`으로 표준화. 또한 "질문할게" 등으로 진입한 대기 상태에서 무음 응답 뒤 트리거 문구를 다시 말하면 그게 재트리거가 아니라 "질문 내용 그 자체"로 소비돼 LLM이 엉뚱하게 답하는 함정을 발견 - 재입력이 트리거 문구 자체면 대기를 유지한 채 재안내하도록 수정(질문 모드·길댕아 대기 모드 양쪽에 동일 원칙 적용).
+  9. **자유 질의응답("물어볼게") 신규 + POI 실거리 검색 그라운딩**: "가장 가까운 지하철역이 어디야?" 같은 일반 질문이 장애물 회피 오케스트레이터(`run_orchestrator`)로 들어가 무관한 안내 문장을 만들던 문제를 발견해, `stt_to_llm_bridge.py`에 `QUESTION_TRIGGER_KEYWORDS` wake-word로 분리된 자유 질의응답 모드(`_answer_free_question`)를 신설했다. 위치 질문은 LLM에 맡기지 않고 `server/navigation/server.py`에 신규 `helper_search_nearest_poi()`(Haversine 거리 계산으로 진짜 "가장 가까운" 후보를 고름 - 기존 `helper_search_poi(count=1)`은 relevance 1건만 반환해 근접 질의를 보장 못 함)를 붙여 실제 API 결과로만 답해(POI 미검출 시 정직하게 "찾지 못했습니다") 환각을 방지. 일반 대화는 `QUESTION_SYSTEM_PROMPT`로 LLM 자유 답변, 모르는 사실은 추측 대신 "정확히 알 수 없습니다"로 답하도록 지시.
+  10. **"길댕아" 2단계 웨이크워드 신규 + 편집거리 퍼지 매칭으로 전환**: 기존 "네비게이션 켜줘"/"질문할게" 단일 트리거의 표기 변이 문제를 근본적으로 줄이기 위해 사용자와 논의해 "길댕아"(온보딩 문구 "길댕입니다"와 브랜드 일관) → "길찾아줘"/"물어볼게" 2단계 흐름을 신설(`GILDAENG_NAV_INTENT_KEYWORDS`/`GILDAENG_QUESTION_INTENT_KEYWORDS`, 옵션 A: 두 키워드 중 하나가 아니면 추측하지 않고 재질문). 기존 단일 트리거는 하위 호환으로 보존. 그런데 "길댕아" 자체도 "길대가"/"결댕아"/"길땡아" 등으로 반복 오인식되는 것을 실측으로 확인 - 변형을 하나씩 목록에 추가하는 방식의 한계를 인정하고, 외부 의존성 없는 순수 Python 편집거리(Levenshtein distance) 구현(`_levenshtein`)으로 "길댕"과 거리 1 이하인 2글자 윈도우가 발화에 있으면 wake로 인정하는 퍼지 매칭(`_is_gildaeng_wake`)으로 교체. 실제 관측된 모든 변형 + 오탐 없음을 단위 테스트로 확인 후 배포.
+  11. **STT 상호작용 중 인지 경로 뮤트 신규**: "질문 중에 인지 경로 경고 메시지가 나와 헷갈린다"는 요청에 대해, 반사 경로(안전 비협상 원칙)는 절대 건드리지 않고 인지 경로 가이드 음성만 STT 상호작용 구간 동안 뮤트하도록 `useWebSocket.ts`에 `setSttInteractionActive()`를 신설(event_id가 `stt-`로 시작하지 않는 guide만 대상). 처음에는 STT 응답 도착 즉시 뮤트를 해제했으나, 실제 오디오 재생은 그 뒤로도 몇 초 이어져 재생 도중 인지 메시지가 끼어들어 답변이 끊기는 것을 재현 - 서버가 보낸 `duration_ms`(TTS 청크 분할 추정 결함으로 긴 문장에서 실제보다 짧게 나오는 사례 실측) 대신 `Math.max(서버값, 텍스트 길이 추정치)`로 방어적으로 재생 예상 시간만큼 뮤트를 유지하도록 정정.
+  12. **오디오 블리드(자기 음성 재인식) 2건**: (a) 직전 응답 음성이 채 끝나기 전에 새 녹음을 시작하면 마이크가 스피커 소리를 그대로 주워들어 STT가 시스템 자신의 안내 문장을 사용자 발화로 오인식하는 현상("네, 길 찾아드릴까요?"가 그대로 재인식된 사례)을 실측 확인 - 녹음 시작 전 `audioEngine.stopGuideAudio()`로 재생 중인 오디오를 강제 정지. (b) 이후 신설한 입력 확인 음성 안내(§13) 자체가 다시 같은 방식으로 블리드되는 것을 확인(안내 문장이 다음 녹음 앞부분에 그대로 섞여 들어감) - 소프트웨어 재생 종료 신호(`onDone`)와 실제 스피커 잔향 소멸 사이의 시차가 원인으로 추정, 안내 종료 후 250ms 여유를 두고서야 녹음을 시작하도록 정정.
+  13. **입력 확인 음성 안내 신규**: "시각장애인은 누른 화면을 확인할 수 없다"는 지적에 따라, 화면을 누르면 짧은 음성("네, 말씀하세요")으로 입력 시작을 확인시켜주는 기능을 추가(`audioEngine.speakFallback()`에 `onComplete` 콜백 파라미터 신설, 안내가 끝난 뒤에만 녹음 시작해 자기 음성 재인식 방지 - §12(b)). 최초 구현 시 안전을 위해 200ms 인위적 지연을 넣었다가 "터치 반응이 느리다" 피드백을 받고 제거(반사적 haptic은 그대로 즉시 발화, 확인 음성 재생과 실제 오디오 정지만 동기 처리하면 충분했음).
+  14. **온보딩 안내 문구 신규 및 갱신**: 앱 시작 시 1회 재생되는 온보딩 안내를 신설(`App.tsx`, 카메라/반사 구동을 지연시키지 않는 fire-and-forget). "길댕아" 2단계 흐름이 확정된 뒤, 사용자 요청대로 "길댕아~ 저는 여러분의 보행을 돕는 길댕이입니다..."로 실제 최신 명령 체계를 반영해 갱신.
+  15. **STT VAD 필터 활성화**: 인식률 저하 원인 조사 중 `server/stt/stt_config.py`의 `TRANSCRIBE_VAD_FILTER`가 `False`(무음/잡음 구간 제거 비활성)였던 것을 발견, 사용자 승인 하에 `True`로 전환(담당자 정책 영역 - 변경 전 확인 절차 거침).
+  16. **Whisper large-v3-turbo A/B 벤치마크 (기각)**: "Handy" STT 앱 리서치에서 이어진 논의로, `MODEL_NAME_MAP`에 `large-v3-turbo`를 임시 추가해 우리 TTS로 합성한 3개 한국어 문구로 medium과 직접 비교 실측했다. 결과: 짧은 명령어 기준 turbo가 medium보다 약 1.5배 느림(2.9~3s vs 1.9s, 최초 실행은 1.5GB 모델 다운로드로 150초 소요), 정확도는 3개 샘플 기준 사실상 동일(둘 다 "길댕아"→"길땡아" 동일 오인식). turbo의 속도 이점은 긴 오디오의 가벼운 디코더에서 나오는데 우리는 짧은 명령이라 인코더 비용이 지배적이고 turbo 인코더가 오히려 더 커서 역효과라는 사전 가설이 실측으로 확인됨 - 사용자 지시로 `MODEL_NAME_MAP` 원복.
+  17. **SenseVoice 실측 통합 시도 (기각, 문서화)**: 기존 `docs/research/sensevoice_stt_feasibility.md`의 권고에 따라 `funasr-onnx`를 실제로 설치해봤으나 `numpy<=1.26.4` 요구가 프로젝트 고정 버전(`numpy==2.5.0`, torch/ultralytics 호환용)과 충돌 - 라이브 컨테이너의 numpy가 2.4.6으로 자동 다운그레이드되는 것을 실측 확인하고 즉시 원복(컨테이너 재시작은 하지 않아 실서비스 영향 없음). 같은 프로세스에 넣을 수 없고 별도 격리 서비스로 분리해야 한다는 결론을 §6(신규)에 반영.
+  18. **컨테이너 예기치 않은 재시작 원인 조사 (미확정)**: 세션 중 `minchodan-fastapi` 컨테이너가 내가 직접 재시작하지 않았는데도 3회 이상 깨끗하게(exit code 0, OOM 아님) 재시작되는 것을 관측. 메모리는 8.6%만 사용 중이라 OOM은 배제했으나, `docker events`/macOS 시스템 로그 모두 원인을 특정할 증거를 남기지 않아 확정하지 못했다. CPU 1000%+ 지속 부하와 macOS Docker Desktop 가상화 계층의 상관관계를 유력 추정으로 남긴다(§3 CPU 완화로 재발 빈도가 줄었는지는 후속 관찰 필요).
+- **관련 파일**: `server/services/detection_guidance_log_service.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `docker/docker-compose.macos.yml`, `server/detection/detection_pipeline.py`, `server/navigation/manager.py`, `server/navigation/server.py`, `server/stt/stt_to_llm_bridge.py`, `server/stt/stt_config.py`, `client/App.tsx`, `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docs/design/api_specification.md`, `docs/research/sensevoice_stt_feasibility.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 전 항목을 실기기(iPhone, 팀원 "고태현의 iPhone")+실제 서버(Docker macOS CPU 폴백)+실제 팀 공유 DB(Tailscale RPi MariaDB)로 반복 재현·수정·재검증했다(mock 없음). 서버 재시작마다 `docker logs`로 스택트레이스 부재 확인, DB 쿼리로 실제 저장된 행(전사문·안내문 전체) 직접 조회, Metro 클라이언트 로그로 `playGuideAudioBytes`/`speakFallback` 호출 순서 대조. `python3 -c "import py_compile"`로 수정 파일 구문 검증, `npx tsc --noEmit`로 클라이언트 타입 검증(신규 오류 0건). 길댕아 퍼지 매칭은 실측 오인식 변형 전체(길대가/결댕아/길땡아) + 오탐 후보 문장으로 단위 테스트 통과.
+- **비고**: iOS 빌드/실기기 로그 추적은 이번 세션에서도 전담했다(기존 `[[ios_build_ownership]]` 위임 유지). `client/App.tsx`/`CameraView.tsx`/`useSttRecorder.ts`/`DebugTriggerPanel.tsx`/`server/api/ws_router.py`는 세션 시작 시점에 이미 작업 중이던(다른 세션에서 시작된) 변경분이 섞여 있었다(STT 터치 레이어 전체화면 Pressable 전환, 에러 상세 화면 표시 등) - 이번 세션은 그 위에 이어서 작업했다. `docs/design/architecture.md`/`docs/ops/navigation_and_reflex_guide.md`는 STT/네비게이션 관련 서술이 원래 없어 이번 범위에서 신규 작성하지 않았다(후속 과제). 세션 중 발견한 미해결 항목: 컨테이너 재시작 원인(§18), STT 인식률이 VAD+길댕아 퍼지 매칭 이후에도 완전히 만족스럽지는 않다는 사용자 피드백(근본적으로는 모델 자체 한계로 추정 - large-v3-turbo·SenseVoice 둘 다 이번 세션에서 기각됨).
+
+---
+
+### 2026-07-11 | 3단계 | CoreML FP16 재변환 + ANE 가속 활성화 + segmentation 출력 파싱 버그 수정
+
+- **커밋**: `fix(3단계): CoreML FP16 재변환 + ANE 가속 활성화 + segmentation 출력 파싱 버그 수정`
+- **변경 내용**:
+  - 설치된 ultralytics(8.4.82)의 CoreML export가 `half` 인자를 폐기하고 `quantize=16`으로 대체한 것을 실측 확인(과거 변환 시 `--no-half`가 실제로 적용돼 `storagePrecision: Float32`로 굳어 있었음). `scripts/convert_yolo_to_coreml.py` 기본값(`half=True`) 그대로 object_detection/segmentation 모델을 재변환해 `storagePrecision: Float16` 확보(det 300/302, seg 338/341 연산이 FP16으로 전환, Conv/Silu 백본 전량 FP16).
+  - `CoreMLInferenceBridge.swift`의 `MLModelConfiguration.computeUnits`를 `.cpuOnly` 고정에서 `.cpuAndNeuralEngine` 우선 시도 + 실패 시 `.cpuOnly` 폴백(`loadModel(url:)` 신설)으로 변경. 과거 크래시는 `.cpuAndGPU`(GPU/Metal 경로) 조합이었고 ANE 전용 조합은 그동안 미검증 상태였음.
+  - `runDetection()`에서 `prediction.featureNames.first`로 출력 텐서를 무작정 집던 로직을 shape 기반 탐색(`shape.count == 3`)으로 수정. segmentation 모델은 출력이 2개([1,300,38] 박스+마스크계수, [1,32,160,160] 프로토타입 마스크)인데, `featureNames`(Set 기반, 순서 미보장)가 프로토 마스크 텐서를 먼저 반환하면 매 프레임 파싱이 실패해 segmentation 결과가 통째로 유실되던 버그를 해결.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/assets/models/yolo26n/ios/object_detection.mlpackage/*`, `client/assets/models/yolo26n/ios/segmentation.mlpackage/*`, `client/ios/Minchodan/object_detection.mlmodelc/*`, `client/ios/Minchodan/segmentation.mlmodelc/*`, `docs/changelogs/kb.md`
+- **검증 결과**: 실기기("고태현의 iPhone")에 재빌드/재설치 후 수 분간(수백 프레임) 연속 추론 크래시 없음 확인. 총추론 시간 48~70ms → 19~22ms로 약 2.5배 단축(KPI `<80ms` 대비 여유 확대). `[1, 32, 160, 160]` shape 경고 재발 없음, seg 벤치마크(12~18ms) 정상 기록으로 segmentation 파싱 정상 동작 확인.
+- **비고**: segmentation 프로토타입 마스크(`[1, 32, 160, 160]`)는 여전히 픽셀 단위로 조합되지 않고 박스+클래스 목록만 사용 중이다 - 실제 픽셀 단위 마스크가 필요해지면 후속 과제.
+
+---
+
+### 2026-07-11 | 7단계 | STT 녹음 진입/종료 신호음 추가
+
+- **커밋**: `feat(7단계): STT 녹음 진입/종료 신호음 추가`
+- **변경 내용**:
+  - 시각장애인 사용자가 화면을 보지 않고도 STT 녹음의 실제 시작/종료 시점을 구분할 수 있도록, 단일 고음 비프(`stt_start.wav`, 1000Hz 120ms)와 더블 비프(`stt_end.wav`, 700Hz 60ms x2)를 신규 생성(mono 44.1kHz 16bit, 기존 `beep.wav`/`silence.wav`와 동일 포맷).
+  - `audioEngine.ts`에 `playSttStartCue()`/`playSttEndCue()` 추가. 에셋 URI를 1회만 리졸브해 캐시하고, 반사 비프(`playBeep`)와는 별개의 일회성 플레이어로 재생해 반사 경로 상태와 간섭하지 않는다.
+  - `useSttRecorder.ts`의 실제 `recorder.record()` 성공 직후(진입점)와 `recorder.stop()` 성공 직후(종료점)에 각각 연결. UI 제스처 이벤트가 아니라 훅 내부의 실제 녹음 상태 전환에 결속해, 권한 거부 등으로 녹음이 실제로 시작되지 않은 경우 오신호를 방지한다. 기존 "네, 말씀하세요" TTS 안내는 그대로 유지.
+- **관련 파일**: `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `client/assets/sounds/stt_start.wav`(신규), `client/assets/sounds/stt_end.wav`(신규), `docs/changelogs/kb.md`
+- **검증 결과**: JS/에셋 변경만 있어 Metro Fast Refresh로 반영. 실기기 청취 검증은 사용자 진행 예정.
+- **비고**: (없음)
+
+---
+
+### 2026-07-11 | 6+7단계 | STT 녹음 오디오 블리드 근본 수정 + hotwords 배선 + ANE 선택헤드 이관 실험(롤백) + 문서 정합화
+
+- **커밋**: `fix(7단계): STT 녹음 오디오 블리드 근본 수정 + 즉시 녹음 시작 전환`, `feat(6단계): STT hotwords 배선`, `fix(3단계): ANE 선택헤드 Swift 이관 실험 코드 보존(raw-head, 실측 성능 회귀로 롤백)`, `docs: CoreML ANE 벤치마크·iOS 구현 설계서 정합화`
+- **변경 내용**:
+  - **STT "입력이 없어" 근본 원인 규명**: 디버그 오디오 파일을 서버에 임시 저장해 `afinfo`/파형 진폭 분석으로 직접 까본 결과, 녹음이 실제로는 몇 초씩 진행됐는데도(JS 타이머로 `recorder.record()`~`stop()` 3.5초 측정) 인코딩된 파일에는 0.2~0.7초 분량만 담기는 현상을 확인. 원인은 두 겹이었다: ① 기존 "네, 말씀하세요" TTS가 끝난 뒤에야 녹음을 시작하는 순차 구조에서, 사용자가 짧게 말하고 바로 손을 떼면 `pendingStartRef` 동기화 때문에 `recorder.record()` 직후 곧바로 `stop()`이 뒤따라 녹음 구간이 잘림 → 버튼을 누르는 즉시 `recorder.record()`를 호출하도록 전환(`useSttRecorder.ts`, `CameraView.tsx`). ② 신호음(비프)을 녹음 활성 중에 병행 재생하면 스피커 소리가 마이크에 그대로 다시 잡히는 음향 블리드가 발생(하드웨어 에코 제거 없이는 회피 불가) → 시작 신호음 재생 자체를 제거하고 진입점 안내는 기존 haptic이 전담하도록 변경, 종료 신호음(`playSttEndCue`)은 `recorder.stop()` 완료 이후에만 재생되므로 그대로 유지.
+  - **faster-whisper `hotwords` 배선**: `stt_config.py`에 `TRANSCRIBE_HOTWORDS` 상수 추가(`stt_to_llm_bridge.py`에 이미 정의된 실제 명령어 어휘 — 길댕이/길찾아줘/물어볼게/POI 카테고리 등 — 기반 초안), `stt_service.py`의 `model.transcribe()` 호출에 `hotwords=` 인자로 연결. 신조어 웨이크워드("길댕아") 오인식 완화 목적(opus 제안 0순위, faster-whisper 1.2.1이 `hotwords`/`initial_prompt`를 지원함을 실측 확인). 실제 어휘 목록 최종 확정은 담당자 검토 필요(`stt_config.py` 정책값 - 하드코딩 영역).
+  - **ANE 선택헤드(TopK/Gather) Swift 이관 실험 및 롤백**: `scripts/convert_yolo_to_coreml.py`에 `--raw-head` 옵션 추가(Detect 헤드 `postprocess()`를 identity로 몽키패치, end2end 유지). 검증 결과 op histogram에서 TopK/GatherNd/GatherAlongAxis가 0개로 완전히 제거됐으나(100% ANE 호환), 출력 텐서가 `[1,300,6]`→`[1,8400,33]`(154배)로 커지면서 ANE→CPU 메모리 복사 비용이 커져 det 지연이 6~14ms→34~53ms로 오히려 3~5배 악화됨을 실측 확인, 배포본은 롤백(커밋된 end2end 후처리 버전 유지). `--raw-head` 옵션 자체는 기본값 `False`로 스크립트에 보존.
+  - **문서 정합화**: [`docs/ops/ondevice_coreml_benchmark.md`](../ops/ondevice_coreml_benchmark.md)를 FP16+ANE 실측치·Instruments 검증·raw-head 실험 기록으로 갱신(v1.4.0), [`docs/mobile/mobile_ios_implementation_plan.md`](../mobile/mobile_ios_implementation_plan.md) §9.2를 ANE 가속 실측 달성 상태로 갱신(v0.1.1).
+- **관련 파일**: `client/src/hooks/useSttRecorder.ts`, `client/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `client/assets/sounds/stt_start.wav`(삭제 - 오디오 블리드로 사용 중단), `server/stt/stt_config.py`, `server/stt/stt_service.py`, `scripts/convert_yolo_to_coreml.py`, `docs/ops/ondevice_coreml_benchmark.md`, `docs/mobile/mobile_ios_implementation_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 실기기 재현 테스트로 STT 녹음 길이가 1.2초 이상으로 정상화, VAD가 무음을 0초 제거하고 전체 구간을 발화로 인식, `text_len` 양수 및 서버 응답이 `stt-bridge`(정상)로 전환됨을 서버 로그(`faster_whisper` VAD/duration 로그, `stt_audio 처리 완료`)로 직접 확인. ANE raw-head 실험은 빌드 성공·무크래시였으나 벤치마크 로그로 성능 회귀를 확인하고 롤백.
+- **비고**: hotwords 실제 어휘 목록은 초안 상태 - 담당자가 실사용 명령 패턴에 맞춰 확정 필요. STT 인식 자체의 정확도(퍼지 매칭 이후에도 완전 만족스럽지 않다는 기존 피드백, §17 참조)는 이번 세션 범위 밖이라 사용자가 별도로 다루기로 함. `client/ios/CoreMLInferenceBridge.swift`의 `runDetection()`이 shape 기반으로 3차원 텐서를 탐색하도록 되어 있어(이전 항목 §segmentation 파싱 수정) raw-head 출력([1,8400,33], 3차원 유지)과도 호환되는 것을 이번 실험에서 재확인했다.
+
+---
+
+### 2026-07-11 | 6+7단계 | STT 메아리/상태머신/WS송신스팸 3건 수정 + 폴백 모드 BBox 표시
+
+- **커밋**: (이번 커밋)
+- **변경 내용**:
+  - **[결함] STT 자기-에코(메아리) 루트 원천 차단 - 서버+클라이언트 이중 방어**: 클로드(Claude Code) 세션에서 실기기 로그(13:24:07)로 발견된 문제. TTS 안내문("네, 길 찾아드릴까요?")이 스피커로 재생되는 도중 사용자가 녹음 버튼을 누르면, 마이크가 안내문 통째로 주워듣고 Whisper가 전사한 뒤 이 전사에 포함된 웨이크업 키워드("길찾아줘")가 재발동 → 동일 안내 재생 → 또 녹음되는 메아리 루프가 발생했다. (a) **서버 측 자기-에코 필터 신규**: `stt_to_llm_bridge.py`에 `_is_self_echo()` 함수와 `SttToLlmBridge._recent_guidance`(device_id별 최근 안내문 캐시, TTL 10초)를 추가. `invoke_existing_llm()` 진입 시 전사 결과가 최근 안내문과 유사하면(안내문 포함 여부, 접두사/접미사 매칭, 핵심 구간 편집거리 2 이내 부분 문자열 매칭) `source: "stt-echo-detected"`로 빈 응답 반환. `ws_router._process_stt_audio()`에서 이 source면 클라이언트에 응답을 보내지 않고 조용히 종료. 정상 안내문 전송 시 `_record_guidance()`로 캐시에 기록해 다음 STT 입력의 에코 판정에 사용. (b) **클라이언트 측 TTS 재생 중 녹음 가드 보강**: `CameraView.tsx` `onPressIn` 핸들러에서 `audioEngine.isGuidePlaying`이 true면 `stopGuideAudio()` 후 150ms 대기하고 녹음을 시작해 스피커 잔향이 물리적으로 멈춘 뒤 마이크가 활성화되도록 수정.
+  - **[결함] STT 인텐트 체크 순서 변경 (awaiting_intent 상태 머신 수정)**: 클로드 세션에서 실기기 로그(13:24:19~13:25:35, 5회 반복)로 발견. "길댕아" 웨이크워드 이후 인텐트 대기 상태(`is_awaiting_intent`)에서, wake 재호출(`_is_gildaeng_wake`) 체크가 nav/question 인텐트 체크보다 **우선**하고 있었다. 사용자가 "길댕아 길찾아줘"라고 말하면 `_is_gildaeng_wake`가 먼저 True가 되어 인텐트 매칭 전에 리턴해버려, 목적지 대기 상태로 진입하지 못하고 "네, 길 찾아드릴까요?" 안내만 반복되는 문제. 체크 순서를 `nav intent → question intent → wake 재호출 → else(재질문)`로 변경해, 실제 인텐트 키워드가 포함되어 있으면 그것을 우선 처리하도록 정정.
+  - **[결함] WS 종료 후 서버 송신 실패 스팸 방지**: 클로드 세션에서 실기기 로그(13:26:47~52, 17회 반복)로 발견. `session_manager.py`의 `send_json()`/`send_bytes()`가 WebSocket 상태를 검사하지 않고 `active_connections` 딕셔너리 키 존재 여부만 확인했다. WS 연결이 끊어진 뒤에도 `disconnect()` 호출 전에 DetectionConsumer가 독립 asyncio 태스크로 `send`를 시도하면 `RuntimeError: Cannot call "send" once a close message has been sent` 에러가 스팸으로 발생. `send_json`/`send_bytes`/`is_connected`에 `ws.application_state == WebSocketState.CONNECTED` 가드를 추가해 종료된 연결로의 송신을 원천 차단.
+  - **[결함] 폴백 모드 BBox 미표시 수정**: WS 재연결 한계 도달 후 폴백 모드(`status === "fallback"`)에서 탐지된 객체의 BBox가 화면에 표시되지 않는 문제. `CameraView.tsx`의 `handleFrame`에서 온디바이스 추론 결과(det+seg)를 `setDetections`에 반영하는 조건이 `if (isMockModeRef.current)`로 묶여 있어, 실기기(`MOCK_CAMERA=false`)에서는 온디바이스 추론이 정상 동작함에도 BBox 데이터가 `detections` 상태에 전달되지 않았다. `wsStatusRef`를 도입해 `isMockModeRef.current || wsStatusRef.current === "fallback"` 조건으로 확장 - 정상 연결 시에는 서버 `server_detection` 결과를 우선(덮어쓰기 방지), 폴백 모드에서는 온디바이스 CoreML 추론 결과로 BBox를 표시.
+  - **빈 입력 안내문 개선**: `stt_to_llm_bridge.py`의 빈 입력 폴백 안내문을 "입력이 없어 정지하세요"에서 "음성이 인식되지 않았어요. 다시 말씀해 주세요."로 변경(사용자 친화적 표현).
+- **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `server/api/ws_router.py`, `server/api/session_manager.py`, `client/src/components/CameraView.tsx`, `client/src/hooks/useSttRecorder.ts`, `docs/design/api_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `docs/design/architecture.md`, `docs/ops/test_specification.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 서버 Docker 재빌드 후 health 정상, 클라이언트 실기기 빌드/설치/실행 성공. WebSocket 연결 정상(`dev-001`, 현재 접속 1명). `server_detection 송신 실패` 에러 재발 없음(WebSocketState 가드 적용 확인). STT 에코 필터/인텐트 순서 변경/폴백 BBox 표시에 대한 실기기 사용자 검증은 후속 진행 예정.
+- **비고**: 클로드(Claude Code) 세션에서 STT 3건 문제 분석을 위임받아 이어서 작업. `.xcodebuildmcp/config.yaml`은 개인 로컬 환경값(workspacePath, deviceId)으로 업데이트된 상태 - 커밋 시 개인 정보 노출 주의.
+
+---
+
+### 2026-07-11 | 1+3+6+7단계 | dev 병합 전 kb 신규 커밋 안전성 결함 8건 수정
+
+- **커밋**: (이번 커밋)
+- **변경 내용**:
+  - **Android STT 캡처 판정 정정**: iOS Linear PCM에만 바이트 길이 기반 캡처 검증을 적용하고, Android MPEG-4/AAC는 압축 오디오이므로 해당 검증에서 제외했습니다. 공통 확장자도 iOS `.wav`, 그 외 `.m4a`로 분리하고 `RecordingOptions.web` 필수 설정을 추가했습니다.
+  - **지연 녹음 경쟁 상태 제거**: 안내 음성 중 150ms 잔향 대기 타이머와 press 상태를 추적하여 사용자가 먼저 손을 떼면 예약 녹음을 취소하고 STT 인지 가이드 뮤트를 즉시 해제하도록 수정했습니다.
+  - **반사 경보 송신 성공 확인**: `SessionManager.send_json()`/`send_bytes()`가 실제 송신 성공 여부를 boolean으로 반환하게 하고, 반사 경보가 전달된 경우에만 60초 중복 억제를 기록하도록 수정했습니다.
+  - **STT 개인정보 최소화**: `data/stt_debug/` 원본 WAV 영구 저장과 INFO 로그의 전사문·안내문 본문 출력을 제거했습니다. DB에는 전사문 대신 입력 길이만 저장하며 요청 단위 임시 파일은 기존 `finally` 정리 경로에서 즉시 삭제합니다.
+  - **STT 계약·테스트 정합화**: REST STT 브리지에도 실제 `device_id`를 전달하고, WS 응답 테스트를 `transport: "binary"`와 raw WAV 프레임 기준으로 갱신했습니다. 자기-에코 감지, 인텐트 우선순위, 연결 종료 시 반사 경보 비억제 테스트를 추가했습니다.
+  - **문서·줄바꿈 정합화**: API 명세, STT 통합 가이드, 테스트 명세, 아키텍처, WebSocket 스킬을 구현과 맞추고 `.gitignore`를 LF로 정규화했습니다.
+- **관련 파일**: `client/src/hooks/useSttRecorder.ts`, `client/src/components/CameraView.tsx`, `server/api/session_manager.py`, `server/api/stt_router.py`, `server/api/ws_router.py`, `server/detection/consumer.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_session_manager.py`, `tests/test_detection.py`, `tests/test_ws_router_stt.py`, `tests/test_stt_router_nonblocking.py`, `tests/test_stt_service_template.py`, `tests/test_stt_to_llm_bridge_template.py`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/ops/test_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `.gitignore`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest` 변경 영향 포함 전체 테스트 130건 통과·2건 건너뜀(`test_ws_echo.py`, 기존 비결정적 RAG E2E 제외), `tsc --noEmit`, 변경 Python 파일 `py_compile`, iOS 기기용 Debug 무서명 빌드, `git diff --check` 통과. 전체 테스트에서 변경 범위 밖 `tests/test_e2e_pipeline.py` 1건은 Mock 캡셔닝이 킥보드 문구 대신 일반 안내를 반환해 기존 실패가 재현되었습니다.
+- **비고**: `dev` 병합과 원격 push는 수행하지 않고 로컬 `kb` 수정 커밋만 생성합니다.
+
+---
+
+### 2026-07-11 | 6+7단계+클라이언트 | STT 응답 지연 개선, 길안내 무음 수정, 하단 T맵 지도 패널 추가
+
+- **커밋**: `feat(6+7단계): STT 응답 지연 개선, 길안내 무음 수정, T맵 지도 패널 추가 및 문서 정합화`
+- **변경 내용**:
+  - **STT 응답 지연 개선 3건 (실측 근거)**: macOS Docker CPU 폴백 환경에서 STT 왕복이 정상 3.8초, 컨테이너 재시작 후 첫 요청 10초+로 측정되었다. (a) Whisper 기본 모델을 `faster-whisper-medium`에서 `faster-whisper-small`로 전환(`stt_config.py`, hotwords 바이어싱 유지, 회귀 시 상수 1개 롤백). (b) `main.py` lifespan에서 Whisper 모델을 백그라운드 스레드로 프리로드해 콜드스타트 8~10초 제거. (c) `realtime_tts.py`에 (text, voice, speed) 키 FIFO 캐시(64건)를 추가해 고정 안내문 재합성 1.4~1.9초를 2회째부터 0초로 단축.
+  - **[결함] 길안내(turn-by-turn) 무음 수정**: 길안내 멘트 조회(`get_combined_guidance`)가 `DetectionConsumer._send_cognitive_guide` 안에만 있어 카메라 탐지가 없으면 NAVIGATING 상태여도 안내가 전혀 나가지 않았다(실기기 실측: 경로 113 웨이포인트 설정 후 무음). `ws_router.py`의 `realtime_gps` 수신 시점에 NAVIGATING이면 길안내를 직접 평가하고 `_send_nav_guidance()`로 TTS 합성·전송하도록 분리. 중복 발화는 기존 nav_filter의 announced_cache/silence_interval이 양쪽 경로 공용으로 차단. 경로 설정 성공 멘트에 첫 유의미 웨이포인트 지시("먼저, ...")를 덧붙여 시작 직후 방향 공백도 해소.
+  - **하단 T맵 지도 패널 신규 (운영자/데모용)**: "정적 지도 + 주기 갱신" 합의 사양으로 구현. `NavMapPanel.tsx` 신규(WebView + TMap JS API, 지도 인터랙션 전면 차단, 경로 폴리라인 + 현재 위치 마커). 마커 갱신은 2초 스로틀, 토글 꺼짐 시 WebView 미마운트로 부하 0. 서버는 경로 설정/해제 시 `nav_route` 메시지(좌표 목록 + TMap appKey)를 전송(`stt_to_llm_bridge.py` nav_waypoints, `ws_router.py`). `react-native-webview` 13.16.1 의존성 추가(pod install 완료).
+  - **문서 정합화**: `api_specification.md` v0.4.10(nav_route §6.6 신설, §6.5 길안내 직접 평가 비고, §6.3 기본 모델 small), `architecture.md` v0.4.1(기술 스택·구성도·디렉토리 매핑·§6.7 인터페이스·§10 환경 변수), `environment_variables.md` v0.4.12(`TMAP_APP_KEY` 용도 확장), `stage_stt_integration_guide.md` v0.2.2(지연 개선 3건), `docs/README.md`(내비게이션 요약)를 이번 변경 기준으로 갱신.
+- **관련 파일**: `server/stt/stt_config.py`, `server/main.py`, `server/tts/realtime_tts.py`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `client/src/components/NavMapPanel.tsx`, `client/src/components/CameraView.tsx`, `client/src/types/detection.ts`, `client/package.json`, `client/ios/Podfile.lock`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과, 변경 Python `py_compile` 통과, FastAPI 재시작 후 health 정상 및 "Whisper 모델 프리로드 완료: faster-whisper-small" 로그 확인, iOS Release 실기기 빌드/설치/실행 성공(WS 프레임 수신 확인). small 모델 인식 품질, GPS 기반 길안내 발화, 지도 패널 표시에 대한 실기기 사용자 검증은 후속 진행.
+- **비고**: TMap appKey는 클라이언트 하드코딩 대신 서버 환경변수(`TMAP_APP_KEY`)를 nav_route 메시지로 전달하는 방식이라 저장소에 키가 남지 않는다. 다만 앱 런타임에는 노출되므로 TMap 콘솔에서 키 사용 제한 설정 권장. `react-native-webview`는 클라이언트 신규 의존성(팀 공유 필요).
+
+---
+
+### 2026-07-11 | 문서 | Mitos 보완 로드맵 코드 대조 검증 및 정정본 docs/ 이동
+
+- **커밋**: `docs: Mitos 보완 로드맵 v0.3.0 정정본, docs/research/로 이동`
+- **변경 내용**:
+  - **코드 전수 대조 검증**: Mitos 로드맵의 주장 17건을 실제 코드·changelog·설계 문서와 대조했다. 결과: 13건 정확(신호등 미인식, crosswalk 부재, Seg 마스크 미활용, bbox 거리 휴리스틱, 카메라 프레임 기준 방향, 패닝 비프, AEC 미적용, ngrok/정적 토큰/재연결 3회, exit 0 재시작 미규명, 반사 4fps, 골든셋 부재, 웨이크워드, 무고지 폴백), 2건 이미 해소("정지하세요" 문구는 `072e990`에서 수정, 전사문 DB 저장은 dev 병합 개인정보 정책으로 제거), 1건 부분 해소(STT 왕복 지연 - `4ff207b` small 전환·프리로드·TTS 캐시), 뉘앙스 보정 2건(폴백 모드는 온디바이스 반사 기능 유지, "길댕아 길찾아줘" 1턴 결합은 처리 가능).
+  - **정정본 반영 (v0.3.0)**: 신호등 클래스가 `MID_RISK_CLASSES`에서 제외되어 안내에 미사용인 사실 보강, 각 표의 근거를 코드 파일 기준으로 구체화, STT 지연 항목을 부분 해소로 갱신, 우선순위 표에 부분 해소 행 추가(연결 끊김 고지가 실질적 최우선), 부록 §10 코드 대조 검증 기록 신설.
+  - **위치 이동**: `git mv`로 루트 `PROJECT_IMPROVEMENTS_MITOS.md`를 `docs/research/mitos_improvement_roadmap.md`로 이동(이력 보존, jy가 정리한 단일 정본 원칙 유지 - 중복본 미생성). `docs/README.md` 인덱스 2곳 갱신(v0.13.7).
+- **관련 파일**: `docs/research/mitos_improvement_roadmap.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 검증 근거는 문서 부록 §10에 주장별 코드 위치로 기록. 저장소 내 `PROJECT_IMPROVEMENTS_MITOS.md` 잔여 참조는 jy changelog 과거 이력 서술뿐으로 정정 불필요.
+- **비고**: 로드맵의 기존 최우선 과제(STT 정지 문구)는 완료 상태이므로, 실질적 다음 액션은 연결 끊김 음성 고지 + 무한 백오프 재연결이다.
+
+---
+
+### 2026-07-11 | 클라이언트 | 연결 끊김 음성 고지 + 무한 지수 백오프 재연결 (Mitos 우선순위 2)
+
+- **커밋**: `feat(client): WS 무한 지수 백오프 재연결 + 폴백 전환/복구 음성 고지`
+- **변경 내용**:
+  - **재연결 정책 변경**: 기존 `MAX_RECONNECT=3`회 1초 간격 재시도 후 콘솔 경고만 남기고 영구 포기하던 구조를, 지수 백오프(1s에서 2배씩, 상한 `RECONNECT_DELAY_MAX=30s`) 무한 재시도로 전환. `MAX_RECONNECT`는 "중단 횟수"에서 "폴백 모드 전환 + 음성 고지 문턱값"으로 의미 재정의(`config/index.ts` 주석 반영).
+  - **음성 고지 2종**: 연속 3회 실패 시 "서버 연결이 끊겨 기본 경보 모드로 전환합니다. 연결은 계속 시도합니다."(단절 1회당 1번, `fallbackAnnouncedRef` 가드), 재연결 성공(welcome) 시 "서버 연결이 복구되었습니다. 상세 안내를 다시 시작합니다.". 사용자가 화면을 볼 수 없으므로 음성이 유일한 상태 전달 수단이라는 로드맵 지적을 반영. 출력은 기존 `audioEngine.speakFallback`(expo-speech, 반사 비프/햅틱과 독립 채널)을 재사용.
+  - **폴백 상태 유지(sticky)**: 백그라운드 재시도가 상태를 `connecting`/`disconnected`로 덮으면 CameraView의 폴백 판정(`wsStatusRef.current === "fallback"`)이 시도할 때마다 꺼졌다 켜져 온디바이스 BBox/경보 표시가 깜빡이는 문제를 함수형 setState로 차단. 폴백은 실제 welcome 수신까지 유지.
+  - **재연결 카운터 리셋 시점 이동**: onopen(TCP 연결)에서 welcome(핸드셰이크 성공)으로 이동. 인증 실패 등 "연결 직후 끊김" 반복 시에도 백오프가 계속 자라고 폴백 고지가 동작하도록 보강(기존에는 onopen 리셋 때문에 1초 간격 무한 재시도 + 고지 없음).
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/config/index.ts`, `docs/design/architecture.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과. 실기기 시나리오 검증(서버 중단 후 폴백 고지 발화 - 30초 상한 백오프 지속 - 서버 재기동 후 복구 고지 발화)은 후속 진행(기존 실기기 검증 대기 3건에 추가).
+- **비고**: 문서 반영 - architecture.md v0.4.2(오프라인 내성 항목), mitos_improvement_roadmap.md v0.3.1(§4 해소, §7 완료, §10 부록 갱신). 서버 측 변경 없음(클라이언트 단독 패치).
+
+---
+
+### 2026-07-11 | 클라이언트+iOS 네이티브 | STT 녹음 구간 AEC 도입 (Mitos 우선순위 4)
+
+- **커밋**: `feat(client): STT 녹음 구간 AEC(voiceChat 세션) 도입 + 시작 신호음 조건부 복원`
+- **변경 내용**:
+  - **AudioSessionBridge 네이티브 모듈 신규**: STT 녹음 구간에서 AVAudioSession을 `.playAndRecord` + `.voiceChat` 모드로 전환해 iOS VoiceProcessingIO의 AEC(에코 캔슬레이션)를 활성화한다. 녹음 중 스피커 출력(반사 비프, 신호음)이 마이크에 되잡히는 음향 블리드(2026-07-11 파형 분석으로 확인된 STT 오염 원인)의 하드웨어 수준 대책. `.defaultToSpeaker` 필수 적용(voiceChat 기본 라우팅은 수화부라 미적용 시 경보 음량 급감), `.allowBluetooth`(HFP)로 골전도/오픈이어 헤드셋 마이크 허용. 전환 직전 세션 설정(expo-audio의 mixWithOthers 등)을 저장했다가 녹음 종료 시 복구. 파일은 기존 함정 회피를 위해 `client/ios/` 루트에 배치(CoreMLInferenceBridge 주석 참조), project.pbxproj 4개 섹션에 수동 등록.
+  - **녹음 시작 신호음 조건부 복원**: 음향 블리드 때문에 제거했던 시작 신호음(단일 상승 비프 120ms, `stt_start.wav` 신규 생성 - 종료 더블 비프와 구분)을 AEC 활성이 세션 조회(`getSessionInfo`)로 확인된 경우에 한해 복원. 두꺼운 옷/추운 날 햅틱만으로는 녹음 시작을 인지하기 어렵다는 로드맵 지적 반영. 회귀 시 `STT_START_CUE_WITH_AEC` 플래그만 false로 롤백(AEC 전환 자체는 유지). 기존 캡처 절단 가드(hold 대비 captured 길이 대조)가 회귀 감지망 역할.
+  - **검증 계측**: voiceChat 전환을 prepare 전에 수행(녹음 시작 후 세션 변경은 캡처 절단 위험)하고, record() 직후 세션 모드를 재조회해 expo-audio가 모드를 덮는지 로그로 확인(`[STT][AEC]` 태그). 덮인 경우 시작 신호음을 생략하고 경고 로그.
+  - **예외 복구**: 녹음 시작 실패/종료 실패 경로 모두에서 voiceChat 세션이 잔류하지 않도록 복구 호출. 종료 신호음은 세션 복구 후 재생(voiceChat 유지 시 재생 음질/음량 저하 회피).
+- **관련 파일**: `client/ios/AudioSessionBridge.swift`(신규), `client/ios/AudioSessionBridge.mm`(신규), `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/src/services/audioSessionBridge.ts`(신규), `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `client/assets/sounds/stt_start.wav`(신규), `docs/design/architecture.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과, `plutil -lint` pbxproj 무결성 통과, iOS 시뮬레이터 Debug 빌드 성공(BUILD SUCCEEDED), 산출물 `Minchodan.debug.dylib`에서 AudioSessionBridge 심볼 50개 및 `setVoiceProcessing:resolver:rejecter:` 시그니처 확인(컴파일·RN 모듈 등록 정합). 실기기 청취 검증은 후속: (1) 녹음 중 반사 비프가 전사에 안 섞이는지, (2) 시작 신호음 자기 녹음 여부, (3) voiceChat 전환 후 스피커 라우팅·음량 실용성, (4) 캡처 절단 가드 미발동 확인.
+- **비고**: AEC 실효성은 시뮬레이터에서 검증 불가(실제 스피커-마이크 음향 결합 필요). Android는 `audioSessionBridge.ts`가 no-op이라 동작 변화 없음(후속: AcousticEchoCanceler). Info.plist 권한 변경 없음(기존 마이크 권한 그대로).
+
+---
+
+### 2026-07-11 | 문서 | 세션 구현분 문서 전수 정합화 및 스킬 트리 동기화
+
+- **커밋**: `docs: 세션 구현분(STT small·지도 패널·재연결·AEC) 문서 전수 정합화 + 스킬 트리 동기화`
+- **변경 내용**:
+  - **CLAUDE.md v0.3.5 / AGENTS.md v0.3.2**: §2 기술 스택에 STT(faster-whisper-small)·Navigation(TMAP)·react-native-webview 지도 패널·STT 녹음 구간 AEC(AudioSessionBridge) 등재. AGENTS.md의 구식 표기 2건 정정(LangChain 병기 → 래퍼 미사용, Web Audio API 개념 규격 → 미사용 명시, 온디바이스 추론 누락 보완).
+  - **api_specification.md v0.4.11**: §6.4 폴백 모드 비고를 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, welcome 수신 시 해제) 기준으로 갱신.
+  - **ios_android_bifurcation_contract.md v1.1.1**: §3 소유권 매트릭스에 `AudioSessionBridge.swift/.mm`(iOS 전용), `audioSessionBridge.ts`(공유 계약, Android no-op - 인터페이스 유지 필수) 등재.
+  - **stage_stt_integration_guide.md v0.2.4**: §6 테스트 체크리스트에 AEC 실기기 검증 항목 TC-STT-010(voiceChat 세션 유지 로그), TC-STT-011(시작 신호음 비오염) 추가.
+  - **websocket-gateway 스킬 정정 + 스킬 트리 전수 동기화**: SKILL.md의 useWebSocket 예시에 재연결 정책 정정 노트 추가, 검증 매트릭스의 "3회 이내 성공"을 무한 백오프+음성 고지 기준으로 갱신. 점검 중 `.claude/skills/`가 `.agents/skills/` 대비 5개 파일 뒤처져 있음을 발견(websocket-gateway v0.2.1 잔존, 4개 스킬의 docs 재편성 이전 경로 잔존) - `.agents/` 최신본으로 전수 동기화 완료(두 트리 diff 0건).
+- **관련 파일**: `CLAUDE.md`, `AGENTS.md`, `docs/design/api_specification.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `.agents/skills/websocket-gateway/SKILL.md`, `.claude/skills/websocket-gateway/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/rag-realtime-search/SKILL.md`, `.claude/skills/xcode-build-management/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `diff -rq .agents/skills .claude/skills` 무차이 확인. 코드 변경 없음(문서 전용 커밋).
+- **비고**: Directory_Structure.md는 "계획된 물리적 폴더 구조" 문서(설계 초안 보존 목적)로 판단해 이번 정합화 범위에서 제외.
+
+---
+
+### 2026-07-11 | 병합 | 최신 dev(d490a65) 병합 및 문서 정합성 정리
+
+- **커밋**: `merge: 최신 dev를 kb에 통합` + `docs: dev 병합 후 README 중복 섹션 정리 및 계획 문서 교차 참조`
+- **변경 내용**:
+  - **dev 병합**: dev 신규 커밋 1건(d490a65, TH의 "dev 통합 개선 실행 계획서 추가") 병합. `git merge-tree` 사전 시뮬레이션으로 텍스트 충돌 0건 확인 후 클린 머지(kb 코드 변경과 겹침 없음, 문서 전용).
+  - **README 중복 섹션 정리 (v0.13.8)**: dev가 말미에 추가한 `## 9. ops/reports/ - 감사·개선 보고서` 섹션은 기존 §7(ops/reports)과 주제 중복 + 실제 파일 위치(`docs/ops/`)와 섹션명 불일치 + 비번호 섹션들 뒤에 위치하는 3중 문제가 있어 제거하고, 계획서 인덱스 행을 상단 문서 목록과 §5(ops) 표로 이관.
+  - **계획서 정합 노트 (v1.0.1)**: `dev_8b2f606_improvement_plan.md`에 kb 반영 현황 노트 추가(원본 본문 무변경) - §5 설계 원본 갱신은 kb에서 상당 부분 완료, §2 인증/반사 억제·§5 환경변수는 Mitos 로드맵과 스코프 중복(교차 확인 안내), §4 품질 수치는 병합 후 재측정 필요.
+  - **Mitos 로드맵 교차 참조 (v0.3.3)**: §7 우선순위에 dev 계획서 교차 참조 블록 추가(중복 스코프 3건 명시).
+- **관련 파일**: `docs/README.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 병합 전 `git merge-tree --write-tree` 충돌 0건 확인, 병합 후 정리 문서 상대 링크 경로 존재 확인. 코드 변경 없음.
+- **비고**: 두 계획 문서(dev 계획서 + Mitos 로드맵)는 관점이 달라(전자: dev 통합 감사 기반 P0/P1, 후자: 실기기 검증 기반 사용자 안전) 병존시키고 교차 참조로 연결.
+
+---
+
+### 2026-07-11 | 통합 정합화 | KB 담당 확인 항목 이행: 지침서 정정, 콘솔 지도 복구, event_id 구조화, 위험도 SSOT 계약
+
+- **커밋**: `feat(통합): 지침서 정정, 콘솔 지도 연동 복구, event_id 구조화, 위험도 SSOT 계약 초안`
+- **변경 내용**:
+  - **통합 지침서 2종 정정 (v2.3.0)**: KB 담당 확인 결과 코드보다 뒤처진 서술을 갱신. 서버 통합 기술 지침서 - §3.2 GPS 수신을 detection 페이로드 필드가 아닌 실제 구현(`realtime_gps` 전용 메시지)으로 정정, §3.2에 GPS 수신 시점 길안내 직접 평가(2026-07-11) 추가, §3.4 nav_route 신설, 지도 웹페이지용 ws와 단말 `/ws/detect` 채널 구분 명시, 로컬 절대 경로 제거. 관제 UI 지침서 - §1에 "길댕아" 2단계 웨이크워드·질문 모드·첫 방향 지시 멘트 반영, 반사 경로 비협상 원칙(고위험 경보는 네비 멘트와 미융합) 명시, §3에 콘솔 지도와 단말 NavMapPanel이 별개 화면임을 명시.
+  - **콘솔 지도 임베딩 복구**: `OperatorLiveMap.tsx`가 구버전 8001 독립 포트로 하드코딩된 채 `App.tsx`에서 주석 처리되어 있던 것을, 8000 서브앱 경로(`VITE_NAV_MAP_URL` 환경변수, 기본 `http://localhost:8000/navigation/?embed=true`)로 수정하고 재활성화. `console/.env.example`에 변수 등재. 콘솔은 공유 영역이므로 TH 확인 요망.
+  - **event_id 구조화 (dev 계획서 §3)**: 단말 detection event_id를 `event-{epoch_ms}`에서 `event-{device_id}-{stream}-{epoch_ms}`로 변경(`CameraView.tsx`). 기존 형식은 반사(4fps)/인지(2fps) 타이머가 같은 ms에 발화하면 충돌했고, DB의 event_id UNIQUE + 중복 저장 방지 로직이 두 번째 프레임 로그를 조용히 유실시키는 실결함이었다. 서버는 event_id를 파싱하지 않고 통과시키며(전수 확인), DB 컬럼 String(64) 대비 신규 형식 약 38자로 안전. api_specification 공통 필드 표에 형식 명세 반영.
+  - **반사 위험도 SSOT 계약 초안 (dev 계획서 §2, 1단계)**: `docs/design/risk_ssot_contract.md` 신설 - 서버/단말이 반드시 일치시켜야 하는 고위험 5종+confidence를 SSOT로 고정하고, 단말 전용 실내 오탐 확장 7종과 거리 산식 불일치(서버 bbox 하단 y vs 단말 면적 기반)는 인지된 기술 부채로 명시. 회귀 테스트 `tests/test_risk_ssot.py` 신설(서버는 import 대조, 단말은 TSX 텍스트 파싱 대조, 파싱 실패 시 명시적 실패) - 복제 불일치가 커밋 단계에서 차단됨. 공통 데이터 계약 소스 통합(2단계)은 TH·Mobile 합의 대기.
+- **관련 파일**: `docs/dev-guides/integration/서버_및_시스템_통합_기술_지침서.md`, `docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md`, `console/src/components/OperatorLiveMap.tsx`, `console/src/App.tsx`, `console/.env.example`, `client/src/components/CameraView.tsx`, `docs/design/risk_ssot_contract.md`(신규), `tests/test_risk_ssot.py`(신규), `docs/design/api_specification.md`, `docs/ops/test_specification.md`(TC-DET-011), `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/test_risk_ssot.py` 3건 통과, 클라이언트/콘솔 `tsc --noEmit` 각각 통과. 콘솔 지도 iframe 실표시와 event_id 실기기 왕복은 서버 기동 환경에서 후속 확인.
+- **비고**: KB 담당 핵심 원칙(내비게이션의 반사 경로 미경유) 코드 검증 완료 - 반사 경로 3개 파일에 navigation 참조 0건, 길안내 발화 3경로 전부 인지 채널(guide). 검토 상세는 이 엔트리 직전 대화 기준.
+
+---
+
+### 2026-07-11 | 통합 정합화 2차 | SSE·콘솔 이벤트 계약 고정, 인증 기본값 제거
+
+- **커밋**: `feat(보안+계약): SSE 이벤트 계약 고정 및 인증 기본값 환경 분리(fail-closed)`
+- **변경 내용**:
+  - **SSE·콘솔 이벤트 계약 고정 (dev 계획서 §5)**: api_specification §8을 전면 개편(v0.4.12). 실발행 이벤트(connection_established/ping)와 예약 브리지 이벤트(system_metrics·risk_event·session_status·detection_event·llm/rag/tts/stt_status)를 분리하고, payload 필드를 콘솔 파서(`useMonitorStream.ts`) 기준으로 고정. **실측 사실 명시**: `mcp:metrics` 스트림에 실데이터를 발행하는 producer가 현재 저장소에 없음(탐지 파이프라인 실발행은 `risk.events`, 두 스트림 미연결) - 기존 명세의 "risk.events 실시간 뷰" 오기를 정정하고 producer 구현을 후속 과제로 등재. 데모 데이터는 DEV 빌드+`VITE_ENABLE_DEMO_DATA` 이중 가드로 이미 분리되어 있음을 §8.4에 명문화.
+  - **인증 기본값 제거 (dev 계획서 §2)**:
+    - `server/db/security.py`: `APP_ENV=production`에서 `JWT_SECRET_KEY` 미설정 시 `RuntimeError`로 기동 거부(fail-closed). 개발 환경만 임시 키 폴백(테스트 하위 호환).
+    - `server/api/auth.py`: 정적 디바이스 토큰 하드코딩을 `DEVICE_STATIC_TOKENS`(`id:token` 쉼표 목록) 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록(JWT 디바이스 토큰만 인정).
+    - `server/api/ws_router.py`: 토큰 검증 실패 로그의 토큰 원문 출력을 제거(길이만 기록).
+    - `client/src/config/index.ts`: NETWORK_MODE/LAN_IP/NGROK_DOMAIN/DEVICE_ID/TOKEN을 `EXPO_PUBLIC_*` 환경 변수 우선으로 전환(기존 상수는 개발 폴백 유지 - 이원화 계약 §7.3 상수 보존 규칙 준수, 계약 v1.1.2로 규칙 확장 반영). EXPO_PUBLIC 값은 번들에 평문 포함되므로 비밀키 용도 금지를 주석으로 명시.
+    - `.env.example`에 `APP_ENV`/`JWT_SECRET_KEY`/`DEVICE_STATIC_TOKENS` 등재, environment_variables.md v0.4.13(§2.4 갱신, §2.14 클라이언트·콘솔 공개 변수 신설).
+- **관련 파일**: `server/db/security.py`, `server/api/auth.py`, `server/api/ws_router.py`, `client/src/config/index.ts`, `.env.example`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: (1) `APP_ENV=production` + `JWT_SECRET_KEY` 미설정에서 security 모듈 임포트 시 `RuntimeError` 기동 거부 확인, (2) production에서 `DEVICE_STATIC_TOKENS` 미설정 시 정적 토큰 목록 빈 값 확인, (3) `DEVICE_STATIC_TOKENS` 오버라이드 파싱 확인, (4) `pytest tests/test_api_ws.py tests/test_risk_ssot.py` 7건 통과(개발 기본 토큰 하위 호환 유지), (5) 클라이언트 `tsc --noEmit` 통과. `tests/test_ws_echo.py` 6건 실패는 라이브 서버(localhost:8000) 필요 테스트로 변경 전 기준선에서도 동일 실패함을 대조 확인(회귀 아님).
+- **비고**: dev 계획서 §2/§5의 KB 확인 항목 전부 착수 완료. 잔여: `mcp:metrics` producer 구현(TH·Backend), 기기 고유 인증·관리자 bootstrap 절차(JY·TH), ngrok 대체 고정 도메인+TLS(팀 인프라 결정 필요).

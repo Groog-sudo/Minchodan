@@ -1,7 +1,7 @@
 # STT 모델 검토 보고서 (Alibaba SenseVoice-Small 도입 정당성: 지연·로딩·한국어 정확도)
 
 > **작성일**: 2026-07-07
-> **버전**: v1.0.0
+> **버전**: v1.1.0 (2026-07-10 §7 실측 통합 시도 결과 추가: numpy 의존성 충돌로 현재 컨테이너 구조에서 도입 보류 + 이전 v1.0.0 이력 유지)
 > **대상 경로**: 사용자 음성 명령(STT) 경로 — 현재 7단계 골격 범위 밖의 신규 입력 경로
 > **관련 문서**: [`docs/design/minchodan_design_note.md`](../design/minchodan_design_note.md) (§183 "Whisper는 STT 전용, 골격 범위 밖"), [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) (§175 "사용자 음성 명령(STT) 경로")
 
@@ -85,7 +85,34 @@ Minchodan은 카메라 입력을 받아 음성으로 안내하는 **출력 중�
 
 ---
 
-## 6. 참고 자료
+## 6. 실측 통합 시도 결과 (2026-07-10)
+
+실기기 STT 인식률 저하 문제를 조사하던 중, 이 보고서의 §5 권장사항에 따라 **실제로
+`funasr-onnx`를 컨테이너에 설치해 A/B 벤치마크를 시도**했다. 결과적으로 정확도·지연
+비교 이전에 **의존성 충돌로 통합 자체가 막혔다.**
+
+| 시도 | 결과 |
+| :--- | :--- |
+| `pip install funasr-onnx` | `numpy<=1.26.4` 요구 — 프로젝트 `numpy==2.5.0`(torch/ultralytics YOLO 호환 고정)과 충돌 |
+| `--no-deps`로 강제 설치 | import 시 `librosa` 등 연쇄 의존성 누락으로 실패 |
+| `librosa` 추가 설치 | numpy가 **2.5.0 → 2.4.6으로 자동 다운그레이드**됨(라이브 컨테이너에서 실측 확인) |
+
+numpy 다운그레이드 상태로 컨테이너가 재시작됐다면 이미 메모리에 로드된 numpy 2.5.0
+기준으로 컴파일된 torch/ultralytics(YOLO) 파이프라인이 numpy ABI 불일치로 깨졌을
+가능성이 높다(재시작 전에 실험을 중단하고 `numpy==2.5.0`으로 원복, `funasr-onnx`/
+`librosa`/`numba`/`llvmlite` 등 추가 설치분 전부 제거해 원상 복구했다 - 실제 재시작은
+하지 않아 라이브 서비스 영향은 없었음).
+
+**결론(§5 갱신)**: SenseVoice-Small을 **현재 FastAPI 프로세스와 같은 Python 환경에는
+넣을 수 없다.** 도입하려면 §3.1에서 이미 언급한 "서버 배치" 자체는 맞지만, **탐지
+파이프라인과 별도의 격리된 서비스/컨테이너**(예: 독립 프로세스 + REST/gRPC 호출)로
+분리해야 한다 - 이는 모델 하나를 바꾸는 수준이 아니라 아키텍처 변경이므로, 이번
+실측에서 확인하려던 정확도/지연 비교 자체를 진행하지 못했다. 정확도 검증은 §5의
+소규모 실측 벤치 권고가 여전히 유효하나, **격리 서비스 분리를 먼저 결정한 뒤** 재시도할 것.
+
+---
+
+## 7. 참고 자료
 
 - [SenseVoice vs Whisper: Korean/CJK Benchmark (whispernotes.app)](https://whispernotes.app/blog/sensevoice-fastest-cjk-transcription)
 - [FunAudioLLM/SenseVoiceSmall (Hugging Face)](https://huggingface.co/FunAudioLLM/SenseVoiceSmall)

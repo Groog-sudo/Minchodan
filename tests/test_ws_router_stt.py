@@ -24,9 +24,13 @@ from server.stt.stt_schema import SttTranscribeResult
 class _FakeWebSocket:
     def __init__(self) -> None:
         self.sent: list[dict] = []
+        self.sent_bytes: list[bytes] = []
 
     async def send_json(self, payload: dict) -> None:
         self.sent.append(payload)
+
+    async def send_bytes(self, payload: bytes) -> None:
+        self.sent_bytes.append(payload)
 
 
 def _fake_wav_b64() -> str:
@@ -50,7 +54,8 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
         classmethod(lambda cls, saved_path, model_name: fake_result),
     )
 
-    async def _fake_invoke(self, stt_result):
+    async def _fake_invoke(self, stt_result, device_id):
+        assert device_id == "dev-001"
         return {
             "guidance_text": "네비게이션 기능을 시작합니다. 목적지를 말씀해 주세요.",
             "used_fallback_llm": True,
@@ -69,6 +74,13 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
         _fake_synthesize.__get__(ws_router_module.realtime_tts),
     )
 
+    persisted: list[dict] = []
+
+    async def _fake_persist(**kwargs):
+        persisted.append(kwargs)
+
+    monkeypatch.setattr(ws_router_module, "persist_detection_guidance_log", _fake_persist)
+
     ws = _FakeWebSocket()
     await _handle_stt_audio(ws, "dev-001", {"type": "stt_audio", "audio_b64": _fake_wav_b64()})
 
@@ -76,9 +88,13 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
     payload = ws.sent[0]
     assert payload["type"] == "guide"
     assert payload["guidance_text"] == "네비게이션 기능을 시작합니다. 목적지를 말씀해 주세요."
-    assert payload["audio_mp3_b64"] == "ZmFrZS1hdWRpbw=="
+    assert payload["transport"] == "binary"
     assert payload["duration_ms"] == 900.0
     assert payload["source"] == "navigation-setup-wakeup"
+    assert ws.sent_bytes == [b"fake-audio"]
+    assert persisted[0]["detections"] == [
+        {"source": "stt", "text_length": len(fake_result.text)}
+    ]
 
 
 @pytest.mark.asyncio
@@ -104,4 +120,5 @@ async def test_stt_audio_transcribe_failure_sends_fallback_guide(
     payload = ws.sent[0]
     assert payload["type"] == "guide"
     assert payload["source"] == "stt-transcribe-error"
-    assert payload["audio_mp3_b64"] == ""
+    assert payload["transport"] == "none"
+    assert ws.sent_bytes == []

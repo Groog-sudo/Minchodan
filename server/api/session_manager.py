@@ -8,6 +8,7 @@ import logging
 import sys
 
 from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
@@ -39,13 +40,22 @@ class SessionManager:
                 f"현재 접속: {len(self.active_connections)}명"
             )
 
-    async def send_json(self, device_id: str, data: dict) -> None:
-        """특정 디바이스에 JSON 메시지 송신."""
-        ws = self.active_connections.get(device_id)
-        if ws:
-            await ws.send_json(data)
+    async def send_json(self, device_id: str, data: dict) -> bool:
+        """특정 디바이스에 JSON 메시지 송신.
 
-    async def send_bytes(self, device_id: str, data: bytes) -> None:
+        2026-07-11: WebSocket application_state가 CONNECTED인 경우에만 송신한다.
+        WS 연결이 끊어진 뒤에도 active_connections에서 즉시 제거되지 않는 경쟁
+        창(consumer 태스크가 독립적으로 실행 중)에서 send를 시도하면
+        "Cannot call send once a close message has been sent" 에러가 스팸으로
+        발생했던 문제(13:26:47~52 로그, 17회 반복)를 방지한다.
+        """
+        ws = self.active_connections.get(device_id)
+        if not ws or ws.application_state != WebSocketState.CONNECTED:
+            return False
+        await ws.send_json(data)
+        return True
+
+    async def send_bytes(self, device_id: str, data: bytes) -> bool:
         """특정 디바이스에 바이너리(raw bytes) 프레임 송신.
 
         인지 경로 guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는 대신
@@ -56,12 +66,15 @@ class SessionManager:
         적용된 바이너리 프레임 패턴을 반대 방향(server->client)에도 적용한다.
         """
         ws = self.active_connections.get(device_id)
-        if ws:
-            await ws.send_bytes(data)
+        if not ws or ws.application_state != WebSocketState.CONNECTED:
+            return False
+        await ws.send_bytes(data)
+        return True
 
     def is_connected(self, device_id: str) -> bool:
-        """디바이스 연결 여부 확인."""
-        return device_id in self.active_connections
+        """디바이스 연결 여부 확인. application_state도 함께 검증한다."""
+        ws = self.active_connections.get(device_id)
+        return ws is not None and ws.application_state == WebSocketState.CONNECTED
 
 
 manager = SessionManager()

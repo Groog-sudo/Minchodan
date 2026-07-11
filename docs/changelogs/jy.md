@@ -171,3 +171,121 @@
   - `git diff --check -- 'Minchodan DB.session.sql'` 통과
   - SQL 파일 내 신규 테이블 DDL 및 선택 검증 쿼리 위치 확인 완료
   - 실제 MariaDB 실행 검증은 이번 작업 범위에서 수행하지 않았습니다.
+
+---
+
+### 2026-07-10 | DB | 탐지 안내 로그 ORM 및 migration 파일 추가
+
+- **커밋**: `db: add detection guidance ORM migration`
+- **변경 내용**:
+  - `detection_guidance_logs` 테이블을 SQLAlchemy ORM 기준 정의에 추가하고, `DetectionStreamType` enum과 사용자/기기 역방향 관계를 연결했습니다.
+  - 탐지 안내 로그 생성/응답용 Pydantic DTO와 Repository 저장/조회 메서드를 추가했습니다.
+  - SQLite 검증용 `server/db/schema.sql`에도 동일한 로그 테이블과 인덱스/FK 구조를 반영했습니다.
+  - 운영 변경 이력 폴더 `server/db/migrations/`와 `20260710_001_add_detection_guidance_logs.sql` 증분 SQL 파일을 추가했습니다.
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/README.md`, `server/db/migrations/20260710_001_add_detection_guidance_logs.sql`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `.venv/bin/python -m py_compile server/db/models.py server/db/schemas.py server/db/repositories.py` 통과
+  - `.venv/bin/python -c "from server.db.models import DetectionGuidanceLog; ..."` 기반 ORM import 검증 통과
+  - `sqlite3 :memory: ".read server/db/schema.sql" ".tables"` 기반 SQLite DDL 실행 및 `detection_guidance_logs` 생성 확인
+  - `git diff --check` 통과
+
+---
+
+### 2026-07-10 | Git | 최신 dev 브랜치 jy 병합 및 DB 충돌 해결
+
+- **커밋**: `Merge remote-tracking branch 'origin/dev' into jy` (`c050a00`)
+- **변경 내용**:
+  - 최신 `origin/dev`(`10f2b12`)를 `jy` 브랜치에 병합하고, 병합 결과를 원격 `origin/jy`에 push했습니다.
+  - `jy`의 기존 `detection_guidance_logs` ORM/migration 커밋(`0c98670`)과 `dev`의 탐지 안내 로그 서비스 확장 작업이 같은 DB 계층 파일을 수정해 발생한 충돌을 해결했습니다.
+  - `server/db/models.py`는 `dev` 기준의 `StreamType`, `detection_guidance_logs` 관계명, MySQL JSON 호환 문자열 저장 구조를 유지하면서 `jy`의 로그 테이블 ORM 정의가 중복되지 않도록 정리했습니다.
+  - `server/db/repositories.py`는 `DetectionGuidanceLogRepository`의 `get_by_event_id()` 중복 조회 메서드와 `create()` 저장 메서드가 모두 남도록 충돌 마커를 제거했습니다.
+  - `server/db/schemas.py`는 중복 정의된 `DetectionGuidanceLogCreate`, `DetectionGuidanceLogResponse`를 제거하고, 서비스 코드와 맞는 `StreamType` 및 JSON 문자열 DTO 기준으로 통일했습니다.
+- **관련 파일**: `server/db/models.py`, `server/db/repositories.py`, `server/db/schemas.py`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `python3 -m py_compile server/db/models.py server/db/repositories.py server/db/schemas.py server/services/detection_guidance_log_service.py` 통과
+  - `git diff --check` 통과
+  - `git rev-parse HEAD origin/jy origin/dev`로 `HEAD == origin/jy == c050a00`, `origin/dev == 10f2b12` 확인
+  - `git log --oneline HEAD..origin/dev` 결과가 비어 있어 `dev`에만 있고 `jy`에 없는 커밋이 없음을 확인
+
+---
+
+### 2026-07-10 | Git | 개인 설정 파일 제외 규칙 문서화
+
+- **커밋**: `docs(git): document local private config ignores`
+- **변경 내용**:
+  - `.gitignore` 하단의 `**/Copy_*` 규칙을 팀원이 이해할 수 있도록 개인 설정 파일 제외 가이드를 추가했습니다.
+  - 이미 Git이 추적 중인 원본 파일은 `.gitignore`만으로 수정 제외되지 않는다는 주의사항을 명시했습니다.
+  - `.xcodebuildmcp/config.yaml`은 공유 템플릿으로 유지하고, `.xcodebuildmcp/Copy_config.yaml`은 개인 설정 복사본으로 사용하는 운영 기준을 정리했습니다.
+  - 커밋 전 `git check-ignore`, `git status`, `git status --ignored` 기반 점검 명령을 문서화했습니다.
+- **관련 파일**: `.gitignore`, `docs/ops/local_private_config_guide.md`, `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `git check-ignore -v .xcodebuildmcp/Copy_config.yaml`로 `**/Copy_*` 규칙 적용 확인
+  - `git status --short --ignored .xcodebuildmcp ...`로 `Copy_config.yaml`이 ignored 상태(`!!`)임을 확인
+  - `git diff --check` 통과
+
+---
+
+### 2026-07-11 | iOS/서버 | 실기기 빌드 의존성 및 FastAPI 루트 응답 정리
+
+- **커밋**: `15cb978` (`iOS: 실기기 빌드 의존성 및 루트 응답 정리`)
+- **변경 내용**:
+  - 실기기 빌드 과정에서 미사용 `react-native-tts`, CocoaPods 1.17 잠금 결과, Xcode 26 프로젝트 자동 재작성, 개인 `DEVELOPMENT_TEAM` 값이 함께 반영되었습니다.
+  - 후속 dev 병합 전 정합성 검토에서 `react-native-worklets-core`는 이미 기준선에 존재했고 `react-native-tts`는 런타임 import가 없음을 확인했습니다.
+  - Xcode 26이 `shellScript`를 배열로 저장한 프로젝트 파일은 CocoaPods 1.17.0/xcodeproj 1.28.1의 깨끗한 `pod install`과 호환되지 않는 것도 확인했습니다.
+  - FastAPI 서버 기본 경로(`/`)에 서비스 상태, 헬스체크 경로, Swagger 문서 경로, WebSocket 경로를 반환하는 루트 응답을 추가했습니다.
+  - 실기기 확인과 세션 로그를 바탕으로 안전 판단 공백, 음성 상호작용 지연, 연결 신뢰성, 안내 품질 검증, 제품화 과제를 정리한 Mitos 보완점 문서를 추가했습니다.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `server/main.py`, `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `client/ios/build-device-debug.log` 기준 `xcodebuild -workspace client/ios/Minchodan.xcworkspace -scheme Minchodan -configuration Debug -destination platform=iOS,id=... build` 실기기 Debug 빌드 성공 확인
+  - 기존 Pods가 남아 있던 로컬 빌드 로그에서는 `BUILD SUCCEEDED`를 확인했으나, 후속 깨끗한 `pod install` 검증에서 Xcode 프로젝트 저장 형식 호환 실패를 확인
+  - 빌드 로그 마지막 결과 `BUILD SUCCEEDED` 확인
+  - `python3 -m py_compile server/main.py` 통과
+  - `git diff --check` 통과
+  - `server/main.py` 루트 응답은 정적 코드 diff 기준으로 확인했으며, 서버 기동 후 HTTP 요청 검증은 이번 작업 범위에서 아직 수행하지 않았습니다.
+- **비고**:
+  - `client/ios/build-device-debug.log`는 빌드 성공 근거로 확인했지만 현재 미추적 파일 상태이므로, 커밋 포함 여부는 커밋 직전에 별도 판단이 필요합니다.
+
+---
+
+### 2026-07-11 | 문서 | macOS Xcode 빌드 공유 가이드 문서화
+
+- **커밋**: `6d38ae3` (`docs: macOS Xcode 빌드 공유 가이드 추가`)
+- **변경 내용**:
+  - `.vscode/xcode_mcp_setup_guide.md`의 Xcode MCP 설정 절차를 팀 공유 문서로 복사하여 `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`를 추가했습니다.
+  - `.vscode/ios_device_build_iteration_guide.md`의 iOS 실기기 빌드 및 수정 반복 절차를 공유 문서로 복사하여 `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`를 추가했습니다.
+  - 원본 `.vscode` 문서는 로컬 작업 노트로 보존하고, `docs/` 하위 복사본에는 팀원이 그대로 참고할 수 있도록 목적, 사전 준비, MCP 설정, 실기기 빌드, 설치/실행, 커밋 전 점검 절차를 정리했습니다.
+  - 개인 Mac 절대경로, `file://` 링크, 실제 단말명, 실제 UDID/CoreDevice ID, 실제 bundle id, Apple 계정/Team 관련 값이 공유 문서에 노출되지 않도록 `<PROJECT_ROOT>`, `<XCODEBUILD_DEVICE_UDID>`, `<COREDEVICE_IDENTIFIER>`, `<IOS_BUNDLE_ID>` 등 안내 문구로 치환했습니다.
+  - Xcode MCP 설정 문서에는 `xcodebuildmcp` 개요, `.xcodebuildmcp/config.yaml` 필드 설명, MCP 클라이언트 등록 예시, 오동작 대처 기준, 개인값 점검 명령을 정리했습니다.
+  - iOS 단말 빌드 반복 문서에는 환경 확인, 단말 연결 확인, Signing Team 설정, Metro 실행, CLI 빌드, `devicectl` 설치/실행, 앱 확인 체크리스트, 재빌드 판단 기준을 정리했습니다.
+- **관련 파일**: `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `rg`로 `file:///`, `/Users/jjun`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
+  - `git diff --check -- docs/macOS_xcode_build docs/changelogs/jy.md` 통과
+  - 기존 미추적 빌드 로그 `client/ios/build-device-debug.log`는 이번 문서 커밋 대상에서 제외했습니다.
+
+---
+
+### 2026-07-11 | iOS/문서 | dev 병합 전 정합성 차단 사항 정리
+
+- **커밋**: (이번 커밋)
+- **변경 내용**:
+  - `client/ios/Minchodan.xcodeproj/project.pbxproj`, `Podfile.lock`, `package.json`, `package-lock.json`을 `origin/dev` 기준으로 복구하여 Xcode 26 자동 재작성, 개인 Signing Team, 미사용 `react-native-tts`와 잠금 파일 노이즈를 제거했습니다.
+  - 루트 `PROJECT_IMPROVEMENTS_MITOS.md`를 v0.2.0으로 갱신하여 `3e7ab52`에서 해결된 STT 위험 문구와 전사문 저장 문제를 완료 상태로 분리했습니다.
+  - 중복된 `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`를 제거하고 `docs/README.md`가 루트 정본을 가리키도록 수정했습니다.
+  - 과거 iOS 작업과 macOS 가이드 changelog를 실제 diff와 커밋 해시에 맞게 정정했습니다.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `PROJECT_IMPROVEMENTS_MITOS.md`, `docs/README.md`, `docs/supplement/PROJECT_IMPROVEMENTS_MITOS.md`, `docs/changelogs/jy.md`
+- **검증 결과**: `npm ci`, `tsc --noEmit`, `server/main.py`·`server/db/models.py` `py_compile`, `git diff --check` 통과. CocoaPods 1.17.0은 복구된 Xcode 프로젝트를 정상 파싱하고 autolinking까지 완료했으며, `pod install --deployment`는 저장소 기준 1.16.2와 로컬 1.17.0의 4개 Pod 체크섬·도구 버전 차이만 보고했습니다.
+- **비고**: `client/ios/build-device-debug.log`는 기존 미추적 상태로 유지하며 커밋에 포함하지 않습니다.
+
+---
+
+### 2026-07-11 | Git | 최신 dev 병합 및 정합성 충돌 해소
+
+- **커밋**: (이번 병합 커밋)
+- **변경 내용**:
+  - `origin/dev`(`3e7ab52`)를 `jy`에 일반 병합하여 STT·반사 경보 안전 패치와 CoreML FP16+ANE 변경을 통합했습니다.
+  - 유일한 명시적 충돌인 `.gitignore`는 `dev`의 LF 버전과 `.zcode/`, `.claude/`, 에이전트 스크립트 제외 규칙을 유지하고 `jy`의 `**/Copy_*` 규칙을 추가하는 방식으로 해소했습니다.
+  - CocoaPods 1.17.0으로 네이티브 의존성을 재생성하여 미사용 `TextToSpeech` Pod 제거와 96개 Pod 설치를 확인한 뒤, 추적 `Podfile.lock`은 저장소 기준 1.16.2 체크섬으로 유지했습니다.
+- **관련 파일**: `.gitignore`, `docs/changelogs/jy.md` 및 `origin/dev`의 신규 커밋 전체
+- **검증 결과**: 서버 테스트 130건 통과·2건 건너뜀(`test_ws_echo.py`, 기존 비결정적 RAG E2E 제외), `tsc --noEmit`, SQLite 5개 테이블 생성, 변경 Python 파일 `py_compile`, CocoaPods 설치, iOS 기기용 Debug 무서명 빌드, `git diff --check` 통과.
+- **비고**: `dev` 브랜치와 `origin/dev`에는 아직 `jy`를 병합하지 않았습니다. 본 커밋과 `origin/jy` push 이후 별도 승인 단계로 진행합니다.

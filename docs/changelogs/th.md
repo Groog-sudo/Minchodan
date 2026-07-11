@@ -294,3 +294,39 @@
 - **검증 결과**:
   - 기존 `cd console && npm run build` 통과 상태 유지
   - 문서 정리 작업으로 추가 빌드는 생략
+
+---
+
+### 2026-07-10 | 문서 | th 최신 반영 후 문서 인덱스 누락 항목 정합화
+
+- **변경 내용**:
+  - `origin/th` 최신 fast-forward 반영 후 `docs/README.md`를 재점검했습니다.
+  - 이번에 추가된 Android 무선 테스트 문서 2건과 STT 통합 가이드 1건이 인덱스에 빠져 있어 링크를 보강했습니다.
+  - 문서 본문 내용은 유지하고 인덱스·버전 표기만 현재 저장소 상태에 맞게 정리했습니다.
+- **관련 파일**: `docs/README.md`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `docs/README.md` 내 신규 문서 링크 경로 존재 여부 확인 완료
+
+---
+
+### 2026-07-11 | 운영자 콘솔 | dev 사전 병합 정합성 보완
+
+- **변경 내용**:
+  - 로그인 응답과 앱 상태에서 JWT를 출력하던 디버그 로그를 제거했습니다.
+  - SSE effect가 로그인 token 변경에 반응하도록 의존성을 보완하고 query parameter를 안전하게 인코딩했습니다.
+  - 비밀번호 원문을 보존하고 관리자 사번에만 `trim()`을 적용했습니다.
+  - 샘플 이벤트와 탐지 안내 mock 이력은 개발 환경의 `VITE_ENABLE_DEMO_DATA=true`에서만 활성화하도록 격리했습니다.
+  - 최신 dev를 통합하면서 `docs/README.md`의 Mitos 기준선과 th 문서 인덱스를 모두 보존했습니다.
+- **관련 파일**: `console/src/App.tsx`, `console/src/api/useMonitorStream.ts`, `console/src/components/Login.tsx`, `console/.env.example`, `console/README.md`, `docs/README.md`
+- **검증 기준**: `npm run build`, 관리자 로그인 테스트, `git diff --check`
+
+---
+
+### 2026-07-11 | 문서 | dev 8b2f606 개선 실행 계획서 작성
+
+- **변경 내용**:
+  - 팀 제공 감사 결과를 바탕으로 P0 안전성, 인지 경로·RAG 정합성, 품질 게이트, 운영·문서 개선 순서를 정리했습니다.
+  - 각 항목에 담당 영역, 검증 방법, 완료 기준을 명시했습니다.
+  - 코드·환경변수·설정 파일은 수정하지 않았습니다.
+- **관련 파일**: `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/th.md`
+- **검증 기준**: 문서 링크 경로 존재 여부 확인

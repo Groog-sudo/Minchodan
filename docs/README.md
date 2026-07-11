@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
-> **작성일**: 2026-06-24
-> **버전**: v0.13.3 (2026-07-10 dev 브랜치 문서 정합성 점검: 4·5단계 RAG 설계서 설명을 Gemini 캡셔닝으로 정정, 현재 문서 기준선에 Gemini/Supertonic/GPS/MariaDB 반영, 1주차 미결정 표에 TTS·RDB 확정 결과 각주 추가 + 이전 v0.13.2 이력 유지: th 브랜치 병합 문서 폴더 재정리 반영, jy 브랜치 병합의 DB Tailscale 외부망 연결 가이드 추가, iOS/Android 이원화 통합 계약서 추가)
+> **작성일**: 2026-07-11
+> **버전**: v0.13.9 (2026-07-11 반사 위험도 SSOT 계약 초안(design/risk_ssot_contract.md) 등재 + 이전 v0.13.8 이력 유지: dev 병합 정리: dev 통합 개선 실행 계획서를 문서 목록·§5 ops 표에 등재하고 말미 중복 §9 섹션(ops/reports 표기 불일치) 제거 + 이전: Mitos 보완 로드맵 `docs/research/` 이동, Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
 
 ## 문서 목록
 
@@ -18,9 +18,12 @@
 | 파이프라인 단계 설계 | [design/pipeline_stage_design.md](design/pipeline_stage_design.md)   | 7단계 run mode, 종단 지연 목표, 추상화 지점                       |
 | **환경 변수 명세서** | [ops/environment_variables.md](ops/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류**             |
 | **배포 가이드**      | [ops/deployment_guide.md](ops/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
+| **개인 설정 파일 Git 제외 가이드** | [ops/local_private_config_guide.md](ops/local_private_config_guide.md) | **`Copy_` 접두어 기반 로컬 개인 설정 복사본 제외 규칙** |
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
+| **dev 통합 개선 실행 계획서** | [ops/dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 기반 P0/P1 개선 순서와 완료 기준** |
+| **프로젝트 보완점: Mitos (정정본)** | [research/mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵. v0.3.0 코드 대조 검증 기록 포함 (루트에서 이동)** |
 | **백엔드 DB 아키텍처** | [design/backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
 | 2단계 캡처 설계서     | [stage-guides/stage2_capture_design.md](stage-guides/stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
 
@@ -70,6 +73,7 @@ docs/
 | 보행이론 인사이트 | [behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의 |
 | **실내 오탐 완화 2차 설계서** | [indoor_fp_mitigation_design.md](design/indoor_fp_mitigation_design.md) | **물리적 타당성 필터 + VNClassifyImageRequest 씬 분류기 게이트 설계** |
 | **씬 분류기 게이트 해설(팀 학습용)** | [scene_classifier_gate_guide.md](design/scene_classifier_gate_guide.md) | **VNClassifyImageRequest 게이트 기법을 배경·원리·코드 위치·FAQ로 풀어 쓴 학습용 문서** |
+| **반사 위험도 SSOT 계약 (초안)** | [risk_ssot_contract.md](design/risk_ssot_contract.md) | **서버/단말 고위험 클래스·confidence 단일 계약, 회귀 테스트(`tests/test_risk_ssot.py`) 연동 (TH·Mobile 합의 전 초안)** |
 
 ---
 
@@ -89,6 +93,7 @@ docs/
 | 4·5단계 테스트 가이드 | [stage4_5_test_guide.md](stage-guides/stage4_5_test_guide.md) | RAG 백엔드 단위 테스트 실행 가이드 |
 | 6단계 오케스트레이션 설계서 | [stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | LangGraph L1/L2/L3, LLM 핫스왑, 가드레일 |
 | 7단계 TTS 설계서 | [stage7_tts_design.md](stage-guides/stage7_tts_design.md) | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점 재생 설계 |
+| STT 통합 가이드 | [stage_stt_integration_guide.md](stage-guides/stage_stt_integration_guide.md) | `stt_audio -> STT -> Bridge -> TTS -> guide` 흐름, 메시지 계약, 테스트 체크리스트 |
 | **3단계 YOLO 코드 리뷰** | [stage3_detection_code_review.md](stage-guides/stage3_detection_code_review.md) | **3단계 탐지 파이프라인 코드 분석, 준수 점검, 종합 평가 및 개선 제안** |
 
 ---
@@ -118,6 +123,7 @@ docs/
 | Post-MVP 온디바이스 타당성 | [post_mvp_ondevice_feasibility.md](research/post_mvp_ondevice_feasibility.md) | 엣지 TFLite 추론 가능성 검증서 |
 | Post-MVP 하이브리드 로드맵 | [post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | 하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP) |
 | SenseVoice-Small STT 검토 | [sensevoice_stt_feasibility.md](research/sensevoice_stt_feasibility.md) | 음성 명령(STT) 경로용 SenseVoice-Small 도입 정당성(지연·로딩·한국어 정확도) |
+| **프로젝트 보완점: Mitos (정정본)** | [mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **안전성·음성 UX·신뢰성·검증 체계·제품화 보완 로드맵. v0.3.0에서 코드 대조 검증 기록(§10) 추가, 루트 `PROJECT_IMPROVEMENTS_MITOS.md`에서 이동** |
 
 ---
 
@@ -130,15 +136,19 @@ docs/
 | **환경 변수 명세서** | [environment_variables.md](ops/environment_variables.md) | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류** |
 | **배포 가이드** | [deployment_guide.md](ops/deployment_guide.md) | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동** |
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
+| **Android 빌드 및 무선 테스트 가이드** | [android_build_and_wireless_test_guide.md](ops/android_build_and_wireless_test_guide.md) | **Android 개발 빌드, adb reverse, 무선 연동 기본 절차** |
+| **Android 무선 테스트 가이드 v2** | [android_wireless_test_guide_v2.md](ops/android_wireless_test_guide_v2.md) | **실기기 테스트 중 Metro 연결 끊김, adb 데드락, reverse 복구 절차 상세판** |
 | **실기기 무선 연동 가이드** | [wireless_test_guide.md](ops/wireless_test_guide.md) | **실기기(LTE) 및 Docker 연동 구조, 터널링, 트러블슈팅 상세 가이드** |
 | **AI 모델 및 하드웨어 구성 지침** | [ai_model_hardware_setup.md](ops/ai_model_hardware_setup.md) | **GPU 요구사항(verify_gpu) 및 호스트 로컬 Ollama 모델(gemma4:e4b/nomic) 풀링 가이드** |
 | **Redis Streams 데이터 스키마 명세** | [redis_streams_schema.md](ops/redis_streams_schema.md) | **risk.events 스트림 페이로드 필드 정의 및 중복 알림 TTL 캐시 명세** |
 | **모바일 빌드 트러블슈팅 가이드** | [mobile_build_troubleshooting.md](ops/mobile_build_troubleshooting.md) | **iOS 샌드박싱/Rosetta ffi 및 Android SDK/JDK 버전 충돌 해결 핸드북** |
 | **코드 품질 검증 가이드** | [code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 검증 파이프라인** |
+| **개인 설정 파일 Git 제외 가이드** | [local_private_config_guide.md](ops/local_private_config_guide.md) | **`Copy_` 접두어 기반 로컬 개인 설정 복사본 제외 규칙** |
 | **iOS CoreML ANE 벤치마크** | [ondevice_coreml_benchmark.md](ops/ondevice_coreml_benchmark.md) | **CoreML ANE 온디바이스 추론 지연 벤치마크 및 서버 KPI 비교** |
 | **모델 클래스별 검증 보고서** | [model_class_validation_report.md](ops/model_class_validation_report.md) | **YOLO26n 33클래스(탐지29+세그멘테이션4) 샘플 이미지 탐지 검증 결과** |
 | Git 브랜칭 전략 | [git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조 (`main` / `dev` / 개인), PR 작업 규칙 |
 | 테스트 명세서 | [test_specification.md](ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
+| **dev 통합 개선 실행 계획서** | [dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 결과 기반 P0/P1 개선 순서와 완료 기준 (Mitos 로드맵과 교차 참조)** |
 
 ---
 
@@ -211,7 +221,7 @@ docs/
 - **LLM은 로컬 Ollama(gemma4:e4b)** 기본이며, `LLMClientFactory(BaseChatModel)`로 gpt-4o-mini 핫스왑을 대비합니다.
 - **4단계 캡셔닝은 Gemini API**(`gemini-2.5-flash-lite`, 최초 계획 로컬 Llava에서 전환)입니다.
 - **7단계 TTS는 Supertonic 기본**(`TTS_ENGINE=supertonic`)이며, Piper/pyttsx3는 핫스왑 폴백입니다.
-- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다.
+- **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다. 길안내 발화는 `realtime_gps` 수신 시점에 직접 평가하며(카메라 탐지와 분리, 2026-07-11), 경로 좌표는 `nav_route` 메시지로 단말 하단 T맵 지도 패널(운영자/데모용)에 전달됩니다.
 - **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
 - **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.

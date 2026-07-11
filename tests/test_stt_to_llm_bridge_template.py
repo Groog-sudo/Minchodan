@@ -49,6 +49,8 @@ class _FakeNavManager:
         self.status = status
         self.last_route: list[dict] = []
         self.session = SimpleNamespace(lat=None, lon=None)
+        self.awaiting_question = False
+        self.awaiting_intent = False
 
     def get_status(self, device_id: str) -> str:
         _ = device_id
@@ -65,6 +67,22 @@ class _FakeNavManager:
     def _get_or_create_session(self, device_id: str):
         _ = device_id
         return self.session
+
+    def is_awaiting_question(self, device_id: str) -> bool:
+        _ = device_id
+        return self.awaiting_question
+
+    def set_awaiting_question(self, device_id: str, value: bool) -> None:
+        _ = device_id
+        self.awaiting_question = value
+
+    def is_awaiting_intent(self, device_id: str) -> bool:
+        _ = device_id
+        return self.awaiting_intent
+
+    def set_awaiting_intent(self, device_id: str, value: bool) -> None:
+        _ = device_id
+        self.awaiting_intent = value
 
 
 def test_build_orch_input_success() -> None:
@@ -83,7 +101,7 @@ async def test_invoke_existing_llm_empty_fallback() -> None:
     bridge = SttToLlmBridge()
     result = _make_stt_result("", has_input=False)
 
-    response = await bridge.invoke_existing_llm(result)
+    response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "stt-bridge-empty"
     assert response["used_fallback_llm"] is True
@@ -102,7 +120,7 @@ async def test_invoke_existing_llm_success(monkeypatch: pytest.MonkeyPatch) -> N
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("테스트")
-    response = await bridge.invoke_existing_llm(result)
+    response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response == {
         "guidance_text": "오른쪽으로 피해 이동하세요",
@@ -120,7 +138,7 @@ async def test_invoke_existing_llm_error_fallback(monkeypatch: pytest.MonkeyPatc
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("테스트")
-    response = await bridge.invoke_existing_llm(result)
+    response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "stt-bridge-error"
     assert response["used_fallback_llm"] is True
@@ -142,7 +160,7 @@ async def test_navigation_wakeup_command_sets_waiting_status(
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("네비게이션 시작")
-    response = await bridge.invoke_existing_llm(result)
+    response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "navigation-setup-wakeup"
     assert fake_manager.status == "WAITING_FOR_DESTINATION"
@@ -160,7 +178,7 @@ async def test_navigation_shutdown_command_resets_status_and_route(
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("네비게이션 꺼줘")
-    response = await bridge.invoke_existing_llm(result)
+    response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "navigation-setup-shutdown"
     assert fake_manager.status == "IDLE"
@@ -204,7 +222,7 @@ async def test_navigation_destination_setup_success(
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("서울역으로 설정")
-    response = await bridge.invoke_existing_llm(result)
+    response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "navigation-setup-success"
     assert fake_manager.status == "NAVIGATING"
@@ -233,7 +251,42 @@ async def test_navigation_destination_setup_fail_when_poi_not_found(
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("없는목적지로 설정")
-    response = await bridge.invoke_existing_llm(result)
+    response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "navigation-setup-fail"
     assert fake_manager.status == "WAITING_FOR_DESTINATION"
+
+
+@pytest.mark.asyncio
+async def test_recent_guidance_echo_is_ignored() -> None:
+    bridge = SttToLlmBridge()
+    bridge._recent_guidance.clear()
+    bridge._record_guidance("echo-device", "길찾아줘 또는 물어볼게 중 하나로 다시 말씀해 주세요.")
+
+    response = await bridge.invoke_existing_llm(
+        _make_stt_result("길찾아줘 또는 물어볼게 중 하나로 다시 말씀해 주세요"),
+        "echo-device",
+    )
+
+    assert response["source"] == "stt-echo-detected"
+    assert response["guidance_text"] == ""
+    bridge._recent_guidance.clear()
+
+
+@pytest.mark.asyncio
+async def test_navigation_intent_wins_over_repeated_wake(monkeypatch: pytest.MonkeyPatch) -> None:
+    import server.navigation.manager as nav_manager_module
+
+    fake_manager = _FakeNavManager(status="IDLE")
+    fake_manager.awaiting_intent = True
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(
+        _make_stt_result("길댕아 길찾아줘"),
+        "test-device",
+    )
+
+    assert response["source"] == "navigation-setup-wakeup"
+    assert fake_manager.status == "WAITING_FOR_DESTINATION"
+    assert fake_manager.awaiting_intent is False

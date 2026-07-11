@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.1 (2026-07-09 Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영)
+> **버전**: v0.3.2 (2026-07-11 §2 스택 정합화: LangChain 래퍼 미사용·Web Audio API 아님 표기를 실제 구현 기준으로 정정, STT(faster-whisper-small)·Navigation(TMAP)·온디바이스 추론·react-native-webview 지도 패널·STT 녹음 구간 AEC 등재 + 이전 v0.3.1 이력 유지: 2026-07-09 Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 > **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
@@ -37,17 +37,21 @@
 - Segmentation: Ultralytics Yolo 26N - Segmentation
 - Tracking: ByteTrack
 - Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
-- LLM Orchestration: LangGraph, LangChain
-- Local LLM/Embedding: Ollama (gemma4-e4b, Llava, nomic-embed-text)
-- TTS: Kokoro-82M / Coqui (로컬)
+- LLM Orchestration: LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용)
+- Local LLM/Embedding: Ollama (gemma4-e4b, nomic-embed-text), Gemini API (gemini-2.5-flash-lite, 4단계 VLM 캡셔닝)
+- TTS: Supertonic (기본, ONNX 로컬), Piper / pyttsx3 (핫스왑 폴백)
+- STT (부가, 음성 명령): faster-whisper (기본 small, hotwords 바이어싱, 서버 기동 시 프리로드)
+- Navigation (부가, GPS 길안내): TMAP 보행자 경로 API + NavigationManager
 - Message Bus: Redis (Streams + 컨텍스트 TTL)
 - Image: OpenCV
 
 ### 클라이언트 (단말)
 
 - Framework: React Native (iOS/Android)
-- Camera: react-native-vision-camera
-- Audio: expo-audio (단말 재생 계층), Web Audio API (개념 규격), react-native-tts (예비)
+- Camera: react-native-vision-camera (Frame Processor 기반 연속 캡처)
+- On-device Inference: CoreML(iOS) / TFLite(Android) - 반사 경로 온디바이스 탐지
+- Audio: expo-audio (단말 재생 계층, Web Audio API 아님), react-native-tts (예비). STT 녹음 구간은 AVAudioSession voiceChat(AEC) 전환(`AudioSessionBridge`)
+- Map Panel (운영자/데모): react-native-webview + TMap JS API (`NavMapPanel.tsx`)
 - Accessibility: Haptics, announceForAccessibility
 
 ### 운영 콘솔
