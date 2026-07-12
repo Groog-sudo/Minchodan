@@ -1553,3 +1553,28 @@
 - **관련 파일**: `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/styles.css`, `client/ios/ReflexFrameProcessorPlugin.swift`, `client/src/services/frameCaptureProvider.ts`, `client/src/services/frameCaptureProviderSelect.ios.ts`, `client/ios/Minchodan/Info.plist`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 콘솔 `npm run build`(tsc --noEmit 포함) 통과, 클라이언트 `tsc --noEmit` 통과, iOS Release 빌드 3회 반복(수정 전/Info.plist만/최종) 모두 BUILD SUCCEEDED, 최종 빌드 실기기 설치·실행 후 손·다리 실측으로 방향 정상화 확인.
 - **비고**: 이 결함은 콘솔 갤러리 표시 문제로 시작했지만 **서버 YOLO 탐지에 들어가는 원본 프레임 자체가 뒤집혀 있었다는 뜻**이라, 지금까지의 탐지 정확도에도 실질적 영향을 줬을 가능성이 있다. 이벤트 프레임 보존 기능([[event-frame-storage]] 성격의 앞선 커밋 659a08e)이 아니었다면 발견하기 어려웠던 결함. Android 네이티브 Frame Processor 구현 시 이 문서의 경고를 참고해 별도로 방향을 검증할 것.
+
+---
+
+### 2026-07-12 | 서버+콘솔 | 오탐 판정(false_positive) 데이터베이스 컬럼 추가 및 운영 콘솔 오탐 판정 기능 구현
+
+- **커밋**: `feat(서버+콘솔): 오탐 판정(false_positive) 컬럼 추가 및 콘솔 오탐 판정 기능 구현`
+- **변경 내용**:
+  - **데이터베이스 스키마 확장**:
+    - `detection_guidance_logs` 테이블에 `false_positive` 컬럼 추가: SQLite (`schema.sql`에 `false_positive INTEGER CHECK (false_positive IN (0, 1))` 추가), MariaDB용 마이그레이션 DDL 스크립트 작성 (`server/db/migrations/20260712_002_add_false_positive_to_detection_guidance_logs.sql` 신설).
+    - ORM 모델 `models.py`에 `false_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)` 속성 추가.
+  - **DTO 스키마 및 비즈니스 로직**:
+    - `schemas.py`에 `false_positive` 속성 및 `FalsePositiveUpdateRequest` DTO 추가.
+    - `DetectionGuidanceLogRepository` 및 `DetectionGuidanceLogService`에 `update_false_positive` 비동기 업데이트 메서드 구현.
+    - `DetectionGuidanceLogService.create_log` 시 생성 페이로드로부터 `false_positive` 값을 전달하도록 구현.
+  - **API 엔드포인트 구현**:
+    - `detection_log_router.py`에 `PUT /api/v1/admin/detection-logs/{log_id}/false-positive` 라우터 등록. 존재하지 않는 로그인 경우 404 예외 처리.
+  - **관리자 운영 콘솔 UI 개선**:
+    - `types/monitor.ts` 내 `DetectionGuidanceLogRow` 타입 정의에 `false_positive: boolean | null` 필드 반영 및 `App.tsx` 데모 로그 mock 객체 필드 정합성 교정.
+    - `useDetectionLogs.ts`에 `updateLogFalsePositive` PUT API 호출 비동기 callback 훅 추가 및 UI 단독 상태 즉시 반영.
+    - `DetectionGuidanceLogTable.tsx`에 "오탐 판정" 컬럼 추가, `FalsePositiveBadge` 및 정탐/오탐 판정 및 취소 액션 버튼군 배치 (로그 상세 뷰 및 라이트박스 뷰 둘 다 적용).
+  - **안전성 테스트 검증**:
+    - `tests/test_false_positive.py` 단위 테스트 파일 작성: Repository, Service, Router 계층 오탐 업데이트 성공/실패 여부를 교차 검증하는 pytest 비동기 테스트 케이스 구축.
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/20260712_002_add_false_positive_to_detection_guidance_logs.sql`(신규), `server/services/detection_guidance_log_service.py`, `server/api/detection_log_router.py`, `console/src/types/monitor.ts`, `console/src/api/useDetectionLogs.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/App.tsx`, `console/src/styles.css`, `tests/test_false_positive.py`(신규), `docs/changelogs/kb.md`
+- **검증 결과**: `tests/test_false_positive.py` 3건 테스트 전원 통과 완료, 콘솔 `npm run build` TypeScript 무오류 빌드 완료.
+- **비고**: 수집된 오탐 판정 데이터는 추후 인도 보행 이미지 및 YOLO 탐지 모델의 재학습(Re-training) 데이터셋 선별에 핵심 지표로 재활용될 예정입니다.
