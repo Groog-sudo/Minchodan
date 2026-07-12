@@ -24,6 +24,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
+from server.api.admin_member_router import router as admin_member_router
 from server.api.admin_router import router as admin_router
 from server.api.config import settings
 from server.api.detection_log_router import router as detection_log_router
@@ -173,9 +174,14 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex="https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # X-Total-Count: 콘솔 Detection Guidance Log 페이지네이션이 전체 건수를 읽으려면
+    # 브라우저 fetch()가 이 커스텀 헤더를 볼 수 있어야 한다(CORS 기본값은 표준
+    # 헤더만 노출하고 커스텀 헤더는 명시적으로 허용해야 함, 2026-07-12).
+    expose_headers=["X-Total-Count"],
 )
 
 # 모니터링 라우터 마운트
@@ -187,6 +193,7 @@ app.include_router(ws_router, prefix="")
 # 사용자 및 관리자 API 라우터 마운트
 app.include_router(user_router)
 app.include_router(admin_router)
+app.include_router(admin_member_router)
 app.include_router(detection_log_router)
 app.include_router(stt_router)
 

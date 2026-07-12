@@ -9,6 +9,7 @@ import asyncio
 import base64
 import contextlib
 import logging
+import os
 import sys
 import time
 
@@ -28,8 +29,10 @@ from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
+from server.orchestration.llm_client_factory import LLMClientFactory
 from server.rag.retriever import get_default_retriever
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
+from server.services.device_registry_service import get_cached_device_ids
 from server.services.event_frame_store import save_event_frame
 from server.tts.realtime_tts import realtime_tts
 from server.tts.suppressor import Alert_suppressor
@@ -88,6 +91,49 @@ class DetectionConsumer:
         """최근 DetectionConsumer 처리 상태를 반환한다."""
         return dict(self._last_status)
 
+    async def _broadcast_latency_event(
+        self, event_id: str | None, stream_type: str, latency_stages: dict[str, float]
+    ) -> None:
+        """콘솔 "파이프라인 지연 요약" 패널을 실시간 갱신하기 위해 스테이지별 ms를 즉시 푸시한다.
+
+        기존 REST 폴링(30초)만으로는 콘솔이 "실시간"으로 느껴지지 않는다는 피드백에 따라,
+        이미 연결돼 있는 콘솔 WS 브로드캐스트 채널(server_detection과 동일 채널)을 재사용한다
+        - 신규 연결/엔드포인트 없이 기존에 검증된 경로에 얹는다. db_save_ms는 이 시점에는
+        아직 확정 전이라(비동기 백그라운드에서 INSERT 이후 측정) 포함하지 않는다 - REST 폴링된
+        detection_guidance_logs 조회 시에는 포함된다.
+        """
+        try:
+            await manager.broadcast_json_to_consoles(
+                {
+                    "type": "latency_event",
+                    "event_id": event_id,
+                    "stream_type": stream_type,
+                    "latency": latency_stages,
+                    "ts": time.time(),
+                }
+            )
+        except Exception as e:
+            logger.debug(f"[DetectionConsumer] latency_event 브로드캐스트 실패: {e}")
+
+    async def _broadcast_ai_pipeline_status(self, **fields) -> None:
+        """콘솔 "AI Pipeline Monitor" 패널의 LLM/RAG/TTS 필드를 실시간 갱신한다.
+
+        llm_provider/llm_verified/llm_retry_count/rag_query/tts_engine/reflex_bypass는
+        콘솔 타입(AiPipelineStatus)에는 정의돼 있었지만 서버 쪽 producer가 전혀 없어
+        항상 undefined였다(2026-07-12 발견 - session_status와 같은 문제).
+        이 채널은 latency_event/guidance_log_event가 쓰는 콘솔 WS(session_manager)가
+        아니라, SystemMetrics/SessionStatus와 같은 SSE 채널(mcp_manager)이다 - 두 브로드캐스트
+        경로가 이 프로젝트에 별도로 존재하므로 혼동하지 않도록 주의(§ws_router._broadcast_session_status
+        참조). event_type은 콘솔이 llm_status/rag_result/tts_status를 동일하게 처리하므로
+        아무거나 써도 무방하지만 가독성을 위해 "llm_status"로 통일한다.
+        """
+        try:
+            from server.mcp.manager import mcp_manager
+
+            await mcp_manager.broadcast_event("llm_status", fields)
+        except Exception as e:
+            logger.debug(f"[DetectionConsumer] ai_pipeline 상태 브로드캐스트 실패: {e}")
+
     async def _ensure_pipeline(self) -> DetectionPipeline:
         if self._pipeline is None:
             await redis_bus.connect()
@@ -136,6 +182,9 @@ class DetectionConsumer:
         detections: list[dict],
         tts_text: str,
         frame: np.ndarray | None = None,
+        latency_stages: dict[str, float] | None = None,
+        user_id: int | None = None,
+        device_id: int | None = None,
     ) -> None:
         task = asyncio.create_task(
             self._persist_log_safe(
@@ -144,6 +193,9 @@ class DetectionConsumer:
                 detections=detections,
                 tts_text=tts_text,
                 frame=frame,
+                latency_stages=latency_stages,
+                user_id=user_id,
+                device_id=device_id,
             )
         )
         self._log_tasks.add(task)
@@ -157,6 +209,9 @@ class DetectionConsumer:
         detections: list[dict],
         tts_text: str,
         frame: np.ndarray | None = None,
+        latency_stages: dict[str, float] | None = None,
+        user_id: int | None = None,
+        device_id: int | None = None,
     ) -> None:
         # 프레임 저장(JPEG 인코딩+디스크 쓰기)은 백그라운드 로그 태스크 안에서만
         # 수행한다. 반사/인지 실시간 전송이 끝난 뒤 실행되므로 경로 지연에 영향 없다.
@@ -165,15 +220,35 @@ class DetectionConsumer:
         if frame is not None and event_id:
             frame_path = await asyncio.to_thread(save_event_frame, event_id, frame)
         try:
-            await persist_detection_guidance_log(
+            saved = await persist_detection_guidance_log(
                 event_id=event_id,
                 stream_type=stream_type,
                 detections=detections,
                 tts_text=tts_text,
                 frame_path=frame_path,
+                latency_stages=latency_stages,
+                user_id=user_id,
+                device_id=device_id,
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] DB 로그 저장 실패: event_id={event_id}, {e}")
+            return
+        await self._broadcast_guidance_log_event(saved)
+
+    async def _broadcast_guidance_log_event(self, row) -> None:
+        """콘솔 Detection Guidance Log 테이블을 실시간 갱신하기 위해 저장 완료된 로그 행을 푸시한다.
+
+        DB 저장(+프레임 파일 저장)이 모두 끝난 뒤에만 호출되므로, 콘솔이 이 이벤트를 받자마자
+        썸네일 URL을 요청해도 404가 나지 않는다(latency_event보다 나중에, 별도로 발생).
+        REST 응답(DetectionGuidanceLogResponse)과 동일한 필드 구조를 그대로 실어 보내
+        콘솔이 REST로 받은 행과 동일하게 다룰 수 있게 한다.
+        """
+        try:
+            await manager.broadcast_json_to_consoles(
+                {"type": "guidance_log_event", "row": row.model_dump(mode="json")}
+            )
+        except Exception as e:
+            logger.debug(f"[DetectionConsumer] guidance_log_event 브로드캐스트 실패: {e}")
 
     async def _consume_loop(self, stream: str) -> None:
         queue = self._select_queue(stream)
@@ -214,6 +289,9 @@ class DetectionConsumer:
             return
 
         frame: np.ndarray = processed.frame
+        # 레이턴시 계측 기준점: 프레임 디코딩 완료(processed.processing_time_ms) 이후부터
+        # 반사/인지 전송 완료까지를 측정한다. decode_ms + 이 구간이 WS 수신~단말 전송 총 지연이다.
+        pipeline_start = time.perf_counter()
         try:
             result, detections, surfaces = await self._pipeline.run(
                 frame=frame,
@@ -242,6 +320,15 @@ class DetectionConsumer:
         await self._send_server_detection(
             processed.device_id, processed.event_id, detections, surfaces
         )
+        # 콘솔 DetectionFeed 패널(탐지 메타데이터 텍스트 피드) 실시간 갱신
+        await self._broadcast_detection_event(
+            processed.device_id,
+            processed.event_id,
+            stream,
+            detections,
+            surfaces,
+            getattr(result, "inference_ms", 0.0),
+        )
 
         if isinstance(result, ReflexAlert):
             self._last_status.update(
@@ -255,7 +342,13 @@ class DetectionConsumer:
                     "error": None,
                 }
             )
-            await self._send_reflex_alert(processed.device_id, result, frame=frame)
+            await self._send_reflex_alert(
+                processed.device_id,
+                result,
+                frame=frame,
+                decode_ms=processed.processing_time_ms,
+                pipeline_start=pipeline_start,
+            )
         elif isinstance(result, DetectionResult):
             self._last_status.update(
                 {
@@ -269,7 +362,13 @@ class DetectionConsumer:
                 }
             )
             if result.risk_hint in ("mid", "low"):
-                await self._send_cognitive_guide(processed.device_id, result, frame=frame)
+                await self._send_cognitive_guide(
+                    processed.device_id,
+                    result,
+                    frame=frame,
+                    decode_ms=processed.processing_time_ms,
+                    pipeline_start=pipeline_start,
+                )
             logger.debug(
                 f"[DetectionConsumer] 인지 결과: event_id={result.event_id}, "
                 f"risk={result.risk_hint}, inference_ms={result.inference_ms:.1f}"
@@ -287,6 +386,51 @@ class DetectionConsumer:
                     "error": "unexpected_result_type",
                 }
             )
+
+    async def _broadcast_detection_event(
+        self,
+        device_id: str,
+        event_id: str,
+        stream: str,
+        detections: list,
+        surfaces: list,
+        inference_ms: float,
+    ) -> None:
+        """콘솔 DetectionFeed 패널(탐지 메타데이터 텍스트 피드)을 실시간 갱신한다.
+
+        이전에는 detection_event가 서버 어디에서도 브로드캐스트되지 않아 패널이 항상
+        비어 있었다(2026-07-12 발견, session_status와 동일 문제). DetectionFeedItem은
+        프레임당 탐지 1건 요약 구조라, 탐지가 있으면 가장 신뢰도 높은 객체를, 없고
+        노면 분류만 있으면 surface만 실어 보낸다. 아무것도 없는 프레임은 보내지 않는다
+        (반사 8~10fps 전부를 텍스트 피드에 흘리면 도배되므로).
+        """
+        if not detections and not surfaces:
+            return
+
+        primary_class = "unknown"
+        confidence: float | None = None
+        if detections:
+            primary = max(detections, key=lambda d: d.confidence)
+            primary_class = primary.class_name
+            confidence = primary.confidence
+
+        try:
+            from server.mcp.manager import mcp_manager
+
+            await mcp_manager.broadcast_event(
+                "detection_event",
+                {
+                    "event_id": event_id,
+                    "device_id": device_id,
+                    "stream": stream,
+                    "class_name": primary_class,
+                    "confidence": confidence,
+                    "inference_ms": round(inference_ms, 1),
+                    "surface": surfaces[0].class_name if surfaces else None,
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[DetectionConsumer] detection_event 브로드캐스트 실패: {e}")
 
     async def _send_server_detection(
         self,
@@ -339,13 +483,19 @@ class DetectionConsumer:
 
         try:
             await manager.send_json(device_id, payload)
+            await manager.broadcast_json_to_consoles(payload)
         except Exception as e:
             logger.error(
                 f"[DetectionConsumer] server_detection 송신 실패: device_id={device_id}, {e}"
             )
 
     async def _send_reflex_alert(
-        self, device_id: str, alert: ReflexAlert, frame: np.ndarray | None = None
+        self,
+        device_id: str,
+        alert: ReflexAlert,
+        frame: np.ndarray | None = None,
+        decode_ms: float = 0.0,
+        pipeline_start: float | None = None,
     ) -> None:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
 
@@ -386,6 +536,19 @@ class DetectionConsumer:
                 f"[DetectionConsumer] 반사 알림 전송: "
                 f"device_id={device_id}, alert_id={alert.alert_id}"
             )
+            # 반사 경로 latency_json에는 decode/inference/total만 존재한다(LLM/RAG/TTS 미경유
+            # 원칙이 그대로 데이터에 반영됨 - rag_ms/llm_ms/tts_ms 키 자체가 생기지 않는다).
+            latency_stages: dict[str, float] = {
+                "decode_ms": round(decode_ms, 1),
+                "inference_ms": round(alert.inference_ms, 1),
+            }
+            if pipeline_start is not None:
+                latency_stages["total_ms"] = round(
+                    (time.perf_counter() - pipeline_start) * 1000 + decode_ms, 1
+                )
+            await self._broadcast_latency_event(alert.event_id, "reflex", latency_stages)
+            await self._broadcast_ai_pipeline_status(reflex_bypass=True)
+            reg_user_id, reg_device_id = get_cached_device_ids(device_id)
             self._schedule_log_persist(
                 event_id=alert.event_id,
                 stream_type="reflex",
@@ -399,12 +562,20 @@ class DetectionConsumer:
                 ],
                 tts_text=f"[반사 클립] {alert.clip}",
                 frame=frame,
+                latency_stages=latency_stages,
+                user_id=reg_user_id,
+                device_id=reg_device_id,
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
 
     async def _send_cognitive_guide(
-        self, device_id: str, result: DetectionResult, frame: np.ndarray | None = None
+        self,
+        device_id: str,
+        result: DetectionResult,
+        frame: np.ndarray | None = None,
+        decode_ms: float = 0.0,
+        pipeline_start: float | None = None,
     ) -> None:
         """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
         if not result.detections:
@@ -434,6 +605,7 @@ class DetectionConsumer:
 
         # RAG 검색: 가장 신뢰도 높은 탐지 사물 기준으로 안전 수칙 조회 (실패 시 빈 문자열, fallback 미경유 유지)
         rag_context = ""
+        rag_start = time.perf_counter()
         try:
             retriever = get_default_retriever()
             if retriever is not None:
@@ -444,6 +616,7 @@ class DetectionConsumer:
                 )
         except Exception as e:
             logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
+        rag_ms = (time.perf_counter() - rag_start) * 1000
 
         orch_input = {
             "event": {
@@ -477,7 +650,18 @@ class DetectionConsumer:
                 )
                 return
 
+            await self._broadcast_ai_pipeline_status(
+                llm_provider=LLMClientFactory.get_current_provider(),
+                llm_verified=bool(orch_result.get("verified", False)),
+                llm_retry_count=int(orch_result.get("retry_count", 0)),
+                rag_query=max(result.detections, key=lambda d: d.confidence).class_name,
+                tts_engine=os.getenv("TTS_ENGINE", "supertonic"),
+                reflex_bypass=False,
+            )
+
+            tts_start = time.perf_counter()
             audio_b64, duration_ms = await realtime_tts.synthesize_from_llm(orch_result)
+            tts_ms = (time.perf_counter() - tts_start) * 1000
 
             # 전송 직전 재검사: 오케스트레이션/TTS 처리 시간이 요청마다 달라(2~10s+),
             # "처리 시작" 시점 쿨다운만으로는 실제 전송(클라이언트 재생 트리거) 간격이
@@ -539,12 +723,28 @@ class DetectionConsumer:
                 }
                 for det in result.detections
             ]
+            latency_stages: dict[str, float] = {
+                "decode_ms": round(decode_ms, 1),
+                "inference_ms": round(result.inference_ms, 1),
+                "rag_ms": round(rag_ms, 1),
+                "llm_ms": round(orch_result.get("total_latency_ms", 0.0), 1),
+                "tts_ms": round(tts_ms, 1),
+            }
+            if pipeline_start is not None:
+                latency_stages["total_ms"] = round(
+                    (time.perf_counter() - pipeline_start) * 1000 + decode_ms, 1
+                )
+            await self._broadcast_latency_event(result.event_id, "cognitive", latency_stages)
+            reg_user_id, reg_device_id = get_cached_device_ids(device_id)
             self._schedule_log_persist(
                 event_id=result.event_id,
                 stream_type="cognitive",
                 detections=log_detections,
                 tts_text=guidance_text,
                 frame=frame,
+                latency_stages=latency_stages,
+                user_id=reg_user_id,
+                device_id=reg_device_id,
             )
         except Exception as e:
             logger.error(

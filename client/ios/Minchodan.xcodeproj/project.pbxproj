@@ -8,10 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		032BC27755E52F228790816E /* ReflexFrameProcessorPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = C9E22D51B3661C9BF2C1D436 /* ReflexFrameProcessorPlugin.m */; };
-		AEC5B10D20260711000000B1 /* AudioSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */; };
-		AEC5B10D20260711000000B2 /* AudioSessionBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */; };
-		DE9780B20260711000000B1 /* DepthProbeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9780B20260711000000A1 /* DepthProbeBridge.swift */; };
-		DE9780B20260711000000B2 /* DepthProbeBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = DE9780B20260711000000A2 /* DepthProbeBridge.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		569D46ACA729BE0C9D7D9C3B /* libPods-Minchodan.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6F5C63C68FCCE506EF7045C0 /* libPods-Minchodan.a */; };
@@ -20,8 +16,12 @@
 		75E04FC62FF8F48E0067928C /* CoreMLInferenceBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E04FC52FF8F48E0067928C /* CoreMLInferenceBridge.swift */; };
 		75F330BB2FF93C42002CBEB3 /* segmentation.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = 75F330BA2FF93C42002CBEB3 /* segmentation.mlpackage */; };
 		94886D699F70B815631A72EC /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9D7E82D580A1B720BD9CE5 /* ExpoModulesProvider.swift */; };
+		AEC5B10D20260711000000B1 /* AudioSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */; };
+		AEC5B10D20260711000000B2 /* AudioSessionBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		C0BE7D038B0DF6441E766533 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9372D75AD1D505CFF3E7CF63 /* PrivacyInfo.xcprivacy */; };
+		DE9780B20260711000000B1 /* DepthProbeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9780B20260711000000A1 /* DepthProbeBridge.swift */; };
+		DE9780B20260711000000B2 /* DepthProbeBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = DE9780B20260711000000A2 /* DepthProbeBridge.mm */; };
 		DF90E9DC2398CACB6B13323F /* object_detection.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = D11F336DF4E1FAA4FA22DB4B /* object_detection.mlpackage */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
@@ -33,20 +33,20 @@
 		579841D21C3D1F17A9EF2E27 /* Pods-Minchodan.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Minchodan.release.xcconfig"; path = "Target Support Files/Pods-Minchodan/Pods-Minchodan.release.xcconfig"; sourceTree = "<group>"; };
 		6F5C63C68FCCE506EF7045C0 /* libPods-Minchodan.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Minchodan.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		75E04FC32FF8F4760067928C /* CoreMLInferenceBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CoreMLInferenceBridge.mm; sourceTree = "<group>"; };
-		AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionBridge.swift; sourceTree = "<group>"; };
-		AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioSessionBridge.mm; sourceTree = "<group>"; };
-		DE9780B20260711000000A1 /* DepthProbeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthProbeBridge.swift; sourceTree = "<group>"; };
-		DE9780B20260711000000A2 /* DepthProbeBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = DepthProbeBridge.mm; sourceTree = "<group>"; };
 		75E04FC52FF8F48E0067928C /* CoreMLInferenceBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLInferenceBridge.swift; sourceTree = "<group>"; };
 		75F330BA2FF93C42002CBEB3 /* segmentation.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = segmentation.mlpackage; sourceTree = "<group>"; };
 		8E0686B7E8E7316C6EA4626F /* ReflexFrameProcessorPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReflexFrameProcessorPlugin.swift; sourceTree = "<group>"; };
 		9372D75AD1D505CFF3E7CF63 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Minchodan/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A79F968E0837B52A12556710 /* Pods-Minchodan.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Minchodan.debug.xcconfig"; path = "Target Support Files/Pods-Minchodan/Pods-Minchodan.debug.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Minchodan/SplashScreen.storyboard; sourceTree = "<group>"; };
+		AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionBridge.swift; sourceTree = "<group>"; };
+		AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioSessionBridge.mm; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		C9E22D51B3661C9BF2C1D436 /* ReflexFrameProcessorPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ReflexFrameProcessorPlugin.m; sourceTree = "<group>"; };
 		CD9D7E82D580A1B720BD9CE5 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Minchodan/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		D11F336DF4E1FAA4FA22DB4B /* object_detection.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; name = object_detection.mlpackage; path = ../assets/models/yolo26n/ios/object_detection.mlpackage; sourceTree = SOURCE_ROOT; };
+		DE9780B20260711000000A1 /* DepthProbeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthProbeBridge.swift; sourceTree = "<group>"; };
+		DE9780B20260711000000A2 /* DepthProbeBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = DepthProbeBridge.mm; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Minchodan/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Minchodan-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Minchodan-Bridging-Header.h"; path = "Minchodan/Minchodan-Bridging-Header.h"; sourceTree = "<group>"; };

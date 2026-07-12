@@ -5,7 +5,7 @@ API 명세서 v0.2.0 기준 메시지 타입별 스키마를 정의합니다.
 
 import contextlib
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -75,8 +75,15 @@ class HeartbeatAckMessage(BaseModel):
 
 
 def now_iso() -> str:
-    """현재 시각을 ISO 8601 문자열로 반환."""
-    return datetime.now().isoformat()
+    """현재 시각을 ISO 8601 문자열로 반환한다 (UTC, 타임존 오프셋 포함).
+
+    2026-07-12 수정: 이전에는 datetime.now()(naive, 컨테이너 시스템 시각=UTC)를 그대로
+    직렬화해 "+00:00"/"Z" 같은 타임존 표시가 없었다. JS의 `new Date(...)`는 오프셋이
+    없는 ISO 문자열을 "브라우저 로컬 시각"으로 해석하므로, UTC 09:53을 KST 09:53으로
+    잘못 표시하는 9시간 오차가 콘솔 전역(마지막 이벤트 시각, welcome server_time 등)에서
+    발생했다. datetime.now(UTC)로 오프셋을 명시해 브라우저가 올바르게 KST로 변환하게 한다.
+    """
+    return datetime.now(UTC).isoformat()
 
 
 def now_ts() -> float:

@@ -32,7 +32,7 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
         headers: {
           "Content-Type" : "application/x-www-form-urlencoded",
         },
-        body: formData.toString()      
+        body: formData.toString()
       });
 
       // TH HARDCODE AREA:
@@ -58,24 +58,26 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
       <form onSubmit={handleLogin} className="login-form">
         <h2 className="login-title">Minchodan Console</h2>
         <p className="login-subtitle">관리자 로그인이 필요합니다.</p>
-        
-        <input 
-          type="text" 
-          placeholder="사번 (Employee No)" 
-          value={employeeNo} 
+
+        <input
+          type="text"
+          placeholder="사번 (Employee No)"
+          value={employeeNo}
           onChange={e => setEmployeeNo(e.target.value)}
           className="login-input"
+          autoComplete="username"
         />
-        <input 
-          type="password" 
-          placeholder="비밀번호" 
-          value={password} 
+        <input
+          type="password"
+          placeholder="비밀번호"
+          value={password}
           onChange={e => setPassword(e.target.value)}
           className="login-input"
+          autoComplete="current-password"
         />
-        
+
         {error && <div className="login-error">{error}</div>}
-        
+
         <button type="submit" className="login-button">
           로그인 (JWT 발급)
         </button>

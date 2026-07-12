@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
@@ -57,7 +57,10 @@ class MCPManager:
         """
         event_data = {
             "event_type": event_type,
-            "timestamp": datetime.now().isoformat(),
+            # 2026-07-12 수정: naive(datetime.now())는 오프셋이 없어 브라우저 new Date()가
+            # UTC를 로컬(KST)로 오인식 - 9시간 밀리는 원인이었다(server/api/schemas.py
+            # now_iso()와 동일 버그). UTC 오프셋을 명시해 콘솔이 올바르게 변환하게 한다.
+            "timestamp": datetime.now(UTC).isoformat(),
             "payload": payload,
         }
 

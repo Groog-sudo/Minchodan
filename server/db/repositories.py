@@ -1,4 +1,5 @@
 import sys
+from datetime import date
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -14,8 +15,9 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 # (힌트: server.db.models 에서 AdminAccount, AdminLoginAudit, AppUser, UserDevice 임포트)
 # 여기에 작성:
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from server.db.models import (
     AdminAccount,
@@ -78,11 +80,56 @@ class UserRepository:
         result = await self.session.execute(select(AppUser).where(AppUser.phone == phone))
         return result.scalars().first()
 
+    async def get_by_id(self, user_id: int) -> AppUser | None:
+        result = await self.session.execute(select(AppUser).where(AppUser.user_id == user_id))
+        return result.scalars().first()
+
     async def create(self, user: AppUser) -> AppUser:
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)
         return user
+
+    async def update_profile(
+        self,
+        user_id: int,
+        *,
+        name: str,
+        phone: str,
+        disability_severity: str,
+        birth_date: date | None = None,
+        guardian_phone: str | None = None,
+        address: str | None = None,
+    ) -> AppUser | None:
+        """관리자 회원 등록 화면에서 익명 자동등록 레코드를 실명으로 전환하거나
+        기존 회원 정보를 수정할 때 사용한다."""
+        user = await self.get_by_id(user_id)
+        if user is None:
+            return None
+        user.name = name
+        user.phone = phone
+        user.disability_severity = disability_severity
+        user.birth_date = birth_date
+        user.guardian_phone = guardian_phone
+        user.address = address
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
+    async def list_all(self, limit: int = 20, offset: int = 0) -> list[AppUser]:
+        """관리자 회원 목록 조회용. devices를 selectinload로 함께 로드해 N+1을 피한다."""
+        result = await self.session.execute(
+            select(AppUser)
+            .options(selectinload(AppUser.devices))
+            .order_by(AppUser.user_id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def count_all(self) -> int:
+        result = await self.session.execute(select(func.count()).select_from(AppUser))
+        return int(result.scalar_one())
 
 
 # 5. DeviceRepository 클래스를 만드세요.
@@ -152,6 +199,11 @@ class DetectionGuidanceLogRepository:
         )
         return list(result.scalars().all())
 
+    async def count_all(self) -> int:
+        """콘솔 페이지네이션이 전체 페이지 수를 계산하기 위한 전체 로그 건수."""
+        result = await self.session.execute(select(func.count()).select_from(DetectionGuidanceLog))
+        return int(result.scalar_one())
+
     # ==========================================
     # HARDCODE PART - create 설명 및 작성 조건
     #
@@ -199,6 +251,24 @@ class DetectionGuidanceLogRepository:
         log = result.scalars().first()
         if log:
             log.false_positive = false_positive
+            await self.session.commit()
+            await self.session.refresh(log)
+        return log
+
+    async def update_latency_json(
+        self, log_id: int, latency_json: str
+    ) -> DetectionGuidanceLog | None:
+        """INSERT 완료 후 db_save_ms를 합산한 latency_json으로 갱신한다.
+
+        자기 자신의 쓰기 소요 시간은 쓰기가 끝나기 전에는 알 수 없으므로,
+        1차 INSERT(latency_json에 db_save_ms 제외) 후 이 메서드로 한 번 더 갱신한다.
+        """
+        result = await self.session.execute(
+            select(DetectionGuidanceLog).where(DetectionGuidanceLog.log_id == log_id)
+        )
+        log = result.scalars().first()
+        if log:
+            log.latency_json = latency_json
             await self.session.commit()
             await self.session.refresh(log)
         return log

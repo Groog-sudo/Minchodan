@@ -28,6 +28,10 @@ from server.bus.redis_client import redis_bus
 from server.capture.frame_decoder import decode_frame, decode_frame_binary
 from server.capture.stream_splitter import get_default_splitter
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
+from server.services.device_registry_service import (
+    ensure_device_registered,
+    get_cached_device_ids,
+)
 from server.stt.stt_service import SttService
 from server.stt.stt_to_llm_bridge import SttToLlmBridge
 from server.tts.realtime_tts import realtime_tts
@@ -82,6 +86,28 @@ async def _finish_detection(
                 "frame_id": frame_id,
                 "decode_ms": round(decode_ms, 2),
             }
+        )
+
+
+async def _broadcast_session_status(
+    device_id: str, status: str, rtt_ms: float | None = None
+) -> None:
+    """콘솔 SessionStatus 패널(단말 접속 상태) 실시간 갱신.
+
+    이전에는 session_status 이벤트를 아무 곳에서도 발행하지 않아 콘솔 패널이 항상 비어
+    있었다(2026-07-12 발견). 연결/재확인(heartbeat_ack)/해제 3개 지점에서 호출한다.
+    """
+    from server.mcp.manager import mcp_manager
+
+    with contextlib.suppress(Exception):
+        await mcp_manager.broadcast_event(
+            "session_status",
+            {
+                "device_id": device_id,
+                "status": status,
+                "rtt_ms": rtt_ms,
+                "last_seen": now_iso(),
+            },
         )
 
 
@@ -161,6 +187,19 @@ async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> 
 
 async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> None:
     model_name = data.get("model_name")
+    # 레이턴시 계측: 실기기 -> STT -> LLM -> TTS -> DB저장 스테이지별 ms를 모아
+    # persist_detection_guidance_log에 넘긴다(콘솔 레이턴시 패널에서 확인).
+    stt_stage_start = time.perf_counter()
+    latency_stages: dict[str, float] = {}
+
+    try:
+        from server.mcp.manager import mcp_manager
+
+        await mcp_manager.broadcast_event(
+            "stt_status", {"stt_status": "transcribing", "device_id": device_id}
+        )
+    except Exception as e:
+        logger.error(f"[WS] stt_status broadcast failed: {e}")
 
     try:
         audio_bytes = base64.b64decode(audio_b64)
@@ -177,8 +216,12 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         stt_result = await asyncio.to_thread(
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
+        latency_stages["stt_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
         logger.info(f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}")
+
+        llm_start = time.perf_counter()
         bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
+        latency_stages["llm_ms"] = round((time.perf_counter() - llm_start) * 1000, 1)
         guidance_text = bridge_result.get("guidance_text", "")
         bridge_source = bridge_result.get("source", "")
 
@@ -193,12 +236,28 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             f"guidance_len={len(guidance_text)}, source={bridge_source}"
         )
 
+        # 콘솔 AI Pipeline Monitor 실시간 갱신 (consumer.py._broadcast_ai_pipeline_status와 동일 목적).
+        with contextlib.suppress(Exception):
+            from server.mcp.manager import mcp_manager
+            from server.orchestration.llm_client_factory import LLMClientFactory
+
+            await mcp_manager.broadcast_event(
+                "llm_status",
+                {
+                    "llm_provider": LLMClientFactory.get_current_provider(),
+                    "tts_engine": os.getenv("TTS_ENGINE", "supertonic"),
+                    "reflex_bypass": False,
+                },
+            )
+
         # 2026-07-11: 클라이언트에 전송할 안내문을 에코 감지용 메모리에 기록한다
         # (다음 STT 입력이 이 안내문의 에코인지 판정하기 위함).
         if guidance_text:
             _stt_bridge._record_guidance(device_id, guidance_text)
 
+        tts_start = time.perf_counter()
         audio_wav_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
+        latency_stages["tts_ms"] = round((time.perf_counter() - tts_start) * 1000, 1)
         stt_event_id = f"stt-{device_id}-{now_ts()}"
 
         # 2026-07-09에 인지 경로(DetectionConsumer._send_cognitive_guide)가 오디오를
@@ -252,13 +311,36 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             f"source={bridge_result.get('source')}"
         )
         if guidance_text:
+            latency_stages["total_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
+            # 콘솔 "파이프라인 지연 요약" 패널 실시간 갱신 (consumer.py._broadcast_latency_event와
+            # 동일 목적/채널 - STT 경로는 DetectionConsumer 밖이라 여기서 직접 브로드캐스트한다).
+            with contextlib.suppress(Exception):
+                await manager.broadcast_json_to_consoles(
+                    {
+                        "type": "latency_event",
+                        "event_id": stt_event_id,
+                        "stream_type": "cognitive",
+                        "latency": latency_stages,
+                        "ts": now_ts(),
+                    }
+                )
             try:
-                await persist_detection_guidance_log(
+                reg_user_id, reg_device_id = get_cached_device_ids(device_id)
+                saved_log = await persist_detection_guidance_log(
                     event_id=stt_event_id,
                     stream_type="cognitive",
                     detections=[{"source": "stt", "text_length": len(stt_result.text)}],
                     tts_text=guidance_text,
+                    latency_stages=latency_stages,
+                    user_id=reg_user_id,
+                    device_id=reg_device_id,
                 )
+                # 콘솔 Detection Guidance Log 테이블 실시간 갱신 (consumer.py._broadcast_guidance_log_event와
+                # 동일 목적/채널 - DB 저장 완료 후에만 보내 콘솔이 즉시 썸네일을 요청해도 안전하다).
+                with contextlib.suppress(Exception):
+                    await manager.broadcast_json_to_consoles(
+                        {"type": "guidance_log_event", "row": saved_log.model_dump(mode="json")}
+                    )
             except Exception as e:
                 logger.error(f"[WS] stt_audio DB 로그 저장 실패: device_id={device_id}, {e}")
     except (KeyError, ValueError, RuntimeError) as e:
@@ -280,6 +362,27 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
     finally:
         if saved_path is not None:
             saved_path.unlink(missing_ok=True)
+        with contextlib.suppress(Exception):
+            from server.mcp.manager import mcp_manager
+
+            await mcp_manager.broadcast_event(
+                "stt_status", {"stt_status": "idle", "device_id": device_id}
+            )
+
+
+@router.websocket("/ws/console/live-feed")
+async def ws_console_live_feed(ws: WebSocket) -> None:
+    """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트."""
+    await manager.connect_console(ws)
+    try:
+        while True:
+            # ping/pong 및 연결 유지를 위해 메시지 수신 대기 (받은 메시지는 무시)
+            _ = await ws.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect_console(ws)
+    except Exception as e:
+        logger.error(f"[ConsoleWS] 예외: {e}")
+        manager.disconnect_console(ws)
 
 
 @router.websocket("/ws/detect")
@@ -358,7 +461,15 @@ async def ws_detect(
 
         logger.info(f"[WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}")
         print(f"[DEBUG_WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}", flush=True)
+        # auth_ok 송신 "전"에 등록을 끝낸다: 클라이언트는 auth_ok를 받는 즉시 프레임을
+        # 보내기 시작할 수 있어, 먼저 보내버리면 DetectionConsumer가 등록 완료 전에
+        # 로그를 저장해 user_id/device_id가 NULL로 새는 레이스가 있었다(2026-07-12 실측 확인).
+        try:
+            await ensure_device_registered(device_id)
+        except Exception as e:
+            logger.error(f"[WS] 단말 자동 등록 실패: device_id={device_id}, {e}")
         await ws.send_json({"type": "auth_ok", "device_id": device_id})
+        await _broadcast_session_status(device_id, "connected")
         await redis_bus.connect()
 
         # 2026-07-11: 재접속 시 지도 경로 복원. nav_route는 원래 경로 설정 순간에만
@@ -432,6 +543,8 @@ async def ws_detect(
                 processed = await decode_frame_binary(raw_bytes, meta)
                 decode_ms = (time.perf_counter() - decode_start) * 1000
 
+                await manager.broadcast_to_consoles(raw_bytes)
+
                 await _finish_detection(
                     ws, splitter, processed, event_id, frame_id, decode_ms, len(raw_bytes)
                 )
@@ -446,6 +559,9 @@ async def ws_detect(
             if msg_type in ("heartbeat_ack", "pong"):
                 if heartbeat:
                     heartbeat.record_ack()
+                    await _broadcast_session_status(
+                        device_id, "connected", rtt_ms=heartbeat.last_rtt_ms
+                    )
 
             elif msg_type == "ping":
                 # HeartbeatManager와의 동시 close 레이스 방지 (ack 전송과 동일 사유)
@@ -499,6 +615,10 @@ async def ws_detect(
 
                 b64_val = payload.get("thumbnail_jpeg_b64")
                 b64_len = len(b64_val) if b64_val else 0
+                if b64_val:
+                    with contextlib.suppress(Exception):
+                        raw_bytes = base64.b64decode(b64_val)
+                        await manager.broadcast_to_consoles(raw_bytes)
                 await _finish_detection(
                     ws, splitter, processed, event_id, frame_id, decode_ms, b64_len
                 )
@@ -561,6 +681,7 @@ async def ws_detect(
         logger.error(f"[WS] 예기치 않은 오류: device_id={device_id}, error={e}")
     finally:
         manager.disconnect(device_id)
+        await _broadcast_session_status(device_id, "disconnected")
         if heartbeat:
             heartbeat.stop()
         if heartbeat_task:

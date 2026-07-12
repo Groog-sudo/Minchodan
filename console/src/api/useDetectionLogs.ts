@@ -5,6 +5,10 @@ import type { DetectionGuidanceLogRow } from "../types/monitor";
 // - detection_guidance_logs 사후 이력 조회 훅입니다. 실시간 SSE(useMonitorStream)와
 //   달리 REST GET 폴링으로 충분한 영역이라 EventSource를 쓰지 않습니다.
 // - 서버 주소는 VITE_API_BASE_URL 환경 변수 하나로 재정의합니다 (기본 localhost:8000).
+// - 2026-07-12: 전체 건수(수천 건 가능)를 클라이언트가 한 번에 다 받아 슬라이싱하던
+//   방식에서, page/pageSize로 서버에 offset 쿼리를 보내는 진짜 서버 페이지네이션으로
+//   전환했다(하단 "N건" 표시가 실제 로드된 50건만 반영해 DB 전체 건수와 안 맞는다는
+//   피드백). 전체 건수는 X-Total-Count 응답 헤더로 받는다.
 const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
@@ -22,8 +26,14 @@ export function eventFrameUrl(eventId: string, token: string): string {
   )}?${new URLSearchParams({ token }).toString()}`;
 }
 
-export function useDetectionLogs(token: string | null, pollMs = DEFAULT_POLL_MS) {
+export function useDetectionLogs(
+  token: string | null,
+  page: number,
+  pageSize: number,
+  pollMs = DEFAULT_POLL_MS,
+) {
   const [rows, setRows] = useState<DetectionGuidanceLogRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -31,21 +41,25 @@ export function useDetectionLogs(token: string | null, pollMs = DEFAULT_POLL_MS)
     if (!token) return;
     setLoading(true);
     try {
-      const response = await fetch(`${LOGS_ENDPOINT}?limit=50`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const offset = page * pageSize;
+      const response = await fetch(
+        `${LOGS_ENDPOINT}?limit=${pageSize}&offset=${offset}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
       if (!response.ok) {
         throw new Error(`로그 조회 실패 (HTTP ${response.status})`);
       }
       const data: DetectionGuidanceLogRow[] = await response.json();
       setRows(data);
+      const totalHeader = response.headers.get("X-Total-Count");
+      if (totalHeader) setTotalCount(Number(totalHeader));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "로그 조회 중 오류");
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, page, pageSize]);
 
   const updateLogFalsePositive = useCallback(
     async (logId: number, falsePositive: boolean | null) => {
@@ -85,5 +99,5 @@ export function useDetectionLogs(token: string | null, pollMs = DEFAULT_POLL_MS)
     return () => clearInterval(timer);
   }, [token, refresh, pollMs]);
 
-  return { rows, error, loading, refresh, updateLogFalsePositive };
+  return { rows, totalCount, error, loading, refresh, updateLogFalsePositive };
 }

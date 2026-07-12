@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DetectionGuidanceLogRow } from "../types/monitor";
+import type { DetectionGuidanceLogRow, LatencyStages } from "../types/monitor";
 import { eventFrameUrl } from "../api/useDetectionLogs";
 
 // 발표/면접 포인트:
@@ -10,6 +10,16 @@ import { eventFrameUrl } from "../api/useDetectionLogs";
 // - bbox는 이미지에 굽지 않고 detected_objects_json 좌표로 오버레이 렌더링합니다.
 //   원본 이미지를 보존해야 임계값/모델을 바꿔 재검증할 수 있기 때문입니다.
 // - 썸네일/상세 이미지를 클릭하면 라이트박스(확대 보기)가 열립니다.
+
+function getColorForClass(className: string): string {
+  const c = className.toLowerCase();
+  if (c.includes("person") || c.includes("pedestrian")) return "#10b981"; // Emerald Green
+  if (c.includes("car") || c.includes("truck") || c.includes("bus") || c.includes("motorcycle") || c.includes("vehicle")) return "#ef4444"; // Vivid Red
+  if (c.includes("bollard") || c.includes("pole") || c.includes("tree") || c.includes("obstacle") || c.includes("barrier")) return "#f59e0b"; // Alert Amber
+  if (c.includes("caution") || c.includes("warning") || c.includes("danger") || c.includes("construction")) return "#ec4899"; // Pink/Magenta
+  if (c.includes("crosswalk") || c.includes("sidewalk") || c.includes("walkway")) return "#3b82f6"; // Blue
+  return "#8b5cf6"; // Purple
+}
 
 interface LoggedDetection {
   class_name?: string;
@@ -50,6 +60,49 @@ function formatDetectedAt(iso: string): string {
   const parts = koreanDateTimeFormatter.formatToParts(new Date(iso));
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
+function parseLatency(json: string | null): LatencyStages {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json);
+    return typeof parsed === "object" && parsed !== null ? (parsed as LatencyStages) : {};
+  } catch {
+    return {};
+  }
+}
+
+// 실기기 -> STT/추론 -> RAG -> LLM -> TTS -> DB저장 순서로 고정 표시한다.
+// 각 로그는 실제로 경유한 스테이지 키만 latency_json에 담겨 있으므로(반사 경로는
+// decode/inference/total뿐) 없는 키는 자동으로 생략된다.
+const LATENCY_STAGE_ORDER: Array<[keyof LatencyStages, string]> = [
+  ["decode_ms", "디코딩"],
+  ["stt_ms", "STT"],
+  ["inference_ms", "추론"],
+  ["rag_ms", "RAG"],
+  ["llm_ms", "LLM"],
+  ["tts_ms", "TTS"],
+  ["db_save_ms", "DB저장"],
+  ["total_ms", "총합"],
+];
+
+/** 스테이지별 ms를 칩 형태로 나열합니다. total_ms는 강조 표시합니다. */
+function LatencyBadges({ latencyJson }: { latencyJson: string | null }) {
+  const stages = parseLatency(latencyJson);
+  const entries = LATENCY_STAGE_ORDER.filter(([key]) => typeof stages[key] === "number");
+  if (entries.length === 0) return <span className="latency-empty">-</span>;
+  return (
+    <span className="latency-badges">
+      {entries.map(([key, label]) => (
+        <span
+          key={key}
+          className={key === "total_ms" ? "latency-chip latency-chip-total" : "latency-chip"}
+        >
+          {label} {stages[key]!.toFixed(0)}ms
+        </span>
+      ))}
+    </span>
+  );
 }
 
 const STREAM_LABEL: Record<string, string> = {
@@ -118,19 +171,30 @@ function FrameWithOverlay({
       {natural &&
         boxes.map((det, index) => {
           const { x, y, w, h } = det.bbox!;
+          const className = det.class_name ?? "unknown";
+          const color = getColorForClass(className);
           return (
             <div
-              key={`${det.class_name ?? "obj"}-${index}`}
+              key={`${className}-${index}`}
               className="frame-overlay-box"
               style={{
                 left: `${(x / natural.w) * 100}%`,
                 top: `${(y / natural.h) * 100}%`,
                 width: `${(w / natural.w) * 100}%`,
                 height: `${(h / natural.h) * 100}%`,
+                borderColor: color,
+                boxShadow: `0 0 6px ${color}`,
               }}
             >
-              <span className="frame-overlay-label">
-                {det.class_name ?? "?"}
+              <span
+                className="frame-overlay-label"
+                style={{
+                  backgroundColor: color,
+                  color: "#000000",
+                  fontWeight: 900
+                }}
+              >
+                {(det.class_name ?? "?").toUpperCase()}
                 {typeof det.confidence === "number"
                   ? ` ${(det.confidence * 100).toFixed(0)}%`
                   : ""}
@@ -181,6 +245,9 @@ function FrameLightbox({
             <span className="lightbox-tts">
               {formatDetectedAt(row.detected_at)} · {row.tts_text}
             </span>
+            <div style={{ marginTop: "6px" }}>
+              <LatencyBadges latencyJson={row.latency_json} />
+            </div>
             <div style={{ marginTop: "8px", display: "flex", gap: "6px" }}>
               <button
                 type="button"
@@ -230,13 +297,33 @@ export function DetectionGuidanceLogTable({
   rows,
   token,
   onUpdateFalsePositive,
+  onRefresh,
+  refreshing,
+  live,
+  page = 0,
+  pageSize = 10,
+  totalCount,
+  onPrevPage,
+  onNextPage,
 }: {
   rows: DetectionGuidanceLogRow[];
   token?: string | null;
   onUpdateFalsePositive?: (logId: number, falsePositive: boolean | null) => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+  live?: boolean;
+  // 2026-07-12: 서버 페이지네이션으로 전환 - rows는 이미 서버가 offset/limit으로 잘라
+  // 보낸 "현재 페이지" 데이터라 여기서 다시 슬라이싱하지 않는다. 페이지 이동은
+  // onPrevPage/onNextPage로 부모(App.tsx)에 위임해 실제 REST 재조회를 트리거한다.
+  page?: number;
+  pageSize?: number;
+  totalCount?: number;
+  onPrevPage?: () => void;
+  onNextPage?: () => void;
 }) {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [lightboxLogId, setLightboxLogId] = useState<number | null>(null);
+  const totalPages = Math.max(1, Math.ceil((totalCount ?? rows.length) / pageSize));
   const selected = rows.find((row) => row.log_id === selectedLogId) ?? null;
   const lightboxRow = rows.find((row) => row.log_id === lightboxLogId) ?? null;
   const canShowFrame = (row: DetectionGuidanceLogRow) =>
@@ -246,7 +333,26 @@ export function DetectionGuidanceLogTable({
     <section className="panel panel-table">
       <div className="panel-header">
         <h2>Detection Guidance Log</h2>
-        <span className="panel-kicker">이력 로그</span>
+        <div className="panel-header-actions">
+          <button
+            type="button"
+            className="refresh-btn"
+            onClick={() => onRefresh?.()}
+            disabled={refreshing}
+          >
+            {refreshing ? "새로고침 중..." : "새로고침"}
+          </button>
+          <span className="panel-kicker">
+            {live ? (
+              <>
+                <span className="latency-live-dot" aria-hidden="true" />
+                실시간 이력 로그
+              </>
+            ) : (
+              "이력 로그"
+            )}
+          </span>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -261,52 +367,83 @@ export function DetectionGuidanceLogTable({
                 <th>스트림</th>
                 <th>이벤트 ID</th>
                 <th>TTS 안내문</th>
+                <th>지연(ms)</th>
                 <th>오탐 판정</th>
                 <th>사용자</th>
                 <th>기기</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr
-                  key={row.log_id}
-                  className={row.log_id === selectedLogId ? "row-selected" : undefined}
-                  onClick={() =>
-                    setSelectedLogId(row.log_id === selectedLogId ? null : row.log_id)
-                  }
-                >
-                  <td>
-                    {canShowFrame(row) ? (
-                      <img
-                        src={eventFrameUrl(row.event_id!, token!)}
-                        alt="이벤트 썸네일 (클릭하면 확대)"
-                        className="frame-thumb"
-                        loading="lazy"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setLightboxLogId(row.log_id);
-                        }}
-                      />
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td>{formatDetectedAt(row.detected_at)}</td>
-                  <td>
-                    <StreamBadge streamType={row.stream_type} />
-                  </td>
-                  <td>{row.event_id ?? "-"}</td>
-                  <td>{row.tts_text}</td>
-                  <td>
-                    <FalsePositiveBadge value={row.false_positive} />
-                  </td>
-                  <td>{row.user_id ?? "-"}</td>
-                  <td>{row.device_id ?? "-"}</td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const totalMs = parseLatency(row.latency_json).total_ms;
+                return (
+                  <tr
+                    key={row.log_id}
+                    className={row.log_id === selectedLogId ? "row-selected" : undefined}
+                    onClick={() =>
+                      setSelectedLogId(row.log_id === selectedLogId ? null : row.log_id)
+                    }
+                  >
+                    <td>
+                      {canShowFrame(row) ? (
+                        <img
+                          src={eventFrameUrl(row.event_id!, token!)}
+                          alt="이벤트 썸네일 (클릭하면 확대)"
+                          className="frame-thumb"
+                          loading="lazy"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setLightboxLogId(row.log_id);
+                          }}
+                        />
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td>{formatDetectedAt(row.detected_at)}</td>
+                    <td>
+                      <StreamBadge streamType={row.stream_type} />
+                    </td>
+                    <td>{row.event_id ?? "-"}</td>
+                    <td>{row.tts_text}</td>
+                    <td className="latency-total-cell">
+                      {typeof totalMs === "number" ? totalMs.toFixed(0) : "-"}
+                    </td>
+                    <td>
+                      <FalsePositiveBadge value={row.false_positive} />
+                    </td>
+                    <td>{row.user_id ?? "-"}</td>
+                    <td>{row.device_id ?? "-"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {totalPages > 1 && (
+        <nav className="log-pagination" aria-label="이력 페이지 이동">
+          <button
+            type="button"
+            className="page-btn"
+            onClick={() => onPrevPage?.()}
+            disabled={page === 0}
+          >
+            이전
+          </button>
+          <span className="page-indicator">
+            {page + 1} / {totalPages} 페이지 · 전체 {totalCount ?? rows.length}건
+          </span>
+          <button
+            type="button"
+            className="page-btn"
+            onClick={() => onNextPage?.()}
+            disabled={page >= totalPages - 1}
+          >
+            다음
+          </button>
+        </nav>
       )}
 
       {selected && canShowFrame(selected) && (
@@ -319,6 +456,9 @@ export function DetectionGuidanceLogTable({
             </div>
             <span>{formatDetectedAt(selected.detected_at)}</span>
             <span style={{ display: "block", margin: "4px 0 8px 0" }}>{selected.tts_text}</span>
+            <div style={{ margin: "0 0 8px 0" }}>
+              <LatencyBadges latencyJson={selected.latency_json} />
+            </div>
             <div style={{ display: "flex", gap: "6px" }}>
               <button
                 type="button"

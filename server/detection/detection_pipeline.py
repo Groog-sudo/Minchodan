@@ -133,6 +133,7 @@ class DetectionPipeline:
         if reflex_alert is not None:
             reflex_alert.event_id = event_id
             reflex_alert.ts = time.time()
+            reflex_alert.inference_ms = (time.time() - start_ts) * 1000
             logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
             return reflex_alert, detections, surfaces
 
@@ -140,6 +141,7 @@ class DetectionPipeline:
         if head_level_alert is not None:
             head_level_alert.event_id = event_id
             head_level_alert.ts = time.time()
+            head_level_alert.inference_ms = (time.time() - start_ts) * 1000
             logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
             return head_level_alert, detections, surfaces
 
@@ -147,6 +149,7 @@ class DetectionPipeline:
         if surface_alert is not None:
             surface_alert.event_id = event_id
             surface_alert.ts = time.time()
+            surface_alert.inference_ms = (time.time() - start_ts) * 1000
             logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
             return surface_alert, detections, surfaces
 

@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.13 (2026-07-12 §8.5 사후 이력 조회 REST 신설 - detection-logs 목록·event-frames 이미지 서빙, 이벤트 프레임 저장 계약(frame_path·보존 7일·백그라운드 저장), 인지 로그 detected_objects_json에 bbox 포함 + 이전 v0.4.12 이력 유지: §8 SSE 계약 고정 - 실발행/예약 이벤트 분리·payload 필드 고정·mcp:metrics producer 부재 명시, event_id 형식 구조화)
+> **버전**: v0.4.15 (2026-07-12 §8.6에 app_users 회원 프로필 확장 필드(birth_date/guardian_phone/address, 전부 선택) 반영 + 이전 v0.4.14 이력 유지: §8.6 회원(시각장애인) 관리 REST 신설 - 관리자 콘솔의 회원 등록/전환/목록 API, 익명 자동등록(anon: 접두사) 레코드를 실명으로 전환하는 분기 로직 명세, §8.5 사후 이력 조회 REST 신설 - detection-logs 목록·event-frames 이미지 서빙, 이벤트 프레임 저장 계약(frame_path·보존 7일·백그라운드 저장), 인지 로그 detected_objects_json에 bbox 포함)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -649,6 +649,31 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | 경로 방어 | event_id 화이트리스트(`[A-Za-z0-9._-]{1,64}`) + DB 등록 경로만 서빙 + 저장소 밖 경로 해석 차단 이중 검증 |
 
 > 인지 로그의 `detected_objects_json`에는 2026-07-12부터 bbox 좌표가 포함됩니다(콘솔 오버레이용). LLM 오케스트레이터 입력에는 기존대로 bbox를 넣지 않습니다(프롬프트 오염 방지).
+
+### 8.6 회원(시각장애인) 관리 REST (2026-07-12 신설)
+
+콘솔의 "회원 관리" 화면(`console/src/pages/MembersPage.tsx`)이 사용합니다. `app_users`/`user_devices`를 다루며, 기존에 인증 없이 열려 있던 `POST /api/v1/users/register`(어디서도 호출되지 않는 죽은 엔드포인트)와 별개로 관리자 인증이 필요한 신규 API입니다.
+
+| 항목 | 값 |
+| :--- | :--- |
+| 회원 목록 | `GET /api/v1/admin/members?limit=20&offset=0` (limit 1~100) |
+| 회원 등록/전환 | `POST /api/v1/admin/members` |
+| 인증 | 관리자 JWT (`Depends(get_current_admin)`), 다른 admin API와 동일 수준(역할별 세분화 권한 체크는 없음) |
+| 라우터 | `server/api/admin_member_router.py` |
+
+**목록 응답 필드**: `user_id`, `name`, `phone`, `disability_severity`, `birth_date`, `guardian_phone`, `address`, `status`, `devices`(`device_id`/`device_uuid`/`platform`/`is_active` 배열), `is_anonymous`(phone이 `anon:` 접두사면 true). `X-Total-Count` 응답 헤더로 전체 건수를 함께 내려준다(detection-logs와 동일 패턴).
+
+**등록 요청 필드**: `device_uuid`, `name`, `phone`, `disability_severity`(필수) + `birth_date`, `guardian_phone`, `address`(선택, 2026-07-12 추가 - 익명 자동등록 레코드는 채우지 않으므로 NULL 허용), platform 생략 시 unknown.
+
+**등록/전환 분기 로직** (`UserService.register_or_convert_member`):
+
+| device_uuid 상태 | 동작 |
+| :--- | :--- |
+| 이미 등록됨(주로 익명 자동등록) | 소유 회원의 `name`/`phone`/`disability_severity`를 요청 값으로 UPDATE(전환). 신규 행 생성 안 함 |
+| 미등록 | 같은 phone의 기존 회원이 있으면 그 회원에 기기만 추가, 없으면 회원+기기 신규 생성 |
+| phone이 다른 회원 소유 | `409 Conflict` |
+
+> "익명 자동등록"은 `server/services/device_registry_service.py`가 WS 최초 접속 시 `detection_guidance_logs.user_id`/`device_id` FK를 채우기 위해 만드는 `phone="anon:{device_uuid}"` 형태의 임시 계정입니다(2026-07-12 도입). 회원 관리 화면은 이 임시 계정을 실명으로 전환하는 용도로 설계되었습니다.
 
 ---
 

@@ -15,7 +15,7 @@ import sys
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,13 +57,20 @@ async def update_detection_log_false_positive(
 
 @router.get("/detection-logs", response_model=list[DetectionGuidanceLogResponse])
 async def list_detection_logs(
+    response: Response,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     admin_id: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[DetectionGuidanceLogResponse]:
-    """콘솔 이력 테이블용 최신 탐지/안내 로그 목록을 반환합니다."""
+    """콘솔 이력 테이블용 최신 탐지/안내 로그 목록을 반환합니다.
+
+    전체 건수는 X-Total-Count 응답 헤더로 함께 내려준다(응답 바디는 기존과 동일한
+    배열 형태를 유지 - 콘솔 페이지네이션이 전체 페이지 수를 계산하는 데 사용).
+    """
     service = DetectionGuidanceLogService(db)
+    total = await service.count_logs()
+    response.headers["X-Total-Count"] = str(total)
     return await service.list_logs(limit=limit, offset=offset)
 
 

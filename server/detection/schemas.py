@@ -60,3 +60,4 @@ class ReflexAlert(BaseModel):
     beep_interval_ms: int = 250
     haptic_pattern: str = "double"
     ts: float
+    inference_ms: float = 0.0

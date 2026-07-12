@@ -49,6 +49,31 @@ button:hover {
   gap: 16px;
 }
 
+.main-nav {
+  border-bottom: 1px solid #2a3140;
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 20px 0;
+}
+
+.main-nav-link {
+  border-bottom: 2px solid transparent;
+  color: #96a0b5;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 14px;
+  text-decoration: none;
+}
+
+.main-nav-link:hover {
+  color: #edf2fb;
+}
+
+.main-nav-link-active {
+  border-bottom-color: #00f2fe;
+  color: #00f2fe;
+}
+
 .eyebrow {
   color: #96a0b5;
   font-size: 13px;
@@ -205,6 +230,14 @@ h2 {
   gap: 8px;
 }
 
+/* DetectionFeed는 프레임마다(최대 8~10fps) 쌓여 최근 80건까지 보관되므로, 목록 자체를
+   패널 안에서 세로 스크롤시켜 패널/그리드 행이 한없이 길어지는 것을 막는다. */
+.feed-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .session-row,
 .feed-row {
   align-items: center;
@@ -217,6 +250,20 @@ h2 {
   padding: 10px;
 }
 
+/* event_id처럼 긴 문자열이 flex 아이템의 기본 min-width(auto) 때문에 박스 밖으로
+   삐져나가던 문제 수정: 각 칸을 세로로 쌓고 줄바꿈을 허용한다. */
+.feed-row {
+  flex-wrap: wrap;
+}
+
+.feed-row > div {
+  display: flex;
+  flex: 1 1 45%;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .session-row strong,
 .feed-row strong {
   color: #ffffff;
@@ -226,6 +273,10 @@ h2 {
 .feed-row span {
   color: #a8b2c7;
   font-size: 12px;
+}
+
+.feed-row span {
+  overflow-wrap: anywhere;
 }
 
 .session-meta {
@@ -579,4 +630,267 @@ td {
   background: rgba(16, 185, 129, 0.3);
   border-color: #10b981;
   color: #ecfdf5;
+}
+
+.logout-btn {
+  background: none;
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  color: #00f2fe;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 12px;
+  transition: all 0.2s ease;
+}
+
+.panel-header-actions {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.refresh-btn {
+  background: rgba(0, 242, 254, 0.1);
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  border-radius: 4px;
+  color: #00f2fe;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 4px 10px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background-color: rgba(0, 242, 254, 0.2);
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
+}
+
+.refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 이력 테이블 페이지네이션 (15건 단위) */
+.log-pagination {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.page-btn {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  color: #edf2fb;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.page-btn:disabled {
+  color: #4b5568;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.page-indicator {
+  color: #96a0b5;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.latency-live-dot {
+  animation: latency-live-pulse 1.4s ease-in-out infinite;
+  background: #6ee7b7;
+  border-radius: 999px;
+  display: inline-block;
+  height: 7px;
+  margin-right: 5px;
+  width: 7px;
+}
+
+@keyframes latency-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 파이프라인 지연(레이턴시) 표시: 이력 테이블 열 칩 + 요약 패널 */
+.latency-total-cell {
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.latency-empty {
+  color: #5b6577;
+}
+
+.latency-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.latency-chip {
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.latency-chip-total {
+  background: rgba(0, 242, 254, 0.16);
+  color: #67e8f9;
+}
+
+.panel-latency {
+  min-height: unset;
+}
+
+.latency-stat-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.latency-stat-card {
+  background: #11151d;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.latency-stat-label {
+  color: #96a0b5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.latency-stat-avg {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.latency-stat-sub {
+  color: #6b7590;
+  font-size: 11px;
+}
+
+.latency-stat-ok .latency-stat-avg {
+  color: #6ee7b7;
+}
+
+.latency-stat-over .latency-stat-avg {
+  color: #fca5a5;
+}
+
+.latency-stat-neutral .latency-stat-avg {
+  color: #93c5fd;
+}
+
+.logout-btn:hover {
+  background-color: rgba(0, 242, 254, 0.1);
+  border-color: #00f2fe;
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
+}
+
+/* 회원 관리 화면 */
+.panel-member-form {
+  margin-bottom: 16px;
+}
+
+.member-form-hint {
+  color: #96a0b5;
+  font-size: 12px;
+  margin: 0 0 14px 0;
+}
+
+.member-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.member-form label {
+  color: #96a0b5;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.member-form input {
+  background: #11151d;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  color: #edf2fb;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.member-form input:focus {
+  border-color: #00f2fe;
+  outline: none;
+}
+
+.member-form-message-ok {
+  color: #6ee7b7;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.member-form-message-error {
+  color: #fca5a5;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.member-status-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.member-status-anon {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fdba74;
+}
+
+.member-status-real {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
 }

@@ -62,6 +62,10 @@ class NavigationManager:
         if hasattr(self, "_initialized") and self._initialized:
             return
         self.sessions: dict[str, NavigationSession] = {}
+        # 콘솔 브로드캐스트(_broadcast_nav_change)의 fire-and-forget 태스크 참조를
+        # 들고 있지 않으면 GC가 실행 도중 태스크를 수거할 수 있다(server/detection/
+        # consumer.py의 _log_tasks와 동일 패턴).
+        self._background_tasks: set[Any] = set()
         self._initialized: bool = True
 
     def _get_or_create_session(self, device_id: str) -> NavigationSession:
@@ -69,12 +73,35 @@ class NavigationManager:
             self.sessions[device_id] = NavigationSession()
         return self.sessions[device_id]
 
+    def _broadcast_nav_change(self, device_id: str, session: NavigationSession) -> None:
+        try:
+            import asyncio
+
+            from server.mcp.manager import mcp_manager
+
+            task = asyncio.create_task(
+                mcp_manager.broadcast_event(
+                    "llm_status",
+                    {
+                        "device_id": device_id,
+                        "navigation_status": session.status,
+                        "awaiting_free_question": session.awaiting_free_question,
+                        "awaiting_intent": session.awaiting_intent,
+                    },
+                )
+            )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except Exception as e:
+            print(f"[NavigationManager] Broadcast failed: {e}")
+
     def set_status(
         self, device_id: str, status: Literal["IDLE", "WAITING_FOR_DESTINATION", "NAVIGATING"]
     ) -> None:
         session = self._get_or_create_session(device_id)
         session.status = status
         print(f"[NavigationManager] Status changed for '{device_id}' to: {status}")
+        self._broadcast_nav_change(device_id, session)
 
     def get_status(self, device_id: str) -> str:
         session = self._get_or_create_session(device_id)
@@ -83,6 +110,7 @@ class NavigationManager:
     def set_awaiting_question(self, device_id: str, waiting: bool) -> None:
         session = self._get_or_create_session(device_id)
         session.awaiting_free_question = waiting
+        self._broadcast_nav_change(device_id, session)
 
     def is_awaiting_question(self, device_id: str) -> bool:
         session = self._get_or_create_session(device_id)
@@ -91,6 +119,7 @@ class NavigationManager:
     def set_awaiting_intent(self, device_id: str, waiting: bool) -> None:
         session = self._get_or_create_session(device_id)
         session.awaiting_intent = waiting
+        self._broadcast_nav_change(device_id, session)
 
     def is_awaiting_intent(self, device_id: str) -> bool:
         session = self._get_or_create_session(device_id)
