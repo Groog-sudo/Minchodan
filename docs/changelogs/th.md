@@ -330,3 +330,19 @@
   - 코드·환경변수·설정 파일은 수정하지 않았습니다.
 - **관련 파일**: `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/th.md`
 - **검증 기준**: 문서 링크 경로 존재 여부 확인
+
+---
+
+### 2026-07-12 | 5단계 | RAG retriever 라벨 SSOT 임포트 크래시 수정
+
+- **커밋**: `미커밋`
+- **변경 내용**:
+  - `server/rag/retriever.py`가 `shared/labels.py`에 존재하지 않는 구 라벨 심볼을 임포트하던 문제를 현재 SSOT 라벨인 `SCOOTER` 기준으로 정정했습니다.
+  - retriever 스모크 테스트 블록의 더미 문서 메타데이터와 `detect_info["class_name"]`도 `SCOOTER` 기준으로 맞췄습니다.
+  - `tests/test_retriever.py`의 수집 단계 ImportError를 해소하도록 동일 라벨을 정정했습니다.
+  - 사용자 발화 문구는 내부 라벨과 분리하여 "전동킥보드 또는 스쿠터"로 표현하도록 `fallback.py`, retriever 스모크 데이터, RAG 원본 JSON을 보강했습니다.
+  - 같은 구 라벨 import가 남아 있던 fallback/E2E 테스트와 mock 임베딩·DB 빌더 문구도 `SCOOTER` 기준으로 정리했습니다.
+  - `braille_damaged`, `stairs`로 남아 있던 RAG 원본 메타데이터를 현재 SSOT 노면 위험 라벨인 `caution`으로 정리했습니다.
+  - LangGraph 오케스트레이션 테스트 입력에 남아 있던 구 장애물 라벨을 `scooter`로 정리하고, 사용자 문구는 전동킥보드 기준으로 유지했습니다.
+- **관련 파일**: `server/rag/retriever.py`, `server/rag/fallback.py`, `server/rag/embedding_engine_factory.py`, `server/rag/build/db_builder.py`, `tests/test_retriever.py`, `tests/test_fallback.py`, `tests/test_e2e_pipeline.py`, `tests/test_langgraph.py`, `data/safety_guidelines.json`, `docs/changelogs/th.md`
+- **검증 결과**: `.\venv\Scripts\python.exe -c "import server.rag.retriever"`, `.\venv\Scripts\python.exe -m py_compile server/rag/retriever.py`, `.\venv\Scripts\python.exe -m server.rag.retriever`, `.\venv\Scripts\python.exe -m pytest tests/test_retriever.py tests/test_fallback.py tests/test_e2e_pipeline.py -v`, `.\venv\Scripts\python.exe -m pytest tests/test_langgraph.py -v` 통과

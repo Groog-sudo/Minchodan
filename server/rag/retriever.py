@@ -9,8 +9,11 @@ import os
 from dotenv import load_dotenv
 from langchain_core.vectorstores import VectorStore
 
-# 로컬 모듈 임포트
-from server.rag.shared.labels import KICKBOARD
+# TH HARD CODE AREA:
+# shared/labels.py의 현재 SSOT는 구 라벨명이 아니라 SCOOTER입니다.
+# 면접/발표 포인트: RAG 검색기는 탐지 taxonomy와 같은 라벨만 사용해야 모듈 import 단계에서 죽지 않고,
+# YOLO -> RAG -> LangGraph 경로의 라벨 계약을 한 곳에서 설명할 수 있습니다.
+from server.rag.shared.labels import SCOOTER
 
 load_dotenv()
 
@@ -41,7 +44,7 @@ class Retriever:
 
         Args:
             detect_info: 3단계 YOLO 탐지 결과 정보 딕셔너리
-                         예: {"class_name": "kickboard", "confidence": 0.87, "bbox": [120, 200, 280, 360]}
+                         예: {"class_name": "scooter", "confidence": 0.87, "bbox": [120, 200, 280, 360]}
             k: 가져올 상위 유사 문서 개수 (기본값 5)
 
         Returns:
@@ -62,18 +65,36 @@ class Retriever:
             if not results:
                 return ""
 
-            # 가장 높은 스코어를 기록한 문서 중, metadata의 guidance_template을 반환
-            best_doc, _score = results[0]
+            class_name = class_name.lower().strip()
+            best_doc = None
 
-            # 메타데이터 추출 및 라벨 매칭 검증 (비협상 가드)
-            metadata = best_doc.metadata
-            scene_type = metadata.get("scene_type")
-            if scene_type != class_name:
-                print(
-                    f"[Retriever] 라벨 불일치 (질의: {class_name}, 결과: {scene_type}) -> RAG 미적중 처리"
-                )
+            # 면접/발표 포인트:
+            # RAG 문서의 scene_type은 "sidewalk"처럼 상황/노면을 뜻할 수 있고,
+            # YOLO 탐지 class_name은 "scooter"처럼 실제 장애물 객체를 뜻할 수 있습니다.
+            # 따라서 Top-K 결과를 순회하며 scene_type 또는 objects 중 하나라도 맞는 문서를 채택합니다.
+            for candidate_doc, _score in results:
+                metadata = candidate_doc.metadata
+                scene_type = str(metadata.get("scene_type") or "").lower().strip()
+
+                objects_raw = metadata.get("objects", [])
+                try:
+                    if isinstance(objects_raw, str):
+                        objects = json.loads(objects_raw)
+                    else:
+                        objects = objects_raw
+                except json.JSONDecodeError:
+                    objects = []
+
+                objects = [str(obj).lower().strip() for obj in objects]
+                if scene_type == class_name or class_name in objects:
+                    best_doc = candidate_doc
+                    break
+
+            if best_doc is None:
+                print(f"[Retriever] 라벨 불일치 (질의: {class_name}) -> RAG 미적중 처리")
                 return ""
 
+            metadata = best_doc.metadata
             guidance = metadata.get("guidance_template")
             if not guidance:
                 # 본문에서 행동 수칙 분리 파싱 시도
@@ -139,14 +160,16 @@ if __name__ == "__main__":
     test_db_dir = "temp_smoke_retriever_chromadb"
     mock_embeds = EmbeddingEngineFactory.get_embeddings(provider="mock")
 
-    # 더미 문서 생성
+    # TH HARD CODE AREA:
+    # 모델 내부 라벨은 SCOOTER 하나로 통일하고, 사용자 안내문은 "전동킥보드 또는 스쿠터"로 표현합니다.
+    # 발표/면접 포인트: 탐지 taxonomy와 발화 문구를 분리하면 모델 재학습 없이도 사용자 친화적인 한국어 안내가 가능합니다.
     doc = Document(
-        page_content="장면 설명: 킥보드가 쓰러져 있습니다. 행동 수칙: 킥보드를 조심히 피해서 돌아가세요.",
+        page_content="장면 설명: 전동킥보드 또는 스쿠터가 쓰러져 있습니다. 행동 수칙: 좌우 여유 공간을 확인하며 천천히 우회하세요.",
         metadata={
-            "scene_type": KICKBOARD,
+            "scene_type": SCOOTER,
             "risk_level": "mid",
-            "objects": json.dumps([KICKBOARD]),
-            "guidance_template": "킥보드를 조심히 피해서 돌아가세요.",
+            "objects": json.dumps([SCOOTER]),
+            "guidance_template": "전방에 전동킥보드 또는 스쿠터가 있습니다. 좌우 여유 공간을 확인하며 천천히 우회하세요.",
         },
     )
 
@@ -160,7 +183,7 @@ if __name__ == "__main__":
         retriever = Retriever(db)
 
         # 조회 테스트
-        detect_info = {"class_name": KICKBOARD, "confidence": 0.9}
+        detect_info = {"class_name": SCOOTER, "confidence": 0.9}
         res = retriever.search_guidance(detect_info)
         print(f"RAG 매칭 검색 결과: {res}")
 

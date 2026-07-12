@@ -85,9 +85,10 @@ def build_database(
 
     # TH HARD CODE AREA:
     # 현재는 실데이터 전면 정리 전 단계라서 화면/데모/면접 대응에 필요한 최소 라벨만 먼저 고정합니다.
-    # 발표/면접 포인트: "RAG 품질보다 먼저 taxonomy 정합과 안내 문구 일관성을 우선 맞췄습니다."
+    # 발표/면접 포인트: 내부 라벨은 scooter로 고정하고, 사용자 안내문은 한국 보행 맥락에 맞춰
+    # "전동 킥보드 또는 스쿠터"로 표현합니다. 모델 taxonomy와 사용자 발화를 분리한 설계입니다.
     dummy_guidance_templates = {
-        SCOOTER: "전방에 전동 킥보드가 놓여 있습니다. 좌우 공간을 확인하며 천천히 비껴가세요.",
+        SCOOTER: "전방에 전동 킥보드 또는 스쿠터가 놓여 있습니다. 좌우 공간을 확인하며 천천히 비껴가세요.",
         BOLLARD: "전방에 볼라드가 있습니다. 정면 충돌을 피하도록 옆으로 돌아가세요.",
         CAUTION: "전방 바닥 위험 구간입니다. 발끝 높낮이를 확인하며 천천히 이동하세요.",
         ROADWAY: "차도와 가까운 구간입니다. 보도 안쪽으로 위치를 조정하세요.",
@@ -103,7 +104,7 @@ def build_database(
         if force_mock_captioner:
             # 캡션 Mocking
             if i % 3 == 0:
-                caption = "길가 한가운데 전동 킥보드가 쓰러져 있고 통행을 방해하는 화면입니다."
+                caption = "길가 한가운데 전동 킥보드 또는 스쿠터가 쓰러져 있고 통행을 방해하는 화면입니다."
                 scene_type = SCOOTER
                 risk_level = "mid"
                 objects = [SCOOTER]
@@ -132,7 +133,7 @@ def build_database(
                         break
             except Exception as e:
                 print(f"[DB Builder] {frame_path} 캡셔닝 실패: {e}. 기본 scooter로 폴백합니다.")
-                caption = "전동 킥보드가 방치된 화면입니다."
+                caption = "전동 킥보드 또는 스쿠터가 방치된 화면입니다."
                 scene_type = SCOOTER
                 risk_level = "mid"
                 objects = [SCOOTER]

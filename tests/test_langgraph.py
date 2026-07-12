@@ -181,14 +181,17 @@ async def test_langgraph_retry_recovery_flow():
     """
     TC-LG-007: 가드레일 위반 시 RETRY 엣지를 탄 후, 2차 시도에서 성공하여 END에 도달하는 흐름 검증.
     """
+    # TH HARD CODE AREA:
+    # 29클래스 모델 내부 라벨은 scooter로 고정하고, 테스트 문구는 사용자 발화용 "전동킥보드"를 사용합니다.
+    # 발표/면접 포인트: 오케스트레이션 계층도 탐지 taxonomy와 같은 class_name을 받아야 RAG/LLM 경로가 끊기지 않습니다.
     initial_state = {
-        "detected_classes": ["kickboard"],
-        "rag_context": "킥보드는 속도가 빠릅니다. 우측으로 피하세요.",
+        "detected_classes": ["scooter"],
+        "rag_context": "전동킥보드 또는 스쿠터는 속도가 빠릅니다. 우측으로 피하세요.",
     }
 
     # 1차 시도는 비정상 문장(길이 초과), 2차 시도는 정상 문장 반환하도록 설정
     mock_response_1 = AsyncMock()
-    mock_response_1.content = "전방 우측 도로에 킥보드가 빠르게 접근하고 있으니 좌측으로 조심해서 이동하세요"  # 44자 (길이 초과)
+    mock_response_1.content = "전방 우측 도로에 전동킥보드가 빠르게 접근하고 있으니 좌측으로 조심해서 이동하세요"  # 길이 초과
 
     mock_response_2 = AsyncMock()
     mock_response_2.content = "좌측으로 피하세요"  # 정상 (9자, 방향포함)
@@ -217,7 +220,7 @@ async def test_langgraph_api_error_fallback():
     """
     TC-LG-008: LLM API 호출 장애 발생 시 정적 Fallback으로 즉시 우회하여 파이프라인 영속성이 확보되는지 검증.
     """
-    initial_state = {"detected_classes": ["kickboard"]}
+    initial_state = {"detected_classes": ["scooter"]}
 
     # ainvoke 호출 시 강제로 Exception을 발생시킴
     with patch(

@@ -16,7 +16,7 @@ from server.rag.fallback import get_fallback_guidance
 from server.rag.retriever import Retriever
 
 # 로컬 모듈 임포트
-from server.rag.shared.labels import KICKBOARD
+from server.rag.shared.labels import SCOOTER
 from server.rag.vector_db_factory import VectorDBFactory
 
 load_dotenv()
@@ -58,15 +58,15 @@ def test_e2e_rag_pipeline(tmp_path):
     # 5. Retriever 객체 생성 및 실시간 3단계 YOLO 결과 주입 검색 수행
     retriever = Retriever(loaded_db)
 
-    # CASE A: 정상적으로 ChromaDB에 인덱싱된 킥보드 검색 검증
-    detect_info_kick = {
-        "class_name": KICKBOARD,
+    # CASE A: 정상적으로 ChromaDB에 인덱싱된 전동킥보드/스쿠터 검색 검증
+    detect_info_scooter = {
+        "class_name": SCOOTER,
         "confidence": 0.88,
         "bbox": [100, 200, 300, 400],
         "track_id": 1,
     }
-    guidance_kick = retriever.search_guidance(detect_info_kick)
-    assert "킥보드" in guidance_kick
+    guidance_scooter = retriever.search_guidance(detect_info_scooter)
+    assert "전동 킥보드" in guidance_scooter or "전동킥보드" in guidance_scooter
 
     # CASE B: DB에 인덱싱되지 않은 미확인 사물 검색 시, Retriever의 가드레일이 작동하여 빈 문자열 반환하고 fallback.py로 이어지는지 검증
     detect_info_unknown = {"class_name": "unknown_obstacle_type", "confidence": 0.75}

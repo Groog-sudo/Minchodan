@@ -15,7 +15,7 @@ from server.rag.embedding_engine_factory import EmbeddingEngineFactory
 from server.rag.retriever import Retriever
 
 # 로컬 모듈 임포트
-from server.rag.shared.labels import BOLLARD, KICKBOARD
+from server.rag.shared.labels import BOLLARD, SCOOTER
 
 load_dotenv()
 
@@ -26,12 +26,12 @@ def test_retriever_search_success(tmp_path):
 
     # 1. 테스트용 수칙 문서 생성
     doc_kick = Document(
-        page_content="장면 설명: 킥보드가 쓰러져 있습니다. 행동 수칙: 킥보드를 피해서 안전하게 지나가세요.",
+        page_content="장면 설명: 전동킥보드 또는 스쿠터가 쓰러져 있습니다. 행동 수칙: 좌우 여유 공간을 확인하며 천천히 우회하세요.",
         metadata={
-            "scene_type": KICKBOARD,
+            "scene_type": SCOOTER,
             "risk_level": "mid",
-            "objects": json.dumps([KICKBOARD]),
-            "guidance_template": "킥보드를 피해서 안전하게 지나가세요.",
+            "objects": json.dumps([SCOOTER]),
+            "guidance_template": "전방에 전동킥보드 또는 스쿠터가 있습니다. 좌우 여유 공간을 확인하며 천천히 우회하세요.",
         },
     )
     doc_boll = Document(
@@ -54,9 +54,9 @@ def test_retriever_search_success(tmp_path):
     retriever = Retriever(db)
 
     # 3. 킥보드 정보로 RAG 검색 실행 검증
-    detect_info_kick = {"class_name": KICKBOARD, "confidence": 0.9}
+    detect_info_kick = {"class_name": SCOOTER, "confidence": 0.9}
     guidance_kick = retriever.search_guidance(detect_info_kick)
-    assert guidance_kick == "킥보드를 피해서 안전하게 지나가세요."
+    assert guidance_kick == "전방에 전동킥보드 또는 스쿠터가 있습니다. 좌우 여유 공간을 확인하며 천천히 우회하세요."
 
     # 4. 볼라드 정보로 RAG 검색 실행 검증
     detect_info_boll = {"class_name": BOLLARD, "confidence": 0.8}
@@ -78,7 +78,7 @@ def test_retriever_search_success(tmp_path):
 def test_retriever_search_failure():
     # 주입된 DB가 비었거나 잘못되어 검색 오류 발생 시 빈 문자열("") 리턴 및 가드레일 작동 검증
     retriever = Retriever(None)  # None DB 전달
-    detect_info = {"class_name": KICKBOARD}
+    detect_info = {"class_name": SCOOTER}
 
     guidance = retriever.search_guidance(detect_info)
     assert guidance == ""  # 예외를 가로채고 빈 문자열 리턴하여 중단 방지

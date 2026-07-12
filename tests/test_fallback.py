@@ -8,24 +8,25 @@ from dotenv import load_dotenv
 from server.rag.fallback import get_fallback_guidance
 
 # 로컬 모듈 임포트
-from server.rag.shared.labels import BOLLARD, BRAILLE_DAMAGED, KICKBOARD, STAIRS
+from server.rag.shared.labels import BOLLARD, CAUTION, ROADWAY, SCOOTER
 
 load_dotenv()
 
 
 def test_fallback_guidance_known_classes():
     # 정의된 표준 클래스들에 대한 정상 수칙 반환 테스트
-    res_kick = get_fallback_guidance(KICKBOARD)
-    assert "킥보드" in res_kick
+    res_scooter = get_fallback_guidance(SCOOTER)
+    assert "전동 킥보드" in res_scooter
+    assert "스쿠터" in res_scooter
 
     res_boll = get_fallback_guidance(BOLLARD)
     assert "볼라드" in res_boll
 
-    res_braille = get_fallback_guidance(BRAILLE_DAMAGED)
-    assert "점자블록" in res_braille
+    res_caution = get_fallback_guidance(CAUTION)
+    assert "바닥 위험" in res_caution
 
-    res_stairs = get_fallback_guidance(STAIRS)
-    assert "계단" in res_stairs
+    res_roadway = get_fallback_guidance(ROADWAY)
+    assert "차도" in res_roadway
 
 
 def test_fallback_guidance_unknown_and_none():
