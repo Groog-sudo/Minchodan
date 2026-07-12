@@ -204,6 +204,12 @@ export function CameraView() {
   const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
   const lastMapPosTsRef = useRef(0);
 
+  useEffect(() => {
+    if (!navRoute) {
+      setMapVisible(false);
+    }
+  }, [navRoute]);
+
   // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트
   useEffect(() => {
     if (!lastMessage) return;
@@ -640,25 +646,27 @@ export function CameraView() {
       {/* 2026-07-11 하단 T맵 지도 패널: 정적 표시 전용(pointerEvents none이라 STT
           press-and-hold 터치가 그대로 통과), 토글 켜짐일 때만 WebView 마운트.
           켜면 하단 디버그 패널 위를 덮는다(발표·모니터링 용도 전제). */}
-      {mapVisible && (
+      {mapVisible && navRoute && (
         <View style={styles.navMapWrap} pointerEvents="none">
           <NavMapPanel
-            appKey={navRoute?.appKey ?? ""}
-            waypoints={navRoute?.waypoints ?? []}
+            appKey={navRoute.appKey}
+            waypoints={navRoute.waypoints}
             current={mapPos}
           />
         </View>
       )}
-      <View style={styles.mapToggleWrap} pointerEvents="box-none">
-        <Pressable
-          style={styles.mapToggleButton}
-          onPress={() => setMapVisible((v) => !v)}
-          accessibilityRole="button"
-          accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
-        >
-          <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
-        </Pressable>
-      </View>
+      {navRoute && (
+        <View style={styles.mapToggleWrap} pointerEvents="box-none">
+          <Pressable
+            style={styles.mapToggleButton}
+            onPress={() => setMapVisible((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+          >
+            <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }

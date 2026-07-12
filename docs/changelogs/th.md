@@ -346,6 +346,7 @@
   - LangGraph 오케스트레이션 테스트 입력에 남아 있던 구 장애물 라벨을 `scooter`로 정리하고, 사용자 문구는 전동킥보드 기준으로 유지했습니다.
 - **관련 파일**: `server/rag/retriever.py`, `server/rag/fallback.py`, `server/rag/embedding_engine_factory.py`, `server/rag/build/db_builder.py`, `tests/test_retriever.py`, `tests/test_fallback.py`, `tests/test_e2e_pipeline.py`, `tests/test_langgraph.py`, `data/safety_guidelines.json`, `docs/changelogs/th.md`
 - **검증 결과**: `.\venv\Scripts\python.exe -c "import server.rag.retriever"`, `.\venv\Scripts\python.exe -m py_compile server/rag/retriever.py`, `.\venv\Scripts\python.exe -m server.rag.retriever`, `.\venv\Scripts\python.exe -m pytest tests/test_retriever.py tests/test_fallback.py tests/test_e2e_pipeline.py -v`, `.\venv\Scripts\python.exe -m pytest tests/test_langgraph.py -v` 통과
+
 ---
 
 ### 2026-07-10 | 운영자 콘솔 | DetectionFeed 및 로그 테이블 UI 정리
@@ -376,3 +377,82 @@
   - `POST /api/v1/admin/login` 200 OK 응답 확인
   - `brew install redis` 완료
   - `brew services start redis` 후 `lsof -i :6379` 리스닝 확인
+
+---
+
+### 2026-07-12 | Android 빌드 환경 | Windows 긴 경로 + JDK 17 + SDK 설치 및 빌드 안정화
+
+- **커밋**: `build(android): Windows 긴 경로 환경에서 네이티브 빌드 안정화` (이미 origin/th에 반영됨, 커밋 `85e9503`)
+- **변경 내용**:
+  - Android SDK/Studio/JDK 17 전체 신규 설치 (winget + sdkmanager) — `C:\Users\rhxoc\AppData\Local\Android\Sdk`, build-tools 35.0.0, platform-tools, NDK 27.1.12297006
+  - `client/android/local.properties`에 `sdk.dir` 지정 (머신별, gitignore)
+  - `client/android/gradle.properties`에 `org.gradle.java.home=C:/Program Files/Java/jdk-17` 고정
+  - `client/android/build.gradle`에 `subprojects afterEvaluate` 훅 추가 — CMake 사용 모듈의 `buildStagingDirectory`를 `C:/AndroidCxx/{모듈경로}`로 분리
+- **오류와 해결**:
+  - `expo-audio plugin resolve 실패` → `client`에서 `npm install` 누락, 의존성 설치로 해결
+  - `JAVA_HOME이 .exe 파일 경로로 잘못 지정` → `gradle.properties`에 `org.gradle.java.home` 고정으로 세션 환경변수 의존도 제거
+  - `CMake Warning: object file directory has 193 chars, max 250` + `ninja: error: manifest 'build.ninja' still dirty after 100 tries` → 깊은 프로젝트 경로(`D:\home_coding_task\...`)가 Windows 250자 한도 초과, `buildStagingDirectory` 우회로 네이티브 캐시만 `C:/AndroidCxx`로 분리
+  - `subst M:\client` 우회 시도 → `react-native-vision-camera generateCodegenSchemaFromJavaScript`에서 `M:`와 `D:` 루트 충돌로 실패, subst 방식 폐기
+  - `No Android connected device found` → USB 디버깅 승인 팝업 대기/케이블 재연결로 해결
+- **관련 파일**: `client/android/build.gradle`, `client/android/gradle.properties`, `client/android/local.properties`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `.\gradlew.bat -v` Gradle 9.3.1 정상 기동
+  - `adb version` 1.0.41 정상
+  - `expo run:android`가 디바이스 미연결 오류 전까지 Gradle 설정 단계 통과
+
+---
+
+### 2026-07-12 | Android 실기기 | 내부 서버 및 LAN Metro 연결 전환
+
+- **커밋**: `이번 커밋에 포함`
+- **변경 내용**:
+  - Android 실기기 로그에서 카메라 reflex 프레임 생성과 STT 녹음은 정상이나, `wss://partake-primer-surround.ngrok-free.dev/ws/detect` WebSocket 연결이 반복 실패하는 것을 확인했습니다.
+  - 로컬 모델 파일 `client/assets/models/yolo26n/object_detection.tflite`, `client/assets/models/yolo26n/segmentation.tflite`, `server/models/yolo26n/object_detection.pt` 존재를 확인해 1차 원인은 모델 파일 부재가 아니라 네트워크 연결 실패로 분리했습니다.
+  - 내부 FastAPI 서버를 프로젝트 `venv`로 기동해 `0.0.0.0:8000` Listen 상태를 확인했습니다.
+  - React Native Metro 프론트를 LAN 모드로 기동해 `8081` Listen 상태를 확인했습니다.
+  - 현재 노트북 Wi-Fi IP가 `192.168.1.103`으로 확인되어 `client/src/config/index.ts`를 `NETWORK_MODE="lan"`, `LAN_IP="192.168.1.103"` 기준으로 전환했습니다.
+  - Android 실기기에서 카메라 권한을 허용하고 앱을 재설치한 뒤 `Camera 0 ... ACTIVE`, `PreviewView Stream State changed to STREAMING`, `Camera/Real-Android reflex 프레임 완료`, `TFLiteDetector 듀얼 TFLite 모델 로드 성공` 로그를 확인했습니다.
+  - 경로가 없는 상태에서도 지도 placeholder가 표시되어 카메라 확인을 방해할 수 있어, `nav_route` 수신 전에는 지도 패널과 토글을 숨기고 경로 해제 시 자동으로 닫히도록 수정했습니다.
+- **오류 및 후속 수정 필요**:
+  - 시스템 Python 3.14에는 `uvicorn`이 없어 서버 기동이 실패했습니다. 프로젝트 서버 실행은 반드시 `venv\Scripts\python.exe -m uvicorn server.main:app --host 0.0.0.0 --port 8000` 기준으로 수행해야 합니다.
+  - 서버 로그에서 Redis `localhost:6379` 연결 거부가 반복됩니다. Redis 또는 Docker Redis 컨테이너를 기동해야 Streams/MCP 경로가 정상화됩니다.
+  - 서버 로그에서 Whisper small 프리로드가 실패해 STT는 지연 로딩으로 폴백 중입니다. 네비게이션 음성 명령 종단 테스트 전 faster-whisper 모델 로딩 환경을 재검증해야 합니다.
+  - 서버 segmentation 기본 경로(`YOLO26N_SEG=server/models/yolo26n/segbest.pt`)와 실제 파일 존재 여부는 추가 확인이 필요합니다.
+  - 폰에서 `http://192.168.1.103:8000/health` 접근은 성공했으나 `http://192.168.1.103:8081/status`는 타임아웃이 발생했습니다. Metro LAN 포트는 방화벽 또는 Expo dev server 바인딩 문제로 별도 조치가 필요하며, 임시로 `adb reverse tcp:8081 tcp:8081`을 적용했습니다.
+  - 다음 단계는 WebSocket 실기기 재접속 확인 후 `TMAP_APP_KEY`, `realtime_gps`, `nav_route` 기반 네비게이션 경로 안내를 검증하는 것입니다.
+- **관련 파일**: `client/src/config/index.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/th.md`, `server_start_th.log`
+- **검증 결과**:
+  - `Get-NetTCPConnection -LocalPort 8000,8081` 기준 `8000` FastAPI, `8081` Metro Listen 확인
+  - `server.main` import 정상 확인
+  - Android 실기기 카메라 ACTIVE + TFLite 듀얼 모델 로드 성공 로그 확인
+
+---
+
+### 2026-07-12 | Android 클라이언트 | VisionCamera Frame Processor 등록 및 TFLite NMS 출력 정합
+
+- **커밋**: `이번 커밋에 포함`
+- **변경 내용**:
+  - `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt` 신규 추가 — VisionCamera Frame Processor 플러그인 `reflexFrameCapture` 구현체
+  - `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt` 신규 추가 — 커스텀 네이티브 모듈 패키지 래퍼
+  - `client/android/app/src/main/java/com/minchodan/app/AudioSessionBridgeModule.kt` 신규 추가 — STT 녹음 구간 AEC용 AudioSession 브릿지(Android 측 대응)
+  - `client/android/app/src/main/java/com/minchodan/app/MainApplication.kt` — `MinchodanCustomPackage` 등록 및 `FrameProcessorPluginRegistry.addFrameProcessorPlugin("reflexFrameCapture")` 호출 추가
+  - `client/src/inference/tfliteDetector.ts` — YOLO 26N 출력 포맷 33(NMS-free 4+29)에서 6(NMS-enabled 4+score+classId)로 정정. 커스텀 학습 가중치가 NMS를 포함한 형태로 export되었기 때문에 출력 채널 수를 맞춤
+  - `client/src/components/CameraView.tsx` — `navRoute`가 없을 때 지도 패널과 토글 버튼을 렌더링하지 않도록 가드 추가
+- **오류와 해결**:
+  - `Frame Processor Plugin "reflexFrameCapture" not registered` → `MainApplication.onCreate`에 `FrameProcessorPluginRegistry.addFrameProcessorPlugin` 등록으로 해결
+  - TFLite 탐지 결과가 전부 0점/빈 배열로 떨어짐 → 모델 출력 채널 수(33 vs 6) 불일치, NMS-enabled export 형태에 맞춰 6으로 정정
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/android/app/src/main/java/com/minchodan/app/AudioSessionBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/MainApplication.kt`, `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`
+- **검증 결과**:
+  - `npx tsc --noEmit` 통과
+  - Android 빌드 Gradle 설정 단계 통과 (디바이스 미연결로 설치 단계는 대기 중)
+
+---
+
+### 2026-07-12 | 동기화 | kb 브랜치 통합
+
+- **커밋**: `이번 커밋에 포함 (merge commit)`
+- **변경 내용**:
+  - `origin/kb` 최신 9개 커밋을 `th`에 병합 — 파이프라인 레이턴시 계측, 실시간 브로드캐스트 확장, 관리자 회원 등록 페이지, 오탐 판정(false_positive) 컬럼 추가, iOS 카메라 180도 방향 반전 수정, 이벤트 프레임 보존(frame_path), LiDAR 실거리 프로브 프로토타입, SSE 이벤트 계약 고정 및 인증 기본값 환경 분리(fail-closed), 콘솔 지도 연동 복구 등
+- **관련 파일**: `docs/changelogs/th.md` (이력 기록)
+- **검증 결과**:
+  - `git merge origin/kb` 충돌 없이 병합 완료
