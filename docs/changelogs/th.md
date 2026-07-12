@@ -424,6 +424,29 @@
 - **검증 결과**:
   - `Get-NetTCPConnection -LocalPort 8000,8081` 기준 `8000` FastAPI, `8081` Metro Listen 확인
   - `server.main` import 정상 확인
+
+---
+
+### 2026-07-12 | Android 실기기 | 탐지 및 지도 미표시 원인 분리
+
+- **커밋**: `fix(stt): CPU Whisper compute_type 폴백 및 연락처 음성 명령 저장소 추가`
+- **변경 내용**:
+  - 연결 이후 앱 프레임은 서버 `/ws/detect`로 정상 수신되고 있음을 확인했습니다. 서버 로그 기준 `FrameDecoder`가 640x640 프레임을 2~6ms 내외로 디코딩하고 있습니다.
+  - 탐지가 안 보이던 1차 원인은 `.env`의 `DETECTOR_TYPE=mock` 설정이었습니다. 실제 서버 탐지를 위해 `DETECTOR_TYPE=yolo`로 전환했습니다. (`.env`는 gitignore라 커밋 제외)
+  - `.env`의 `YOLO26N_OBJECT_DET`가 존재하지 않는 `server/models/yolo26n/det_best_20260705.pt`를 가리켜, 실제 존재하는 `server/models/yolo26n/object_detection.pt`로 정정했습니다.
+  - 서버 재시작 후 `YoloDetector` 로드 성공과 `stroller`, `bicycle` 등 실제 탐지 클래스가 LLM/RAG 경로로 들어가는 것을 확인했습니다.
+  - `YOLO26N_SEG=server/models/yolo26n/segbest.pt`는 실파일이 없어 `MockSegmentor`로 폴백 중입니다. segmentation 결과가 필요한 지도/노면 계층 검증 전 가중치 파일 보강이 필요합니다.
+  - 지도는 단순히 `지도 켜기`를 누르면 바로 TMap을 여는 구조가 아니라, STT 목적지 설정 성공 후 서버가 `nav_route`와 `TMAP_APP_KEY`를 앱으로 보내야 표시됩니다.
+  - `stt_audio`는 서버에 수신되지만 Whisper small 초기화가 실패해 목적지 설정과 `nav_route` 생성이 막히는 것을 확인했습니다. CPU 환경에서 `int8` 실패 시 `int8_float32`, `float32`로 재시도하도록 `SttService.get_model()`을 보강했습니다.
+  - `server/stt/contact_store.py`를 신규 추가해 음성 명령 기반 연락처 저장/조회 데모용 메모리 저장소를 분리했습니다. (세션 범위 dict, DB 영속화는 후속)
+- **오류 및 후속 수정 필요**:
+  - 현재 venv가 Python 3.14 계열로 동작하고 있어 faster-whisper/ctranslate2 호환성 문제가 남아 있을 수 있습니다. STT 네비게이션 검증은 Python 3.13 호환 venv 재구성 또는 faster-whisper 런타임 재설치가 필요합니다.
+  - Redis `localhost:6379` 연결 실패가 반복되어 Redis Streams 기반 부가 경로는 아직 정상화되지 않았습니다.
+  - Ollama `nomic-embed-text`가 없어 RAG 검색이 fallback으로 동작합니다. `ollama pull nomic-embed-text`가 필요합니다.
+- **관련 파일**: `server/stt/stt_service.py`, `server/stt/contact_store.py`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - 서버 재시작 후 `YoloDetector 로드 성공: server/models/yolo26n/object_detection.pt` 확인
+  - 서버 로그에서 `/ws/detect` 연결, `detection 수신`, 실제 클래스 기반 LLM 호출 확인
   - Android 실기기 카메라 ACTIVE + TFLite 듀얼 모델 로드 성공 로그 확인
 
 ---
