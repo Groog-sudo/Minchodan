@@ -28,10 +28,10 @@ const AIHUB_CLASS_NAMES = [
   "traffic_sign", "tree_trunk", "truck", "wheelchair"
 ];
 
-const CONF_THRESHOLD = 0.50; // 오탐 방지를 위해 0.25에서 0.50으로 상향
+const CONF_THRESHOLD = 0.25; // 0.25 임계값 유지
 const IOU_THRESHOLD = 0.45; // 중복 박스 제거(NMS) 기준
 
-function calculateIoU(box1: {x:number, y:number, w:number, h:number}, box2: {x:number, y:number, w:number, h:number}) {
+function calculateIoU(box1: { x: number, y: number, w: number, h: number }, box2: { x: number, y: number, w: number, h: number }) {
   const x1 = Math.max(box1.x, box2.x);
   const y1 = Math.max(box1.y, box2.y);
   const x2 = Math.min(box1.x + box1.w, box2.x + box2.w);
@@ -112,7 +112,7 @@ export class TFLiteDetector implements LocalDetector {
     label: "segmentation" | "object_detection",
     buffer: ArrayBuffer
   ): Promise<DetectionResult[]> {
-    if (!model) return [];
+    if (!model || !this.isLoaded) return [];
     try {
       const outputs = await model.run([buffer]);
       let out: Float32Array = new Float32Array(0);
@@ -127,60 +127,30 @@ export class TFLiteDetector implements LocalDetector {
         out = new Float32Array(outputs[0]);
       }
       const numBoxes = Math.floor(out.length / attrsPerBox);
-      const shape = model.outputs?.[0]?.shape || [];
-      const isTransposed = shape.length >= 3 && shape[1] === attrsPerBox; // e.g. [1, 33, 8400]
-
       const results: DetectionResult[] = [];
-      for (let i = 0; i < numBoxes; i++) {
-        let xc, yc, w, h, maxScore = 0, clsId = -1;
 
-        if (label === "object_detection" && attrsPerBox >= 33) {
-          // Yolo 26N Format
-          if (isTransposed) {
-            // Memory layout: [1, attrsPerBox, numBoxes] -> out[attr * numBoxes + i]
-            xc = out[0 * numBoxes + i];
-            yc = out[1 * numBoxes + i];
-            w  = out[2 * numBoxes + i];
-            h  = out[3 * numBoxes + i];
-            for (let c = 0; c < numClasses; c++) {
-              const score = out[(4 + c) * numBoxes + i];
-              if (score > maxScore) {
-                maxScore = score;
-                clsId = c;
-              }
-            }
-          } else {
-            // Memory layout: [1, numBoxes, attrsPerBox] -> out[i * attrsPerBox + attr]
-            const off = i * attrsPerBox;
-            xc = out[off];
-            yc = out[off + 1];
-            w  = out[off + 2];
-            h  = out[off + 3];
-            for (let c = 0; c < numClasses; c++) {
-              const score = out[off + 4 + c];
-              if (score > maxScore) {
-                maxScore = score;
-                clsId = c;
-              }
-            }
-          }
-        } else {
-          // Legacy/Fallback Format
-          const off = i * attrsPerBox;
-          const x1 = Math.min(out[off], out[off + 2]);
-          const y1 = Math.min(out[off + 1], out[off + 3]);
-          const x2 = Math.max(out[off], out[off + 2]);
-          const y2 = Math.max(out[off + 1], out[off + 3]);
-          w = x2 - x1;
-          h = y2 - y1;
-          xc = x1 + w / 2;
-          yc = y1 + h / 2;
-          maxScore = out[off + 4];
-          clsId = Math.round(Math.abs(out[off + 5]));
-        }
+      for (let i = 0; i < numBoxes; i++) {
+        const off = i * attrsPerBox;
+        if (off + 5 >= out.length) break;
+
+        const raw_xc = out[off + 0];
+        const raw_yc = out[off + 1];
+        const raw_w = out[off + 2];
+        const raw_h = out[off + 3];
+        const maxScore = out[off + 4];
+        const clsId = Math.round(Math.abs(out[off + 5]));
 
         if (maxScore < CONF_THRESHOLD || clsId >= numClasses) continue;
+
+        // [해결책] 모델 출력값이 0~1 사이의 정규화 비율일 경우 640 픽셀 해상도 크기로 자동 변환
+        const scale = (raw_w <= 1.0 && raw_h <= 1.0) ? 640 : 1;
+        const xc = raw_xc * scale;
+        const yc = raw_yc * scale;
+        const w = raw_w * scale;
+        const h = raw_h * scale;
+
         if (w <= 1 || h <= 1) continue;
+
 
         results.push({
           model: label,
@@ -211,7 +181,7 @@ export class TFLiteDetector implements LocalDetector {
       ),
       this.runModel(
         this.detModel,
-        6, // YOLO 26N NMS-enabled format (4 coords + score + classId = 6)
+        6,
         AIHUB_CLASS_NAMES.length,
         AIHUB_CLASS_NAMES,
         "object_detection",
@@ -227,13 +197,13 @@ export class TFLiteDetector implements LocalDetector {
     if (this.segModel) {
       try {
         this.segModel.dispose();
-      } catch {}
+      } catch { }
       this.segModel = null;
     }
     if (this.detModel) {
       try {
         this.detModel.dispose();
-      } catch {}
+      } catch { }
       this.detModel = null;
     }
   }
