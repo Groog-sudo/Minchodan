@@ -507,9 +507,11 @@
 
 ### 2026-07-12 | STT 브리지+클라이언트 | 음성 편의기능 3종 추가 (긴급전화/연락처 저장·전화걸기/문자 읽어주기)
 
-- **커밋**: `이번 커밋에 포함`
+- **커밋**: `feat(stt,client): 음성 편의기능 3종(긴급전화/연락처/SMS읽어주기) 및 dial_action`
+- **선행 커밋**: `9f194da`에 `server/stt/contact_store.py`(ContactStore)와 Whisper CPU
+  compute_type 폴백이 먼저 들어감. 본 커밋은 브리지 인텐트·WS·단말·문서·테스트를 연결
 - **변경 내용**:
-  - `server/stt/contact_store.py` 신규 추가 - 음성 연락처 저장/조회. 정규식으로
+  - `server/stt/contact_store.py` - (선행) 음성 연락처 저장/조회. 정규식으로
     전화번호를 추출하고 조사/어미를 트리밍해 이름 후보를 정리하는 휴리스틱
     (`ContactStore`는 device_id별 프로세스 메모리 저장소, **TH HARDCODE**: 별도
     Contact 테이블이 없어 서버 재시작 시 소실되는 데모 시연 범위 한계)
@@ -542,6 +544,10 @@
   - `client/src/components/CameraView.tsx` - `useSmsReader()` 훅 마운트
   - `docs/design/api_specification.md` §6.3 명령어 표에 긴급전화/연락처 저장/전화걸기
     행 추가, §6.7 `dial_action` 계약 신설
+  - `server/stt/stt_config.py` - MODEL_NAME_MAP에 `"small"`/`"medium"` 별칭 추가
+    (WS 경로에서 faster-whisper 접두사 없이 내부 별칭이 전달되는 경우 허용)
+  - `scripts/dev_redis_stub.py` 신규 - 로컬에서 Redis 미기동 시 Streams 의존을
+    완화하기 위한 최소 RESP 스텁(인식 리포트 I-2 대응용 개발 보조)
   - `tests/test_stt_convenience_features.py` 신규 추가 - 기존
     `test_stt_to_llm_bridge_template.py`와 동일한 픽스처 패턴(`_make_stt_result`,
     `_FakeNavManager`, `monkeypatch`)으로 연락처 저장/전화걸기, 긴급전화
@@ -560,13 +566,14 @@
     미완료 - 아래 pytest는 텍스트 인텐트 분기 로직만 검증하며 실제 Whisper 인식은
     거치지 않는다
 - **관련 파일**: `server/stt/contact_store.py`, `server/stt/stt_to_llm_bridge.py`,
-  `server/api/ws_router.py`, `client/src/types/detection.ts`,
-  `client/src/hooks/useWebSocket.ts`, `client/src/hooks/useSmsReader.ts`,
-  `client/src/components/CameraView.tsx`,
+  `server/stt/stt_config.py`, `server/api/ws_router.py`,
+  `client/src/types/detection.ts`, `client/src/hooks/useWebSocket.ts`,
+  `client/src/hooks/useSmsReader.ts`, `client/src/components/CameraView.tsx`,
   `client/android/app/src/main/java/com/minchodan/app/SmsReaderModule.kt`,
   `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`,
   `client/android/app/src/main/AndroidManifest.xml`,
-  `docs/design/api_specification.md`, `tests/test_stt_convenience_features.py`
+  `docs/design/api_specification.md`, `scripts/dev_redis_stub.py`,
+  `tests/test_stt_convenience_features.py`, `docs/changelogs/th.md`
 - **검증 결과**:
   - `python -m pytest tests/test_stt_convenience_features.py -v` 6개 전부 통과
     (연락처 저장/전화걸기 성공·실패, 긴급전화 guardian_phone 성공/119 폴백,

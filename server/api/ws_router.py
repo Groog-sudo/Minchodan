@@ -306,6 +306,27 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                 f"waypoints={len(bridge_result['nav_waypoints'])}"
             )
 
+        # [TH HARDCODE 아님] 긴급전화/연락처 전화걸기 편의기능용. 서버는 통신사
+        # 회선을 직접 제어할 수 없으므로(전화는 통신사/캐리어 API 영역), 여기서는
+        # 의도 해석과 번호 조회 결과만 dial_action 메시지로 전달하고, 실제 다이얼
+        # 실행은 클라이언트의 OS 텔레포니 API(React Native Linking "tel:")에
+        # 위임한다(client/src/hooks/useWebSocket.ts 참조).
+        if "dial_action" in bridge_result:
+            dial_action = bridge_result["dial_action"]
+            with contextlib.suppress(Exception):
+                await ws.send_json(
+                    {
+                        "type": "dial_action",
+                        "contact_name": dial_action.get("contact_name", ""),
+                        "phone_number": dial_action.get("phone_number", ""),
+                        "ts": now_ts(),
+                    }
+                )
+            logger.info(
+                f"[WS] dial_action 전송: device_id={device_id}, "
+                f"contact={dial_action.get('contact_name')}"
+            )
+
         logger.info(
             f"[WS] stt_audio 처리 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
             f"source={bridge_result.get('source')}"

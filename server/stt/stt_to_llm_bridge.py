@@ -7,6 +7,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from server.orchestration import run_orchestrator
 
+from .contact_store import ContactStore, extract_call_target, extract_save_command
 from .stt_config import STT_ORCH_CLASS_NAME, STT_ORCH_RISK_HINT
 from .stt_runtime import validate_stt_bridge_config
 from .stt_schema import SttTranscribeResult
@@ -131,6 +132,41 @@ POI_CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "주차장": ["주차장"],
 }
 
+# ==========================================
+# 🧠 TH HARDCODE AREA (면접/발표 핵심 방어 영역)
+# 음성 편의기능 3종 - 긴급전화 / 연락처 저장 / 이름으로 전화걸기
+# ==========================================
+#
+# 💡 [면접 대비 주석 - 긴급전화 vs 일반 연락처의 구현 차이]
+# Q. 이 셋 다 "전화 걸기"인데 왜 긴급전화만 따로 뺐습니까?
+# A. "긴급전화는 안전 기능이라 관리자가 등록해 둔 실제 AppUser.guardian_phone
+#    DB 컬럼을 조회하는 진짜 구현입니다(_handle_emergency_call, 아래 참조).
+#    반면 일반 연락처 저장/전화걸기는 사용자가 그 자리에서 즉흥 등록하는
+#    임의 이름이라 Contact 테이블이 없어 contact_store.py의 프로세스 메모리로
+#    대체했습니다(TH HARDCODE, 데모 시연 범위 - 서버 재시작 시 소실). 발표 때
+#    이 대비를 짚어주면 '아무거나 하드코딩한 게 아니라 데이터 성격에 맞춰
+#    영속화 수준을 다르게 골랐다'는 설계 판단으로 설명할 수 있다."
+
+# [TH HARDCODE] 긴급전화 직접 트리거 키워드. "SOS"는 실기기 STT가 영문 발화를
+# 안정적으로 인식하지 못할 가능성이 커 데모 시연에서는 한국어 트리거 위주로 쓴다.
+EMERGENCY_TRIGGER_WORDS = ["긴급전화", "긴급 전화", "긴급 상황", "SOS", "sos", "에스오에스"]
+
+# [TH HARDCODE] 연락처 저장/전화걸기 트리거 키워드
+CONTACT_SAVE_TRIGGER_WORDS = ["저장해줘", "저장해"]
+CONTACT_CALL_TRIGGER_WORDS = ["전화 걸어줘", "전화해줘", "전화 걸어", "전화해", "전화 걸어줄래"]
+
+
+def _is_emergency_call_trigger(text: str) -> bool:
+    """긴급전화 트리거 판별. "긴급전화/SOS류" 직접 키워드와 "보호자한테 전화/연결"
+    자연어 패턴 두 가지를 모두 인식한다(실제 위급 상황에서 나올 법한 표현 둘 다 커버).
+    "보호자" 분기를 아래 일반 CONTACT_CALL_TRIGGER_WORDS보다 먼저 검사해야
+    "보호자한테 전화해줘"가 (등록 안 된) 일반 연락처 조회로 새지 않는다.
+    """
+    if any(kw in text for kw in EMERGENCY_TRIGGER_WORDS):
+        return True
+    return "보호자" in text and any(w in text for w in ("전화", "연결"))
+
+
 QUESTION_SYSTEM_PROMPT = """당신은 시각장애인 보행자를 돕는 음성 비서입니다.
 사용자의 질문에 짧고 명확한 한국어 존댓말로 답변하세요.
 
@@ -186,6 +222,58 @@ class SttToLlmBridge:
             del cls._recent_guidance[device_id]
             return False
         return _is_self_echo(transcript, guidance_text)
+
+    # [TH HARDCODE 아님 - 실제 DB 연동] 보호자 긴급전화. 조회 실패/미등록 시에만
+    # 폴백 번호를 하드코딩으로 쓴다(아래 EMERGENCY_FALLBACK_NUMBER).
+    EMERGENCY_FALLBACK_NUMBER: ClassVar[str] = "119"
+    EMERGENCY_FALLBACK_LABEL: ClassVar[str] = "119 안전신고센터"
+
+    async def _handle_emergency_call(self, device_id: str) -> dict:
+        """보호자 전화번호(AppUser.guardian_phone)를 조회해 긴급 다이얼 액션을 만든다.
+
+        💡 [면접 대비 주석]
+        Q. 이 함수는 어떻게 device_id로 보호자 번호까지 찾아갑니까?
+        A. "WS 접속 시 device_registry_service.ensure_device_registered가 채워둔
+           (device_uuid -> user_id) 캐시를 get_cached_device_ids로 조회하고,
+           UserRepository.get_by_id로 실제 AppUser 로우를 읽어 guardian_phone을
+           꺼냅니다. Router->Service->Repository 계층을 그대로 재사용한 것이라
+           이 기능만은 새 저장소를 만들지 않았습니다."
+        """
+        from server.db.connection import async_sessionmaker_factory
+        from server.db.repositories import UserRepository
+        from server.services.device_registry_service import get_cached_device_ids
+
+        user_id, _ = get_cached_device_ids(device_id)
+        guardian_phone: str | None = None
+
+        if user_id is not None:
+            try:
+                async with async_sessionmaker_factory() as session:
+                    user = await UserRepository(session).get_by_id(user_id)
+                    guardian_phone = user.guardian_phone if user else None
+            except Exception as e:
+                print(f"[STT BRIDGE] 보호자 번호 조회 실패: device_id={device_id}, {e}")
+
+        if guardian_phone:
+            return {
+                "guidance_text": "보호자에게 긴급 전화를 겁니다.",
+                "used_fallback_llm": True,
+                "source": "emergency-call-guardian",
+                "dial_action": {"contact_name": "보호자", "phone_number": guardian_phone},
+            }
+
+        # [TH HARDCODE] 보호자 번호가 DB에 없을 때만 쓰는 고정 폴백 번호.
+        return {
+            "guidance_text": (
+                f"등록된 보호자 번호가 없어 {self.EMERGENCY_FALLBACK_LABEL}로 연결합니다."
+            ),
+            "used_fallback_llm": True,
+            "source": "emergency-call-fallback",
+            "dial_action": {
+                "contact_name": self.EMERGENCY_FALLBACK_LABEL,
+                "phone_number": self.EMERGENCY_FALLBACK_NUMBER,
+            },
+        }
 
     @staticmethod
     def build_orch_input(stt_result: SttTranscribeResult) -> dict:
@@ -281,6 +369,15 @@ class SttToLlmBridge:
 
         current_status = nav_manager.get_status(device_id)
 
+        # 💡 [면접 대비 주석 - 긴급전화는 왜 이 위치에서 가장 먼저 검사하는가]
+        # Q. 목적지 대기/질문 대기 상태 분기보다도 위에서 검사하는 이유는요?
+        # A. "시각장애인 보행자가 위급 상황에서 '긴급전화'라고 외쳤는데, 마침
+        #    네비게이션 목적지를 묻는 중이었다는 이유로 무시되면 안 됩니다.
+        #    반사 경로의 안전 최우선 원칙(Dual Path Discipline)과 같은 취지로,
+        #    다른 모든 대화 상태보다 긴급전화 트리거를 우선 처리합니다."
+        if _is_emergency_call_trigger(normalized_text):
+            return await self._handle_emergency_call(device_id)
+
         # [하드 코딩 부분 - 핵심]
         # 자유 질의응답 모드 최우선 처리: "질문할게" 등으로 진입한 다음 발화는 그
         # 내용과 무관하게(네비게이션 키워드가 우연히 섞여 있어도) 질문 자체로 취급한다.
@@ -371,6 +468,14 @@ class SttToLlmBridge:
         ]
         is_shutdown = any(kw in normalized_text for kw in shutdown_keywords)
 
+        # [TH HARDCODE] 연락처 저장/전화걸기 트리거 판별. "저장" 키워드만으로는
+        # 오탐이 크므로 전화번호 정규식까지 실제로 매칭되어야 저장 트리거로 인정한다.
+        is_contact_save_trigger = (
+            any(kw in normalized_text for kw in CONTACT_SAVE_TRIGGER_WORDS)
+            and extract_save_command(normalized_text) is not None
+        )
+        is_contact_call_trigger = any(kw in normalized_text for kw in CONTACT_CALL_TRIGGER_WORDS)
+
         # [하드 코딩 부분 - 핵심] 자유 질의응답 진입 트리거 판별
         is_question_trigger = any(kw in normalized_text for kw in QUESTION_TRIGGER_KEYWORDS)
 
@@ -410,6 +515,39 @@ class SttToLlmBridge:
                 "source": "navigation-setup-shutdown",
                 # 지도 패널의 경로 폴리라인 제거용(빈 배열 = 경로 해제).
                 "nav_waypoints": [],
+            }
+
+        elif is_contact_save_trigger:
+            # [TH HARDCODE] 발표용 편의기능: 음성으로 연락처 저장.
+            # extract_save_command가 None이면 트리거 자체가 False라 여기 안 들어온다
+            # (is_contact_save_trigger 계산에서 이미 검증됨).
+            name, phone = extract_save_command(normalized_text)  # type: ignore[misc]
+            ContactStore.save(device_id, name, phone)
+            return {
+                "guidance_text": f"{name}님 번호를 저장했습니다.",
+                "used_fallback_llm": True,
+                "source": "contact-save-success",
+            }
+
+        elif is_contact_call_trigger:
+            # [TH HARDCODE] 발표용 편의기능: 음성으로 저장된 연락처에 전화 걸기.
+            # 💡 [면접 대비 주석] 서버는 통신사 회선을 직접 제어할 수 없어 전화를
+            # 걸 수 없다 - 서버는 의도 해석과 번호 조회만 하고, 실제 다이얼 실행은
+            # dial_action WS 메시지로 클라이언트에 위임한다(ws_router.py가 변환,
+            # 클라이언트는 useWebSocket.ts에서 React Native Linking "tel:"로 실행).
+            target_name = extract_call_target(normalized_text)
+            phone = ContactStore.lookup(device_id, target_name) if target_name else None
+            if phone:
+                return {
+                    "guidance_text": f"{target_name}님에게 전화를 겁니다.",
+                    "used_fallback_llm": True,
+                    "source": "contact-call-success",
+                    "dial_action": {"contact_name": target_name, "phone_number": phone},
+                }
+            return {
+                "guidance_text": "저장된 번호를 찾을 수 없습니다. 먼저 번호를 저장해 주세요.",
+                "used_fallback_llm": True,
+                "source": "contact-call-fail",
             }
 
         elif is_question_trigger:

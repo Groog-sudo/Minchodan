@@ -21,6 +21,7 @@ import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
 import { useLocation, type GpsCoords } from "../hooks/useLocation";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
+import { useSmsReader } from "../hooks/useSmsReader";
 import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
 import {
@@ -111,6 +112,9 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
 
 export function CameraView() {
   const { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive } = useWebSocket(DEVICE_ID, TOKEN);
+  // [TH HARDCODE] 발표용 편의기능: 수신 문자 메시지 읽어주기(Android 전용).
+  // 서버 왕복이 필요 없는 순수 로컬 기능이라 WS 파이프라인과 독립적으로 마운트한다.
+  useSmsReader();
   const {
     cameraRef,
     device,

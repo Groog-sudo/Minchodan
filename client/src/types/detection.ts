@@ -25,7 +25,8 @@ export type MessageType =
   | "guide"
   | "error"
   | "server_detection"
-  | "nav_route";
+  | "nav_route"
+  | "dial_action";
 
 export interface BBox {
   x: number;
@@ -71,6 +72,10 @@ export interface WSMessage {
   waypoints?: { lat: number; lon: number }[];
   /** nav_route 메시지: TMap JS API appKey (서버 환경변수 재사용) */
   app_key?: string;
+  /** dial_action 메시지(긴급전화/연락처 전화걸기 편의기능): 호출 대상 표시명 */
+  contact_name?: string;
+  /** dial_action 메시지: 실제 다이얼에 쓸 전화번호. 클라이언트가 Linking "tel:"로 실행한다 */
+  phone_number?: string;
 }
 
 export interface DetectionPayload {

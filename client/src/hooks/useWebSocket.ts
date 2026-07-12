@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Linking } from "react-native";
 
 import {
   DEVICE_ID,
@@ -216,6 +217,19 @@ export function useWebSocket(
               ? { appKey: data.app_key ?? "", waypoints: wps }
               : null,
           );
+        } else if (data.type === "dial_action") {
+          // [TH HARDCODE 아님] 긴급전화/연락처 전화걸기 편의기능: 서버가 조회한
+          // 번호로 OS 다이얼러를 실행한다. Linking.openURL("tel:...")은 다이얼러
+          // 실행까지만 보장하며, 실제 통화 연결/응답 여부는 확인하지 않는다.
+          const phoneNumber = data.phone_number ?? "";
+          console.log(
+            `[WS] dial_action 수신: contact=${data.contact_name}, phone=${phoneNumber}`,
+          );
+          if (phoneNumber) {
+            Linking.openURL(`tel:${phoneNumber}`).catch((err) =>
+              console.error("[WS] 전화 걸기 실패:", err),
+            );
+          }
         } else {
           setLastMessage(data);
         }
