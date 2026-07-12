@@ -1534,3 +1534,22 @@
 - **관련 파일**: `server/services/event_frame_store.py`(신규), `server/api/detection_log_router.py`(신규), `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/20260712_001_add_frame_path_to_detection_guidance_logs.sql`(신규), `server/services/detection_guidance_log_service.py`, `server/detection/consumer.py`, `server/main.py`, `console/src/api/useDetectionLogs.ts`(신규), `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/types/monitor.ts`, `console/src/App.tsx`, `console/src/styles.css`, `console/.env.example`, `.env.example`, `tests/test_event_frame_store.py`(신규), `docs/design/api_specification.md`(v0.4.13 §8.5), `docs/design/architecture.md`(v0.4.5 §13.3.1), `docs/ops/environment_variables.md`(v0.4.14), `docs/changelogs/kb.md`
 - **검증 결과**: `pytest tests/test_event_frame_store.py tests/test_ws_router_stt.py tests/test_admin_service_login.py tests/test_risk_ssot.py` 18건 통과(저장/경로 탈출 차단/보존 정리 + 기존 회귀), 변경 모듈 전체 임포트 무결성 확인, ruff 통과, 콘솔 `npm run build`(tsc --noEmit 포함) 통과. 실제 탐지 이벤트로 이미지 저장·콘솔 표시 왕복은 서버+실기기 기동 환경에서 후속 확인.
 - **비고**: 보행 중 촬영 이미지는 행인 등 개인정보 포함 가능성이 있어 기간 한정 보존(기본 7일)으로 설계했으며, 보존 기간 정책은 팀 확정 필요(STT WAV 제거 전례 참조). MariaDB 운영 DB에는 마이그레이션 SQL 수동 반영 필요. 후속 확장 후보: 오탐 판정 컬럼(`false_positive`)+콘솔 판정 버튼 - (이미지, 오탐 라벨) 쌍은 재학습 데이터로 재사용 가능.
+
+---
+
+### 2026-07-12 | 콘솔+iOS 실기기 | 이미지 라이트박스, 한국식 시각/스트림 배지, iOS 카메라 180도 방향 반전 결함 수정
+
+- **커밋**: `fix(client): iOS 카메라 프레임 180도 방향 반전 수정 + feat(콘솔): 이미지 확대·시각/스트림 표시 개선`
+- **배경**: 실기기→서버→DB E2E 검증 중 콘솔에서 저장된 이벤트 프레임이 뒤집혀 보인다는 사용자 보고를 받아 조사. 처음엔 CSS/라이트박스 문제로 의심했으나, 서버 응답과 디스크 원본 파일의 MD5가 완전히 일치하고 콘솔 전체에 rotate/transform CSS가 전혀 없음을 확인해 표시 버그를 배제. 손을 편 상태(손가락 위)로 반복 실기기 촬영해 대조한 결과, **폰이 정상(노치 위)으로 들려 있었는데도 저장된 프레임은 정확히 180도 뒤집혀 있음을 확정**. 반사(Frame Processor, Swift)·인지(takePhoto+expo-image-manipulator) 두 개의 완전히 독립된 캡처 경로가 동일 증상을 보여, 두 경로가 공유하는 `react-native-vision-camera` 4.7.3의 가속도계 기반 방향 판정(`CMAccelerometerData+deviceOrientation.swift`)이 이 기기 조합에서 반대로 보고되는 것으로 결론.
+- **콘솔 개선**:
+  - **이미지 확대 보기(라이트박스)**: `DetectionGuidanceLogTable.tsx`에 썸네일/상세 미리보기 이미지 클릭 시 원본 크기 모달(bbox 오버레이 포함)로 확대하는 기능 추가. 닫기는 버튼/배경 클릭/Esc 키 세 경로 지원.
+  - **탐지 시각 한국식 고정 표기**: `Intl.DateTimeFormat`에 `timeZone: "Asia/Seoul"` 명시로 브라우저 로케일과 무관하게 `YYYY-MM-DD HH:mm:ss`(KST) 고정 표시(`formatDetectedAt`). 기존 `toLocaleString()`은 브라우저 설정에 따라 형식이 들쭉날쭉해 로그 대조가 어려웠음.
+  - **반사/인지 스트림 배지**: 원시 enum 문자열 대신 "반사"(빨강)/"인지"(파랑)/"미분류"(회색) 색상 배지로 렌더링(`StreamBadge`), 테이블·상세 미리보기·라이트박스 헤더 전체에 일관 적용.
+- **iOS 방향 버그 수정**:
+  - `client/ios/ReflexFrameProcessorPlugin.swift`: 기존 `frame.orientation` 기반 보정 뒤에 `.oriented(.down)` 180도 추가 보정.
+  - `client/src/services/frameCaptureProvider.ts`: `captureViaTakePhoto`에 `applyIosOrientationFix` 매개변수(기본 false) 신설, true일 때만 `manipulateAsync` 연산에 `{ rotate: 180 }` 추가. **Android는 이 함수를 아예 쓰지 않고 별도 구현(`captureViaTakePhotoAndroid`)이라 원천적으로 영향 없음** - 이 사실과 Android 자체 실기기 검증 필요성을 `ios_android_bifurcation_contract.md`(v1.1.4)에 명시.
+  - `client/ios/Minchodan/Info.plist`: iPhone `UISupportedInterfaceOrientations`에서 `PortraitUpsideDown` 제거(근본 원인은 아니었으나 앱이 실수로 거꾸로 인터페이스 방향에 잠기는 경로를 하나 더 차단하는 안전장치로 보존).
+  - **검증 3단계**: (1) 수정 전 손 테스트로 180도 반전 확정(반사/인지 둘 다), (2) Info.plist만 수정 후 재테스트했으나 미해결(가설 기각, 근본 원인이 interfaceOrientation이 아님을 실측 확인), (3) 위 180도 보정 코드 추가 후 손+다리 재테스트로 완전 정상화 확인(손가락 위, 협탁/침대/전선 중력 방향 모두 일치).
+- **관련 파일**: `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/styles.css`, `client/ios/ReflexFrameProcessorPlugin.swift`, `client/src/services/frameCaptureProvider.ts`, `client/src/services/frameCaptureProviderSelect.ios.ts`, `client/ios/Minchodan/Info.plist`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npm run build`(tsc --noEmit 포함) 통과, 클라이언트 `tsc --noEmit` 통과, iOS Release 빌드 3회 반복(수정 전/Info.plist만/최종) 모두 BUILD SUCCEEDED, 최종 빌드 실기기 설치·실행 후 손·다리 실측으로 방향 정상화 확인.
+- **비고**: 이 결함은 콘솔 갤러리 표시 문제로 시작했지만 **서버 YOLO 탐지에 들어가는 원본 프레임 자체가 뒤집혀 있었다는 뜻**이라, 지금까지의 탐지 정확도에도 실질적 영향을 줬을 가능성이 있다. 이벤트 프레임 보존 기능([[event-frame-storage]] 성격의 앞선 커밋 659a08e)이 아니었다면 발견하기 어려웠던 결함. Android 네이티브 Frame Processor 구현 시 이 문서의 경고를 참고해 별도로 방향을 검증할 것.

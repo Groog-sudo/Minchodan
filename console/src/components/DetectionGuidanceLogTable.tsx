@@ -31,6 +31,43 @@ function parseDetections(json: string): LoggedDetection[] {
   }
 }
 
+// 탐지 시각을 한국 표준시(KST) 기준 "YYYY-MM-DD HH:mm:ss"로 고정 표기합니다.
+// 운영자 브라우저의 로케일/타임존 설정과 무관하게 항상 동일한 형식으로 보이도록
+// Intl.DateTimeFormat에 timeZone을 명시적으로 지정합니다(toLocaleString 기본값은
+// 브라우저 로케일에 따라 형식이 들쭉날쭉해 로그 대조가 어려웠습니다).
+const koreanDateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+function formatDetectedAt(iso: string): string {
+  const parts = koreanDateTimeFormatter.formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
+const STREAM_LABEL: Record<string, string> = {
+  reflex: "반사",
+  cognitive: "인지",
+  unknown: "미분류",
+};
+
+/** 반사/인지/미분류를 한눈에 구분하는 배지. */
+function StreamBadge({ streamType }: { streamType: string }) {
+  const known = streamType in STREAM_LABEL ? streamType : "unknown";
+  return (
+    <span className={`stream-pill stream-${known}`}>
+      {STREAM_LABEL[known]}
+    </span>
+  );
+}
+
 /** 프레임 이미지 위에 bbox를 비율 좌표로 오버레이합니다. */
 function FrameWithOverlay({
   src,
@@ -127,8 +164,13 @@ function FrameLightbox({
       <div className="lightbox-content" onClick={(event) => event.stopPropagation()}>
         <div className="lightbox-header">
           <div>
-            <strong>{row.event_id}</strong>
-            <span className="lightbox-tts">{row.tts_text}</span>
+            <div className="lightbox-title-row">
+              <strong>{row.event_id}</strong>
+              <StreamBadge streamType={row.stream_type} />
+            </div>
+            <span className="lightbox-tts">
+              {formatDetectedAt(row.detected_at)} · {row.tts_text}
+            </span>
           </div>
           <button
             type="button"
@@ -211,8 +253,10 @@ export function DetectionGuidanceLogTable({
                       "-"
                     )}
                   </td>
-                  <td>{new Date(row.detected_at).toLocaleString()}</td>
-                  <td>{row.stream_type}</td>
+                  <td>{formatDetectedAt(row.detected_at)}</td>
+                  <td>
+                    <StreamBadge streamType={row.stream_type} />
+                  </td>
                   <td>{row.event_id ?? "-"}</td>
                   <td>{row.tts_text}</td>
                   <td>{row.user_id ?? "-"}</td>
@@ -228,6 +272,8 @@ export function DetectionGuidanceLogTable({
         <div className="frame-detail">
           <div className="frame-detail-meta">
             <strong>{selected.event_id}</strong>
+            <StreamBadge streamType={selected.stream_type} />
+            <span>{formatDetectedAt(selected.detected_at)}</span>
             <span>{selected.tts_text}</span>
           </div>
           <FrameWithOverlay

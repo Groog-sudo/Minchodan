@@ -60,7 +60,8 @@ export function useFrameCaptureProvider(
   );
 
   const capturePhoto = (stream: StreamType): Promise<FrameData | null> =>
-    captureViaTakePhoto(cameraRef, isCapturingRef, stream, readJpegBytesDefault);
+    // 2026-07-12: iOS 실기기에서 확인된 180도 방향 반전 보정 적용 (frameCaptureProvider.ts 주석 참조)
+    captureViaTakePhoto(cameraRef, isCapturingRef, stream, readJpegBytesDefault, true);
 
   return {
     // 네이티브 플러그인이 등록되지 않은 경우(개발 빌드 미동기화 등) takePhoto로 자동 폴백.

@@ -44,7 +44,13 @@ public class ReflexFrameProcessorPlugin: FrameProcessorPlugin {
     // 변환 이니셜라이저가 이 SDK 조합에서 인식되지 않아(rawValue: 쪽으로 오버로드 해석되는
     // 컴파일 오류 실측) 수동 매핑한다.
     let cgOrientation = ReflexFrameProcessorPlugin.cgImageOrientation(from: frame.orientation)
-    let oriented = sourceImage.oriented(cgOrientation)
+    // 2026-07-12 실기기 실측: frame.orientation 기준 보정만 적용하면 저장된 프레임이
+    // 실제 폰 방향(노치 위, 정자세) 대비 180도 뒤집혀 나온다(손 피사체로 반복 확인,
+    // Info.plist UISupportedInterfaceOrientations에서 PortraitUpsideDown 제거로도
+    // 미해결). react-native-vision-camera 4.7.3의 CMAccelerometerData+deviceOrientation.swift
+    // 가속도계 부호 판정이 이 기기 조합에서 반대로 보고되는 것으로 추정되며, 라이브러리
+    // 내부(node_modules) 수정은 재설치 시 유실되므로 여기서 180도 보정 회전을 추가한다.
+    let oriented = sourceImage.oriented(cgOrientation).oriented(.down)
 
     // 중앙 정사각형 크롭 (미리보기와 모델 입력 기하 구조를 일치시켜 bbox 정합 유지,
     // captureRealFrame()의 크롭 규칙과 동일).

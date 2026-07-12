@@ -430,6 +430,37 @@ td {
   font-size: 14px;
 }
 
+.lightbox-title-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+/* 반사/인지/미분류 스트림 배지 */
+.stream-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.stream-reflex {
+  background: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+}
+
+.stream-cognitive {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+}
+
+.stream-unknown {
+  background: rgba(100, 116, 139, 0.22);
+  color: #cbd5e1;
+}
+
 .lightbox-tts {
   color: #9da7ba;
   display: block;

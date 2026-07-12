@@ -1,7 +1,7 @@
 # iOS/Android 클라이언트 이원화 및 서버 정합성 통합 계약서
 
 > **작성일**: 2026-07-10
-> **버전**: v1.1.3 (2026-07-11 §3에 iOS LiDAR 실거리 프로브 `DepthProbeBridge.swift/.mm`(iOS 전용)와 TS 래퍼 `depthProbe.ts`(공유 계약) 등재 + 이전 v1.1.2 이력 유지: §7.3 확장 - 네트워크 상수·디바이스 토큰의 `EXPO_PUBLIC_*` 환경 변수 우선 규칙 추가(상수는 개발 폴백으로 보존) + 이전 v1.1.1 이력 유지: §3 소유권 매트릭스에 iOS 오디오 세션(AEC) 브릿지 `AudioSessionBridge.swift/.mm`(iOS 전용)과 TS 래퍼 `audioSessionBridge.ts`(공유 계약, Android no-op) 등재 + 이전 v1.1.0 이력 유지: 2026-07-10 §4 카메라 캡처 계층 iOS 측 구현 완료 반영 - 실제 파일명을 `frameCaptureProvider*.ts`로 확정, §7.3 NETWORK_MODE 플래그 구현 완료)
+> **버전**: v1.1.4 (2026-07-12 §4.5에 iOS 카메라 프레임 180도 방향 반전 버그·수정 내역 및 Android 작업자 검증 필수 경고 추가 - `captureViaTakePhoto`에 `applyIosOrientationFix` 매개변수 신설로 iOS만 보정, Android는 영향 없음 명시 + 이전 v1.1.3 이력 유지: §3에 iOS LiDAR 실거리 프로브 `DepthProbeBridge.swift/.mm`(iOS 전용)와 TS 래퍼 `depthProbe.ts`(공유 계약) 등재 + 이전 v1.1.2 이력 유지: §7.3 확장 - 네트워크 상수·디바이스 토큰의 `EXPO_PUBLIC_*` 환경 변수 우선 규칙 추가(상수는 개발 폴백으로 보존) + 이전 v1.1.1 이력 유지: §3 소유권 매트릭스에 iOS 오디오 세션(AEC) 브릿지 `AudioSessionBridge.swift/.mm`(iOS 전용)과 TS 래퍼 `audioSessionBridge.ts`(공유 계약, Android no-op) 등재 + 이전 v1.1.0 이력 유지: 2026-07-10 §4 카메라 캡처 계층 iOS 측 구현 완료 반영 - 실제 파일명을 `frameCaptureProvider*.ts`로 확정, §7.3 NETWORK_MODE 플래그 구현 완료)
 > **설계 기준**: [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](ondevice_inference_engine_isolation_plan.md)(추론 계층 격리, 본 문서의 §5는 이 문서를 계승·확정한다), [`docs/design/api_specification.md`](../design/api_specification.md)(WS 프로토콜 단일 명세)
 > **근거**: kb 브랜치(iOS 작업, `bbfe812` 기준) ↔ dg2 브랜치(Android 작업, `249f51a` 기준) `git merge-tree` 실병합 시뮬레이션 결과 (2026-07-10 분석)
 > **적용 대상**: iOS 작업자(kb 계열 브랜치)와 Android 작업자(dg2 계열 브랜치)는 신규 작업 착수 전 본 문서를 먼저 읽고, 본 문서가 정의한 파일 소유권과 인터페이스 계약을 벗어나는 변경을 하지 않는다.
@@ -145,6 +145,8 @@ export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 **과도기 (구현 완료, kb 브랜치)**: `frameCaptureProviderSelect.android.ts`는 `supportsStream = false`로 선언하고 `takePhoto()` 기반 `capturePhoto()`를 사용한다. dg2 브랜치에서 확인된 크롭/파일읽기 우회(Android 실기기의 `File.bytes()` rejected 에러 우회 - `FileSystem.readAsStringAsync` + 수동 base64 디코드)를 이 파일에 이미 반영해뒀다. dg2의 `Image.getSize()` 기반 크롭 좌표 재계산(orientation 메타데이터 대신 실측 해상도 사용)은 아직 포팅하지 않았다 — 필요 시 Android 작업자가 이 파일 안에서 추가한다.
 
 **목표 (Android 작업자 담당)**: `client/android/app/src/main/java/.../ReflexFrameProcessorPlugin.kt`를 신규 작성해 iOS의 `ReflexFrameProcessorPlugin.swift`와 동일한 이름(`reflexFrameCapture`)·동일한 반환 계약(JPEG base64 문자열)으로 등록한다. 완료되면 `frameCaptureProviderSelect.android.ts`를 iOS 파일과 동일한 훅 구조(`useFrameProcessor` + `VisionCameraProxy`)로 교체하면 된다. react-native-vision-camera의 Android Frame Processor 플러그인 작성 가이드를 따른다(Kotlin, `FrameProcessorPlugin` 상속).
+
+**주의 (2026-07-12, iOS 방향 버그 발견)**: iOS 실기기(손 피사체로 반복 확인)에서 저장 프레임이 실제 폰 방향 대비 180도 뒤집혀 나오는 결함을 발견했다. 원인은 `react-native-vision-camera` 4.7.3의 가속도계 기반 방향 판정(`CMAccelerometerData+deviceOrientation.swift`)이 이 기기 조합에서 반대로 보고되는 것으로 추정되며, `ReflexFrameProcessorPlugin.swift`(반사)와 `frameCaptureProvider.ts`의 `captureViaTakePhoto`(인지, `applyIosOrientationFix=true`로 iOS에서만 호출)에 각각 180도 보정 회전을 추가해 해결했다. `CMAccelerometerData`는 iOS/CoreMotion 전용 API이므로 Android는 완전히 다른 방향 판정 경로를 쓴다 - **동일 버그가 있다고 가정하지 말 것**. Android 네이티브 플러그인·`captureViaTakePhotoAndroid` 구현 후 반드시 손 피사체(손가락 위로) 실기기 테스트로 방향을 직접 검증한다. 이 버그는 콘솔 갤러리 표시뿐 아니라 서버 YOLO 탐지 입력 자체에 영향을 주므로(탐지 정확도 저하 가능) 우선순위 높음.
 
 ### 4.6 useCamera.ts 리팩터링 (완료)
 
