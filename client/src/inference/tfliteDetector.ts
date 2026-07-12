@@ -28,7 +28,7 @@ const AIHUB_CLASS_NAMES = [
   "traffic_sign", "tree_trunk", "truck", "wheelchair"
 ];
 
-const CONF_THRESHOLD = 0.25; // 0.25 임계값 유지
+const CONF_THRESHOLD = 0.50; // 오탐 방지를 위해 0.25에서 0.50으로 상향 (되돌림 복구)
 const IOU_THRESHOLD = 0.45; // 중복 박스 제거(NMS) 기준
 
 function calculateIoU(box1: { x: number, y: number, w: number, h: number }, box2: { x: number, y: number, w: number, h: number }) {
@@ -133,24 +133,21 @@ export class TFLiteDetector implements LocalDetector {
         const off = i * attrsPerBox;
         if (off + 5 >= out.length) break;
 
-        const raw_xc = out[off + 0];
-        const raw_yc = out[off + 1];
-        const raw_w = out[off + 2];
-        const raw_h = out[off + 3];
+        // ultralytics nms=True export 출력 포맷은 [x1, y1, x2, y2, confidence, classId]
+        // 코너 좌표(픽셀 단위)이다. xc/yc/w/h 중심좌표가 아니므로 min/max로 정규화해서 계산한다.
+        const x1 = Math.min(out[off], out[off + 2]);
+        const y1 = Math.min(out[off + 1], out[off + 3]);
+        const x2 = Math.max(out[off], out[off + 2]);
+        const y2 = Math.max(out[off + 1], out[off + 3]);
+        const w = x2 - x1;
+        const h = y2 - y1;
+        const xc = x1 + w / 2;
+        const yc = y1 + h / 2;
         const maxScore = out[off + 4];
         const clsId = Math.round(Math.abs(out[off + 5]));
 
         if (maxScore < CONF_THRESHOLD || clsId >= numClasses) continue;
-
-        // [해결책] 모델 출력값이 0~1 사이의 정규화 비율일 경우 640 픽셀 해상도 크기로 자동 변환
-        const scale = (raw_w <= 1.0 && raw_h <= 1.0) ? 640 : 1;
-        const xc = raw_xc * scale;
-        const yc = raw_yc * scale;
-        const w = raw_w * scale;
-        const h = raw_h * scale;
-
         if (w <= 1 || h <= 1) continue;
-
 
         results.push({
           model: label,

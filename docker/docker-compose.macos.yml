@@ -102,7 +102,7 @@ services:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
     command: http fastapi:8000 --log=stdout
     ports:
-      - "4040:4040"
+      - "4041:4040"
     depends_on:
       - fastapi
     restart: unless-stopped

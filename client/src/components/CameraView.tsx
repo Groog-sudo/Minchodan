@@ -269,8 +269,12 @@ export function CameraView() {
       reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
       const allDetections = [...det, ...seg].slice(0, 20);
 
-      // [해결책] 웹소켓 연결 여부와 상관없이 온디바이스 TFLite 실시간 탐지 박스를 화면에 항상 동기화
-      setDetectionsRef.current(allDetections);
+      // 폴백 모드(서버 연결 끊김)에서는 server_detection이 들어오지 않으므로 온디바이스
+      // 추론 결과로 BBox를 표시한다. 정상 연결 시에는 온디바이스 det 결과가 비어 있을 수
+      // 있어 서버 결과를 덮어쓰지 않도록 한다(원래 의도 유지). Mock 모드는 항상 온디바이스 결과 사용.
+      if (isMockModeRef.current || wsStatusRef.current === "fallback") {
+        setDetectionsRef.current(allDetections);
+      }
 
 
       const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(

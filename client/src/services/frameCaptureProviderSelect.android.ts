@@ -22,6 +22,7 @@
  */
 
 import { useCallback, useRef } from "react";
+import { Image } from "react-native";
 import {
   type Camera,
   type PhotoFile,
@@ -79,6 +80,13 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+/** 이미지 파일의 실제 픽셀 가로/세로 해상도를 비동기로 얻는다(orientation 메타데이터 대신). */
+function getImageSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(uri, (width, height) => resolve({ width, height }), reject);
+  });
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> {
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error(errorMessage)), ms),
@@ -111,22 +119,28 @@ async function captureViaTakePhotoAndroid(
           ? photo.path
           : `file://${photo.path}`;
 
-        // [해결책] 스마트폰 원본 해상도 비율에서 정중앙 1:1 정사각형 영역을 역산합니다.
-        const minSize = Math.min(photo.width, photo.height);
-        const originX = Math.floor((photo.width - minSize) / 2);
-        const originY = Math.floor((photo.height - minSize) / 2);
+        // photo.orientation 메타데이터를 신뢰하지 않고 실제 픽셀 크기를 직접 얻는다 -
+        // Android 실기기에서 orientation 기반 크롭 좌표가 이미지 경계를 벗어나
+        // 크래시가 발생한 것을 실측 확인했다.
+        const { width, height } = await getImageSize(path);
+        const cropSize = Math.min(width, height);
+        let originX = Math.floor((width - cropSize) / 2);
+        let originY = Math.floor((height - cropSize) / 2);
+
+        // 음수/경계 초과 좌표 방지 가드
+        if (originX < 0) originX = 0;
+        if (originY < 0) originY = 0;
+        if (originX + cropSize > width) originX = Math.max(0, width - cropSize);
+        if (originY + cropSize > height) originY = Math.max(0, height - cropSize);
 
         const manipResult = await manipulateAsync(
           path,
           [
-            // 1단계: 정중앙을 1:1 비율로 크롭하여 왜곡(찌그러짐)을 원천 제거합니다.
-            { crop: { originX, originY, width: minSize, height: minSize } },
-            // 2단계: 크롭된 깔끔한 정사각형을 AI 모델 규격인 640x640으로 리사이즈합니다.
+            { crop: { originX, originY, width: cropSize, height: cropSize } },
             { resize: { width: 640, height: 640 } },
           ],
           { compress: 0.5, format: SaveFormat.JPEG, base64: true },
         );
-
 
         const base64 = manipResult.base64 ?? "";
         const float32 = new Float32Array(0);

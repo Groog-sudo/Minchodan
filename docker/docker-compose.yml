@@ -100,7 +100,7 @@ services:
     # 터널 URL은 http://localhost:4040 대시보드 또는 컨테이너 로그에서 확인
     command: http fastapi:8000 --log=stdout
     ports:
-      - "4040:4040"
+      - "4041:4040"
     depends_on:
       - fastapi
     restart: unless-stopped
