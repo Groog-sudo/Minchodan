@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-11
-> **버전**: v0.4.12 (2026-07-11 §2.13 `TMAP_APP_KEY` 용도 확장 반영 - 하단 지도 패널용 `nav_route` WS 메시지의 `app_key`로 단말에 전달, `server/api/ws_router.py` 참조 추가 + 이전 v0.4.11 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
+> **버전**: v0.4.14 (2026-07-12 §2.7 `EVENT_FRAMES_DIR`/`EVENT_FRAME_RETENTION_DAYS`/`EVENT_FRAME_JPEG_QUALITY` 신설 - 콘솔 오탐 검증용 이벤트 프레임 보존, §2.14 `VITE_API_BASE_URL` 추가 + 이전 v0.4.13 이력 유지: 2026-07-11 인증 기본값 분리 반영 - §2.4 `APP_ENV`/`DEVICE_STATIC_TOKENS` 신설·`JWT_SECRET_KEY` 운영 필수(fail-closed) 강화·`.env.example` 등재, §2.14 클라이언트·콘솔 공개 변수(EXPO_PUBLIC_*/VITE_*) 신설 + 이전 v0.4.12 이력 유지: §2.13 `TMAP_APP_KEY` 용도 확장 반영 - 하단 지도 패널용 `nav_route` WS 메시지의 `app_key`로 단말에 전달, `server/api/ws_router.py` 참조 추가 + 이전 v0.4.11 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -54,7 +54,9 @@
 | **`HEARTBEAT_TIMEOUT`** | int | 선택 | `15` | 하트비트 미수신 타임아웃(초). 총 유예 시간은 `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 20초). **2026-07-10 변경**(기존 5): ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료되는 문제를 실기기 LTE 테스트로 확인해 상향 | `server/api/config.py:31` |
 | **`MAX_RECONNECT_ATTEMPTS`** | int | 선택 | (코드 기본값) | 서버 측 재연결 허용 횟수 | `server/api/config.py:32` |
 | **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-09 정정**: 필드는 존재했으나 `server/main.py`가 소비하지 않고 `allow_origins=["*"]`로 고정돼 있던 문제를 연결. 프로덕션 배포 시 반드시 콘솔 실제 도메인으로 override | `server/api/config.py`, `server/main.py` |
-| **`JWT_SECRET_KEY`** | string | 선택 | (코드 기본값) | 관리자/유저 인증 JWT 서명 키 (2026-07-07 추가 — `.env.example`에도 없어 실서비스 배포 전 반드시 별도 설정 필요) | `server/db/security.py:19` |
+| **`JWT_SECRET_KEY`** | string | 필수(운영) / 선택(개발) | (개발 전용 임시 키) | 관리자/유저·디바이스 JWT 서명 키. **2026-07-11 강화**: `APP_ENV=production`에서 미설정 시 `RuntimeError`로 서버 기동 거부(fail-closed). 개발 환경에서만 임시 키 폴백. `.env.example`에 등재됨 | `server/db/security.py` |
+| **`APP_ENV`** | string | 선택 | `development` | 배포 환경 구분(`development`/`production`). **2026-07-11 신설**: `production`이면 (1) `JWT_SECRET_KEY` 필수(기동 거부), (2) `DEVICE_STATIC_TOKENS` 미설정 시 정적 디바이스 토큰 경로 비활성화(JWT만 인정) | `server/db/security.py`, `server/api/auth.py` |
+| **`DEVICE_STATIC_TOKENS`** | string | 선택 | (개발 기본 2식) | 정적 디바이스 토큰 목록, `device_id:token` 쉼표 구분(예: `dev-001:token-abc-001,dev-002:token-abc-002`). **2026-07-11 신설**: 코드 하드코딩 딕셔너리를 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록 | `server/api/auth.py` |
 
 ### 2.5 탐지 설정 (3단계 Detection)
 
@@ -91,6 +93,9 @@
 | **`DATA_DEDUPED`** | path | 필수 | `data/deduped` | pHash 중복 제거 후 프레임 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_CAPTIONS`** | path | 필수 | `data/captions` | 캡셔닝 결과 JSON (Llava 또는 Gemini API 사용에 따라 동일 경로에 저장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_REFLEX_CLIPS`** | path | 미사용(폐기) | `data/reflex_clips` | **2026-07-09 정정**: 코드 어디서도 소비되지 않는 죽은 변수. 반사 음성 클립은 서버 `data/`가 아니라 단말 번들(`client/assets/sounds/reflex_clips/`, WAV 5종)로 실제 구현됨 | [`reflex_audio_specification.md`](../design/reflex_audio_specification.md) §4 |
+| **`EVENT_FRAMES_DIR`** | path | 선택 | `data/event_frames` | 이벤트 프레임 이미지 저장소 루트(2026-07-12 신설). 탐지/안내 로그 적재 이벤트의 발생 시점 프레임 JPEG을 날짜 폴더로 보관 | `server/services/event_frame_store.py`, [`api_specification.md`](../design/api_specification.md) §8.5 |
+| **`EVENT_FRAME_RETENTION_DAYS`** | int | 선택 | `7` | 이벤트 프레임 보존 기간(일). 초과 날짜 폴더는 서버 기동 시 삭제. `0` 이하는 정리 비활성. 보행 중 촬영 이미지는 개인정보 포함 가능성으로 기간 한정 보존 | `server/services/event_frame_store.py` |
+| **`EVENT_FRAME_JPEG_QUALITY`** | int | 선택 | `80` | 이벤트 프레임 JPEG 품질(용량 통제 우선) | `server/services/event_frame_store.py` |
 
 ### 2.8 Slack Integration (공통 경보)
 
@@ -146,6 +151,22 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **`.env.example`에 아직 등재되어 있지 않아 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38`, `server/api/ws_router.py` |
+
+### 2.14 클라이언트·콘솔 공개 변수 (빌드 시 인라인, 2026-07-11 신설)
+
+> **주의**: `EXPO_PUBLIC_*`(단말 앱)과 `VITE_*`(운영 콘솔)는 빌드 산출물에 **평문 포함**되는 공개 변수입니다. 비밀키를 넣지 않습니다. 서버 `.env`가 아니라 각 앱 디렉토리의 환경 파일(`client/.env`, `console/.env`)에서 관리합니다.
+
+| 변수명 | 타입 | 필수/선택 | 기본값(코드 폴백) | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `ngrok` | 단말 접속 모드(`lan`/`ngrok`) | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | `192.168.0.209` | LAN 직결 시 서버 IP | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NGROK_DOMAIN`** | string | 선택 | `partake-primer-surround.ngrok-free.dev` | 외부망 터널 도메인 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_DEVICE_ID`** | string | 선택 | `dev-001` | 단말 식별자 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_DEVICE_TOKEN`** | string | 선택 | `token-abc-001`(개발 전용) | 디바이스 토큰. **2026-07-11 분리**: 코드 하드코딩에서 환경 변수 우선으로 전환. 실질 보안은 서버 JWT 발급 체계(`issue_device_token`)로 이관 예정 | `client/src/config/index.ts`, `server/api/auth.py` |
+| **`VITE_MONITOR_STREAM_URL`** | string | 선택 | `http://localhost:8000/api/v1/monitor/stream` | 콘솔 SSE 스트림 주소 | `console/src/api/useMonitorStream.ts`, `console/.env.example` |
+| **`VITE_ENABLE_DEMO_DATA`** | string | 선택 | `false` | 콘솔 데모 데이터 주입(개발 빌드 전용, api_specification §8.4) | `console/src/App.tsx` |
+| **`VITE_NAV_MAP_URL`** | string | 선택 | `http://localhost:8000/navigation/?embed=true` | 관제 지도 iframe 주소(2026-07-11 신설) | `console/src/components/OperatorLiveMap.tsx` |
+| **`VITE_API_BASE_URL`** | string | 선택 | `http://localhost:8000` | 콘솔 REST API 기본 주소(2026-07-12 신설). 사후 이력 로그 조회·이벤트 프레임 이미지 서빙에 사용 | `console/src/api/useDetectionLogs.ts`, api_specification §8.5 |
 
 ---
 

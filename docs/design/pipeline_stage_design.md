@@ -1,7 +1,7 @@
 # Minchodan 파이프라인 단계 설계
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.2 (2026-07-10 §5.2 카메라 캡처 계층 iOS/Android 물리 분리(FrameCaptureProvider) 반영 + 이전 v0.3.1 이력 유지)
+> **버전**: v0.3.3 (2026-07-12 §4 단계별 지연 목표 표에 L6/L7 실측치 반영 - `detection_guidance_logs.latency_json` 계측 및 콘솔 표시 구현 완료, `docs/changelogs/kb.md` 참조 + 이전 v0.3.2 이력 유지: 2026-07-10 §5.2 카메라 캡처 계층 iOS/Android 물리 분리(FrameCaptureProvider) 반영)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -64,14 +64,16 @@ graph LR
 
 단계별 지연 목표:
 
-| 단계 | 항목            | 목표        |
-| ---- | --------------- | ----------- |
-| 1    | WS RTT          | < 100ms     |
-| 2    | 캡처수신        | < 50ms      |
-| 3    | Detection 추론  | < 80ms      |
-| 5    | RAG 검색        | < 50ms      |
-| 6    | L2 `ainvoke`    | (측정 필요) |
-| 7    | 실시간 TTS 합성 | (측정 필요) |
+| 단계 | 항목            | 목표    | 실측(2026-07-12, 실기기 E2E 표본)          |
+| ---- | --------------- | ------- | ------------------------------------------- |
+| 1    | WS RTT          | < 100ms | (미계측 - ack 왕복 별도 측정 필요)          |
+| 2    | 캡처수신        | < 50ms  | 0.8ms (decode_ms)                            |
+| 3    | Detection 추론  | < 80ms  | 235~340ms (목표 미달 - 후속 최적화 필요)     |
+| 5    | RAG 검색        | < 50ms  | 56~78ms (목표 근접)                          |
+| 6    | L2 `ainvoke`    | (미정)  | 460ms~3.7s (편차 큼 - 표본 축적 후 목표 확정) |
+| 7    | 실시간 TTS 합성 | (미정)  | 0~2.0s (0ms 사례 원인 미확인, 후속 조사)      |
+
+콘솔 운영 콘솔(`http://localhost:5174`)의 "파이프라인 지연 요약" 패널에서 최근 30건 기준 평균/최대치를 실시간으로 확인할 수 있다(`console/src/components/LatencySummaryPanel.tsx`). `detection_guidance_logs.latency_json`에 스테이지별 원시값이 영속 저장되므로 위 표는 표본이 쌓이는 대로 갱신할 것.
 
 ---
 

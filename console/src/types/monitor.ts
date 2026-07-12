@@ -62,7 +62,37 @@ export interface DetectionGuidanceLogRow {
   stream_type: "reflex" | "cognitive" | "unknown";
   detected_objects_json: string;
   tts_text: string;
+  // 이벤트 발생 시점 프레임 이미지 상대 경로 (서버 data/event_frames/ 기준).
+  // NULL이면 이미지 미보존 (STT 이벤트, 저장 실패, 보존 기간 만료 등).
+  frame_path: string | null;
+  false_positive: boolean | null;
+  // 스테이지별 처리 지연(ms) JSON 문자열. 반사 경로는 decode/inference/total만,
+  // 인지 경로는 rag/llm/tts까지, STT 경로는 stt/llm/tts까지 포함한다(경유한 스테이지만 존재).
+  latency_json: string | null;
   created_at: string;
+}
+
+// latency_json 파싱 결과 - 콘솔에서만 쓰는 화면 표시용 타입.
+export interface LatencyStages {
+  decode_ms?: number;
+  inference_ms?: number;
+  rag_ms?: number;
+  llm_ms?: number;
+  tts_ms?: number;
+  stt_ms?: number;
+  db_save_ms?: number;
+  total_ms?: number;
+}
+
+// server/detection/consumer.py._broadcast_latency_event / ws_router.py._process_stt_audio가
+// /ws/console/live-feed로 실시간 푸시하는 레이턴시 이벤트. db_save_ms는 이 시점엔 아직
+// 미확정이라 없다(REST 폴링된 DetectionGuidanceLogRow.latency_json에는 포함됨).
+export interface LiveLatencyEvent {
+  type: "latency_event";
+  event_id: string | null;
+  stream_type: "reflex" | "cognitive" | "unknown";
+  latency: LatencyStages;
+  ts: number;
 }
 
 export interface AiPipelineStatus {
@@ -76,6 +106,9 @@ export interface AiPipelineStatus {
   tts_engine?: string;
   tts_status?: string;
   stt_status?: string;
+  navigation_status?: "IDLE" | "WAITING_FOR_DESTINATION" | "NAVIGATING";
+  awaiting_free_question?: boolean;
+  awaiting_intent?: boolean;
 }
 
 export interface MonitorState {
@@ -87,4 +120,36 @@ export interface MonitorState {
   detections: DetectionFeedItem[];
   ai: AiPipelineStatus | null;
   raw_events: MonitorEvent[];
+}
+
+// 회원 관리 화면(server/api/admin_member_router.py) 타입 - 서버 DTO와 필드 1:1.
+export interface UserDeviceRow {
+  device_id: number;
+  user_id: number;
+  device_uuid: string;
+  platform: "ios" | "android" | "unknown";
+  is_active: boolean;
+}
+
+export interface AppUserRow {
+  user_id: number;
+  name: string;
+  phone: string;
+  disability_severity: string;
+  birth_date: string | null;
+  guardian_phone: string | null;
+  address: string | null;
+  status: "active" | "inactive" | "deleted";
+  devices: UserDeviceRow[];
+  is_anonymous: boolean;
+}
+
+export interface MemberRegisterPayload {
+  device_uuid: string;
+  name: string;
+  phone: string;
+  disability_severity: string;
+  birth_date?: string;
+  guardian_phone?: string;
+  address?: string;
 }

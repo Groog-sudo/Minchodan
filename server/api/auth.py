@@ -15,6 +15,7 @@ server/db/init_db.py(스키마 생성 스크립트) 실행 이후 후속 작업�
 
 import contextlib
 import logging
+import os
 import sys
 
 import jwt
@@ -27,10 +28,42 @@ if sys.stdout.encoding != "utf-8":
 
 logger = logging.getLogger(__name__)
 
-REGISTERED_DEVICES: dict[str, str] = {
+# 2026-07-11 인증 기본값 제거(dev 개선 계획서 §2): 정적 디바이스 토큰을 코드
+# 하드코딩에서 환경 변수로 분리한다.
+# - DEVICE_STATIC_TOKENS="dev-001:token-abc-001,dev-002:token-abc-002" 형식.
+# - 미설정 시: 개발 환경은 기존 개발 기본 토큰으로 폴백(경고 로그, 하위 호환),
+#   운영 환경(APP_ENV=production)은 빈 목록(fail-closed - JWT 경로만 인정).
+_DEV_DEFAULT_DEVICES: dict[str, str] = {
     "dev-001": "token-abc-001",
     "dev-002": "token-abc-002",
 }
+
+
+def _load_registered_devices() -> dict[str, str]:
+    raw = os.getenv("DEVICE_STATIC_TOKENS", "").strip()
+    if raw:
+        devices: dict[str, str] = {}
+        for item in raw.split(","):
+            device_id, _, token = item.strip().partition(":")
+            if device_id and token:
+                devices[device_id] = token
+            else:
+                logger.warning(f"[Auth] DEVICE_STATIC_TOKENS 항목 형식 오류(무시): {item!r}")
+        return devices
+    if os.getenv("APP_ENV", "development").strip().lower() == "production":
+        logger.warning(
+            "[Auth] 운영 환경에서 DEVICE_STATIC_TOKENS 미설정 - 정적 토큰 경로를 "
+            "비활성화합니다(JWT 디바이스 토큰만 인정)."
+        )
+        return {}
+    logger.warning(
+        "[Auth] DEVICE_STATIC_TOKENS 미설정 - 개발 기본 정적 토큰을 사용합니다. "
+        "운영 배포 전 반드시 환경 변수로 교체하십시오."
+    )
+    return dict(_DEV_DEFAULT_DEVICES)
+
+
+REGISTERED_DEVICES: dict[str, str] = _load_registered_devices()
 
 
 def issue_device_token(device_id: str) -> str:

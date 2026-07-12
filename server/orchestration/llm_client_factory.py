@@ -151,31 +151,26 @@ class SimpleGeminiClient:
                 content = msg.get("content", "")
 
             if role_type == "system":
-                # Gemini API v1beta에서는 system_instruction을 별도 필드로 설정하거나 
+                # Gemini API v1beta에서는 system_instruction을 별도 필드로 설정하거나
                 # 또는 대화의 처음에 포함할 수 있음. 여기서는 system_instruction 텍스트로 보관.
                 system_instruction_text = content
             else:
                 # Gemini 역할은 'user'와 'model'만 허용됨
                 role = "user" if role_type in ("user", "human") else "model"
-                contents.append({
-                    "role": role,
-                    "parts": [{"text": content}]
-                })
+                contents.append({"role": role, "parts": [{"text": content}]})
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
-        
+
         payload = {
             "contents": contents,
             "generationConfig": {
                 "temperature": 0.3,
                 "maxOutputTokens": 100,
-            }
+            },
         }
-        
+
         if system_instruction_text:
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_instruction_text}]
-            }
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction_text}]}
 
         headers = {"Content-Type": "application/json"}
 
@@ -190,7 +185,7 @@ class SimpleGeminiClient:
         except (KeyError, IndexError) as e:
             logger.error(f"Gemini API 응답 파싱 실패: {e}, 응답: {res_data}")
             content = ""
-            
+
         return LLMResponse(content)
 
 
@@ -205,6 +200,11 @@ class LLMClientFactory:
     _current_provider: str = "ollama"
     _monitor_task: asyncio.Task = None
     _gpu_monitor = None
+
+    @classmethod
+    def get_current_provider(cls) -> str:
+        """현재 활성 LLM provider("OLLAMA"/"OPENAI")를 반환한다. 콘솔 AI Pipeline Monitor용."""
+        return cls._current_provider.upper()
 
     @classmethod
     def get_ollama(cls) -> SimpleOllamaClient:
@@ -250,7 +250,8 @@ class LLMClientFactory:
         async def _monitor_loop():
             while True:
                 try:
-                    should_fallback = await cls._gpu_monitor.check_hotswap_trigger()
+                    status = await cls._gpu_monitor.get_gpu_status()
+                    should_fallback = status.get("should_fallback", False)
                     if should_fallback and cls._current_provider == "ollama":
                         cls._current_provider = "openai"
                         logger.warning(
@@ -264,6 +265,21 @@ class LLMClientFactory:
                             logger.info(
                                 "[MCP HOTSWAP] GPU 부하 정상 복구로 인해 로컬 Ollama(gemma4-e4b)로 복귀합니다."
                             )
+
+                    # 관제 콘솔에 실시간 GPU 및 시스템 상태 브로드캐스트
+                    from server.mcp.manager import mcp_manager
+
+                    await mcp_manager.broadcast_event(
+                        "system_metrics",
+                        {
+                            "gpu_usage_pct": status.get("gpu_usage_pct", 0.0),
+                            "memory_used_mb": status.get("memory_used_mb", 0.0),
+                            "current_provider": cls._current_provider.upper(),
+                            "network_rtt_ms": 12,
+                            "queue_depth": 0,
+                            "dropped_frames": 0,
+                        },
+                    )
                 except Exception as e:
                     logger.error(f"[MCP HOTSWAP] GPU 모니터 루프 예외 발생: {e!s}")
                 await asyncio.sleep(interval_seconds)

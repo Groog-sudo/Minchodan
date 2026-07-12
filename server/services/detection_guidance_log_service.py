@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,12 +95,60 @@ class DetectionGuidanceLogService:
             stream_type=payload.stream_type,
             detected_objects_json=payload.detected_objects_json,
             tts_text=payload.tts_text,
+            frame_path=payload.frame_path,
+            false_positive=payload.false_positive,
+            latency_json=payload.latency_json,
         )
 
         saved = await self.log_repo.create(log)
         return DetectionGuidanceLogResponse.model_validate(saved)
 
         # raise NotImplementedError("HARDCODE PART: create_log()를 직접 구현하세요.")
+
+    async def list_logs(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[DetectionGuidanceLogResponse]:
+        """콘솔 이력 조회용 최신 로그 목록을 응답 DTO 리스트로 반환합니다."""
+        rows = await self.log_repo.list_recent(limit=limit, offset=offset)
+        return [DetectionGuidanceLogResponse.model_validate(row) for row in rows]
+
+    async def count_logs(self) -> int:
+        """콘솔 페이지네이션용 전체 로그 건수."""
+        return await self.log_repo.count_all()
+
+    async def get_log_by_event_id(self, event_id: str) -> DetectionGuidanceLogResponse | None:
+        """event_id로 단건 로그를 조회합니다. 프레임 이미지 서빙 검증에 사용합니다."""
+        row = await self.log_repo.get_by_event_id(event_id)
+        if row is None:
+            return None
+        return DetectionGuidanceLogResponse.model_validate(row)
+
+    async def update_false_positive(
+        self, log_id: int, false_positive: bool | None
+    ) -> DetectionGuidanceLogResponse | None:
+        # ==========================================
+        # 🧠 HARDCODE PART - update_false_positive
+        #
+        # [기능 설명]
+        # - log_repo.update_false_positive를 호출하여 오탐 여부를 업데이트합니다.
+        # - 업데이트에 성공하면 DetectionGuidanceLogResponse DTO로 변환하여 반환합니다.
+        # - 대상 로그가 없는 경우 None을 반환합니다.
+        # ==========================================
+        # 💡 [면접 대비 주석]: DB 레포지토리에 오탐 업데이트를 요청하고,
+        # 반환된 ORM 객체를 API 계층용 Response DTO로 검증 및 매핑하여 변환합니다.
+        updated = await self.log_repo.update_false_positive(log_id, false_positive)
+        if updated is None:
+            return None
+        return DetectionGuidanceLogResponse.model_validate(updated)
+
+    async def update_latency_json(
+        self, log_id: int, latency_json: str
+    ) -> DetectionGuidanceLogResponse | None:
+        """db_save_ms를 합산한 latency_json으로 갱신한다 (persist_detection_guidance_log 전용)."""
+        updated = await self.log_repo.update_latency_json(log_id, latency_json)
+        if updated is None:
+            return None
+        return DetectionGuidanceLogResponse.model_validate(updated)
 
 
 # ==========================================
@@ -136,13 +185,21 @@ async def persist_detection_guidance_log(
     tts_text: str,
     user_id: int | None = None,
     device_id: int | None = None,
+    frame_path: str | None = None,
+    latency_stages: dict[str, float] | None = None,
 ) -> DetectionGuidanceLogResponse:
     """FastAPI Depends(get_db) 요청 컨텍스트 밖(WS 컨슈머 등)에서 로그를 저장하는 헬퍼.
 
     async_sessionmaker_factory로 세션을 직접 열고 닫는다. 호출부(DetectionConsumer,
     ws_router)는 반사/인지 경로의 실시간 응답을 막지 않도록 이 호출을 background task로
     감싸고 예외를 흡수해야 한다(이 함수 자체는 예외를 그대로 전파한다).
+
+    latency_stages: 호출부가 이미 측정해 둔 스테이지별 ms(decode/inference/rag/llm/tts/stt 등).
+    이 함수는 INSERT 완료 후 자신의 쓰기 소요 시간(db_save_ms)을 여기에 합산해 한 번 더
+    UPDATE한다 - 쓰기 시간은 쓰기가 끝나기 전에는 알 수 없기 때문이다.
     """
+    stages = dict(latency_stages) if latency_stages else None
+    db_save_start = time.perf_counter()
     payload = DetectionGuidanceLogCreate(
         event_id=event_id,
         user_id=user_id,
@@ -151,10 +208,23 @@ async def persist_detection_guidance_log(
         stream_type=stream_type,
         detected_objects_json=build_detected_objects_json(detections),
         tts_text=tts_text,
+        frame_path=frame_path,
+        latency_json=json.dumps(stages, ensure_ascii=False) if stages else None,
     )
     async with async_sessionmaker_factory() as session:
         service = DetectionGuidanceLogService(session)
-        return await service.create_log(payload)
+        saved = await service.create_log(payload)
+
+    if not stages:
+        return saved
+
+    stages["db_save_ms"] = round((time.perf_counter() - db_save_start) * 1000, 1)
+    async with async_sessionmaker_factory() as session:
+        service = DetectionGuidanceLogService(session)
+        updated = await service.update_latency_json(
+            saved.log_id, json.dumps(stages, ensure_ascii=False)
+        )
+    return updated or saved
 
 
 # ==========================================

@@ -1,20 +1,23 @@
+// 관제 콘솔 실시간 보행 지도. 무거운 지도 라이브러리를 콘솔이 직접 들지 않고,
+// 메인 FastAPI(8000) 하위에 마운트된 네비게이션 서브앱의 embed 모드 화면을
+// iframe으로 가져와 렌더링 부하를 없앤다.
+// 2026-07-11 정정: 구버전 8001 독립 포트 하드코딩을 8000 서브앱 경로로 교체
+// (docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md §2).
+// 원격(ngrok) 관제 시에는 VITE_NAV_MAP_URL로 주소를 주입한다.
+const NAV_MAP_URL =
+  import.meta.env.VITE_NAV_MAP_URL || "http://localhost:8000/navigation/?embed=true";
+
 export function OperatorLiveMap() {
   return (
-    <section className="panel" style={{ minHeight: '400px', padding:0, overflow: 'hidden'}}>
-      {/* 💡 [면접 대비 주석 - 마이크로서비스 연동] 
-          네이비게이션은 8001번 독립 서버에서 구동됩니다
-          콘솔은 무거운 지도 라이브러리를 직접 들고 있지 않고. iframe embed 옵션으로 화면만 가져와 랜더링 부하를 없앴습니다.
-      */}
-      <iframe 
-        src="http://localhost:8001/?embed=true"
+    <section className="panel" style={{ minHeight: "400px", padding: 0, overflow: "hidden" }}>
+      <iframe
+        src={NAV_MAP_URL}
         title="스마트 가이드독 실시간 보행 관제 지도"
         width="100%"
         height="100%"
-        style={{ border : 'none', display : 'block'}}
-        >
-      </iframe>
-
+        style={{ border: "none", display: "block", minHeight: "400px" }}
+        allow="geolocation; accelerometer; gyroscope"
+      ></iframe>
     </section>
   );
-
 }

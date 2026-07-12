@@ -78,7 +78,7 @@ export function useMonitorStream(token: string | null = null) {
    * 여기부터는 담당자가 직접 작성합니다.
    *
    * 직접 구현할 것:
-   * 1. useEffect 안에서 new EventSource(resolvedUrl) 생성 
+   * 1. useEffect 안에서 new EventSource(resolvedUrl) 생성
    * 2. source.onopen에서 connection="connected" 처리
    * 3. source.onmessage에서 JSON.parse(message.data) 처리
    * 4. source.onerror에서 connection="error" 처리
@@ -93,7 +93,7 @@ export function useMonitorStream(token: string | null = null) {
     // 토큰이 없으면 인증되지 않은 SSE 연결을 만들지 않는다.
     if (!token) return;
 
-    // 1. useEffect 안에서 new EventSource(resolvedUrl) 생성 
+    // 1. useEffect 안에서 new EventSource(resolvedUrl) 생성
     setState((current) => ({
       ...current,
       connection: "connecting",
@@ -109,7 +109,7 @@ export function useMonitorStream(token: string | null = null) {
     const tokenQuery = new URLSearchParams({ token }).toString();
     const urlWithToken = `${resolvedUrl}${separator}${tokenQuery}`;
     const source = new EventSource(urlWithToken);
-    
+
     // 2. source.onopen에서 connection="connected" 처리
     source.onopen = () => {
       /*
@@ -238,7 +238,7 @@ export function useMonitorStream(token: string | null = null) {
               raw_events,
             };
 
-        case "system_metrics": 
+        case "system_metrics":
         case "gpu_status":
         case "system_status":
         case "system_error":
@@ -256,7 +256,7 @@ export function useMonitorStream(token: string | null = null) {
             system: {
               gpu_usage_pct:
                 typeof payload.gpu_usage_pct === "number"
-                  ? payload.gpu_usage_pct 
+                  ? payload.gpu_usage_pct
                   : current.system?.gpu_usage_pct,
               // 메모리는 GPU 사용률과 다른 지표라 memory_used_mb 필드만 사용합니다.
               memory_used_mb:
@@ -284,7 +284,7 @@ export function useMonitorStream(token: string | null = null) {
                   ? payload.error_message
                   : current.system?.last_error,
 
-            }, 
+            },
           };
 
           case "risk_event" : {
@@ -343,13 +343,13 @@ export function useMonitorStream(token: string | null = null) {
             * - 같은 device_id가 다시 들어오면 기존 행을 갱신하고, 처음 보는 device_id면 새 행을 추가합니다.
             * - 이 패턴은 upsert라고 설명할 수 있습니다.
             * - SessionStatus["status"]로 타입을 고정한 이유는 connected/disconnected/unknown 외 문자열이 화면 상태에 섞이지 않게 하기 위해서입니다.
-             */ 
-            const device_id = 
+             */
+            const device_id =
                   typeof payload.device_id === "string"
-                    ? payload.device_id 
+                    ? payload.device_id
                     : "unknown-device";
 
-            const sessionsStatus: SessionStatus["status"] = 
+            const sessionsStatus: SessionStatus["status"] =
                   payload.status === "connected" || payload.status === "disconnected"
                     ? payload.status
                     : "unknown"
@@ -393,7 +393,7 @@ export function useMonitorStream(token: string | null = null) {
             // stream 값으로 reflex와 cognitive를 구분해서 이중 경로 흐름을 콘솔에서 볼 수 있음
             // 배열은 무한 증가 방지를 위해 최근 80개만 유지
 
-            /* 
+            /*
             * 발표 및 면접 대응 포인트:
             * - DetectionFeed는 1차 MVP에서 실제 카메라 이미지를 띄우지 않습니다.
             * - 대신 서버가 보내는 탐지 메타데이터(event_id, stream, class_name, confidence, inference_ms)를 먼저 표시합니다.
@@ -410,31 +410,31 @@ export function useMonitorStream(token: string | null = null) {
               id: `${payload.event_id ?? "detection" } ${ receivedAt }`,
               event_id :
                 typeof payload.event_id === "string"
-                    ?  payload.event_id 
+                    ?  payload.event_id
                     : "unknown" ,
-              device_id : 
+              device_id :
                 typeof payload.device_id === "string"
                     ? payload.device_id
                     : "unknown-device",
               stream,
               class_name:
                 typeof payload.class_name === "string"
-                  ? payload.class_name 
+                  ? payload.class_name
                   : "unknown",
-              
-              confidence : 
+
+              confidence :
                 typeof payload.confidence === "number"
-                  ? payload.confidence 
+                  ? payload.confidence
                   : undefined ,
-              
+
               inference_ms:
                 typeof payload.inference_ms === "number"
-                  ? payload.inference_ms 
+                  ? payload.inference_ms
                   : undefined ,
 
               surface :
                 typeof payload.surface === "string"
-                  ? payload.surface 
+                  ? payload.surface
                   : "unknown" ,
 
               ts : receivedAt
@@ -445,7 +445,7 @@ export function useMonitorStream(token: string | null = null) {
               last_event_at: receivedAt,
               raw_events,
               detections: [detection, ...current.detections].slice(0, 80)
-              
+
             }
           }
           // [면접 대비 주석 - 프론트 주도 데모 계약]
@@ -453,7 +453,7 @@ export function useMonitorStream(token: string | null = null) {
           // A. "애자일 개발을 위해 프론트-백엔드 간 '데모/확장 계약'을 먼저 체결했습니다.
           //    백엔드 Producer(6, 7단계)가 아직 없지만 프론트는 주입(Inject) 함수로 UI를 미리 검증할 수 있습니다."
 
-          case "llm_status" : 
+          case "llm_status" :
           case "rag_result" :
           case "tts_status" :
           // case "stt_status" : {  // STT는 7단계 파이프라인 범위 밖이므로 제외
@@ -517,6 +517,20 @@ export function useMonitorStream(token: string | null = null) {
                 typeof payload.llm_retry_count === "number"
                   ? payload.llm_retry_count
                   : previousAi.llm_retry_count,
+              navigation_status:
+                payload.navigation_status === "IDLE" ||
+                payload.navigation_status === "WAITING_FOR_DESTINATION" ||
+                payload.navigation_status === "NAVIGATING"
+                  ? (payload.navigation_status as any)
+                  : previousAi.navigation_status,
+              awaiting_free_question:
+                typeof payload.awaiting_free_question === "boolean"
+                  ? payload.awaiting_free_question
+                  : previousAi.awaiting_free_question,
+              awaiting_intent:
+                typeof payload.awaiting_intent === "boolean"
+                  ? payload.awaiting_intent
+                  : previousAi.awaiting_intent,
             };
 
             return {
@@ -525,18 +539,18 @@ export function useMonitorStream(token: string | null = null) {
               raw_events,
               ai: nextAi,
               /*
-              AI 파이프라인 상태는 위험 이벤트처럼 누적 로그가 아니라 최신 상태를 보는 목적입니다. LLM, RAG, TTS, STT는 각각 독립 이벤트로 들어올 수 있어서 
-              기존 ai 상태를 펼친 뒤 들어온 필드만 갱신합니다. 그래서 한 이벤트가 들어와도 다른 필드가 사라지지 않습니다. 
-              */ 
+              AI 파이프라인 상태는 위험 이벤트처럼 누적 로그가 아니라 최신 상태를 보는 목적입니다. LLM, RAG, TTS, STT는 각각 독립 이벤트로 들어올 수 있어서
+              기존 ai 상태를 펼친 뒤 들어온 필드만 갱신합니다. 그래서 한 이벤트가 들어와도 다른 필드가 사라지지 않습니다.
+              */
             };
           }
-          default: 
+          default:
             return {
               ...current,
               last_event_at: receivedAt,
               raw_events,
             };
-         
+
       }
   // connection_established와 ping은 연결 상태 이벤트라 화면 상태만 갱신합니다.
   // system_metrics와 gpu_status는 최신 시스템 상태이므로 배열에 누적하지 않고 system 객체를 덮어씁니다.

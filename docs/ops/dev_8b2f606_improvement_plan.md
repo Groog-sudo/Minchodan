@@ -12,6 +12,16 @@
 > 재설계", §5 "환경변수 단일 명세"는 [`docs/research/mitos_improvement_roadmap.md`](../research/mitos_improvement_roadmap.md)
 > (Mitos 보완 로드맵)와 스코프가 겹치므로 착수 전 두 문서를 함께 확인할 것.
 > (3) §4의 Ruff/mypy 등 품질 수치는 8b2f606 기준으로, kb 병합 후 재측정이 필요합니다.
+> (4) 2026-07-11 kb 착수분: §2 "반사 위험도 SSOT"는 1단계 계약 초안
+> [`docs/design/risk_ssot_contract.md`](../design/risk_ssot_contract.md) + 회귀 테스트
+> `tests/test_risk_ssot.py`(TC-DET-011)로 복제 불일치 차단까지 진행(공통 데이터 계약
+> 소스 통합은 TH·Mobile 합의 대기). §3 "이벤트 ID 개선"은 단말 detection event_id를
+> `event-{device_id}-{stream}-{epoch_ms}`로 구조화해 반사/인지 동일 ms 충돌 제거.
+> §5 "SSE 계약 정리"는 api_specification §8에 실발행/예약 이벤트 분리와 payload 필드
+> 고정으로 완료(`mcp:metrics` producer 부재 사실 명시 - producer 구현은 잔여 후속).
+> §2 "인증 기본값 제거"는 `APP_ENV=production` fail-closed(JWT_SECRET_KEY 필수,
+> 정적 토큰 경로 비활성화), `DEVICE_STATIC_TOKENS` 환경 분리, 토큰 원문 로그 제거,
+> 단말 `EXPO_PUBLIC_*` 분리까지 완료(기기 고유 인증·bootstrap 절차는 JY·TH 협업 잔여).
 
 ---
 

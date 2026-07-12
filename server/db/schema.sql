@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS app_users (
     name VARCHAR(50) NOT NULL,
     phone VARCHAR(30) NOT NULL,
     disability_severity VARCHAR(30) NOT NULL,
+    birth_date DATE,
+    guardian_phone VARCHAR(30),
+    address VARCHAR(255),
     status VARCHAR(10) NOT NULL DEFAULT 'active'
         CHECK (status IN ('active', 'inactive', 'deleted')),
     CONSTRAINT UK_APP_USERS_PHONE UNIQUE (phone)
@@ -77,6 +80,9 @@ CREATE TABLE IF NOT EXISTS detection_guidance_logs (
         CHECK (stream_type IN ('reflex', 'cognitive', 'unknown')),
     detected_objects_json JSON NOT NULL,
     tts_text TEXT NOT NULL,
+    frame_path VARCHAR(255),
+    false_positive INTEGER CHECK (false_positive IN (0, 1)),
+    latency_json JSON,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT UK_DETECTION_GUIDANCE_LOGS_EVENT_ID UNIQUE (event_id),
     CONSTRAINT FK_DETECTION_GUIDANCE_LOGS_APP_USERS

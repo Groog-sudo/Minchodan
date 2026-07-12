@@ -49,6 +49,31 @@ button:hover {
   gap: 16px;
 }
 
+.main-nav {
+  border-bottom: 1px solid #2a3140;
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 20px 0;
+}
+
+.main-nav-link {
+  border-bottom: 2px solid transparent;
+  color: #96a0b5;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 14px;
+  text-decoration: none;
+}
+
+.main-nav-link:hover {
+  color: #edf2fb;
+}
+
+.main-nav-link-active {
+  border-bottom-color: #00f2fe;
+  color: #00f2fe;
+}
+
 .eyebrow {
   color: #96a0b5;
   font-size: 13px;
@@ -205,6 +230,14 @@ h2 {
   gap: 8px;
 }
 
+/* DetectionFeed는 프레임마다(최대 8~10fps) 쌓여 최근 80건까지 보관되므로, 목록 자체를
+   패널 안에서 세로 스크롤시켜 패널/그리드 행이 한없이 길어지는 것을 막는다. */
+.feed-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .session-row,
 .feed-row {
   align-items: center;
@@ -217,6 +250,20 @@ h2 {
   padding: 10px;
 }
 
+/* event_id처럼 긴 문자열이 flex 아이템의 기본 min-width(auto) 때문에 박스 밖으로
+   삐져나가던 문제 수정: 각 칸을 세로로 쌓고 줄바꿈을 허용한다. */
+.feed-row {
+  flex-wrap: wrap;
+}
+
+.feed-row > div {
+  display: flex;
+  flex: 1 1 45%;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .session-row strong,
 .feed-row strong {
   color: #ffffff;
@@ -226,6 +273,10 @@ h2 {
 .feed-row span {
   color: #a8b2c7;
   font-size: 12px;
+}
+
+.feed-row span {
+  overflow-wrap: anywhere;
 }
 
 .session-meta {
@@ -321,6 +372,180 @@ td {
   margin-top: 10px;
 }
 
+/* 이벤트 프레임 이미지 (오탐 검증용 상황 이미지) */
+.frame-thumb {
+  border-radius: 6px;
+  cursor: zoom-in;
+  display: block;
+  height: 48px;
+  object-fit: cover;
+  transition: transform 0.12s ease;
+  width: 64px;
+}
+
+.frame-thumb:hover {
+  transform: scale(1.08);
+}
+
+.row-selected td {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.frame-detail {
+  border-top: 1px solid #2a3140;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.frame-detail-meta {
+  color: #9da7ba;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.frame-detail-meta strong {
+  color: #edf2fb;
+}
+
+.frame-overlay-wrap {
+  display: inline-block;
+  max-width: 640px;
+  position: relative;
+  width: 100%;
+}
+
+.frame-overlay-image {
+  border-radius: 8px;
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.frame-overlay-box {
+  border: 2px solid #f59e0b;
+  border-radius: 3px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.frame-overlay-label {
+  background: rgba(245, 158, 11, 0.9);
+  color: #111827;
+  font-size: 11px;
+  font-weight: 800;
+  left: -2px;
+  padding: 1px 5px;
+  position: absolute;
+  top: -18px;
+  white-space: nowrap;
+}
+
+.frame-overlay-wrap[role="button"] {
+  cursor: zoom-in;
+}
+
+/* 이미지 확대 보기(라이트박스) 모달 */
+.lightbox-backdrop {
+  align-items: center;
+  background: rgba(6, 9, 16, 0.86);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 100;
+}
+
+.lightbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 92vh;
+  max-width: min(960px, 92vw);
+  width: 100%;
+}
+
+.lightbox-header {
+  align-items: flex-start;
+  color: #edf2fb;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.lightbox-header strong {
+  display: block;
+  font-size: 14px;
+}
+
+.lightbox-title-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+/* 반사/인지/미분류 스트림 배지 */
+.stream-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.stream-reflex {
+  background: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+}
+
+.stream-cognitive {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+}
+
+.stream-unknown {
+  background: rgba(100, 116, 139, 0.22);
+  color: #cbd5e1;
+}
+
+.lightbox-tts {
+  color: #9da7ba;
+  display: block;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.lightbox-close {
+  background: rgba(148, 163, 184, 0.16);
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  color: #edf2fb;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.lightbox-close:hover {
+  background: rgba(148, 163, 184, 0.28);
+}
+
+.frame-overlay-lightbox {
+  cursor: default;
+  max-height: 82vh;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.frame-overlay-lightbox .frame-overlay-image {
+  width: 100%;
+}
+
 @media (max-width: 1180px) {
   .dashboard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -350,4 +575,322 @@ td {
   .detection-summary {
     grid-template-columns: 1fr;
   }
+}
+
+/* 오탐 판정 (False Positive) 디자인 */
+.fp-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.fp-unmarked {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
+.fp-true {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fdba74;
+}
+
+.fp-false {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+/* 오탐 판정 버튼 */
+.fp-btn {
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 11px;
+  margin-right: 4px;
+  padding: 2px 6px;
+  transition: all 0.2s;
+}
+
+.fp-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+.fp-btn-active-true {
+  background: rgba(249, 115, 22, 0.3);
+  border-color: #f97316;
+  color: #ffedd5;
+}
+
+.fp-btn-active-false {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: #10b981;
+  color: #ecfdf5;
+}
+
+.logout-btn {
+  background: none;
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  color: #00f2fe;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 12px;
+  transition: all 0.2s ease;
+}
+
+.panel-header-actions {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.refresh-btn {
+  background: rgba(0, 242, 254, 0.1);
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  border-radius: 4px;
+  color: #00f2fe;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 4px 10px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background-color: rgba(0, 242, 254, 0.2);
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
+}
+
+.refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 이력 테이블 페이지네이션 (15건 단위) */
+.log-pagination {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.page-btn {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  color: #edf2fb;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.page-btn:disabled {
+  color: #4b5568;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.page-indicator {
+  color: #96a0b5;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.latency-live-dot {
+  animation: latency-live-pulse 1.4s ease-in-out infinite;
+  background: #6ee7b7;
+  border-radius: 999px;
+  display: inline-block;
+  height: 7px;
+  margin-right: 5px;
+  width: 7px;
+}
+
+@keyframes latency-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 파이프라인 지연(레이턴시) 표시: 이력 테이블 열 칩 + 요약 패널 */
+.latency-total-cell {
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.latency-empty {
+  color: #5b6577;
+}
+
+.latency-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.latency-chip {
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.latency-chip-total {
+  background: rgba(0, 242, 254, 0.16);
+  color: #67e8f9;
+}
+
+.panel-latency {
+  min-height: unset;
+}
+
+.latency-stat-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.latency-stat-card {
+  background: #11151d;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.latency-stat-label {
+  color: #96a0b5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.latency-stat-avg {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.latency-stat-sub {
+  color: #6b7590;
+  font-size: 11px;
+}
+
+.latency-stat-ok .latency-stat-avg {
+  color: #6ee7b7;
+}
+
+.latency-stat-over .latency-stat-avg {
+  color: #fca5a5;
+}
+
+.latency-stat-neutral .latency-stat-avg {
+  color: #93c5fd;
+}
+
+.logout-btn:hover {
+  background-color: rgba(0, 242, 254, 0.1);
+  border-color: #00f2fe;
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
+}
+
+/* 회원 관리 화면 */
+.panel-member-form {
+  margin-bottom: 16px;
+}
+
+.member-form-hint {
+  color: #96a0b5;
+  font-size: 12px;
+  margin: 0 0 14px 0;
+}
+
+.member-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.member-form label {
+  color: #96a0b5;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.member-form input {
+  background: #11151d;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  color: #edf2fb;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.member-form input:focus {
+  border-color: #00f2fe;
+  outline: none;
+}
+
+.member-form-message-ok {
+  color: #6ee7b7;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.member-form-message-error {
+  color: #fca5a5;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.member-status-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.member-status-anon {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fdba74;
+}
+
+.member-status-real {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
 }

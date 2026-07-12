@@ -1473,3 +1473,204 @@
 - **관련 파일**: `docs/README.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 병합 전 `git merge-tree --write-tree` 충돌 0건 확인, 병합 후 정리 문서 상대 링크 경로 존재 확인. 코드 변경 없음.
 - **비고**: 두 계획 문서(dev 계획서 + Mitos 로드맵)는 관점이 달라(전자: dev 통합 감사 기반 P0/P1, 후자: 실기기 검증 기반 사용자 안전) 병존시키고 교차 참조로 연결.
+
+---
+
+### 2026-07-11 | 통합 정합화 | KB 담당 확인 항목 이행: 지침서 정정, 콘솔 지도 복구, event_id 구조화, 위험도 SSOT 계약
+
+- **커밋**: `feat(통합): 지침서 정정, 콘솔 지도 연동 복구, event_id 구조화, 위험도 SSOT 계약 초안`
+- **변경 내용**:
+  - **통합 지침서 2종 정정 (v2.3.0)**: KB 담당 확인 결과 코드보다 뒤처진 서술을 갱신. 서버 통합 기술 지침서 - §3.2 GPS 수신을 detection 페이로드 필드가 아닌 실제 구현(`realtime_gps` 전용 메시지)으로 정정, §3.2에 GPS 수신 시점 길안내 직접 평가(2026-07-11) 추가, §3.4 nav_route 신설, 지도 웹페이지용 ws와 단말 `/ws/detect` 채널 구분 명시, 로컬 절대 경로 제거. 관제 UI 지침서 - §1에 "길댕아" 2단계 웨이크워드·질문 모드·첫 방향 지시 멘트 반영, 반사 경로 비협상 원칙(고위험 경보는 네비 멘트와 미융합) 명시, §3에 콘솔 지도와 단말 NavMapPanel이 별개 화면임을 명시.
+  - **콘솔 지도 임베딩 복구**: `OperatorLiveMap.tsx`가 구버전 8001 독립 포트로 하드코딩된 채 `App.tsx`에서 주석 처리되어 있던 것을, 8000 서브앱 경로(`VITE_NAV_MAP_URL` 환경변수, 기본 `http://localhost:8000/navigation/?embed=true`)로 수정하고 재활성화. `console/.env.example`에 변수 등재. 콘솔은 공유 영역이므로 TH 확인 요망.
+  - **event_id 구조화 (dev 계획서 §3)**: 단말 detection event_id를 `event-{epoch_ms}`에서 `event-{device_id}-{stream}-{epoch_ms}`로 변경(`CameraView.tsx`). 기존 형식은 반사(4fps)/인지(2fps) 타이머가 같은 ms에 발화하면 충돌했고, DB의 event_id UNIQUE + 중복 저장 방지 로직이 두 번째 프레임 로그를 조용히 유실시키는 실결함이었다. 서버는 event_id를 파싱하지 않고 통과시키며(전수 확인), DB 컬럼 String(64) 대비 신규 형식 약 38자로 안전. api_specification 공통 필드 표에 형식 명세 반영.
+  - **반사 위험도 SSOT 계약 초안 (dev 계획서 §2, 1단계)**: `docs/design/risk_ssot_contract.md` 신설 - 서버/단말이 반드시 일치시켜야 하는 고위험 5종+confidence를 SSOT로 고정하고, 단말 전용 실내 오탐 확장 7종과 거리 산식 불일치(서버 bbox 하단 y vs 단말 면적 기반)는 인지된 기술 부채로 명시. 회귀 테스트 `tests/test_risk_ssot.py` 신설(서버는 import 대조, 단말은 TSX 텍스트 파싱 대조, 파싱 실패 시 명시적 실패) - 복제 불일치가 커밋 단계에서 차단됨. 공통 데이터 계약 소스 통합(2단계)은 TH·Mobile 합의 대기.
+- **관련 파일**: `docs/dev-guides/integration/서버_및_시스템_통합_기술_지침서.md`, `docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md`, `console/src/components/OperatorLiveMap.tsx`, `console/src/App.tsx`, `console/.env.example`, `client/src/components/CameraView.tsx`, `docs/design/risk_ssot_contract.md`(신규), `tests/test_risk_ssot.py`(신규), `docs/design/api_specification.md`, `docs/ops/test_specification.md`(TC-DET-011), `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/test_risk_ssot.py` 3건 통과, 클라이언트/콘솔 `tsc --noEmit` 각각 통과. 콘솔 지도 iframe 실표시와 event_id 실기기 왕복은 서버 기동 환경에서 후속 확인.
+- **비고**: KB 담당 핵심 원칙(내비게이션의 반사 경로 미경유) 코드 검증 완료 - 반사 경로 3개 파일에 navigation 참조 0건, 길안내 발화 3경로 전부 인지 채널(guide). 검토 상세는 이 엔트리 직전 대화 기준.
+
+---
+
+### 2026-07-11 | 통합 정합화 2차 | SSE·콘솔 이벤트 계약 고정, 인증 기본값 제거
+
+- **커밋**: `feat(보안+계약): SSE 이벤트 계약 고정 및 인증 기본값 환경 분리(fail-closed)`
+- **변경 내용**:
+  - **SSE·콘솔 이벤트 계약 고정 (dev 계획서 §5)**: api_specification §8을 전면 개편(v0.4.12). 실발행 이벤트(connection_established/ping)와 예약 브리지 이벤트(system_metrics·risk_event·session_status·detection_event·llm/rag/tts/stt_status)를 분리하고, payload 필드를 콘솔 파서(`useMonitorStream.ts`) 기준으로 고정. **실측 사실 명시**: `mcp:metrics` 스트림에 실데이터를 발행하는 producer가 현재 저장소에 없음(탐지 파이프라인 실발행은 `risk.events`, 두 스트림 미연결) - 기존 명세의 "risk.events 실시간 뷰" 오기를 정정하고 producer 구현을 후속 과제로 등재. 데모 데이터는 DEV 빌드+`VITE_ENABLE_DEMO_DATA` 이중 가드로 이미 분리되어 있음을 §8.4에 명문화.
+  - **인증 기본값 제거 (dev 계획서 §2)**:
+    - `server/db/security.py`: `APP_ENV=production`에서 `JWT_SECRET_KEY` 미설정 시 `RuntimeError`로 기동 거부(fail-closed). 개발 환경만 임시 키 폴백(테스트 하위 호환).
+    - `server/api/auth.py`: 정적 디바이스 토큰 하드코딩을 `DEVICE_STATIC_TOKENS`(`id:token` 쉼표 목록) 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록(JWT 디바이스 토큰만 인정).
+    - `server/api/ws_router.py`: 토큰 검증 실패 로그의 토큰 원문 출력을 제거(길이만 기록).
+    - `client/src/config/index.ts`: NETWORK_MODE/LAN_IP/NGROK_DOMAIN/DEVICE_ID/TOKEN을 `EXPO_PUBLIC_*` 환경 변수 우선으로 전환(기존 상수는 개발 폴백 유지 - 이원화 계약 §7.3 상수 보존 규칙 준수, 계약 v1.1.2로 규칙 확장 반영). EXPO_PUBLIC 값은 번들에 평문 포함되므로 비밀키 용도 금지를 주석으로 명시.
+    - `.env.example`에 `APP_ENV`/`JWT_SECRET_KEY`/`DEVICE_STATIC_TOKENS` 등재, environment_variables.md v0.4.13(§2.4 갱신, §2.14 클라이언트·콘솔 공개 변수 신설).
+- **관련 파일**: `server/db/security.py`, `server/api/auth.py`, `server/api/ws_router.py`, `client/src/config/index.ts`, `.env.example`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/changelogs/kb.md`
+- **검증 결과**: (1) `APP_ENV=production` + `JWT_SECRET_KEY` 미설정에서 security 모듈 임포트 시 `RuntimeError` 기동 거부 확인, (2) production에서 `DEVICE_STATIC_TOKENS` 미설정 시 정적 토큰 목록 빈 값 확인, (3) `DEVICE_STATIC_TOKENS` 오버라이드 파싱 확인, (4) `pytest tests/test_api_ws.py tests/test_risk_ssot.py` 7건 통과(개발 기본 토큰 하위 호환 유지), (5) 클라이언트 `tsc --noEmit` 통과. `tests/test_ws_echo.py` 6건 실패는 라이브 서버(localhost:8000) 필요 테스트로 변경 전 기준선에서도 동일 실패함을 대조 확인(회귀 아님).
+- **비고**: dev 계획서 §2/§5의 KB 확인 항목 전부 착수 완료. 잔여: `mcp:metrics` producer 구현(TH·Backend), 기기 고유 인증·관리자 bootstrap 절차(JY·TH), ngrok 대체 고정 도메인+TLS(팀 인프라 결정 필요).
+
+---
+
+### 2026-07-11 | 클라이언트+iOS 네이티브 | LiDAR 실거리 프로브 프로토타입 (Mitos 로드맵 §2 거리 휴리스틱)
+
+- **커밋**: `feat(client): LiDAR 실거리 프로브 프로토타입 - DepthProbeBridge + 거리측정 모드`
+- **변경 내용**:
+  - **배경**: 현재 거리 판정은 단안 휴리스틱 3종(단말 `0.22/sqrt(areaRatio)`, 서버 `bbox_area_ratio`, 반사 게이트 bbox 하단 y)뿐이라 "전방 3m"가 아닌 "크게 보임" 수준. 테스트 기기(iPhone 14 Pro Max)의 LiDAR + `AVCaptureDepthDataOutput`으로 실거리 검증 경로를 만든다(1단계 프로토타입).
+  - **DepthProbeBridge 네이티브 모듈 신규**: `builtInLiDARDepthCamera` 자체 세션(vga640x480, 심도 전용)으로 최신 심도 맵을 유지하고, 정규화 좌표(portrait) 목록의 실거리(m)를 3x3 미디언으로 샘플링해 반환(`startProbe`/`stopProbe`/`probe`). `isFilteringEnabled`로 저반사 표면 홀 필링, `depthDataAccuracy`(absolute=LiDAR 실측) 노출. project.pbxproj 4개 섹션 수동 등록.
+  - **단말 거리측정 모드**: CameraView에 "거리측정" 토글 신규. 켜면 vision-camera를 내리고(`isActive=false`, **두 세션이 후면 카메라를 동시 점유할 수 없는 프로토타입 제약** - 탐지·경보 일시 정지) 500ms 폴링으로 화면 3지점(중앙/전방 하단/발밑) 실거리를 오버레이 표시. 줄자 실측 대조용 계측 화면.
+  - **2단계(후속) 방향 문서화**: vision-camera 세션에 depth 출력을 통합해 bbox+실거리 상시 융합, bbox 휴리스틱은 depth 신뢰도 낮을 때 fallback으로 강등(Mitos 로드맵 §2, risk_ssot_contract §3 수렴 방향과 일치). Android는 LiDAR 부재로 대칭 구현 없음(이원화 계약 v1.1.3 등재).
+- **관련 파일**: `client/ios/DepthProbeBridge.swift`(신규), `client/ios/DepthProbeBridge.mm`(신규), `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/src/services/depthProbe.ts`(신규), `client/src/components/CameraView.tsx`, `docs/design/architecture.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `tsc --noEmit` 통과, iOS 시뮬레이터 Debug 빌드 BUILD SUCCEEDED + DepthProbeBridge 오브젝트 파일(Swift/mm) 생성 확인. 실기기 검증(LiDAR 실측 정확도 - 줄자 대조 1/2/3/5m, 저반사 표면, 야외 직사광, 탐지 모드 복귀 시 카메라 재점유)은 후속. 시뮬레이터는 LiDAR가 없어 "LiDAR 심도 카메라 없음" 에러 표출이 정상.
+- **비고**: 접근성 주의 - 거리측정 모드 동안 반사 경보가 정지되므로 운영자/계측 전용 기능임(종단 사용자 UX 아님). 토글 진입 시 이 사실이 오버레이 첫 줄("탐지 일시정지")에 표기됨.
+
+---
+
+### 2026-07-12 | 서버+콘솔 | 이벤트 프레임 보존 및 콘솔 상황 이미지 렌더링 (오탐 검증 기반)
+
+- **커밋**: `feat(서버+콘솔): 이벤트 프레임 보존(frame_path) 및 콘솔 사후 이력 이미지 렌더링`
+- **변경 내용**:
+  - **배경**: `detection_guidance_logs`에는 bbox·클래스 등 텍스트 메타데이터만 남고 발생 시점 프레임 이미지는 어디에도 영속되지 않아, 콘솔에서 오탐 여부 판별이나 안내 발화 당시 상황 확인이 불가능했다. 이미지 파일 + DB 경로 참조 방식으로 보존 체계를 신설한다(BLOB 저장은 반사 이벤트 유입량에 DB 비대화로 배제).
+  - **이벤트 프레임 저장소 신설** (`server/services/event_frame_store.py`): 로그 적재 이벤트만 원본 프레임을 JPEG(품질 80)으로 `data/event_frames/YYYYMMDD/{event_id}.jpg`에 저장. event_id 화이트리스트(`[A-Za-z0-9._-]{1,64}`)·저장소 밖 경로 해석 차단(resolve 검증)·보존 기간(`EVENT_FRAME_RETENTION_DAYS` 기본 7일) 초과 날짜 폴더 기동 시 삭제. 저장 실패 시 `frame_path=NULL`로 로그 적재는 계속(방어적 코딩).
+  - **반사 경로 무영향 저장**: JPEG 인코딩·디스크 쓰기는 기존 `_schedule_log_persist` 백그라운드 태스크 내부에서 `asyncio.to_thread`로만 수행. `_process_frame`이 보유한 프레임을 `_send_reflex_alert`/`_send_cognitive_guide`에 전달하고, 실제 전송 성사 후에만 저장이 예약된다(중복 억제·쿨다운으로 걸러진 프레임은 미저장 - 용량 통제).
+  - **DB 스키마**: `detection_guidance_logs.frame_path VARCHAR(255) NULL` 추가(models/schemas/schema.sql), 마이그레이션 `20260712_001_add_frame_path_to_detection_guidance_logs.sql` 신설. 인지 로그의 `detected_objects_json`에 bbox 좌표(좌상단 x,y+w,h, 프레임 픽셀) 포함 - 콘솔 오버레이용이며 LLM 오케스트레이터 입력에는 기존대로 미포함(프롬프트 오염 방지).
+  - **조회 API 신설** (`server/api/detection_log_router.py`): `GET /api/v1/admin/detection-logs`(목록, limit 1~200) + `GET /api/v1/admin/event-frames/{event_id}`(JPEG 서빙). 인증은 `get_current_admin`(헤더 또는 쿼리 토큰 - `<img>` 태그 제약상 SSE와 동일한 쿼리 우회). DB 등록 경로만 서빙해 임의 파일 접근을 차단. Repository에 `list_recent`(detected_at 내림차순) 추가.
+  - **콘솔 상황 이미지 렌더링**: `useDetectionLogs` 훅 신설(REST 30초 폴링, `VITE_API_BASE_URL`). Detection Guidance Log 테이블에 썸네일 컬럼 추가, 행 클릭 시 상세 뷰에서 원본 이미지 위에 bbox·클래스·신뢰도를 비율 좌표 오버레이로 표시(이미지에 굽지 않음 - 원본 보존으로 임계값/모델 교체 재검증 가능). 데모 데이터는 실조회 결과 없을 때만 폴백.
+- **관련 파일**: `server/services/event_frame_store.py`(신규), `server/api/detection_log_router.py`(신규), `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/20260712_001_add_frame_path_to_detection_guidance_logs.sql`(신규), `server/services/detection_guidance_log_service.py`, `server/detection/consumer.py`, `server/main.py`, `console/src/api/useDetectionLogs.ts`(신규), `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/types/monitor.ts`, `console/src/App.tsx`, `console/src/styles.css`, `console/.env.example`, `.env.example`, `tests/test_event_frame_store.py`(신규), `docs/design/api_specification.md`(v0.4.13 §8.5), `docs/design/architecture.md`(v0.4.5 §13.3.1), `docs/ops/environment_variables.md`(v0.4.14), `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/test_event_frame_store.py tests/test_ws_router_stt.py tests/test_admin_service_login.py tests/test_risk_ssot.py` 18건 통과(저장/경로 탈출 차단/보존 정리 + 기존 회귀), 변경 모듈 전체 임포트 무결성 확인, ruff 통과, 콘솔 `npm run build`(tsc --noEmit 포함) 통과. 실제 탐지 이벤트로 이미지 저장·콘솔 표시 왕복은 서버+실기기 기동 환경에서 후속 확인.
+- **비고**: 보행 중 촬영 이미지는 행인 등 개인정보 포함 가능성이 있어 기간 한정 보존(기본 7일)으로 설계했으며, 보존 기간 정책은 팀 확정 필요(STT WAV 제거 전례 참조). MariaDB 운영 DB에는 마이그레이션 SQL 수동 반영 필요. 후속 확장 후보: 오탐 판정 컬럼(`false_positive`)+콘솔 판정 버튼 - (이미지, 오탐 라벨) 쌍은 재학습 데이터로 재사용 가능.
+
+---
+
+### 2026-07-12 | 콘솔+iOS 실기기 | 이미지 라이트박스, 한국식 시각/스트림 배지, iOS 카메라 180도 방향 반전 결함 수정
+
+- **커밋**: `fix(client): iOS 카메라 프레임 180도 방향 반전 수정 + feat(콘솔): 이미지 확대·시각/스트림 표시 개선`
+- **배경**: 실기기→서버→DB E2E 검증 중 콘솔에서 저장된 이벤트 프레임이 뒤집혀 보인다는 사용자 보고를 받아 조사. 처음엔 CSS/라이트박스 문제로 의심했으나, 서버 응답과 디스크 원본 파일의 MD5가 완전히 일치하고 콘솔 전체에 rotate/transform CSS가 전혀 없음을 확인해 표시 버그를 배제. 손을 편 상태(손가락 위)로 반복 실기기 촬영해 대조한 결과, **폰이 정상(노치 위)으로 들려 있었는데도 저장된 프레임은 정확히 180도 뒤집혀 있음을 확정**. 반사(Frame Processor, Swift)·인지(takePhoto+expo-image-manipulator) 두 개의 완전히 독립된 캡처 경로가 동일 증상을 보여, 두 경로가 공유하는 `react-native-vision-camera` 4.7.3의 가속도계 기반 방향 판정(`CMAccelerometerData+deviceOrientation.swift`)이 이 기기 조합에서 반대로 보고되는 것으로 결론.
+- **콘솔 개선**:
+  - **이미지 확대 보기(라이트박스)**: `DetectionGuidanceLogTable.tsx`에 썸네일/상세 미리보기 이미지 클릭 시 원본 크기 모달(bbox 오버레이 포함)로 확대하는 기능 추가. 닫기는 버튼/배경 클릭/Esc 키 세 경로 지원.
+  - **탐지 시각 한국식 고정 표기**: `Intl.DateTimeFormat`에 `timeZone: "Asia/Seoul"` 명시로 브라우저 로케일과 무관하게 `YYYY-MM-DD HH:mm:ss`(KST) 고정 표시(`formatDetectedAt`). 기존 `toLocaleString()`은 브라우저 설정에 따라 형식이 들쭉날쭉해 로그 대조가 어려웠음.
+  - **반사/인지 스트림 배지**: 원시 enum 문자열 대신 "반사"(빨강)/"인지"(파랑)/"미분류"(회색) 색상 배지로 렌더링(`StreamBadge`), 테이블·상세 미리보기·라이트박스 헤더 전체에 일관 적용.
+- **iOS 방향 버그 수정**:
+  - `client/ios/ReflexFrameProcessorPlugin.swift`: 기존 `frame.orientation` 기반 보정 뒤에 `.oriented(.down)` 180도 추가 보정.
+  - `client/src/services/frameCaptureProvider.ts`: `captureViaTakePhoto`에 `applyIosOrientationFix` 매개변수(기본 false) 신설, true일 때만 `manipulateAsync` 연산에 `{ rotate: 180 }` 추가. **Android는 이 함수를 아예 쓰지 않고 별도 구현(`captureViaTakePhotoAndroid`)이라 원천적으로 영향 없음** - 이 사실과 Android 자체 실기기 검증 필요성을 `ios_android_bifurcation_contract.md`(v1.1.4)에 명시.
+  - `client/ios/Minchodan/Info.plist`: iPhone `UISupportedInterfaceOrientations`에서 `PortraitUpsideDown` 제거(근본 원인은 아니었으나 앱이 실수로 거꾸로 인터페이스 방향에 잠기는 경로를 하나 더 차단하는 안전장치로 보존).
+  - **검증 3단계**: (1) 수정 전 손 테스트로 180도 반전 확정(반사/인지 둘 다), (2) Info.plist만 수정 후 재테스트했으나 미해결(가설 기각, 근본 원인이 interfaceOrientation이 아님을 실측 확인), (3) 위 180도 보정 코드 추가 후 손+다리 재테스트로 완전 정상화 확인(손가락 위, 협탁/침대/전선 중력 방향 모두 일치).
+- **관련 파일**: `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/styles.css`, `client/ios/ReflexFrameProcessorPlugin.swift`, `client/src/services/frameCaptureProvider.ts`, `client/src/services/frameCaptureProviderSelect.ios.ts`, `client/ios/Minchodan/Info.plist`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npm run build`(tsc --noEmit 포함) 통과, 클라이언트 `tsc --noEmit` 통과, iOS Release 빌드 3회 반복(수정 전/Info.plist만/최종) 모두 BUILD SUCCEEDED, 최종 빌드 실기기 설치·실행 후 손·다리 실측으로 방향 정상화 확인.
+- **비고**: 이 결함은 콘솔 갤러리 표시 문제로 시작했지만 **서버 YOLO 탐지에 들어가는 원본 프레임 자체가 뒤집혀 있었다는 뜻**이라, 지금까지의 탐지 정확도에도 실질적 영향을 줬을 가능성이 있다. 이벤트 프레임 보존 기능([[event-frame-storage]] 성격의 앞선 커밋 659a08e)이 아니었다면 발견하기 어려웠던 결함. Android 네이티브 Frame Processor 구현 시 이 문서의 경고를 참고해 별도로 방향을 검증할 것.
+
+---
+
+### 2026-07-12 | 서버+콘솔 | 오탐 판정(false_positive) 데이터베이스 컬럼 추가 및 운영 콘솔 오탐 판정 기능 구현
+
+- **커밋**: `feat(서버+콘솔): 오탐 판정(false_positive) 컬럼 추가 및 콘솔 오탐 판정 기능 구현`
+- **변경 내용**:
+  - **데이터베이스 스키마 확장**:
+    - `detection_guidance_logs` 테이블에 `false_positive` 컬럼 추가: SQLite (`schema.sql`에 `false_positive INTEGER CHECK (false_positive IN (0, 1))` 추가), MariaDB용 마이그레이션 DDL 스크립트 작성 (`server/db/migrations/20260712_002_add_false_positive_to_detection_guidance_logs.sql` 신설).
+    - ORM 모델 `models.py`에 `false_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)` 속성 추가.
+  - **DTO 스키마 및 비즈니스 로직**:
+    - `schemas.py`에 `false_positive` 속성 및 `FalsePositiveUpdateRequest` DTO 추가.
+    - `DetectionGuidanceLogRepository` 및 `DetectionGuidanceLogService`에 `update_false_positive` 비동기 업데이트 메서드 구현.
+    - `DetectionGuidanceLogService.create_log` 시 생성 페이로드로부터 `false_positive` 값을 전달하도록 구현.
+  - **API 엔드포인트 구현**:
+    - `detection_log_router.py`에 `PUT /api/v1/admin/detection-logs/{log_id}/false-positive` 라우터 등록. 존재하지 않는 로그인 경우 404 예외 처리.
+  - **관리자 운영 콘솔 UI 개선**:
+    - `types/monitor.ts` 내 `DetectionGuidanceLogRow` 타입 정의에 `false_positive: boolean | null` 필드 반영 및 `App.tsx` 데모 로그 mock 객체 필드 정합성 교정.
+    - `useDetectionLogs.ts`에 `updateLogFalsePositive` PUT API 호출 비동기 callback 훅 추가 및 UI 단독 상태 즉시 반영.
+    - `DetectionGuidanceLogTable.tsx`에 "오탐 판정" 컬럼 추가, `FalsePositiveBadge` 및 정탐/오탐 판정 및 취소 액션 버튼군 배치 (로그 상세 뷰 및 라이트박스 뷰 둘 다 적용).
+  - **안전성 테스트 검증**:
+    - `tests/test_false_positive.py` 단위 테스트 파일 작성: Repository, Service, Router 계층 오탐 업데이트 성공/실패 여부를 교차 검증하는 pytest 비동기 테스트 케이스 구축.
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/20260712_002_add_false_positive_to_detection_guidance_logs.sql`(신규), `server/services/detection_guidance_log_service.py`, `server/api/detection_log_router.py`, `console/src/types/monitor.ts`, `console/src/api/useDetectionLogs.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/App.tsx`, `console/src/styles.css`, `tests/test_false_positive.py`(신규), `docs/changelogs/kb.md`
+- **검증 결과**: `tests/test_false_positive.py` 3건 테스트 전원 통과 완료, 콘솔 `npm run build` TypeScript 무오류 빌드 완료.
+- **비고**: 수집된 오탐 판정 데이터는 추후 인도 보행 이미지 및 YOLO 탐지 모델의 재학습(Re-training) 데이터셋 선별에 핵심 지표로 재활용될 예정입니다.
+
+---
+
+### 2026-07-12 | 서버+콘솔 | 파이프라인 스테이지별 지연(레이턴시) 계측 및 콘솔 표시
+
+- **커밋**: (미커밋)
+- **배경**: `docs/design/pipeline_stage_design.md` §4 "단계별 지연 목표" 표에서 L6(LangGraph `ainvoke`)와 L7(실시간 TTS 합성)이 "측정 필요"로 표시된 채 남아 있었고, 실기기 E2E 테스트 중 "실기기 -> STT -> LLM -> 추론 -> DB저장" 종단 지연을 콘솔에서 직접 확인하고 싶다는 요청을 받아, 이미 부분적으로 흩어져 있던 계측(decode_ms, inference_ms, total_latency_ms)을 하나로 모아 DB에 영속화하고 콘솔에 노출했다.
+- **변경 내용**:
+  - **DB 스키마**: `detection_guidance_logs.latency_json JSON NULL` 추가(models/schemas/schema.sql), 마이그레이션 `20260712_003_add_latency_json_to_detection_guidance_logs.sql` 신설(팀 공유 MariaDB에 적용 완료). 키는 실제로 경유한 스테이지만 담긴다 - 반사 경로는 `decode_ms`/`inference_ms`/`total_ms`만 존재하고 `rag_ms`/`llm_ms`/`tts_ms` 키 자체가 없어, 이중 경로 물리 분리 원칙이 데이터 구조로도 드러난다.
+  - **db_save_ms 2단계 기록**: 자기 자신의 DB 쓰기 소요 시간은 쓰기 시작 전에는 알 수 없으므로, `persist_detection_guidance_log()`가 1차 INSERT(다른 스테이지만 포함) 후 소요 시간을 측정해 `db_save_ms`를 합산한 JSON으로 한 번 더 UPDATE한다(`DetectionGuidanceLogRepository.update_latency_json` 신설, `update_false_positive`와 동일 패턴).
+  - **반사/인지 경로 계측** (`server/detection/consumer.py`): `_process_frame`에서 `pipeline_start = time.perf_counter()`를 잡아 `_send_reflex_alert`/`_send_cognitive_guide`에 `decode_ms`(`ProcessedFrame.processing_time_ms` 재사용)와 함께 전달. 인지 경로는 RAG 검색 구간(`rag_ms`), `run_orchestrator` 반환값의 `total_latency_ms`(신규 측정 아님 - 기존 계측 재사용), TTS 합성 구간(`tts_ms`)을 추가로 측정. `ReflexAlert`에 `inference_ms` 필드를 신설해 반사 게이트 3종(`reflex_gate`/`head_level_gate`/`surface_gate`) 판정 시점까지의 추론 시간을 기록(`server/detection/detection_pipeline.py`).
+  - **STT 경로 계측** (`server/api/ws_router.py` `_process_stt_audio`): `stt_ms`(전사), `llm_ms`(`SttToLlmBridge.invoke_existing_llm`), `tts_ms`(합성) 측정 후 `total_ms`(함수 진입~전송 직전, 즉 사용자가 체감하는 대기 시간)와 함께 `persist_detection_guidance_log`에 전달.
+  - **콘솔 표시**: `DetectionGuidanceLogTable`에 "지연(ms)" 열 추가(total_ms 표시) + 행 상세뷰/라이트박스에 스테이지별 칩(`LatencyBadges`, 디코딩/STT/추론/RAG/LLM/TTS/DB저장/총합 순 고정 표시, 존재하는 키만 렌더링). `LatencySummaryPanel` 신규 컴포넌트로 최근 30건 기준 스테이지별 평균/최대/건수 요약 카드를 표시하며, 설계 문서 목표치(디코딩<50ms, 추론<80ms, RAG<50ms)가 있는 스테이지는 평균 초과 시 빨간색으로 경고한다(목표 미정인 STT/LLM/TTS/DB저장/총합은 중립색).
+- **관련 파일**: `server/db/models.py`, `server/db/schemas.py`, `server/db/repositories.py`, `server/db/schema.sql`, `server/db/migrations/20260712_003_add_latency_json_to_detection_guidance_logs.sql`(신규), `server/services/detection_guidance_log_service.py`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `server/detection/schemas.py`, `server/api/ws_router.py`, `console/src/types/monitor.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LatencySummaryPanel.tsx`(신규), `console/src/App.tsx`, `console/src/styles.css`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_false_positive.py tests/test_ws_router_stt.py tests/test_event_frame_store.py` 40건 통과(`test_false_positive.py`의 3건 에러는 이번 변경과 무관한 기존 pytest-asyncio 픽스처 설정 이슈), 콘솔 `tsc --noEmit` 무오류. 실기기 E2E로 실측 확인: 반사 경로 `{"decode_ms":0.8,"inference_ms":335.9,"total_ms":337.6,"db_save_ms":507.6}`, 인지 경로 `{"decode_ms":0.8,"inference_ms":289.5,"rag_ms":77.9,"llm_ms":476.8,"tts_ms":0.0,"total_ms":845.6,"db_save_ms":483.5}`, STT 경로 `{"stt_ms":206.9,"llm_ms":0.0,"tts_ms":2037.4,"total_ms":2245.3,"db_save_ms":470.3}` 모두 정상 저장·API 응답 확인.
+- **비고**: `db_save_ms`가 480~625ms로 상당히 높게 측정됐다 - 팀 공유 MariaDB가 Tailscale 원격(라즈베리파이)에 있어 네트워크 왕복이 포함된 값이며, 로컬 DB라면 훨씬 낮을 것으로 예상된다(후속 확인 필요). LLM `ainvoke` 실측값이 500ms~3.7s로 편차가 커 L6 목표치를 아직 문서에 확정하지 못했다 - 표본이 더 쌓이면 `pipeline_stage_design.md` §4에 목표값을 채워 넣을 것. TTS `tts_ms`가 0.0으로 찍히는 케이스가 관측됐는데(캐시 히트 또는 무음 처리 경로로 추정) 원인은 미확인 - 후속 조사 필요.
+
+**추가 커밋(같은 날 후속 작업)**: 위 구현 직후 "요약 패널이 REST 30초 폴링이라 실시간이 아니다"는 피드백을 받아, 콘솔에 이미 연결돼 있던 실기기 라이브 프리뷰용 WS 채널(`/ws/console/live-feed`, `server_detection` bbox 브로드캐스트와 동일 채널)에 `latency_event` 메시지 타입을 얹어 진짜 실시간 푸시로 전환했다.
+- `server/detection/consumer.py`에 `DetectionConsumer._broadcast_latency_event()` 신설 - `_send_reflex_alert`/`_send_cognitive_guide`에서 `latency_stages` 딕셔너리 완성 직후(`_schedule_log_persist` 호출 전) `manager.broadcast_json_to_consoles({"type":"latency_event", ...})`로 즉시 푸시. `server/api/ws_router.py`의 `_process_stt_audio`도 동일 패턴으로 STT 경로 인라인 브로드캐스트 추가.
+- 콘솔: `console/src/api/useLiveFeed.ts`에 `latencyEvents`(최근 30건 rolling) 상태 추가, `latency_event` 메시지 타입 파싱. `LatencySummaryPanel`이 `liveEvents` prop이 있으면 그것을 우선 사용(진짜 실시간, 초록 점 pulse 인디케이터 표시)하고 비어 있으면(페이지 갓 로드 등) 기존 REST `rows`로 폴백. `db_save_ms`는 브로드캐스트 시점엔 아직 미확정(INSERT 후 비동기 UPDATE로 확정)이라 실시간 이벤트에는 빠지고 REST 폴백 시에만 표시된다.
+- **검증**: 컨테이너 내부에서 `websockets` 클라이언트로 `/ws/console/live-feed`에 직접 접속해 `latency_event` 수신 확인 - 반사 경로 `{"decode_ms":0.9,"inference_ms":243.4,"total_ms":245.3}`(rag/llm/tts 키 없음), 인지 경로 `{"decode_ms":0.8,"inference_ms":267.3,"rag_ms":51.7,"llm_ms":478.4,"tts_ms":1234.5,"total_ms":2033.7}` 모두 실시간 수신 확인. `pytest tests/test_detection.py tests/test_ws_router_stt.py tests/test_event_frame_store.py` 40건 재통과, 콘솔 `tsc --noEmit` 통과.
+- **관련 파일(추가분)**: `server/detection/consumer.py`, `server/api/ws_router.py`, `console/src/api/useLiveFeed.ts`, `console/src/components/LatencySummaryPanel.tsx`, `console/src/types/monitor.ts`, `console/src/App.tsx`, `console/src/styles.css`.
+
+**추가 커밋 2(같은 날, UX)**: 이력 테이블이 무한 스크롤로 너무 길다는 피드백에 15건 단위 페이지네이션(`DetectionGuidanceLogTable`에 `page` 상태 + 이전/다음 버튼, `PAGE_SIZE=15`) 추가. 이어서 "새로 쌓이는 걸 보려면 갱신 버튼이 있으면 좋겠다"는 요청에 패널 헤더에 "새로고침" 버튼 추가(`useDetectionLogs`가 이미 노출하던 `refresh`/`loading`을 `App.tsx`에서 `onRefresh`/`refreshing` prop으로 연결, 클릭 시 1페이지로 리셋).
+
+**추가 커밋 3(같은 날)**: "Detection Guidance Log 테이블도 브로드캐스팅으로 실시간 렌더링 가능한가?" 요청에, `latency_event`와 별개로 `guidance_log_event`(저장 완료된 로그 행 전체, `DetectionGuidanceLogResponse.model_dump(mode="json")`)를 DB 저장(+프레임 파일 저장) 완료 직후에만 WS 브로드캐스트하도록 `consumer.py._broadcast_guidance_log_event`/`ws_router.py._process_stt_audio`에 추가. 저장 완료 후에만 보내므로 콘솔이 이벤트를 받자마자 썸네일을 요청해도 404가 나지 않는다. 콘솔은 `useLiveFeed.ts`에 `guidanceLogEvents`(최근 50건) 상태를 추가하고, `App.tsx`가 REST `fetchedLogs`와 `log_id` 기준으로 병합(`useMemo`)해 `DetectionGuidanceLogTable`/`LatencySummaryPanel`에 공급한다. 테이블 헤더에 실시간 여부를 나타내는 pulse 점 인디케이터도 추가.
+
+**추가 커밋 4(같은 날, 핵심 버그 수정 + 미구현 패널 발견)**: "SystemMetrics도 실시간인가? SessionStatus/AI Pipeline Monitor는 구현된 것인가?" 질문에 서버 전체를 조사해 다음을 확인:
+- **SystemMetrics**: 실제로 2초 주기 실시간 브로드캐스트됨(`llm_client_factory.py`의 GPU 모니터 루프). GPU가 없는 이 Mac에서는 폴백 고정값이지만 배선 자체는 정상.
+- **SessionStatus(상단 기기 접속 상태)**: **완전 미구현이었음** - `session_status` 이벤트가 서버 어디에도 브로드캐스트되지 않아 패널이 항상 빈 상태였다. 신규 구현: `ws_router.py`에 `_broadcast_session_status()` 추가, 연결(auth_ok 직후)/heartbeat_ack 수신 시(RTT 갱신)/해제(finally) 3개 지점에서 브로드캐스트. RTT 실측을 위해 `HeartbeatManager`에 `_last_sent_ts`/`last_rtt_ms` 필드 추가(heartbeat 송신~ack 수신 간격).
+- **AI Pipeline Monitor**: `stt_status`/`navigation_status`(이벤트 타입명은 `llm_status`)만 실제 구현돼 있었고 `llm_provider`/`llm_verified`/`llm_retry_count`/`rag_query`/`tts_engine`/`reflex_bypass` 필드는 콘솔 타입에만 정의되고 서버 producer가 없어 항상 undefined였다. `LLMClientFactory.get_current_provider()` 신설, `consumer.py._broadcast_ai_pipeline_status()`로 인지 경로(`_send_cognitive_guide`, orch_result의 verified/retry_count 재사용)와 반사 경로(`_send_reflex_alert`, reflex_bypass=True만)에서 브로드캐스트, STT 경로(`ws_router.py`)에도 최소 필드(provider/tts_engine/reflex_bypass) 추가. `rag_score`는 `Retriever.search_guidance()`가 유사도 점수를 폐기하고 문자열만 반환하는 기존 시그니처라(핵심 로직 영역, 임의 변경 회피) 이번에는 wiring하지 않음 - 후속 과제.
+- **부수 발견 - 실제 버그**: 위 조사 중 "현재 시간이 오전 09:53으로 잘못 찍힌다"는 신고를 받아 근본 원인 확인. `server/api/schemas.py`의 `now_iso()`와 `server/mcp/manager.py`의 SSE `timestamp` 생성이 둘 다 `datetime.now().isoformat()`(naive, 컨테이너 시스템 시각=UTC)를 그대로 반환해 타임존 오프셋이 없었다. JS `new Date(...)`는 오프셋 없는 ISO 문자열을 브라우저 로컬 시각(KST)으로 해석하므로 UTC 09:53을 KST 09:53으로 잘못 표시(정상은 18:53) - 9시간 오차. 두 함수 모두 `datetime.now(UTC).isoformat()`로 수정해 `+00:00` 오프셋을 명시(브라우저가 올바르게 KST로 환산). `detected_at`(DB 컬럼)과 `now_ts()`(epoch ms)는 애초에 타임존 정보가 필요 없는 절대값이라 영향 없었음.
+- **검증**: SSE 스트림을 직접 열어 `session_status`(rtt_ms 실측 9~33ms), `llm_status`(실제 인지 가이드 전송 시점에 `{"llm_provider":"OLLAMA","llm_verified":true,"llm_retry_count":0,"rag_query":"car","tts_engine":"supertonic","reflex_bypass":false}` 확인), 타임스탬프에 `+00:00` 오프셋 포함 확인. `pytest tests/ --ignore=tests/test_false_positive.py --ignore=tests/test_admin_service_login.py` 140 passed / 3 failed(전부 이번 변경과 무관한 기존 실패 - `test_risk_ssot.py` 2건은 컨테이너에 `client/` 소스 미마운트로 인한 환경 문제, `test_e2e_pipeline.py` 1건은 RAG 목업 데이터 콘텐츠 관련 기존 실패).
+- **관련 파일**: `server/api/schemas.py`, `server/mcp/manager.py`, `server/api/ws_router.py`, `server/api/heartbeat.py`, `server/detection/consumer.py`, `server/orchestration/llm_client_factory.py`.
+- **후속 과제**: `RiskEventLog`(하단 위험 이벤트 로그) 패널도 조사 중 동일 문제 발견 - `risk_event` 이벤트 역시 서버 어디서도 브로드캐스트되지 않아 항상 비어 있다. 이번 스코프에는 포함하지 않음. `rag_score` wiring도 미완.
+
+**추가 커밋 5(같은 날)**: 대시보드 그리드 레이아웃 순서 오류(4열 그리드에서 `LiveCameraFeed`/`DeviceTelemetryPanel`가 각 `grid-column: span 2`인데 DOM에서 `AiPipelineMonitor` 바로 뒤에 와서 1행 4번째 칸을 못 채우고 다음 줄로 밀려나, `DetectionFeed`가 3행에 혼자 남던 문제) 발견 → `App.tsx`에서 1칸짜리 패널 4개(SystemMetrics/SessionStatus/AiPipelineMonitor/DetectionFeed)를 먼저 배치해 1행을 채우고 span-2 패널 2개가 2행을 채우도록 순서 변경.
+
+이 과정에서 `DetectionFeed`("탐지 메타데이터" 텍스트 피드) 역시 `detection_event`가 서버 어디서도 브로드캐스트되지 않아 SessionStatus와 같은 문제로 항상 비어 있었음을 발견 → `consumer.py._broadcast_detection_event()` 신설, `_process_frame`에서 매 프레임 처리 후(반사/인지 공통) 탐지가 있으면 최고 신뢰도 객체를, 없고 노면 분류만 있으면 surface만 실어 SSE로 브로드캐스트(탐지도 노면도 전혀 없는 프레임은 도배 방지를 위해 스킵). 실측 SSE로 `{"event_id":...,"stream":"cognitive","class_name":"unknown","confidence":null,"inference_ms":249.6,"surface":"roadway"}` 형태 확인(현재 카메라가 물체 없는 노면만 비춰 class_name이 unknown으로 찍히는 것은 정상 - 실제 물체 탐지 시 채워짐). `pytest tests/test_detection.py tests/test_ws_router_stt.py tests/test_event_frame_store.py` 40건 재통과, 콘솔 `tsc --noEmit` 통과.
+- **관련 파일**: `console/src/App.tsx`, `server/detection/consumer.py`.
+
+**추가 커밋 6(같은 날)**: `DetectionFeed` 패널이 최근 80건까지 쌓이면서 패널/그리드 행이 세로로 한없이 길어지고, `event_id` 같은 긴 문자열이 flex 아이템 기본 `min-width:auto`에 막혀 박스 밖으로 삐져나가는 문제 발견 → `.feed-list`에 `max-height:360px`+`overflow-y:auto`(패널 내부 스크롤), `.feed-row > div`를 세로 스택(`flex-direction:column`)+`min-width:0`+`overflow-wrap:anywhere`로 변경. `console/src/styles.css`만 수정.
+
+**추가 커밋 7(같은 날, 핵심 버그 2건)**: "Detection Guidance Log의 사용자/기기 칸이 비고, 감지시간도 안 맞는다"는 신고로 두 가지를 확인.
+- **감지시간 재불일치**: 이전 커밋(추가 커밋 4)에서 `now_iso()`/SSE 타임스탬프는 고쳤지만, `detected_at`/`created_at`는 DB 왕복을 거치는 다른 경로였다. MariaDB `DATETIME` 컬럼은 타임존을 저장하지 않아, 쓸 때는 `datetime.now(UTC)`(aware)였어도 다시 읽으면 naive로 돌아와 API 응답에 오프셋이 빠졌다(`"2026-07-12T10:07:42.552558"`) - 같은 9시간 오차 재발. `server/db/schemas.py`에 `_assume_utc_if_naive()` 공통 함수 + `field_validator(mode="before")`를 `DetectionGuidanceLogResponse.detected_at/created_at`, `AdminLoginAuditResponse.created_at`에 적용해 naive 값을 UTC로 간주하고 오프셋을 붙이도록 수정(모델 재검증 시점에 정규화되므로 REST와 WS `guidance_log_event` 브로드캐스트 양쪽에 자동 적용됨 - 둘 다 같은 Pydantic 모델을 거치기 때문).
+- **사용자/기기 컬럼 항상 NULL**: 렌더링 문제가 아니라 DB 컬럼 자체가 항상 NULL이었다 - 로그 저장 경로가 클라이언트의 문자열 `device_id`("dev-001")를 `app_users`/`user_devices`의 정수 PK와 연결하는 조회/등록 로직을 아예 갖고 있지 않았다(정식 회원가입/기기 인증 bootstrap은 별도 담당 영역, 미구현 상태). 정식 인증 대신 **간이 자동 등록**을 신설: `server/services/device_registry_service.py`(신규) - 처음 보는 device_uuid를 만나면 익명 `app_users` 행(phone=`anon:{device_uuid}`)과 `user_devices` 행을 자동 생성하고, 프로세스 내 메모리 캐시(`_cache: dict[device_uuid, (user_id, device_id)]`)에 저장해 매 로그 저장마다 DB 조회 없이 즉시 조회 가능하게 함. WS 연결 시(`ws_router.py`) 1회 `ensure_device_registered()` 호출, 이후 반사/인지(`consumer.py`)·STT(`ws_router.py`) 로그 저장 경로 3곳에서 `get_cached_device_ids()`로 조회해 `persist_detection_guidance_log()`에 전달.
+  - **레이스 컨디션 발견 및 수정**: 최초 구현에서는 `auth_ok`를 클라이언트에 먼저 보낸 뒤 등록을 처리했는데, 클라이언트가 `auth_ok`를 받자마자 프레임을 보내기 시작해 `DetectionConsumer`가 등록 완료 전에 로그를 저장하는 경우가 실측으로 확인됐다(재기동 직후 첫 이벤트의 user_id/device_id가 여전히 NULL). `ensure_device_registered()` 호출을 `auth_ok` 송신 "이전"으로 옮겨 해결 - 등록이 끝나야 클라이언트가 인증 완료로 알고 프레임을 보내기 시작한다.
+- **검증**: 재기동 후 실기기 이벤트로 `user_id=3, device_id=3`(자동 등록된 "dev-001"), `detected_at`에 `Z` 오프셋 포함 확인. `pytest tests/ --ignore=tests/test_false_positive.py --ignore=tests/test_admin_service_login.py --ignore=tests/test_e2e_pipeline.py --ignore=tests/test_risk_ssot.py` 139 passed / 1 skipped(제외한 4개 파일은 전부 이번 변경과 무관한 기존 환경/데이터 이슈).
+- **관련 파일**: `server/db/schemas.py`, `server/services/device_registry_service.py`(신규), `server/api/ws_router.py`, `server/detection/consumer.py`.
+- **비고**: 익명 자동 등록은 정식 회원 인증을 대체하지 않는다 - 실제 로그인/기기 등록 플로우가 생기면 `phone` 필드가 `anon:` 접두사로 충돌하지 않도록 마이그레이션이 필요하다.
+
+**추가 커밋 8(같은 날)**: "페이지네이션 10개씩으로 바꾸고 하단 전체 건수가 안 맞는다"는 피드백 확인 - DB에는 1249건이 있는데 콘솔은 REST에서 최근 50건만 받아 그 안에서 클라이언트 슬라이싱만 하고 있어 하단 표시가 실제 전체 건수를 반영하지 못했다. 클라이언트 슬라이싱을 걷어내고 **진짜 서버 페이지네이션**으로 전환:
+- **서버**: `DetectionGuidanceLogRepository.count_all()`(전체 건수 COUNT 쿼리) + `DetectionGuidanceLogService.count_logs()` 신설. `GET /api/v1/admin/detection-logs`가 응답 바디(배열, 기존과 동일 형태 유지)와 별도로 `X-Total-Count` 헤더에 전체 건수를 실어 보낸다. `main.py` CORS 미들웨어에 `expose_headers=["X-Total-Count"]` 추가(기본값은 커스텀 헤더를 브라우저 fetch()에서 안 보여줌).
+- **콘솔**: `useDetectionLogs(token, page, pageSize)`로 시그니처 변경 - offset(`page*pageSize`)/limit을 REST 쿼리로 보내고 응답 헤더의 전체 건수를 `totalCount`로 노출. `App.tsx`가 `logPage` 상태를 소유(10개씩), 1페이지(최신)에서만 WS 실시간 이벤트(`guidanceLogEvents`)를 병합하고 병합 후 페이지 크기로 자른다(2페이지 이후는 특정 offset의 과거 스냅샷이라 실시간 이벤트가 끼면 페이지 경계가 흔들리므로 제외). `DetectionGuidanceLogTable`은 더 이상 자체 페이지 상태/슬라이싱을 갖지 않고 `rows`를 그대로 렌더링, `page`/`pageSize`/`totalCount`/`onPrevPage`/`onNextPage` prop으로 부모에 위임. 하단 표시를 `"N / 전체페이지 · 전체 1249건"`으로 변경.
+- **검증**: `curl`로 offset=0/10 각각 조회해 `X-Total-Count: 1249`, 겹치지 않는 log_id 시퀀스(1250~1241 / 1240~1231) 확인, `Origin` 헤더 포함 요청으로 `Access-Control-Expose-Headers: X-Total-Count` 확인. `pytest` 139 passed, 콘솔 `tsc --noEmit` 통과.
+- **관련 파일**: `server/db/repositories.py`, `server/services/detection_guidance_log_service.py`, `server/api/detection_log_router.py`, `server/main.py`, `console/src/api/useDetectionLogs.ts`, `console/src/App.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`.
+- **부수 정리**: 조사 중 `tests/test_api_ws.py`가 격리된 테스트 DB가 아니라 팀 공유 MariaDB를 그대로 쓰는 구조라는 것을 발견 - `pytest` 실행마다 `dev-test-001`/`dev-test-003` 가짜 기기가 `app_users`/`user_devices`에 실제로 쌓이고 있었다. 연결된 로그가 0건임을 확인 후 팀 동의를 받아 두 테스트 오염 행을 삭제(운영 데이터 영향 없음). 테스트가 공유 DB에 쓰는 구조 자체는 이번 스코프에서 고치지 않음 - 후속 과제로 별도 테스트 DB 분리 필요.
+
+---
+
+### 2026-07-12 | 서버+콘솔 | 관리자용 시각장애인 회원 등록/전환 화면 신설
+
+- **커밋**: (미커밋)
+- **배경**: "관리자가 시각장애인 회원을 가입해주는 페이지가 필요하다"는 요청으로 설계 계획(Plan mode)부터 진행. 조사 결과 `app_users`/`user_devices` DB 스키마와 `UserService.register_user_and_device`/`POST /api/v1/users/register`가 이미 있었지만, 인증이 없는 공개 API이고 클라이언트·콘솔·테스트 어디서도 호출되지 않는 죽은 코드였다(`docs/design/api_specification.md`에도 미문서화). 대신 실제 사용자/기기 FK는 이번 세션 앞부분에 만든 `device_registry_service.py`의 **익명 자동등록**(`phone="anon:{device_uuid}"`)이 채우고 있었다. 사용자 확인 후 방향 확정: react-router 도입, 익명 레코드는 새로 만들지 않고 실명으로 **전환(UPDATE)**, DB 스키마는 그대로 사용, 기존 죽은 엔드포인트는 건드리지 않고 관리자 전용 API를 신설.
+- **서버**:
+  - `server/db/models.py`: `ANON_PHONE_PREFIX = "anon:"` 상수 신설(기존 `device_registry_service.py`에 인라인이던 접두사를 승격, `schemas.py`/`device_registry_service.py` 양쪽에서 공유).
+  - `server/db/repositories.py` `UserRepository`: `get_by_id`, `update_profile`(익명→실명 전환용 UPDATE), `list_all`(devices `selectinload`로 N+1 방지), `count_all` 신규.
+  - `server/db/schemas.py`: `MemberRegisterRequest`(device_uuid+name+phone+disability_severity), `AppUserWithDevicesResponse`(devices 중첩 + `model_validator`로 계산되는 `is_anonymous` 플래그) 신규.
+  - `server/services/user_service.py`: `register_or_convert_member()` 신규 - 기존 `register_user_and_device`는 "익명→실명 전환" 시나리오에서 새 phone으로 새 유저를 만든 뒤 기존 device 소유자와 달라 400 충돌을 내는 구조라 재사용 불가했다. 신규 메서드는 device_uuid를 먼저 조회해 있으면 소유 회원을 UPDATE(전환), 없으면 CREATE(같은 phone이면 기존 회원에 기기만 추가)로 분기하고, 다른 회원이 쓰는 phone으로 전환 시도 시 409를 낸다. `list_members`/`count_members`도 추가.
+  - 신규 라우터 `server/api/admin_member_router.py`: `GET/POST /api/v1/admin/members`(`get_current_admin` 인증, 목록은 `detection_log_router.py`와 동일한 `X-Total-Count` 헤더 패턴). `server/main.py`에 마운트.
+  - `tests/test_user_service.py` 신규 5건: 신규 등록, 동일 phone 기기 추가 시 회원 재사용, 익명→실명 전환 시 user_id 불변(신규 행 미생성), 타인 phone 충돌 409, 목록 조회 `is_anonymous` 정확성.
+- **콘솔**:
+  - `react-router-dom@7.18.1` 신규 의존성. `App.tsx`를 `BrowserRouter`+`Routes`로 재구성 - 공용 `Layout`(헤더+네비게이션 탭)이 `<Outlet/>`으로 `/`(기존 대시보드, `pages/DashboardPage.tsx`로 추출)과 `/members`(신규, `pages/MembersPage.tsx`)를 분기. SSE(`useMonitorStream`)/WS(`useLiveFeed`) 구독은 App 최상단 1곳에서만 열어 페이지 전환 시 재연결되지 않게 함.
+  - `console/src/api/useMembers.ts` 신규: `useDetectionLogs.ts`와 동일한 서버 페이지네이션 패턴(offset/limit + `X-Total-Count`) + 등록 POST 뮤테이션.
+  - `console/src/pages/MembersPage.tsx` 신규: 등록 폼(device_uuid/이름/전화번호/장애정도) + 페이지네이션 회원 목록 테이블(이력 테이블에서 만든 `.log-pagination`/`.page-btn` CSS 재사용). 익명 자동등록 행에 "회원 정보 입력" 버튼을 둬 클릭 시 폼에 device_uuid를 프리필하고 스크롤 이동 - 관리자가 별도로 device_uuid를 몰라도 목록에서 바로 전환 작업을 시작할 수 있게 함. "정식 회원"/"익명 자동등록" 상태 배지로 구분.
+- **검증**: 서버 재시작(이미지 재빌드 불필요 - `server`/`tests`가 볼륨 마운트라 프로세스 재시작만으로 반영) 후 curl E2E - 실제 익명 상태였던 "dev-001"을 `POST /api/v1/admin/members`로 전환, `user_id=3`/`device_id=3` 그대로 유지된 채 name/phone/disability_severity만 갱신됨을 DB로 직접 확인(신규 행 미생성). `GET /api/v1/admin/members` 목록에서 `is_anonymous` true/false 정확히 계산됨과 devices 중첩 배열 확인. `pytest tests/`(공유 DB를 오염시키는 `test_api_ws.py` 제외) 140 passed. 콘솔 `tsc --noEmit` 통과, `/`와 `/members` 라우트 모두 200 확인.
+- **관련 파일**: `server/db/models.py`, `server/db/repositories.py`, `server/db/schemas.py`, `server/services/user_service.py`, `server/services/device_registry_service.py`, `server/api/admin_member_router.py`(신규), `server/main.py`, `tests/test_user_service.py`(신규), `console/package.json`, `console/src/App.tsx`, `console/src/pages/DashboardPage.tsx`(신규), `console/src/pages/MembersPage.tsx`(신규), `console/src/api/useMembers.ts`(신규), `console/src/types/monitor.ts`, `console/src/styles.css`, `docs/design/api_specification.md`(v0.4.14 §8.6).
+- **비고**: 역할별 세분화 권한(`AdminRole` super_admin/operator/viewer)은 이번 스코프에서 적용하지 않았다 - 다른 admin API와 동일하게 인증된 관리자면 누구나 등록 가능. 기존 죽은 `POST /api/v1/users/register`는 그대로 남아있으며 이번 작업과 무관 - 필요시 별도로 제거 검토.
+
+**추가 커밋(같은 날)**: 콘솔 `/members` 페이지 확인 중 "생년월일/보호자 연락처/주소가 있어야겠다"는 피드백으로 `app_users`에 3개 필드 추가.
+- 마이그레이션 `server/db/migrations/20260712_004_add_member_profile_fields_to_app_users.sql`(`birth_date DATE`, `guardian_phone VARCHAR(30)`, `address VARCHAR(255)`, 전부 NULL 허용 - 익명 자동등록은 이 값을 채우지 않으므로). `server/db/models.py`/`schema.sql`/`schemas.py`(`AppUserCreate`/`AppUserResponse`/`MemberRegisterRequest`)/`repositories.py`(`update_profile`)/`user_service.py`(`register_or_convert_member`의 CREATE·UPDATE 양쪽 분기) 전부 반영.
+- 콘솔: `MembersPage.tsx` 등록 폼에 생년월일(date input)/보호자 연락처/주소 입력칸 3개(전부 선택 입력) 추가, 목록 테이블에도 3개 컬럼 추가(`.table-wrap`의 기존 `overflow-x: auto`가 폭 초과를 처리). `types/monitor.ts`의 `AppUserRow`/`MemberRegisterPayload`에 필드 반영.
+- **검증**: 마이그레이션을 팀 공유 MariaDB에 적용 후 서버 재시작(볼륨 마운트라 이미지 재빌드 불필요), curl로 3개 필드 포함 등록 후 응답에 그대로 반영됨을 확인. `pytest tests/test_user_service.py` 5건 + 전체 회귀(공유 DB를 오염시키는 `test_api_ws.py` 제외) 140 passed 재확인, 콘솔 `tsc --noEmit` 통과.
+- **관련 파일**: `server/db/models.py`, `server/db/schema.sql`, `server/db/schemas.py`, `server/db/repositories.py`, `server/services/user_service.py`, `server/db/migrations/20260712_004_add_member_profile_fields_to_app_users.sql`(신규), `console/src/pages/MembersPage.tsx`, `console/src/types/monitor.ts`, `docs/design/api_specification.md`(v0.4.15).
+
+---
+
+### 2026-07-12 | 서버+콘솔 | 실기기 라이브 카메라 피드 및 원격 텔레메트리 패널 (기록 누락분 정리)
+
+- **커밋**: (미커밋)
+- **배경**: 이 세션에서 커밋 전 변경사항을 전수 점검하는 과정에서, 이전 세션에 이미 구현됐지만 changelog에 기록되지 않은 상태로 작업 트리에 남아 있던 기능을 발견했다. 이번 항목은 그 기능을 사후 정리·기록하는 changelog다(코드 신규 작성 아님, 기존 커밋되지 않은 작업 문서화).
+- **서버**: `server/api/session_manager.py`에 `console_connections` 집합과 `connect_console`/`disconnect_console`/`broadcast_to_consoles`(raw bytes)/`broadcast_json_to_consoles`(JSON) 메서드 신설 - 콘솔 전용 WS 채널의 기반. `server/api/ws_router.py`에 `@router.websocket("/ws/console/live-feed")` 엔드포인트 추가(이번 세션에 만든 `latency_event`/`guidance_log_event`가 나중에 이 채널에 얹혔다). `server/navigation/manager.py`에 `_broadcast_nav_change()` 추가 - `NavigationManager.set_status`/`set_awaiting_question`/`set_awaiting_intent` 호출 시마다 `mcp_manager.broadcast_event("llm_status", {navigation_status, awaiting_free_question, awaiting_intent})`로 SSE 브로드캐스트(이벤트 타입명은 `llm_status`이지만 실제로는 내비게이션 상태다 - AI Pipeline Monitor 조사 때 확인한 것과 동일 지점).
+- **콘솔**: `console/src/api/useLiveFeed.ts` 신설 - `/ws/console/live-feed`에 접속해 바이너리 프레임(Blob, 카메라 실시간 이미지)과 `server_detection`(bbox) 메시지를 수신, 3초 후 자동 재연결. `console/src/components/LiveCameraFeed.tsx`+`.css`(실시간 카메라 화면 + bbox 오버레이 + `NAV_MAP_URL` iframe으로 T맵 GPS HUD 미니맵 표시), `console/src/components/DeviceTelemetryPanel.tsx`+`.css`(단말 접속 상태/AI 모델 런타임/위험물 매트릭스/STT-TTS 로그를 군용 콘솔 스타일 HUD로 표시) 신설. `console/src/api/useMonitorStream.ts`에 `navigation_status`/`awaiting_free_question`/`awaiting_intent` 필드 파싱 추가(`llm_status` 이벤트 페이로드). `console/src/components/OperatorLiveMap.tsx`의 iframe에 `allow="geolocation; accelerometer; gyroscope"` 권한 추가(T맵 GPS 지도 정상 동작에 필요). `console/src/components/Login.tsx` 입력창에 `autoComplete="username"/"current-password"` 추가(브라우저 자동완성/접근성 개선).
+- **인프라**: `docker/docker-compose.yml`(리눅스/배포용, macOS용과 별개)에서 `DB_TYPE`/`DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` 하드코딩 오버라이드와 NVIDIA GPU `deploy.reservations` 블록을 제거 - `.env` 값을 그대로 쓰도록 단순화하고, GPU 없는 환경(로컬 개발)에서도 컨테이너가 뜨도록 함.
+- **미완/후속 과제**: `console/src/components/DeviceUiMirror.tsx`+`.css`(실기기 화면을 아이폰 프레임 목업으로 미러링하는 컴포넌트)도 함께 작성돼 있으나, **어떤 페이지에서도 import/렌더링되지 않는 미사용 상태**임을 확인(2026-07-12 grep으로 재확인). 완성해서 대시보드에 연결하거나, 불필요하면 삭제할지 후속 결정 필요.
+- **관련 파일**: `server/api/session_manager.py`, `server/api/ws_router.py`, `server/navigation/manager.py`, `console/src/api/useLiveFeed.ts`(신규), `console/src/api/useMonitorStream.ts`, `console/src/components/LiveCameraFeed.tsx`/`.css`(신규), `console/src/components/DeviceTelemetryPanel.tsx`/`.css`(신규), `console/src/components/DeviceUiMirror.tsx`/`.css`(신규, 미사용), `console/src/components/OperatorLiveMap.tsx`, `console/src/components/Login.tsx`, `docker/docker-compose.yml`.

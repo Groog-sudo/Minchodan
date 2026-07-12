@@ -1,0 +1,290 @@
+.device-mirror-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 480px;
+  grid-column: span 2;
+}
+
+.mirror-viewport {
+  flex: 1;
+  position: relative;
+  background-color: #080a0f;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 380px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 16px 0;
+}
+
+/* Phone Frame Shell */
+.phone-container {
+  width: 260px;
+  height: 450px;
+  background-color: #0d0f14;
+  border: 6px solid #2b2f3a;
+  border-radius: 36px;
+  position: relative;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+              0 0 20px 2px rgba(59, 130, 246, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.phone-notch {
+  width: 110px;
+  height: 18px;
+  background-color: #2b2f3a;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+.phone-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  padding-top: 22px; /* clearance for notch */
+  position: relative;
+  background-color: #000000;
+  user-select: none;
+}
+
+/* Status Bar */
+.screen-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.status-icons {
+  display: flex;
+  gap: 4px;
+}
+
+/* App Header */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+}
+
+.app-title-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: #edf2fb;
+  letter-spacing: -0.02em;
+}
+
+.app-subtitle {
+  font-size: 8px;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.app-status-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.app-status-badge.online {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.app-status-badge.offline {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* Camera inside Phone screen */
+.screen-camera-container {
+  width: 100%;
+  aspect-ratio: 1;
+  background-color: #111;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.screen-camera-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.screen-camera-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+/* Debug console log */
+.screen-debug-logs {
+  margin-top: 8px;
+  background-color: #080a0f;
+  border-radius: 6px;
+  padding: 6px;
+  font-family: monospace;
+  font-size: 8px;
+  color: #10b981;
+  line-height: 1.3;
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Confidence Threshold Control */
+.screen-conf-bar {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  color: #9ca3af;
+}
+
+.conf-adjust {
+  display: flex;
+  gap: 6px;
+}
+
+.conf-btn {
+  background-color: #2b2f3a;
+  color: #edf2fb;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Detection overlay */
+.screen-detections {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.det-title {
+  font-size: 9px;
+  font-weight: 700;
+  color: #d1d5db;
+}
+
+.det-text {
+  font-size: 8px;
+  color: #9ca3af;
+}
+
+/* Bottom Button Panel */
+.screen-stt-button {
+  margin-top: auto; /* Push to bottom */
+  background-color: #1f2937;
+  color: #edf2fb;
+  border-radius: 8px;
+  padding: 8px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stt-active-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #ef4444;
+}
+
+.pulse-mic {
+  animation: mic-pulse 1s infinite alternate;
+}
+
+@keyframes mic-pulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.15); opacity: 1; }
+}
+
+/* Floating toggles inside phone */
+.screen-floating-toggles {
+  position: absolute;
+  bottom: 50px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+}
+
+.toggle-btn {
+  background-color: rgba(31, 41, 55, 0.85);
+  backdrop-filter: blur(4px);
+  color: #edf2fb;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.phone-home-indicator {
+  width: 90px;
+  height: 3px;
+  background-color: #9ca3af;
+  border-radius: 999px;
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}

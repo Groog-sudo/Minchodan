@@ -1,0 +1,112 @@
+import { useEffect, useState, useRef } from "react";
+import type { DetectionGuidanceLogRow, LiveLatencyEvent } from "../types/monitor";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const WS_LIVE_FEED_URL = API_BASE_URL.replace(/^http/, "ws") + "/ws/console/live-feed";
+const MAX_LIVE_LATENCY_EVENTS = 30;
+const MAX_LIVE_LOG_ROWS = 50;
+
+export function useLiveFeed() {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [connected, setConnected] = useState<boolean>(false);
+  const [latestDetections, setLatestDetections] = useState<any[]>([]);
+  const [latencyEvents, setLatencyEvents] = useState<LiveLatencyEvent[]>([]);
+  const [guidanceLogEvents, setGuidanceLogEvents] = useState<DetectionGuidanceLogRow[]>([]);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const prevUrlRef = useRef<string | null>(null);
+  const clearTimerRef = useRef<any | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    function connect() {
+      if (!active) return;
+
+      const ws = new WebSocket(WS_LIVE_FEED_URL);
+      wsRef.current = ws;
+
+      ws.binaryType = "blob";
+
+      ws.onopen = () => {
+        if (active) setConnected(true);
+      };
+
+      ws.onmessage = (event) => {
+        if (!active) return;
+
+        if (event.data instanceof Blob) {
+          const newUrl = URL.createObjectURL(event.data);
+          setImageUrl(newUrl);
+
+          // Revoke the previous object URL to prevent memory leaks
+          if (prevUrlRef.current) {
+            URL.revokeObjectURL(prevUrlRef.current);
+          }
+          prevUrlRef.current = newUrl;
+
+          // Reset clear timer
+          if (clearTimerRef.current) {
+            clearTimeout(clearTimerRef.current);
+          }
+          // Clear detections if no new frame in 2 seconds
+          clearTimerRef.current = setTimeout(() => {
+            if (active) {
+              setLatestDetections([]);
+            }
+          }, 2000);
+
+        } else if (typeof event.data === "string") {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "server_detection") {
+              setLatestDetections(data.detections || []);
+            } else if (data.type === "latency_event") {
+              setLatencyEvents((prev) =>
+                [data as LiveLatencyEvent, ...prev].slice(0, MAX_LIVE_LATENCY_EVENTS),
+              );
+            } else if (data.type === "guidance_log_event" && data.row) {
+              setGuidanceLogEvents((prev) =>
+                [data.row as DetectionGuidanceLogRow, ...prev].slice(0, MAX_LIVE_LOG_ROWS),
+              );
+            }
+          } catch (e) {
+            console.error("Failed to parse websocket message", e);
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        if (active) {
+          setConnected(false);
+          setLatestDetections([]);
+          // latencyEvents는 재연결 후에도 최근 이력으로 유지한다 (bbox 오버레이와 달리
+          // "현재 프레임" 개념이 없어 끊겼다고 비울 이유가 없다).
+          // Reconnect in 3 seconds
+          setTimeout(connect, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    connect();
+
+    return () => {
+      active = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (prevUrlRef.current) {
+        URL.revokeObjectURL(prevUrlRef.current);
+      }
+      if (clearTimerRef.current) {
+        clearTimeout(clearTimerRef.current);
+      }
+    };
+  }, []);
+
+  return { imageUrl, latestDetections, connected, latencyEvents, guidanceLogEvents };
+}
