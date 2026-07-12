@@ -176,13 +176,29 @@ class DetectionGuidanceLogRepository:
     # - commit 없이 refresh를 호출하면 아직 저장 안 된 데이터를 읽으려 해서 오류가 납니다.
     # ==========================================
     async def create(self, log: DetectionGuidanceLog) -> DetectionGuidanceLog:
-        # HINT 1: self.session.add(log)        # 대기열에 등록
-        # HINT 2: await self.session.commit()  # DB에 실제 저장
-        # HINT 3: await self.session.refresh(log)  # DB 자동 생성값 반영
-        # HINT 4: return log
-        # raise NotImplementedError("HARDCODE PART: create() 를 직접 구현하세요.")
-
         self.session.add(log)
         await self.session.commit()
         await self.session.refresh(log)
+        return log
+
+    async def update_false_positive(
+        self, log_id: int, false_positive: bool | None
+    ) -> DetectionGuidanceLog | None:
+        # ==========================================
+        # 🧠 HARDCODE PART - update_false_positive
+        #
+        # [기능 설명]
+        # - log_id로 DetectionGuidanceLog를 조회하여 false_positive 값을 업데이트하고 커밋한 후 반환합니다.
+        # - 만약 해당하는 로그가 없으면 None을 반환합니다.
+        # ==========================================
+        # 💡 [면접 대비 주석]: log_id로 로그를 찾아서 false_positive 상태를 수정하고
+        # 트랜잭션을 commit/refresh하여 DB와 파이썬 객체 상태를 동기화합니다.
+        result = await self.session.execute(
+            select(DetectionGuidanceLog).where(DetectionGuidanceLog.log_id == log_id)
+        )
+        log = result.scalars().first()
+        if log:
+            log.false_positive = false_positive
+            await self.session.commit()
+            await self.session.refresh(log)
         return log

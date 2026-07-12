@@ -362,6 +362,8 @@ class DetectionGuidanceLog(Base):
     # frame_path: 이벤트 발생 시점 프레임 이미지의 상대 경로 (data/event_frames/ 기준).
     # 이미지 저장 실패 또는 프레임 없는 이벤트(STT 등)는 NULL로 두고 로그는 적재합니다.
     frame_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # false_positive: 오탐 판정 여부 (NULL: 미판정, False: 정상 탐지, True: 오탐)
+    false_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # created_at: DB 레코드 적재 시각 (마이크로초 6자리)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

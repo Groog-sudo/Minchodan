@@ -95,6 +95,7 @@ class DetectionGuidanceLogService:
             detected_objects_json=payload.detected_objects_json,
             tts_text=payload.tts_text,
             frame_path=payload.frame_path,
+            false_positive=payload.false_positive,
         )
 
         saved = await self.log_repo.create(log)
@@ -115,6 +116,24 @@ class DetectionGuidanceLogService:
         if row is None:
             return None
         return DetectionGuidanceLogResponse.model_validate(row)
+
+    async def update_false_positive(
+        self, log_id: int, false_positive: bool | None
+    ) -> DetectionGuidanceLogResponse | None:
+        # ==========================================
+        # 🧠 HARDCODE PART - update_false_positive
+        #
+        # [기능 설명]
+        # - log_repo.update_false_positive를 호출하여 오탐 여부를 업데이트합니다.
+        # - 업데이트에 성공하면 DetectionGuidanceLogResponse DTO로 변환하여 반환합니다.
+        # - 대상 로그가 없는 경우 None을 반환합니다.
+        # ==========================================
+        # 💡 [면접 대비 주석]: DB 레포지토리에 오탐 업데이트를 요청하고,
+        # 반환된 ORM 객체를 API 계층용 Response DTO로 검증 및 매핑하여 변환합니다.
+        updated = await self.log_repo.update_false_positive(log_id, false_positive)
+        if updated is None:
+            return None
+        return DetectionGuidanceLogResponse.model_validate(updated)
 
 
 # ==========================================

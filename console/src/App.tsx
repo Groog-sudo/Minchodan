@@ -23,6 +23,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     detected_objects_json: '[{"class_name":"pole","confidence":0.91}]',
     tts_text: "전방에 기둥이 있습니다.",
     frame_path: null,
+    false_positive: null,
     created_at: "2026-07-10T10:15:12Z",
   },
 ];
@@ -38,7 +39,7 @@ export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const { state, streamUrl, injectDemoEvents } = useMonitorStream(token);
   // 사후 이력 로그는 REST 폴링으로 조회한다 (frame_path 이미지 포함).
-  const { rows: fetchedLogs } = useDetectionLogs(token);
+  const { rows: fetchedLogs, updateLogFalsePositive } = useDetectionLogs(token);
   const isDemoMode =
     import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_DATA === "true";
   const detectionGuidanceLogs =
@@ -91,7 +92,11 @@ export default function App() {
           DetectionFeed는 실시간 스트림 모니터링,
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
-      <DetectionGuidanceLogTable rows={detectionGuidanceLogs} token={token} />
+      <DetectionGuidanceLogTable
+        rows={detectionGuidanceLogs}
+        token={token}
+        onUpdateFalsePositive={updateLogFalsePositive}
+      />
       <RiskEventLog events={state.risks} />
     </main>
   );

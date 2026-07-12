@@ -47,6 +47,37 @@ export function useDetectionLogs(token: string | null, pollMs = DEFAULT_POLL_MS)
     }
   }, [token]);
 
+  const updateLogFalsePositive = useCallback(
+    async (logId: number, falsePositive: boolean | null) => {
+      if (!token) return;
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/admin/detection-logs/${logId}/false-positive`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ false_positive: falsePositive }),
+          },
+        );
+        if (!response.ok) {
+          throw new Error(`오탐 판정 업데이트 실패 (HTTP ${response.status})`);
+        }
+        const updated: DetectionGuidanceLogRow = await response.json();
+        setRows((prev) =>
+          prev.map((row) => (row.log_id === logId ? updated : row)),
+        );
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "오탐 업데이트 중 오류",
+        );
+      }
+    },
+    [token],
+  );
+
   useEffect(() => {
     if (!token) return;
     void refresh();
@@ -54,5 +85,5 @@ export function useDetectionLogs(token: string | null, pollMs = DEFAULT_POLL_MS)
     return () => clearInterval(timer);
   }, [token, refresh, pollMs]);
 
-  return { rows, error, loading, refresh };
+  return { rows, error, loading, refresh, updateLogFalsePositive };
 }

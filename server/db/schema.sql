@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS detection_guidance_logs (
     detected_objects_json JSON NOT NULL,
     tts_text TEXT NOT NULL,
     frame_path VARCHAR(255),
+    false_positive INTEGER CHECK (false_positive IN (0, 1)),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT UK_DETECTION_GUIDANCE_LOGS_EVENT_ID UNIQUE (event_id),
     CONSTRAINT FK_DETECTION_GUIDANCE_LOGS_APP_USERS

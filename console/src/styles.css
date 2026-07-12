@@ -525,3 +525,58 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+/* 오탐 판정 (False Positive) 디자인 */
+.fp-pill {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.fp-unmarked {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
+.fp-true {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fdba74;
+}
+
+.fp-false {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+/* 오탐 판정 버튼 */
+.fp-btn {
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 11px;
+  margin-right: 4px;
+  padding: 2px 6px;
+  transition: all 0.2s;
+}
+
+.fp-btn:hover {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+.fp-btn-active-true {
+  background: rgba(249, 115, 22, 0.3);
+  border-color: #f97316;
+  color: #ffedd5;
+}
+
+.fp-btn-active-false {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: #10b981;
+  color: #ecfdf5;
+}

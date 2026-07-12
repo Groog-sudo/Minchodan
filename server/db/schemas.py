@@ -126,6 +126,7 @@ class DetectionGuidanceLogCreate(BaseModel):
     detected_objects_json: str = Field(..., min_length=2)
     tts_text: str = Field(..., min_length=1)
     frame_path: str | None = Field(default=None, max_length=255)
+    false_positive: bool | None = Field(default=None)
 
 
 class DetectionGuidanceLogResponse(BaseModel):
@@ -142,7 +143,14 @@ class DetectionGuidanceLogResponse(BaseModel):
     detected_objects_json: str
     tts_text: str
     frame_path: str | None
+    false_positive: bool | None
     created_at: datetime
+
+
+class FalsePositiveUpdateRequest(BaseModel):
+    """오탐 여부 업데이트 요청 DTO."""
+
+    false_positive: bool | None
 
 
 class TokenResponse(BaseModel):
@@ -161,6 +169,7 @@ __all__ = [
     "AppUserResponse",
     "DetectionGuidanceLogCreate",
     "DetectionGuidanceLogResponse",
+    "FalsePositiveUpdateRequest",
     "TokenResponse",
     "UserDeviceCreate",
     "UserDeviceResponse",

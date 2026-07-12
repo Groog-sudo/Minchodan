@@ -21,11 +21,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.api.dependencies import get_current_admin
 from server.db.connection import get_db
-from server.db.schemas import DetectionGuidanceLogResponse
+from server.db.schemas import DetectionGuidanceLogResponse, FalsePositiveUpdateRequest
 from server.services.detection_guidance_log_service import DetectionGuidanceLogService
 from server.services.event_frame_store import is_valid_event_id, resolve_frame_path
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+
+
+@router.put("/detection-logs/{log_id}/false-positive", response_model=DetectionGuidanceLogResponse)
+async def update_detection_log_false_positive(
+    log_id: int,
+    payload: FalsePositiveUpdateRequest,
+    admin_id: str = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+) -> DetectionGuidanceLogResponse:
+    # ==========================================
+    # 🧠 HARDCODE PART - update_detection_log_false_positive
+    #
+    # [기능 설명]
+    # - DetectionGuidanceLogService를 호출하여 log_id 로그의 false_positive를 payload.false_positive 값으로 업데이트합니다.
+    # - 결과가 None인 경우, 404 HTTP 예외(HTTPException)를 발생시킵니다.
+    # - 업데이트에 성공한 로그 응답 DTO를 반환합니다.
+    # ==========================================
+    # 💡 [면접 대비 주석]: Service 계층에 데이터 제어를 위임하며,
+    # 존재하지 않는 로그에 대해서는 RESTful 가이드에 따라 404 Not Found 예외를 프론트엔드에 응답합니다.
+    service = DetectionGuidanceLogService(db)
+    log = await service.update_false_positive(log_id, payload.false_positive)
+    if log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="해당 로그를 찾을 수 없습니다.",
+        )
+    return log
 
 
 @router.get("/detection-logs", response_model=list[DetectionGuidanceLogResponse])
