@@ -402,6 +402,29 @@
 
 ---
 
+### 2026-07-12 | Android 실기기 | Redis 및 STT 런타임 복구
+
+- **커밋**: `이번 커밋에 포함`
+- **변경 내용**:
+  - Docker Desktop을 기동하고 `docker compose -f docker/docker-compose.yml up -d redis`로 `minchodan-redis` 컨테이너를 복구했습니다.
+  - FastAPI 서버를 재시작해 `/ws/detect` 재접속, `auth_ok`, `realtime_gps`, 프레임 수신을 다시 확인했습니다.
+  - 서버 로그 기준 `RedisBus 연결 성공`과 Android 실기기 프레임 디코딩, YOLO 추론, LLM guide 전송을 확인했습니다.
+  - `server/stt/stt_config.py`의 `MODEL_NAME_MAP`에 `small`, `medium` 내부 별칭을 추가해 WebSocket 경로에서 `model=small`이 전달되어도 STT 서비스가 처리하도록 보강했습니다.
+  - 현재 `venv`에 누락되어 있던 `faster-whisper==1.2.1`을 설치했고, `SttService.get_model("small")` 단독 로딩이 `ok`로 통과하는 것을 확인했습니다.
+- **오류 및 후속 수정 필요**:
+  - RAG 임베딩 모델 `nomic-embed-text`가 Ollama에 없어 `/api/embed`가 404를 반환합니다. `ollama pull nomic-embed-text`가 필요합니다.
+  - TTS 경로에서 `No module named 'piper'`가 발생합니다. 현재 서버는 guide 텍스트 전송은 수행하지만 Piper 음성 합성은 실패합니다.
+  - DB 자동 등록 및 탐지 로그 저장에서 `root@localhost` 인증 실패가 발생합니다. `.env`의 DB 계정 또는 로컬 MariaDB 상태 정합화가 필요합니다.
+  - `StreamSplitter` 일부 Redis 발행 경로는 서버 재기동 직후에도 `연결 끊김` 경고가 남아 있습니다. `redis_bus` 재연결 처리와 splitter 싱글턴 상태를 추가 점검해야 합니다.
+- **관련 파일**: `server/stt/stt_config.py`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `docker compose -f docker/docker-compose.yml ps redis` 기준 `minchodan-redis` Up 확인
+  - `.\venv\Scripts\python.exe -c "from server.stt.stt_service import SttService; SttService.get_model('small'); print('ok')"` 통과
+  - `/health` 응답에서 `detector_type="yolo"` 및 최근 detection consumer 상태 확인
+  - 서버 로그에서 `탐지 객체: [pole, stroller] -> LLM 응답`, `guide 전송` 확인
+
+---
+
 ### 2026-07-12 | Android 실기기 | 내부 서버 및 LAN Metro 연결 전환
 
 - **커밋**: `이번 커밋에 포함`
@@ -479,3 +502,91 @@
 - **관련 파일**: `docs/changelogs/th.md` (이력 기록)
 - **검증 결과**:
   - `git merge origin/kb` 충돌 없이 병합 완료
+
+---
+
+### 2026-07-12 | STT 브리지+클라이언트 | 음성 편의기능 3종 추가 (긴급전화/연락처 저장·전화걸기/문자 읽어주기)
+
+- **커밋**: `이번 커밋에 포함`
+- **변경 내용**:
+  - `server/stt/contact_store.py` 신규 추가 - 음성 연락처 저장/조회. 정규식으로
+    전화번호를 추출하고 조사/어미를 트리밍해 이름 후보를 정리하는 휴리스틱
+    (`ContactStore`는 device_id별 프로세스 메모리 저장소, **TH HARDCODE**: 별도
+    Contact 테이블이 없어 서버 재시작 시 소실되는 데모 시연 범위 한계)
+  - `server/stt/stt_to_llm_bridge.py` - 3개 신규 인텐트 추가
+    - 긴급전화(`_is_emergency_call_trigger` + `_handle_emergency_call`): "긴급전화"/
+      "SOS"/"보호자한테 전화해줘" 등 인식 시 `AppUser.guardian_phone`(실제 DB 컬럼,
+      `device_registry_service.get_cached_device_ids` -> `UserRepository.get_by_id`
+      경로로 조회)로 다이얼. 다른 모든 대화 상태(목적지 대기/질문 대기 등)보다
+      최우선 처리. 미등록 시 고정 폴백 번호(`119`, **TH HARDCODE**)로 연결
+    - 연락처 저장(`"<이름> 번호 <전화번호> 저장해줘"`): `ContactStore.save` 호출
+    - 이름으로 전화걸기(`"<이름>한테 전화 걸어줘"`): `ContactStore.lookup` 후
+      `dial_action` 결과 필드 반환
+  - `server/api/ws_router.py` - `bridge_result["dial_action"]`을 감지해 신규 WS
+    메시지 타입 `dial_action`(`contact_name`, `phone_number`)으로 전송하는 분기 추가
+  - `client/src/types/detection.ts` - `MessageType`에 `"dial_action"` 추가, `WSMessage`에
+    `contact_name`/`phone_number` 필드 추가
+  - `client/src/hooks/useWebSocket.ts` - `dial_action` 수신 시 `Linking.openURL("tel:" +
+    phone_number)`로 실제 다이얼 실행
+  - `client/android/app/src/main/java/com/minchodan/app/SmsReaderModule.kt` 신규
+    추가 - 문자 메시지 읽어주기(Android 전용) 네이티브 브릿지. `SMS_RECEIVED`
+    브로드캐스트를 동적 등록(정적 매니페스트 리시버 대신 JS 생명주기에 맞춰
+    `startListening`/`stopListening`)으로 수신해 `onSmsReceived` 이벤트로 전달
+  - `client/android/.../MinchodanCustomPackage.kt` - `SmsReaderModule` 등록
+  - `client/android/app/src/main/AndroidManifest.xml` - `RECEIVE_SMS` 권한 추가
+    (**TH HARDCODE 아님 - 플랫폼 제약 메모**: Google Play 정책상 "기본 문자 앱"이
+    아니면 상시 허용되지 않는 민감 권한이라 데모/사이드로드 범위로 한정)
+  - `client/src/hooks/useSmsReader.ts` 신규 추가 - Android 권한 요청 +
+    `onSmsReceived` 구독 + 기존 `audioEngine.speakFallback`(expo-speech 기반)으로
+    발신자/본문 읽어주기. iOS는 공개 SMS 콘텐츠 API가 없어 미지원(플랫폼 제약)
+  - `client/src/components/CameraView.tsx` - `useSmsReader()` 훅 마운트
+  - `docs/design/api_specification.md` §6.3 명령어 표에 긴급전화/연락처 저장/전화걸기
+    행 추가, §6.7 `dial_action` 계약 신설
+  - `tests/test_stt_convenience_features.py` 신규 추가 - 기존
+    `test_stt_to_llm_bridge_template.py`와 동일한 픽스처 패턴(`_make_stt_result`,
+    `_FakeNavManager`, `monkeypatch`)으로 연락처 저장/전화걸기, 긴급전화
+    guardian_phone 성공/미등록 폴백, 긴급전화가 nav 대기 상태를 무시하고
+    최우선 처리되는지까지 6개 케이스 검증
+- **하드코딩/데모 한계 (TH HARDCODE, 발표 시 설명 필요)**:
+  - 일반 연락처 저장은 DB가 아닌 프로세스 메모리(`ContactStore`) - 서버 재시작 시 소실
+  - 이름/전화번호 추출은 형태소 분석기 없이 정규식+문자열 트리밍 휴리스틱
+  - 긴급전화 미등록 시 폴백 번호(`119`)는 고정값, 지역/상황별 라우팅 없음
+  - 문자 읽어주기는 앱이 열려 있는 동안(포그라운드)만 동작 - 백그라운드/종료 상태 미지원
+- **미검증 항목**:
+  - 문자 읽어주기(`SmsReaderModule`)는 실제 SMS 수신 테스트가 아직 완료되지
+    않았다. Android 에뮬레이터 Extended Controls > Phone > SMS(또는 `adb emu
+    sms send`)로 실기기 SIM 없이도 검증 가능 - 테스트 후 이 항목을 갱신할 것
+  - 긴급전화/연락처 저장/전화걸기 음성 명령의 실기기 종단 테스트(STT 인식률 포함)
+    미완료 - 아래 pytest는 텍스트 인텐트 분기 로직만 검증하며 실제 Whisper 인식은
+    거치지 않는다
+- **관련 파일**: `server/stt/contact_store.py`, `server/stt/stt_to_llm_bridge.py`,
+  `server/api/ws_router.py`, `client/src/types/detection.ts`,
+  `client/src/hooks/useWebSocket.ts`, `client/src/hooks/useSmsReader.ts`,
+  `client/src/components/CameraView.tsx`,
+  `client/android/app/src/main/java/com/minchodan/app/SmsReaderModule.kt`,
+  `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`,
+  `client/android/app/src/main/AndroidManifest.xml`,
+  `docs/design/api_specification.md`, `tests/test_stt_convenience_features.py`
+- **검증 결과**:
+  - `python -m pytest tests/test_stt_convenience_features.py -v` 6개 전부 통과
+    (연락처 저장/전화걸기 성공·실패, 긴급전화 guardian_phone 성공/119 폴백,
+    긴급전화의 nav 상태 우선순위 무시까지 커버)
+  - `python -m pytest tests/test_stt_to_llm_bridge_template.py tests/test_ws_router_stt.py`
+    13개 전부 통과(기존 STT 브리지/WS 라우터 회귀 없음 확인)
+  - `python -m py_compile` 통과, `npx tsc --noEmit` 통과
+  - 실기기/에뮬레이터 통합 테스트(STT 음성 인식, SMS 실수신, tel: 다이얼러 실행)는
+    미수행 - 위 미검증 항목 참조
+
+---
+
+### 2026-07-12 | 문서 | Android STT/실내 탐지 인식 문제 종합 리포트
+
+- **커밋**: `docs: Android STT 및 실내 탐지 인식 저하 종합 리포트`
+- **변경 내용**:
+  - `docs/ops/android_stt_recognition_issue_report.md` v1.2.0 작성/갱신
+  - STT 인식 실패뿐 아니라 **실내 장애물 탐지 체감 저하**를 명시
+  - 원인을 인프라(I) / STT(S) / 비전·실내탐지(D) / UX(U) 4축으로 종합 분석
+  - P0~중기 개선 방향(Python 3.13 venv, seg 가중치, VAD, 실내 데이터·conf, UX 구분) 정리
+  - `docs/README.md` 문서 인덱스에 리포트 링크 추가
+- **관련 파일**: `docs/ops/android_stt_recognition_issue_report.md`, `docs/README.md`, `docs/changelogs/th.md`
+- **검증 결과**: 문서 교차 링크 및 섹션 구조 점검 완료
