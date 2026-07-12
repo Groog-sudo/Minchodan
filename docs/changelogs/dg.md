@@ -345,3 +345,17 @@
     - 주말 동안 사투를 벌인 안드로이드 실기기 하이브리드 연동, 센터 크롭(Center Crop) 왜곡 분쇄, 소켓 락 해제 등의 내역을 팀원들과 투명하게 공유하고 논의할 수 있도록 프로페셔널 규격의 보고서 문서(`docs/changelogs/team_share_summary.md`)를 신규 개설하여 영속화함.
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `docs/changelogs/team_share_summary.md`
 - **검증 결과**: TypeScript 수동 컴파일 및 Expo 메트로 번들러 빌드 무결점 통과 확인, 실기기 무선 스트리밍 개통 준비 완료.
+
+---
+
+### 2026-07-12 | 모바일/AI | 폴백모드 재발 원인 규명 — bbox 좌표 파싱 버그 정정 및 `team_share_summary.md` 오기재 수정
+
+- **배경**: "잘 되던 연결이 안 되고 계속 폴백모드만 뜬다"는 증상 보고를 역추적한 결과, 커밋 메시지가 실제 diff와 어긋난 이력이 있는 커밋(주석엔 "래터박스"라고 적혀 있었으나 실제로는 여전히 센터 크롭 방식) 이후 3개 파일에 실제 버그가 유입된 것으로 확인됨.
+- **변경 내용**:
+  - **`client/src/inference/tfliteDetector.ts`**: 서버 커스텀 YOLO(`nms=True` export) 출력은 `[x1, y1, x2, y2, confidence, classId]` **코너좌표(픽셀 단위)** 포맷인데, 이를 `[xc, yc, w, h]` 중심좌표로 잘못 해석 + 불필요한 0~1 정규화 스케일 휴리스틱까지 추가되어 있던 것을 코너좌표 기반 파싱(`min/max`로 `x1,y1,x2,y2` 산출 후 `w,h,xc,yc` 역산)으로 정정함. 오탐 방지 목적으로 0.50까지 올렸던 `CONF_THRESHOLD`가 도중에 0.25로 되돌아가 있던 것도 0.50으로 복구함.
+  - **`client/src/services/frameCaptureProviderSelect.android.ts`**: 파일 상단 주석에는 "Android 실기기에서 `photo.orientation` 메타데이터 기반 좌표가 경계를 벗어나 크래시 발생 확인(2026-07-10)"이라고 적혀 있었으나, 실제 코드에서는 그 안전장치(`Image.getSize()` 실측 + 경계 클램프)가 제거되고 `photo.width/height`만 신뢰하도록 바뀌어 있었음(주석-코드 불일치). `Image.getSize()` 기반 실측 + 경계 가드(`originX/originY` 음수·초과 방지) 복구함.
+  - **`client/src/components/CameraView.tsx`**: 원래 "서버 연결 중엔 `server_detection` 결과를 화면에 쓰고, 폴백/Mock일 때만 온디바이스 결과로 대체"하는 구조였는데, "연결 상태 무관하게 항상 온디바이스 결과로 덮어쓰기"로 바뀌어 있었던 것을 `isMockModeRef.current || wsStatusRef.current === "fallback"` 조건부 로직으로 복구함.
+  - **`docker/docker-compose.yml`, `docker/docker-compose.macos.yml`**: ngrok 컨테이너(FastAPI(8000)용)와 `npx expo start --tunnel`이 로컬에 띄우는 자체 ngrok(Metro(8081)용)이 둘 다 기본 포트 4040을 잡으려다 충돌하던 문제 해결 — 도커 ngrok 쪽 포트를 `"4040:4040"` → `"4041:4040"`으로 변경(두 compose 파일 모두 반영 필요, GPU 모드는 `docker-compose.yml`, CPU 모드는 `docker-compose.macos.yml`을 사용하므로 하나만 고치면 재발함).
+  - **`docs/changelogs/team_share_summary.md` 정정**: 1.2절에 "다이렉트 6포인트 매핑 구조(`[xc, yc, w, h, score, clsId]`, 중심좌표)를 완벽히 가동시켰다"고 기재되어 있던 부분은 위에서 서술한 버그를 완료된 정상 작업인 것처럼 잘못 기록한 것이었음. 실제 정답(코너좌표 파싱)에 맞춰 정정함.
+- **관련 파일**: `client/src/inference/tfliteDetector.ts`, `client/src/services/frameCaptureProviderSelect.android.ts`, `client/src/components/CameraView.tsx`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docs/changelogs/team_share_summary.md`
+- **검증 결과**: `docker logs minchodan-fastapi`에서 WebSocket accept/hello/`auth_ok` 확인. 폰 앱에서 "연결됨" 배지, `WS: connected`, YOLO 모델(`seg`/`det`) 로드, `det shape: [1,300,6]` 확인. 단, 사람(person)·실외 물체 대상 실제 bbox 렌더링 검증은 다음 세션 과제로 남음.
