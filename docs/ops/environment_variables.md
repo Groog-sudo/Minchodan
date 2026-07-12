@@ -1,8 +1,8 @@
 ﻿# Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-11
-> **버전**: v0.4.14 (2026-07-12 §2.7 `EVENT_FRAMES_DIR`/`EVENT_FRAME_RETENTION_DAYS`/`EVENT_FRAME_JPEG_QUALITY` 신설 - 콘솔 오탐 검증용 이벤트 프레임 보존, §2.14 `VITE_API_BASE_URL` 추가 + 이전 v0.4.13 이력 유지: 2026-07-11 인증 기본값 분리 반영 - §2.4 `APP_ENV`/`DEVICE_STATIC_TOKENS` 신설·`JWT_SECRET_KEY` 운영 필수(fail-closed) 강화·`.env.example` 등재, §2.14 클라이언트·콘솔 공개 변수(EXPO_PUBLIC_*/VITE_*) 신설 + 이전 v0.4.12 이력 유지: §2.13 `TMAP_APP_KEY` 용도 확장 반영 - 하단 지도 패널용 `nav_route` WS 메시지의 `app_key`로 단말에 전달, `server/api/ws_router.py` 참조 추가 + 이전 v0.4.11 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 점검: §2.6 TTS 엔진 선택 이력 노트가 supertonic 미구현이라 서술하던 표 내부 모순 정정, §6 검증 체크리스트의 가중치 파일 경로를 §2.5 정정본과 일치시킴, §2.13 TMAP_APP_KEY 신규 등재 + 이전 v0.4.10 이력 유지: dg2 브랜치 병합 `TTS_ENGINE`에 `pyttsx3`(로컬 저사양 대체) 옵션 추가 반영, jy 브랜치 병합으로 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 접속 변수 `COMPOSE_OLLAMA_BASE_URL` 추가, `HEARTBEAT_TIMEOUT` 기본값 5→15초 상향)
+> **수정일**: 2026-07-13
+> **버전**: v0.4.15 (2026-07-13 §2.14 WiFi/USB 이중 접속 변수(`EXPO_PUBLIC_WIFI_HOST`/`USB_HOST`/`DEFAULT_TRANSPORT`) 등재, `LAN_IP` 폴백 관계 정정 + 이전 v0.4.14 이력 유지: 2026-07-12 이벤트 프레임·`VITE_API_BASE_URL` + 이전 v0.4.13 인증 기본값 분리)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -74,13 +74,15 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TTS_ENGINE`** | string | 필수 | `supertonic` | TTS 엔진. **2026-07-09 변경**: 실기기 청취 검증 결과 Piper의 발음 품질 한계(흔한 음절 누락)가 확인되어 기본값을 `supertonic`으로 교체. `piper`는 핫스왑 폴백으로 여전히 지정 가능(코드 보존). **2026-07-10 추가**: `pyttsx3`(OS 내장 SAPI5/espeak, GPU·네트워크 불필요)도 로컬 저사양 대체 옵션으로 지원. 그 외 값은 경고 로그 후 supertonic으로 강제 폴백. 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
-| **`SUPERTONIC_VOICE`** | string | 선택 | `F1` | **2026-07-09 신규.** Supertonic 보이스 스타일 이름(`server/models/supertonic` 웹 콘솔 기준 F1~F5/M1~M5 등) | `server/tts/tts_service.py` |
+| **`TTS_ENGINE`** | string | 필수 | `supertonic` | TTS 엔진. **2026-07-13 추가**: `edge`(Microsoft Edge Neural, `edge-tts`, 네트워크 필수·로컬 모델 없음, 한국어 자연도 우선). 기존: `supertonic`(로컬 기본) / `piper` / `pyttsx3`. 인지 경로 실시간 합성에만 사용 (반사 경로는 사전합성 클립) | [`stage7_tts_design.md`](../stage-guides/stage7_tts_design.md) |
+| **`EDGE_TTS_VOICE`** | string | 선택 | `ko-KR-SunHiNeural` | **2026-07-13 신규.** `TTS_ENGINE=edge`일 때 화자. 예: `ko-KR-SunHiNeural`(여), `ko-KR-InJoonNeural`(남) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_VOICE`** | string | 선택 | `F2` | **2026-07-09 신규.** Supertonic 보이스(`F1`~`F5`/`M1`~`M5`). **2026-07-13 접근성**: 기본 `F1`→`F2`(부드러운 안내톤, 기계음 체감 완화) | `server/tts/tts_service.py` |
 | **`SUPERTONIC_MODEL_DIR`** | path | 선택 | (미지정, 라이브러리 기본 `~/.cache/supertonic3`) | **2026-07-09 신규.** 명시적으로 지정하지 않는 것을 권장 - `server/models/` 하위로 지정하면 `docker-compose.yml`의 `../server:/app/server` 볼륨 마운트가 빌드 타임에 받아둔 캐시를 컨테이너 시작 시 호스트 쪽 내용으로 덮어써 버린다(pygoruut와 동일 문제) | `server/tts/tts_service.py` |
-| **`SUPERTONIC_TOTAL_STEPS`** | int | 선택 | `8` | **2026-07-09 신규.** 합성 품질/속도 트레이드오프(5=저품질·고속 ~ 12=고품질·저속) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_TOTAL_STEPS`** | int | 선택 | `12` | **2026-07-09 신규.** 합성 품질/속도 트레이드오프(5=저품질·고속 ~ 16=고품질·저속). **2026-07-13**: 접근성 기본 `8`→`12` | `server/tts/tts_service.py` |
+| **`TTS_DEFAULT_SPEED`** | float | 선택 | `0.85` | **2026-07-13 신규.** 인지 경로 기본 발화 속도(Supertonic/Piper/pyttsx3 공통). 미지정 시 `PIPER_DEFAULT_LENGTH_SCALE` → `0.85` 순 | `server/tts/realtime_tts.py` |
 | **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부(핫스왑 폴백용, `TTS_ENGINE=piper`일 때만 사용). **2026-07-09 정정**: 상주 프로세스화로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
 | **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위(핫스왑 폴백용) | `server/tts/tts_service.py` |
-| **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.9` | Piper 핫스왑 경로 사용 시 기본 속도. **2026-07-08 추가**: 모델 원 설정(`phoneme_type=pygoruut`)을 실제로 지원하지 않는 `piper-tts==1.4.2`에서 발생한 속도 이상(정상 대비 약 2.5~3배 느림)을 `pygoruut` 사전 음소화 도입으로 해소한 뒤의 정상 범위 값 | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
+| **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.85` | Piper 핫스왑·`TTS_DEFAULT_SPEED` 미지정 시 폴백 속도. **2026-07-13**: 접근성 기본 `0.9`→`0.85` | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
 
 > **TTS 엔진 선택 이력**: piper → **supertonic(최종 선정, 2026-07-09 코드 반영 완료)**. 현재 코드 런타임(`get_tts_service()`)은 `supertonic`(기본)·`piper`·`pyttsx3` 3종 모두 구현되어 있으며, 미지원 값 입력 시 경고 로그 후 `supertonic`으로 강제 폴백합니다.
 
@@ -158,8 +160,11 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값(코드 폴백) | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `ngrok` | 단말 접속 모드(`lan`/`ngrok`) | `client/src/config/index.ts` |
-| **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | `192.168.0.209` | LAN 직결 시 서버 IP | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `lan` | 단말 접속 모드(`lan`/`ngrok`). `ngrok`이면 WiFi/USB 토글보다 WSS 우선 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_WIFI_HOST`** | string | 선택 | `192.168.137.1` | **평상시 WiFi 모드** PC 호스트. Windows 노트북 모바일 핫스팟 게이트웨이 기본값(2026-07-13) | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
+| **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | (WIFI_HOST 폴백) | 구 명칭. 설정 시 `WIFI_HOST`가 없으면 이 값을 WiFi 호스트로 사용 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_USB_HOST`** | string | 선택 | `127.0.0.1` | **개발 USB 모드** + `adb reverse` 호스트 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
+| **`EXPO_PUBLIC_DEFAULT_TRANSPORT`** | string | 선택 | `wifi` | 앱 최초 기동 기본 수송(`wifi`/`usb`). 이후 선택은 단말에 영속 | `client/src/config/index.ts`, `client/src/services/serverTransport.ts` |
 | **`EXPO_PUBLIC_NGROK_DOMAIN`** | string | 선택 | `partake-primer-surround.ngrok-free.dev` | 외부망 터널 도메인 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEVICE_ID`** | string | 선택 | `dev-001` | 단말 식별자 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEVICE_TOKEN`** | string | 선택 | `token-abc-001`(개발 전용) | 디바이스 토큰. **2026-07-11 분리**: 코드 하드코딩에서 환경 변수 우선으로 전환. 실질 보안은 서버 JWT 발급 체계(`issue_device_token`)로 이관 예정 | `client/src/config/index.ts`, `server/api/auth.py` |

@@ -218,6 +218,10 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         )
         latency_stages["stt_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
         logger.info(f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}")
+        # [DEBUG TEMP 2026-07-13] 연락처 저장 재검증용 - 확인 후 제거
+        _t = (stt_result.text or "").strip()
+        if any(k in _t for k in ("저장", "전화")):
+            logger.info(f"[WS][DEBUG-STT-TEXT] device_id={device_id}, text={_t[:120]}")
 
         llm_start = time.perf_counter()
         bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
@@ -319,12 +323,35 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                         "type": "dial_action",
                         "contact_name": dial_action.get("contact_name", ""),
                         "phone_number": dial_action.get("phone_number", ""),
+                        "device_lookup": bool(dial_action.get("device_lookup", False)),
                         "ts": now_ts(),
                     }
                 )
             logger.info(
                 f"[WS] dial_action 전송: device_id={device_id}, "
                 f"contact={dial_action.get('contact_name')}"
+            )
+
+        # [TH HARDCODE 아님 - 전송 계층] 음성 연락처 저장.
+        # 💡 [면접 대비 주석]
+        # Q. 왜 guide TTS와 같이 서버에서 처리하지 않나요?
+        # A. "주소록은 단말 OS 권한(WRITE_CONTACTS)이 필요한 로컬 리소스다.
+        #    서버는 contact_save 이벤트만 브로드캐스트하고, 클라이언트
+        #    ContactsBridge가 실제 영속화를 수행한다(thin client + 역할 분리)."
+        if "contact_save" in bridge_result:
+            contact_save = bridge_result["contact_save"]
+            with contextlib.suppress(Exception):
+                await ws.send_json(
+                    {
+                        "type": "contact_save",
+                        "contact_name": contact_save.get("contact_name", ""),
+                        "phone_number": contact_save.get("phone_number", ""),
+                        "ts": now_ts(),
+                    }
+                )
+            logger.info(
+                f"[WS] contact_save 전송: device_id={device_id}, "
+                f"contact={contact_save.get('contact_name')}"
             )
 
         logger.info(
@@ -652,6 +679,17 @@ async def ws_detect(
                 task = asyncio.create_task(_handle_stt_audio(ws, device_id, data))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
+
+            elif msg_type == "detection_control":
+                # 클라이언트 "탐지 시작/중지" 토글. OFF면 목적지/인텐트 대기를 풀고
+                # STT 일반 발화를 자유 질문으로 라우팅한다(탐지 끄고 질문 무응답 실측).
+                enabled = bool(data.get("enabled", False))
+                from server.navigation.manager import nav_manager
+
+                nav_manager.set_detection_enabled(device_id, enabled)
+                logger.info(
+                    f"[WS] detection_control: device_id={device_id}, enabled={enabled}"
+                )
 
             elif msg_type == "realtime_gps":
                 lat = data.get("lat")

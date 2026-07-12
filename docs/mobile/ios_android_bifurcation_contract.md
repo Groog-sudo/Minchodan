@@ -207,7 +207,13 @@ dg2가 추가한 `server_detection` 메시지(서버 YOLO/Seg 결과를 BBox 오
 
 ### 7.3 네트워크 접속 설정 (`client/src/config/index.ts`, 완료)
 
-`LAN_IP`(로컬 Wi-Fi 직결)와 `NGROK_DOMAIN`(외부망) 두 상수를 **둘 다 유지**하고, `NETWORK_MODE: "lan" | "ngrok"` 플래그로 `WS_URL`을 전환하도록 구현했다(2026-07-10). 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다. **2026-07-11 확장**: 두 상수와 `NETWORK_MODE`/`DEVICE_ID`/`TOKEN`은 `EXPO_PUBLIC_*` 환경 변수(빌드 시 인라인)가 있으면 그 값이 우선하고, 기존 상수는 개발 폴백으로 유지된다(인증 기본값 분리 - `docs/ops/environment_variables.md` §2.14). 상수 보존 규칙은 그대로 유효하다. ngrok 고정 도메인(`partake-primer-surround.ngrok-free.dev`)은 무료 티어라 **동시에 한 프로세스만** 터널을 열 수 있다(`ERR_NGROK_334` 충돌 실제 발생 이력 있음) — LTE/외부망 테스트 일정은 팀 채널에서 사전 조율한다.
+`WIFI_HOST`(평상시 LAN/핫스팟)와 `USB_HOST`(`127.0.0.1` + adb reverse), `NGROK_DOMAIN`(외부망)을 **모두 유지**한다. `NETWORK_MODE: "lan" | "ngrok"` 로 ngrok 여부를 정하고, lan일 때는 앱 UI 토글(`연결: WiFi` / `연결: USB`)로 런타임 전환한다(2026-07-13, [android_wifi_usb_transport.md](../ops/android_wifi_usb_transport.md)). 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다.
+
+**2026-07-11 확장**: 상수와 `NETWORK_MODE`/`DEVICE_ID`/`TOKEN`은 `EXPO_PUBLIC_*` 환경 변수(빌드 시 인라인)가 있으면 그 값이 우선하고, 기존 상수는 개발 폴백으로 유지된다(인증 기본값 분리 - `docs/ops/environment_variables.md` §2.14).
+
+**2026-07-13 th 실측**: PC가 아이폰 핫스팟을 받으면서(`172.20.10.2`) 다시 모바일 핫스팟을 쏠 때, 공기계가 써야 할 주소는 업링크 IP가 아니라 Windows 핫스팟 게이트웨이 **`192.168.137.1`** 이다. `EXPO_PUBLIC_WIFI_HOST`(또는 구 `EXPO_PUBLIC_LAN_IP`)로 학원 공용 Wi-Fi IP를 주입할 수 있다.
+
+ngrok 고정 도메인(`partake-primer-surround.ngrok-free.dev`)은 무료 티어라 **동시에 한 프로세스만** 터널을 열 수 있다(`ERR_NGROK_334` 충돌 실제 발생 이력 있음) — LTE/외부망 테스트 일정은 팀 채널에서 사전 조율한다.
 
 ### 7.4 `requirements.txt` 플랫폼 마커
 

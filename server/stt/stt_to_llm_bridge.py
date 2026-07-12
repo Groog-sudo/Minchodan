@@ -17,6 +17,19 @@ from .stt_schema import SttTranscribeResult
 # 회피 오케스트레이터(run_orchestrator)로 들어가 무관한 안내 문장을 만들던 문제
 # (실기기 실측 확인)를 해결하기 위해, 명시적 wake-word로 자유 질문 모드를 분리한다.
 QUESTION_TRIGGER_KEYWORDS = ["질문할게", "질문할래", "질문 있어", "질문이요", "물어볼게"]
+# 목적지 대기 중에도 "질문처럼 보이는" 발화는 POI 목적지가 아니라 자유 질문으로 보낸다.
+QUESTION_HINT_WORDS = (
+    "뭐",
+    "무엇",
+    "어디",
+    "언제",
+    "몇",
+    "왜",
+    "어떻게",
+    "누가",
+    "얼마",
+    "무슨",
+)
 
 # [하드 코딩 부분 - 핵심] 2026-07-10 추가: "길댕아" 2단계 wake-word.
 # "네비게이션 켜줘"는 "네비게이션/내비게이션" 표기 변이로 인식이 불안정했다(실기기
@@ -132,6 +145,16 @@ POI_CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "주차장": ["주차장"],
 }
 
+
+def _looks_like_question(text: str) -> bool:
+    """목적지 POI가 아니라 일반 질문으로 보이는지 휴리스틱 판별."""
+    if not text:
+        return False
+    if "?" in text or "？" in text:
+        return True
+    return any(w in text for w in QUESTION_HINT_WORDS)
+
+
 # ==========================================
 # 🧠 TH HARDCODE AREA (면접/발표 핵심 방어 영역)
 # 음성 편의기능 3종 - 긴급전화 / 연락처 저장 / 이름으로 전화걸기
@@ -139,13 +162,18 @@ POI_CATEGORY_KEYWORDS: dict[str, list[str]] = {
 #
 # 💡 [면접 대비 주석 - 긴급전화 vs 일반 연락처의 구현 차이]
 # Q. 이 셋 다 "전화 걸기"인데 왜 긴급전화만 따로 뺐습니까?
-# A. "긴급전화는 안전 기능이라 관리자가 등록해 둔 실제 AppUser.guardian_phone
-#    DB 컬럼을 조회하는 진짜 구현입니다(_handle_emergency_call, 아래 참조).
-#    반면 일반 연락처 저장/전화걸기는 사용자가 그 자리에서 즉흥 등록하는
-#    임의 이름이라 Contact 테이블이 없어 contact_store.py의 프로세스 메모리로
-#    대체했습니다(TH HARDCODE, 데모 시연 범위 - 서버 재시작 시 소실). 발표 때
-#    이 대비를 짚어주면 '아무거나 하드코딩한 게 아니라 데이터 성격에 맞춰
-#    영속화 수준을 다르게 골랐다'는 설계 판단으로 설명할 수 있다."
+# A. "긴급전화는 안전 기능이라 AppUser.guardian_phone DB를 조회하는 진짜 구현
+#    (_handle_emergency_call). 일반 연락처는 즉흥 등록이라 서버는 STT 의도/번호
+#    파싱만 하고, 영속화는 contact_save WS → Android ContactsContract에 위임한다.
+#    ContactStore RAM은 세션 캐시일 뿐이고, 미스 시 device_lookup으로 단말 주소록을
+#    다시 본다. '데이터 성격(안전 DB vs 사용자 주소록)에 맞춰 영속화 계층을 나눴다'
+#    는 설계 판단으로 발표하면 된다."
+#
+# 💡 [면접 대비 주석 - 왜 질문 대기보다 연락처 분기를 앞에 두나]
+# Q. is_awaiting_question이 True면 그냥 LLM으로 보내면 안 되나요?
+# A. "실측으로 질문 대기 중 '엄마 번호 저장'이 question-llm에 먹혀 '저장할 수
+#    없다'고 답하는 사고를 확인했다. 의도 분류는 규칙(키워드+번호 패턴)이
+#    LLM보다 먼저 확정해야 편의기능이 새지 않는다(긴급전화와 같은 우선순위)."
 
 # [TH HARDCODE] 긴급전화 직접 트리거 키워드. "SOS"는 실기기 STT가 영문 발화를
 # 안정적으로 인식하지 못할 가능성이 커 데모 시연에서는 한국어 트리거 위주로 쓴다.
@@ -153,7 +181,14 @@ EMERGENCY_TRIGGER_WORDS = ["긴급전화", "긴급 전화", "긴급 상황", "SO
 
 # [TH HARDCODE] 연락처 저장/전화걸기 트리거 키워드
 CONTACT_SAVE_TRIGGER_WORDS = ["저장해줘", "저장해"]
-CONTACT_CALL_TRIGGER_WORDS = ["전화 걸어줘", "전화해줘", "전화 걸어", "전화해", "전화 걸어줄래"]
+CONTACT_CALL_TRIGGER_WORDS = [
+    "전화 걸어줘",
+    "전화해줘",
+    "전화 걸어",
+    "전화해",
+    "전화 걸어줄래",
+    "전화 걸어주어",  # Whisper가 어미를 '주어'로 전사하는 실측 케이스
+]
 
 
 def _is_emergency_call_trigger(text: str) -> bool:
@@ -378,6 +413,48 @@ class SttToLlmBridge:
         if _is_emergency_call_trigger(normalized_text):
             return await self._handle_emergency_call(device_id)
 
+        # [TH HARDCODE] 연락처 저장/전화 - 질문·네비 대기보다 앞(2026-07-13 실측).
+        # 한글 숫자 폴백은 contact_store.extract_save_command 쪽.
+        _contact_save_early = (
+            any(kw in normalized_text for kw in CONTACT_SAVE_TRIGGER_WORDS)
+            and extract_save_command(normalized_text) is not None
+        )
+        if _contact_save_early:
+            name, phone = extract_save_command(normalized_text)  # type: ignore[misc]
+            # RAM 캐시(같은 세션 빠른 조회) + contact_save로 단말 영속화 위임.
+            ContactStore.save(device_id, name, phone)
+            if nav_manager.is_awaiting_question(device_id):
+                nav_manager.set_awaiting_question(device_id, False)
+            return {
+                "guidance_text": f"{name}님 번호를 휴대폰 주소록에 저장합니다.",
+                "used_fallback_llm": True,
+                "source": "contact-save-success",
+                "contact_save": {"contact_name": name, "phone_number": phone},
+            }
+        if any(kw in normalized_text for kw in CONTACT_CALL_TRIGGER_WORDS):
+            # [TH HARDCODE] RAM 히트 → dial_action(번호 포함), 미스 → device_lookup.
+            target_name = extract_call_target(normalized_text)
+            phone = ContactStore.lookup(device_id, target_name) if target_name else None
+            if nav_manager.is_awaiting_question(device_id):
+                nav_manager.set_awaiting_question(device_id, False)
+            if phone:
+                return {
+                    "guidance_text": f"{target_name}님에게 전화를 겁니다.",
+                    "used_fallback_llm": True,
+                    "source": "contact-call-success",
+                    "dial_action": {"contact_name": target_name, "phone_number": phone},
+                }
+            return {
+                "guidance_text": f"{target_name or '연락처'}님에게 전화를 겁니다.",
+                "used_fallback_llm": True,
+                "source": "contact-call-device-lookup",
+                "dial_action": {
+                    "contact_name": target_name or "",
+                    "phone_number": "",
+                    "device_lookup": True,
+                },
+            }
+
         # [하드 코딩 부분 - 핵심]
         # 자유 질의응답 모드 최우선 처리: "질문할게" 등으로 진입한 다음 발화는 그
         # 내용과 무관하게(네비게이션 키워드가 우연히 섞여 있어도) 질문 자체로 취급한다.
@@ -518,23 +595,35 @@ class SttToLlmBridge:
             }
 
         elif is_contact_save_trigger:
-            # [TH HARDCODE] 발표용 편의기능: 음성으로 연락처 저장.
-            # extract_save_command가 None이면 트리거 자체가 False라 여기 안 들어온다
-            # (is_contact_save_trigger 계산에서 이미 검증됨).
+            # [TH HARDCODE] 음성 연락처 저장(early 경로와 동일 계약).
+            # extract_save_command None이면 is_contact_save_trigger가 이미 False.
+            #
+            # 💡 [면접 대비 주석 - 서버가 주소록에 직접 쓰지 않는 이유]
+            # Q. FastAPI에서 폰 연락처를 어떻게 씁니까?
+            # A. "못 씁니다. GPU 서버는 단말 ContactsProvider에 접근할 수 없다.
+            #    서버는 이름/번호 파싱 + guidance_text + contact_save 페이로드만
+            #    만들고, 실제 INSERT는 클라이언트의 ContactsBridgeModule이
+            #    ContentProviderOperation으로 수행한다(역할 분리 = dial_action과 동일)."
             name, phone = extract_save_command(normalized_text)  # type: ignore[misc]
             ContactStore.save(device_id, name, phone)
             return {
-                "guidance_text": f"{name}님 번호를 저장했습니다.",
+                "guidance_text": f"{name}님 번호를 휴대폰 주소록에 저장합니다.",
                 "used_fallback_llm": True,
                 "source": "contact-save-success",
+                "contact_save": {"contact_name": name, "phone_number": phone},
             }
 
         elif is_contact_call_trigger:
-            # [TH HARDCODE] 발표용 편의기능: 음성으로 저장된 연락처에 전화 걸기.
-            # 💡 [면접 대비 주석] 서버는 통신사 회선을 직접 제어할 수 없어 전화를
-            # 걸 수 없다 - 서버는 의도 해석과 번호 조회만 하고, 실제 다이얼 실행은
-            # dial_action WS 메시지로 클라이언트에 위임한다(ws_router.py가 변환,
-            # 클라이언트는 useWebSocket.ts에서 React Native Linking "tel:"로 실행).
+            # [TH HARDCODE] 음성으로 이름으로 전화 걸기.
+            # 💡 [면접 대비 주석] 서버는 통신사 회선을 직접 제어할 수 없다.
+            #    의도 해석 + (RAM 또는 device_lookup 위임) → dial_action WS →
+            #    클라이언트가 Linking "tel:"로 OS 다이얼러 실행.
+            #
+            # 💡 [면접 대비 주석 - device_lookup]
+            # Q. 서버 재시작 후 ContactStore가 비면 전화가 안 되지 않나요?
+            # A. "번호 없이 device_lookup=True만 보내면 단말이 READ_CONTACTS로
+            #    주소록을 다시 조회한다. RAM 캐시 소멸과 사용자 체감 저장이
+            #    분리돼 있다(실측 검증 2026-07-13)."
             target_name = extract_call_target(normalized_text)
             phone = ContactStore.lookup(device_id, target_name) if target_name else None
             if phone:
@@ -545,9 +634,14 @@ class SttToLlmBridge:
                     "dial_action": {"contact_name": target_name, "phone_number": phone},
                 }
             return {
-                "guidance_text": "저장된 번호를 찾을 수 없습니다. 먼저 번호를 저장해 주세요.",
+                "guidance_text": f"{target_name or '연락처'}님에게 전화를 겁니다.",
                 "used_fallback_llm": True,
-                "source": "contact-call-fail",
+                "source": "contact-call-device-lookup",
+                "dial_action": {
+                    "contact_name": target_name or "",
+                    "phone_number": "",
+                    "device_lookup": True,
+                },
             }
 
         elif is_question_trigger:
@@ -562,6 +656,12 @@ class SttToLlmBridge:
             }
 
         elif current_status == "WAITING_FOR_DESTINATION":
+            # 2026-07-13: 목적지 대기 중에도 "지금 몇 시야" 같은 질문을 목적지로
+            # 삼켜 네비만 돌리던 문제를 막는다. 질문처럼 보이면 대기를 풀고 자유 답변.
+            if _looks_like_question(normalized_text):
+                nav_manager.set_status(device_id, "IDLE")
+                return await self._answer_free_question(device_id, normalized_text)
+
             # [하드 코딩 부분 - 핵심]
             # 목적지 파싱 규칙: 조사/설정 어미를 제거해 POI 검색용 핵심 문자열을 만든다.
             # 작성법: replace 체인은 짧게 유지하고, 복잡해지면 정규식/파서 함수로 분리한다.
@@ -656,8 +756,16 @@ class SttToLlmBridge:
         _model_name = stt_result.model_name
         _saved_file = stt_result.saved_file
 
+        # 2026-07-13: 탐지 OFF(또는 질문형 발화)면 장애물 오케스트레이터로 보내지 않는다.
+        # 탐지 끄고 질문했는데 "우측으로 피하세요"류(물체탐지)만 나오던 실측 대응.
+        # 탐지 ON + 비질문형만 기존 stt→orch 경로를 유지한다.
+        if (not nav_manager.is_detection_enabled(device_id)) or _looks_like_question(
+            normalized_text
+        ):
+            return await self._answer_free_question(device_id, normalized_text)
+
         try:
-            # [바이브 코딩 부분] 일반 발화는 기존 오케스트레이션 경로로 위임
+            # [바이브 코딩 부분] 탐지 ON + 일반 발화는 기존 오케스트레이션 경로로 위임
             orch_input = self.build_orch_input(stt_result)
             orch_result = await run_orchestrator(orch_input)
             return {

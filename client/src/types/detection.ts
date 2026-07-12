@@ -26,7 +26,8 @@ export type MessageType =
   | "error"
   | "server_detection"
   | "nav_route"
-  | "dial_action";
+  | "dial_action"
+  | "contact_save";
 
 export interface BBox {
   x: number;
@@ -76,6 +77,8 @@ export interface WSMessage {
   contact_name?: string;
   /** dial_action 메시지: 실제 다이얼에 쓸 전화번호. 클라이언트가 Linking "tel:"로 실행한다 */
   phone_number?: string;
+  /** dial_action: 서버 RAM에 번호가 없을 때 단말이 주소록에서 이름으로 조회 */
+  device_lookup?: boolean;
 }
 
 export interface DetectionPayload {

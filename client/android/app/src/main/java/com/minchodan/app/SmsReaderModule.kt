@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.provider.Telephony
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -30,17 +31,32 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 // [TH HARDCODE] RECEIVE_SMS 권한은 Google Play 정책상 "기본 문자 앱(Default SMS
 // app)"이 아니면 상시 허용되지 않는 민감 권한이다. 데모/사이드로드 빌드 범위를
 // 벗어나 스토어에 배포하려면 별도 정책 심사 절차가 필요하다 - 발표 시 반드시 언급.
-// [미검증] SMS 브로드캐스트 수신 자체는 아직 실측으로 검증되지 않았다. Android
-// 에뮬레이터는 가짜 모뎀으로 SMS 수신을 완전히 시뮬레이션할 수 있으므로(Extended
-// Controls > Phone > SMS, 또는 `adb emu sms send <번호> "<본문>"`) 실기기 SIM 없이도
-// 검증 가능하다 - 테스트 후 이 주석을 갱신할 것.
+//
+// [TH HARDCODE - 공기계 테스트] SIM 없는 실기기는 실제 SMS가 오지 않으므로
+// DEBUG_SMS_ACTION 브로드캐스트로 동일 이벤트 경로를 검증한다.
+//   adb shell am broadcast -p com.minchodan.app -a com.minchodan.app.DEBUG_SMS \
+//     --es sender "01012345678" --es body "테스트 메시지"
 class SmsReaderModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
+
+    companion object {
+        const val DEBUG_SMS_ACTION = "com.minchodan.app.DEBUG_SMS"
+    }
 
     private var receiver: BroadcastReceiver? = null
 
     override fun getName(): String {
         return "SmsReaderModule"
+    }
+
+    private fun emitSms(sender: String, body: String) {
+        if (body.isBlank()) return
+        val payload = Arguments.createMap()
+        payload.putString("sender", sender)
+        payload.putString("body", body)
+        reactApplicationContext
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onSmsReceived", payload)
     }
 
     @ReactMethod
@@ -52,27 +68,40 @@ class SmsReaderModule(reactContext: ReactApplicationContext) :
             }
             val newReceiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
-                    // [TH HARDCODE] 장문 SMS는 통신사에서 여러 PDU로 분할해 보낼 수
-                    // 있어, 같은 브로드캐스트 안의 조각들을 이어 붙여 본문을 만든다.
-                    val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-                    if (messages.isNullOrEmpty()) return
-                    val sender = messages[0].originatingAddress ?: "알 수 없음"
-                    val body = messages.joinToString(separator = "") { it.messageBody ?: "" }
-                    if (body.isBlank()) return
-
-                    val payload = Arguments.createMap()
-                    payload.putString("sender", sender)
-                    payload.putString("body", body)
-
-                    reactApplicationContext
-                        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                        .emit("onSmsReceived", payload)
+                    when (intent.action) {
+                        DEBUG_SMS_ACTION -> {
+                            // 공기계/에뮬 SIM 없이 TTS 경로만 검증하는 디버그 인입.
+                            val sender = intent.getStringExtra("sender") ?: "디버그발신"
+                            val body = intent.getStringExtra("body") ?: return
+                            emitSms(sender, body)
+                        }
+                        Telephony.Sms.Intents.SMS_RECEIVED_ACTION -> {
+                            // [TH HARDCODE] 장문 SMS는 통신사에서 여러 PDU로 분할해 보낼 수
+                            // 있어, 같은 브로드캐스트 안의 조각들을 이어 붙여 본문을 만든다.
+                            val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+                            if (messages.isNullOrEmpty()) return
+                            val sender = messages[0].originatingAddress ?: "알 수 없음"
+                            val body = messages.joinToString(separator = "") { it.messageBody ?: "" }
+                            emitSms(sender, body)
+                        }
+                    }
                 }
             }
-            reactApplicationContext.registerReceiver(
-                newReceiver,
-                IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION),
-            )
+            val filter = IntentFilter().apply {
+                addAction(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
+                addAction(DEBUG_SMS_ACTION)
+            }
+            // adb 브로드캐스트(디버그) 수신을 위해 EXPORTED 필요(API 33+).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                reactApplicationContext.registerReceiver(
+                    newReceiver,
+                    filter,
+                    Context.RECEIVER_EXPORTED,
+                )
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                reactApplicationContext.registerReceiver(newReceiver, filter)
+            }
             receiver = newReceiver
             promise.resolve(true)
         } catch (e: Exception) {
@@ -88,6 +117,17 @@ class SmsReaderModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("SMS_UNLISTEN_ERROR", e.message)
+        }
+    }
+
+    /** 공기계 검증용: JS/브리지에서 직접 가짜 문자를 주입한다. */
+    @ReactMethod
+    fun simulateIncomingSms(sender: String, body: String, promise: Promise) {
+        try {
+            emitSms(sender, body)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("SMS_SIMULATE_ERROR", e.message)
         }
     }
 }

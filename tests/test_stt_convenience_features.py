@@ -68,6 +68,10 @@ class _FakeNavManager:
         _ = device_id
         self.awaiting_intent = value
 
+    def is_detection_enabled(self, device_id: str) -> bool:
+        _ = device_id
+        return False
+
 
 @pytest.fixture(autouse=True)
 def _clear_contact_store():
@@ -103,14 +107,39 @@ async def test_contact_save_then_call_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_contact_call_without_saved_number_fails() -> None:
+async def test_contact_save_accepts_korean_spoken_digits() -> None:
+    # 2026-07-13 실기기 실측: Whisper가 전화번호를 아라비아 숫자 대신 한글 숫자로
+    # 전사하는 경우(예: "공일공일이삼사오육칠팔") 저장이 안 되던 문제의 회귀 테스트.
+    bridge = SttToLlmBridge()
+
+    save_response = await bridge.invoke_existing_llm(
+        _make_stt_result("아빠 번호는 공일공일이삼사오육칠팔 저장해줘"), "test-device"
+    )
+    assert save_response["source"] == "contact-save-success"
+
+    call_response = await bridge.invoke_existing_llm(
+        _make_stt_result("아빠한테 전화 걸어줘"), "test-device"
+    )
+    assert call_response["dial_action"] == {
+        "contact_name": "아빠",
+        "phone_number": "010-1234-5678",
+    }
+
+
+@pytest.mark.asyncio
+async def test_contact_call_without_saved_number_uses_device_lookup() -> None:
+    # 서버 RAM에 번호가 없어도 단말이 주소록에서 찾도록 dial_action + device_lookup을 보낸다.
     bridge = SttToLlmBridge()
 
     response = await bridge.invoke_existing_llm(
         _make_stt_result("아빠한테 전화 걸어줘"), "test-device"
     )
-    assert response["source"] == "contact-call-fail"
-    assert "dial_action" not in response
+    assert response["source"] == "contact-call-device-lookup"
+    assert response["dial_action"] == {
+        "contact_name": "아빠",
+        "phone_number": "",
+        "device_lookup": True,
+    }
 
 
 @pytest.mark.asyncio

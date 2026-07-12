@@ -40,6 +40,10 @@ class NavigationSession:
         # 고를지 대기하는 플래그. awaiting_free_question과 마찬가지로 status와 독립.
         self.awaiting_intent: bool = False
 
+        # 클라이언트 "탐지 시작/중지" 토글. 기본 False(앱 기본 OFF와 동일).
+        # OFF면 STT 일반 발화를 장애물 오케스트레이터가 아니라 자유 질문으로 처리한다.
+        self.detection_enabled: bool = False
+
         # Redis Stream 등으로부터 수신된 미해결 장애물 이벤트 캐시
         self.pending_obstacles: list[dict[str, Any]] = []
         self.last_announced_obstacle_time: float = 0.0
@@ -124,6 +128,31 @@ class NavigationManager:
     def is_awaiting_intent(self, device_id: str) -> bool:
         session = self._get_or_create_session(device_id)
         return session.awaiting_intent
+
+    def set_detection_enabled(self, device_id: str, enabled: bool) -> None:
+        """클라이언트 탐지 토글 반영.
+
+        OFF로 전환 시 목적지/인텐트 대기를 풀어, 탐지 끄고 바로 질문해도
+        네비 목적지 파싱·장애물 안내로 새지 않게 한다(2026-07-13 실측).
+        NAVIGATING(길안내 중)은 GPS 턴바이턴을 위해 유지한다.
+        """
+        session = self._get_or_create_session(device_id)
+        session.detection_enabled = bool(enabled)
+        if not enabled:
+            if session.status == "WAITING_FOR_DESTINATION":
+                session.status = "IDLE"
+            session.awaiting_intent = False
+            print(
+                f"[NavigationManager] detection_enabled=False for '{device_id}' "
+                f"(cleared destination/intent wait, status={session.status})"
+            )
+        else:
+            print(f"[NavigationManager] detection_enabled=True for '{device_id}'")
+        self._broadcast_nav_change(device_id, session)
+
+    def is_detection_enabled(self, device_id: str) -> bool:
+        session = self._get_or_create_session(device_id)
+        return session.detection_enabled
 
     def update_route(self, device_id: str, waypoints: list[dict[str, Any]]) -> None:
         """

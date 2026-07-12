@@ -58,6 +58,12 @@ class AudioEngine {
   public isGuidePlaying = false;
   /** [TEMP DEBUG 2026-07-09] speakFallback 중복 호출 진단용 순번 카운터. */
   private _speakCallSeq = 0;
+  /**
+   * 단말 내장 TTS(ko) 중 가장 자연스러운 음성 identifier.
+   * undefined=미조회, null=조회 실패/후보 없음, string=선택됨.
+   * Android 기본 SAPI/로컬 TTS는 기계음이 강해 Google Neural 계열을 우선한다.
+   */
+  private preferredKoVoiceId: string | null | undefined = undefined;
 
   // 버킷별 800Hz 비프 스테레오 에셋 (원본 assets/sounds/beep.wav에서 좌우 게인만 다르게
   // 프리렌더링, reflex_audio_specification.md 준수, 오프라인 안정).
@@ -442,11 +448,53 @@ class AudioEngine {
     }
   }
 
+  /** 단말 ko TTS 후보 점수(높을수록 자연·선호). */
+  private scoreKoVoice(voice: Speech.Voice): number {
+    const id = `${voice.identifier ?? ""} ${voice.name ?? ""}`.toLowerCase();
+    let score = 0;
+    if ((voice.language ?? "").toLowerCase().startsWith("ko")) score += 100;
+    if (id.includes("neural") || id.includes("wavenet") || id.includes("natural")) score += 50;
+    if (id.includes("google")) score += 40;
+    if (id.includes("premium") || id.includes("enhanced") || id.includes("quality")) score += 30;
+    if (id.includes("female") || id.includes("woman") || id.includes("여자")) score += 10;
+    if (id.includes("robot") || id.includes("compact") || id.includes("local")) score -= 30;
+    return score;
+  }
+
+  /** 설치된 ko 음성 중 가장 덜 기계적인 identifier를 1회 캐시한다. */
+  private async ensurePreferredKoVoice(): Promise<string | undefined> {
+    if (this.preferredKoVoiceId !== undefined) {
+      return this.preferredKoVoiceId ?? undefined;
+    }
+    try {
+      const voices = await Speech.getAvailableVoicesAsync();
+      const koVoices = voices.filter((v) =>
+        (v.language ?? "").toLowerCase().startsWith("ko"),
+      );
+      if (koVoices.length === 0) {
+        this.preferredKoVoiceId = null;
+        return undefined;
+      }
+      koVoices.sort((a, b) => this.scoreKoVoice(b) - this.scoreKoVoice(a));
+      this.preferredKoVoiceId = koVoices[0]?.identifier ?? null;
+      console.log(
+        `[AudioEngine] 단말 ko TTS 선택: name=${koVoices[0]?.name} id=${this.preferredKoVoiceId}`,
+      );
+    } catch (e) {
+      console.warn("[AudioEngine] 단말 TTS 음성 목록 조회 실패:", e);
+      this.preferredKoVoiceId = null;
+    }
+    return this.preferredKoVoiceId ?? undefined;
+  }
+
   /**
-   * 서버 TTS 실패/타임아웃(3초) 시 단말 내장 TTS로 안내 문장을 대신 발화한다.
+   * 서버 TTS 실패/타임아웃 시 단말 내장 TTS로 안내 문장을 대신 발화한다.
    * (docs/design/reflex_audio_specification.md와 무관 - 인지 경로 전용 폴백.
    * 서버는 여전히 오디오를 생성하지 못했을 뿐 안내 문장 자체는 만들었으므로,
    * 무음 대신 단말이 직접 말해 안내가 사라지는 체감을 없앤다.)
+   *
+   * 온보딩·SMS 읽어주기 등도 이 경로를 쓰므로, Android 기본 기계음 완화를 위해
+   * Google Neural 계열 ko 음성을 우선 선택한다(미설치 시 OS 기본).
    */
   public speakFallback(text: string, onComplete?: () => void): void {
     if (!text || !text.trim()) {
@@ -460,38 +508,45 @@ class AudioEngine {
     const callTs = Date.now();
     console.log(`[AudioEngine][DEBUG] speakFallback 호출 id=${callId} ts=${callTs} wasPlaying=${this.isGuidePlaying} text="${text}"`);
 
-    this.stopGuideAudio();
-    this.isGuidePlaying = true;
-    Speech.speak(text, {
-      language: "ko-KR",
-      // [TEMP DEBUG 2026-07-09] 기본 속도(1.0)에서 "우측으로"->"돌아가세요" 단어 경계
-      // 사이가 부자연스럽게 들려("짤림"으로 체감) 속도를 낮춰 자연스러워지는지 검증한다.
-      rate: 0.85,
-      onStart: () => {
-        console.log(`[AudioEngine][DEBUG] speakFallback onStart id=${callId} ts=${Date.now()}`);
-      },
-      onBoundary: (event: any) => {
-        const idx = event?.charIndex ?? -1;
-        const len = event?.charLength ?? 0;
-        const chunk = idx >= 0 ? text.slice(idx, idx + len) : "?";
-        console.log(`[AudioEngine][DEBUG] speakFallback onBoundary id=${callId} ts=${Date.now()} charIndex=${idx} charLength=${len} chunk="${chunk}"`);
-      },
-      onDone: () => {
-        console.log(`[AudioEngine][DEBUG] speakFallback onDone id=${callId} ts=${Date.now()}`);
-        this.isGuidePlaying = false;
-        onComplete?.();
-      },
-      onStopped: () => {
-        console.log(`[AudioEngine][DEBUG] speakFallback onStopped id=${callId} ts=${Date.now()}`);
-        this.isGuidePlaying = false;
-        onComplete?.();
-      },
-      onError: (err) => {
-        console.error(`[AudioEngine] 단말 TTS 폴백 실패 id=${callId}:`, err);
-        this.isGuidePlaying = false;
-        onComplete?.();
-      },
-    });
+    void (async () => {
+      const voice = await this.ensurePreferredKoVoice();
+      if (callId !== this._speakCallSeq) {
+        return;
+      }
+
+      this.stopGuideAudio();
+      this.isGuidePlaying = true;
+      Speech.speak(text, {
+        language: "ko-KR",
+        voice,
+        pitch: 0.95,
+        rate: 0.85,
+        onStart: () => {
+          console.log(`[AudioEngine][DEBUG] speakFallback onStart id=${callId} ts=${Date.now()}`);
+        },
+        onBoundary: (event: any) => {
+          const idx = event?.charIndex ?? -1;
+          const len = event?.charLength ?? 0;
+          const chunk = idx >= 0 ? text.slice(idx, idx + len) : "?";
+          console.log(`[AudioEngine][DEBUG] speakFallback onBoundary id=${callId} ts=${Date.now()} charIndex=${idx} charLength=${len} chunk="${chunk}"`);
+        },
+        onDone: () => {
+          console.log(`[AudioEngine][DEBUG] speakFallback onDone id=${callId} ts=${Date.now()}`);
+          this.isGuidePlaying = false;
+          onComplete?.();
+        },
+        onStopped: () => {
+          console.log(`[AudioEngine][DEBUG] speakFallback onStopped id=${callId} ts=${Date.now()}`);
+          this.isGuidePlaying = false;
+          onComplete?.();
+        },
+        onError: (err) => {
+          console.error(`[AudioEngine] 단말 TTS 폴백 실패 id=${callId}:`, err);
+          this.isGuidePlaying = false;
+          onComplete?.();
+        },
+      });
+    })();
   }
 
   /** 재생 중인 안내 음성을 즉시 중단하고 플레이어/임시 파일을 정리한다. */
@@ -554,8 +609,11 @@ class AudioEngine {
   }
 
   /**
-   * 반사 경로 사전합성 음성 클립을 1회 재생한다(비프/햅틱과 별개 채널, 병행 재생).
+   * 반사 경로 사전합성 음성 클립을 1회 재생한다(비프/햅틱과 별개 채널).
    * clipPath는 서버 reflex_alert 페이로드의 clip 필드(예: "reflex_clips/high_front.wav").
+   *
+   * 호출측(useWebSocket)이 긴급(beep_interval_ms<=100)일 때는 호출하지 않는다:
+   * 긴급은 핑퐁 비프만, 여유가 있을 때만 음성 클립/인지 TTS를 쓴다.
    */
   public async playReflexClip(clipPath: string): Promise<void> {
     const basename = clipPath.split("/").pop() ?? "";
@@ -567,9 +625,7 @@ class AudioEngine {
 
     try {
       await this.ensureSession();
-      // reflex_alert는 항상 reflex_gate/surface_gate/head_level_gate가 실제 위험을
-      // 판정했을 때만 발생하므로(§ playBeep의 isHighDanger 정책과 동일한 근거),
-      // 인지 가이드가 재생 중이면 선점한다(2026-07-09 추가).
+      // 여유 단계 음성 클립이어도, 인지 가이드와 겹치면 안내가 뭉개지므로 선점한다.
       if (this.isGuidePlaying) this.stopGuideAudio();
       const clipPlayer = createAudioPlayer(uri);
       clipPlayer.volume = 1.0;

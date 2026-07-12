@@ -16,7 +16,7 @@ import { Camera } from "react-native-vision-camera";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
 import { NavMapPanel, type NavMapWaypoint } from "./NavMapPanel";
-import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS } from "../config";
+import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS, type ServerTransport } from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
 import { useLocation, type GpsCoords } from "../hooks/useLocation";
@@ -25,6 +25,7 @@ import { useSmsReader } from "../hooks/useSmsReader";
 import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
 import {
+  isDepthProbeSupported,
   probeDepth,
   startDepthProbe,
   stopDepthProbe,
@@ -33,6 +34,12 @@ import {
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
+import {
+  loadServerTransport,
+  saveServerTransport,
+  transportLabel,
+  wsUrlFor,
+} from "../services/serverTransport";
 import type { StreamType } from "../types/detection";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -111,7 +118,21 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
 }
 
 export function CameraView() {
-  const { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive } = useWebSocket(DEVICE_ID, TOKEN);
+  // 평상시 WiFi / 개발 USB — 둘 다 설정에 두고 토글로 전환 (재시작 후에도 유지).
+  const [serverTransport, setServerTransport] = useState<ServerTransport>("wifi");
+  const [transportReady, setTransportReady] = useState(false);
+  useEffect(() => {
+    void loadServerTransport().then((t) => {
+      setServerTransport(t);
+      setTransportReady(true);
+    });
+  }, []);
+  const wsBaseUrl = wsUrlFor(serverTransport);
+  const { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive } = useWebSocket(
+    DEVICE_ID,
+    TOKEN,
+    transportReady ? wsBaseUrl : wsUrlFor("wifi"),
+  );
   // [TH HARDCODE] 발표용 편의기능: 수신 문자 메시지 읽어주기(Android 전용).
   // 서버 왕복이 필요 없는 순수 로컬 기능이라 WS 파이프라인과 독립적으로 마운트한다.
   useSmsReader();
@@ -134,11 +155,12 @@ export function CameraView() {
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
 
-  // GPS 전송: 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
+  // GPS 전송: 탐지 세션이 켜져 있을 때만 켠다(상시 watch는 배터리·부하).
+  // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
   // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
   // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
   useEffect(() => {
-    if (isMockMode) return;
+    if (isMockMode || !detectionEnabled) return;
     let cancelled = false;
 
     (async () => {
@@ -165,7 +187,7 @@ export function CameraView() {
       stopWatching();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode]);
+  }, [isMockMode, detectionEnabled]);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
@@ -214,6 +236,16 @@ export function CameraView() {
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
   const [confThreshold, setConfThreshold] = useState(0.40);
+  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
+  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
+  const [detectionEnabled, setDetectionEnabled] = useState(false);
+
+  // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
+  // WS 재연결 후에도 현재 토글 값을 다시 보낸다.
+  useEffect(() => {
+    if (status !== "connected") return;
+    send({ type: "detection_control", enabled: detectionEnabled, ts: Date.now() });
+  }, [status, detectionEnabled, send]);
 
   // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
   // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
@@ -505,31 +537,37 @@ export function CameraView() {
     }
   }, []); // 의존성 없음 - 모든 최신 상태를 ref 로 직접 참조
 
-  // 캡처 시작: 권한 확보 즉시 구동 (로컬 모델 로딩 여부와 관계없이 서버 추론 전송을 위해 즉시 캡처 기동)
+  // 캡처 시작: 기본 OFF. "탐지 시작"으로 detectionEnabled=true일 때만 루프 기동.
+  // (상시 기동은 실기기 과부하·캡처 오류 유발 - 2026-07-13 th)
   useEffect(() => {
-    if (!isMockMode && !hasPermission) return;  // 실기기: 권한 없으면 대기
-    if (!isMockMode && !device) return;          // 실기기: 카메라 디바이스 없으면 대기
-    if (isCapturing) return;                     // 중복 시작 방지
+    if (!detectionEnabled) {
+      stopCapture();
+      setDetections([]);
+      return;
+    }
+    if (!isMockMode && !hasPermission) return;
+    if (!isMockMode && !device) return;
+    if (isCapturing) return;
 
     startCapture((frame: FrameData) => {
       void handleFrame(frame, frame.stream ?? "reflex");
     });
     return () => stopCapture();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode, hasPermission, device]);
+  }, [isMockMode, hasPermission, device, detectionEnabled]);
 
   useEffect(() => {
     const info: string[] = [];
     info.push(`모드: ${isMockMode ? "MOCK(시뮬레이터)" : "REAL(실기기)"}`);
     info.push(`권한: ${permissionStatus}`);
     if (!isMockMode) info.push(`카메라: ${device ? device.id : "없음"}`);
-    info.push(`WS: ${status}`);
-    info.push(`캡처: ${isCapturing ? "ON" : "OFF"} (반사 ${currentReflexFps}fps 동적)`);
+    info.push(`WS: ${status} / ${transportLabel(serverTransport)}`);
+    info.push(`캡처: ${isCapturing ? "ON" : "OFF"} (탐지토글 ${detectionEnabled ? "ON" : "OFF"}, 반사 ${currentReflexFps}fps 동적)`);
     info.push(`모델: ${segLoaded ? "seg" : "…"} / ${detLoaded ? "det" : "…"}`);
     if (detShapeLog) info.push(`det shape: ${detShapeLog}`);
     info.push(`추론: ${lastDetect}`);
     setDebugInfo(info);
-  }, [isMockMode, permissionStatus, device, status, isCapturing, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
+  }, [isMockMode, permissionStatus, device, status, serverTransport, isCapturing, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
 
   // --- 권한 게이트 (실기기 전용) ---
   if (!isMockMode && !hasPermission) {
@@ -589,8 +627,9 @@ export function CameraView() {
             <Camera
               ref={cameraRef}
               device={device!}
-              // 거리 측정(LiDAR 프로브) 모드 동안은 세션을 놓아준다(동시 점유 불가).
-              isActive={!depthMode}
+              // 의도(2026-07-13): 탐지 시작 전=카메라 세션 OFF(검은 화면),
+              // 탐지 시작 후=프리뷰 ON. 부하 절감 + "탐지 중" 상태를 화면으로 구분.
+              isActive={detectionEnabled && !depthMode}
               video={true}
               audio={false}
               pixelFormat="yuv"
@@ -601,12 +640,19 @@ export function CameraView() {
             <Camera
               ref={cameraRef}
               device={device!}
-              isActive={!depthMode}
+              isActive={detectionEnabled && !depthMode}
               photo={true}
               audio={false}
               style={StyleSheet.absoluteFill}
             />
           ))
+        )}
+        {!detectionEnabled && !isMockMode && (
+          <View style={styles.detectionIdleBanner} pointerEvents="none">
+            <Text style={styles.detectionIdleText}>
+              탐지 대기 중 (카메라 OFF) — 오른쪽 &quot;탐지 시작&quot;을 누르면 화면이 켜집니다
+            </Text>
+          </View>
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
@@ -765,15 +811,67 @@ export function CameraView() {
           )}
         </View>
       )}
-      <View style={styles.depthToggleWrap} pointerEvents="box-none">
+      <View style={styles.detectionToggleWrap} pointerEvents="box-none">
         <Pressable
-          style={styles.mapToggleButton}
-          onPress={() => setDepthMode((v) => !v)}
+          style={[
+            styles.mapToggleButton,
+            detectionEnabled && styles.detectionToggleActive,
+          ]}
+          onPress={() => {
+            setDetectionEnabled((v) => {
+              const next = !v;
+              if (!next) {
+                hapticEngine.stopContinuous();
+                void audioEngine.stopBeep();
+              }
+              return next;
+            });
+          }}
           accessibilityRole="button"
-          accessibilityLabel={depthMode ? "거리 측정 끄기" : "거리 측정 켜기"}
+          accessibilityLabel={detectionEnabled ? "탐지 중지" : "탐지 시작"}
         >
-          <Text style={styles.mapToggleText}>{depthMode ? "거리측정 끄기" : "거리측정"}</Text>
+          <Text style={styles.mapToggleText}>
+            {detectionEnabled ? "탐지 중지" : "탐지 시작"}
+          </Text>
         </Pressable>
+      </View>
+
+      <View style={styles.transportToggleWrap} pointerEvents="box-none">
+        <Pressable
+          style={[
+            styles.mapToggleButton,
+            serverTransport === "usb" && styles.transportToggleUsb,
+          ]}
+          onPress={() => {
+            const next: ServerTransport = serverTransport === "wifi" ? "usb" : "wifi";
+            setServerTransport(next);
+            void saveServerTransport(next);
+            console.log(`[ServerTransport] 전환: ${transportLabel(next)} -> ${wsUrlFor(next)}`);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            serverTransport === "wifi"
+              ? "WiFi 연결 중. USB 개발 모드로 전환"
+              : "USB 연결 중. WiFi 평상시 모드로 전환"
+          }
+        >
+          <Text style={styles.mapToggleText}>
+            {serverTransport === "wifi" ? "연결: WiFi" : "연결: USB"}
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.depthToggleWrap} pointerEvents="box-none">
+        {isDepthProbeSupported() ? (
+          <Pressable
+            style={styles.mapToggleButton}
+            onPress={() => setDepthMode((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={depthMode ? "거리 측정 끄기" : "거리 측정 켜기"}
+          >
+            <Text style={styles.mapToggleText}>{depthMode ? "거리측정 끄기" : "거리측정"}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -1014,6 +1112,36 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 262,
     right: 12,
+  },
+  detectionToggleWrap: {
+    position: "absolute",
+    bottom: 302,
+    right: 12,
+  },
+  transportToggleWrap: {
+    position: "absolute",
+    bottom: 342,
+    right: 12,
+  },
+  detectionToggleActive: {
+    backgroundColor: "rgba(16,185,129,0.85)",
+  },
+  transportToggleUsb: {
+    backgroundColor: "rgba(59,130,246,0.85)",
+  },
+  detectionIdleBanner: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 24,
+  },
+  detectionIdleText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 22,
   },
   depthOverlay: {
     position: "absolute",

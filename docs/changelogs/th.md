@@ -596,4 +596,183 @@
   - P0~중기 개선 방향(Python 3.13 venv, seg 가중치, VAD, 실내 데이터·conf, UX 구분) 정리
   - `docs/README.md` 문서 인덱스에 리포트 링크 추가
 - **관련 파일**: `docs/ops/android_stt_recognition_issue_report.md`, `docs/README.md`, `docs/changelogs/th.md`
+
+---
+
+### 2026-07-13 | 부가(STT) | 연락처 저장 트리거 - 한글 숫자 전사 폴백 추가
+
+- **커밋**: (본 세션 통합 커밋에 포함)
+- **배경(실기기 실측)**: 음성 편의기능 3종(2026-07-12, `311eb4a`) 배포 후 실기기로
+  "번호 저장해줘" 편의기능을 테스트했으나, STT 인식 자체는 정상인데도 연락처 저장이
+  되지 않고 일반 대화 경로로 새서 LLM이 "직접 저장하세요" 류의 엉뚱한 문장을
+  생성하는 현상을 확인했다.
+- **원인 분석**:
+  - `contact_store.py`의 `PHONE_NUMBER_PATTERN`(`01[0-9][-\s]?\d{3,4}[-\s]?\d{4}`)은
+    아라비아 숫자 전사만 전제한다.
+  - Whisper가 전화번호를 "공일공일이삼사오육칠팔"처럼 한글 숫자로 전사하면 정규식이
+    매칭에 실패해 `extract_save_command`가 `None`을 반환한다.
+  - `is_contact_save_trigger`가 꺼지므로 발화가 저장 분기를 타지 못하고
+    `stt_to_llm_bridge.py`의 일반 `run_orchestrator` 경로(장애물 회피용 L1/L2/L3)로
+    흘러가, 맥락에 안 맞는 LLM 생성 문장이 반환된 것이었다(RAG 미스는 아니었음 -
+    애초에 RAG를 거치지도 않는 경로).
+- **변경 내용**:
+  - `server/stt/contact_store.py`에 `_KOREAN_DIGIT_MAP`/`_find_korean_spoken_phone`
+    추가. 한글 숫자 문자가 9~12자 연속으로 이어진 구간만 후보로 보고, 변환 후
+    11자리 + "01" 시작 조건까지 만족해야 전화번호로 인정한다(오탐 방지).
+  - `extract_save_command`가 아라비아 숫자 매칭 실패 시 위 폴백을 시도하도록 분기
+    추가.
+  - `tests/test_stt_convenience_features.py`에
+    `test_contact_save_accepts_korean_spoken_digits` 회귀 테스트 추가.
+- **하드코딩 설계 판단 (TH HARDCODE, 발표 시 설명 필요)**:
+  - 정규식 자체를 한글 숫자까지 매칭하도록 합치지 않고 별도 폴백 함수로 분리했다.
+    이유: "일/이/오" 같은 한글 숫자 문자는 그 자체로 흔한 한국어 단어/조사이기도 해서
+    (예: "일하다", "오늘"), 짧은 매칭을 허용하면 일반 문장에서 오탐 저장이 발생할
+    위험이 있다. 최소 길이(9자 이상 연속)와 변환 후 자릿수 검증(11자리, "01" 시작)
+    2중 조건으로 위험을 낮췄다.
+  - 형태소 분석기/LLM 개체명 추출을 쓰지 않고 규칙 기반을 유지한 이유는 기존
+    `extract_save_command` 주석(LLM 환각으로 엉뚱한 번호가 저장될 위험) 참조.
+  - **면접 대비 포인트**: "왜 이 버그를 RAG가 아니라 STT 브리지 쪽에서 고쳤나"라는
+    질문에는 "STT 일반 편의기능 인텐트(연락처 저장 등)는 애초에 RAG/LLM을 거치지
+    않는 규칙 기반 분기이고, 실패 시에만 장애물 회피용 오케스트레이터로 새는
+    구조였다 - 증상은 '이상한 LLM 답변'으로 보였지만 원인은 RAG가 아니라 정규식이
+    한글 숫자 전사를 못 받아준 것"이라고 설명하면 된다.
+- **미검증 항목**: 10자리(지역번호/구내전화 등 010 외 형식) 한글 숫자 전사는 폴백
+  대상에서 제외했다 - 실사용 빈도가 낮다고 판단해 스코프에서 뺐다(필요 시 재검토).
+- **관련 파일**: `server/stt/contact_store.py`, `tests/test_stt_convenience_features.py`,
+  `docs/changelogs/th.md`
+- **검증 결과**: `python -m py_compile server/stt/contact_store.py` 통과,
+  `python -m pytest tests/test_stt_convenience_features.py -v` 7개 전부 통과
+  (신규 회귀 테스트 `test_contact_save_accepts_korean_spoken_digits` 포함)
 - **검증 결과**: 문서 교차 링크 및 섹션 구조 점검 완료
+
+---
+
+### 2026-07-13 | 운영(단말) | WiFi/USB 이중 접속 문서화 및 앱 토글
+
+- **커밋**: (본 세션 통합 커밋에 포함)
+- **배경**: 공기계 테스트 시 USB(`adb reverse` + `127.0.0.1`)와 노트북 모바일 핫스팟
+  (`192.168.137.1`)을 번갈아 쓰게 되어, 설정을 매번 고쳐 빌드하는 방식이 비효율적이었다.
+  또한 PC가 아이폰 핫스팟을 받는 IP(`172.20.10.2`)와 공기계가 붙는 핫스팟 게이트웨이
+  (`192.168.137.1`)를 혼동하기 쉬워 문서화가 필요했다.
+- **변경 내용**:
+  - 앱: `연결: WiFi` / `연결: USB` 토글 (`CameraView`), 선택값 단말 영속
+    (`serverTransport.ts`), `buildWsUrl` / `WIFI_HOST` / `USB_HOST` (`config/index.ts`)
+  - 문서: `docs/ops/android_wifi_usb_transport.md` 신설
+  - 교차 반영: `docs/README.md`, `environment_variables.md` §2.14,
+    `ios_android_bifurcation_contract.md` §7.3, `android_build_and_wireless_test_guide.md` §3
+- **관련 파일**: 위 문서·클라이언트 경로
+- **사용 요약**: 평상시 WiFi(선 없음) / 기능 수정 시 USB + `adb reverse tcp:8000|8081`
+
+---
+
+### 2026-07-13 | 부가(STT)+단말 | 연락처 단말 영속화·탐지 토글·오디오 UX·질문 라우팅·Edge TTS
+
+- **커밋**: `feat(th): 연락처 영속화, 탐지/질문 라우팅, 긴급핑퐁, Edge TTS`
+- **작업 범위 요약**: 2026-07-13 th 실기기 세션에서 보고된 UX/음성/STT 이슈를
+  일괄 반영. (WiFi/USB·한글숫자 연락처는 위 항목과 동일 세션)
+
+#### 1) 연락처: 서버 RAM만이 아니라 폰 주소록에 저장
+
+- **문제**: 음성으로 번호 저장해도 폰 연락처 앱에 안 보임(서버 `ContactStore` RAM만).
+- **변경**:
+  - Android `ContactsBridgeModule.kt` + `contactsBridge.ts` (READ/WRITE_CONTACTS)
+  - WS `contact_save` → 단말 `ContactsContract` INSERT
+  - 전화 걸기: RAM 미스 시 `device_lookup`으로 단말 주소록 재조회
+- **관련 파일**: `ContactsBridgeModule.kt`, `contactsBridge.ts`, `ws_router.py`,
+  `stt_to_llm_bridge.py`, `CameraView`/`useWebSocket` 연동, `AndroidManifest.xml`
+
+#### 2) 탐지 기본 OFF + 「탐지 시작/중지」
+
+- **의도**: 상시 캡처/전송 과부하 완화. STT press-and-hold와 독립.
+- **UX**: 탐지 OFF면 카메라 `isActive`도 OFF → 검은 화면(의도된 동작, 사용자 확인).
+- **관련 파일**: `CameraView.tsx`
+
+#### 3) 긴급=핑퐁 / 여유=음성 채널 분기
+
+- **요청**: 긴급 위험은 핑퐁(비프), 여유 있으면 음성.
+- **구현**: `beep_interval_ms <= 100`(Critical/High) → 비프+햅틱만,
+  `>100`(Mid/Low) → 반사 음성 클립 허용. 인지 `guide` TTS는 mid/low 상세 안내.
+- **관련 파일**: `useWebSocket.ts`, `audioEngine.ts`,
+  `docs/design/reflex_audio_specification.md` v1.3.0
+
+#### 4) 탐지 끈 뒤 질문이 네비/물체탐지로 새는 버그 수정
+
+- **증상(실측)**: 거리(주차센서식) 탐지 중 탐지를 끄고 질문하면 질문 답이 안 나오고
+  네비게이션·장애물 안내만 재생됨.
+- **원인**:
+  1. `WAITING_FOR_DESTINATION` 잔류 시 질문 문장이 목적지로 파싱됨
+  2. 기본 STT 폴백이 `run_orchestrator`(물체탐지 안내)로 감
+- **수정**:
+  - WS `detection_control` + `NavigationSession.detection_enabled`
+  - 탐지 OFF 시 목적지/인텐트 대기 해제, STT 일반 발화 → `_answer_free_question`
+  - 목적지 대기 중 질문형 휴리스틱(`뭐/어디/몇` 등) → 자유 질문으로 탈출
+- **관련 파일**: `manager.py`, `ws_router.py`, `stt_to_llm_bridge.py`, `CameraView.tsx`,
+  `tests/test_stt_to_llm_bridge_template.py`
+
+#### 5) TTS: 기계음 완화 → Edge Neural 핫스왑
+
+- **피드백**: 장애우분들이 기계음을 싫어함.
+- **1차**: Supertonic `F2` + steps `12` + speed `0.85`, 단말 `speakFallback`에
+  Google Neural 계열 ko 음성 우선 선택.
+- **2차(채택)**: `TTS_ENGINE=edge` (`edge-tts`, `ko-KR-SunHiNeural`).
+  로컬 모델 없이 MS Neural, MP3→WAV는 `imageio-ffmpeg`.
+  오프라인 시 `TTS_ENGINE=supertonic`으로 되돌림.
+- **관련 파일**: `tts_service.py`(`EdgeTTSService`), `realtime_tts.py`,
+  `requirements.txt`, `.env.example`, `environment_variables.md`
+
+#### 6) 기타
+
+- Android 거리측정(LiDAR): Pro 전용 안내 강화, 미지원 시 버튼 숨김
+  (`depthProbe.ts` / `isDepthProbeSupported`)
+- Supertonic 기본 속도 env: `TTS_DEFAULT_SPEED`
+
+---
+
+### 2026-07-13 | 실기기 테스트 로그 (th, Android 공기계)
+
+- **환경**:
+  - 기기: Android (`R3CX70EB6QH`)
+  - 네트워크: 노트북이 아이폰 핫스팟 수신(`172.20.10.x`) + Windows 모바일 핫스팟
+    송신 → 공기계는 **`192.168.137.1:8000`** 로 서버 접속 (WiFi 모드)
+  - 서버: FastAPI `:8000` + Redis stub `:6379` + (개발 시) Metro `:8081`
+  - STT: faster-whisper-small, CPU 폴백
+  - TTS: 세션 후반 `edge` / `ko-KR-SunHiNeural` (그 전 Supertonic F2 시도)
+
+#### 테스트한 시나리오와 결과
+
+| # | 시나리오 | 결과 / 관찰 | 후속 조치 |
+|---|----------|-------------|-----------|
+| T1 | WiFi로 서버 접속 (`연결: WiFi`) | `192.168.137.1` 사용 시 연결 가능. `172.20.10.2`는 PC 업링크라 공기계에 부적합 | 토글·문서화 |
+| T2 | USB + `adb reverse` 개발 접속 | 핫리로드·디버그에 유용, 선 뽑으면 끊김 | USB 모드 유지 |
+| T3 | 탐지 기본 OFF → 「탐지 시작」 | OFF 시 검은 화면(카메라 inactive). 시작 후 프리뷰·탐지 | 의도 UX로 확정 |
+| T4 | 장애물 근접 시 비프(핑퐁) | 거리 가까울수록 간격 짧아짐(주차센서식) | 유지 |
+| T5 | 긴급 시 음성+비프 동시 | 기계음 클립이 긴급 반응을 방해한다는 피드백 | 긴급(≤100ms)은 비프만 |
+| T6 | 여유 거리 / 인지 안내 | 음성 안내 필요 | Mid/Low·guide TTS |
+| T7 | 탐지 중 끄고 바로 질문 | **실패**: 질문 답 없음, 네비/물체탐지 멘트만 | `detection_control`+자유질문 라우팅 |
+| T8 | 목적지 대기 중 일반 질문 | 목적지로 오인될 수 있음 | 질문형 휴리스틱 탈출 |
+| T9 | 음성 연락처 저장 | 아라비아 숫자 OK. 한글 숫자("공일공…")는 예전 실패 → 폴백 추가 | `contact_store` 폴백 |
+| T10 | 저장 후 폰 주소록 확인 | RAM만이면 앱에 안 보임 → ContactsBridge로 영속 | 단말 INSERT |
+| T11 | TTS 청취(Supertonic) | 여전히 기계음 체감, 장애우 피드백 부정적 | Edge Neural로 전환 |
+| T12 | TTS 청취(edge SunHi) | 로컬 대비 자연스러움↑, **인터넷 필요** | `.env` `TTS_ENGINE=edge` |
+| T13 | 거리측정 버튼(Android) | LiDAR 미지원 → 안내/버튼 숨김 | `isDepthProbeSupported` |
+| T14 | STT press-and-hold | 서버 기동·Whisper 프리로드 후 전사 가능. 탐지와 동시 시 네이티브 크래시 로그(3221225477) 간헐 관찰 | 후속 안정화 과제 |
+| T15 | 단위 테스트 | `test_stt_to_llm_bridge_template` / `test_stt_convenience_features` 통과 (탐지OFF→질문, 목적지대기 탈출, 한글숫자 저장 포함) | CI 로컬 확인 |
+
+#### 테스트 시 유의점 (다음 시연용)
+
+1. 앱 **연결: WiFi**, 디버그에 `WiFi(192.168.137.1)` 확인
+2. 폰 브라우저 `http://192.168.137.1:8000/docs` 열리면 네트워크 OK
+3. 질문만 할 때는 **탐지 중지** 후 화면 누르고 말하기 (이제 자유 질문으로 감)
+4. 길안내는 `길댕아` → `길찾아줘` → 목적지 순서
+5. Edge TTS는 PC/서버에 인터넷이 있어야 함. 오프라인이면 `TTS_ENGINE=supertonic`
+
+#### 미해결 / 후속
+
+- STT+YOLO 동시 부하 시 Windows Whisper 네이티브 크래시 간헐
+- YOLO seg 가중치 부재 → MockSegmentor
+- Edge TTS 네트워크 의존(오프라인 시연 시 Supertonic 폴백 안내 필요)
+- 반사 클립 WAV 자체는 여전히 사전합성(기계음 가능) — 긴급 구간에서는 재생 안 함
+
+- **관련 파일**: 본 세션 변경 전부 + `docs/changelogs/th.md`
+- **검증 결과**: 위 표 T1~T15. 서버 `/docs` 200, Edge 합성 스모크(WAV RIFF) 확인,
+  pytest 브리지/편의기능 통과

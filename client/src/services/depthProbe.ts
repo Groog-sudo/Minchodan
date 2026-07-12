@@ -38,10 +38,23 @@ function getModule(): DepthProbeBridgeModule | null {
   return (NativeModules.DepthProbeBridge as DepthProbeBridgeModule) ?? null;
 }
 
+/** Android·비 LiDAR iPhone에서는 false. UI에서 거리측정 버튼을 숨길 때 사용. */
+export function isDepthProbeSupported(): boolean {
+  return getModule() != null;
+}
+
 /** 프로브 세션 시작. LiDAR 미탑재/카메라 점유 등 실패 시 에러 메시지 반환. */
 export async function startDepthProbe(): Promise<{ ok: boolean; error?: string }> {
   const mod = getModule();
-  if (!mod) return { ok: false, error: "미지원 플랫폼 또는 구버전 네이티브 빌드" };
+  if (!mod) {
+    if (Platform.OS === "android") {
+      return {
+        ok: false,
+        error: "거리측정(LiDAR)은 iPhone Pro 전용입니다. Android에서는 사용할 수 없습니다.",
+      };
+    }
+    return { ok: false, error: "미지원 플랫폼 또는 구버전 네이티브 빌드(iOS LiDAR 필요)" };
+  }
   try {
     const result = await mod.startProbe();
     return { ok: result.running };
