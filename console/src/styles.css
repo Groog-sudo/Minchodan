@@ -324,10 +324,16 @@ td {
 /* 이벤트 프레임 이미지 (오탐 검증용 상황 이미지) */
 .frame-thumb {
   border-radius: 6px;
+  cursor: zoom-in;
   display: block;
   height: 48px;
   object-fit: cover;
+  transition: transform 0.12s ease;
   width: 64px;
+}
+
+.frame-thumb:hover {
+  transform: scale(1.08);
 }
 
 .row-selected td {
@@ -384,6 +390,78 @@ td {
   position: absolute;
   top: -18px;
   white-space: nowrap;
+}
+
+.frame-overlay-wrap[role="button"] {
+  cursor: zoom-in;
+}
+
+/* 이미지 확대 보기(라이트박스) 모달 */
+.lightbox-backdrop {
+  align-items: center;
+  background: rgba(6, 9, 16, 0.86);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 100;
+}
+
+.lightbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 92vh;
+  max-width: min(960px, 92vw);
+  width: 100%;
+}
+
+.lightbox-header {
+  align-items: flex-start;
+  color: #edf2fb;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.lightbox-header strong {
+  display: block;
+  font-size: 14px;
+}
+
+.lightbox-tts {
+  color: #9da7ba;
+  display: block;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.lightbox-close {
+  background: rgba(148, 163, 184, 0.16);
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  color: #edf2fb;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.lightbox-close:hover {
+  background: rgba(148, 163, 184, 0.28);
+}
+
+.frame-overlay-lightbox {
+  cursor: default;
+  max-height: 82vh;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.frame-overlay-lightbox .frame-overlay-image {
+  width: 100%;
 }
 
 @media (max-width: 1180px) {

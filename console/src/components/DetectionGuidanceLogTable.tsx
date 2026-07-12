@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DetectionGuidanceLogRow } from "../types/monitor";
 import { eventFrameUrl } from "../api/useDetectionLogs";
 
@@ -9,6 +9,7 @@ import { eventFrameUrl } from "../api/useDetectionLogs";
 //   오탐 여부 판별과 안내 발화 당시 상황 확인에 사용합니다.
 // - bbox는 이미지에 굽지 않고 detected_objects_json 좌표로 오버레이 렌더링합니다.
 //   원본 이미지를 보존해야 임계값/모델을 바꿔 재검증할 수 있기 때문입니다.
+// - 썸네일/상세 이미지를 클릭하면 라이트박스(확대 보기)가 열립니다.
 
 interface LoggedDetection {
   class_name?: string;
@@ -34,9 +35,13 @@ function parseDetections(json: string): LoggedDetection[] {
 function FrameWithOverlay({
   src,
   detections,
+  className,
+  onClick,
 }: {
   src: string;
   detections: LoggedDetection[];
+  className?: string;
+  onClick?: () => void;
 }) {
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const boxes = detections.filter(
@@ -44,7 +49,19 @@ function FrameWithOverlay({
   );
 
   return (
-    <div className="frame-overlay-wrap">
+    <div
+      className={`frame-overlay-wrap${className ? ` ${className}` : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") onClick();
+            }
+          : undefined
+      }
+    >
       <img
         src={src}
         alt="이벤트 프레임"
@@ -81,6 +98,57 @@ function FrameWithOverlay({
   );
 }
 
+/** 이미지 확대 보기 모달. 배경 클릭/닫기 버튼/Esc로 닫습니다. */
+function FrameLightbox({
+  row,
+  token,
+  onClose,
+}: {
+  row: DetectionGuidanceLogRow;
+  token: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="lightbox-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="이벤트 프레임 확대 보기"
+      onClick={onClose}
+    >
+      <div className="lightbox-content" onClick={(event) => event.stopPropagation()}>
+        <div className="lightbox-header">
+          <div>
+            <strong>{row.event_id}</strong>
+            <span className="lightbox-tts">{row.tts_text}</span>
+          </div>
+          <button
+            type="button"
+            className="lightbox-close"
+            onClick={onClose}
+            aria-label="닫기"
+          >
+            닫기 (Esc)
+          </button>
+        </div>
+        <FrameWithOverlay
+          src={eventFrameUrl(row.event_id!, token)}
+          detections={parseDetections(row.detected_objects_json)}
+          className="frame-overlay-lightbox"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function DetectionGuidanceLogTable({
   rows,
   token,
@@ -89,7 +157,9 @@ export function DetectionGuidanceLogTable({
   token?: string | null;
 }) {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
+  const [lightboxLogId, setLightboxLogId] = useState<number | null>(null);
   const selected = rows.find((row) => row.log_id === selectedLogId) ?? null;
+  const lightboxRow = rows.find((row) => row.log_id === lightboxLogId) ?? null;
   const canShowFrame = (row: DetectionGuidanceLogRow) =>
     Boolean(token && row.event_id && row.frame_path);
 
@@ -129,9 +199,13 @@ export function DetectionGuidanceLogTable({
                     {canShowFrame(row) ? (
                       <img
                         src={eventFrameUrl(row.event_id!, token!)}
-                        alt="이벤트 썸네일"
+                        alt="이벤트 썸네일 (클릭하면 확대)"
                         className="frame-thumb"
                         loading="lazy"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setLightboxLogId(row.log_id);
+                        }}
                       />
                     ) : (
                       "-"
@@ -159,8 +233,17 @@ export function DetectionGuidanceLogTable({
           <FrameWithOverlay
             src={eventFrameUrl(selected.event_id!, token!)}
             detections={parseDetections(selected.detected_objects_json)}
+            onClick={() => setLightboxLogId(selected.log_id)}
           />
         </div>
+      )}
+
+      {lightboxRow && canShowFrame(lightboxRow) && token && (
+        <FrameLightbox
+          row={lightboxRow}
+          token={token}
+          onClose={() => setLightboxLogId(null)}
+        />
       )}
     </section>
   );
