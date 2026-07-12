@@ -346,3 +346,33 @@
   - LangGraph 오케스트레이션 테스트 입력에 남아 있던 구 장애물 라벨을 `scooter`로 정리하고, 사용자 문구는 전동킥보드 기준으로 유지했습니다.
 - **관련 파일**: `server/rag/retriever.py`, `server/rag/fallback.py`, `server/rag/embedding_engine_factory.py`, `server/rag/build/db_builder.py`, `tests/test_retriever.py`, `tests/test_fallback.py`, `tests/test_e2e_pipeline.py`, `tests/test_langgraph.py`, `data/safety_guidelines.json`, `docs/changelogs/th.md`
 - **검증 결과**: `.\venv\Scripts\python.exe -c "import server.rag.retriever"`, `.\venv\Scripts\python.exe -m py_compile server/rag/retriever.py`, `.\venv\Scripts\python.exe -m server.rag.retriever`, `.\venv\Scripts\python.exe -m pytest tests/test_retriever.py tests/test_fallback.py tests/test_e2e_pipeline.py -v`, `.\venv\Scripts\python.exe -m pytest tests/test_langgraph.py -v` 통과
+---
+
+### 2026-07-10 | 운영자 콘솔 | DetectionFeed 및 로그 테이블 UI 정리
+
+- **커밋**: `feat(console): refine monitoring tables and detection feed`
+- **변경 내용**:
+  - `console/src/components/DetectionFeed.tsx`에서 `event_id` 제목 노출, `stream` 중복 출력, `confidence`/`inference_ms` 조건식 오류, placeholder 중복 노출 문제를 정리했습니다.
+  - `console/src/types/monitor.ts`에 `DetectionGuidanceLogRow` 타입을 추가하고 `detection_guidance_logs` 테이블/응답 컬럼 구조와 맞추도록 최소 타입을 고정했습니다.
+  - `console/src/components/DetectionGuidanceLogTable.tsx`를 신규 추가해 실시간 feed와 분리된 history/log table 골격을 구성했습니다.
+  - `console/src/components/RiskEventLog.tsx`를 placeholder에서 실제 위험 로그 table 렌더 구조로 전환했습니다.
+  - `console/src/App.tsx`에 mock `DetectionGuidanceLogRow[]`를 연결하고, DetectionFeed와 DB 로그 영역이 서로 다른 역할임을 설명하는 발표/면접 대응 주석을 보강했습니다.
+- **관련 파일**: `console/src/App.tsx`, `console/src/types/monitor.ts`, `console/src/components/DetectionFeed.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/RiskEventLog.tsx`
+- **검증 결과**:
+  - `cd console && npm run build` 통과
+
+---
+
+### 2026-07-10 | 운영자 콘솔/로컬 실행 | 로그인 응답 처리 및 CORS/Redis 정리
+
+- **커밋**: `fix(console): handle login response and local CORS`
+- **변경 내용**:
+  - `console/src/components/Login.tsx`에 `trim()` 적용, `detail` 우선 에러 표시, `access_token` 존재 검사, 하드코딩 구간 주석을 추가해 로그인 실패 원인을 프론트에서 더 분명히 확인할 수 있게 했습니다.
+  - `server/api/config.py`의 `CORS_ORIGINS` 기본값에 `http://localhost:5174`를 추가해 Vite 개발 서버에서 관리자 로그인 요청이 CORS로 차단되던 문제를 정리했습니다.
+  - `console/src/App.tsx`에서 `OperatorLiveMap`을 임시 비활성화해 `localhost:8001` 지도 서버 미실행 상태에서 iframe `load fail`이 대시보드 진입을 방해하지 않도록 처리했습니다.
+  - macOS 로컬 환경에 `redis`를 설치하고 `brew services start redis`로 `6379` 리스닝 상태를 확인했습니다.
+- **관련 파일**: `console/src/components/Login.tsx`, `console/src/App.tsx`, `server/api/config.py`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `POST /api/v1/admin/login` 200 OK 응답 확인
+  - `brew install redis` 완료
+  - `brew services start redis` 후 `lsof -i :6379` 리스닝 확인
