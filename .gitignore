@@ -301,3 +301,7 @@ scripts/launch_agents.sh
 #   - Personal paths, device IDs, tokens, and local-only settings
 # ==========================================
 **/Copy_*
+
+# IDE scan and diagnostic scratch files
+project_scan_summary.json
+scratch/

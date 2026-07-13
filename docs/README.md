@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-11
-> **버전**: v0.13.10 (2026-07-13 Android WiFi/USB 이중 접속 가이드 `ops/android_wifi_usb_transport.md` 등재 + 이전 v0.13.9 이력 유지: 2026-07-11 반사 위험도 SSOT 계약 초안(design/risk_ssot_contract.md) 등재 + 이전 v0.13.8 이력 유지: dev 병합 정리)
+> **버전**: v0.13.11 (2026-07-13 신규 MCP 5종 백엔드 실연동 및 관제 대시보드 마운트 명세 정합)
 
 ## 문서 목록
 

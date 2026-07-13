@@ -1,5 +1,5 @@
 # Minchodan Docker Compose
-# Redis + Ollama + FastAPI 3컨테이너 구성
+# Redis + MariaDB + FastAPI 3컨테이너 구성
 # 상세 명세: docs/deployment_guide.md 7절
 
 services:

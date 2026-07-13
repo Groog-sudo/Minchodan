@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.2 (2026-07-11 §2 스택 정합화: LangChain 래퍼 미사용·Web Audio API 아님 표기를 실제 구현 기준으로 정정, STT(faster-whisper-small)·Navigation(TMAP)·온디바이스 추론·react-native-webview 지도 패널·STT 녹음 구간 AEC 등재 + 이전 v0.3.1 이력 유지: 2026-07-09 Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동 기준 반영)
+> **버전**: v0.3.3 (2026-07-13 §2 스택 명세화 및 VLM 스킬 표 정합: Llava→Gemini VLM 캡셔닝, edge-tts 추가, react-native-tts → expo-speech 갱신, RAG/LLM 계층 분리 기술 명세화)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 > **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
@@ -37,9 +37,9 @@
 - Segmentation: Ultralytics Yolo 26N - Segmentation
 - Tracking: ByteTrack
 - Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
-- LLM Orchestration: LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용)
+- LLM Orchestration: LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용. 단, RAG 검색 계층(server/rag/)은 ChromaDB 래퍼(langchain_community.vectorstores) 사용)
 - Local LLM/Embedding: Ollama (gemma4-e4b, nomic-embed-text), Gemini API (gemini-2.5-flash-lite, 4단계 VLM 캡셔닝)
-- TTS: Supertonic (기본, ONNX 로컬), Piper / pyttsx3 (핫스왑 폴백)
+- TTS: Supertonic (기본, ONNX 로컬), edge-tts (한국어 자연도 우선), Piper / pyttsx3 (핫스왑 폴백)
 - STT (부가, 음성 명령): faster-whisper (기본 small, hotwords 바이어싱, 서버 기동 시 프리로드)
 - Navigation (부가, GPS 길안내): TMAP 보행자 경로 API + NavigationManager
 - Message Bus: Redis (Streams + 컨텍스트 TTL)
@@ -50,7 +50,7 @@
 - Framework: React Native (iOS/Android)
 - Camera: react-native-vision-camera (Frame Processor 기반 연속 캡처)
 - On-device Inference: CoreML(iOS) / TFLite(Android) - 반사 경로 온디바이스 탐지
-- Audio: expo-audio (단말 재생 계층, Web Audio API 아님), react-native-tts (예비). STT 녹음 구간은 AVAudioSession voiceChat(AEC) 전환(`AudioSessionBridge`)
+- Audio: expo-audio (단말 재생 계층, Web Audio API 아님), expo-speech (실제 사용, react-native-tts 미사용). STT 녹음 구간은 AVAudioSession voiceChat(AEC) 전환(`AudioSessionBridge`)
 - Map Panel (운영자/데모): react-native-webview + TMap JS API (`NavMapPanel.tsx`)
 - Accessibility: Haptics, announceForAccessibility
 
@@ -159,7 +159,7 @@
 | `websocket-gateway`         | 1    | `.agents/skills/websocket-gateway/`         | FastAPI WebSocket 실시간 통신, Redis Streams                                    |
 | `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송                                |
 | `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트 |
-| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Llava 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드                             |
+| `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Gemini 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드                             |
 | `rag-realtime-search`       | 5    | `.agents/skills/rag-realtime-search/`       | similarity_search(k=5) < 50ms, VectorDBFactory                                  |
 | `llm-guidance-orchestrator` | 6    | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑                                     |
 | `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점                                  |

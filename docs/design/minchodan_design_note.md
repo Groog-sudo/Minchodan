@@ -3,8 +3,8 @@
 > **이 문서는?** 5인 MVP 팀의 7단계 파이프라인 표준 양식이다. 네 개의 초안을 통합했다 — **문서2(구현 상세)를 본문 백본**으로, **문서1**의 인터페이스·예외 계약, **문서3**의 선택 근거·분업·MVP 스코프, **문서4**의 완료 기준을 각 단계에 이식했다.
 > **전제:** 비전 설계서 **v1.1**(이중 경로 / Yolo 26N - Object Detection·Yolo 26N - Segmentation / cu128 / 클래스 분리)을 오버레이로 반영한다. 충돌 시 v1.1이 우선한다.
 > **작성일**: 2026-06-23
-> **수정일**: 2026-07-07 (2단계 프레임 전송을 base64 미경유 바이너리 방식으로 갱신)
-> **버전**: v0.2.1
+> **수정일**: 2026-07-13 (4단계 RAG 빌더 기술 스택을 Llava에서 Gemini API로 정합화)
+> **버전**: v0.2.2
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
@@ -120,8 +120,8 @@
 - **주제 / 키워드:** 로컬 VLM 캡셔닝 + 임베딩 + Vector DB / 오프라인 배치
 - **목표·목적:** 장애물별 "왜 위험하고 어떻게 회피하는지" 행동 수칙을 벡터 DB로 구축. 비용 없이 로컬 RAG 제공.
 - **선택 이유:** 키워드 매칭은 문맥 이해 불가 의미 기반 벡터 검색 필요. 로컬 VLM/임베딩으로 API 비용 0.
-- **핵심 절차(오프라인):** 영상/사진 100+ 수집 1fps 프레임 추출 pHash 중복 제거 로컬 VLM(Llava) 한글 캡셔닝 로컬 임베딩(nomic-embed-text, 768d) `Document` + 메타데이터 `Chroma.from_documents(persist_directory)` hit-rate 평가.
-- **활용 스택·핵심 함수:** Ollama(Llava), OllamaEmbeddings, ChromaDB / `embed_query()`, `Chroma.from_documents()`, `imagehash.phash()` — _상용 전환 대비 `Embeddings` 추상 클래스로 랩핑_
+- **핵심 절차(오프라인):** 영상/사진 100+ 수집 1fps 프레임 추출 pHash 중복 제거 VLM(Gemini API: gemini-2.5-flash-lite) 한글 캡셔닝 로컬 임베딩(nomic-embed-text, 768d) `Document` + 메타데이터 `Chroma.from_documents(persist_directory)` hit-rate 평가.
+- **활용 스택·핵심 함수:** Gemini API (gemini-2.5-flash-lite), Ollama(nomic-embed-text), ChromaDB / `embed_query()`, `Chroma.from_documents()`, `imagehash.phash()` — _상용 전환 대비 `Embeddings` 추상 클래스로 랩핑_
 - **데이터 인터페이스:** In `List[Document]`(page_content=수칙, metadata={scene_type, risk_level, objects, guidance_template}) Out 로컬 persist 디렉토리(정적 벡터 DB)
 - **의존성·예외:** 단독 선행 작업. 산출 DB는 5단계가 경로 연동. **필수 가드:** 임베딩 API 네트워크/인증 오류; 디스크 쓰기 권한·경로(`PermissionError`) 사전 체크.
 - **분업:** 2명 주도 — 문서 수집·전처리 1명, LangChain·DB 구축 1명.
