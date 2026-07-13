@@ -43,6 +43,8 @@ if sys.stdout.encoding != "utf-8":
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+MIN_STT_AUDIO_BYTES = 4096
+
 
 async def _finish_detection(
     ws: WebSocket,
@@ -205,6 +207,27 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         audio_bytes = base64.b64decode(audio_b64)
     except (ValueError, TypeError) as e:
         logger.error(f"[WS] stt_audio base64 디코딩 실패: device_id={device_id}, {e}")
+        return
+
+    if len(audio_bytes) < MIN_STT_AUDIO_BYTES:
+        logger.warning(
+            f"[WS] stt_audio 길이 부족 - 전사 생략: device_id={device_id}, "
+            f"bytes={len(audio_bytes)}, min={MIN_STT_AUDIO_BYTES}"
+        )
+        with contextlib.suppress(Exception):
+            await ws.send_json(
+                {
+                    "type": "guide",
+                    "event_id": f"stt-short-{device_id}-{now_ts()}",
+                    "risk_level": "low",
+                    "guidance_text": "음성이 너무 짧습니다. 버튼을 누른 채로 다시 말씀해 주세요.",
+                    "audio_codec": "wav",
+                    "duration_ms": 0,
+                    "transport": "none",
+                    "source": "stt-audio-too-short",
+                    "ts": now_ts(),
+                }
+            )
         return
 
     saved_path: Path | None = None
@@ -665,7 +688,12 @@ async def ws_detect(
                 b64_len = len(b64_val) if b64_val else 0
                 if b64_val:
                     with contextlib.suppress(Exception):
-                        raw_bytes = base64.b64decode(b64_val)
+                        b64_for_decode = b64_val
+                        if isinstance(b64_for_decode, str) and b64_for_decode.startswith("data:"):
+                            parts = b64_for_decode.split(",", 1)
+                            if len(parts) == 2:
+                                b64_for_decode = parts[1]
+                        raw_bytes = base64.b64decode(b64_for_decode)
                         await manager.broadcast_to_consoles(raw_bytes)
                 await _finish_detection(
                     ws, splitter, processed, event_id, frame_id, decode_ms, b64_len

@@ -16,7 +16,14 @@ import { Camera } from "react-native-vision-camera";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
 import { NavMapPanel, type NavMapWaypoint } from "./NavMapPanel";
-import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS, type ServerTransport } from "../config";
+import {
+  DEFAULT_SERVER_TRANSPORT,
+  DEVICE_ID,
+  TOKEN,
+  REFLEX_FPS,
+  COGNITIVE_FPS,
+  type ServerTransport,
+} from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
 import { useLocation, type GpsCoords } from "../hooks/useLocation";
@@ -119,11 +126,18 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
 
 export function CameraView() {
   // 평상시 WiFi / 개발 USB — 둘 다 설정에 두고 토글로 전환 (재시작 후에도 유지).
-  const [serverTransport, setServerTransport] = useState<ServerTransport>("wifi");
+  const [serverTransport, setServerTransport] = useState<ServerTransport>(DEFAULT_SERVER_TRANSPORT);
   const [transportReady, setTransportReady] = useState(false);
   useEffect(() => {
     void loadServerTransport().then((t) => {
-      setServerTransport(t);
+      // Expo 환경값의 기본 수송 경로를 시작 정책으로 삼는다.
+      // 유선 테스트는 usb(127.0.0.1 + adb reverse), 핫스팟/LAN 테스트는 wifi.
+      const initialTransport: ServerTransport = DEFAULT_SERVER_TRANSPORT || t;
+      if (t !== initialTransport) {
+        void saveServerTransport(initialTransport);
+        console.log(`[ServerTransport] 시작 기본값 적용: ${transportLabel(initialTransport)}`);
+      }
+      setServerTransport(initialTransport);
       setTransportReady(true);
     });
   }, []);
@@ -131,7 +145,7 @@ export function CameraView() {
   const { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive } = useWebSocket(
     DEVICE_ID,
     TOKEN,
-    transportReady ? wsBaseUrl : wsUrlFor("wifi"),
+    transportReady ? wsBaseUrl : wsUrlFor(DEFAULT_SERVER_TRANSPORT),
   );
   // [TH HARDCODE] 발표용 편의기능: 수신 문자 메시지 읽어주기(Android 전용).
   // 서버 왕복이 필요 없는 순수 로컬 기능이라 WS 파이프라인과 독립적으로 마운트한다.
@@ -154,40 +168,9 @@ export function CameraView() {
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
-
-  // GPS 전송: 탐지 세션이 켜져 있을 때만 켠다(상시 watch는 배터리·부하).
-  // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
-  // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
-  // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
-  useEffect(() => {
-    if (isMockMode || !detectionEnabled) return;
-    let cancelled = false;
-
-    (async () => {
-      const granted = await requestLocationPermission();
-      if (cancelled || !granted) return;
-      await startWatching((coords: GpsCoords) => {
-        send({
-          type: "realtime_gps",
-          lat: coords.lat,
-          lon: coords.lon,
-          heading: coords.heading,
-        });
-        // 지도 마커 갱신은 2초 스로틀(WebView 주입 빈도 제한, 성능 합의 사항).
-        const nowTs = Date.now();
-        if (nowTs - lastMapPosTsRef.current >= 2000) {
-          lastMapPosTsRef.current = nowTs;
-          setMapPos({ lat: coords.lat, lon: coords.lon });
-        }
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-      stopWatching();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode, detectionEnabled]);
+  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
+  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
+  const [detectionEnabled, setDetectionEnabled] = useState(false);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
@@ -202,6 +185,12 @@ export function CameraView() {
     requestPermissionEarly: requestSttPermissionEarly,
   } = useSttRecorder(
     (audioB64) => {
+      if (status !== "connected") {
+        void hapticEngine.trigger("double");
+        setSttErrorInfo(`STT 실패[ws_disconnected]: websocket 상태=${status}`);
+        audioEngine.speakFallback("서버 연결이 불안정해 음성 명령을 전송할 수 없습니다.");
+        return;
+      }
       void hapticEngine.trigger("short");
       setSttErrorInfo("");
       send({ type: "stt_audio", audio_b64: audioB64 });
@@ -236,9 +225,6 @@ export function CameraView() {
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
   const [confThreshold, setConfThreshold] = useState(0.40);
-  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
-  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
-  const [detectionEnabled, setDetectionEnabled] = useState(false);
 
   // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
   // WS 재연결 후에도 현재 토글 값을 다시 보낸다.
@@ -254,6 +240,40 @@ export function CameraView() {
   const [mapVisible, setMapVisible] = useState(false);
   const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
   const lastMapPosTsRef = useRef(0);
+
+  // GPS 전송: 탐지 세션이 켜져 있을 때만 켠다(상시 watch는 배터리·부하).
+  // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
+  // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
+  // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
+  useEffect(() => {
+    if (isMockMode || !detectionEnabled) return;
+    let cancelled = false;
+
+    (async () => {
+      const granted = await requestLocationPermission();
+      if (cancelled || !granted) return;
+      await startWatching((coords: GpsCoords) => {
+        send({
+          type: "realtime_gps",
+          lat: coords.lat,
+          lon: coords.lon,
+          heading: coords.heading,
+        });
+        // 지도 마커 갱신은 2초 스로틀(WebView 주입 빈도 제한, 성능 합의 사항).
+        const nowTs = Date.now();
+        if (nowTs - lastMapPosTsRef.current >= 2000) {
+          lastMapPosTsRef.current = nowTs;
+          setMapPos({ lat: coords.lat, lon: coords.lon });
+        }
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      stopWatching();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMockMode, detectionEnabled]);
 
   useEffect(() => {
     if (!navRoute) {
@@ -1130,7 +1150,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(59,130,246,0.85)",
   },
   detectionIdleBanner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.55)",

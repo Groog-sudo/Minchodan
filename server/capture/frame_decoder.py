@@ -146,6 +146,12 @@ async def decode_frame(payload: dict) -> ProcessedFrame | None:
         logger.warning(f"[FrameDecoder] base64 데이터 없음: event_id={event_id}")
         return None
 
+    # data URI 형식("data:image/jpeg;base64,...")도 허용한다.
+    if isinstance(b64_str, str) and b64_str.startswith("data:"):
+        parts = b64_str.split(",", 1)
+        if len(parts) == 2:
+            b64_str = parts[1]
+
     try:
         jpeg_bytes = base64.b64decode(b64_str)
     except Exception as e:

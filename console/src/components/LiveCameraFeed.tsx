@@ -9,6 +9,31 @@ interface LiveCameraFeedProps {
 
 const NAV_MAP_URL =
   import.meta.env.VITE_NAV_MAP_URL || "http://localhost:8000/navigation/?embed=true";
+const LIVE_FEED_ROTATE_DEG = 90;
+
+function getDisplayBBox(
+  bbox: { x: number; y: number; w: number; h: number },
+  natural: { w: number; h: number },
+): { leftPct: number; topPct: number; widthPct: number; heightPct: number } {
+  const { x, y, w, h } = bbox;
+  const srcW = natural.w;
+  const srcH = natural.h;
+
+  // 왼쪽으로 90도 꺾여 들어오는 프레임을 모바일 시점(CW 90도)으로 보정.
+  const rotatedX = srcH - (y + h);
+  const rotatedY = x;
+  const rotatedW = h;
+  const rotatedH = w;
+  const dstW = srcH;
+  const dstH = srcW;
+
+  return {
+    leftPct: (rotatedX / dstW) * 100,
+    topPct: (rotatedY / dstH) * 100,
+    widthPct: (rotatedW / dstW) * 100,
+    heightPct: (rotatedH / dstH) * 100,
+  };
+}
 
 function getColorForClass(className: string): string {
   const c = className.toLowerCase();
@@ -53,7 +78,8 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected }: LiveCa
             <img
               src={imageUrl}
               alt="실기기 실시간 화면"
-              className="feed-image frame-overlay-image"
+              className="feed-image frame-overlay-image live-feed-rotated"
+              style={{ transform: `rotate(${LIVE_FEED_ROTATE_DEG}deg)` }}
               onLoad={(event) => {
                 const img = event.currentTarget;
                 setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
@@ -63,16 +89,17 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected }: LiveCa
               latestDetections.map((det: any, index: number) => {
                 if (!det.bbox) return null;
                 const { x, y, w, h } = det.bbox;
+                const displayBBox = getDisplayBBox({ x, y, w, h }, naturalSize);
                 const color = getColorForClass(det.className);
                 return (
                   <div
                     key={index}
                     className="frame-overlay-box"
                     style={{
-                      left: `${(x / naturalSize.w) * 100}%`,
-                      top: `${(y / naturalSize.h) * 100}%`,
-                      width: `${(w / naturalSize.w) * 100}%`,
-                      height: `${(h / naturalSize.h) * 100}%`,
+                      left: `${displayBBox.leftPct}%`,
+                      top: `${displayBBox.topPct}%`,
+                      width: `${displayBBox.widthPct}%`,
+                      height: `${displayBBox.heightPct}%`,
                       borderColor: color,
                       boxShadow: `0 0 6px ${color}`,
                     }}

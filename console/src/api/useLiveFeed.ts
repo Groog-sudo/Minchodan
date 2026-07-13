@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import type { DetectionGuidanceLogRow, LiveLatencyEvent } from "../types/monitor";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  `${window.location.protocol}//${window.location.hostname}:8000`;
 const WS_LIVE_FEED_URL = API_BASE_URL.replace(/^http/, "ws") + "/ws/console/live-feed";
 const MAX_LIVE_LATENCY_EVENTS = 30;
 const MAX_LIVE_LOG_ROWS = 50;
@@ -16,6 +18,7 @@ export function useLiveFeed() {
   const wsRef = useRef<WebSocket | null>(null);
   const prevUrlRef = useRef<string | null>(null);
   const clearTimerRef = useRef<any | null>(null);
+  const reconnectTimerRef = useRef<any | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -29,10 +32,16 @@ export function useLiveFeed() {
       ws.binaryType = "blob";
 
       ws.onopen = () => {
-        if (active) setConnected(true);
+        if (wsRef.current !== ws) return;
+        if (!active) {
+          ws.close();
+          return;
+        }
+        setConnected(true);
       };
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws) return;
         if (!active) return;
 
         if (event.data instanceof Blob) {
@@ -77,18 +86,23 @@ export function useLiveFeed() {
       };
 
       ws.onclose = () => {
+        if (wsRef.current !== ws) return;
         if (active) {
+          wsRef.current = null;
           setConnected(false);
           setLatestDetections([]);
           // latencyEvents는 재연결 후에도 최근 이력으로 유지한다 (bbox 오버레이와 달리
           // "현재 프레임" 개념이 없어 끊겼다고 비울 이유가 없다).
           // Reconnect in 3 seconds
-          setTimeout(connect, 3000);
+          reconnectTimerRef.current = setTimeout(connect, 3000);
         }
       };
 
       ws.onerror = () => {
-        ws.close();
+        if (wsRef.current !== ws) return;
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
       };
     }
 
@@ -96,8 +110,14 @@ export function useLiveFeed() {
 
     return () => {
       active = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+      }
       if (wsRef.current) {
-        wsRef.current.close();
+        const state = wsRef.current.readyState;
+        if (state === WebSocket.OPEN) {
+          wsRef.current.close();
+        }
       }
       if (prevUrlRef.current) {
         URL.revokeObjectURL(prevUrlRef.current);
