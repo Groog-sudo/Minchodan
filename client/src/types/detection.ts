@@ -25,6 +25,7 @@ export type MessageType =
   | "guide"
   | "error"
   | "server_detection"
+  | "network_probe_ack"
   | "nav_route"
   | "dial_action"
   | "contact_save";
@@ -41,6 +42,10 @@ export interface ServerDetectionResult {
   className: string;
   confidence: number;
   bbox: BBox;
+  distanceMeters?: number | null;
+  distanceSource?: "lidar" | "heuristic" | "none";
+  depthSampleCount?: number;
+  depthAccuracy?: "absolute" | "relative";
 }
 
 export interface WSMessage {
@@ -68,6 +73,14 @@ export interface WSMessage {
   /** guide 오디오 전송 방식. "binary"면 이 메시지 직후 WS 바이너리 프레임으로 WAV 원본이 이어진다(2026-07-09 도입). */
   transport?: "binary" | "none";
   duration_ms?: number;
+  /** network_probe_ack 메시지: 앱/스크립트에서 보낸 probe 식별자 */
+  probe_id?: string;
+  /** network_probe_ack 메시지: probe 페이로드 크기 */
+  payload_bytes?: number;
+  /** network_probe_ack 메시지: 서버 수신 시각(epoch ms) */
+  server_received_ts?: number;
+  /** network_probe_ack 메시지: 서버 송신 시각(epoch ms) */
+  server_sent_ts?: number;
   detections?: ServerDetectionResult[];
   /** nav_route 메시지: 하단 지도 패널의 경로 폴리라인용 좌표 목록 (빈 배열 = 경로 해제) */
   waypoints?: { lat: number; lon: number }[];

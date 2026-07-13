@@ -3,6 +3,10 @@ export interface DetectionResult {
   className: string;
   confidence: number;
   bbox: { x: number; y: number; w: number; h: number };
+  distanceMeters?: number | null;
+  distanceSource?: "lidar" | "heuristic" | "none";
+  depthSampleCount?: number;
+  depthAccuracy?: "absolute" | "relative";
 }
 
 export type InferenceFrame = Float32Array;
