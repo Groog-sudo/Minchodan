@@ -78,6 +78,22 @@ services:
     networks:
       - minchodan-net
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: minchodan-ngrok
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    # FastAPI WebSocket 서버를 외부 HTTPS 터널로 노출
+    # 터널 URL은 http://localhost:4040 대시보드 또는 컨테이너 로그에서 확인
+    command: http fastapi:8000 --log=stdout
+    ports:
+      - "4041:4040"
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+
 volumes:
   redis_data:
   mariadb_data:

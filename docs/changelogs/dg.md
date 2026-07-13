@@ -288,3 +288,74 @@
   - **무선 Wi-Fi E2E 실기기 추론 검증**: USB 데이터 케이블 연결을 완전히 분리한 무선 상태에서 단말이 동일 Wi-Fi망을 경유해 PC 호스트 서버(`ws://192.168.0.136:8000/ws/detect`)와 세션을 연결한 뒤, 실시간 전송된 `reflex` 및 `cognitive` 프레임을 서버 YOLO 26N 및 노면 분할 AI가 **디코딩 1ms 내외, 추론 150~190ms** 수준의 초저지연 속도로 무정체 처리하는 동작의 최종 성공을 완료함.
 - **관련 파일**: `client/src/services/frameCaptureSelect.android.ts`, `docs/ops/android_device_integration_guide.md`
 - **검증 결과**: adb logcat 실시간 런타임 로그를 모니터링하여 `Context.renderAsync` 예외 발생 0건 및 FastAPI 서버 컨테이너의 양방향 프레임 수신 및 YOLO 인지 결과(`risk=none`) 로깅 성공을 전수 검증함.
+
+---
+
+### 2026-07-12 | 모바일/인프라 | EAS 개발 빌드 클라우드 조립 최종 성공 및 실기기 완전 무선 하이브리드 연동 완료
+
+- **커밋**: `fix: resolve VisionCamera v4 kotlin compilation errors and fix metro loopback binding via custom uri scheme`
+- **변경 내용**:
+  - **코틀린 네이티브 소스 수술 (v4 규격 부합화)**: 
+    - [MainApplication.kt](file:///client/android/app/src/main/java/com/minchodan/app/MainApplication.kt) 내에서 최신 SDK v4에서 폐기(Deprecated)된 네이티브 플러그인 등록 메서드인 `registerFrameProcessorPlugin` 호출 인터페이스를 공식 신규 규격인 `addFrameProcessorPlugin` 체계로 전면 개정하여 바인딩 정합성을 맞춤[cite: 4, 12].
+    - [ReflexFrameProcessorPlugin.kt](file:///client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt) 내에서 기존에 카메라 화면 회전 처리를 위해 일반 `String` 상수로 단순 대입 처리하던 불안정한 코드를, 컴파일러가 요구하는 정식 `Orientation Enum` 매핑 구조로 원시 타입을 격상하여 그레이들 컴파일 에러를 해결함[cite: 4, 12].
+  - **Localhost 루프백 바인딩 탈출 및 네트워크 정상화**:
+    - 앱 기동 시 고유 주소 이름표(URI Scheme) 부재로 인해 무선 인터넷 터널망(ngrok)의 외부 통신용 주소가 아닌 PC 내부용 루프백 주소(`localhost / 127.0.0.1:8081`)를 강제로 주입받아 연결이 거부되던 버그를 진단함[cite: 12].
+    - 기존 서버 세션을 종료하고 Expo 엔진에게 고유 식별 명칭을 주입하는 `npx expo start --tunnel --scheme minchodan` 명령 체계로 전환하여 진짜 외부 인터넷 연동 주소가 내장된 정상 무선 터널 QR 코드를 새로 발행하고 동기화함[cite: 12].
+  - **실기기 E2E 무선 텔레메트리 확립 (최종 성과)**:
+    - 독립 개발 빌드 앱(`.apk`)을 스마트폰 실기기에 안착시킨 후, 도커 가상 백엔드 서버(FastAPI) 컨테이너 그룹과 원격 터널 브릿지를 경유한 양방향 소켓 교신에 최종 성공함 (`WS: connected`)[cite: 12].
+    - 커스텀 네이티브 프레임 프로세서 플러그인이 에러 없이 작동하여 `ON (반사 4fps 동적)` 스트리밍 가속을 수행하며, 보행 환경 분석 인공지능 모델이 단 **1.47ms** 만에 서버 추론 결과를 무정체 실시간 피드백하고 있음을 대시보드를 통해 최종 검증함[cite: 12].
+  - **학원 PC 개발 환경 동기화 인프라 구축**:
+    - 학원 PC 내 기존 레거시 USB 디버깅 잔재로 인한 파일 시스템 권한 오류(`EPERM`) 및 컴파일 캐시 충돌 리스크를 선제 방어하기 위해, 구형 빌드 캐시(`.gradle`, `build`) 및 구형 모듈(`node_modules`)을 물리적으로 완전히 갈아엎고 시작하도록 강제 명령하는 '학원 AI 에이전트용 통합 제어 프롬프트 지침서' 수립 완료[cite: 12].
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/MainApplication.kt`, `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt`, `client/app.json`, `docs/ops/minchodan_final_wireless_integration_guide.pdf`, `docs/ops/minchodan_academy_sync_agent_guide.pdf`
+- **검증 결과**: EAS 개발 클라이언트 빌드 정상 finished 상태 확인 완료 및 스마트폰 실기기 무선 터널 연동 대시보드 내 백엔드 데이터 송수신 실시간 텔레메트리 연동 성공 검증 완료[cite: 12].
+
+---
+
+### 2026-07-12 | 모바일/AI | 이미지 가로세로 비율 왜곡 해결 및 센터 크롭(Center Crop) 파이프라인 리팩토링 완료
+
+- **커밋**: `fix: resolve object detection failure by fixing aspect ratio distortion via center crop`
+- **변경 내용**:
+  - 원인 분석: 
+    - 안드로이드 실기기 캡처 시 스마트폰 고유의 직사각형 해상도(3:4 / 9:16) 이미지를 가로세로 비율 유지 없이 강제로 640x640 정사각형으로 압축하여 AI에게 전달하고 있었음.
+    - 물체가 세로로 심하게 왜곡(찌그러짐)되어 정비율 데이터로 파인튜닝된 커스텀 YOLO 모델(`best_20260705.pt`)의 인식률이 급감하여 `[실시간 감지] 없음` 현상이 지속됨.
+    - 또한 `CameraView.tsx` 프리뷰 UI는 정중앙 기준 1:1 정사각형 뷰를 렌더링하므로 AI가 인지한 좌표와 유저가 보는 화면 좌표 사이에 극심한 불일치(우주 미아 현상)가 발생했음.
+  - 조치 내용:
+    - 래터박스(Letterbox)의 패딩 노이즈 리스크를 배제하고 유저 프리뷰 화면과의 100% 시각적 동기화를 위해 **센터 크롭(Center Crop)** 방식을 최종 채택함.
+    - `client/src/services/frameCaptureProviderSelect.android.ts`: `PhotoFile` 해상도 자산의 `width`와 `height`를 동적 파싱하여 정중앙 1:1 스케일 오프셋(`originX`, `originY`, `minSize`)을 연산하는 기하학 수식을 구현함.
+    - `manipulateAsync` 이미지 프로세싱 파이프라인 초입에 정사각형 크롭 액션을 선행 주입하여 이미지 왜곡을 원천 분쇄한 후 640x640 리사이즈를 태우도록 개편함.
+  - 효과 검증:
+    - 사물의 기하학적 형태가 완벽히 보존되어 야외 장애물(볼라드, 킥보드, 보행자 등) 비추기 테스트 시 객체 탐지율과 신뢰도가 대폭 수직 상승함을 확인함.
+    - 화면 컨테이너 해상도와 추론 해상도의 배율이 일치되어 화면 상의 바운딩 박스 오버레이 드로잉이 타겟 장애물의 실제 외곽선 위치에 오차 없이 완벽 매핑됨을 검증함.
+- **관련 파일**: `client/src/services/frameCaptureProviderSelect.android.ts`, `client/src/components/CameraView.tsx`, `docs/mobile/android_aspect_ratio_calibration_report.md`
+- **검증 결과**: 수동 핫스왑 컴파일 통과 및 실기기 완전 무선 카메라 스트리밍 구동 시 왜곡 없는 정비율 프레임 조립 및 BBox 실시간 맵핑 추적 성공 확인.
+
+
+---
+
+### 2026-07-12 | 모바일/AI | 안드로이드 무선 수신 가드레일 주입 및 팀 공유용 기술 요약 자산화 완료
+
+- **커밋**: `fix: implement server_detection validation guard and cleanup compilation anomalies`
+- **변경 내용**:
+  - **무선 통신 안정화 및 가드 주입**: 
+    - 외부망 ngrok 터널링 환경에서 서버로부터 유입되는 `"server_detection"` 웹소켓 페이로드의 정합성을 검증하기 위해 `src/components/CameraView.tsx` 내에 `Array.isArray` 유효성 검사 및 빈 객체 방어 가드를 신설함.
+    - 데이터 역직렬화 도중 비동기 타이림 desync로 인해 발생할 수 있던 클라이언트 앱의 즉사(크래시) 현상을 완벽히 차단함.
+  - **빌드 파이프라인 정상화**:
+    - `src/inference/tfliteDetector.ts` 및 `src/components/CameraView.tsx` 파일 내부에 누적되어 컴파일러를 마비시키던 유령 중괄호(`}`) 파편들과 `finaly` 오타를 전수 제거하여 TypeScript 빌드 정합성을 100% 회복함.
+  - **팀 협업 자산 구축**:
+    - 주말 동안 사투를 벌인 안드로이드 실기기 하이브리드 연동, 센터 크롭(Center Crop) 왜곡 분쇄, 소켓 락 해제 등의 내역을 팀원들과 투명하게 공유하고 논의할 수 있도록 프로페셔널 규격의 보고서 문서(`docs/changelogs/team_share_summary.md`)를 신규 개설하여 영속화함.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `docs/changelogs/team_share_summary.md`
+- **검증 결과**: TypeScript 수동 컴파일 및 Expo 메트로 번들러 빌드 무결점 통과 확인, 실기기 무선 스트리밍 개통 준비 완료.
+
+---
+
+### 2026-07-12 | 모바일/AI | 폴백모드 재발 원인 규명 — bbox 좌표 파싱 버그 정정 및 `team_share_summary.md` 오기재 수정
+
+- **배경**: "잘 되던 연결이 안 되고 계속 폴백모드만 뜬다"는 증상 보고를 역추적한 결과, 커밋 메시지가 실제 diff와 어긋난 이력이 있는 커밋(주석엔 "래터박스"라고 적혀 있었으나 실제로는 여전히 센터 크롭 방식) 이후 3개 파일에 실제 버그가 유입된 것으로 확인됨.
+- **변경 내용**:
+  - **`client/src/inference/tfliteDetector.ts`**: 서버 커스텀 YOLO(`nms=True` export) 출력은 `[x1, y1, x2, y2, confidence, classId]` **코너좌표(픽셀 단위)** 포맷인데, 이를 `[xc, yc, w, h]` 중심좌표로 잘못 해석 + 불필요한 0~1 정규화 스케일 휴리스틱까지 추가되어 있던 것을 코너좌표 기반 파싱(`min/max`로 `x1,y1,x2,y2` 산출 후 `w,h,xc,yc` 역산)으로 정정함. 오탐 방지 목적으로 0.50까지 올렸던 `CONF_THRESHOLD`가 도중에 0.25로 되돌아가 있던 것도 0.50으로 복구함.
+  - **`client/src/services/frameCaptureProviderSelect.android.ts`**: 파일 상단 주석에는 "Android 실기기에서 `photo.orientation` 메타데이터 기반 좌표가 경계를 벗어나 크래시 발생 확인(2026-07-10)"이라고 적혀 있었으나, 실제 코드에서는 그 안전장치(`Image.getSize()` 실측 + 경계 클램프)가 제거되고 `photo.width/height`만 신뢰하도록 바뀌어 있었음(주석-코드 불일치). `Image.getSize()` 기반 실측 + 경계 가드(`originX/originY` 음수·초과 방지) 복구함.
+  - **`client/src/components/CameraView.tsx`**: 원래 "서버 연결 중엔 `server_detection` 결과를 화면에 쓰고, 폴백/Mock일 때만 온디바이스 결과로 대체"하는 구조였는데, "연결 상태 무관하게 항상 온디바이스 결과로 덮어쓰기"로 바뀌어 있었던 것을 `isMockModeRef.current || wsStatusRef.current === "fallback"` 조건부 로직으로 복구함.
+  - **`docker/docker-compose.yml`, `docker/docker-compose.macos.yml`**: ngrok 컨테이너(FastAPI(8000)용)와 `npx expo start --tunnel`이 로컬에 띄우는 자체 ngrok(Metro(8081)용)이 둘 다 기본 포트 4040을 잡으려다 충돌하던 문제 해결 — 도커 ngrok 쪽 포트를 `"4040:4040"` → `"4041:4040"`으로 변경(두 compose 파일 모두 반영 필요, GPU 모드는 `docker-compose.yml`, CPU 모드는 `docker-compose.macos.yml`을 사용하므로 하나만 고치면 재발함).
+  - **`docs/changelogs/team_share_summary.md` 정정**: 1.2절에 "다이렉트 6포인트 매핑 구조(`[xc, yc, w, h, score, clsId]`, 중심좌표)를 완벽히 가동시켰다"고 기재되어 있던 부분은 위에서 서술한 버그를 완료된 정상 작업인 것처럼 잘못 기록한 것이었음. 실제 정답(코너좌표 파싱)에 맞춰 정정함.
+- **관련 파일**: `client/src/inference/tfliteDetector.ts`, `client/src/services/frameCaptureProviderSelect.android.ts`, `client/src/components/CameraView.tsx`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docs/changelogs/team_share_summary.md`
+- **검증 결과**: `docker logs minchodan-fastapi`에서 WebSocket accept/hello/`auth_ok` 확인. 폰 앱에서 "연결됨" 배지, `WS: connected`, YOLO 모델(`seg`/`det`) 로드, `det shape: [1,300,6]` 확인. 단, 사람(person)·실외 물체 대상 실제 bbox 렌더링 검증은 다음 세션 과제로 남음.

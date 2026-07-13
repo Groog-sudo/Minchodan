@@ -100,7 +100,10 @@ def export_model(model_key: str, fmt: str, output_dir: str) -> str | None:
 
     try:
         model = YOLO(weights_path)
-        export_path = str(model.export(format=fmt))
+        export_kwargs = {"format": fmt}
+        if fmt in ("tflite", "coreml") and model_key == "object_detection":
+            export_kwargs["nms"] = True
+        export_path = str(model.export(**export_kwargs))
         target_path = target_path_for(model_key, fmt, export_path, output_dir)
         replace_path(export_path, target_path)
         print(f"[INFO] 익스포트 성공: {target_path}")

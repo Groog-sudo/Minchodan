@@ -42,7 +42,7 @@ jobs:
         run: mypy server/
 
       - name: jscpd Duplication Check
-        run: npx -y jscpd
+        run: jscpd
 
       - name: pip-audit CVE Scan
-        run: pip-audit -r requirements.txt --ignore-vuln CVE-2026-45829
+        run: pip-audit -r requirements.txt

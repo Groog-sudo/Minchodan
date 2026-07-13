@@ -95,6 +95,20 @@ services:
     networks:
       - minchodan-net
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: minchodan-ngrok
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    command: http fastapi:8000 --log=stdout
+    ports:
+      - "4041:4040"
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+
 volumes:
   redis_data:
   mariadb_data:

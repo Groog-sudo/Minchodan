@@ -25,7 +25,19 @@ class SessionManager:
         self.console_connections: set[WebSocket] = set()
 
     async def connect(self, device_id: str, websocket: WebSocket) -> None:
-        """새 연결 수락 및 등록."""
+        """새 연결 수락 및 등록.
+
+        동일 device_id의 잔류 세션이 있으면 강제 종료 후 교체한다.
+        망 전환(Wi-Fi <-> 핫스팟) 또는 앱 강제 종료 시 기존 TCP 연결이 FIN 없이
+        사라져 서버에 세션이 잔류하는 문제를 방지한다.
+        """
+        old_ws = self.active_connections.get(device_id)
+        if old_ws is not None:
+            with contextlib.suppress(Exception):
+                await old_ws.close(code=1001, reason="replaced by new connection")
+            del self.active_connections[device_id]
+            logger.info(f"[Session] 잔류 세션 강제 종료: device_id={device_id}")
+
         await websocket.accept()
         self.active_connections[device_id] = websocket
         logger.info(

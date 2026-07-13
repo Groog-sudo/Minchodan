@@ -261,6 +261,13 @@ langgraph_checkpoints/
 !training/datasets/segmentation/images/.gitkeep
 # 기타 등등...
 # ==========================================
+<<<<<<< HEAD
+
+# .agents/ 하위는 Git에서 추적 (스킬, 에이전트 설정 공유)
+# 단 .master_agents/ 와 .contexty/ 는 제외
+**/.master_agents/
+.contexty/
+=======
 
 # .agents/ 하위는 Git에서 추적 (스킬, 에이전트 설정 공유)
 # 단 .master_agents/ 와 .contexty/ 는 제외
@@ -301,3 +308,4 @@ scripts/launch_agents.sh
 #   - Personal paths, device IDs, tokens, and local-only settings
 # ==========================================
 **/Copy_*
+>>>>>>> 8ee1cb3d1c691c4ccf2d27aa8cb4ba4cca754ff2

@@ -56,7 +56,10 @@ def test_retriever_search_success(tmp_path):
     # 3. 킥보드 정보로 RAG 검색 실행 검증
     detect_info_kick = {"class_name": SCOOTER, "confidence": 0.9}
     guidance_kick = retriever.search_guidance(detect_info_kick)
-    assert guidance_kick == "전방에 전동킥보드 또는 스쿠터가 있습니다. 좌우 여유 공간을 확인하며 천천히 우회하세요."
+    assert (
+        guidance_kick
+        == "전방에 전동킥보드 또는 스쿠터가 있습니다. 좌우 여유 공간을 확인하며 천천히 우회하세요."
+    )
 
     # 4. 볼라드 정보로 RAG 검색 실행 검증
     detect_info_boll = {"class_name": BOLLARD, "confidence": 0.8}

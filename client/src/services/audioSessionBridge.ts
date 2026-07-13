@@ -21,9 +21,13 @@ interface AudioSessionBridgeModule {
 }
 
 function getModule(): AudioSessionBridgeModule | null {
-  if (Platform.OS !== "ios") return null;
-  // 구버전 네이티브 빌드(모듈 미포함)에서 JS만 갱신된 경우를 방어한다.
-  return (NativeModules.AudioSessionBridge as AudioSessionBridgeModule) ?? null;
+  if (Platform.OS === "ios") {
+    return (NativeModules.AudioSessionBridge as AudioSessionBridgeModule) ?? null;
+  }
+  if (Platform.OS === "android") {
+    return (NativeModules.AudioSessionBridgeModule as AudioSessionBridgeModule) ?? null;
+  }
+  return null;
 }
 
 /** voiceChat(AEC) 모드 전환. 실패/미지원 시 null 반환(호출측은 기존 동작 유지). */
@@ -33,7 +37,16 @@ export async function setVoiceProcessing(
   const mod = getModule();
   if (!mod) return null;
   try {
-    return await mod.setVoiceProcessing(enabled);
+    const result = await mod.setVoiceProcessing(enabled);
+    if (Platform.OS === "android") {
+      return {
+        category: "playAndRecord",
+        mode: enabled ? "voiceChat" : "normal",
+        voiceProcessingActive: enabled,
+        outputRoute: "speaker",
+      };
+    }
+    return result;
   } catch (err) {
     console.warn(`[AudioSession] voiceChat 전환 실패(enabled=${enabled}):`, err);
     return null;
@@ -45,7 +58,18 @@ export async function getSessionInfo(): Promise<AudioSessionInfo | null> {
   const mod = getModule();
   if (!mod) return null;
   try {
-    return await mod.getSessionInfo();
+    const result = await mod.getSessionInfo();
+    if (Platform.OS === "android") {
+      const infoStr = typeof result === "string" ? result : "UNKNOWN";
+      const isVoiceChat = infoStr.includes("COMMUNICATION");
+      return {
+        category: "playAndRecord",
+        mode: isVoiceChat ? "voiceChat" : "normal",
+        voiceProcessingActive: isVoiceChat,
+        outputRoute: "speaker",
+      };
+    }
+    return result;
   } catch {
     return null;
   }

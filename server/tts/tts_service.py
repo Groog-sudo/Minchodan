@@ -494,7 +494,7 @@ class EdgeTTSService(TTSService):
         if not mp3_bytes:
             return None
         try:
-            import subprocess
+            import subprocess  # nosec B404 - 고정 인자 리스트만 사용, 외부 입력 미포함
 
             import imageio_ffmpeg
         except ImportError as e:
@@ -507,7 +507,7 @@ class EdgeTTSService(TTSService):
             wav_path = os.path.join(tmp_dir, "out.wav")
             with open(mp3_path, "wb") as mp3_file:
                 mp3_file.write(mp3_bytes)
-            proc = subprocess.run(
+            proc = subprocess.run(  # noqa: S603  # nosec B603 - ffmpeg 경로(imageio_ffmpeg)와 tmp 경로 모두 내부 고정값, shell 미사용
                 [
                     ffmpeg,
                     "-y",
