@@ -12,9 +12,9 @@
  * (디바이스 토큰의 실질 보안은 서버 JWT 발급 체계로 이관 예정).
  */
 
-const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "ngrok") as "lan" | "ngrok";
+const NETWORK_MODE = "lan";
 
-const LAN_IP = process.env.EXPO_PUBLIC_LAN_IP ?? "192.168.0.136";
+const LAN_IP = "100.92.150.34";
 const NGROK_DOMAIN =
   process.env.EXPO_PUBLIC_NGROK_DOMAIN ?? "uncombed-elastic-exodus.ngrok-free.dev";
 
