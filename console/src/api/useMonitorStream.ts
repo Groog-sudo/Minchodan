@@ -456,8 +456,11 @@ export function useMonitorStream(token: string | null = null) {
           case "llm_status" :
           case "rag_result" :
           case "tts_status" :
-          // case "stt_status" : {  // STT는 7단계 파이프라인 범위 밖이므로 제외
-          {
+          case "stt_status" : {
+            // 2026-07-13 재활성화: server/api/ws_router.py가 stt_status(transcribing/idle)를
+            // 실제로 broadcast_event하고 있어 STT는 7단계 파이프라인 범위 밖이 아니라
+            // 실제 producer가 있는 이벤트였음(주석의 전제가 틀렸었다). 이 case가 주석
+            // 처리되어 있어 콘솔 MIC STATE가 항상 STANDBY로 고정되던 버그.
             /*
              * 발표/면접 대응 포인트:
              * - AI 파이프라인 상태는 누적 로그보다 최신 상태 확인이 중요합니다.
