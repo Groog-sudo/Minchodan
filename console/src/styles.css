@@ -837,8 +837,9 @@ td {
 
 .member-form {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  row-gap: 16px;
+  column-gap: 0;
+  grid-template-columns: 1fr;
 }
 
 .member-form label {
@@ -847,7 +848,8 @@ td {
   flex-direction: column;
   font-size: 12px;
   font-weight: 700;
-  gap: 6px;
+  row-gap: 14px;
+  column-gap: 6px;
 }
 
 .member-form input {
@@ -862,6 +864,10 @@ td {
 .member-form input:focus {
   border-color: #00f2fe;
   outline: none;
+}
+
+.member-form .refresh-btn {
+  padding: 10px 10px;
 }
 
 .member-form-message-ok {
