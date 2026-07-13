@@ -82,7 +82,7 @@ const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
 // 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
 // YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
 // 자체를 모른다. 실내에서만 나타날 리 없는(즉 실외 전용) 클래스들이 실내 오탐 시 자주
-// 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 40%)보다 더 높은 하한선을
+// 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 20%)보다 더 높은 하한선을
 // 개별로 강제한다. 목록에 없는 클래스는 confThreshold를 그대로 사용한다.
 const CLASS_MIN_CONFIDENCE: Record<string, number> = {
   car: 0.35,
