@@ -1798,3 +1798,14 @@
 - **조치**: `car`를 0.6으로 즉시 원복. SSOT 계약(§4 변경 절차: 서버·단말·문서를 같은 커밋에서 함께 수정)을 어기지 않는 선에서, 차량 표시 표본을 더 모으고 싶다면 §2 절차대로 서버 게이트까지 같이 낮추거나 화면 표시 전용 별도 상수를 신설해야 한다는 것을 주석으로 남겼다. `test_risk_ssot.py` 3건 전부 재통과 확인.
 - **교훈**: 반사 경로 관련 상수를 만질 때는 항상 `docs/design/risk_ssot_contract.md`와 `test_risk_ssot.py`를 먼저 확인할 것 - 이름만 보고 "화면 표시용이겠지"라고 단정하면 안 된다. 이번엔 자동 회귀 테스트가 실수를 커밋 전에 잡아낸 사례로 남긴다.
 - **관련 파일**: `client/src/components/CameraView.tsx`, `tests/test_risk_ssot.py`(수정 없음, 검증만 수행).
+
+---
+
+### 2026-07-13 | 서버+클라이언트 | jy 브랜치 병합 - Tailscale 연결 방식을 jy 표준으로 통일
+
+- **커밋**: (병합 예정)
+- **배경**: jy 브랜치를 kb에 병합하기 전 충돌·정합성을 검토했다(임시 워크트리에서 실제 병합 실행 후 `pytest` 214건, `tsc --noEmit` 0 errors까지 확인 - 텍스트 충돌은 없었음). 다만 같은 문제(외부망 Tailscale 접속)를 두 브랜치가 독립적으로 각자 해결한 것을 발견했다 - kb는 기존 `NETWORK_MODE=lan`+`EXPO_PUBLIC_LAN_IP`를 재사용(코드 변경 없음), jy는 전용 `NETWORK_MODE=tailscale`+`EXPO_PUBLIC_TAILSCALE_HOST`를 신설(`network_probe` RTT 계측과 통합). 또한 jy의 changelog(`docs/changelogs/jy.md`)는 "ngrok 컨테이너나 도메인 지원을 제거한 것이 아니라 확장한 것"이라고 기록돼 있었는데, kb는 같은 날 ngrok 도커 컨테이너와 `NGROK_AUTHTOKEN`을 완전히 제거한 상태라 전제가 어긋나 있었다.
+- **조치**: 사용자 결정에 따라 (1) 클라이언트 접속 방식은 jy의 전용 `tailscale` 모드를 팀 표준으로 채택 - `client/.env`를 `EXPO_PUBLIC_NETWORK_MODE=tailscale`+`EXPO_PUBLIC_TAILSCALE_HOST=100.121.247.4`+`EXPO_PUBLIC_SERVER_PORT=8000`으로 전환(기존 `lan`+`LAN_IP` 조합에서). (2) ngrok 도커 인프라는 kb의 완전 제거 상태를 유지 - jy 브랜치도 `docker-compose.yml`을 건드리지 않아 병합에 지장 없음. `docs/ops/environment_variables.md` §2.11을 이 결정에 맞게 갱신(기존 lan 재사용 서술 → jy 표준 채택 서술로 교체, ngrok 폴백 코드는 있으나 도커 인프라는 없다는 점 명시).
+- **검증**: 병합 자체는 `git merge origin/jy` 실행, 충돌 0건. 병합 후 `pytest tests/ --ignore=test_ws_echo.py` 214 passed, `cd client && npx tsc --noEmit` 0 errors(오히려 jy의 리팩토링이 기존 사전 존재 TS 에러 2건도 부수적으로 해소함).
+- **미완/후속 과제**: `api_specification.md`의 버전 헤더를 kb 자신의 "N시 방향" 변경분에 대해서는 올리지 않았던 것(jy가 먼저 v0.4.16을 씀) - 필요 시 v0.4.17로 별도 이력 추가할 것.
+- **관련 파일**: `client/.env`, `docs/ops/environment_variables.md`.
