@@ -25,6 +25,10 @@ class OrchState(TypedDict, total=False):
     rag_context: str
     navigation_guidance: str
     positions: list[str]
+    # 2026-07-13 추가: 보도 이탈 히스테리시스 확정 여부와 점자블록 추종 보정 방향.
+    # server/detection/surface_departure.py의 판정 결과를 인지 경로 문장 생성에 전달한다.
+    is_departing_confirmed: bool
+    braille_direction: str
     guidance_text: str
     direction: Literal["좌", "우", "직진", "정지", ""]
     verified: bool

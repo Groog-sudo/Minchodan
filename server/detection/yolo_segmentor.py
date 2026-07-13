@@ -70,14 +70,31 @@ class YoloSegmentor(SegmentorInterface):
             cls_id = int(result.boxes.cls[idx]) if result.boxes is not None else idx
             class_name = names.get(cls_id, str(cls_id))
             centroid = self._compute_centroid(mask.xy)
+            polygon = self._extract_polygon(mask.xy)
             surfaces.append(
                 SurfaceResult(
                     class_name=class_name,
                     mask=None,
                     centroid=centroid,
+                    polygon=polygon,
                 )
             )
         return surfaces
+
+    @staticmethod
+    def _extract_polygon(mask_xy) -> list[list[float]]:
+        # =========================================================================
+        # 🤖 VIBE CODE 영역 (폴리곤 좌표 변환) 🤖
+        # 💡 [설계 의도] ultralytics mask.xy는 인스턴스당 폴리곤 1개를 numpy ndarray로 준다.
+        # SurfaceResult.polygon(exclude=True, 서버 내부 전용)에 담기 위해 JSON 직렬화 가능한
+        # list[list[float]]로만 변환한다. 이 필드는 어디로도 전송되지 않으므로 좌표를 압축하지
+        # 않고 그대로 보존해 point-in-polygon 판정(surface_departure.py)의 정확도를 지킨다.
+        # =========================================================================
+        try:
+            pts = np.concatenate(mask_xy, axis=0)
+            return pts.tolist()
+        except Exception:
+            return []
 
     @staticmethod
     def _compute_centroid(mask_xy) -> list[float]:

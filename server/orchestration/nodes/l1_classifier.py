@@ -57,10 +57,17 @@ async def l1_classifier_node(state: dict) -> dict:
     LangGraph L1 분류 노드 진입점.
     """
     detected_classes = state.get("detected_classes", [])
+    # 2026-07-13 추가: 탐지 객체가 없어도(순수 보도 이탈) 히스테리시스로 확정된 이탈은
+    # mid로 분류해야 L2가 안내 문장을 생성한다. server/detection/consumer.py가
+    # DEPARTURE_CONFIRM_STREAK 연속 프레임 확인 후에만 True를 넘기므로 여기서는
+    # 그대로 신뢰한다(재검증하지 않음 - 판단 책임은 3단계 파이프라인에 있음).
+    is_departing_confirmed = state.get("is_departing_confirmed", False)
 
     # 방어적 예외 처리: high가 인지 경로로 잘못 들어올 경우 차단하기 위한 가드 추가
     # 만약 state에 high가 이미 명시적으로 정의되어 있고 수동 디렉션이 있다면 존중하되,
     # 기본은 리스크에 맞춰 재분류합니다.
     risk_level = classify_risk(detected_classes)
+    if is_departing_confirmed and risk_level == "low":
+        risk_level = "mid"
 
     return {"risk_level": risk_level, "retry_count": 0, "verified": False, "validation_errors": []}

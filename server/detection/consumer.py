@@ -39,6 +39,10 @@ from server.tts.suppressor import Alert_suppressor
 
 logger = logging.getLogger(__name__)
 
+# 보도 이탈 확정에 필요한 연속 인지 프레임 수 (surface_departure.py의 단일 프레임
+# 판정을 히스테리시스로 감싸는 값 - 이 파일 상단 __init__ 주석 참조).
+DEPARTURE_CONFIRM_STREAK = 3
+
 
 class DetectionConsumer:
     """이중 큐(반사/인지)에서 프레임을 소비하고 DetectionPipeline을 실행.
@@ -70,6 +74,11 @@ class DetectionConsumer:
         self._last_guide_duration_sec: dict[str, float] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
+        # 2026-07-13 추가: device_id별 보도 이탈(is_departing) 연속 프레임 카운터.
+        # 인지 프레임은 1~2fps라 세그멘테이션 경계 노이즈로 단일 프레임이 흔들릴 수 있어,
+        # DEPARTURE_CONFIRM_STREAK회 연속으로 이탈이 나와야 실제 안내를 내보낸다
+        # (약 1.5~3초 지속 확인 - 너무 짧으면 오탐, 너무 길면 안내가 늦어짐).
+        self._departure_streak: dict[str, int] = {}
         self._last_status: dict[str, str | float | int | None] = {
             "stream": None,
             "event_id": None,
@@ -79,6 +88,12 @@ class DetectionConsumer:
             "updated_at": None,
             "error": None,
         }
+
+    def _update_departure_streak(self, device_id: str, is_departing: bool) -> bool:
+        """연속 이탈 프레임 수를 device_id별로 갱신하고, 확정 임계값 도달 여부를 반환한다."""
+        streak = self._departure_streak.get(device_id, 0) + 1 if is_departing else 0
+        self._departure_streak[device_id] = streak
+        return streak >= DEPARTURE_CONFIRM_STREAK
 
     def _required_guide_gap_sec(self, device_id: str) -> float:
         """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다."""
@@ -361,13 +376,17 @@ class DetectionConsumer:
                     "error": None,
                 }
             )
-            if result.risk_hint in ("mid", "low"):
+            departure_confirmed = self._update_departure_streak(
+                processed.device_id, result.is_departing
+            )
+            if result.risk_hint in ("mid", "low") or departure_confirmed:
                 await self._send_cognitive_guide(
                     processed.device_id,
                     result,
                     frame=frame,
                     decode_ms=processed.processing_time_ms,
                     pipeline_start=pipeline_start,
+                    departure_confirmed=departure_confirmed,
                 )
             logger.debug(
                 f"[DetectionConsumer] 인지 결과: event_id={result.event_id}, "
@@ -576,9 +595,15 @@ class DetectionConsumer:
         frame: np.ndarray | None = None,
         decode_ms: float = 0.0,
         pipeline_start: float | None = None,
+        departure_confirmed: bool = False,
     ) -> None:
-        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
-        if not result.detections:
+        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다.
+
+        2026-07-13: 원래 탐지 객체(detections)가 없으면 곧장 반환했으나, 보도 이탈이
+        히스테리시스(DEPARTURE_CONFIRM_STREAK)로 확정된 경우는 객체 탐지 없이 노면
+        정보만으로도 안내가 나가야 하므로 departure_confirmed일 때는 통과시킨다.
+        """
+        if not result.detections and not departure_confirmed:
             return
 
         # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이
@@ -604,11 +629,12 @@ class DetectionConsumer:
             logger.error(f"[DetectionConsumer] NavigationManager 조회 실패: {e}")
 
         # RAG 검색: 가장 신뢰도 높은 탐지 사물 기준으로 안전 수칙 조회 (실패 시 빈 문자열, fallback 미경유 유지)
+        # detections가 비어 있는(순수 보도 이탈) 이벤트는 조회할 사물이 없으므로 건너뛴다.
         rag_context = ""
         rag_start = time.perf_counter()
         try:
             retriever = get_default_retriever()
-            if retriever is not None:
+            if retriever is not None and result.detections:
                 primary_det = max(result.detections, key=lambda d: d.confidence)
                 rag_context = await asyncio.to_thread(
                     retriever.search_guidance,
@@ -636,6 +662,8 @@ class DetectionConsumer:
             "risk_level": result.risk_hint,
             "navigation_guidance": navigation_guidance,
             "rag_context": rag_context or "관련 수칙 없음",
+            "is_departing_confirmed": departure_confirmed,
+            "braille_direction": result.braille_direction or "",
             "retry_count": 0,
             "verified": False,
             "validation_errors": [],
@@ -650,11 +678,16 @@ class DetectionConsumer:
                 )
                 return
 
+            rag_query = (
+                max(result.detections, key=lambda d: d.confidence).class_name
+                if result.detections
+                else "surface_departure"
+            )
             await self._broadcast_ai_pipeline_status(
                 llm_provider=LLMClientFactory.get_current_provider(),
                 llm_verified=bool(orch_result.get("verified", False)),
                 llm_retry_count=int(orch_result.get("retry_count", 0)),
-                rag_query=max(result.detections, key=lambda d: d.confidence).class_name,
+                rag_query=rag_query,
                 tts_engine=os.getenv("TTS_ENGINE", "supertonic"),
                 reflex_bypass=False,
             )
