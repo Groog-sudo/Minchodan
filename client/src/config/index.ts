@@ -14,9 +14,9 @@
 
 const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "ngrok") as "lan" | "ngrok";
 
-const LAN_IP = process.env.EXPO_PUBLIC_LAN_IP ?? "192.168.0.209";
+const LAN_IP = process.env.EXPO_PUBLIC_LAN_IP ?? "192.168.0.136";
 const NGROK_DOMAIN =
-  process.env.EXPO_PUBLIC_NGROK_DOMAIN ?? "partake-primer-surround.ngrok-free.dev";
+  process.env.EXPO_PUBLIC_NGROK_DOMAIN ?? "uncombed-elastic-exodus.ngrok-free.dev";
 
 export const WS_URL =
   NETWORK_MODE === "lan"
