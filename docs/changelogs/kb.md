@@ -1701,3 +1701,20 @@
   - iOS: xcodebuildmcp로 `Minchodan.xcworkspace`를 iPhone 17 Pro 시뮬레이터 대상 빌드 - **0 에러, `CoreMLInferenceBridge.swift` 관련 경고 0건**으로 컴파일 성공 확인. `client/` `tsc --noEmit`은 이번 세션에서 건드리지 않은 `CameraView.tsx`의 기존 오류 3건(무관, 이 작업 이전부터 존재)만 남고 `localDetectorSelect.ios.ts` 관련 오류 없음.
   - **실기기 실측은 수행하지 못함**: 물리 기기 접근이 불가능한 세션이라, 실제 카메라 프레임으로 (1) 서버 히스테리시스 임계값(3프레임)이 실사용에 적절한지, (2) 온디바이스 단일 기준점이 세그멘테이션 경계 근처에서 얼마나 자주 뒤집히는지(노이즈)는 검증되지 않았다. 위 로그(`[Pipeline] 보도 이탈 판정`, `[SurfaceDeparture][OnDevice]`)가 실기기 확인용으로 준비되어 있으니, 실보행 테스트로 다음 세션에서 확정할 것.
 - **관련 파일**: `server/detection/consumer.py`, `server/detection/surface_departure.py`, `server/orchestration/state.py`, `server/orchestration/nodes/l1_classifier.py`, `server/orchestration/nodes/l2_generator.py`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`, `tests/test_departure_hysteresis.py`(신규), `tests/test_surface_departure.py`.
+
+---
+
+### 2026-07-13 | 인프라+클라이언트 | ngrok -> Tailscale 전환 및 정합성 검토 P0 조치
+
+- **커밋**: (미커밋)
+- **배경**: ngrok Free 플랜의 클라우드 프록시 경유 지연을 피하고 실기기(LTE 등 외부망)와 개발 PC 간 P2P 직결을 위해 Tailscale VPN으로 전환했다. 마침 팀 DB(RPi 호스트)가 이미 Tailscale로 연결되어 있어 같은 tailnet에 편입시키는 방향으로 진행. 이어서 별도 세션에서 산출된 "Minchodan 프로젝트 종합 분석 보고서"의 P0 지적사항 4건을 실제 코드와 대조 검증 후 반영했다.
+- **Tailscale 전환**: `client/src/config/index.ts`는 기존에 이미 `NETWORK_MODE=lan` + `EXPO_PUBLIC_LAN_IP` 구조를 갖추고 있어 코드 수정 없이 `client/.env`의 `EXPO_PUBLIC_LAN_IP`만 이 Mac(`sojiroh-macmini`)의 Tailscale IP(`100.121.247.4`)로 교체했다. `server/main.py`가 이미 `--host 0.0.0.0`으로 기동 중이라 서버 코드도 무변경. `curl http://100.121.247.4:8000/` 200 응답 및 실기기(iPhone) 앱에서 `WS: connected / WiFi(100.121.247.4)` 표시로 종단 검증 완료.
+- **ngrok 제거(Docker)**: 실행 중이던 `minchodan-ngrok` 컨테이너 중지·삭제. `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`에서 `ngrok` 서비스 정의 삭제(`docker compose config` 유효성 검증 통과). `.env`/`.env.example`의 `NGROK_AUTHTOKEN` 제거. 클라이언트 코드의 `NETWORK_MODE=ngrok` 분기(`config/index.ts`)와 `@expo/ngrok` 의존성은 폴백으로 의도적으로 보존(사용자 결정).
+- **정합성 보고서 P0 조치 4건** (전부 실제 코드/스크립트 대조로 재검증 후 반영):
+  1. `.gitignore` L264-311 병합 충돌 마커(`<<<<<<< HEAD`/`=======`/`>>>>>>> 8ee1cb3`) 해결 - 두 브랜치 규칙이 동일한 앞 4줄만 겹치고 한쪽이 나머지(`temp_smoke_*`, `node_modules/`, `.expo/`, 커스텀 가중치, `.zcode/`/`.claude/`, `**/Copy_*` 등)를 포함하는 상위집합이라 중복 없이 병합.
+  2. `.env.example` 누락 변수 4종 추가: `GOOGLE_API_KEY`(Gemini VLM 캡셔닝, `server/rag/build/gemini_captioner.py`), `TMAP_APP_KEY`(내비게이션, `server/navigation/`), `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID`(`scripts/slack_publisher.py`) - `docs/ops/environment_variables.md`가 이미 이 불일치를 지적해두고 있었음. 죽은 변수 2종 제거: `SLACK_WEBHOOK_URL`(코드 어디서도 미참조, Bot Token 방식으로 이미 대체됨), `DATA_REFLEX_CLIPS`(미참조, 반사 클립은 단말 번들 방식).
+  3. `scripts/postwork.sh`의 `get_test_cmd()`가 존재하지 않는 파일명(`test_rag_retrieval.py`, `test_tts_reflex.py`)을 참조해 5/7단계 테스트가 항상 실패하던 것을 실제 파일명(`test_retriever.py`, `test_reflex_and_nav.py`)으로 수정.
+  4. `server/tts/reflex_clip_sender.py`의 `send_reflex_clip()` 데드 코드 제거 - `consumer.py._send_reflex_alert()`가 실제 반사 송출을 전담하고 이 함수는 어디서도 호출되지 않음을 grep 전수 검색으로 확인. 같은 파일의 `REFLEX_CLIP_MAP`/`DEFAULT_REFLEX_CLIP`도 자체 주석("어디서도 호출되지 않는다")과 grep 결과가 일치해 함께 제거. 단, `_resolve_reflex_patterns()`는 `tests/test_reflex_and_nav.py`가 직접 import해 사용 중이므로 보존.
+- **검증**: `tests/test_reflex_and_nav.py` 3건 통과, `pytest tests/ --collect-only` 193건 전체 수집 성공(임포트 깨짐 없음).
+- **미완/후속 과제**: 보고서의 P1 항목(`ws_router.py`/`stt_to_llm_bridge.py` 계층 분리, `AGENTS.md` LangChain 명세 정정, UTF-8 reconfigure 패턴 통일 등)은 이번 세션 범위에서 제외 - 사용자가 다음 스프린트로 명시적으로 유보.
+- **관련 파일**: `client/.env`, `.gitignore`, `.env`, `.env.example`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `scripts/postwork.sh`, `server/tts/reflex_clip_sender.py`.
