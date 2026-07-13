@@ -158,7 +158,15 @@ tmp/
 !client/ios/**
 !client/android/**
 
-
+# 2026-07-13: 안드로이드 바이너리 데모/샘플 리소스는 로컬만 유지(git 미추적).
+# - index.android.bundle: 디버그 빌드 번들(빌드 시 재생성)
+# - assets_samples_frame_*.jpg: TFLite 추론 데모용 샘플 프레임
+# - res/raw/*.tflite, *.wav: 온디바이스 모델/반사 클립(빌드 자산이 아닌 로컬 리소스)
+# - keep.xml은 빌드 보존 설정(텍스트)이라 추적한다.
+client/android/app/src/main/assets/*.bundle
+client/android/app/src/main/res/drawable-mdpi/assets_samples_*.jpg
+client/android/app/src/main/res/raw/*.tflite
+client/android/app/src/main/res/raw/*.wav
 
 
 # ==========================================
@@ -261,13 +269,6 @@ langgraph_checkpoints/
 !training/datasets/segmentation/images/.gitkeep
 # 기타 등등...
 # ==========================================
-<<<<<<< HEAD
-
-# .agents/ 하위는 Git에서 추적 (스킬, 에이전트 설정 공유)
-# 단 .master_agents/ 와 .contexty/ 는 제외
-**/.master_agents/
-.contexty/
-=======
 
 # .agents/ 하위는 Git에서 추적 (스킬, 에이전트 설정 공유)
 # 단 .master_agents/ 와 .contexty/ 는 제외
@@ -308,4 +309,3 @@ scripts/launch_agents.sh
 #   - Personal paths, device IDs, tokens, and local-only settings
 # ==========================================
 **/Copy_*
->>>>>>> 8ee1cb3d1c691c4ccf2d27aa8cb4ba4cca754ff2
