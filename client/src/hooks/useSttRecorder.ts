@@ -183,30 +183,21 @@ export function useSttRecorder(
       const audioB64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      // iOS LINEARPCM 44.1kHz mono 16bit만 base64 길이로 캡처 시간을 역산할 수 있다.
-      // Android MPEG-4/AAC는 압축률이 달라 같은 공식을 적용하면 정상 녹음도 잘린 파일로
-      // 오판하므로, Android는 서버 디코더/VAD 검증에 맡긴다.
+      // holdMs 계측: 로그/디버그용으로만 사용한다.
+      // capture_truncated 가드 제거(2026-07-13): 서버 Whisper vad_filter=True가 무음/짧은
+      // 오디오를 걸러주므로 클라이언트에서 이중 차단은 불필요하다. 이 가드가 "길댕아"처럼
+      // 짧은 웨이크워드를 서버 전송 전에 차단하는 원인이었음을 실측으로 확인.
       const holdMs =
         recordStartTsRef.current > 0 ? Date.now() - recordStartTsRef.current : 0;
       if (Platform.OS === "ios") {
         const capturedSec = Math.max(0, (audioB64.length * 0.75 - 44) / (44100 * 2));
         console.log(
-          `[STT] 녹음 완료(iOS PCM): hold=${(holdMs / 1000).toFixed(2)}s, captured=${capturedSec.toFixed(2)}s`,
+          `[STT] 녹음 완료(iOS PCM): hold=${(holdMs / 1000).toFixed(2)}s, captured=${capturedSec.toFixed(2)}s, b64_len=${audioB64.length}`,
         );
-        if (holdMs >= 800 && capturedSec < (holdMs / 1000) * 0.5) {
-          console.warn(
-            `[STT] 캡처 결함 감지(세션 인터럽션 의심): hold=${(holdMs / 1000).toFixed(2)}s, ` +
-              `captured=${capturedSec.toFixed(2)}s - 서버 전송 생략, 재시도 안내`,
-          );
-          onError?.(
-            "capture_truncated",
-            `hold=${(holdMs / 1000).toFixed(2)}s captured=${capturedSec.toFixed(2)}s`,
-          );
-          audioEngine.speakFallback("다시 말씀해 주세요");
-          return;
-        }
       } else {
-        console.log(`[STT] 녹음 완료(${Platform.OS} 압축 오디오): hold=${(holdMs / 1000).toFixed(2)}s`);
+        console.log(
+          `[STT] 녹음 완료(${Platform.OS}): hold=${(holdMs / 1000).toFixed(2)}s, b64_len=${audioB64.length}`,
+        );
       }
       onAudioReady(audioB64);
     } catch (err) {
