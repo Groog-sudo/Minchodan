@@ -24,8 +24,10 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
+from server.api.admin_member_router import router as admin_member_router
 from server.api.admin_router import router as admin_router
 from server.api.config import settings
+from server.api.detection_log_router import router as detection_log_router
 from server.api.monitor import router as monitor_router
 from server.api.stt_router import router as stt_router
 from server.api.user_router import router as user_router
@@ -90,7 +92,21 @@ async def lifespan(app: FastAPI):
 
     stt_preload_task = asyncio.create_task(asyncio.to_thread(_preload_whisper))
 
+    # 4. 이벤트 프레임 보존 기간 초과분 정리 (콘솔 오탐 검증용 이미지, 기본 7일)
+    # 디스크 IO이므로 스레드로 위임하고 실패해도 기동은 막지 않는다.
+    from server.services.event_frame_store import cleanup_expired_frames
+
+    def _cleanup_event_frames() -> None:
+        try:
+            cleanup_expired_frames()
+        except Exception as e:
+            logger.error(f"이벤트 프레임 보존 정리 실패: {e}")
+
+    frame_cleanup_task = asyncio.create_task(asyncio.to_thread(_cleanup_event_frames))
+
     yield
+
+    frame_cleanup_task.cancel()
 
     stt_preload_task.cancel()
 
@@ -158,9 +174,14 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex="https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # X-Total-Count: 콘솔 Detection Guidance Log 페이지네이션이 전체 건수를 읽으려면
+    # 브라우저 fetch()가 이 커스텀 헤더를 볼 수 있어야 한다(CORS 기본값은 표준
+    # 헤더만 노출하고 커스텀 헤더는 명시적으로 허용해야 함, 2026-07-12).
+    expose_headers=["X-Total-Count"],
 )
 
 # 모니터링 라우터 마운트
@@ -172,6 +193,8 @@ app.include_router(ws_router, prefix="")
 # 사용자 및 관리자 API 라우터 마운트
 app.include_router(user_router)
 app.include_router(admin_router)
+app.include_router(admin_member_router)
+app.include_router(detection_log_router)
 app.include_router(stt_router)
 
 # 네비게이션 서브앱 마운트

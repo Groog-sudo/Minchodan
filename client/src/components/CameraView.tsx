@@ -16,16 +16,30 @@ import { Camera } from "react-native-vision-camera";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
 import { NavMapPanel, type NavMapWaypoint } from "./NavMapPanel";
-import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS } from "../config";
+import { DEVICE_ID, TOKEN, REFLEX_FPS, COGNITIVE_FPS, type ServerTransport } from "../config";
 import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
 import { useLocation, type GpsCoords } from "../hooks/useLocation";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
+import { useSmsReader } from "../hooks/useSmsReader";
 import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
+import {
+  isDepthProbeSupported,
+  probeDepth,
+  startDepthProbe,
+  stopDepthProbe,
+  type DepthProbeResult,
+} from "../services/depthProbe";
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
+import {
+  loadServerTransport,
+  saveServerTransport,
+  transportLabel,
+  wsUrlFor,
+} from "../services/serverTransport";
 import type { StreamType } from "../types/detection";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -34,12 +48,42 @@ const FRAME_SIZE = 640;
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
 
+// 2026-07-11 LiDAR 실거리 프로브(프로토타입) 샘플링 지점: 세로 화면 정규화 좌표.
+// bbox 휴리스틱 거리의 기준점(중앙/하단)과 대응시켜 줄자 실측 대조가 쉽게 한다.
+const DEPTH_PROBE_POINTS = [
+  { label: "중앙", x: 0.5, y: 0.5 },
+  { label: "전방 하단", x: 0.5, y: 0.72 },
+  { label: "발밑", x: 0.5, y: 0.9 },
+];
+const DEPTH_PROBE_INTERVAL_MS = 500;
+
+// 29클래스 중 이동체(충돌 접근 속도가 빠른 대상) - 조기 경보 임계치를 낮게 적용
 const HIGH_HAZARDS = ["person", "bicycle", "car", "motorcycle", "bus", "truck", "scooter", "wheelchair", "stroller", "carrier"];
+// 노면 위험 구간 (segmentation 클래스, SEG_HAZARD 인덱스와 정합: caution, roadway)
 const GROUND_HAZARDS = ["caution", "roadway"];
+// 2026-07-07 추가: 정상 보행로(안전한 바닥면)는 화면을 크게 채워도 장애물이 아니다.
+// 기존 로직은 maxAreaRatio > 0.32 등 면적 조건이 클래스와 무관하게 무조건 최상위(초접근)
+// 경보를 발동시켜, 카메라를 아래로 향하거나 바닥에 가까이 대면 정상 보행로만으로도
+// 연속음+강한 진동이 울리는 오탐이 관측됨. 안전 노면 클래스는 반사 경보 판정에서
+// 완전히 제외한다(디스플레이용 activeDetections/BBoxOverlay에는 계속 노출됨).
 const SAFE_SURFACE_CLASSES = ["sidewalk_normal", "braille_normal"];
+
+// 2026-07-07 추가: 이 모델(det/seg 둘 다)은 AI Hub 한국 인도(실외) 데이터셋만으로
+// 학습되어 실내 개념 자체를 모른다. 특정 클래스(car)만 개별로 막아본 결과 bollard/
+// movable_signage/pole 등 다른 클래스도 똑같이 실내에서 고신뢰도 오탐이 발생함을 확인함.
+// 이 제품 자체가 "실외 보행로 보조"로 스코프가 한정되어 있으므로(README/설계 문서),
+// object_detection 클래스 전체에 대해 "같은 프레임에 실외 보행로 segmentation 신호가
+// 전혀 없으면 반사 경보 대상에서 제외"하는 포괄적 교차검증(co-occurrence)을 적용한다.
+// segmentation 4클래스 자체(sidewalk_normal/caution/roadway/braille_normal)는 그 존재
+// 자체가 "실외 보행로를 보고 있다"는 근거이므로 이 게이트에서 자기 자신을 통과시킨다.
 const OUTDOOR_SURFACE_CLASSES = ["sidewalk_normal", "caution", "roadway", "braille_normal"];
 const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
 
+// 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
+// YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
+// 자체를 모른다. 실내에서만 나타날 리 없는(즉 실외 전용) 클래스들이 실내 오탐 시 자주
+// 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 40%)보다 더 높은 하한선을
+// 개별로 강제한다. 목록에 없는 클래스는 confThreshold를 그대로 사용한다.
 const CLASS_MIN_CONFIDENCE: Record<string, number> = {
   car: 0.6,
   bus: 0.6,
@@ -55,11 +99,17 @@ const CLASS_MIN_CONFIDENCE: Record<string, number> = {
   roadway: 0.55,
 };
 
+// 클래스별 최소 confidence와 사용자 슬라이더(confThreshold) 중 더 높은 값을 유효 임계값으로 사용
 function getEffectiveConfThreshold(className: string, baseThreshold: number): number {
   const classMin = CLASS_MIN_CONFIDENCE[className];
   return classMin !== undefined ? Math.max(classMin, baseThreshold) : baseThreshold;
 }
 
+// 2026-07-07 추가 (docs/design/indoor_fp_mitigation_design.md §3 물리적 타당성 필터):
+// bbox는 640x640 캔버스에 대한 회귀 출력이므로, 정상 학습 데이터의 GT는 캔버스 경계를
+// 초과할 수 없다. 실기기 실내 오탐 로그에서 w/h가 640을 뚜렷하게 초과(641~676)하는
+// 회귀 붕괴 패턴이 반복 관측됨 - 클래스와 무관하게 이런 bbox는 신뢰할 수 없으므로
+// 반사 경보 판정에서 제외한다. 부동소수점 회귀 노이즈 감안 2% 여유만 허용.
 const CANVAS_OVERFLOW_MARGIN = 1.02;
 
 function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
@@ -68,7 +118,24 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
 }
 
 export function CameraView() {
-  const { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive } = useWebSocket(DEVICE_ID, TOKEN);
+  // 평상시 WiFi / 개발 USB — 둘 다 설정에 두고 토글로 전환 (재시작 후에도 유지).
+  const [serverTransport, setServerTransport] = useState<ServerTransport>("wifi");
+  const [transportReady, setTransportReady] = useState(false);
+  useEffect(() => {
+    void loadServerTransport().then((t) => {
+      setServerTransport(t);
+      setTransportReady(true);
+    });
+  }, []);
+  const wsBaseUrl = wsUrlFor(serverTransport);
+  const { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive } = useWebSocket(
+    DEVICE_ID,
+    TOKEN,
+    transportReady ? wsBaseUrl : wsUrlFor("wifi"),
+  );
+  // [TH HARDCODE] 발표용 편의기능: 수신 문자 메시지 읽어주기(Android 전용).
+  // 서버 왕복이 필요 없는 순수 로컬 기능이라 WS 파이프라인과 독립적으로 마운트한다.
+  useSmsReader();
   const {
     cameraRef,
     device,
@@ -88,8 +155,12 @@ export function CameraView() {
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
 
+  // GPS 전송: 탐지 세션이 켜져 있을 때만 켠다(상시 watch는 배터리·부하).
+  // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
+  // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
+  // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
   useEffect(() => {
-    if (isMockMode) return;
+    if (isMockMode || !detectionEnabled) return;
     let cancelled = false;
 
     (async () => {
@@ -102,6 +173,7 @@ export function CameraView() {
           lon: coords.lon,
           heading: coords.heading,
         });
+        // 지도 마커 갱신은 2초 스로틀(WebView 주입 빈도 제한, 성능 합의 사항).
         const nowTs = Date.now();
         if (nowTs - lastMapPosTsRef.current >= 2000) {
           lastMapPosTsRef.current = nowTs;
@@ -114,8 +186,12 @@ export function CameraView() {
       cancelled = true;
       stopWatching();
     };
-  }, [isMockMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMockMode, detectionEnabled]);
 
+  // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
+  // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
+  // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
   const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
   const sttPressActiveRef = useRef(false);
   const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,9 +212,12 @@ export function CameraView() {
     },
   );
 
+  // 화면을 누르는 press-and-hold 도중 마이크 권한 다이얼로그가 뜨면 터치가 취소되어
+  // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
   useEffect(() => {
     if (isMockMode) return;
     void requestSttPermissionEarly();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
 
   useEffect(() => {
@@ -157,11 +236,81 @@ export function CameraView() {
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
   const [confThreshold, setConfThreshold] = useState(0.40);
+  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
+  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
+  const [detectionEnabled, setDetectionEnabled] = useState(false);
 
+  // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
+  // WS 재연결 후에도 현재 토글 값을 다시 보낸다.
+  useEffect(() => {
+    if (status !== "connected") return;
+    send({ type: "detection_control", enabled: detectionEnabled, ts: Date.now() });
+  }, [status, detectionEnabled, send]);
+
+  // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
+  // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
+  // 경로 데이터(navRoute)는 useWebSocket이 전용 상태로 직접 보존한다
+  // (lastMessage 경유 시 고빈도 메시지에 덮여 유실 - 실기기 확인).
   const [mapVisible, setMapVisible] = useState(false);
   const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
   const lastMapPosTsRef = useRef(0);
 
+  useEffect(() => {
+    if (!navRoute) {
+      setMapVisible(false);
+    }
+  }, [navRoute]);
+
+  // 2026-07-11 LiDAR 실거리 프로브 모드(프로토타입, iOS Pro 계열 전용, Mitos 로드맵 §2):
+  // 켜면 vision-camera를 내리고(isActive=false, 두 세션이 후면 카메라를 공유할 수 없는
+  // 프로토타입 제약) 자체 심도 세션으로 화면 3지점의 실거리를 표시한다. bbox 휴리스틱
+  // 거리와의 교차 검증(줄자 실측 대조)용 계측 화면이며, 탐지·경보는 이 모드 동안 정지한다.
+  const [depthMode, setDepthMode] = useState(false);
+  const [depthResult, setDepthResult] = useState<DepthProbeResult | null>(null);
+  const [depthError, setDepthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!depthMode) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    (async () => {
+      // vision-camera가 isActive=false 렌더로 세션을 놓을 시간을 준 뒤 프로브를 켠다.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (cancelled) return;
+      const started = await startDepthProbe();
+      if (cancelled) {
+        void stopDepthProbe();
+        return;
+      }
+      if (!started.ok) {
+        setDepthError(started.error ?? "프로브 시작 실패");
+        return;
+      }
+      setDepthError(null);
+      timer = setInterval(async () => {
+        const result = await probeDepth(DEPTH_PROBE_POINTS);
+        if (!cancelled && result) {
+          setDepthResult(result);
+          // 실측 기록용(Release 빌드에서는 미출력) - 시나리오 기록은 화면 판독으로 수행
+          console.log(
+            `[DepthProbe] acc=${result.accuracy} ` +
+              result.samples
+                .map((s, i) => `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m`)
+                .join(", "),
+          );
+        }
+      }, DEPTH_PROBE_INTERVAL_MS);
+    })();
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      void stopDepthProbe();
+      setDepthResult(null);
+      setDepthError(null);
+    };
+  }, [depthMode]);
+
+  // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트
   useEffect(() => {
     if (!lastMessage) return;
 
@@ -170,23 +319,25 @@ export function CameraView() {
       const risk = lastMessage.risk_level ?? "unknown";
       setLastDetect(`서버반사: ${alertId} (위험: ${risk})`);
     } else if (lastMessage.type === "guide") {
+      // 오디오 재생은 useWebSocket의 onmessage에서 직접 트리거된다(상태 경유 차단).
       const text = lastMessage.guidance_text ?? "";
       const risk = lastMessage.risk_level ?? "unknown";
       setLastDetect(`서버가이드: ${text} (${risk})`);
     } else if (lastMessage.type === "ack") {
       setLastDetect(`서버추론: 안전 (${lastMessage.decode_ms ?? 0}ms)`);
     } else if (lastMessage.type === "server_detection") {
-      const rawDets = lastMessage.detections;
-      const serverDets = Array.isArray(rawDets)
-        ? rawDets.filter((d: any) => d && (d.bbox || d.class_name || d.className))
-        : [];
+      const serverDets = lastMessage.detections ?? [];
       setDetections(serverDets);
     }
   }, [lastMessage]);
 
+  // Stale Closure 방지용 useRef 미러: setInterval 콜백은 등록 시점의 값을 캡처하므로
+  // 최신 상태는 반드시 ref 를 통해 읽어야 한다.
   const detectFrameRef = useRef(detectFrame);
   const isModelsLoadedRef = useRef(isModelsLoaded);
   const isMockModeRef = useRef(isMockMode);
+  // 2026-07-11: WS 연결 상태를 ref로 추적해 handleFrame 클로저 안에서 최신값을 읽는다.
+  // 폴백 모드에서 온디바이스 추론 결과를 BBox로 표시하기 위해 필요하다.
   const wsStatusRef = useRef(status);
   const sendRef = useRef(send);
   const sendBinaryRef = useRef(sendBinary);
@@ -208,6 +359,7 @@ export function CameraView() {
   const detectingRef = useRef(false);
   const lastDetectTsRef = useRef(0);
 
+  // Mock 햅틱 시각 핸들러 등록
   useEffect(() => {
     if (!MOCK_HAPTIC) return;
     hapticEngine.setMockHandler(() => {
@@ -217,11 +369,20 @@ export function CameraView() {
     return () => hapticEngine.setMockHandler(null);
   }, []);
 
+  // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
   const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
     const now = Date.now();
+    // 2026-07-11 event_id 구조화(dev 개선 계획서 §3): 기존 `event-${now}`는 ms 단위라
+    // 반사/인지 두 캡처 타이머가 같은 ms에 발화하면 event_id가 충돌했고, 서버 DB의
+    // event_id UNIQUE + 중복 저장 방지 로직(detection_guidance_log_service)이 두 번째
+    // 프레임 로그를 조용히 버렸다. device_id와 stream을 포함해 충돌을 제거한다.
     const frameStream = frame.stream ?? "reflex";
     const eventId = `event-${DEVICE_ID}-${frameStream}-${now}`;
 
+    // 로컬 추론 엔진 적재 여부와 관계없이 서버로 프레임 전송 수행 (WebSocket)
+    // raw JPEG 바이트가 있으면(실기기) base64를 경유하지 않고 메타데이터(JSON) + 바이너리
+    // 프레임 2개를 순차 전송한다. 단일 WS 연결에서 프레임 순서는 보장되므로 서버는
+    // "transport: binary" 메타 수신 직후 오는 바이너리 프레임을 해당 이벤트로 매칭한다.
     if (frame.jpegBytes && sendRef.current && sendBinaryRef.current) {
       sendRef.current({
         type: "detection",
@@ -235,6 +396,7 @@ export function CameraView() {
       });
       sendBinaryRef.current(frame.jpegBytes);
     } else if (frame.base64 && sendRef.current) {
+      // 폴백(Mock 등 jpegBytes 미지원 경로): 기존 base64 방식 유지
       sendRef.current({
         type: "detection",
         payload: {
@@ -248,6 +410,9 @@ export function CameraView() {
     }
 
     if (!isModelsLoadedRef.current) return;
+
+    // 실기기 온디바이스 추론 재활성화 (Vision/raw-tensor 불일치로 인한 크래시 원인 수정 완료,
+    // CoreMLInferenceBridge.swift 참조). 재현 테스트를 위해 서버 추론 전담 우회 가드를 제거함.
 
     const minInterval = isMockModeRef.current
       ? MOCK_DETECT_MIN_INTERVAL_MS
@@ -266,26 +431,38 @@ export function CameraView() {
       if (benchmark && !audioEngine.isGuidePlaying) {
         console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
       }
+      // 온디바이스 추론 지연을 캡처 루프에 피드백하여 반사 fps를 동적으로 조절
+      // (추론이 캡처 간격을 못 따라가면 fps를 낮춰 과부하로 인한 크래시 재발을 방지)
       reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
+      // BBox 오버레이용: det + seg 상위 결과 병합
       const allDetections = [...det, ...seg].slice(0, 20);
 
-      // 폴백 모드(서버 연결 끊김)에서는 server_detection이 들어오지 않으므로 온디바이스
-      // 추론 결과로 BBox를 표시한다. 정상 연결 시에는 온디바이스 det 결과가 비어 있을 수
-      // 있어 서버 결과를 덮어쓰지 않도록 한다(원래 의도 유지). Mock 모드는 항상 온디바이스 결과 사용.
+      // 2026-07-11 수정: 폴백 모드(서버 연결 끊김)에서는 server_detection이 들어오지
+      // 않으므로 온디바이스 추론 결과로 BBox를 표시한다. 정상 연결 시에는 온디바이스
+      // det 결과가 비어 있을 수 있어 서버 결과를 덮어쓰지 않도록 한다(원래 의도 유지).
+      // Mock 모드는 항상 온디바이스 결과를 사용한다.
       if (isMockModeRef.current || wsStatusRef.current === "fallback") {
         setDetectionsRef.current(allDetections);
       }
 
-
+      // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
       const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
         (d: OnDeviceDetectionResult) => OUTDOOR_SURFACE_CLASSES.includes(d.className) && d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE
       );
+      // docs/design/indoor_fp_mitigation_design.md §4.4: seg 기반 co-occurrence 게이트(hasOutdoorSurface)와
+      // VNClassifyImageRequest 씬 분류(scene.isLikelyIndoor)를 AND로 결합한다(중첩 방어).
+      // scene이 없거나(Android, 계측 실패) 판정 불가면 true로 폴백해 기존 게이트만으로 동작시킨다.
       const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
       const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
+        // 안전 보행로는 화면을 아무리 채워도 장애물이 아니므로 반사 경보 판정에서 제외
         if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
+        // 회귀 붕괴로 캔버스 크기를 초과하는 bbox는 기하학적으로 신뢰 불가 (§3 물리적 타당성 필터)
         if (isGeometricallyImplausible(d.bbox)) return false;
         if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
+        // 실외 보행로 신호가 전혀 없는 프레임(=실내로 추정)이면 어떤 클래스든 반사 경보 대상에서 제외.
+        // OUTDOOR_SURFACE_CLASSES 자신은 존재 자체가 hasOutdoorSurface를 true로 만들므로 자기 자신은 통과한다.
         if (!hasOutdoorSurface) return false;
+        // §4.4 씬 분류 게이트: 지면/초목/도로 긍정 증거 없이 실내로 판정되면 제외
         if (!isOutdoorByScene) return false;
         return true;
       });
@@ -302,34 +479,41 @@ export function CameraView() {
           }
         });
 
+        // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
         const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
 
+        // 주차센서식 거리 반비례 4단계 피드백 캘리브레이션
         if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
+          // 1단계: 초접근 (연속음 + 강한 진동)
           void hapticEngine.trigger("continuous");
-          void audioEngine.playBeep(0.0, 0);
+          void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
           if (!audioEngine.isGuidePlaying) {
             console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
           }
         } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
+          // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
           void hapticEngine.trigger("double");
-          void audioEngine.playBeep(0.0, 200);
+          void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
           if (!audioEngine.isGuidePlaying) {
             console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
           }
         } else if (maxAreaRatio > 0.03) {
+          // 3단계: 중거리 (일반 점멸 + 단발 진동)
           void hapticEngine.trigger("short");
-          void audioEngine.playBeep(0.0, 600);
+          void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
           if (!audioEngine.isGuidePlaying) {
             console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
           }
         } else {
+          // 4단계: 원거리 (매우 느린 점멸 + 무진동)
           hapticEngine.stopContinuous();
-          void audioEngine.playBeep(0.0, 1200);
+          void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
           if (!audioEngine.isGuidePlaying) {
             console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
           }
         }
       } else {
+        // 안전 상황: 햅틱 및 비프음 끔
         hapticEngine.stopContinuous();
         void audioEngine.stopBeep();
       }
@@ -348,12 +532,19 @@ export function CameraView() {
       }
     } catch (err) {
       console.error("[CameraView] 추론 오류:", err);
-    } finally { // <- finaly에서 finally로 철자 오류 완벽 정정!
+    } finally {
       detectingRef.current = false;
     }
-  }, []);
+  }, []); // 의존성 없음 - 모든 최신 상태를 ref 로 직접 참조
 
+  // 캡처 시작: 기본 OFF. "탐지 시작"으로 detectionEnabled=true일 때만 루프 기동.
+  // (상시 기동은 실기기 과부하·캡처 오류 유발 - 2026-07-13 th)
   useEffect(() => {
+    if (!detectionEnabled) {
+      stopCapture();
+      setDetections([]);
+      return;
+    }
     if (!isMockMode && !hasPermission) return;
     if (!isMockMode && !device) return;
     if (isCapturing) return;
@@ -362,21 +553,23 @@ export function CameraView() {
       void handleFrame(frame, frame.stream ?? "reflex");
     });
     return () => stopCapture();
-  }, [isMockMode, hasPermission, device]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMockMode, hasPermission, device, detectionEnabled]);
 
   useEffect(() => {
     const info: string[] = [];
     info.push(`모드: ${isMockMode ? "MOCK(시뮬레이터)" : "REAL(실기기)"}`);
     info.push(`권한: ${permissionStatus}`);
     if (!isMockMode) info.push(`카메라: ${device ? device.id : "없음"}`);
-    info.push(`WS: ${status}`);
-    info.push(`캡처: ${isCapturing ? "ON" : "OFF"} (반사 ${currentReflexFps}fps 동적)`);
+    info.push(`WS: ${status} / ${transportLabel(serverTransport)}`);
+    info.push(`캡처: ${isCapturing ? "ON" : "OFF"} (탐지토글 ${detectionEnabled ? "ON" : "OFF"}, 반사 ${currentReflexFps}fps 동적)`);
     info.push(`모델: ${segLoaded ? "seg" : "…"} / ${detLoaded ? "det" : "…"}`);
     if (detShapeLog) info.push(`det shape: ${detShapeLog}`);
     info.push(`추론: ${lastDetect}`);
     setDebugInfo(info);
-  }, [isMockMode, permissionStatus, device, status, isCapturing, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
+  }, [isMockMode, permissionStatus, device, status, serverTransport, isCapturing, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
 
+  // --- 권한 게이트 (실기기 전용) ---
   if (!isMockMode && !hasPermission) {
     return (
       <View style={styles.container}>
@@ -401,20 +594,15 @@ export function CameraView() {
     );
   }
 
-  const activeDetections = detections.filter(d => {
-    const cName = (d as any).class_name || d.className;
-    const cConf = d.confidence;
-    return cConf > getEffectiveConfThreshold(cName, confThreshold);
-  });
-
+  const activeDetections = detections.filter(
+    d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
+  );
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
-      const cName = (d as any).class_name || d.className;
-      const cConf = d.confidence;
-      const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
-      const dist = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
-      return `${cName} ${dist.toFixed(1)}m (${(cConf * 100).toFixed(0)}%)`;
-    }).join(", ")
+        const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
+        const dist = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
+        return `${d.className} ${dist.toFixed(1)}m (${(d.confidence * 100).toFixed(0)}%)`;
+      }).join(", ")
     : "없음";
 
   return (
@@ -422,6 +610,7 @@ export function CameraView() {
       style={styles.container}
       accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}`}
     >
+      {/* 1:1 카메라 스크린 기하학적 정합 프레임 */}
       <View style={styles.cameraContainer}>
         {isMockMode && previewSrc !== null ? (
           <Image
@@ -432,10 +621,15 @@ export function CameraView() {
         ) : (
           !isMockMode &&
           (useStreamCapture ? (
+            // 프레임 프로세서 경로(기본값, 2026-07-09): AVCapturePhotoOutput을 세션에
+            // 붙이지 않아(photo 미지정) 촬영마다 발생하던 AVAudioSessionInterruption을
+            // 원천 제거한다. 플랫폼별 구현: client/src/services/frameCaptureProviderSelect.ios.ts
             <Camera
               ref={cameraRef}
               device={device!}
-              isActive={true}
+              // 의도(2026-07-13): 탐지 시작 전=카메라 세션 OFF(검은 화면),
+              // 탐지 시작 후=프리뷰 ON. 부하 절감 + "탐지 중" 상태를 화면으로 구분.
+              isActive={detectionEnabled && !depthMode}
               video={true}
               audio={false}
               pixelFormat="yuv"
@@ -446,17 +640,31 @@ export function CameraView() {
             <Camera
               ref={cameraRef}
               device={device!}
-              isActive={true}
+              isActive={detectionEnabled && !depthMode}
               photo={true}
               audio={false}
               style={StyleSheet.absoluteFill}
             />
           ))
         )}
+        {!detectionEnabled && !isMockMode && (
+          <View style={styles.detectionIdleBanner} pointerEvents="none">
+            <Text style={styles.detectionIdleText}>
+              탐지 대기 중 (카메라 OFF) — 오른쪽 &quot;탐지 시작&quot;을 누르면 화면이 켜집니다
+            </Text>
+          </View>
+        )}
         {hapticFlash && <View style={styles.hapticFlash} />}
+        {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
       </View>
 
+      {/* 2026-07-10: react-native-vision-camera의 <Camera> 네이티브 뷰가 자체 제스처
+          인식기를 갖고 있어 부모 Pressable로 터치가 버블링되지 않는 문제(실기기 실측
+          확인: onPressIn 미발화)가 있어, 조상(ancestor) 방식 대신 카메라 위에 별도의
+          전체화면 투명 터치 레이어를 형제(sibling)로 얹는다. 아래에 나오는 실제 버튼들
+          (신뢰도 조절, STT 상태 배지, 디버그 패널)은 JSX상 이 레이어보다 뒤에 위치해
+          터치 우선순위를 그대로 가져간다. */}
       <Pressable
         style={StyleSheet.absoluteFill}
         onPressIn={() => {
@@ -466,7 +674,14 @@ export function CameraView() {
             delayedSttStartTimerRef.current = null;
           }
           void hapticEngine.trigger("short");
+          // STT 질문 상호작용 시작 - 응답 도착(또는 타임아웃) 전까지 인지 경로 가이드
+          // 음성만 뮤트한다(반사 경로는 안전 비협상 원칙상 그대로 유지, useWebSocket 참조).
           setSttInteractionActive(true);
+          // 2026-07-11 실기기 실측(메아리 버그 수정): TTS 응답 음성이 재생되는 도중
+          // 버튼을 누르면 stopGuideAudio()로 중단하더라도 잔여 스피커 출력이 마이크에
+          // 잡혀 안내문 통째로 전사되는 음향 블리드가 발생한다(13:24:07 로그 확인).
+          // stopGuideAudio 후 150ms 대기해 스피커가 물리적으로 완전히 멈춘 뒤 녹음을
+          // 시작한다 (서버 측 자기-에코 필터와 이중 방어).
           if (audioEngine.isGuidePlaying) {
             audioEngine.stopGuideAudio();
             delayedSttStartTimerRef.current = setTimeout(() => {
@@ -526,6 +741,9 @@ export function CameraView() {
         <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
       </View>
 
+      {/* 2026-07-10 정정: 시각장애인 사용자는 화면 속 작은 버튼 위치를 찾기 어려우므로,
+          STT 트리거는 이 상태 표시용 View가 아니라 최상위 컨테이너(Pressable) 전체가
+          담당한다. 화면 어디를 누르고 있어도 녹음이 시작된다. */}
       <View
         style={[styles.sttButton, sttStatus !== "idle" && styles.sttButtonActive]}
         pointerEvents="none"
@@ -538,28 +756,122 @@ export function CameraView() {
         )}
       </View>
 
+      {/* 2026-07-10: bottom:0/left:0/right:0로 화면 하단 전폭을 차지하는 불투명 래퍼라
+          버튼이 아닌 빈 공간을 눌러도 STT 터치 레이어보다 먼저 터치를 가로챘다(실기기
+          실측: 하단을 누르면 STT가 반응하지 않음). box-none으로 자기 자신은 투명 처리하고
+          내부 실제 버튼들만 터치를 받도록 한다. */}
       <View style={styles.panelWrap} pointerEvents="box-none">
         <DebugTriggerPanel />
       </View>
 
-      {mapVisible && (
+      {/* 2026-07-11 하단 T맵 지도 패널: 정적 표시 전용(pointerEvents none이라 STT
+          press-and-hold 터치가 그대로 통과), 토글 켜짐일 때만 WebView 마운트.
+          켜면 하단 디버그 패널 위를 덮는다(발표·모니터링 용도 전제). */}
+      {mapVisible && navRoute && (
         <View style={styles.navMapWrap} pointerEvents="none">
           <NavMapPanel
-            appKey={navRoute?.appKey ?? ""}
-            waypoints={navRoute?.waypoints ?? []}
+            appKey={navRoute.appKey}
+            waypoints={navRoute.waypoints}
             current={mapPos}
           />
         </View>
       )}
-      <View style={styles.mapToggleWrap} pointerEvents="box-none">
+      {navRoute && (
+        <View style={styles.mapToggleWrap} pointerEvents="box-none">
+          <Pressable
+            style={styles.mapToggleButton}
+            onPress={() => setMapVisible((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+          >
+            <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* 2026-07-11 LiDAR 실거리 프로브(프로토타입, 운영자/계측용): 켜면 카메라
+          탐지·경보가 일시 정지되고 화면 3지점의 LiDAR 실거리를 표시한다. */}
+      {depthMode && (
+        <View style={styles.depthOverlay} pointerEvents="none">
+          <Text style={styles.depthTitle}>
+            LiDAR 실거리 (탐지 일시정지, 정확도: {depthResult?.accuracy ?? "-"})
+          </Text>
+          {depthError ? (
+            <Text style={styles.depthError}>{depthError}</Text>
+          ) : (
+            DEPTH_PROBE_POINTS.map((point, i) => {
+              const sample = depthResult?.samples?.[i];
+              return (
+                <Text key={point.label} style={styles.depthRow}>
+                  {point.label}:{" "}
+                  {sample && sample.meters != null ? `${sample.meters.toFixed(2)} m` : "측정 불가"}
+                </Text>
+              );
+            })
+          )}
+        </View>
+      )}
+      <View style={styles.detectionToggleWrap} pointerEvents="box-none">
         <Pressable
-          style={styles.mapToggleButton}
-          onPress={() => setMapVisible((v) => !v)}
+          style={[
+            styles.mapToggleButton,
+            detectionEnabled && styles.detectionToggleActive,
+          ]}
+          onPress={() => {
+            setDetectionEnabled((v) => {
+              const next = !v;
+              if (!next) {
+                hapticEngine.stopContinuous();
+                void audioEngine.stopBeep();
+              }
+              return next;
+            });
+          }}
           accessibilityRole="button"
-          accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+          accessibilityLabel={detectionEnabled ? "탐지 중지" : "탐지 시작"}
         >
-          <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+          <Text style={styles.mapToggleText}>
+            {detectionEnabled ? "탐지 중지" : "탐지 시작"}
+          </Text>
         </Pressable>
+      </View>
+
+      <View style={styles.transportToggleWrap} pointerEvents="box-none">
+        <Pressable
+          style={[
+            styles.mapToggleButton,
+            serverTransport === "usb" && styles.transportToggleUsb,
+          ]}
+          onPress={() => {
+            const next: ServerTransport = serverTransport === "wifi" ? "usb" : "wifi";
+            setServerTransport(next);
+            void saveServerTransport(next);
+            console.log(`[ServerTransport] 전환: ${transportLabel(next)} -> ${wsUrlFor(next)}`);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            serverTransport === "wifi"
+              ? "WiFi 연결 중. USB 개발 모드로 전환"
+              : "USB 연결 중. WiFi 평상시 모드로 전환"
+          }
+        >
+          <Text style={styles.mapToggleText}>
+            {serverTransport === "wifi" ? "연결: WiFi" : "연결: USB"}
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.depthToggleWrap} pointerEvents="box-none">
+        {isDepthProbeSupported() ? (
+          <Pressable
+            style={styles.mapToggleButton}
+            onPress={() => setDepthMode((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={depthMode ? "거리 측정 끄기" : "거리 측정 켜기"}
+          >
+            <Text style={styles.mapToggleText}>{depthMode ? "거리측정 끄기" : "거리측정"}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -575,13 +887,19 @@ function DebugBox({ info }: { info: string[] }) {
   );
 }
 
+// 간단한 스트링 해시를 통해 고유 HSL 색상 생성 (시각장애인 보행 시인성 확보)
 function getClassColor(className: string): string {
+  // 긴급 충돌 위험군은 빨간색 강제 고정
   if (HIGH_HAZARDS.includes(className) || className === "caution") {
     return "#EF4444";
   }
+
+  // 지면 관련 위험은 주황색 강제 고정
   if (className === "roadway") {
     return "#F59E0B";
   }
+
+  // 그 외 일반 장애물은 고유 해시 기반 HSL 컬러 매핑 (선명도 85%, 밝기 55%)
   let hash = 0;
   for (let i = 0; i < className.length; i++) {
     hash = className.charCodeAt(i) + ((hash << 5) - hash);
@@ -590,26 +908,31 @@ function getClassColor(className: string): string {
   return `hsl(${hue}, 85%, 55%)`;
 }
 
+/**
+ * BBox 오버레이: 카메라 프리뷰 위에 탐지 박스를 그린다.
+ * 박스 좌표는 640x640 기준이므로 화면 대비 비율로 변환.
+ */
 function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {detections.map((d, i) => {
-        // 안전 가드레일: 데이터 구조가 깨져있거나 bbox가 없으면 강제 패스하여 렌더링 붕괴 방지
-        if (!d || !d.bbox) return null;
-
-        const cName = (d as any).class_name || d.className;
-        const color = getClassColor(cName);
+        const color = getClassColor(d.className);
         const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
         const topPct = (d.bbox.y / FRAME_SIZE) * 100;
         const widthPct = (d.bbox.w / FRAME_SIZE) * 100;
         const heightPct = (d.bbox.h / FRAME_SIZE) * 100;
         const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
         const distance = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
+        // 박스가 화면 밖(음수 좌표 등)으로 나가도 클래스명 라벨은 항상 화면 안쪽에 보이도록
+        // 박스 테두리와 라벨의 위치를 분리하고, 라벨 좌표만 [0, 100]%로 clamp한다.
         const labelLeftPct = Math.min(100, Math.max(0, leftPct));
         const labelTopPct = Math.min(100, Math.max(0, topPct));
+        // Fragment 사용 필수: 두 절대좌표 View를 감싸는 style 없는 중간 View를 두면
+        // 그 View가 0x0으로 collapse되어, 안쪽 %기반 left/top/width/height가 그 0x0
+        // 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생함(실기기 재현 확인, 2026-07-07).
+        // 반드시 두 View 모두 바깥 absoluteFill 컨테이너의 직계 자식으로 유지해야 한다.
         return (
           <Fragment key={`${d.model}-${i}`}>
-
             <View
               style={{
                 position: "absolute",
@@ -629,7 +952,7 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
               ]}
             >
               <Text style={styles.bboxText}>
-                {cName} {distance.toFixed(1)}m ({(d.confidence * 100).toFixed(0)}%)
+                {d.className} {distance.toFixed(1)}m ({(d.confidence * 100).toFixed(0)}%)
               </Text>
             </View>
           </Fragment>
@@ -785,6 +1108,67 @@ const styles = StyleSheet.create({
     bottom: 222,
     right: 12,
   },
+  depthToggleWrap: {
+    position: "absolute",
+    bottom: 262,
+    right: 12,
+  },
+  detectionToggleWrap: {
+    position: "absolute",
+    bottom: 302,
+    right: 12,
+  },
+  transportToggleWrap: {
+    position: "absolute",
+    bottom: 342,
+    right: 12,
+  },
+  detectionToggleActive: {
+    backgroundColor: "rgba(16,185,129,0.85)",
+  },
+  transportToggleUsb: {
+    backgroundColor: "rgba(59,130,246,0.85)",
+  },
+  detectionIdleBanner: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 24,
+  },
+  detectionIdleText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  depthOverlay: {
+    position: "absolute",
+    top: "32%",
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.72)",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minWidth: 220,
+  },
+  depthTitle: {
+    color: "#7FDBFF",
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  depthRow: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+    lineHeight: 24,
+  },
+  depthError: {
+    color: "#FF6B6B",
+    fontSize: 13,
+  },
   mapToggleButton: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -837,6 +1221,10 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   cameraContainer: {
+    // 실제 캡처/추론 프레임은 640x640 정사각형(디버그로 확인함, 2026-07-06)이므로
+    // 미리보기 컨테이너도 1:1 정사각형이어야 BBox 좌표가 화면과 정합한다.
+    // 3:4였을 때는 미리보기가 실제 캡처 범위보다 넓게 보여, 박스가 실제 사물보다
+    // 훨씬 넓게 그려지는 것처럼 보이는 불일치가 있었다.
     width: "100%",
     aspectRatio: 1,
     overflow: "hidden",

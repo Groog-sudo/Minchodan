@@ -288,8 +288,10 @@ class SupertonicTTSService(TTSService):
     def __init__(self) -> None:
         model_dir_env = os.getenv("SUPERTONIC_MODEL_DIR", "").strip()
         self.model_dir = model_dir_env or None
-        self.voice_name = os.getenv("SUPERTONIC_VOICE", "F1")
-        self.total_steps = int(os.getenv("SUPERTONIC_TOTAL_STEPS", "8"))
+        # 접근성 기본: F1보다 부드러운 F2, steps 12로 기계음 완화(지연↑ 트레이드오프).
+        # 환경 변수로 F3~F5/M1~M5 및 steps(8~16) 재조정 가능.
+        self.voice_name = os.getenv("SUPERTONIC_VOICE", "F2")
+        self.total_steps = int(os.getenv("SUPERTONIC_TOTAL_STEPS", "12"))
         self.speed_min = float(os.getenv("SUPERTONIC_SPEED_MIN", "0.7"))
         self.speed_max = float(os.getenv("SUPERTONIC_SPEED_MAX", "2.0"))
         self._tts: SupertonicTTS | None = None
@@ -462,10 +464,119 @@ class Pyttsx3TTSService(TTSService):
                     logger.warning(f"[Pyttsx3TTS] 임시 파일 삭제 실패: {e}")
 
 
+class EdgeTTSService(TTSService):
+    """Microsoft Edge Neural TTS (`edge-tts`) 기반 한국어 합성.
+
+    [도입 경위, 2026-07-13] 로컬 ONNX(Supertonic/Piper)는 가볍지만 기계음 체감이
+    남아, 접근성 청취에서 더 자연스러운 한국어가 필요했다. Edge Neural
+    (`ko-KR-SunHiNeural` 등)은 로컬 모델 없이 HTTP로 합성해 설치 부담이 거의
+    없고 한국어 자연도가 높다. 네트워크가 필수이므로 오프라인 시에는
+    `TTS_ENGINE=supertonic`으로 되돌린다.
+
+    출력은 기존 인지 경로 계약에 맞춰 WAV(PCM16)로 변환한다(edge-tts 원본은 MP3).
+    """
+
+    def __init__(self) -> None:
+        self.voice_name = os.getenv("EDGE_TTS_VOICE", "ko-KR-SunHiNeural").strip()
+        self.sample_rate = int(os.getenv("EDGE_TTS_SAMPLE_RATE", "22050"))
+        self._synthesize_lock = asyncio.Lock()
+        logger.info(f"[EdgeTTS] 준비 완료 (voice={self.voice_name})")
+
+    @staticmethod
+    def _speed_to_rate(speed: float) -> str:
+        """RealtimeTTS speed(1.0=표준)를 edge-tts rate 문자열(+0%/-15%)로 변환한다."""
+        clamped = max(0.5, min(2.0, float(speed)))
+        rate_pct = int(round((clamped - 1.0) * 100))
+        return f"{rate_pct:+d}%"
+
+    def _mp3_to_wav(self, mp3_bytes: bytes) -> bytes | None:
+        """edge-tts MP3 바이트를 PCM16 mono WAV로 변환한다(imageio-ffmpeg 번들)."""
+        if not mp3_bytes:
+            return None
+        try:
+            import subprocess  # nosec B404 - 고정 인자 리스트만 사용, 외부 입력 미포함
+
+            import imageio_ffmpeg
+        except ImportError as e:
+            logger.error(f"[EdgeTTS] MP3→WAV 변환 의존성 없음(imageio-ffmpeg): {e}")
+            return None
+
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        with tempfile.TemporaryDirectory(prefix="edge_tts_") as tmp_dir:
+            mp3_path = os.path.join(tmp_dir, "in.mp3")
+            wav_path = os.path.join(tmp_dir, "out.wav")
+            with open(mp3_path, "wb") as mp3_file:
+                mp3_file.write(mp3_bytes)
+            proc = subprocess.run(  # noqa: S603  # nosec B603 - ffmpeg 경로(imageio_ffmpeg)와 tmp 경로 모두 내부 고정값, shell 미사용
+                [
+                    ffmpeg,
+                    "-y",
+                    "-i",
+                    mp3_path,
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ar",
+                    str(self.sample_rate),
+                    "-ac",
+                    "1",
+                    wav_path,
+                ],
+                capture_output=True,
+                check=False,
+            )
+            if proc.returncode != 0 or not os.path.exists(wav_path):
+                err = (proc.stderr or b"").decode("utf-8", errors="replace")[-400:]
+                logger.error(f"[EdgeTTS] ffmpeg 변환 실패: {err}")
+                return None
+            with open(wav_path, "rb") as wav_file:
+                wav_bytes = wav_file.read()
+            if not wav_bytes:
+                logger.error("[EdgeTTS] 변환 결과 WAV가 비어 있습니다.")
+                return None
+            return wav_bytes
+
+    async def generate(self, text: str, voice: str, speed: float = 1.0) -> bytes | None:
+        if not text or not text.strip():
+            logger.warning("[EdgeTTS] 빈 텍스트는 합성하지 않습니다.")
+            return None
+
+        try:
+            import edge_tts
+        except ImportError as e:
+            logger.error(f"[EdgeTTS] edge-tts 미설치: {e}")
+            return None
+
+        # voice 인자는 하위 호환용. 실제 화자는 EDGE_TTS_VOICE(또는 명시적 한국어 이름) 우선.
+        selected_voice = self.voice_name
+        if isinstance(voice, str) and voice.startswith("ko-KR-"):
+            selected_voice = voice
+
+        rate = self._speed_to_rate(speed)
+        try:
+            async with self._synthesize_lock:
+                communicate = edge_tts.Communicate(
+                    text=text.strip(),
+                    voice=selected_voice,
+                    rate=rate,
+                )
+                mp3_parts: list[bytes] = []
+                async for chunk in communicate.stream():
+                    if chunk.get("type") == "audio" and chunk.get("data"):
+                        mp3_parts.append(chunk["data"])
+                mp3_bytes = b"".join(mp3_parts)
+                if not mp3_bytes:
+                    logger.error("[EdgeTTS] 합성 결과 MP3가 비어 있습니다.")
+                    return None
+                return await asyncio.to_thread(self._mp3_to_wav, mp3_bytes)
+        except Exception as e:
+            logger.error(f"[EdgeTTS] 합성 중 오류 발생: {e}")
+            return None
+
+
 # ============================================================
 # [파트 4] get_tts_service() 팩토리 함수
 # - 환경 변수에 따라 어떤 TTS 구현체를 사용할지 결정
-# - 현재 지원: supertonic (기본), piper, pyttsx3
+# - 현재 지원: edge (자연한국어), supertonic (기본 로컬), piper, pyttsx3
 # - 클라이언트(react-native-tts) 사용 시에도 이 팩토리는 유지될 수 있음
 #   (단, 이 경우 실제 audio bytes 생성은 클라이언트가 담당)
 # ============================================================
@@ -474,19 +585,21 @@ class Pyttsx3TTSService(TTSService):
 def get_tts_service() -> TTSService:
     """
     현재 설정에 맞는 음성 합성 서비스 객체를 만들어서 돌려준다.
-    환경 변수 TTS_ENGINE (supertonic, piper, pyttsx3. 기본 supertonic)에 따라 결정.
+    환경 변수 TTS_ENGINE (edge, supertonic, piper, pyttsx3. 기본 supertonic)에 따라 결정.
     docs/environment_variables.md, pipeline_stage_design.md, architecture.md 준수.
 
-    supertonic이 기본값인 이유는 2026-07-09 실기기 청취 검증 결과 발음 품질이
-    가장 우수했기 때문이다(CLAUDE.md §2). pyttsx3는 GPU/네트워크 없이 로컬
-    개발 환경(특히 Windows)에서 즉시 구동 가능한 저사양 대체 옵션으로 보존한다.
+    edge는 Microsoft Neural 한국어로 자연도가 높고 로컬 모델이 없다(네트워크 필수).
+    오프라인/로컬 기본은 여전히 supertonic이다.
     """
     engine = os.getenv("TTS_ENGINE", "supertonic").lower().strip()
 
-    if engine not in {"", "default", "supertonic", "piper", "pyttsx3"}:
+    if engine not in {"", "default", "supertonic", "piper", "pyttsx3", "edge"}:
         logger.warning(f"[TTS] 지원하지 않는 TTS_ENGINE='{engine}'. 기본값(supertonic) 사용.")
+        engine = "supertonic"
 
     try:
+        if engine == "edge":
+            return EdgeTTSService()
         if engine == "piper":
             return PiperTTSService()
         if engine == "pyttsx3":

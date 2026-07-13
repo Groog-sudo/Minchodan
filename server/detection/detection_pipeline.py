@@ -16,6 +16,7 @@ from server.detection.gates.head_level_gate import head_level_gate
 from server.detection.gates.reflex_gate import reflex_gate
 from server.detection.gates.surface_gate import surface_gate
 from server.detection.schemas import Detection, DetectionResult, ReflexAlert, SurfaceResult
+from server.detection.surface_departure import braille_follow_direction, check_sidewalk_departure
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ class DetectionPipeline:
         if reflex_alert is not None:
             reflex_alert.event_id = event_id
             reflex_alert.ts = time.time()
+            reflex_alert.inference_ms = (time.time() - start_ts) * 1000
             logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
             return reflex_alert, detections, surfaces
 
@@ -140,6 +142,7 @@ class DetectionPipeline:
         if head_level_alert is not None:
             head_level_alert.event_id = event_id
             head_level_alert.ts = time.time()
+            head_level_alert.inference_ms = (time.time() - start_ts) * 1000
             logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
             return head_level_alert, detections, surfaces
 
@@ -147,11 +150,20 @@ class DetectionPipeline:
         if surface_alert is not None:
             surface_alert.event_id = event_id
             surface_alert.ts = time.time()
+            surface_alert.inference_ms = (time.time() - start_ts) * 1000
             logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
             return surface_alert, detections, surfaces
 
         risk_hint = self._classify_risk(detections, surfaces)
         inference_ms = (time.time() - start_ts) * 1000
+
+        is_departing = check_sidewalk_departure(surfaces, width, height)
+        braille_direction = braille_follow_direction(surfaces, width, height)
+        if is_departing:
+            logger.info(
+                f"[Pipeline] 보도 이탈 판정(단일 프레임): event_id={event_id}, "
+                f"braille_direction={braille_direction}"
+            )
 
         if risk_hint in ("mid", "low"):
             await self._publish_cognitive(event_id, detections, surfaces, risk_hint)
@@ -162,6 +174,8 @@ class DetectionPipeline:
             surface=surfaces,
             risk_hint=risk_hint,
             inference_ms=inference_ms,
+            is_departing=is_departing,
+            braille_direction=braille_direction,
         )
         return res, detections, surfaces
 

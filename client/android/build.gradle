@@ -20,5 +20,23 @@ allprojects {
   }
 }
 
+// Windows: 프로젝트 경로가 길어도 CMake/NDK 빌드가 되도록 네이티브 캐시만 짧은 경로로 분리
+subprojects { subproject ->
+  subproject.afterEvaluate {
+    def hasNativePlugin = subproject.plugins.hasPlugin("com.android.library") ||
+      subproject.plugins.hasPlugin("com.android.application")
+    if (!hasNativePlugin) {
+      return
+    }
+
+    def androidExt = subproject.extensions.findByName("android")
+    def cmakeExt = androidExt?.externalNativeBuild?.cmake
+    if (cmakeExt != null) {
+      def cacheName = subproject.path.replace(":", "_").replace("/", "_")
+      cmakeExt.buildStagingDirectory = new File("C:/AndroidCxx/${cacheName}")
+    }
+  }
+}
+
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"

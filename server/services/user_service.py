@@ -17,7 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import AppUser, UserDevice
 from server.db.repositories import DeviceRepository, UserRepository
-from server.db.schemas import AppUserCreate, AppUserResponse, UserDeviceCreate
+from server.db.schemas import (
+    AppUserCreate,
+    AppUserResponse,
+    AppUserWithDevicesResponse,
+    MemberRegisterRequest,
+    UserDeviceCreate,
+)
 
 # 💡 [면접 대비 주석 - 서비스 계층의 역할]
 # Q. 굳이 API 라우터 놔두고 Service를 따로 만든 이유가 뭡니까?
@@ -76,3 +82,74 @@ class UserService:
             )
 
         return AppUserResponse.model_validate(user)
+
+    # ==========================================
+    # 2026-07-12 관리자 회원 등록 화면용 신규 로직.
+    #
+    # 기존 register_user_and_device는 "익명 자동등록 -> 실명 전환" 시나리오를
+    # 처리하지 못한다: 새 phone으로 새 AppUser를 만든 뒤, 이미 익명 사용자 소유인
+    # device_uuid를 그 새 user_id로 붙이려다 "Device UUID is registered to another
+    # user" 충돌을 낸다. 관리자 화면은 "이 기기의 소유자 정보를 실명으로 갱신한다"는
+    # 의미이므로, device_uuid를 먼저 조회해 있으면 UPDATE, 없으면 CREATE로 분기한다.
+    # ==========================================
+    async def register_or_convert_member(self, payload: MemberRegisterRequest) -> AppUserResponse:
+        device = await self.device_repo.get_by_uuid(payload.device_uuid)
+
+        if device is not None:
+            # 이미 등록된 기기(대개 익명 자동등록) - 소유 회원 프로필을 실명으로 갱신한다.
+            existing_user = await self.user_repo.get_by_id(device.user_id)
+            if existing_user is None:
+                # FK 무결성상 발생하면 안 되는 상태지만 방어적으로 처리한다.
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="등록된 기기의 소유 회원 정보를 찾을 수 없습니다.",
+                )
+            phone_owner = await self.user_repo.get_by_phone(payload.phone)
+            if phone_owner is not None and phone_owner.user_id != existing_user.user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="해당 전화번호는 이미 다른 회원에게 등록되어 있습니다.",
+                )
+            updated = await self.user_repo.update_profile(
+                existing_user.user_id,
+                name=payload.name,
+                phone=payload.phone,
+                disability_severity=payload.disability_severity,
+                birth_date=payload.birth_date,
+                guardian_phone=payload.guardian_phone,
+                address=payload.address,
+            )
+            return AppUserResponse.model_validate(updated)
+
+        # 기기가 아직 없는 경우: 완전 신규 등록(관리자가 실기기 접속 전에 미리 등록해두는
+        # 경우). 같은 phone의 회원이 이미 있으면 새 기기만 그 회원에게 추가한다.
+        user = await self.user_repo.get_by_phone(payload.phone)
+        if user is None:
+            user = await self.user_repo.create(
+                AppUser(
+                    name=payload.name,
+                    phone=payload.phone,
+                    disability_severity=payload.disability_severity,
+                    birth_date=payload.birth_date,
+                    guardian_phone=payload.guardian_phone,
+                    address=payload.address,
+                )
+            )
+        await self.device_repo.create(
+            UserDevice(
+                user_id=user.user_id,
+                device_uuid=payload.device_uuid,
+                platform=payload.platform,
+            )
+        )
+        return AppUserResponse.model_validate(user)
+
+    async def list_members(
+        self, limit: int = 20, offset: int = 0
+    ) -> list[AppUserWithDevicesResponse]:
+        """관리자 회원 관리 화면용 목록 조회. 등록 기기까지 함께 반환한다."""
+        users = await self.user_repo.list_all(limit=limit, offset=offset)
+        return [AppUserWithDevicesResponse.model_validate(u) for u in users]
+
+    async def count_members(self) -> int:
+        return await self.user_repo.count_all()

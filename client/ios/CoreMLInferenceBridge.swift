@@ -110,17 +110,26 @@ class CoreMLInferenceBridge: NSObject {
     DispatchQueue.global(qos: .userInteractive).async {
       do {
         let startTime = CFAbsoluteTimeGetCurrent()
-        let detResults = try self.runDetection(model: detModel, cgImage: cgImage, modelType: "object_detection")
+        let detPrediction = try self.predictRaw(model: detModel, cgImage: cgImage)
+        let detResults = self.runDetection(prediction: detPrediction, modelType: "object_detection")
         let detTime = CFAbsoluteTimeGetCurrent()
         let detLatency = (detTime - startTime) * 1000.0
 
         var segResults: [[String: Any]] = []
         var segLatency = 0.0
+        // 2026-07-13 추가: 서버 server/detection/surface_departure.py와 동일 목적(사용자
+        // 발밑 근사 기준점이 roadway/caution 마스크 안에 있는지)을 온디바이스에서도 계산한다.
+        // 아직 반사(reflex) 경보/햅틱에는 연결하지 않는다 - 이중 경로 원칙상 새 반사 트리거는
+        // 실기기 노이즈 검증(단일 기준점이 세그멘테이션 경계에서 얼마나 흔들리는지)을 먼저
+        // 거쳐야 하며, 이 값은 우선 JS 측에 로그용으로만 전달한다.
+        var isDepartingSidewalk = false
 
         // segmentation 모델이 로드된 경우에만 실행
         if let segModel = self.segModel {
           let segStartTime = CFAbsoluteTimeGetCurrent()
-          segResults = try self.runDetection(model: segModel, cgImage: cgImage, modelType: "segmentation")
+          let segPrediction = try self.predictRaw(model: segModel, cgImage: cgImage)
+          segResults = self.runDetection(prediction: segPrediction, modelType: "segmentation")
+          isDepartingSidewalk = self.computeSidewalkDeparture(prediction: segPrediction)
           segLatency = (CFAbsoluteTimeGetCurrent() - segStartTime) * 1000.0
         }
 
@@ -132,6 +141,9 @@ class CoreMLInferenceBridge: NSObject {
 
         let totalLatency = detLatency + segLatency + sceneLatency
         print("[CoreMLBridge] 벤치마크 - 탐지(det): \(String(format: "%.2f", detLatency))ms | 분할(seg): \(String(format: "%.2f", segLatency))ms | 씬분류(scene): \(String(format: "%.2f", sceneLatency))ms | 총추론: \(String(format: "%.2f", totalLatency))ms")
+        if isDepartingSidewalk {
+          print("[CoreMLBridge][SurfaceDeparture] 보도 이탈 판정(온디바이스, 단일 프레임)")
+        }
 
         DispatchQueue.main.async {
           let benchmarkDict: [String: Any] = [
@@ -144,7 +156,8 @@ class CoreMLInferenceBridge: NSObject {
             "seg": segResults as NSArray,
             "det": detResults as NSArray,
             "benchmark": benchmarkDict as NSDictionary,
-            "scene": sceneResult as NSDictionary
+            "scene": sceneResult as NSDictionary,
+            "surfaceDeparture": isDepartingSidewalk
           ]
           resolve(responseDict as NSDictionary)
         }
@@ -225,11 +238,15 @@ class CoreMLInferenceBridge: NSObject {
   }
 
   // end2end YOLO 모델 추론 및 raw tensor [1, 300, attrsPerBox] 파싱
-  private func runDetection(model: MLModel, cgImage: CGImage, modelType: String) throws -> [[String: Any]] {
-    // 입력 이미지 640x640 리사이즈 (CoreML ImageType 자동 처리)
+  // 입력 이미지 640x640 리사이즈 후 CoreML 추론을 1회 실행한다. det/seg 각 프레임당
+  // 정확히 한 번만 호출해야 한다(segmentation은 박스 파싱과 이탈 판정이 이 결과를
+  // 공유하므로, 중복 호출하면 추론 비용이 2배가 된다).
+  private func predictRaw(model: MLModel, cgImage: CGImage) throws -> MLFeatureProvider {
     let inputFeature = try prepareInput(cgImage: cgImage, expectedSize: 640)
-    let prediction = try model.prediction(from: inputFeature)
+    return try model.prediction(from: inputFeature)
+  }
 
+  private func runDetection(prediction: MLFeatureProvider, modelType: String) -> [[String: Any]] {
     // segmentation 모델은 출력이 2개다: [1, 300, 38](박스+마스크계수)와
     // [1, 32, 160, 160](프로토타입 마스크). featureNames는 Set 기반이라 순서가
     // 보장되지 않으므로 .first로 집으면 실기기에서 프로토 마스크 텐서를 집어
@@ -245,6 +262,80 @@ class CoreMLInferenceBridge: NSObject {
 
     return parseYoloOutput(multiArray: outputMultiArray, modelType: modelType)
   }
+
+  // =========================================================================
+  // 👨‍💻 HARD CODE 영역 시작: 온디바이스 보도 이탈 판정 (프로토타입 마스크 내적) 👨‍💻
+  // 💡 [면접 대비 주석]
+  // 질문: 서버는 point-in-polygon인데 온디바이스는 왜 다른 방식인가요?
+  // 답변: 서버(yolo_segmentor.py)는 ultralytics가 이미 폴리곤(mask.xy)으로 뽑아준 결과를
+  // 받지만, CoreML end2end export는 폴리곤을 주지 않고 YOLOv8-seg 원형 그대로
+  // "인스턴스별 마스크 계수 32개(박스 텐서의 6번 인덱스 이후) + 프로토타입 마스크
+  // [1,32,160,160]"을 준다. 실제 마스크는 sigmoid(계수·프로토타입)로 복원되는데,
+  // 우리에게 필요한 건 발밑 기준점 딱 한 픽셀의 안/밖 여부뿐이므로 160x160 래스터
+  // 전체를 복원할 필요가 없다 - 기준점 좌표에서만 32차원 내적을 계산하면
+  // 인스턴스당 연산 32회로 끝난다(폴리곤 추출·레이캐스팅보다 오히려 더 가볍다).
+  // =========================================================================
+
+  // 사용자 발밑 근사 기준점(서버 surface_departure.py REFERENCE_POINT_*_RATIO와 동일 관례).
+  private let departureReferenceXRatio: Double = 0.5
+  private let departureReferenceYRatio: Double = 0.9
+
+  // segClassNames 기준 caution=1, roadway=2. server DEPARTURE_SURFACE_CLASSES와 동일 근거.
+  private let departureSurfaceClassIds: Set<Int> = [1, 2]
+
+  private func computeSidewalkDeparture(prediction: MLFeatureProvider) -> Bool {
+    let arrays = prediction.featureNames.lazy
+      .compactMap({ prediction.featureValue(for: $0)?.multiArrayValue })
+
+    guard let boxArray = arrays.first(where: { $0.shape.count == 3 }),
+          let protoArray = arrays.first(where: { $0.shape.count == 4 }) else {
+      return false
+    }
+
+    let boxShape = boxArray.shape.map { $0.intValue }
+    let protoShape = protoArray.shape.map { $0.intValue }
+    // boxShape: [1, numBoxes, 38] (6 + 32 마스크계수). protoShape: [1, 32, protoH, protoW].
+    guard boxShape.count == 3, boxShape[2] == 38,
+          protoShape.count == 4, protoShape[1] == 32 else {
+      return false
+    }
+
+    let numBoxes = boxShape[1]
+    let protoHeight = protoShape[2]
+    let protoWidth = protoShape[3]
+    let refX = min(protoWidth - 1, max(0, Int(Double(protoWidth) * departureReferenceXRatio)))
+    let refY = min(protoHeight - 1, max(0, Int(Double(protoHeight) * departureReferenceYRatio)))
+
+    let boxPtr = UnsafeMutablePointer<Float32>(boxArray.dataPointer.assumingMemoryBound(to: Float32.self))
+    let boxStrides = boxArray.strides.map { $0.intValue }
+    let protoPtr = UnsafeMutablePointer<Float32>(protoArray.dataPointer.assumingMemoryBound(to: Float32.self))
+    let protoStrides = protoArray.strides.map { $0.intValue }
+
+    for i in 0..<numBoxes {
+      let baseOffset = i * boxStrides[1]
+      let confidence = Double(boxPtr[baseOffset + 4 * boxStrides[2]])
+      if confidence < confThreshold { continue }
+      let classId = Int(boxPtr[baseOffset + 5 * boxStrides[2]].rounded())
+      guard departureSurfaceClassIds.contains(classId) else { continue }
+
+      // mask = sigmoid(coeff · prototype[:, refY, refX]) - 기준점 한 픽셀만 복원.
+      var dot: Float32 = 0.0
+      for c in 0..<32 {
+        let coeff = boxPtr[baseOffset + (6 + c) * boxStrides[2]]
+        let protoOffset = c * protoStrides[1] + refY * protoStrides[2] + refX * protoStrides[3]
+        dot += coeff * protoPtr[protoOffset]
+      }
+      let maskValue = 1.0 / (1.0 + exp(-Double(dot)))
+      if maskValue > 0.5 {
+        return true
+      }
+    }
+    return false
+  }
+
+  // =========================================================================
+  // 👨‍💻 HARD CODE 영역 끝
+  // =========================================================================
 
   // CGImage -> CVPixelBuffer (640x640 RGB) 변환
   private func prepareInput(cgImage: CGImage, expectedSize: Int) throws -> MLFeatureProvider {

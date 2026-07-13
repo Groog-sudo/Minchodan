@@ -45,12 +45,13 @@ def _make_stt_result(text: str, has_input: bool = True) -> SttTranscribeResult:
 class _FakeNavManager:
     """테스트에서 navigation 상태 전이와 경로 갱신 호출만 추적한다."""
 
-    def __init__(self, status: str = "IDLE"):
+    def __init__(self, status: str = "IDLE", detection_enabled: bool = False):
         self.status = status
         self.last_route: list[dict] = []
         self.session = SimpleNamespace(lat=None, lon=None)
         self.awaiting_question = False
         self.awaiting_intent = False
+        self.detection_enabled = detection_enabled
 
     def get_status(self, device_id: str) -> str:
         _ = device_id
@@ -84,6 +85,18 @@ class _FakeNavManager:
         _ = device_id
         self.awaiting_intent = value
 
+    def is_detection_enabled(self, device_id: str) -> bool:
+        _ = device_id
+        return self.detection_enabled
+
+    def set_detection_enabled(self, device_id: str, enabled: bool) -> None:
+        _ = device_id
+        self.detection_enabled = enabled
+        if not enabled and self.status == "WAITING_FOR_DESTINATION":
+            self.status = "IDLE"
+        if not enabled:
+            self.awaiting_intent = False
+
 
 def test_build_orch_input_success() -> None:
     bridge = SttToLlmBridge()
@@ -109,6 +122,8 @@ async def test_invoke_existing_llm_empty_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_invoke_existing_llm_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    import server.navigation.manager as nav_manager_module
+
     async def _fake_run_orchestrator(state: dict) -> dict:
         assert state["event"]["source"] == "stt"
         return {
@@ -117,6 +132,12 @@ async def test_invoke_existing_llm_success(monkeypatch: pytest.MonkeyPatch) -> N
         }
 
     monkeypatch.setattr(stt_bridge_module, "run_orchestrator", _fake_run_orchestrator)
+    # 탐지 ON일 때만 장애물 orch 경로를 탄다(2026-07-13 분기).
+    monkeypatch.setattr(
+        nav_manager_module,
+        "nav_manager",
+        _FakeNavManager(status="IDLE", detection_enabled=True),
+    )
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("테스트")
@@ -131,10 +152,17 @@ async def test_invoke_existing_llm_success(monkeypatch: pytest.MonkeyPatch) -> N
 
 @pytest.mark.asyncio
 async def test_invoke_existing_llm_error_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    import server.navigation.manager as nav_manager_module
+
     async def _fake_run_orchestrator(_state: dict) -> dict:
         raise RuntimeError("forced-error")
 
     monkeypatch.setattr(stt_bridge_module, "run_orchestrator", _fake_run_orchestrator)
+    monkeypatch.setattr(
+        nav_manager_module,
+        "nav_manager",
+        _FakeNavManager(status="IDLE", detection_enabled=True),
+    )
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("테스트")
@@ -142,6 +170,60 @@ async def test_invoke_existing_llm_error_fallback(monkeypatch: pytest.MonkeyPatc
 
     assert response["source"] == "stt-bridge-error"
     assert response["used_fallback_llm"] is True
+
+
+@pytest.mark.asyncio
+async def test_detection_off_routes_to_free_question(monkeypatch: pytest.MonkeyPatch) -> None:
+    """탐지 OFF면 일반 발화가 물체탐지 orch가 아니라 자유 질문으로 간다."""
+    import server.navigation.manager as nav_manager_module
+
+    async def _fake_answer(self, _device_id: str, question: str) -> dict:
+        return {
+            "guidance_text": f"답:{question}",
+            "used_fallback_llm": False,
+            "source": "question-llm",
+        }
+
+    monkeypatch.setattr(
+        nav_manager_module,
+        "nav_manager",
+        _FakeNavManager(status="IDLE", detection_enabled=False),
+    )
+    monkeypatch.setattr(SttToLlmBridge, "_answer_free_question", _fake_answer)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(_make_stt_result("날씨 알려줘"), "test-device")
+
+    assert response["source"] == "question-llm"
+    assert "날씨" in response["guidance_text"]
+
+
+@pytest.mark.asyncio
+async def test_destination_wait_question_escapes_to_free_qa(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """목적지 대기 중 질문형 발화는 POI 검색 대신 자유 질문으로 탈출한다."""
+    import server.navigation.manager as nav_manager_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION", detection_enabled=True)
+
+    async def _fake_answer(self, _device_id: str, question: str) -> dict:
+        return {
+            "guidance_text": f"답:{question}",
+            "used_fallback_llm": False,
+            "source": "question-llm",
+        }
+
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+    monkeypatch.setattr(SttToLlmBridge, "_answer_free_question", _fake_answer)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(
+        _make_stt_result("지금 몇 시야"), "test-device"
+    )
+
+    assert response["source"] == "question-llm"
+    assert fake_manager.status == "IDLE"
 
 
 # [바이브 코딩 부분]

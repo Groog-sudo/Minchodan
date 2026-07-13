@@ -59,6 +59,10 @@ ignore = [
     "S106",  # 하드코딩 비밀번호 (테스트 fixture)
     "S108",  # /tmp 경로 (테스트 임시 파일)
     "E402",  # sys.path 조작 후 로컬 import (guide 3.3 패턴)
+    "PT011", # raises ValueError too broad
+    "S110",  # try-except-pass
+    "SIM105", # try-except-pass (suppress)
+    "SIM117", # nested with
 ]
 "scripts/**/*.py" = [
     "S404",  # subprocess import 허용 (모델 다운로드)

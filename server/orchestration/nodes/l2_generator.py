@@ -78,16 +78,36 @@ async def l2_generator_node(state: dict) -> dict:
     navigation_guidance = state.get("navigation_guidance", "")
     retry_count = state.get("retry_count", 0)
     errors = state.get("validation_errors", [])
+    is_departing_confirmed = state.get("is_departing_confirmed", False)
+    braille_direction = state.get("braille_direction", "")
 
     classes_str = ", ".join(detected_classes) if detected_classes else "장애물 없음"
     nav_str = f"[길안내 멘트]: {navigation_guidance}\n" if navigation_guidance else ""
+
+    # 2026-07-13 추가: 보도 이탈이 확정되면(3단계 히스테리시스 통과) LLM 프롬프트에
+    # 노면 상태를 별도 줄로 명시한다. 점자블록 방향을 알면 "왼쪽/오른쪽으로"까지
+    # 함께 안내할 수 있어(GUIDANCE_SYSTEM_PROMPT의 방향 키워드 규칙과도 자연히 맞음),
+    # 모르면(점자블록이 화면에 없음) 방향 없이 이탈 사실만 전달하도록 문장을 나눈다.
+    departure_str = ""
+    if is_departing_confirmed:
+        if braille_direction == "left":
+            departure_str = (
+                "[노면 상태]: 보도를 벗어나 차도 방향입니다. 점자블록이 왼쪽에 있습니다.\n"
+            )
+        elif braille_direction == "right":
+            departure_str = (
+                "[노면 상태]: 보도를 벗어나 차도 방향입니다. 점자블록이 오른쪽에 있습니다.\n"
+            )
+        else:
+            departure_str = "[노면 상태]: 보도를 벗어나 차도 방향입니다.\n"
 
     # 사용자 프롬프트 조립 (설계서 10.2절 프롬프트 및 내비게이션 멘트 융합)
     user_prompt = (
         f"[탐지 장애물]: {classes_str}\n"
         f"[위험도]: {risk_level}\n"
         f"[안전 수칙]:\n{rag_context}\n"
-        f"{nav_str}\n"
+        f"{nav_str}"
+        f"{departure_str}\n"
         f"위 정보를 바탕으로, 장애물 회피 안내와 길안내 멘트를 자연스럽게 조합하여 20자 이내 한국어 1문장 보행 안내 가이드를 작성하세요."
     )
 

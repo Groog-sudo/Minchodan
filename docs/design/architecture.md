@@ -1,7 +1,7 @@
 ﻿# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.3 (2026-07-11 STT 녹음 구간 AEC 도입 - `AudioSessionBridge` 네이티브 브릿지로 iOS voiceChat 세션 전환, AEC 확인 시 녹음 시작 신호음 복원 + 이전 v0.4.2 이력 유지: WS 재연결 정책 변경 - 무한 지수 백오프 + 폴백 전환/복구 음성 고지, 오프라인 내성 항목 갱신 + 이전 v0.4.1 이력 유지: 2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
+> **버전**: v0.4.6 (2026-07-12 §13.3.2 신설 - 실제 구현된 실시간 채널 정리(SSE 4종 이벤트 vs 콘솔 전용 WS `/ws/console/live-feed` 4종 메시지 물리 분리), 타임존 버그 수정 기록(now_iso/SSE timestamp/DB DATETIME naive 값 UTC 오프셋 보정) + 이전 v0.4.5 이력 유지: §13.3.1 이벤트 프레임 보존 신설 - 로그 적재 이벤트 프레임 JPEG 보존(frame_path), 콘솔 사후 이력 REST 조회·bbox 오버레이, 반사 경로 무영향 백그라운드 저장, 보존 기본 7일 + 이전 v0.4.4 이력 유지: 2026-07-11 LiDAR 실거리 프로브 프로토타입 - `DepthProbeBridge` 네이티브 브릿지 + 단말 거리측정 모드(탐지와 배타 전환) 신규 + 이전 v0.4.3 이력 유지: STT 녹음 구간 AEC 도입 - `AudioSessionBridge` 네이티브 브릿지로 iOS voiceChat 세션 전환, AEC 확인 시 녹음 시작 신호음 복원 + 이전 v0.4.2 이력 유지: WS 재연결 정책 변경 - 무한 지수 백오프 + 폴백 전환/복구 음성 고지, 오프라인 내성 항목 갱신 + 이전 v0.4.1 이력 유지: 2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -214,6 +214,8 @@ graph TD
 | `client/src/services/audioEngine.ts`          | `expo-audio` 상시 웜 플레이어로 반사/인지 음성 재생 및 선점 정지           | 7    |
 | `client/src/services/audioSessionBridge.ts`   | iOS AVAudioSession voiceChat(AEC) 전환 TS 래퍼. STT 녹음 구간에서 스피커 출력의 마이크 유입(음향 블리드)을 상쇄(2026-07-11 신규, Android는 no-op) | -    |
 | `client/ios/AudioSessionBridge.swift`         | AVAudioSession `.playAndRecord`+`.voiceChat` 전환 네이티브 브릿지(`.defaultToSpeaker` 유지, 이전 세션 저장/복구, 검증용 `getSessionInfo`) | -    |
+| `client/src/services/depthProbe.ts`           | LiDAR 실거리 프로브 TS 래퍼(2026-07-11 프로토타입). iOS Pro 계열 전용, 그 외 null. bbox 거리 휴리스틱 검증 계측용 | -    |
+| `client/ios/DepthProbeBridge.swift`           | `builtInLiDARDepthCamera`+`AVCaptureDepthDataOutput` 자체 세션으로 정규화 좌표의 실거리(m) 샘플링(3x3 미디언). vision-camera와 배타 전환(프로토타입 제약) | -    |
 | `client/src/services/hapticEngine.ts`         | Haptics 패턴 실행 및 지속 진동 정리                                        | 7    |
 | `client/src/hooks/useLocation.ts`             | `expo-location` `watchPositionAsync` GPS 실시간 전송(`realtime_gps`)       | -    |
 | `client/src/components/NavMapPanel.tsx`       | 하단 T맵 지도 패널(WebView + TMap JS API). `nav_route` 좌표 폴리라인 + 현재 위치 마커(2초 스로틀), 토글 꺼짐 시 미마운트. 운영자/데모용(2026-07-11 신규) | -    |
@@ -519,6 +521,51 @@ sequenceDiagram
    - **audio_validation**: `{"alert_id": "ref_alert_001", "ttfb_ms": 120, "is_valid": true}`
    - **cache_suppression**: `{"suppressed_keys": ["suppress:ref_alert_001"], "ttl_seconds": 45}`
    - **system_error**: `{"error_message": "Ollama connection timeout, hot-swapping to OpenAI", "severity": "warning"}`
+
+### 13.3.1 사후 이력 조회와 이벤트 프레임 보존 (2026-07-12 신설)
+
+실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다.
+
+| 항목 | 내용 |
+| :--- | :--- |
+| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 (`server/services/event_frame_store.py`) |
+| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임만 (JPEG, `data/event_frames/YYYYMMDD/{event_id}.jpg`) |
+| **DB 연결** | `detection_guidance_logs.frame_path` 컬럼에 상대 경로만 기록 (BLOB 미사용) |
+| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO는 `asyncio.to_thread`로 로그 태스크 내부에서만 수행 (반사 <300ms 비협상 원칙 유지) |
+| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지, bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
+| **보존 정책** | 기본 7일(`EVENT_FRAME_RETENTION_DAYS`), 서버 기동 시 만료 폴더 삭제 (개인정보 기간 한정 보존) |
+
+상세 계약은 [`api_specification.md`](api_specification.md) §8.5를 참조하십시오.
+
+### 13.3.2 실제 구현된 실시간 채널: SSE vs 콘솔 전용 WS (2026-07-12 정리)
+
+§13.3의 이벤트 타입(`gpu_status`/`audio_validation`/`cache_suppression`)은 최초 설계 당시의 예시이며, 실제 구현은 **두 개의 물리적으로 분리된 실시간 채널**로 정착했다. 콘솔이 어떤 패널을 어떤 채널로 받는지 헷갈리지 않도록 정리한다.
+
+**채널 A - SSE `/api/v1/monitor/stream`** (`server/mcp/manager.py` MCPManager, `server/api/monitor.py`)
+
+관제 상태성 지표를 낮은 빈도로 브로드캐스트한다. 실제 발행되는 `event_type`은 4가지뿐이다.
+
+| event_type | 발행 위치 | 콘솔 소비 패널 |
+| :--- | :--- | :--- |
+| `system_metrics` | `LLMClientFactory.start_gpu_monitor()` 백그라운드 루프(2초 주기) | `SystemMetrics` |
+| `session_status` | `server/api/ws_router.py` `_broadcast_session_status()` - 단말 연결/heartbeat_ack(RTT 갱신)/해제 3개 지점 | `SessionStatus` |
+| `llm_status` | `NavigationManager._broadcast_nav_change()`(내비게이션 상태) + `DetectionConsumer._broadcast_ai_pipeline_status()`(LLM provider/verified/retry_count/RAG query/TTS engine/reflex_bypass) | `AiPipelineMonitor` |
+| `detection_event` | `DetectionConsumer._broadcast_detection_event()` - 탐지/노면 분류가 있는 프레임마다(없으면 스킵) | `DetectionFeed` |
+
+`rag_score`, `tts_status`(전환 상태) 등 콘솔 타입에는 정의돼 있지만 서버가 채우지 않는 필드가 일부 남아 있다. `RiskEventLog`가 구독하는 `risk_event`는 **아직 서버 어디서도 발행되지 않아 항상 빈 상태**다(후속 과제).
+
+**채널 B - WS `/ws/console/live-feed`** (`server/api/session_manager.py` `console_connections`, `console/src/api/useLiveFeed.ts`)
+
+카메라 프레임처럼 고빈도·저지연이 필요한 데이터를 별도 WebSocket으로 분리했다(SSE는 서버→클라이언트 단방향 폴링성 채널이라 바이너리 프레임에 부적합).
+
+| 메시지 타입 | 발행 위치 | 콘솔 소비 |
+| :--- | :--- | :--- |
+| 바이너리 프레임(JPEG) | `ws_router.py`가 단말 프레임 수신 시 그대로 중계 | `LiveCameraFeed`, `DeviceTelemetryPanel` 배경 이미지 |
+| `server_detection` | `DetectionConsumer._send_server_detection()` - 프레임마다 bbox 좌표 | 위 두 패널의 bbox 오버레이 |
+| `latency_event` | `DetectionConsumer._broadcast_latency_event()` / STT 경로 인라인 | `LatencySummaryPanel`(REST 폴링 폴백보다 우선 사용) |
+| `guidance_log_event` | `DetectionConsumer._broadcast_guidance_log_event()` - DB 저장(+프레임 파일 저장) 완료 후에만 | `DetectionGuidanceLogTable`(1페이지에서만 병합) |
+
+> **타임존 버그(2026-07-12 수정)**: `now_iso()`(`server/api/schemas.py`)와 SSE `timestamp` 생성(`server/mcp/manager.py`)이 `datetime.now()`(naive, 컨테이너 시스템 시각=UTC)를 그대로 직렬화해 오프셋이 빠져 있었다. 브라우저 `new Date(...)`가 이를 로컬(KST)로 오인식해 9시간이 밀리는 문제였다 - `datetime.now(UTC)`로 수정. DB에서 재조회되는 `detected_at`/`created_at`도 MariaDB `DATETIME`이 타임존을 저장하지 않아 같은 문제가 있었고, `server/db/schemas.py`의 `field_validator`로 naive 값을 UTC로 간주하도록 보정했다.
 
 ### 13.4 MCP별 자격 증명 및 API 키 요구사항
 

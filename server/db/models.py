@@ -12,12 +12,13 @@ SQLite 비동기 연결에서도 동작하도록 enum은 문자열 제약으로 
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -101,6 +102,13 @@ def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
 # - SQLite AUTOINCREMENT는 INTEGER PRIMARY KEY에서 가장 안정적이므로 sqlite만 Integer로 바꿉니다.
 BIGINT_PK = BigInteger().with_variant(Integer, "sqlite")
 
+# app_users.phone에 붙는 접두사로 "정식 회원가입 없이 서버가 자동 생성한 익명 계정"을
+# 표시한다(2026-07-12, server/services/device_registry_service.py 도입). phone은
+# UNIQUE라 실명 가입 시 충돌하지 않도록 device_uuid를 그대로 이어 붙인다
+# (예: "anon:dev-001"). 관리자 회원 등록 화면(server/services/user_service.py)이
+# 이 접두사로 "전환 대상 익명 레코드"인지 판별한다.
+ANON_PHONE_PREFIX = "anon:"
+
 
 class AppUser(Base):
     """단말 앱 사용자."""
@@ -130,6 +138,13 @@ class AppUser(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     phone: Mapped[str] = mapped_column(String(30), nullable=False)
     disability_severity: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    # 2026-07-12 추가: 생년월일/보호자 연락처/주소. 익명 자동등록
+    # (server/services/device_registry_service.py)은 이 값들을 채우지 않으므로 NULL
+    # 허용 - 실명 전환 시점에 관리자가 선택적으로 입력한다.
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    guardian_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # 하드코딩 포인트 5:
     # status는 단순 문자열이 아니라 UserStatus enum으로 제한합니다.
@@ -229,6 +244,7 @@ class UserDevice(Base):
         back_populates="device",
         passive_deletes="all",
     )
+
 
 class AdminAccount(Base):
     """운영자 콘솔 관리자 계정."""
@@ -358,6 +374,20 @@ class DetectionGuidanceLog(Base):
         nullable=False,
     )
     tts_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # frame_path: 이벤트 발생 시점 프레임 이미지의 상대 경로 (data/event_frames/ 기준).
+    # 이미지 저장 실패 또는 프레임 없는 이벤트(STT 등)는 NULL로 두고 로그는 적재합니다.
+    frame_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # false_positive: 오탐 판정 여부 (NULL: 미판정, False: 정상 탐지, True: 오탐)
+    false_positive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # latency_json: 스테이지별 처리 지연(ms) 기록 - {"decode_ms":.., "inference_ms":.., "rag_ms":..,
+    # "llm_ms":.., "tts_ms":.., "stt_ms":.., "total_ms":.., "db_save_ms":..} 키는 실제 경유한
+    # 스테이지만 포함한다(반사 경로는 LLM/RAG/TTS 미경유이므로 해당 키 자체가 없다 - 이중 경로
+    # 분리 원칙이 데이터로도 드러난다). db_save_ms는 INSERT 완료 후 별도 UPDATE로 채워진다
+    # (자기 자신의 쓰기 시간은 쓰기 시작 전에 알 수 없으므로).
+    latency_json: Mapped[str | None] = mapped_column(
+        Text().with_variant(MySQLJSON, "mysql"),
+        nullable=True,
+    )
     # created_at: DB 레코드 적재 시각 (마이크로초 6자리)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -79,25 +79,28 @@ class MockEmbeddingEngine(Embeddings):
 
         target_keyword = "default"
         for keyword in [
-            "kickboard",
+            "scooter",
             "bollard",
-            "braille_damaged",
-            "stairs",
+            "caution",
             "crosswalk",
             "manhole",
             "grating",
             "점자",
+            "계단",
             "킥보드",
             "볼라드",
         ]:
             if keyword in text:
                 # 관련 키워드 표준화
-                if keyword in ["kickboard", "킥보드"]:
-                    target_keyword = "kickboard"
+                if keyword in ["scooter", "킥보드"]:
+                    target_keyword = "scooter"
                 elif keyword in ["bollard", "볼라드"]:
                     target_keyword = "bollard"
-                elif keyword in ["braille_damaged", "점자"]:
-                    target_keyword = "braille_damaged"
+                elif keyword in ["caution", "점자", "계단", "manhole", "grating"]:
+                    # TH HARD CODE AREA:
+                    # 현재 Segmentation SSOT에서는 점자블록 파손, 계단, 맨홀, 그레이팅을 caution 노면 위험으로 흡수합니다.
+                    # 발표/면접 포인트: 모델이 내는 라벨과 RAG 데이터 라벨을 먼저 맞춰야 검색/평가가 안정적으로 재현됩니다.
+                    target_keyword = "caution"
                 else:
                     target_keyword = keyword
                 break

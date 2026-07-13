@@ -49,6 +49,9 @@ export async function captureViaTakePhoto(
   isCapturingRef: { current: boolean },
   stream: StreamType,
   readJpegBytes: (uri: string) => Promise<Uint8Array>,
+  // 2026-07-12: iOS 전용 180도 보정 플래그 (아래 주석 참조). Android는 다른 방향
+  // 판정 경로를 쓰고 실기기 검증도 안 됐으므로 기본값 false로 영향을 주지 않는다.
+  applyIosOrientationFix: boolean = false,
 ): Promise<FrameData | null> {
   if (!cameraRef.current) {
     console.warn(`[Camera/Real] ${stream} 캡처 실패: cameraRef 없음`);
@@ -87,11 +90,24 @@ export async function captureViaTakePhoto(
     const originY = Math.floor((correctedHeight - cropSize) / 2);
 
     // expo-image-manipulator 기기 네이티브 GPU 가속 크롭/리사이징/압축 기동
+    //
+    // 2026-07-12 iOS 실기기 실측(손 피사체로 반복 확인): 저장된 프레임이 실제 폰 방향
+    // (노치 위, 정자세) 대비 180도 뒤집혀 나온다. 반사 경로(ReflexFrameProcessorPlugin.swift,
+    // 완전히 다른 캡처 코드)에서도 동일 증상이 확인돼 react-native-vision-camera 4.7.3의
+    // 가속도계 기반 방향 판정(CMAccelerometerData+deviceOrientation.swift)이 이 기기
+    // 조합에서 반대로 보고되는 것으로 추정된다. ImageFixOrientationTransformer가 EXIF
+    // 기준으로 "정상 보정"한 결과가 이미 뒤집힌 EXIF를 그대로 따른 것이므로, 정사각형
+    // 리사이즈 이후 180도 보정 회전을 추가로 적용한다(정사각형이라 회전 순서 무관).
+    // Android는 CoreMotion이 아닌 별도 센서 경로를 쓰고 이 버그가 실기기 확인된 적이
+    // 없으므로 applyIosOrientationFix=true로 명시 요청한 호출부에서만 적용한다(현재
+    // frameCaptureProviderSelect.ios.ts만 true로 호출). Android 실기기 검증 시 동일
+    // 증상이 확인되면 android 파일에서도 true로 바꾸면 된다 - 무증상이면 그대로 둔다.
     const manipResult = await manipulateAsync(
       path,
       [
         { crop: { originX, originY, width: cropSize, height: cropSize } },
         { resize: { width: 640, height: 640 } },
+        ...(applyIosOrientationFix ? [{ rotate: 180 }] : []),
       ],
       { compress: 0.5, format: SaveFormat.JPEG, base64: true },
     );

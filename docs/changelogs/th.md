@@ -330,3 +330,449 @@
   - 코드·환경변수·설정 파일은 수정하지 않았습니다.
 - **관련 파일**: `docs/ops/dev_8b2f606_improvement_plan.md`, `docs/README.md`, `docs/changelogs/th.md`
 - **검증 기준**: 문서 링크 경로 존재 여부 확인
+
+---
+
+### 2026-07-12 | 5단계 | RAG retriever 라벨 SSOT 임포트 크래시 수정
+
+- **커밋**: `미커밋`
+- **변경 내용**:
+  - `server/rag/retriever.py`가 `shared/labels.py`에 존재하지 않는 구 라벨 심볼을 임포트하던 문제를 현재 SSOT 라벨인 `SCOOTER` 기준으로 정정했습니다.
+  - retriever 스모크 테스트 블록의 더미 문서 메타데이터와 `detect_info["class_name"]`도 `SCOOTER` 기준으로 맞췄습니다.
+  - `tests/test_retriever.py`의 수집 단계 ImportError를 해소하도록 동일 라벨을 정정했습니다.
+  - 사용자 발화 문구는 내부 라벨과 분리하여 "전동킥보드 또는 스쿠터"로 표현하도록 `fallback.py`, retriever 스모크 데이터, RAG 원본 JSON을 보강했습니다.
+  - 같은 구 라벨 import가 남아 있던 fallback/E2E 테스트와 mock 임베딩·DB 빌더 문구도 `SCOOTER` 기준으로 정리했습니다.
+  - `braille_damaged`, `stairs`로 남아 있던 RAG 원본 메타데이터를 현재 SSOT 노면 위험 라벨인 `caution`으로 정리했습니다.
+  - LangGraph 오케스트레이션 테스트 입력에 남아 있던 구 장애물 라벨을 `scooter`로 정리하고, 사용자 문구는 전동킥보드 기준으로 유지했습니다.
+- **관련 파일**: `server/rag/retriever.py`, `server/rag/fallback.py`, `server/rag/embedding_engine_factory.py`, `server/rag/build/db_builder.py`, `tests/test_retriever.py`, `tests/test_fallback.py`, `tests/test_e2e_pipeline.py`, `tests/test_langgraph.py`, `data/safety_guidelines.json`, `docs/changelogs/th.md`
+- **검증 결과**: `.\venv\Scripts\python.exe -c "import server.rag.retriever"`, `.\venv\Scripts\python.exe -m py_compile server/rag/retriever.py`, `.\venv\Scripts\python.exe -m server.rag.retriever`, `.\venv\Scripts\python.exe -m pytest tests/test_retriever.py tests/test_fallback.py tests/test_e2e_pipeline.py -v`, `.\venv\Scripts\python.exe -m pytest tests/test_langgraph.py -v` 통과
+
+---
+
+### 2026-07-10 | 운영자 콘솔 | DetectionFeed 및 로그 테이블 UI 정리
+
+- **커밋**: `feat(console): refine monitoring tables and detection feed`
+- **변경 내용**:
+  - `console/src/components/DetectionFeed.tsx`에서 `event_id` 제목 노출, `stream` 중복 출력, `confidence`/`inference_ms` 조건식 오류, placeholder 중복 노출 문제를 정리했습니다.
+  - `console/src/types/monitor.ts`에 `DetectionGuidanceLogRow` 타입을 추가하고 `detection_guidance_logs` 테이블/응답 컬럼 구조와 맞추도록 최소 타입을 고정했습니다.
+  - `console/src/components/DetectionGuidanceLogTable.tsx`를 신규 추가해 실시간 feed와 분리된 history/log table 골격을 구성했습니다.
+  - `console/src/components/RiskEventLog.tsx`를 placeholder에서 실제 위험 로그 table 렌더 구조로 전환했습니다.
+  - `console/src/App.tsx`에 mock `DetectionGuidanceLogRow[]`를 연결하고, DetectionFeed와 DB 로그 영역이 서로 다른 역할임을 설명하는 발표/면접 대응 주석을 보강했습니다.
+- **관련 파일**: `console/src/App.tsx`, `console/src/types/monitor.ts`, `console/src/components/DetectionFeed.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/RiskEventLog.tsx`
+- **검증 결과**:
+  - `cd console && npm run build` 통과
+
+---
+
+### 2026-07-10 | 운영자 콘솔/로컬 실행 | 로그인 응답 처리 및 CORS/Redis 정리
+
+- **커밋**: `fix(console): handle login response and local CORS`
+- **변경 내용**:
+  - `console/src/components/Login.tsx`에 `trim()` 적용, `detail` 우선 에러 표시, `access_token` 존재 검사, 하드코딩 구간 주석을 추가해 로그인 실패 원인을 프론트에서 더 분명히 확인할 수 있게 했습니다.
+  - `server/api/config.py`의 `CORS_ORIGINS` 기본값에 `http://localhost:5174`를 추가해 Vite 개발 서버에서 관리자 로그인 요청이 CORS로 차단되던 문제를 정리했습니다.
+  - `console/src/App.tsx`에서 `OperatorLiveMap`을 임시 비활성화해 `localhost:8001` 지도 서버 미실행 상태에서 iframe `load fail`이 대시보드 진입을 방해하지 않도록 처리했습니다.
+  - macOS 로컬 환경에 `redis`를 설치하고 `brew services start redis`로 `6379` 리스닝 상태를 확인했습니다.
+- **관련 파일**: `console/src/components/Login.tsx`, `console/src/App.tsx`, `server/api/config.py`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `POST /api/v1/admin/login` 200 OK 응답 확인
+  - `brew install redis` 완료
+  - `brew services start redis` 후 `lsof -i :6379` 리스닝 확인
+
+---
+
+### 2026-07-12 | Android 빌드 환경 | Windows 긴 경로 + JDK 17 + SDK 설치 및 빌드 안정화
+
+- **커밋**: `build(android): Windows 긴 경로 환경에서 네이티브 빌드 안정화` (이미 origin/th에 반영됨, 커밋 `85e9503`)
+- **변경 내용**:
+  - Android SDK/Studio/JDK 17 전체 신규 설치 (winget + sdkmanager) — `C:\Users\rhxoc\AppData\Local\Android\Sdk`, build-tools 35.0.0, platform-tools, NDK 27.1.12297006
+  - `client/android/local.properties`에 `sdk.dir` 지정 (머신별, gitignore)
+  - `client/android/gradle.properties`에 `org.gradle.java.home=C:/Program Files/Java/jdk-17` 고정
+  - `client/android/build.gradle`에 `subprojects afterEvaluate` 훅 추가 — CMake 사용 모듈의 `buildStagingDirectory`를 `C:/AndroidCxx/{모듈경로}`로 분리
+- **오류와 해결**:
+  - `expo-audio plugin resolve 실패` → `client`에서 `npm install` 누락, 의존성 설치로 해결
+  - `JAVA_HOME이 .exe 파일 경로로 잘못 지정` → `gradle.properties`에 `org.gradle.java.home` 고정으로 세션 환경변수 의존도 제거
+  - `CMake Warning: object file directory has 193 chars, max 250` + `ninja: error: manifest 'build.ninja' still dirty after 100 tries` → 깊은 프로젝트 경로(`D:\home_coding_task\...`)가 Windows 250자 한도 초과, `buildStagingDirectory` 우회로 네이티브 캐시만 `C:/AndroidCxx`로 분리
+  - `subst M:\client` 우회 시도 → `react-native-vision-camera generateCodegenSchemaFromJavaScript`에서 `M:`와 `D:` 루트 충돌로 실패, subst 방식 폐기
+  - `No Android connected device found` → USB 디버깅 승인 팝업 대기/케이블 재연결로 해결
+- **관련 파일**: `client/android/build.gradle`, `client/android/gradle.properties`, `client/android/local.properties`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `.\gradlew.bat -v` Gradle 9.3.1 정상 기동
+  - `adb version` 1.0.41 정상
+  - `expo run:android`가 디바이스 미연결 오류 전까지 Gradle 설정 단계 통과
+
+---
+
+### 2026-07-12 | Android 실기기 | Redis 및 STT 런타임 복구
+
+- **커밋**: `이번 커밋에 포함`
+- **변경 내용**:
+  - Docker Desktop을 기동하고 `docker compose -f docker/docker-compose.yml up -d redis`로 `minchodan-redis` 컨테이너를 복구했습니다.
+  - FastAPI 서버를 재시작해 `/ws/detect` 재접속, `auth_ok`, `realtime_gps`, 프레임 수신을 다시 확인했습니다.
+  - 서버 로그 기준 `RedisBus 연결 성공`과 Android 실기기 프레임 디코딩, YOLO 추론, LLM guide 전송을 확인했습니다.
+  - `server/stt/stt_config.py`의 `MODEL_NAME_MAP`에 `small`, `medium` 내부 별칭을 추가해 WebSocket 경로에서 `model=small`이 전달되어도 STT 서비스가 처리하도록 보강했습니다.
+  - 현재 `venv`에 누락되어 있던 `faster-whisper==1.2.1`을 설치했고, `SttService.get_model("small")` 단독 로딩이 `ok`로 통과하는 것을 확인했습니다.
+- **오류 및 후속 수정 필요**:
+  - RAG 임베딩 모델 `nomic-embed-text`가 Ollama에 없어 `/api/embed`가 404를 반환합니다. `ollama pull nomic-embed-text`가 필요합니다.
+  - TTS 경로에서 `No module named 'piper'`가 발생합니다. 현재 서버는 guide 텍스트 전송은 수행하지만 Piper 음성 합성은 실패합니다.
+  - DB 자동 등록 및 탐지 로그 저장에서 `root@localhost` 인증 실패가 발생합니다. `.env`의 DB 계정 또는 로컬 MariaDB 상태 정합화가 필요합니다.
+  - `StreamSplitter` 일부 Redis 발행 경로는 서버 재기동 직후에도 `연결 끊김` 경고가 남아 있습니다. `redis_bus` 재연결 처리와 splitter 싱글턴 상태를 추가 점검해야 합니다.
+- **관련 파일**: `server/stt/stt_config.py`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `docker compose -f docker/docker-compose.yml ps redis` 기준 `minchodan-redis` Up 확인
+  - `.\venv\Scripts\python.exe -c "from server.stt.stt_service import SttService; SttService.get_model('small'); print('ok')"` 통과
+  - `/health` 응답에서 `detector_type="yolo"` 및 최근 detection consumer 상태 확인
+  - 서버 로그에서 `탐지 객체: [pole, stroller] -> LLM 응답`, `guide 전송` 확인
+
+---
+
+### 2026-07-12 | Android 실기기 | 내부 서버 및 LAN Metro 연결 전환
+
+- **커밋**: `이번 커밋에 포함`
+- **변경 내용**:
+  - Android 실기기 로그에서 카메라 reflex 프레임 생성과 STT 녹음은 정상이나, `wss://partake-primer-surround.ngrok-free.dev/ws/detect` WebSocket 연결이 반복 실패하는 것을 확인했습니다.
+  - 로컬 모델 파일 `client/assets/models/yolo26n/object_detection.tflite`, `client/assets/models/yolo26n/segmentation.tflite`, `server/models/yolo26n/object_detection.pt` 존재를 확인해 1차 원인은 모델 파일 부재가 아니라 네트워크 연결 실패로 분리했습니다.
+  - 내부 FastAPI 서버를 프로젝트 `venv`로 기동해 `0.0.0.0:8000` Listen 상태를 확인했습니다.
+  - React Native Metro 프론트를 LAN 모드로 기동해 `8081` Listen 상태를 확인했습니다.
+  - 현재 노트북 Wi-Fi IP가 `192.168.1.103`으로 확인되어 `client/src/config/index.ts`를 `NETWORK_MODE="lan"`, `LAN_IP="192.168.1.103"` 기준으로 전환했습니다.
+  - Android 실기기에서 카메라 권한을 허용하고 앱을 재설치한 뒤 `Camera 0 ... ACTIVE`, `PreviewView Stream State changed to STREAMING`, `Camera/Real-Android reflex 프레임 완료`, `TFLiteDetector 듀얼 TFLite 모델 로드 성공` 로그를 확인했습니다.
+  - 경로가 없는 상태에서도 지도 placeholder가 표시되어 카메라 확인을 방해할 수 있어, `nav_route` 수신 전에는 지도 패널과 토글을 숨기고 경로 해제 시 자동으로 닫히도록 수정했습니다.
+- **오류 및 후속 수정 필요**:
+  - 시스템 Python 3.14에는 `uvicorn`이 없어 서버 기동이 실패했습니다. 프로젝트 서버 실행은 반드시 `venv\Scripts\python.exe -m uvicorn server.main:app --host 0.0.0.0 --port 8000` 기준으로 수행해야 합니다.
+  - 서버 로그에서 Redis `localhost:6379` 연결 거부가 반복됩니다. Redis 또는 Docker Redis 컨테이너를 기동해야 Streams/MCP 경로가 정상화됩니다.
+  - 서버 로그에서 Whisper small 프리로드가 실패해 STT는 지연 로딩으로 폴백 중입니다. 네비게이션 음성 명령 종단 테스트 전 faster-whisper 모델 로딩 환경을 재검증해야 합니다.
+  - 서버 segmentation 기본 경로(`YOLO26N_SEG=server/models/yolo26n/segbest.pt`)와 실제 파일 존재 여부는 추가 확인이 필요합니다.
+  - 폰에서 `http://192.168.1.103:8000/health` 접근은 성공했으나 `http://192.168.1.103:8081/status`는 타임아웃이 발생했습니다. Metro LAN 포트는 방화벽 또는 Expo dev server 바인딩 문제로 별도 조치가 필요하며, 임시로 `adb reverse tcp:8081 tcp:8081`을 적용했습니다.
+  - 다음 단계는 WebSocket 실기기 재접속 확인 후 `TMAP_APP_KEY`, `realtime_gps`, `nav_route` 기반 네비게이션 경로 안내를 검증하는 것입니다.
+- **관련 파일**: `client/src/config/index.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/th.md`, `server_start_th.log`
+- **검증 결과**:
+  - `Get-NetTCPConnection -LocalPort 8000,8081` 기준 `8000` FastAPI, `8081` Metro Listen 확인
+  - `server.main` import 정상 확인
+
+---
+
+### 2026-07-12 | Android 실기기 | 탐지 및 지도 미표시 원인 분리
+
+- **커밋**: `fix(stt): CPU Whisper compute_type 폴백 및 연락처 음성 명령 저장소 추가`
+- **변경 내용**:
+  - 연결 이후 앱 프레임은 서버 `/ws/detect`로 정상 수신되고 있음을 확인했습니다. 서버 로그 기준 `FrameDecoder`가 640x640 프레임을 2~6ms 내외로 디코딩하고 있습니다.
+  - 탐지가 안 보이던 1차 원인은 `.env`의 `DETECTOR_TYPE=mock` 설정이었습니다. 실제 서버 탐지를 위해 `DETECTOR_TYPE=yolo`로 전환했습니다. (`.env`는 gitignore라 커밋 제외)
+  - `.env`의 `YOLO26N_OBJECT_DET`가 존재하지 않는 `server/models/yolo26n/det_best_20260705.pt`를 가리켜, 실제 존재하는 `server/models/yolo26n/object_detection.pt`로 정정했습니다.
+  - 서버 재시작 후 `YoloDetector` 로드 성공과 `stroller`, `bicycle` 등 실제 탐지 클래스가 LLM/RAG 경로로 들어가는 것을 확인했습니다.
+  - `YOLO26N_SEG=server/models/yolo26n/segbest.pt`는 실파일이 없어 `MockSegmentor`로 폴백 중입니다. segmentation 결과가 필요한 지도/노면 계층 검증 전 가중치 파일 보강이 필요합니다.
+  - 지도는 단순히 `지도 켜기`를 누르면 바로 TMap을 여는 구조가 아니라, STT 목적지 설정 성공 후 서버가 `nav_route`와 `TMAP_APP_KEY`를 앱으로 보내야 표시됩니다.
+  - `stt_audio`는 서버에 수신되지만 Whisper small 초기화가 실패해 목적지 설정과 `nav_route` 생성이 막히는 것을 확인했습니다. CPU 환경에서 `int8` 실패 시 `int8_float32`, `float32`로 재시도하도록 `SttService.get_model()`을 보강했습니다.
+  - `server/stt/contact_store.py`를 신규 추가해 음성 명령 기반 연락처 저장/조회 데모용 메모리 저장소를 분리했습니다. (세션 범위 dict, DB 영속화는 후속)
+- **오류 및 후속 수정 필요**:
+  - 현재 venv가 Python 3.14 계열로 동작하고 있어 faster-whisper/ctranslate2 호환성 문제가 남아 있을 수 있습니다. STT 네비게이션 검증은 Python 3.13 호환 venv 재구성 또는 faster-whisper 런타임 재설치가 필요합니다.
+  - Redis `localhost:6379` 연결 실패가 반복되어 Redis Streams 기반 부가 경로는 아직 정상화되지 않았습니다.
+  - Ollama `nomic-embed-text`가 없어 RAG 검색이 fallback으로 동작합니다. `ollama pull nomic-embed-text`가 필요합니다.
+- **관련 파일**: `server/stt/stt_service.py`, `server/stt/contact_store.py`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - 서버 재시작 후 `YoloDetector 로드 성공: server/models/yolo26n/object_detection.pt` 확인
+  - 서버 로그에서 `/ws/detect` 연결, `detection 수신`, 실제 클래스 기반 LLM 호출 확인
+  - Android 실기기 카메라 ACTIVE + TFLite 듀얼 모델 로드 성공 로그 확인
+
+---
+
+### 2026-07-12 | Android 클라이언트 | VisionCamera Frame Processor 등록 및 TFLite NMS 출력 정합
+
+- **커밋**: `이번 커밋에 포함`
+- **변경 내용**:
+  - `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt` 신규 추가 — VisionCamera Frame Processor 플러그인 `reflexFrameCapture` 구현체
+  - `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt` 신규 추가 — 커스텀 네이티브 모듈 패키지 래퍼
+  - `client/android/app/src/main/java/com/minchodan/app/AudioSessionBridgeModule.kt` 신규 추가 — STT 녹음 구간 AEC용 AudioSession 브릿지(Android 측 대응)
+  - `client/android/app/src/main/java/com/minchodan/app/MainApplication.kt` — `MinchodanCustomPackage` 등록 및 `FrameProcessorPluginRegistry.addFrameProcessorPlugin("reflexFrameCapture")` 호출 추가
+  - `client/src/inference/tfliteDetector.ts` — YOLO 26N 출력 포맷 33(NMS-free 4+29)에서 6(NMS-enabled 4+score+classId)로 정정. 커스텀 학습 가중치가 NMS를 포함한 형태로 export되었기 때문에 출력 채널 수를 맞춤
+  - `client/src/components/CameraView.tsx` — `navRoute`가 없을 때 지도 패널과 토글 버튼을 렌더링하지 않도록 가드 추가
+- **오류와 해결**:
+  - `Frame Processor Plugin "reflexFrameCapture" not registered` → `MainApplication.onCreate`에 `FrameProcessorPluginRegistry.addFrameProcessorPlugin` 등록으로 해결
+  - TFLite 탐지 결과가 전부 0점/빈 배열로 떨어짐 → 모델 출력 채널 수(33 vs 6) 불일치, NMS-enabled export 형태에 맞춰 6으로 정정
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/android/app/src/main/java/com/minchodan/app/AudioSessionBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/MainApplication.kt`, `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`
+- **검증 결과**:
+  - `npx tsc --noEmit` 통과
+  - Android 빌드 Gradle 설정 단계 통과 (디바이스 미연결로 설치 단계는 대기 중)
+
+---
+
+### 2026-07-12 | 동기화 | kb 브랜치 통합
+
+- **커밋**: `이번 커밋에 포함 (merge commit)`
+- **변경 내용**:
+  - `origin/kb` 최신 9개 커밋을 `th`에 병합 — 파이프라인 레이턴시 계측, 실시간 브로드캐스트 확장, 관리자 회원 등록 페이지, 오탐 판정(false_positive) 컬럼 추가, iOS 카메라 180도 방향 반전 수정, 이벤트 프레임 보존(frame_path), LiDAR 실거리 프로브 프로토타입, SSE 이벤트 계약 고정 및 인증 기본값 환경 분리(fail-closed), 콘솔 지도 연동 복구 등
+- **관련 파일**: `docs/changelogs/th.md` (이력 기록)
+- **검증 결과**:
+  - `git merge origin/kb` 충돌 없이 병합 완료
+
+---
+
+### 2026-07-12 | STT 브리지+클라이언트 | 음성 편의기능 3종 추가 (긴급전화/연락처 저장·전화걸기/문자 읽어주기)
+
+- **커밋**: `feat(stt,client): 음성 편의기능 3종(긴급전화/연락처/SMS읽어주기) 및 dial_action`
+- **선행 커밋**: `9f194da`에 `server/stt/contact_store.py`(ContactStore)와 Whisper CPU
+  compute_type 폴백이 먼저 들어감. 본 커밋은 브리지 인텐트·WS·단말·문서·테스트를 연결
+- **변경 내용**:
+  - `server/stt/contact_store.py` - (선행) 음성 연락처 저장/조회. 정규식으로
+    전화번호를 추출하고 조사/어미를 트리밍해 이름 후보를 정리하는 휴리스틱
+    (`ContactStore`는 device_id별 프로세스 메모리 저장소, **TH HARDCODE**: 별도
+    Contact 테이블이 없어 서버 재시작 시 소실되는 데모 시연 범위 한계)
+  - `server/stt/stt_to_llm_bridge.py` - 3개 신규 인텐트 추가
+    - 긴급전화(`_is_emergency_call_trigger` + `_handle_emergency_call`): "긴급전화"/
+      "SOS"/"보호자한테 전화해줘" 등 인식 시 `AppUser.guardian_phone`(실제 DB 컬럼,
+      `device_registry_service.get_cached_device_ids` -> `UserRepository.get_by_id`
+      경로로 조회)로 다이얼. 다른 모든 대화 상태(목적지 대기/질문 대기 등)보다
+      최우선 처리. 미등록 시 고정 폴백 번호(`119`, **TH HARDCODE**)로 연결
+    - 연락처 저장(`"<이름> 번호 <전화번호> 저장해줘"`): `ContactStore.save` 호출
+    - 이름으로 전화걸기(`"<이름>한테 전화 걸어줘"`): `ContactStore.lookup` 후
+      `dial_action` 결과 필드 반환
+  - `server/api/ws_router.py` - `bridge_result["dial_action"]`을 감지해 신규 WS
+    메시지 타입 `dial_action`(`contact_name`, `phone_number`)으로 전송하는 분기 추가
+  - `client/src/types/detection.ts` - `MessageType`에 `"dial_action"` 추가, `WSMessage`에
+    `contact_name`/`phone_number` 필드 추가
+  - `client/src/hooks/useWebSocket.ts` - `dial_action` 수신 시 `Linking.openURL("tel:" +
+    phone_number)`로 실제 다이얼 실행
+  - `client/android/app/src/main/java/com/minchodan/app/SmsReaderModule.kt` 신규
+    추가 - 문자 메시지 읽어주기(Android 전용) 네이티브 브릿지. `SMS_RECEIVED`
+    브로드캐스트를 동적 등록(정적 매니페스트 리시버 대신 JS 생명주기에 맞춰
+    `startListening`/`stopListening`)으로 수신해 `onSmsReceived` 이벤트로 전달
+  - `client/android/.../MinchodanCustomPackage.kt` - `SmsReaderModule` 등록
+  - `client/android/app/src/main/AndroidManifest.xml` - `RECEIVE_SMS` 권한 추가
+    (**TH HARDCODE 아님 - 플랫폼 제약 메모**: Google Play 정책상 "기본 문자 앱"이
+    아니면 상시 허용되지 않는 민감 권한이라 데모/사이드로드 범위로 한정)
+  - `client/src/hooks/useSmsReader.ts` 신규 추가 - Android 권한 요청 +
+    `onSmsReceived` 구독 + 기존 `audioEngine.speakFallback`(expo-speech 기반)으로
+    발신자/본문 읽어주기. iOS는 공개 SMS 콘텐츠 API가 없어 미지원(플랫폼 제약)
+  - `client/src/components/CameraView.tsx` - `useSmsReader()` 훅 마운트
+  - `docs/design/api_specification.md` §6.3 명령어 표에 긴급전화/연락처 저장/전화걸기
+    행 추가, §6.7 `dial_action` 계약 신설
+  - `server/stt/stt_config.py` - MODEL_NAME_MAP에 `"small"`/`"medium"` 별칭 추가
+    (WS 경로에서 faster-whisper 접두사 없이 내부 별칭이 전달되는 경우 허용)
+  - `scripts/dev_redis_stub.py` 신규 - 로컬에서 Redis 미기동 시 Streams 의존을
+    완화하기 위한 최소 RESP 스텁(인식 리포트 I-2 대응용 개발 보조)
+  - `tests/test_stt_convenience_features.py` 신규 추가 - 기존
+    `test_stt_to_llm_bridge_template.py`와 동일한 픽스처 패턴(`_make_stt_result`,
+    `_FakeNavManager`, `monkeypatch`)으로 연락처 저장/전화걸기, 긴급전화
+    guardian_phone 성공/미등록 폴백, 긴급전화가 nav 대기 상태를 무시하고
+    최우선 처리되는지까지 6개 케이스 검증
+- **하드코딩/데모 한계 (TH HARDCODE, 발표 시 설명 필요)**:
+  - 일반 연락처 저장은 DB가 아닌 프로세스 메모리(`ContactStore`) - 서버 재시작 시 소실
+  - 이름/전화번호 추출은 형태소 분석기 없이 정규식+문자열 트리밍 휴리스틱
+  - 긴급전화 미등록 시 폴백 번호(`119`)는 고정값, 지역/상황별 라우팅 없음
+  - 문자 읽어주기는 앱이 열려 있는 동안(포그라운드)만 동작 - 백그라운드/종료 상태 미지원
+- **미검증 항목**:
+  - 문자 읽어주기(`SmsReaderModule`)는 실제 SMS 수신 테스트가 아직 완료되지
+    않았다. Android 에뮬레이터 Extended Controls > Phone > SMS(또는 `adb emu
+    sms send`)로 실기기 SIM 없이도 검증 가능 - 테스트 후 이 항목을 갱신할 것
+  - 긴급전화/연락처 저장/전화걸기 음성 명령의 실기기 종단 테스트(STT 인식률 포함)
+    미완료 - 아래 pytest는 텍스트 인텐트 분기 로직만 검증하며 실제 Whisper 인식은
+    거치지 않는다
+- **관련 파일**: `server/stt/contact_store.py`, `server/stt/stt_to_llm_bridge.py`,
+  `server/stt/stt_config.py`, `server/api/ws_router.py`,
+  `client/src/types/detection.ts`, `client/src/hooks/useWebSocket.ts`,
+  `client/src/hooks/useSmsReader.ts`, `client/src/components/CameraView.tsx`,
+  `client/android/app/src/main/java/com/minchodan/app/SmsReaderModule.kt`,
+  `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`,
+  `client/android/app/src/main/AndroidManifest.xml`,
+  `docs/design/api_specification.md`, `scripts/dev_redis_stub.py`,
+  `tests/test_stt_convenience_features.py`, `docs/changelogs/th.md`
+- **검증 결과**:
+  - `python -m pytest tests/test_stt_convenience_features.py -v` 6개 전부 통과
+    (연락처 저장/전화걸기 성공·실패, 긴급전화 guardian_phone 성공/119 폴백,
+    긴급전화의 nav 상태 우선순위 무시까지 커버)
+  - `python -m pytest tests/test_stt_to_llm_bridge_template.py tests/test_ws_router_stt.py`
+    13개 전부 통과(기존 STT 브리지/WS 라우터 회귀 없음 확인)
+  - `python -m py_compile` 통과, `npx tsc --noEmit` 통과
+  - 실기기/에뮬레이터 통합 테스트(STT 음성 인식, SMS 실수신, tel: 다이얼러 실행)는
+    미수행 - 위 미검증 항목 참조
+
+---
+
+### 2026-07-12 | 문서 | Android STT/실내 탐지 인식 문제 종합 리포트
+
+- **커밋**: `docs: Android STT 및 실내 탐지 인식 저하 종합 리포트`
+- **변경 내용**:
+  - `docs/ops/android_stt_recognition_issue_report.md` v1.2.0 작성/갱신
+  - STT 인식 실패뿐 아니라 **실내 장애물 탐지 체감 저하**를 명시
+  - 원인을 인프라(I) / STT(S) / 비전·실내탐지(D) / UX(U) 4축으로 종합 분석
+  - P0~중기 개선 방향(Python 3.13 venv, seg 가중치, VAD, 실내 데이터·conf, UX 구분) 정리
+  - `docs/README.md` 문서 인덱스에 리포트 링크 추가
+- **관련 파일**: `docs/ops/android_stt_recognition_issue_report.md`, `docs/README.md`, `docs/changelogs/th.md`
+
+---
+
+### 2026-07-13 | 부가(STT) | 연락처 저장 트리거 - 한글 숫자 전사 폴백 추가
+
+- **커밋**: (본 세션 통합 커밋에 포함)
+- **배경(실기기 실측)**: 음성 편의기능 3종(2026-07-12, `311eb4a`) 배포 후 실기기로
+  "번호 저장해줘" 편의기능을 테스트했으나, STT 인식 자체는 정상인데도 연락처 저장이
+  되지 않고 일반 대화 경로로 새서 LLM이 "직접 저장하세요" 류의 엉뚱한 문장을
+  생성하는 현상을 확인했다.
+- **원인 분석**:
+  - `contact_store.py`의 `PHONE_NUMBER_PATTERN`(`01[0-9][-\s]?\d{3,4}[-\s]?\d{4}`)은
+    아라비아 숫자 전사만 전제한다.
+  - Whisper가 전화번호를 "공일공일이삼사오육칠팔"처럼 한글 숫자로 전사하면 정규식이
+    매칭에 실패해 `extract_save_command`가 `None`을 반환한다.
+  - `is_contact_save_trigger`가 꺼지므로 발화가 저장 분기를 타지 못하고
+    `stt_to_llm_bridge.py`의 일반 `run_orchestrator` 경로(장애물 회피용 L1/L2/L3)로
+    흘러가, 맥락에 안 맞는 LLM 생성 문장이 반환된 것이었다(RAG 미스는 아니었음 -
+    애초에 RAG를 거치지도 않는 경로).
+- **변경 내용**:
+  - `server/stt/contact_store.py`에 `_KOREAN_DIGIT_MAP`/`_find_korean_spoken_phone`
+    추가. 한글 숫자 문자가 9~12자 연속으로 이어진 구간만 후보로 보고, 변환 후
+    11자리 + "01" 시작 조건까지 만족해야 전화번호로 인정한다(오탐 방지).
+  - `extract_save_command`가 아라비아 숫자 매칭 실패 시 위 폴백을 시도하도록 분기
+    추가.
+  - `tests/test_stt_convenience_features.py`에
+    `test_contact_save_accepts_korean_spoken_digits` 회귀 테스트 추가.
+- **하드코딩 설계 판단 (TH HARDCODE, 발표 시 설명 필요)**:
+  - 정규식 자체를 한글 숫자까지 매칭하도록 합치지 않고 별도 폴백 함수로 분리했다.
+    이유: "일/이/오" 같은 한글 숫자 문자는 그 자체로 흔한 한국어 단어/조사이기도 해서
+    (예: "일하다", "오늘"), 짧은 매칭을 허용하면 일반 문장에서 오탐 저장이 발생할
+    위험이 있다. 최소 길이(9자 이상 연속)와 변환 후 자릿수 검증(11자리, "01" 시작)
+    2중 조건으로 위험을 낮췄다.
+  - 형태소 분석기/LLM 개체명 추출을 쓰지 않고 규칙 기반을 유지한 이유는 기존
+    `extract_save_command` 주석(LLM 환각으로 엉뚱한 번호가 저장될 위험) 참조.
+  - **면접 대비 포인트**: "왜 이 버그를 RAG가 아니라 STT 브리지 쪽에서 고쳤나"라는
+    질문에는 "STT 일반 편의기능 인텐트(연락처 저장 등)는 애초에 RAG/LLM을 거치지
+    않는 규칙 기반 분기이고, 실패 시에만 장애물 회피용 오케스트레이터로 새는
+    구조였다 - 증상은 '이상한 LLM 답변'으로 보였지만 원인은 RAG가 아니라 정규식이
+    한글 숫자 전사를 못 받아준 것"이라고 설명하면 된다.
+- **미검증 항목**: 10자리(지역번호/구내전화 등 010 외 형식) 한글 숫자 전사는 폴백
+  대상에서 제외했다 - 실사용 빈도가 낮다고 판단해 스코프에서 뺐다(필요 시 재검토).
+- **관련 파일**: `server/stt/contact_store.py`, `tests/test_stt_convenience_features.py`,
+  `docs/changelogs/th.md`
+- **검증 결과**: `python -m py_compile server/stt/contact_store.py` 통과,
+  `python -m pytest tests/test_stt_convenience_features.py -v` 7개 전부 통과
+  (신규 회귀 테스트 `test_contact_save_accepts_korean_spoken_digits` 포함)
+- **검증 결과**: 문서 교차 링크 및 섹션 구조 점검 완료
+
+---
+
+### 2026-07-13 | 운영(단말) | WiFi/USB 이중 접속 문서화 및 앱 토글
+
+- **커밋**: (본 세션 통합 커밋에 포함)
+- **배경**: 공기계 테스트 시 USB(`adb reverse` + `127.0.0.1`)와 노트북 모바일 핫스팟
+  (`192.168.137.1`)을 번갈아 쓰게 되어, 설정을 매번 고쳐 빌드하는 방식이 비효율적이었다.
+  또한 PC가 아이폰 핫스팟을 받는 IP(`172.20.10.2`)와 공기계가 붙는 핫스팟 게이트웨이
+  (`192.168.137.1`)를 혼동하기 쉬워 문서화가 필요했다.
+- **변경 내용**:
+  - 앱: `연결: WiFi` / `연결: USB` 토글 (`CameraView`), 선택값 단말 영속
+    (`serverTransport.ts`), `buildWsUrl` / `WIFI_HOST` / `USB_HOST` (`config/index.ts`)
+  - 문서: `docs/ops/android_wifi_usb_transport.md` 신설
+  - 교차 반영: `docs/README.md`, `environment_variables.md` §2.14,
+    `ios_android_bifurcation_contract.md` §7.3, `android_build_and_wireless_test_guide.md` §3
+- **관련 파일**: 위 문서·클라이언트 경로
+- **사용 요약**: 평상시 WiFi(선 없음) / 기능 수정 시 USB + `adb reverse tcp:8000|8081`
+
+---
+
+### 2026-07-13 | 부가(STT)+단말 | 연락처 단말 영속화·탐지 토글·오디오 UX·질문 라우팅·Edge TTS
+
+- **커밋**: `feat(th): 연락처 영속화, 탐지/질문 라우팅, 긴급핑퐁, Edge TTS`
+- **작업 범위 요약**: 2026-07-13 th 실기기 세션에서 보고된 UX/음성/STT 이슈를
+  일괄 반영. (WiFi/USB·한글숫자 연락처는 위 항목과 동일 세션)
+
+#### 1) 연락처: 서버 RAM만이 아니라 폰 주소록에 저장
+
+- **문제**: 음성으로 번호 저장해도 폰 연락처 앱에 안 보임(서버 `ContactStore` RAM만).
+- **변경**:
+  - Android `ContactsBridgeModule.kt` + `contactsBridge.ts` (READ/WRITE_CONTACTS)
+  - WS `contact_save` → 단말 `ContactsContract` INSERT
+  - 전화 걸기: RAM 미스 시 `device_lookup`으로 단말 주소록 재조회
+- **관련 파일**: `ContactsBridgeModule.kt`, `contactsBridge.ts`, `ws_router.py`,
+  `stt_to_llm_bridge.py`, `CameraView`/`useWebSocket` 연동, `AndroidManifest.xml`
+
+#### 2) 탐지 기본 OFF + 「탐지 시작/중지」
+
+- **의도**: 상시 캡처/전송 과부하 완화. STT press-and-hold와 독립.
+- **UX**: 탐지 OFF면 카메라 `isActive`도 OFF → 검은 화면(의도된 동작, 사용자 확인).
+- **관련 파일**: `CameraView.tsx`
+
+#### 3) 긴급=핑퐁 / 여유=음성 채널 분기
+
+- **요청**: 긴급 위험은 핑퐁(비프), 여유 있으면 음성.
+- **구현**: `beep_interval_ms <= 100`(Critical/High) → 비프+햅틱만,
+  `>100`(Mid/Low) → 반사 음성 클립 허용. 인지 `guide` TTS는 mid/low 상세 안내.
+- **관련 파일**: `useWebSocket.ts`, `audioEngine.ts`,
+  `docs/design/reflex_audio_specification.md` v1.3.0
+
+#### 4) 탐지 끈 뒤 질문이 네비/물체탐지로 새는 버그 수정
+
+- **증상(실측)**: 거리(주차센서식) 탐지 중 탐지를 끄고 질문하면 질문 답이 안 나오고
+  네비게이션·장애물 안내만 재생됨.
+- **원인**:
+  1. `WAITING_FOR_DESTINATION` 잔류 시 질문 문장이 목적지로 파싱됨
+  2. 기본 STT 폴백이 `run_orchestrator`(물체탐지 안내)로 감
+- **수정**:
+  - WS `detection_control` + `NavigationSession.detection_enabled`
+  - 탐지 OFF 시 목적지/인텐트 대기 해제, STT 일반 발화 → `_answer_free_question`
+  - 목적지 대기 중 질문형 휴리스틱(`뭐/어디/몇` 등) → 자유 질문으로 탈출
+- **관련 파일**: `manager.py`, `ws_router.py`, `stt_to_llm_bridge.py`, `CameraView.tsx`,
+  `tests/test_stt_to_llm_bridge_template.py`
+
+#### 5) TTS: 기계음 완화 → Edge Neural 핫스왑
+
+- **피드백**: 장애우분들이 기계음을 싫어함.
+- **1차**: Supertonic `F2` + steps `12` + speed `0.85`, 단말 `speakFallback`에
+  Google Neural 계열 ko 음성 우선 선택.
+- **2차(채택)**: `TTS_ENGINE=edge` (`edge-tts`, `ko-KR-SunHiNeural`).
+  로컬 모델 없이 MS Neural, MP3→WAV는 `imageio-ffmpeg`.
+  오프라인 시 `TTS_ENGINE=supertonic`으로 되돌림.
+- **관련 파일**: `tts_service.py`(`EdgeTTSService`), `realtime_tts.py`,
+  `requirements.txt`, `.env.example`, `environment_variables.md`
+
+#### 6) 기타
+
+- Android 거리측정(LiDAR): Pro 전용 안내 강화, 미지원 시 버튼 숨김
+  (`depthProbe.ts` / `isDepthProbeSupported`)
+- Supertonic 기본 속도 env: `TTS_DEFAULT_SPEED`
+
+---
+
+### 2026-07-13 | 실기기 테스트 로그 (th, Android 공기계)
+
+- **환경**:
+  - 기기: Android (`R3CX70EB6QH`)
+  - 네트워크: 노트북이 아이폰 핫스팟 수신(`172.20.10.x`) + Windows 모바일 핫스팟
+    송신 → 공기계는 **`192.168.137.1:8000`** 로 서버 접속 (WiFi 모드)
+  - 서버: FastAPI `:8000` + Redis stub `:6379` + (개발 시) Metro `:8081`
+  - STT: faster-whisper-small, CPU 폴백
+  - TTS: 세션 후반 `edge` / `ko-KR-SunHiNeural` (그 전 Supertonic F2 시도)
+
+#### 테스트한 시나리오와 결과
+
+| # | 시나리오 | 결과 / 관찰 | 후속 조치 |
+|---|----------|-------------|-----------|
+| T1 | WiFi로 서버 접속 (`연결: WiFi`) | `192.168.137.1` 사용 시 연결 가능. `172.20.10.2`는 PC 업링크라 공기계에 부적합 | 토글·문서화 |
+| T2 | USB + `adb reverse` 개발 접속 | 핫리로드·디버그에 유용, 선 뽑으면 끊김 | USB 모드 유지 |
+| T3 | 탐지 기본 OFF → 「탐지 시작」 | OFF 시 검은 화면(카메라 inactive). 시작 후 프리뷰·탐지 | 의도 UX로 확정 |
+| T4 | 장애물 근접 시 비프(핑퐁) | 거리 가까울수록 간격 짧아짐(주차센서식) | 유지 |
+| T5 | 긴급 시 음성+비프 동시 | 기계음 클립이 긴급 반응을 방해한다는 피드백 | 긴급(≤100ms)은 비프만 |
+| T6 | 여유 거리 / 인지 안내 | 음성 안내 필요 | Mid/Low·guide TTS |
+| T7 | 탐지 중 끄고 바로 질문 | **실패**: 질문 답 없음, 네비/물체탐지 멘트만 | `detection_control`+자유질문 라우팅 |
+| T8 | 목적지 대기 중 일반 질문 | 목적지로 오인될 수 있음 | 질문형 휴리스틱 탈출 |
+| T9 | 음성 연락처 저장 | 아라비아 숫자 OK. 한글 숫자("공일공…")는 예전 실패 → 폴백 추가 | `contact_store` 폴백 |
+| T10 | 저장 후 폰 주소록 확인 | RAM만이면 앱에 안 보임 → ContactsBridge로 영속 | 단말 INSERT |
+| T11 | TTS 청취(Supertonic) | 여전히 기계음 체감, 장애우 피드백 부정적 | Edge Neural로 전환 |
+| T12 | TTS 청취(edge SunHi) | 로컬 대비 자연스러움↑, **인터넷 필요** | `.env` `TTS_ENGINE=edge` |
+| T13 | 거리측정 버튼(Android) | LiDAR 미지원 → 안내/버튼 숨김 | `isDepthProbeSupported` |
+| T14 | STT press-and-hold | 서버 기동·Whisper 프리로드 후 전사 가능. 탐지와 동시 시 네이티브 크래시 로그(3221225477) 간헐 관찰 | 후속 안정화 과제 |
+| T15 | 단위 테스트 | `test_stt_to_llm_bridge_template` / `test_stt_convenience_features` 통과 (탐지OFF→질문, 목적지대기 탈출, 한글숫자 저장 포함) | CI 로컬 확인 |
+
+#### 테스트 시 유의점 (다음 시연용)
+
+1. 앱 **연결: WiFi**, 디버그에 `WiFi(192.168.137.1)` 확인
+2. 폰 브라우저 `http://192.168.137.1:8000/docs` 열리면 네트워크 OK
+3. 질문만 할 때는 **탐지 중지** 후 화면 누르고 말하기 (이제 자유 질문으로 감)
+4. 길안내는 `길댕아` → `길찾아줘` → 목적지 순서
+5. Edge TTS는 PC/서버에 인터넷이 있어야 함. 오프라인이면 `TTS_ENGINE=supertonic`
+
+#### 미해결 / 후속
+
+- STT+YOLO 동시 부하 시 Windows Whisper 네이티브 크래시 간헐
+- YOLO seg 가중치 부재 → MockSegmentor
+- Edge TTS 네트워크 의존(오프라인 시연 시 Supertonic 폴백 안내 필요)
+- 반사 클립 WAV 자체는 여전히 사전합성(기계음 가능) — 긴급 구간에서는 재생 안 함
+
+- **관련 파일**: 본 세션 변경 전부 + `docs/changelogs/th.md`
+- **검증 결과**: 위 표 T1~T15. 서버 `/docs` 200, Edge 합성 스모크(WAV RIFF) 확인,
+  pytest 브리지/편의기능 통과

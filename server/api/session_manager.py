@@ -22,6 +22,7 @@ class SessionManager:
 
     def __init__(self) -> None:
         self.active_connections: dict[str, WebSocket] = {}
+        self.console_connections: set[WebSocket] = set()
 
     async def connect(self, device_id: str, websocket: WebSocket) -> None:
         """새 연결 수락 및 등록.
@@ -42,6 +43,50 @@ class SessionManager:
         logger.info(
             f"[Session] 연결: device_id={device_id}, 현재 접속: {len(self.active_connections)}명"
         )
+
+    async def connect_console(self, websocket: WebSocket) -> None:
+        """새 관제 콘솔 연결 수락 및 등록."""
+        await websocket.accept()
+        self.console_connections.add(websocket)
+        logger.info(f"[Session] 콘솔 연결됨. 현재 콘솔 수: {len(self.console_connections)}")
+
+    def disconnect_console(self, websocket: WebSocket) -> None:
+        """관제 콘솔 연결 해제 및 등록 삭제."""
+        if websocket in self.console_connections:
+            self.console_connections.remove(websocket)
+            logger.info(f"[Session] 콘솔 해제됨. 남은 콘솔 수: {len(self.console_connections)}")
+
+    async def broadcast_to_consoles(self, data: bytes) -> None:
+        """모든 활성 관제 콘솔 웹소켓에 raw bytes (이미지 프레임) 전송."""
+        stale_consoles = []
+        for ws in list(self.console_connections):
+            if ws.application_state == WebSocketState.CONNECTED:
+                try:
+                    await ws.send_bytes(data)
+                except Exception as e:
+                    logger.error(f"[Session] 콘솔 바이너리 송신 예외: {e}")
+                    stale_consoles.append(ws)
+            else:
+                stale_consoles.append(ws)
+
+        for ws in stale_consoles:
+            self.disconnect_console(ws)
+
+    async def broadcast_json_to_consoles(self, data: dict) -> None:
+        """모든 활성 관제 콘솔 웹소켓에 JSON 데이터(BBox 등) 전송."""
+        stale_consoles = []
+        for ws in list(self.console_connections):
+            if ws.application_state == WebSocketState.CONNECTED:
+                try:
+                    await ws.send_json(data)
+                except Exception as e:
+                    logger.error(f"[Session] 콘솔 JSON 송신 예외: {e}")
+                    stale_consoles.append(ws)
+            else:
+                stale_consoles.append(ws)
+
+        for ws in stale_consoles:
+            self.disconnect_console(ws)
 
     def disconnect(self, device_id: str) -> None:
         """연결 해제 및 등록 삭제."""

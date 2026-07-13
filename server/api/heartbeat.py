@@ -39,6 +39,10 @@ class HeartbeatManager:
         self.timeout = timeout
         self.last_ack_time: float = time.time()
         self._running: bool = True
+        # RTT 계측: 직전 heartbeat 송신 시각 대비 ack 수신 시각 차이(ms).
+        # 콘솔 SessionStatus 패널의 rtt_ms 표시에 사용된다.
+        self._last_sent_ts: float | None = None
+        self.last_rtt_ms: float | None = None
 
     async def start(self) -> None:
         """하트비트 루프 시작 (비동기 태스크로 실행)."""
@@ -57,6 +61,7 @@ class HeartbeatManager:
                 break
 
             try:
+                self._last_sent_ts = time.time()
                 await self.ws.send_json(
                     {
                         "type": "heartbeat",
@@ -70,6 +75,8 @@ class HeartbeatManager:
     def record_ack(self) -> None:
         """heartbeat_ack 수신 시 호출."""
         self.last_ack_time = time.time()
+        if self._last_sent_ts is not None:
+            self.last_rtt_ms = (self.last_ack_time - self._last_sent_ts) * 1000
 
     def stop(self) -> None:
         """하트비트 루프 중지."""

@@ -11,11 +11,12 @@ AI(Vibe) 위임 영역:
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import UTC, date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from server.db.models import (
+    ANON_PHONE_PREFIX,
     AdminAccountStatus,
     AdminRole,
     DevicePlatform,
@@ -27,12 +28,28 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
+def _assume_utc_if_naive(value: datetime) -> datetime:
+    """MariaDB DATETIME 컬럼은 타임존을 저장하지 않아, 저장 시 UTC-aware였던
+    값(datetime.now(UTC))도 재조회하면 naive(오프셋 없음)로 돌아온다. Pydantic이
+    이를 그대로 JSON 직렬화하면 오프셋 없는 ISO 문자열이 되어, 브라우저의
+    new Date(...)가 UTC를 로컬(KST)로 오인식해 9시간이 밀린다(now_iso()/SSE
+    timestamp와 같은 계열의 버그, 2026-07-12 발견). 이 프로젝트는 저장 시점에
+    항상 UTC를 쓰므로(datetime.now(UTC)) naive 값은 UTC로 간주해 오프셋을 붙인다.
+    """
+    if isinstance(value, datetime) and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 class AppUserCreate(BaseModel):
     """앱 사용자 생성 요청 DTO."""
 
     name: str = Field(..., min_length=1, max_length=50)
     phone: str = Field(..., min_length=1, max_length=30)
     disability_severity: str = Field(..., min_length=1, max_length=30)
+    birth_date: date | None = Field(default=None)
+    guardian_phone: str | None = Field(default=None, max_length=30)
+    address: str | None = Field(default=None, max_length=255)
     status: UserStatus = UserStatus.ACTIVE
 
 
@@ -47,6 +64,9 @@ class AppUserResponse(BaseModel):
     name: str
     phone: str
     disability_severity: str
+    birth_date: date | None
+    guardian_phone: str | None
+    address: str | None
     status: UserStatus
 
 
@@ -70,6 +90,37 @@ class UserDeviceResponse(BaseModel):
     device_uuid: str
     platform: DevicePlatform
     is_active: bool
+
+
+class MemberRegisterRequest(BaseModel):
+    """관리자 콘솔의 회원 등록/전환 요청 DTO.
+
+    device_uuid가 이미 등록돼 있으면(주로 익명 자동등록 상태) 그 소유 회원 정보를
+    실명으로 갱신(전환)하고, 없으면 새 회원+기기를 등록한다(server/services/user_service.py
+    UserService.register_or_convert_member 참조).
+    """
+
+    device_uuid: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=50)
+    phone: str = Field(..., min_length=1, max_length=30)
+    disability_severity: str = Field(..., min_length=1, max_length=30)
+    birth_date: date | None = Field(default=None)
+    guardian_phone: str | None = Field(default=None, max_length=30)
+    address: str | None = Field(default=None, max_length=255)
+    platform: DevicePlatform = DevicePlatform.UNKNOWN
+
+
+class AppUserWithDevicesResponse(AppUserResponse):
+    """관리자 회원 목록 조회 응답 DTO. 기본 AppUserResponse에 등록 기기 목록과
+    "익명 자동등록 상태인지" 판별 플래그를 더한다(콘솔이 전환 대상 행을 강조 표시)."""
+
+    devices: list[UserDeviceResponse]
+    is_anonymous: bool = False
+
+    @model_validator(mode="after")
+    def _compute_is_anonymous(self) -> AppUserWithDevicesResponse:
+        self.is_anonymous = self.phone.startswith(ANON_PHONE_PREFIX)
+        return self
 
 
 class AdminAccountCreate(BaseModel):
@@ -114,6 +165,8 @@ class AdminLoginAuditResponse(BaseModel):
     success: bool
     created_at: datetime
 
+    _normalize_created_at = field_validator("created_at", mode="before")(_assume_utc_if_naive)
+
 
 class DetectionGuidanceLogCreate(BaseModel):
     """탐지/안내 로그 생성 요청 DTO."""
@@ -125,6 +178,9 @@ class DetectionGuidanceLogCreate(BaseModel):
     stream_type: StreamType = StreamType.UNKNOWN
     detected_objects_json: str = Field(..., min_length=2)
     tts_text: str = Field(..., min_length=1)
+    frame_path: str | None = Field(default=None, max_length=255)
+    false_positive: bool | None = Field(default=None)
+    latency_json: str | None = Field(default=None)
 
 
 class DetectionGuidanceLogResponse(BaseModel):
@@ -140,7 +196,20 @@ class DetectionGuidanceLogResponse(BaseModel):
     stream_type: StreamType
     detected_objects_json: str
     tts_text: str
+    frame_path: str | None
+    false_positive: bool | None
+    latency_json: str | None
     created_at: datetime
+
+    _normalize_dates = field_validator("detected_at", "created_at", mode="before")(
+        _assume_utc_if_naive
+    )
+
+
+class FalsePositiveUpdateRequest(BaseModel):
+    """오탐 여부 업데이트 요청 DTO."""
+
+    false_positive: bool | None
 
 
 class TokenResponse(BaseModel):
@@ -157,8 +226,11 @@ __all__ = [
     "AdminLoginAuditResponse",
     "AppUserCreate",
     "AppUserResponse",
+    "AppUserWithDevicesResponse",
     "DetectionGuidanceLogCreate",
     "DetectionGuidanceLogResponse",
+    "FalsePositiveUpdateRequest",
+    "MemberRegisterRequest",
     "TokenResponse",
     "UserDeviceCreate",
     "UserDeviceResponse",

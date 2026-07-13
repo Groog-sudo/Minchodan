@@ -96,22 +96,26 @@ class SttService:
             return cls._model_cache[cache_key]
 
         device = WHISPER_DEVICE
-        compute_type = WHISPER_COMPUTE_TYPE
+        compute_types = [WHISPER_COMPUTE_TYPE]
+        if device == "cpu":
+            compute_types.extend(["int8_float32", "float32"])
 
-        try:
-            model = WhisperModel(
-                internal_model_name,
-                device=device,
-                compute_type=compute_type,
-            )
-        except ValueError as exc:
-            raise ValueError(
-                f"WhisperModel 생성 실패: model={internal_model_name}, device={device}, compute_type={compute_type}"
-            ) from exc
-        except Exception as exc:
+        last_exc: Exception | None = None
+        for compute_type in dict.fromkeys(compute_types):
+            try:
+                model = WhisperModel(
+                    internal_model_name,
+                    device=device,
+                    compute_type=compute_type,
+                )
+                break
+            except Exception as exc:
+                last_exc = exc
+        else:
             raise RuntimeError(
-                f"WhisperModel 초기화 중 예외 발생: model={internal_model_name}, device={device}, compute_type={compute_type}"
-            ) from exc
+                f"WhisperModel 초기화 중 예외 발생: model={internal_model_name}, device={device}, "
+                f"compute_types={compute_types}"
+            ) from last_exc
 
         cls._model_cache[cache_key] = model
         return model

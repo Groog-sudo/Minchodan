@@ -16,6 +16,7 @@ export function OperatorLiveMap() {
         width="100%"
         height="100%"
         style={{ border: "none", display: "block", minHeight: "400px" }}
+        allow="geolocation; accelerometer; gyroscope"
       ></iframe>
     </section>
   );

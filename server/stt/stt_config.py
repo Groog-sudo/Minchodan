@@ -70,6 +70,9 @@ if hasattr(sys.stdout, "reconfigure"):
 MODEL_NAME_MAP: dict[str, str] = {
     "faster-whisper-medium": "medium",
     "faster-whisper-small": "small",
+    # WebSocket 경로에서 faster-whisper 접두사 없이 내부 별칭이 전달되는 경우를 허용한다.
+    "medium": "medium",
+    "small": "small",
 }
 
 # 2026-07-11 기본 모델 medium -> small 전환(실측 근거): macOS Docker CPU 폴백

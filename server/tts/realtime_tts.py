@@ -10,13 +10,21 @@ import logging
 import os
 import wave
 
+from dotenv import load_dotenv
+
 from server.tts.tts_service import extract_llm_text, get_tts_service
 
 logger = logging.getLogger(__name__)
 
-# [속도 보정] PiperTTSService 참고: espeak 대체 음소화로 인해 length_scale=1.0(기본)이
-# 실측 약 2.5~3배 느리게 합성되어 기본 합성 속도를 낮춰 보정한다.
-DEFAULT_SPEED = float(os.getenv("PIPER_DEFAULT_LENGTH_SCALE", "0.9"))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+load_dotenv(dotenv_path=os.path.join(_PROJECT_ROOT, ".env"))
+
+# 인지 경로 기본 발화 속도. Supertonic/Piper/pyttsx3 공통.
+# 0.85: 시각장애인 안내 가독성(너무 빠른 기계음 체감 완화). Piper 단독 보정은
+# PIPER_DEFAULT_LENGTH_SCALE로 덮어쓸 수 있다.
+DEFAULT_SPEED = float(
+    os.getenv("TTS_DEFAULT_SPEED", os.getenv("PIPER_DEFAULT_LENGTH_SCALE", "0.85"))
+)
 
 
 def _wav_duration_ms(audio_bytes: bytes) -> float:

@@ -102,6 +102,13 @@ class CoreMLDetector implements LocalDetector {
           const b = bridgeResult.benchmark;
           console.log(`[CoreMLBenchmark] det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms scene=${b.scene_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`);
         }
+        // 2026-07-13 추가: 온디바이스 보도 이탈 판정(단일 프레임, CoreMLInferenceBridge.swift
+        // computeSidewalkDeparture) 로그. 아직 어떤 알림/햅틱에도 연결하지 않은 관측 전용 값 -
+        // 실기기에서 세그멘테이션 경계 근처 단일 기준점이 얼마나 자주 뒤집히는지(노이즈)
+        // 확인하기 위한 것이다. 검증 후 서버처럼 히스테리시스를 얹어 실제 기능으로 승격할지 결정한다.
+        if (bridgeResult.surfaceDeparture !== undefined && !audioEngine.isGuidePlaying) {
+          console.log(`[SurfaceDeparture][OnDevice] isDeparting=${bridgeResult.surfaceDeparture}`);
+        }
         // docs/design/indoor_fp_mitigation_design.md §4.4: isLikelyIndoor 게이트 판정에
         // 더해, top-5 identifier는 계속 로그로 남겨 향후 키워드 집합 보강에 활용한다.
         // (가이드 음성 재생 중에는 JS 브릿지 로그 전송이 오디오 콜백과 경합해 억제한다)

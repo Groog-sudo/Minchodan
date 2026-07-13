@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Linking } from "react-native";
 
 import {
   DEVICE_ID,
@@ -15,6 +16,7 @@ import {
   TOKEN,
   WS_URL,
 } from "../config";
+import { findPhoneContact, savePhoneContact } from "../services/contactsBridge";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 import type { WSMessage, WSStatus } from "../types/detection";
@@ -47,6 +49,8 @@ const STT_INTERACTION_TIMEOUT_MS = 20000;
 export function useWebSocket(
   deviceId: string = DEVICE_ID,
   token: string = TOKEN,
+  /** WiFi/USB 토글에 따라 CameraView가 넘긴다. 기본은 config.WS_URL(WiFi). */
+  wsBaseUrl: string = WS_URL,
 ): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectCount = useRef(0);
@@ -94,7 +98,7 @@ export function useWebSocket(
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const wsUrl = `${WS_URL}?device_id=${deviceId}`;
+    const wsUrl = `${wsBaseUrl}?device_id=${deviceId}`;
     console.log(`[WS] 연결 시도 주소: ${wsUrl}`);
     const ws = new WebSocket(wsUrl);
     // guide 오디오(WAV)를 서버가 바이너리 프레임으로 보내므로(2026-07-09 도입),
@@ -156,16 +160,23 @@ export function useWebSocket(
         } else if (data.type === "reflex_alert") {
           setLastMessage(data);
           // 입체 비프음 및 햅틱 연동 실행 (docs/reflex_audio_specification.md 준수)
+          // 채널 분기 (접근성 UX, 2026-07-13):
+          // - 긴급(Critical/High, interval<=100): 핑퐁 비프만. 음성 클립은 반응을 방해하고
+          //   기계음 피로를 키우므로 재생하지 않는다.
+          // - 여유(Mid/Low, interval>100): 방향 음성 클립(+비프). 상세 안내는 인지 guide TTS.
           const panning = typeof data.panning === "number" ? data.panning : 0.0;
           const beepInterval = typeof data.beep_interval_ms === "number" ? data.beep_interval_ms : 250;
           const hapticPattern = typeof data.haptic_pattern === "string" ? data.haptic_pattern : "double";
+          const isUrgentBeepOnly = beepInterval <= 100;
 
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[WS] 반사 알림 수신: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}`);
+            console.log(
+              `[WS] 반사 알림 수신: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}, channel=${isUrgentBeepOnly ? "beep-only" : "voice+beep"}`,
+            );
           }
           audioEngine.playBeep(panning, beepInterval);
           hapticEngine.trigger(hapticPattern);
-          if (data.clip) {
+          if (data.clip && !isUrgentBeepOnly) {
             void audioEngine.playReflexClip(data.clip);
           }
         } else if (data.type === "guide") {
@@ -216,6 +227,50 @@ export function useWebSocket(
               ? { appKey: data.app_key ?? "", waypoints: wps }
               : null,
           );
+        } else if (data.type === "contact_save") {
+          // [TH HARDCODE 아님 - 단말 영속화]
+          // 서버가 파싱한 이름/번호를 Android 주소록에 기록한다.
+          // 💡 [면접 대비] 서버 RAM만으로는 폰 연락처 앱에 안 보인다.
+          //    contact_save → savePhoneContact → ContactsContract INSERT.
+          const contactName = data.contact_name ?? "";
+          const phoneNumber = data.phone_number ?? "";
+          console.log(
+            `[WS] contact_save 수신: contact=${contactName}, phone=${phoneNumber}`,
+          );
+          if (contactName && phoneNumber) {
+            void savePhoneContact(contactName, phoneNumber).then((ok) => {
+              if (!ok) {
+                audioEngine.speakFallback(
+                  "주소록 저장에 실패했습니다. 연락처 권한을 확인해 주세요.",
+                );
+              }
+            });
+          }
+        } else if (data.type === "dial_action") {
+          // [TH HARDCODE 아님] 긴급전화/연락처 전화걸기: 서버는 번호(또는 이름만)
+          // 전달하고, 실제 다이얼은 OS Linking "tel:"에 위임한다.
+          // 💡 [면접 대비] phone 비고 + device_lookup → 단말 주소록 재조회.
+          //    (서버 재시작으로 ContactStore RAM이 비어도 전화 가능)
+          // Linking은 다이얼러 실행까지만 보장, 통화 연결 여부는 확인하지 않는다.
+          const contactName = data.contact_name ?? "";
+          let phoneNumber = data.phone_number ?? "";
+          console.log(
+            `[WS] dial_action 수신: contact=${contactName}, phone=${phoneNumber}, lookup=${data.device_lookup}`,
+          );
+          void (async () => {
+            if (!phoneNumber && data.device_lookup && contactName) {
+              phoneNumber = (await findPhoneContact(contactName)) ?? "";
+            }
+            if (phoneNumber) {
+              Linking.openURL(`tel:${phoneNumber}`).catch((err) =>
+                console.error("[WS] 전화 걸기 실패:", err),
+              );
+            } else {
+              audioEngine.speakFallback(
+                "저장된 번호를 찾을 수 없습니다. 먼저 번호를 저장해 주세요.",
+              );
+            }
+          })();
         } else {
           setLastMessage(data);
         }
@@ -266,9 +321,7 @@ export function useWebSocket(
     ws.onerror = (error: any) => {
       console.error("[WS] 오류:", error);
     };
-  }, [deviceId, token, clearHeartbeat]);
-
-
+  }, [deviceId, token, wsBaseUrl, clearHeartbeat]);
 
   const send = useCallback((data: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -285,6 +338,19 @@ export function useWebSocket(
   }, []);
 
   useEffect(() => {
+    // 수송 모드(WiFi/USB) 변경 시 기존 소켓을 끊고 새 주소로 붙는다.
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
+    clearHeartbeat();
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    reconnectCount.current = 0;
+    fallbackAnnouncedRef.current = false;
     connect();
     return () => {
       clearHeartbeat();

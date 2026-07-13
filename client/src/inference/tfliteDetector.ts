@@ -178,7 +178,7 @@ export class TFLiteDetector implements LocalDetector {
       ),
       this.runModel(
         this.detModel,
-        6,
+        6, // YOLO 26N NMS-enabled format (4 coords + score + classId = 6)
         AIHUB_CLASS_NAMES.length,
         AIHUB_CLASS_NAMES,
         "object_detection",

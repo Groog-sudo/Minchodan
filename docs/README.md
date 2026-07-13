@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-11
-> **버전**: v0.13.9 (2026-07-11 반사 위험도 SSOT 계약 초안(design/risk_ssot_contract.md) 등재 + 이전 v0.13.8 이력 유지: dev 병합 정리: dev 통합 개선 실행 계획서를 문서 목록·§5 ops 표에 등재하고 말미 중복 §9 섹션(ops/reports 표기 불일치) 제거 + 이전: Mitos 보완 로드맵 `docs/research/` 이동, Android 무선 테스트 및 STT 통합 가이드 인덱스 반영)
+> **버전**: v0.13.10 (2026-07-13 Android WiFi/USB 이중 접속 가이드 `ops/android_wifi_usb_transport.md` 등재 + 이전 v0.13.9 이력 유지: 2026-07-11 반사 위험도 SSOT 계약 초안(design/risk_ssot_contract.md) 등재 + 이전 v0.13.8 이력 유지: dev 병합 정리)
 
 ## 문서 목록
 
@@ -137,7 +137,9 @@ docs/
 | **배포 가이드** | [deployment_guide.md](ops/deployment_guide.md) | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동** |
 | **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
 | **Android 빌드 및 무선 테스트 가이드** | [android_build_and_wireless_test_guide.md](ops/android_build_and_wireless_test_guide.md) | **Android 개발 빌드, adb reverse, 무선 연동 기본 절차** |
+| **Android WiFi/USB 이중 접속** | [android_wifi_usb_transport.md](ops/android_wifi_usb_transport.md) | **평상시 WiFi vs 개발 USB 토글, 노트북 핫스팟 `192.168.137.1` 실측** |
 | **Android 무선 테스트 가이드 v2** | [android_wireless_test_guide_v2.md](ops/android_wireless_test_guide_v2.md) | **실기기 테스트 중 Metro 연결 끊김, adb 데드락, reverse 복구 절차 상세판** |
+| **Android STT/실내 탐지 인식 문제 리포트** | [android_stt_recognition_issue_report.md](ops/android_stt_recognition_issue_report.md) | **STT 인식 실패 + 실내 탐지 저하 종합 원인 분석 및 개선 방향** |
 | **실기기 무선 연동 가이드** | [wireless_test_guide.md](ops/wireless_test_guide.md) | **실기기(LTE) 및 Docker 연동 구조, 터널링, 트러블슈팅 상세 가이드** |
 | **AI 모델 및 하드웨어 구성 지침** | [ai_model_hardware_setup.md](ops/ai_model_hardware_setup.md) | **GPU 요구사항(verify_gpu) 및 호스트 로컬 Ollama 모델(gemma4:e4b/nomic) 풀링 가이드** |
 | **Redis Streams 데이터 스키마 명세** | [redis_streams_schema.md](ops/redis_streams_schema.md) | **risk.events 스트림 페이로드 필드 정의 및 중복 알림 TTL 캐시 명세** |
