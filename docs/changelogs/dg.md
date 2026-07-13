@@ -449,3 +449,20 @@
     - 앱이 background 상태에서 foreground(즉 `active`) 상태로 돌아올(리로드) 때마다 `requestSttPermissionEarly`를 트리거하여 마이크 권한 허용 여부를 실시간으로 재확인하고 앱 상태에 동기화하도록 구현함.
 - **관련 파일**: `client/src/components/CameraView.tsx`, `docs/changelogs/dg.md`
 - **검증 결과**: `npx tsc --noEmit` 타입 검사를 무오류로 통과 완료.
+
+---
+
+### 2026-07-13 | STT | Android STT 전사 실패(음성 인식 실패 반복) 현상 해결 및 포맷 감지 가드레일 개선
+
+- **변경 내용**:
+  - **원인 분석**:
+    - Android 단말(expo-audio)이 녹음하여 base64로 전송하는 오디오 파일은 MPEG-4/AAC(.m4a) 포맷입니다.
+    - 하지만 서버(FastAPI ws_router.py) 측 임시 파일 저장소에서 항상 `.wav` 확장자로 강제 저장하여 whisper의 오디오 디코더가 파일 포맷 해석에 실패하고 `RuntimeError`를 던졌습니다.
+    - 또한 도커 컨테이너(minchodan-fastapi)에 ffmpeg 및 관련 라이브러리(espeak 등)는 있었으나, M4A/AAC 포맷 디코딩에 필수적인 `ffmpeg` 바이너리가 누락되어 있었습니다.
+    - iOS의 경우 캡처 시간 역산 기반의 `capture_truncated` 차단 임계값으로 인해 짧은 명령어("길댕아")가 서버 전송 전에 차단되는 문제가 복합적으로 존재했습니다.
+  - **조치 내용**:
+    - **오디오 포맷 감지 로직 구현**: `server/api/ws_router.py`에 magic bytes(ftyp 박스)로 파일 포맷을 판별하는 `_detect_audio_suffix` 헬퍼 함수를 추가하고 임시 파일 저장 시 적절한 확장자(`.m4a`, `.wav` 등)를 할당하도록 수정하였습니다. 0바이트 빈 패킷에 대한 즉각 가드레일 처리도 보강하였습니다.
+    - **도커 이미지 ffmpeg 탑재**: `docker/Dockerfile`에 `ffmpeg` 패키지를 apt-get 설치 항목에 포함시키고, 현재 기동 중인 fastapi 컨테이너에도 직접 ffmpeg 바이너리를 수동 주입 설치하여 즉시 반영하였습니다.
+    - **클라이언트 송신 가드레일 완화**: `client/src/hooks/useSttRecorder.ts`에서 짧은 오디오를 전송 전에 차단하던 `capture_truncated` 가드레일을 제거하여 서버 Whisper VAD(vad_filter=True)에 처리를 위임하고, 안정적인 짧은 웨이크워드 전송을 보장하였습니다.
+- **관련 파일**: `server/api/ws_router.py`, `docker/Dockerfile`, `client/src/hooks/useSttRecorder.ts`
+- **검증 결과**: 컨테이너 내 `SttService.transcribe_file` 호출을 통한 `.m4a` 오디오 디코딩 및 whisper 전사 정상 작동 확인.
