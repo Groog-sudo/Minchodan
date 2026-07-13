@@ -2,6 +2,9 @@
 # Python
 # ==========================================
 
+# ngrok local config (authtoken 포함, 절대 커밋 금지)
+ngrok.yml
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -309,3 +312,6 @@ scripts/launch_agents.sh
 #   - Personal paths, device IDs, tokens, and local-only settings
 # ==========================================
 **/Copy_*
+
+# Local PyTorch CUDA wheel cache (multi-GB)
+.wheel_cache/
