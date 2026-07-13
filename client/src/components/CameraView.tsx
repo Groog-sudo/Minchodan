@@ -235,7 +235,7 @@ export function CameraView() {
   const [hapticFlash, setHapticFlash] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
-  const [confThreshold, setConfThreshold] = useState(0.40);
+  const [confThreshold, setConfThreshold] = useState(0.20);
   // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
   // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
   const [detectionEnabled, setDetectionEnabled] = useState(false);
