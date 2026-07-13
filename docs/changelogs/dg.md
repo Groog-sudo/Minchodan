@@ -409,3 +409,17 @@
   - **클라이언트 연동**: `Platform.OS === 'android'` 분기를 탑재하여 기존 iOS 로직의 영향 범위를 완벽히 차단하고, 판정 상태에 따라 햅틱 진동 및 다이내믹 비프음을 출력하며 **"정면 장애물, [왼쪽/오른쪽] 공간 넓음"** 가이드를 단말 로컬 TTS(`speakFallback`)를 통해 2.5초 간격 스로틀로 낭독 연동 완료함.
 - **관련 파일**: `client/src/inference/pathObstacleDetector.ts` (신설), `client/src/components/CameraView.tsx` (수정)
 - **검증 결과**: Metro 번들러를 통한 컴파일 무결성을 통과하였으며 핫 리로딩 성공 확인 완료.
+
+---
+
+### 2026-07-13 | 모바일/네트워크 | Tailscale 환경 연동 보완 및 모바일 앱 컴파일 에러 수정
+
+- **변경 내용**:
+  - **네트워크 모드 환경변수 우선 연동**:
+    - `client/src/config/index.ts` 내 하드코딩되어 있던 `const NETWORK_MODE = "lan";`을 `process.env.EXPO_PUBLIC_NETWORK_MODE`를 참조하도록 보완하고 기본값 `"lan"` 및 타입 캐스팅을 적용하여 외부망 테스트 및 Tailscale/LAN 연동을 환경 변수로 정밀하게 조율 가능하도록 갱신함.
+  - **TypeScript 컴파일 오류 해결**:
+    - `client/src/components/CameraView.tsx`에서 `detectionEnabled` State가 정의되기 전 `useEffect` 의존성 배열에서 참조하여 발생하던 블록 스코프(TDZ) 오류를 해결하기 위해 관련 State 선언부들을 컴파일러 가이드에 맞춰 컴파일 영역 상단으로 재배치함.
+    - `CameraView.tsx` 내부 스타일시트에서 `StyleSheet.absoluteFillObject` 참조 시 타입스크립트 속성 오류가 발생하여 이를 `StyleSheet.absoluteFill`로 변경 완료함.
+    - `client/src/inference/pathObstacleDetector.ts`에서 `OnDeviceDetectionResult` 타입을 잘못된 상대 경로(`../components/CameraView`)로 참조하여 가져오던 임포트 선언을 정식 위치인 `../hooks/useOnDeviceDetection`으로 정정함.
+- **관련 파일**: `client/src/config/index.ts`, `client/src/components/CameraView.tsx`, `client/src/inference/pathObstacleDetector.ts`, `docs/changelogs/dg.md`
+- **검증 결과**: `npx tsc --noEmit` 정적 타입 컴파일러 검사를 전수 무오류 통과 완료.

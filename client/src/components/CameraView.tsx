@@ -119,6 +119,16 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
 }
 
 export function CameraView() {
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [lastDetect, setLastDetect] = useState<string>("대기");
+  const [hapticFlash, setHapticFlash] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<number | null>(null);
+  const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
+  const [confThreshold, setConfThreshold] = useState(0.20);
+  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
+  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
+  const [detectionEnabled, setDetectionEnabled] = useState(false);
+
   // 평상시 WiFi / 개발 USB — 둘 다 설정에 두고 토글로 전환 (재시작 후에도 유지).
   const [serverTransport, setServerTransport] = useState<ServerTransport>("wifi");
   const [transportReady, setTransportReady] = useState(false);
@@ -231,15 +241,7 @@ export function CameraView() {
     };
   }, []);
 
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const [lastDetect, setLastDetect] = useState<string>("대기");
-  const [hapticFlash, setHapticFlash] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState<number | null>(null);
-  const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
-  const [confThreshold, setConfThreshold] = useState(0.20);
-  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
-  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
-  const [detectionEnabled, setDetectionEnabled] = useState(false);
+  // State variables moved to top of Component to avoid block-scope/TDZ errors.
 
   // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
   // WS 재연결 후에도 현재 토글 값을 다시 보낸다.
@@ -1178,7 +1180,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(59,130,246,0.85)",
   },
   detectionIdleBanner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.55)",

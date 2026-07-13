@@ -11,9 +11,9 @@
 
 export type ServerTransport = "wifi" | "usb";
 
-const NETWORK_MODE = "lan";
+const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "lan") as "lan" | "ngrok";
 
-/** 평상시: PC 모바일 핫스팟(공기계→노트북). Windows 기본 게이트웨이. */
+/** 평상시: PC 모바일 핫스팟(공기계→노1북). Windows 기본 게이트웨이. */
 export const WIFI_HOST =
   process.env.EXPO_PUBLIC_WIFI_HOST ??
   process.env.EXPO_PUBLIC_LAN_IP ??

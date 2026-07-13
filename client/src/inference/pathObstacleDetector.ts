@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { OnDeviceDetectionResult } from "../components/CameraView";
+import { OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
 
 // 640x640 카메라 해상도 기준 설정
 const FRAME_SIZE = 640;
