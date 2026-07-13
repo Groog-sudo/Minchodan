@@ -89,3 +89,24 @@ def bbox_area_ratio(bbox: BBoxLike, frame_width: float, frame_height: float) -> 
     width = max(0.0, bbox.w)
     height = max(0.0, bbox.h)
     return (width * height) / float(frame_width * frame_height)
+
+
+# 인지 경로 전용 - 반사 경로(estimate_direction, front/front-left/front-right 3분대)와는
+# 무관하다. 카메라 전방 시야가 대략 90도라 6시(정면 카메라 기준 정후방)는 물리적으로
+# 탐지 불가하므로, 12시(정면)를 중심으로 9시~3시 7단계만 다룬다.
+CLOCK_HOURS = [9, 10, 11, 12, 1, 2, 3]
+
+
+def estimate_clock_direction(bbox: BBoxLike, frame_width: float) -> str:
+    """bbox 중심 x좌표를 12시(정면) 기준 9시~3시 사이 7단계 시계 방향 문자열로 변환한다.
+
+    인지 경로 안내 문장의 "좌측/우측" 같은 모호한 표현을 실제 탐지 위치 기반의
+    정확한 방향("2시 방향" 등)으로 대체하기 위해 도입했다(2026-07-13).
+    """
+    if frame_width <= 0:
+        return "12시"
+
+    center_x = bbox.x + bbox.w / 2
+    normalized = min(1.0, max(0.0, center_x / frame_width))
+    index = round(normalized * (len(CLOCK_HOURS) - 1))
+    return f"{CLOCK_HOURS[index]}시"

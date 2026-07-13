@@ -15,6 +15,7 @@ from server.detection.detector_interface import DetectorInterface, SegmentorInte
 from server.detection.gates.head_level_gate import head_level_gate
 from server.detection.gates.reflex_gate import reflex_gate
 from server.detection.gates.surface_gate import surface_gate
+from server.detection.path_risk import classify_path_risk, compute_path_risk_ratio
 from server.detection.schemas import Detection, DetectionResult, ReflexAlert, SurfaceResult
 from server.detection.surface_departure import braille_follow_direction, check_sidewalk_departure
 
@@ -97,6 +98,7 @@ class DetectionPipeline:
         stream: str,
         event_id: str,
         device_id: str,
+        is_outdoor: bool | None = None,
     ) -> tuple[DetectionResult | ReflexAlert, list[Detection], list[SurfaceResult]]:
         start_ts = time.time()
 
@@ -157,13 +159,30 @@ class DetectionPipeline:
         risk_hint = self._classify_risk(detections, surfaces)
         inference_ms = (time.time() - start_ts) * 1000
 
-        is_departing = check_sidewalk_departure(surfaces, width, height)
+        # is_outdoor=False(클라이언트 온디바이스 씬 분류가 실내로 확정)면 세그멘테이션
+        # 결과와 무관하게 이탈 판정을 걸지 않는다. 실내 바닥이 roadway/caution으로
+        # 오분류되는 도메인쉬프트(2026-07-13 실기기 실측으로 확인)를 게이팅하기 위함.
+        # None(클라이언트 미판정, 구버전 등)은 기존처럼 세그멘테이션 결과를 신뢰한다.
+        is_departing = (
+            check_sidewalk_departure(surfaces, width, height) if is_outdoor is not False else False
+        )
         braille_direction = braille_follow_direction(surfaces, width, height)
         if is_departing:
             logger.info(
                 f"[Pipeline] 보도 이탈 판정(단일 프레임): event_id={event_id}, "
                 f"braille_direction={braille_direction}"
             )
+
+        # 2026-07-13 실험: 강사님 추천(Depth Map + 주행 ROI + 위험 픽셀 비율) 알고리즘의
+        # 저비용 근사. 아직 risk_hint/안내문에는 연결하지 않고 관측(로그)만 한다 -
+        # is_outdoor=False일 때는 이탈 판정과 동일한 이유로 계산 자체를 건너뛴다.
+        if is_outdoor is not False:
+            path_risk_ratio = compute_path_risk_ratio(surfaces, width, height)
+            if path_risk_ratio > 0:
+                logger.info(
+                    f"[Pipeline] 주행통로 위험 비율(실험): event_id={event_id}, "
+                    f"ratio={path_risk_ratio:.2f}, level={classify_path_risk(path_risk_ratio)}"
+                )
 
         if risk_hint in ("mid", "low"):
             await self._publish_cognitive(event_id, detections, surfaces, risk_hint)

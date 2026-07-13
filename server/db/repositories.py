@@ -24,6 +24,7 @@ from server.db.models import (
     AdminLoginAudit,
     AppUser,
     DetectionGuidanceLog,
+    StreamType,
     UserDevice,
 )
 
@@ -272,3 +273,26 @@ class DetectionGuidanceLogRepository:
             await self.session.commit()
             await self.session.refresh(log)
         return log
+
+    async def list_frequent_tts_texts(
+        self,
+        *,
+        stream_type: StreamType = StreamType.COGNITIVE,
+        min_count: int = 2,
+        limit: int = 30,
+    ) -> list[str]:
+        """빈도 높은 안내 문장을 등장 횟수 내림차순으로 반환한다 (TTS 캐시 프리워밍용).
+
+        stream_type=COGNITIVE로 한정하는 이유: 반사 경로 로그의 tts_text는 실제 합성
+        문장이 아니라 "[반사 클립] {clip}" 플레이스홀더(consumer.py 참조)라서 실시간
+        TTS 캐시 키(text, voice, speed)와 무관하다.
+        """
+        result = await self.session.execute(
+            select(DetectionGuidanceLog.tts_text)
+            .where(DetectionGuidanceLog.stream_type == stream_type)
+            .group_by(DetectionGuidanceLog.tts_text)
+            .having(func.count() >= min_count)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+        return [row[0] for row in result.all()]

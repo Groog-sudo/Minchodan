@@ -27,6 +27,7 @@ from server.capture.stream_splitter import StreamSplitter, get_default_splitter
 from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
+from server.detection.direction import estimate_clock_direction
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.orchestration.llm_client_factory import LLMClientFactory
@@ -313,6 +314,7 @@ class DetectionConsumer:
                 stream=stream,
                 event_id=processed.event_id,
                 device_id=processed.device_id,
+                is_outdoor=processed.is_outdoor,
             )
         except Exception as e:
             logger.error(
@@ -631,15 +633,25 @@ class DetectionConsumer:
         # RAG 검색: 가장 신뢰도 높은 탐지 사물 기준으로 안전 수칙 조회 (실패 시 빈 문자열, fallback 미경유 유지)
         # detections가 비어 있는(순수 보도 이탈) 이벤트는 조회할 사물이 없으므로 건너뛴다.
         rag_context = ""
+        clock_direction = ""
         rag_start = time.perf_counter()
         try:
             retriever = get_default_retriever()
-            if retriever is not None and result.detections:
+            if result.detections:
                 primary_det = max(result.detections, key=lambda d: d.confidence)
-                rag_context = await asyncio.to_thread(
-                    retriever.search_guidance,
-                    {"class_name": primary_det.class_name, "confidence": primary_det.confidence},
-                )
+                if retriever is not None:
+                    rag_context = await asyncio.to_thread(
+                        retriever.search_guidance,
+                        {
+                            "class_name": primary_det.class_name,
+                            "confidence": primary_det.confidence,
+                        },
+                    )
+                # 2026-07-13: "좌측/우측" 같은 모호한 안내 대신 실제 탐지 위치 기반의
+                # 정확한 시계 방향("2시 방향" 등)을 L2 프롬프트에 실어준다. frame이 있어야
+                # 프레임 폭을 알 수 있으므로(항상 640x640 리사이즈), 없으면 계산을 건너뛴다.
+                if frame is not None:
+                    clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
         except Exception as e:
             logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
         rag_ms = (time.perf_counter() - rag_start) * 1000
@@ -659,6 +671,7 @@ class DetectionConsumer:
             },
             "detected_classes": [det.class_name for det in result.detections],
             "positions": [det.direction or "" for det in result.detections],
+            "clock_direction": clock_direction,
             "risk_level": result.risk_hint,
             "navigation_guidance": navigation_guidance,
             "rag_context": rag_context or "관련 수칙 없음",
@@ -690,6 +703,9 @@ class DetectionConsumer:
                 rag_query=rag_query,
                 tts_engine=os.getenv("TTS_ENGINE", "supertonic"),
                 reflex_bypass=False,
+                # 2026-07-13 발견: guidance_text는 만들어지지만 이 필드가 빠져 있어
+                # 콘솔 "TTS GUIDANCE"가 항상 "무발화 대기 중"으로 고정되던 버그.
+                last_guidance=guidance_text,
             )
 
             tts_start = time.perf_counter()

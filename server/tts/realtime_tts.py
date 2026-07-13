@@ -131,6 +131,36 @@ class RealtimeTTS:
             return None, 0.0
         return await self.synthesize(text=text, voice=voice, speed=speed)
 
+    async def prewarm(self, texts: list[str], voice: str = "ko", speed=DEFAULT_SPEED) -> int:
+        """서버 기동 시 DB 이력에서 뽑은 빈도 높은 문장을 미리 합성해 캐시를 채운다.
+
+        문장 하나가 실패해도 나머지는 계속 진행한다(프리워밍은 부가 기능이라
+        실패가 서버 기동이나 이후 실시간 합성을 막으면 안 된다). texts 길이가
+        CACHE_MAX_ENTRIES를 넘으면 FIFO 축출로 앞쪽 항목이 밀려나 프리워밍
+        효과가 사라지므로 상한을 넘지 않도록 호출측(list_frequent_tts_texts의
+        limit)에서 미리 제한해야 한다.
+
+        반환값: 실제로 캐시에 채워진(합성 성공한) 문장 수.
+        """
+        if len(texts) > self.CACHE_MAX_ENTRIES:
+            logger.warning(
+                f"[TTS] 프리워밍 대상({len(texts)}건)이 캐시 상한"
+                f"({self.CACHE_MAX_ENTRIES})을 초과해 앞쪽 항목이 밀려날 수 있습니다."
+            )
+
+        warmed = 0
+        for text in texts:
+            if not text or not text.strip():
+                continue
+            try:
+                b64_audio, _ = await self.synthesize(text=text, voice=voice, speed=speed)
+            except Exception as e:
+                logger.warning(f"[TTS] 프리워밍 합성 실패, 건너뜁니다: '{text}' ({e})")
+                continue
+            if b64_audio is not None:
+                warmed += 1
+        return warmed
+
 
 # 전역에서 사용할 수 있는 기본 인스턴스 생성
 realtime_tts = RealtimeTTS()

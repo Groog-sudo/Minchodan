@@ -6,6 +6,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from server.orchestration import run_orchestrator
+from server.rag.convenience_rag import (
+    answer_convenience_question,
+    looks_like_convenience_query,
+)
 
 from .contact_service import ContactService
 from .contact_store import extract_call_target, extract_save_command
@@ -802,7 +806,8 @@ class SttToLlmBridge:
         """자유 질의응답 모드에서 받은 발화에 답한다.
 
         순서: 1) 근접 POI 질의면 실거리 검색으로 사실 기반 답변(환각 방지)
-              2) 아니면 장애물 회피 오케스트레이터를 우회해 순수 LLM 대화로 답변
+              2) 생활지원/기관 검색 질의면 RAG + Gemini로 답변
+              3) 아니면 장애물 회피 오케스트레이터를 우회해 순수 LLM 대화로 답변
         """
         if not question:
             return {
@@ -818,6 +823,22 @@ class SttToLlmBridge:
                 "used_fallback_llm": True,
                 "source": "question-poi",
             }
+
+        if looks_like_convenience_query(question):
+            try:
+                rag_result = await answer_convenience_question(question)
+                answer_text = (rag_result.get("answer") or "").strip()
+                if answer_text:
+                    return {
+                        "guidance_text": answer_text,
+                        "used_fallback_llm": bool(rag_result.get("used_fallback_llm", False)),
+                        "source": "question-convenience-rag",
+                        "rag_query": rag_result.get("query", question),
+                        "rag_results": rag_result.get("results", []),
+                        "rag_latency_ms": rag_result.get("latency_ms", 0.0),
+                    }
+            except Exception as e:
+                print(f"[STT BRIDGE] Convenience RAG failed: {e}")
 
         try:
             from langchain_core.messages import HumanMessage, SystemMessage

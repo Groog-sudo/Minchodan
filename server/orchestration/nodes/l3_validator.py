@@ -5,6 +5,7 @@ L3 Validator Node.
 """
 
 import contextlib
+import re
 import sys
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
@@ -15,6 +16,11 @@ if sys.stdout.encoding != "utf-8":
 MAX_LEN = 20
 MAX_RETRY = 1
 FALLBACK_MESSAGE = "전방 주의, 천천히 멈추세요"
+
+# 2026-07-13: L2가 "좌측/우측" 대신 "N시 방향"(9시~3시) 형식을 쓰도록 바뀌어
+# 방향 키워드 검사에도 시계 방향 패턴을 추가한다(안 넣으면 정상 문장이 전부
+# "방향 키워드 미포함"으로 재시도/폴백 처리되는 회귀가 생김).
+_CLOCK_PATTERN = re.compile(r"(9|10|11|12|1|2|3)시")
 
 
 def validate_guidance(text: str) -> tuple:
@@ -35,8 +41,9 @@ def validate_guidance(text: str) -> tuple:
         errors.append(f"길이 초과: {text_len}자 > {MAX_LEN}자")
 
     # 3. 방향 키워드 포함 여부 검사
-    valid_keywords = ["좌", "우", "왼", "오른", "직진", "정지", "멈추", "서세요", "대기"]
-    if not any(kw in text for kw in valid_keywords):
+    valid_keywords = ["좌", "우", "왼", "오른", "직진", "정지", "멈추", "서세요", "대기", "전방"]
+    has_clock_direction = bool(_CLOCK_PATTERN.search(text))
+    if not has_clock_direction and not any(kw in text for kw in valid_keywords):
         errors.append("방향 키워드 미포함")
 
     # 4. 한국어 포함 검사 (가~힣)

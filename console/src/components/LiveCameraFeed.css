@@ -89,6 +89,10 @@
   object-fit: contain;
 }
 
+.live-feed-rotated {
+  transform-origin: center center;
+}
+
 .feed-overlay-scanner {
   position: absolute;
   top: 0;

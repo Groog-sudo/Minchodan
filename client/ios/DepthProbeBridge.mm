@@ -13,4 +13,8 @@ RCT_EXTERN_METHOD(probe:(NSArray *)points
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(probeBoxes:(NSArray *)boxes
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

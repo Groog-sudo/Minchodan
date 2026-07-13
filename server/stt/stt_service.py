@@ -4,6 +4,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from pathlib import Path
+from threading import Lock
 from typing import Any, ClassVar
 
 try:
@@ -45,6 +46,7 @@ class SttService:
     """
 
     _model_cache: ClassVar[dict[str, Any]] = {}
+    _model_init_lock: ClassVar[Lock] = Lock()
 
     @classmethod
     def has_stt_input(cls, text: str) -> bool:
@@ -95,30 +97,34 @@ class SttService:
         if cache_key in cls._model_cache:
             return cls._model_cache[cache_key]
 
-        device = WHISPER_DEVICE
-        compute_types = [WHISPER_COMPUTE_TYPE]
-        if device == "cpu":
-            compute_types.extend(["int8_float32", "float32"])
+        with cls._model_init_lock:
+            if cache_key in cls._model_cache:
+                return cls._model_cache[cache_key]
 
-        last_exc: Exception | None = None
-        for compute_type in dict.fromkeys(compute_types):
-            try:
-                model = WhisperModel(
-                    internal_model_name,
-                    device=device,
-                    compute_type=compute_type,
-                )
-                break
-            except Exception as exc:
-                last_exc = exc
-        else:
-            raise RuntimeError(
-                f"WhisperModel 초기화 중 예외 발생: model={internal_model_name}, device={device}, "
-                f"compute_types={compute_types}"
-            ) from last_exc
+            device = WHISPER_DEVICE
+            compute_types = [WHISPER_COMPUTE_TYPE]
+            if device == "cpu":
+                compute_types.extend(["int8_float32", "float32"])
 
-        cls._model_cache[cache_key] = model
-        return model
+            last_exc: Exception | None = None
+            for compute_type in dict.fromkeys(compute_types):
+                try:
+                    model = WhisperModel(
+                        internal_model_name,
+                        device=device,
+                        compute_type=compute_type,
+                    )
+                    break
+                except Exception as exc:
+                    last_exc = exc
+            else:
+                raise RuntimeError(
+                    f"WhisperModel 초기화 중 예외 발생: model={internal_model_name}, device={device}, "
+                    f"compute_types={compute_types}"
+                ) from last_exc
+
+            cls._model_cache[cache_key] = model
+            return model
 
     @classmethod
     def transcribe_file(

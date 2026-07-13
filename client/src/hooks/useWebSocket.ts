@@ -5,12 +5,15 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking } from "react-native";
+import { AppState, Linking } from "react-native";
 
 import {
   DEVICE_ID,
   HEARTBEAT_INTERVAL,
   MAX_RECONNECT,
+  NETWORK_BENCHMARK_ENABLED,
+  NETWORK_BENCHMARK_INTERVAL_MS,
+  NETWORK_BENCHMARK_PAYLOAD_BYTES,
   RECONNECT_DELAY,
   RECONNECT_DELAY_MAX,
   TOKEN,
@@ -40,6 +43,10 @@ export interface UseWebSocketReturn {
    * 반사 경로(reflex_alert)는 안전 비협상 원칙에 따라 절대 뮤트하지 않는다.
    * timeoutMs를 넘기면 해당 시간 뒤 자동 해제(기본은 STT_INTERACTION_TIMEOUT_MS 안전 상한). */
   setSttInteractionActive: (active: boolean, timeoutMs?: number) => void;
+  /** network_probe RTT 최신값(ms). EXPO_PUBLIC_NETWORK_BENCHMARK=true일 때 갱신된다. */
+  networkRttMs: number | null;
+  /** network_probe RTT 최근 30개 평균(ms). */
+  networkRttAvgMs: number | null;
 }
 
 // STT 응답이 오지 않는 예외 상황(네트워크 끊김 등)에서 인지 경로가 무한정 뮤트된 채
@@ -55,10 +62,16 @@ export function useWebSocket(
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectCount = useRef(0);
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const networkProbeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingNetworkProbes = useRef<Map<string, number>>(new Map());
+  const networkRttSamples = useRef<number[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<WSStatus>("disconnected");
   const [lastMessage, setLastMessage] = useState<WSMessage | null>(null);
   const [navRoute, setNavRoute] = useState<NavRouteData | null>(null);
+  const [networkRttMs, setNetworkRttMs] = useState<number | null>(null);
+  const [networkRttAvgMs, setNetworkRttAvgMs] = useState<number | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
   // STT 상호작용 중 인지 경로 뮤트 상태. ref로 관리해 onmessage 클로저 안에서도
   // 항상 최신 값을 읽는다(state였다면 connect()가 재실행되지 않는 한 stale closure).
@@ -95,8 +108,46 @@ export function useWebSocket(
     }
   }, []);
 
+  const clearNetworkProbe = useCallback(() => {
+    if (networkProbeTimer.current) {
+      clearInterval(networkProbeTimer.current);
+      networkProbeTimer.current = null;
+    }
+    pendingNetworkProbes.current.clear();
+  }, []);
+
+  const sendNetworkProbe = useCallback((ws: WebSocket) => {
+    if (!NETWORK_BENCHMARK_ENABLED || ws.readyState !== WebSocket.OPEN) return;
+    const probeId = `ios-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    pendingNetworkProbes.current.set(probeId, Date.now());
+    ws.send(
+      JSON.stringify({
+        type: "network_probe",
+        probe_id: probeId,
+        client_label: "ios-app",
+        client_sent_ts: Date.now(),
+        payload: "x".repeat(Math.max(0, NETWORK_BENCHMARK_PAYLOAD_BYTES)),
+      }),
+    );
+  }, []);
+
+  const recordNetworkProbeAck = useCallback((probeId: string | undefined) => {
+    if (!probeId) return;
+    const sentAt = pendingNetworkProbes.current.get(probeId);
+    if (sentAt === undefined) return;
+    pendingNetworkProbes.current.delete(probeId);
+    const rttMs = Date.now() - sentAt;
+    const samples = [...networkRttSamples.current, rttMs].slice(-30);
+    networkRttSamples.current = samples;
+    const avgMs = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+    setNetworkRttMs(rttMs);
+    setNetworkRttAvgMs(Math.round(avgMs));
+    console.log(`[NetworkBench] probe=${probeId}, rtt=${rttMs}ms, avg30=${Math.round(avgMs)}ms`);
+  }, []);
+
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    const currentState = wsRef.current?.readyState;
+    if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) return;
 
     const wsUrl = `${wsBaseUrl}?device_id=${deviceId}`;
     console.log(`[WS] 연결 시도 주소: ${wsUrl}`);
@@ -111,6 +162,7 @@ export function useWebSocket(
     setStatus((prev) => (prev === "fallback" ? prev : "connecting"));
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) return;
       // 주의: 재연결 카운터는 여기(TCP 연결)가 아니라 welcome(핸드셰이크 성공)에서
       // 리셋한다. 인증 실패 등으로 "연결 직후 끊김"이 반복되는 경우에도 백오프가
       // 계속 자라고 폴백 고지가 정상 동작해야 하기 때문이다.
@@ -124,9 +176,18 @@ export function useWebSocket(
           ws.send(JSON.stringify({ type: "heartbeat", ts: Date.now() }));
         }
       }, HEARTBEAT_INTERVAL);
+
+      clearNetworkProbe();
+      if (NETWORK_BENCHMARK_ENABLED) {
+        sendNetworkProbe(ws);
+        networkProbeTimer.current = setInterval(() => {
+          sendNetworkProbe(ws);
+        }, NETWORK_BENCHMARK_INTERVAL_MS);
+      }
     };
 
     ws.onmessage = (event: any) => {
+      if (wsRef.current !== ws) return;
       // guide 오디오 바이너리 프레임: 직전 "guide" JSON 메시지(transport:"binary")에
       // 이어 도착하는 원본 WAV 바이트다. base64 인코딩을 완전히 우회한다(2026-07-09).
       if (event.data instanceof ArrayBuffer) {
@@ -157,6 +218,8 @@ export function useWebSocket(
           ws.send(
             JSON.stringify({ type: "heartbeat_ack", ts: Date.now() }),
           );
+        } else if (data.type === "network_probe_ack") {
+          recordNetworkProbeAck(data.probe_id);
         } else if (data.type === "reflex_alert") {
           setLastMessage(data);
           // 입체 비프음 및 햅틱 연동 실행 (docs/reflex_audio_specification.md 준수)
@@ -279,11 +342,20 @@ export function useWebSocket(
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: any) => {
+      // 이전 소켓의 종료 콜백이 새 소켓의 재연결 상태를 덮어쓰지 않게 한다.
+      if (wsRef.current !== ws) {
+        console.log("[WS] 구 소켓 종료 이벤트 무시");
+        return;
+      }
+      wsRef.current = null;
       // 폴백 모드는 재연결 성공까지 유지한다(위 connecting 주석과 동일한 이유).
       setStatus((prev) => (prev === "fallback" ? prev : "disconnected"));
       clearHeartbeat();
-      console.log("[WS] 연결 종료");
+      clearNetworkProbe();
+      const closeCode = typeof event?.code === "number" ? event.code : -1;
+      const closeReason = typeof event?.reason === "string" ? event.reason : "";
+      console.log(`[WS] 연결 종료 code=${closeCode} reason=${closeReason}`);
 
       // 오디오 및 진동 피드백 즉각 종료
       audioEngine.stopBeep();
@@ -299,6 +371,9 @@ export function useWebSocket(
         RECONNECT_DELAY * 2 ** (reconnectCount.current - 1),
         RECONNECT_DELAY_MAX,
       );
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+      }
       reconnectTimer.current = setTimeout(() => connect(), backoffMs);
       console.log(
         `[WS] 재연결 예약: ${reconnectCount.current}회차, ${backoffMs}ms 후`,
@@ -319,9 +394,21 @@ export function useWebSocket(
     };
 
     ws.onerror = (error: any) => {
+      if (wsRef.current !== ws) {
+        console.log("[WS] 구 소켓 오류 이벤트 무시");
+        return;
+      }
       console.error("[WS] 오류:", error);
     };
-  }, [deviceId, token, wsBaseUrl, clearHeartbeat]);
+  }, [
+    deviceId,
+    token,
+    wsBaseUrl,
+    clearHeartbeat,
+    clearNetworkProbe,
+    sendNetworkProbe,
+    recordNetworkProbeAck,
+  ]);
 
   const send = useCallback((data: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -330,10 +417,14 @@ export function useWebSocket(
   }, []);
 
   const sendBinary = useCallback((data: Uint8Array) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      // RN WebSocket은 ArrayBufferView(Uint8Array)를 바이너리 프레임으로 직접 전송한다.
-      // base64 인코딩을 경유하지 않아 33% 페이로드 증가와 JS 인코딩/서버 디코딩 오버헤드를 제거한다.
-      wsRef.current.send(data);
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // RN WebSocket은 ArrayBufferView(Uint8Array)를 바이너리 프레임으로 직접 전송한다.
+    // 다만 readyState 검사 직후 onclose가 끼어들 수 있어(send 레이스), 예외를 흡수한다.
+    try {
+      ws.send(data);
+    } catch (error) {
+      console.warn("[WS] 바이너리 전송 스킵(소켓 상태 변경):", error);
     }
   }, []);
 
@@ -344,6 +435,7 @@ export function useWebSocket(
       reconnectTimer.current = null;
     }
     clearHeartbeat();
+    clearNetworkProbe();
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.close();
@@ -354,6 +446,7 @@ export function useWebSocket(
     connect();
     return () => {
       clearHeartbeat();
+      clearNetworkProbe();
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
       }
@@ -373,7 +466,46 @@ export function useWebSocket(
         wsRef.current = null;
       }
     };
-  }, [connect, clearHeartbeat]);
+  }, [connect, clearHeartbeat, clearNetworkProbe]);
 
-  return { status, send, sendBinary, lastMessage, navRoute, setSttInteractionActive };
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (nextState !== "active") {
+        if (reconnectTimer.current) {
+          clearTimeout(reconnectTimer.current);
+          reconnectTimer.current = null;
+        }
+        clearHeartbeat();
+        clearNetworkProbe();
+        if (wsRef.current) {
+          wsRef.current.onclose = null;
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+        return;
+      }
+
+      if (previousState !== "active") {
+        reconnectCount.current = 0;
+        fallbackAnnouncedRef.current = false;
+        connect();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [connect, clearHeartbeat, clearNetworkProbe]);
+
+  return {
+    status,
+    send,
+    sendBinary,
+    lastMessage,
+    navRoute,
+    setSttInteractionActive,
+    networkRttMs,
+    networkRttAvgMs,
+  };
 }
