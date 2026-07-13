@@ -380,3 +380,18 @@
     - `ruff check` 검사 전수 통과 및 `tests/test_detection.py` 내 30개 단위 테스트 전수 통과(`30 passed`) 완료.
 - **관련 파일**: `console/src/components/LiveCameraFeed.css`, `console/src/components/LiveCameraFeed.tsx`, `console/src/api/useLiveFeed.ts`, `server/api/ws_router.py`, `server/navigation/index.html`, `server/detection/detection_pipeline.py`, `server/detection/consumer.py`
 - **검증 결과**: `tests/test_detection.py` 실행 및 테스트 성공 확인. FastAPI uvicorn 서버 수동 재기동 후 8000번 포트에서 모바일 단말(dev-001), 콘솔, 내비게이션의 세션 웹소켓 연결 수신 및 브로드캐스트 작동 성공 로깅 검증 완료.
+
+---
+
+### 2026-07-13 | 모바일/AI | 실기기 29종 객체 탐지 박스 화면 미표시 버그 해결을 위한 최소 신뢰도 임계값 완화
+
+- **변경 내용**:
+  - **원인 분석**: 
+    - 서버에서 파인튜닝 YOLOv8 가중치(`best_20260705.pt`)를 통해 `fire_hydrant` 등의 객체를 성공적으로 검출하여 전송하고 있음에도 화면에 탐지 박스가 나타나지 않는 현상을 분석함.
+    - 모바일 앱의 [CameraView.tsx](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/components/CameraView.tsx) 내부에 실내 오탐 방지용으로 설계된 개별 클래스별 최소 신뢰도 기준(`CLASS_MIN_CONFIDENCE`)이 `0.5` ~ `0.6` 수준으로 매우 높게 하드코딩되어 있었음. 
+    - 그에 따라 신뢰도가 `0.53` 수준으로 정상 감지된 실물 객체 정보가 화면 드로잉 직전에 전부 필터링(무시)되고 있었음. (세그멘테이션 노면 결과는 서버단에서 무조건 `1.0` 으로 강제 주입해 쏘기 때문에 100% 보였음.)
+  - **조치 내용**:
+    - [CameraView.tsx](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/components/CameraView.tsx) 내 `CLASS_MIN_CONFIDENCE` 임계값 테이블을 현실적인 수치인 `0.30` ~ `0.35`로 일괄 인하 조치함.
+    - 이를 통해 서버로부터 전송된 YOLOv8 추론 결과물들이 임계값 게이트를 정상적으로 통과하여 화면에 바운딩 박스로 즉시 오버레이되도록 전송 렌더 필터를 정비함.
+- **관련 파일**: `client/src/components/CameraView.tsx`
+- **검증 결과**: 수동 컴파일 무결 확인 및 Metro 핫 리로딩을 통한 단말 런타임 적용 완료.

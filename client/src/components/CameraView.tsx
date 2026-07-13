@@ -85,18 +85,18 @@ const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
 // 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 40%)보다 더 높은 하한선을
 // 개별로 강제한다. 목록에 없는 클래스는 confThreshold를 그대로 사용한다.
 const CLASS_MIN_CONFIDENCE: Record<string, number> = {
-  car: 0.6,
-  bus: 0.6,
-  truck: 0.6,
-  motorcycle: 0.55,
-  scooter: 0.5,
-  fire_hydrant: 0.55,
-  parking_meter: 0.55,
-  traffic_light: 0.55,
-  traffic_light_controller: 0.55,
-  traffic_sign: 0.55,
-  stop: 0.55,
-  roadway: 0.55,
+  car: 0.35,
+  bus: 0.35,
+  truck: 0.35,
+  motorcycle: 0.35,
+  scooter: 0.3,
+  fire_hydrant: 0.35,
+  parking_meter: 0.35,
+  traffic_light: 0.35,
+  traffic_light_controller: 0.35,
+  traffic_sign: 0.35,
+  stop: 0.35,
+  roadway: 0.35,
 };
 
 // 클래스별 최소 confidence와 사용자 슬라이더(confThreshold) 중 더 높은 값을 유효 임계값으로 사용

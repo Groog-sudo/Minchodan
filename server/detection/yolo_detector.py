@@ -82,6 +82,10 @@ class YoloDetector(DetectorInterface):
                 return []
 
         result = results[0]
+        # 디버그용 로그 추가: 실제 YOLO 검출 개수와 신뢰도 로깅
+        if result.boxes is not None and len(result.boxes) > 0:
+            box_classes = [result.names.get(int(cls), str(cls)) for cls in result.boxes.cls.tolist()]
+            logger.info(f"[YoloDetector DEBUG] 검출된 객체들: {box_classes}, confs: {result.boxes.conf.tolist()}")
         return self._parse_result(result)
 
     def _predict_without_tracking(self, frame: np.ndarray) -> list[Detection]:
