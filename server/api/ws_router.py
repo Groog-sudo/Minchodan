@@ -708,6 +708,20 @@ async def ws_detect(
                         f"[WS] realtime_gps 수신: device_id={device_id}, "
                         f"lat={lat}, lon={lon}, heading={heading}"
                     )
+                    # 콘솔 HUD 미니맵 실시간 갱신: 앱 실기기 GPS 좌표를 콘솔로 브로드캐스트.
+                    # useLiveFeed가 이 메시지를 받아 lastGps 상태를 갱신하고,
+                    # LiveCameraFeed가 HUD 미니맵 iframe에 postMessage로 주입한다.
+                    with contextlib.suppress(Exception):
+                        await manager.broadcast_json_to_consoles(
+                            {
+                                "type": "realtime_gps",
+                                "lat": float(lat),
+                                "lon": float(lon),
+                                "heading": float(heading) if heading is not None else 0,
+                                "device_id": device_id,
+                                "ts": now_ts(),
+                            }
+                        )
                     # 2026-07-11 길안내 무음 수정: 기존에는 길안내 멘트 조회가
                     # DetectionConsumer._send_cognitive_guide 안에만 있어 카메라 탐지가
                     # 없으면(빈 장면) NAVIGATING 상태여도 안내가 전혀 나가지 않았다

@@ -12,6 +12,7 @@ export function useLiveFeed() {
   const [latestDetections, setLatestDetections] = useState<any[]>([]);
   const [latencyEvents, setLatencyEvents] = useState<LiveLatencyEvent[]>([]);
   const [guidanceLogEvents, setGuidanceLogEvents] = useState<DetectionGuidanceLogRow[]>([]);
+  const [lastGps, setLastGps] = useState<{ lat: number; lon: number; heading: number } | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const prevUrlRef = useRef<string | null>(null);
@@ -69,6 +70,9 @@ export function useLiveFeed() {
               setGuidanceLogEvents((prev) =>
                 [data.row as DetectionGuidanceLogRow, ...prev].slice(0, MAX_LIVE_LOG_ROWS),
               );
+            } else if (data.type === "realtime_gps" && data.lat != null && data.lon != null) {
+              // 앱에서 서버로 전달된 실기기 GPS 좌표를 콘솔에서 수신해 지도 iframe에 주입한다.
+              setLastGps({ lat: data.lat, lon: data.lon, heading: data.heading ?? 0 });
             }
           } catch (e) {
             console.error("Failed to parse websocket message", e);
@@ -108,5 +112,5 @@ export function useLiveFeed() {
     };
   }, []);
 
-  return { imageUrl, latestDetections, connected, latencyEvents, guidanceLogEvents };
+  return { imageUrl, latestDetections, connected, latencyEvents, guidanceLogEvents, lastGps };
 }

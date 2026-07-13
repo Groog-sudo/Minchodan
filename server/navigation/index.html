@@ -683,7 +683,26 @@
         function initGPS() {
             initMap();
             
-            // GPS Timeout Safety fallback (Seoul Station)
+            // postMessage 주입: 콘솔 상위 페이지(iframe 부모)에서 앱 GPS 좌표를 전달할 수 있다.
+            // 메시지 형식: { type: 'inject_gps', lat: number, lon: number, heading?: number }
+            // PC 브라우저 GPS 부정확 문제를 우회하기 위해 콘솔이 앱으로부터 받은 realtime_gps
+            // 이벤트 좌표를 이 채널로 주입하면 지도가 실기기 위치로 갱신된다.
+            window.addEventListener('message', (event) => {
+                if (!event.data || event.data.type !== 'inject_gps') return;
+                const injectedLat = parseFloat(event.data.lat);
+                const injectedLon = parseFloat(event.data.lon);
+                const injectedHeading = parseFloat(event.data.heading ?? 0);
+                if (isNaN(injectedLat) || isNaN(injectedLon)) return;
+                currentLat = injectedLat;
+                currentLon = injectedLon;
+                currentHeading = injectedHeading || currentHeading;
+                gpsDot.className = "status-dot active";
+                gpsText.innerText = "GPS 앱 연동 (실기기 위치)";
+                coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
+                updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+            });
+
+            // GPS Timeout Safety fallback (8초 대기 후 서울역 임시 좌표)
             const fallbackTimer = setTimeout(() => {
                 if (currentLat === null) {
                     currentLat = 37.5560;
@@ -691,11 +710,11 @@
                     gpsDot.className = "status-dot danger";
                     gpsText.innerText = "GPS 수신 지연 (임시위치: 서울역)";
                     coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
-                    logMessage("warning", "[GPS TIMEOUT] GPS 응답이 없어 기본 좌표(서울역)로 초기화합니다.");
+                    logMessage("warning", "[GPS TIMEOUT] GPS 응답이 없어 기본 좌표(서울역)로 초기화합니다. (콘솔에서 앱 GPS가 연동되면 자동으로 갱신됩니다.)");
                     updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
                     connectWebSocket();
                 }
-            }, 3000);
+            }, 8000);
 
             if ("geolocation" in navigator) {
                 gpsText.innerText = "GPS 신호를 검색 중...";
@@ -724,7 +743,7 @@
                         updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
                         connectWebSocket();
                     },
-                    { enableHighAccuracy: true, timeout: 5000 }
+                    { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
                 );
             } else {
                 clearTimeout(fallbackTimer);

@@ -358,4 +358,25 @@
   - **`docker/docker-compose.yml`, `docker/docker-compose.macos.yml`**: ngrok 컨테이너(FastAPI(8000)용)와 `npx expo start --tunnel`이 로컬에 띄우는 자체 ngrok(Metro(8081)용)이 둘 다 기본 포트 4040을 잡으려다 충돌하던 문제 해결 — 도커 ngrok 쪽 포트를 `"4040:4040"` → `"4041:4040"`으로 변경(두 compose 파일 모두 반영 필요, GPU 모드는 `docker-compose.yml`, CPU 모드는 `docker-compose.macos.yml`을 사용하므로 하나만 고치면 재발함).
   - **`docs/changelogs/team_share_summary.md` 정정**: 1.2절에 "다이렉트 6포인트 매핑 구조(`[xc, yc, w, h, score, clsId]`, 중심좌표)를 완벽히 가동시켰다"고 기재되어 있던 부분은 위에서 서술한 버그를 완료된 정상 작업인 것처럼 잘못 기록한 것이었음. 실제 정답(코너좌표 파싱)에 맞춰 정정함.
 - **관련 파일**: `client/src/inference/tfliteDetector.ts`, `client/src/services/frameCaptureProviderSelect.android.ts`, `client/src/components/CameraView.tsx`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docs/changelogs/team_share_summary.md`
-- **검증 결과**: `docker logs minchodan-fastapi`에서 WebSocket accept/hello/`auth_ok` 확인. 폰 앱에서 "연결됨" 배지, `WS: connected`, YOLO 모델(`seg`/`det`) 로드, `det shape: [1,300,6]` 확인. 단, 사람(person)·실외 물체 대상 실제 bbox 렌더링 검증은 다음 세션 과제로 남음.
+- **검증 결과**: `docker logs minchodan-fastapi`에서 WebSocket accept/hello/`auth_ok` 확인. 폰 앱에서 "연결됨" 배지, `WS: connected`, YOLO 모델(`seg`/`det`) 로드, `det shape: [1,300,6]` 확인. 단, 사람(person)·실외 물체 대상 실제 bbox 렌더링 검증 is 다음 세션 과제로 남음.
+
+---
+
+### 2026-07-13 | 2·3단계 | 카메라 각도·실시간 GPS 관제 콘솔 동기화 및 이중 탐지 파이프라인(Object+Seg) 노면 연동 결함 수정
+
+- **변경 내용**:
+  - **관제 콘솔 카메라 각도 불일치 수정**:
+    - 앱에서 회전 메타데이터 없이 전송되는 raw JPEG 스트림이 콘솔에서 가로로 찌그러지거나 누워 나타나는 문제를 해결하기 위해 [LiveCameraFeed.css](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/console/src/components/LiveCameraFeed.css) 의 `.feed-image` 스타일 내부에 `transform: rotate(90deg)`를 삽입하여 앱과 화면 방향을 1:1로 일치시킴.
+  - **콘솔 HUD 미니맵 실시간 GPS 연동**:
+    - PC 브라우저의 Geolocation API 호출 시 GPS 좌표가 부정확하여 서울역으로 꽂히는 한계를 해소하고자 모바일 단말의 GPS 정보를 활용하는 파이프라인을 구축함.
+    - [ws_router.py](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/server/api/ws_router.py) 내 `realtime_gps` 이벤트 수신 단에서 콘솔 웹소켓 채널로 GPS 정보를 브로드캐스트하는 `manager.broadcast_json_to_consoles` 호출을 신설함.
+    - [useLiveFeed.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/console/src/api/useLiveFeed.ts)에서 이를 파싱하여 `lastGps` 상태로 내보내고, [LiveCameraFeed.tsx](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/console/src/components/LiveCameraFeed.tsx)가 이 값이 변경될 때마다 내비게이션 `iframe`을 향해 `postMessage`로 `inject_gps` 좌표를 강제 주입하도록 이식함.
+    - [navigation/index.html](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/server/navigation/index.html)에 수신 리스너를 보강하여 브라우저 GPS 수신 대신 단말의 실시간 좌표(역삼역 근처)와 헤딩 방향으로 지도 마커를 즉시 갱신하며, 위치 인식 안정화를 위해 대기 타임아웃을 3초에서 8초로 연장함.
+  - **이중 탐지 파이프라인(Object+Seg) 연동 결함 수정**:
+    - `best_20260705.pt`(객체 탐지) 결과가 1개라도 있을 시 `if detections: return` 가드로 인해 `best.pt`(노면 분할)의 노면 상태 정보(`surfaces`)가 아예 Redis Streams에 발행되지 않고 생략되던 결함을 해결하기 위해 [detection_pipeline.py](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/server/detection/detection_pipeline.py) 의 해당 가드 코드를 제거하여 두 정보가 병렬로 발행되도록 함.
+    - 객체가 없고 노면 정보만 감지된 상황에서도 가이드 음성이 조기 엑싯에 의해 스킵되던 현상을 해결하기 위해, [consumer.py](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/server/detection/consumer.py) 의 `_send_cognitive_guide` 내에 주의 노면(`caution`), 차도(`roadway`), 점자블록(`braille_normal`) 정보 유무를 검사하는 `has_significant_surface` 플래그 조건을 신설하여 정상적인 오케스트레이션 상세 가이드 및 음성 출력을 보장함.
+    - 교육용 프로젝트 가이드라인에 의거하여, 해당 연동 방식의 설계적 타당성을 기재한 `# 💡 [면접 대비 주석]`을 코드 내에 명확히 등재함.
+  - **코드 검증 및 린팅**:
+    - `ruff check` 검사 전수 통과 및 `tests/test_detection.py` 내 30개 단위 테스트 전수 통과(`30 passed`) 완료.
+- **관련 파일**: `console/src/components/LiveCameraFeed.css`, `console/src/components/LiveCameraFeed.tsx`, `console/src/api/useLiveFeed.ts`, `server/api/ws_router.py`, `server/navigation/index.html`, `server/detection/detection_pipeline.py`, `server/detection/consumer.py`
+- **검증 결과**: `tests/test_detection.py` 실행 및 테스트 성공 확인. FastAPI uvicorn 서버 수동 재기동 후 8000번 포트에서 모바일 단말(dev-001), 콘솔, 내비게이션의 세션 웹소켓 연결 수신 및 브로드캐스트 작동 성공 로깅 검증 완료.

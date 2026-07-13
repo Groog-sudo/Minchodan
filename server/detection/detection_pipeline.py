@@ -255,8 +255,8 @@ class DetectionPipeline:
                 await self.producer.publish_detection(event_id, det, risk_hint)
             except Exception as e:
                 logger.warning(f"[Pipeline] cognitive 발행 실패: {e}")
-        if detections:
-            return
+        # best_20260705.pt 객체 탐지가 있더라도 best.pt 노면 분할 결과가 생략되지 않고
+        # Redis Streams를 통해 오케스트레이션 단계로 온전히 전달되도록 if detections: return 가드레일을 제거합니다.
         for surf in surfaces:
             try:
                 await self.producer.publish_surface(event_id, surf, risk_hint)

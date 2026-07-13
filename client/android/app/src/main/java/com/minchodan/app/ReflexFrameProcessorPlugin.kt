@@ -27,10 +27,10 @@ class ReflexFrameProcessorPlugin(proxy: VisionCameraProxy, options: Map<String, 
             val matrix = Matrix()
             // frame.orientation (portrait, landscape 등)에 맞춰 각도 매핑
             val rotationDegrees = when (frame.orientation) {
-                Orientation.PORTRAIT -> 90f
-                Orientation.PORTRAIT_UPSIDE_DOWN -> 270f
-                Orientation.LANDSCAPE_LEFT -> 180f
-                Orientation.LANDSCAPE_RIGHT -> 0f
+                Orientation.PORTRAIT -> 0f
+                Orientation.PORTRAIT_UPSIDE_DOWN -> 180f
+                Orientation.LANDSCAPE_LEFT -> 90f
+                Orientation.LANDSCAPE_RIGHT -> 270f
                 else -> 0f
             }
             if (rotationDegrees != 0f) {
