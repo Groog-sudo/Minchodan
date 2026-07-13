@@ -119,6 +119,17 @@ class TestDecodeFrame:
         assert result.stream == "cognitive"
         assert result.ts == 1719216000000
         assert result.original_size == (480, 640)
+        assert result.is_outdoor is None
+
+    @pytest.mark.asyncio
+    async def test_is_outdoor_parsed_from_payload(self):
+        """클라이언트 온디바이스 씬 분류 결과(is_outdoor)가 전달되면 그대로 보존돼야 한다
+        (2026-07-13 실내 오탐 게이팅용, server/detection/detection_pipeline.py 참조)."""
+        payload = make_payload(make_jpeg_b64())
+        payload["is_outdoor"] = False
+        result = await decode_frame(payload)
+        assert result is not None
+        assert result.is_outdoor is False
 
     @pytest.mark.asyncio
     async def test_timestamp_fallback(self):
@@ -210,6 +221,16 @@ class TestDecodeFrameBinary:
         assert result.stream == "cognitive"
         assert result.ts == 1719216000000
         assert result.original_size == (480, 640)
+        assert result.is_outdoor is None
+
+    @pytest.mark.asyncio
+    async def test_is_outdoor_parsed_from_meta(self):
+        """바이너리 경로(메타 JSON)에서도 is_outdoor가 base64 경로와 동일하게 파싱돼야 한다."""
+        meta = make_meta()
+        meta["is_outdoor"] = True
+        result = await decode_frame_binary(make_jpeg_bytes(), meta)
+        assert result is not None
+        assert result.is_outdoor is True
 
     @pytest.mark.asyncio
     async def test_empty_bytes(self):

@@ -314,7 +314,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
   "type": "guide",
   "event_id": "uuid",
   "risk_level": "mid",
-  "guidance_text": "전방 킥보드, 우측으로 한 발 물러서세요",
+  "guidance_text": "2시 방향 킥보드 주의하세요",
   "audio_codec": "wav",
   "duration_ms": 4820.5,
   "transport": "binary",
@@ -330,7 +330,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함) |
+| `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함). **2026-07-13 변경**: 방향 표현을 "좌측/우측"에서 실측 bbox 위치 기반 "N시 방향"(9시~3시, 12시=전방)으로 교체 - `server/detection/direction.py`의 `estimate_clock_direction()`이 계산해 L2 프롬프트에 실어주고, `server/orchestration/nodes/l3_validator.py`가 시계 패턴도 방향 키워드로 인정 |
 | `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
 | `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
 | `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |

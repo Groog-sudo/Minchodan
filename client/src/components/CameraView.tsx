@@ -85,6 +85,12 @@ const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
 // 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 40%)보다 더 높은 하한선을
 // 개별로 강제한다. 목록에 없는 클래스는 confThreshold를 그대로 사용한다.
 const CLASS_MIN_CONFIDENCE: Record<string, number> = {
+  // 2026-07-13 정정: car를 화면 표시 편의로 0.4로 낮췄었으나, 이 값은
+  // docs/design/risk_ssot_contract.md §2 SSOT 계약값(서버 reflex_gate.py의
+  // HIGH_RISK_CLASSES와 반드시 동일해야 함)과 동일한 상수를 공유하고 있어 반사
+  // 안전 게이트 문턱까지 같이 낮아지는 회귀였다(tests/test_risk_ssot.py가 검출).
+  // 0.6으로 원복. 실외 차량 표본 수집이 다시 필요하면 §2 절차대로 서버·문서와
+  // 함께 변경하거나, 표시 전용 별도 상수를 새로 만들어야 한다.
   car: 0.6,
   bus: 0.6,
   truck: 0.6,
@@ -358,6 +364,13 @@ export function CameraView() {
 
   const detectingRef = useRef(false);
   const lastDetectTsRef = useRef(0);
+  // 2026-07-13: 온디바이스 씬 분류(scene.isLikelyIndoor) 기반 실외 추정치를 서버로 전달하기
+  // 위한 ref. 이번 프레임 전송 시점엔 아직 이번 프레임의 온디바이스 추론이 끝나지 않았으므로
+  // "직전 프레임"에서 계산된 값을 1프레임 지연 허용하고 보낸다(1~2fps 인지 경로 기준 무시할
+  // 만한 지연). 서버는 이 값으로 세그멘테이션 기반 보도 이탈 판정을 게이팅한다
+  // (server/detection/detection_pipeline.py, 실내 바닥이 roadway/caution으로 오분류되는
+  // 문제를 실기기 실측으로 확인).
+  const isOutdoorBySceneRef = useRef<boolean | null>(null);
 
   // Mock 햅틱 시각 핸들러 등록
   useEffect(() => {
@@ -392,6 +405,7 @@ export function CameraView() {
           frame_id: now,
           stream: frameStream,
           transport: "binary",
+          is_outdoor: isOutdoorBySceneRef.current,
         }
       });
       sendBinaryRef.current(frame.jpegBytes);
@@ -405,6 +419,7 @@ export function CameraView() {
           frame_id: now,
           thumbnail_jpeg_b64: frame.base64,
           stream: frameStream,
+          is_outdoor: isOutdoorBySceneRef.current,
         }
       });
     }
@@ -453,6 +468,8 @@ export function CameraView() {
       // VNClassifyImageRequest 씬 분류(scene.isLikelyIndoor)를 AND로 결합한다(중첩 방어).
       // scene이 없거나(Android, 계측 실패) 판정 불가면 true로 폴백해 기존 게이트만으로 동작시킨다.
       const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
+      // 다음 프레임 전송분에 실어 서버 보도 이탈 판정을 게이팅한다(1프레임 지연 허용).
+      isOutdoorBySceneRef.current = isOutdoorByScene;
       const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
         // 안전 보행로는 화면을 아무리 채워도 장애물이 아니므로 반사 경보 판정에서 제외
         if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;

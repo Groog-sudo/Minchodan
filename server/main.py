@@ -104,11 +104,32 @@ async def lifespan(app: FastAPI):
 
     frame_cleanup_task = asyncio.create_task(asyncio.to_thread(_cleanup_event_frames))
 
+    # 5. TTS 캐시 프리워밍: DB 이력에서 빈도 높은 안내 문장을 뽑아 서버 기동 중
+    # 미리 합성해둔다(실시간 합성 캐시는 콜드 상태로 시작하면 첫 재생마다
+    # 1.4~1.9초 지연이 있었다 - RealtimeTTS.CACHE_MAX_ENTRIES 주석 참조).
+    # DB 조회 실패(신규 배포 등으로 로그 없음 포함)해도 서버 기동은 막지 않는다.
+    from server.services.detection_guidance_log_service import list_frequent_tts_texts
+    from server.tts.realtime_tts import realtime_tts
+
+    async def _prewarm_tts_cache() -> None:
+        try:
+            limit = int(os.getenv("TTS_PREWARM_LIMIT", "30"))
+            min_count = int(os.getenv("TTS_PREWARM_MIN_COUNT", "2"))
+            texts = await list_frequent_tts_texts(min_count=min_count, limit=limit)
+            warmed = await realtime_tts.prewarm(texts)
+            logger.info(f"TTS 캐시 프리워밍 완료: {warmed}/{len(texts)}건")
+        except Exception as e:
+            logger.error(f"TTS 캐시 프리워밍 실패 (콜드 캐시로 폴백): {e}")
+
+    tts_prewarm_task = asyncio.create_task(_prewarm_tts_cache())
+
     yield
 
     frame_cleanup_task.cancel()
 
     stt_preload_task.cancel()
+
+    tts_prewarm_task.cancel()
 
     logger.info("Minchodan API Server 종료 중...")
     # 3. DetectionConsumer 중지

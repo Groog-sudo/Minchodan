@@ -27,7 +27,7 @@
 | **`OLLAMA_HOST`** | string | 선택 | (코드 기본값) | 임베딩 팩토리 전용 Ollama 호스트 (2026-07-07 추가 — `OLLAMA_BASE_URL`과 별개로 존재) | `server/rag/embedding_engine_factory.py:46` |
 | **`GEMMA_MODEL`** | string | 필수 | `gemma4:e4b` | L2 가이드 생성 모델 (로컬) | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
 | **`LLAVA_MODEL`** | string | 선택 | `llava` | 4단계 오프라인 캡셔닝 모델 (Ollama 로컬 경로 사용 시). Gemini 캡셔닝 선택 시 미사용 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
-| **`GOOGLE_API_KEY`** | string | 선택 | (미설정) | 4단계 캡셔닝 모델 Gemini API(`gemini-2.5-flash-lite`, `server/rag/build/gemini_captioner.py`) 사용 시 필수. 미설정 시 `ValueError` 발생(Llava 폴백 없음 — 2026-07-07 확인: 실제 캡셔너 구현체는 Gemini뿐). **2026-07-07 현재 `.env.example`에 이 변수가 없어 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | [`stage4_5_rag_design.md`](stage4_5_rag_design.md) 2.1절 |
+| **`GOOGLE_API_KEY`** | string | 선택 | (미설정) | 4단계 캡셔닝 모델 Gemini API(`gemini-2.5-flash-lite`, `server/rag/build/gemini_captioner.py`) 사용 시 필수. 미설정 시 `ValueError` 발생(Llava 폴백 없음 — 2026-07-07 확인: 실제 캡셔너 구현체는 Gemini뿐). **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0) | [`stage4_5_rag_design.md`](stage4_5_rag_design.md) 2.1절 |
 | **`EMBEDDING_MODEL`** | string | 필수 | `nomic-embed-text` | 임베딩 모델 (768차원) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`OPENAI_API_KEY`** | string | 선택 | (미설정) | OpenAI 핫스왑 시 필요. 미설정 시 OpenAI 클라이언트 초기화에서 `ValueError` 발생 후 Ollama로 폴백 | [`architecture.md`](architecture.md) 13.4절 |
 
@@ -83,6 +83,8 @@
 | **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부(핫스왑 폴백용, `TTS_ENGINE=piper`일 때만 사용). **2026-07-09 정정**: 상주 프로세스화로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
 | **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위(핫스왑 폴백용) | `server/tts/tts_service.py` |
 | **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.85` | Piper 핫스왑·`TTS_DEFAULT_SPEED` 미지정 시 폴백 속도. **2026-07-13**: 접근성 기본 `0.9`→`0.85` | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
+| **`TTS_PREWARM_LIMIT`** | int | 선택 | `30` | **2026-07-13 신규.** 서버 기동 시 DB(`detection_guidance_logs`) 이력에서 빈도 높은 안내 문장을 뽑아 `RealtimeTTS` 캐시를 미리 채우는 프리워밍 대상 건수. `RealtimeTTS.CACHE_MAX_ENTRIES`(64)를 넘으면 FIFO 축출로 앞쪽이 밀려나므로 이내로 권장 | `server/main.py`(lifespan), `server/tts/realtime_tts.py` |
+| **`TTS_PREWARM_MIN_COUNT`** | int | 선택 | `2` | **2026-07-13 신규.** 프리워밍 대상으로 뽑을 문장의 최소 등장 횟수(1회성 문장 제외) | `server/db/repositories.py`(`list_frequent_tts_texts`) |
 
 > **TTS 엔진 선택 이력**: piper → **supertonic(최종 선정, 2026-07-09 코드 반영 완료)**. 현재 코드 런타임(`get_tts_service()`)은 `supertonic`(기본)·`piper`·`pyttsx3` 3종 모두 구현되어 있으며, 미지원 값 입력 시 경고 로그 후 `supertonic`으로 강제 폴백합니다.
 
@@ -126,11 +128,9 @@
 
 > **개발 전용**: 이 변수들은 CUDA GPU가 감지되지 않은 개발·CI 환경에서 `GPUMonitorMCP`의 Mock 폴백 동작을 제어합니다. 프로덕션 환경에서는 무시됩니다.
 
-### 2.11 외부 터널링 (Ngrok) (야외 도로 테스트용)
+### 2.11 외부망 연결 (Tailscale, 야외 도로 테스트용)
 
-| 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`NGROK_AUTHTOKEN`** | string | 선택 | (미설정) | 야외 도로 테스트용 ngrok 터널 보안 인증 토큰. 무료 계정 터널 외부 노출 시 필요 | [`docs/changelogs/kb.md`](../changelogs/kb.md) |
+**2026-07-13 변경**: ngrok 프록시(클라우드 경유 지연)를 Tailscale P2P VPN으로 전면 교체. `NGROK_AUTHTOKEN` 변수 및 `docker-compose.yml`/`docker-compose.macos.yml`의 `ngrok` 서비스를 완전히 제거했다. 실기기는 개발 PC의 Tailscale 가상 IP(`100.x.y.z`)로 `client/.env`의 `EXPO_PUBLIC_LAN_IP`를 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다(별도 서버 환경변수 없음 - Tailscale 자체가 OS 레벨 네트워크 인터페이스). 클라이언트 쪽 `NETWORK_MODE=ngrok` 분기와 `@expo/ngrok` 의존성은 폴백으로 코드에 보존되어 있다. 상세: [`docs/changelogs/kb.md`](../changelogs/kb.md) 2026-07-13 항목.
 
 ### 2.12 데이터베이스 (MariaDB)
 
@@ -152,7 +152,7 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **`.env.example`에 아직 등재되어 있지 않아 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38`, `server/api/ws_router.py` |
+| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0) | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38`, `server/api/ws_router.py` |
 
 ### 2.14 클라이언트·콘솔 공개 변수 (빌드 시 인라인, 2026-07-11 신설)
 
@@ -221,7 +221,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 6 | **`LANGCHAIN_*` 누락** | `architecture.md` 13.4절에만 산재 | 본 명세서 2.9절에 통합 |
 | 7 | **`NGROK_AUTHTOKEN` 누락** | 야외 도로 테스트용 터널 인증 변수가 `.env.example`에만 존재 | 본 명세서 2.11절에 통합 |
 | 8 | **DB 환경 변수 누락** | `.env.example`에는 `DB_*` 6종이 있으나 본 명세서에는 누락 | 본 명세서 2.12절에 통합하고 `DB_NAME=minchodan_db` 기준으로 정합 |
-| 9 | **`TMAP_APP_KEY` 누락** | 코드(`server/navigation/`)에서 실사용되나 본 명세서·`.env.example` 모두 누락 | 본 명세서 2.13절에 신규 명세(`.env.example` 반영은 미완, 담당자 확인 필요) |
+| 9 | **`TMAP_APP_KEY` 누락** | 코드(`server/navigation/`)에서 실사용되나 본 명세서·`.env.example` 모두 누락 | 본 명세서 2.13절에 신규 명세. **2026-07-13**: `.env.example` 반영 완료 |
 
 ---
 

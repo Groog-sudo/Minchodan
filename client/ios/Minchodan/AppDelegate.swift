@@ -61,6 +61,12 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
+    // 2026-07-13: 실기기가 Wi-Fi를 벗어나면(Tailscale 경유 LTE/핫스팟) RCTBundleURLProvider의
+    // Bonjour 자동탐색이 실패해 jsLocation이 nil로 남고 "No script URL provided"가 발생했다.
+    // jsLocation을 명시적으로 지정해 자동탐색을 우회한다. METRO_BUNDLER_HOST 환경변수로
+    // 재빌드 없이 덮어쓸 수 있다(기본값은 이 Mac의 Tailscale IP).
+    let host = ProcessInfo.processInfo.environment["METRO_BUNDLER_HOST"] ?? "100.121.247.4:8081"
+    RCTBundleURLProvider.sharedSettings().jsLocation = host
     return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
