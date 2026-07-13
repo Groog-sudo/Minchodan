@@ -117,7 +117,6 @@ class Retriever:
         except Exception as e:
             # 검색 도중 예외가 발생하더라도 빈 문자열을 리턴하여 프로그램 중단을 막고 fallback으로 우회시킴
             print(f"[Retriever Error] RAG 검색 실패 (fallback 모드로 진입합니다): {e}")
-            self._cache[class_name_key] = ""
             return ""
 
 
