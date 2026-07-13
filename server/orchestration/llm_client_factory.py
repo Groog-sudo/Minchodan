@@ -266,10 +266,10 @@ class LLMClientFactory:
                                 "[MCP HOTSWAP] GPU 부하 정상 복구로 인해 로컬 Ollama(gemma4-e4b)로 복귀합니다."
                             )
 
-                    # 관제 콘솔에 실시간 GPU 및 시스템 상태 브로드캐스트
+                    # 관제 콘솔에 실시간 GPU 및 시스템 상태 브로드캐스트 (Redis Streams 발행)
                     from server.mcp.manager import mcp_manager
 
-                    await mcp_manager.broadcast_event(
+                    await mcp_manager.publish_metric(
                         "system_metrics",
                         {
                             "gpu_usage_pct": status.get("gpu_usage_pct", 0.0),

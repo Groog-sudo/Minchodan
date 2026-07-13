@@ -3,6 +3,7 @@ graph.py
 LangGraph StateGraph를 조립하고 컴파일된 실행 객체(싱글톤)를 반환하는 오케스트레이터 모듈입니다.
 """
 
+import asyncio
 import contextlib
 import sys
 import time
@@ -19,6 +20,7 @@ from server.orchestration.state import OrchState
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
+_background_tasks = set()
 
 
 def route_after_l3(state: dict) -> str:
@@ -106,4 +108,17 @@ async def run_orchestrator(state: dict) -> dict:
 
     # 결과 상태 갱신
     result["total_latency_ms"] = latency_ms
+
+    # LangSmith Trace MCP를 사용하여 노드 전이 및 지연 추적 (비동기 아웃오브밴드)
+    from server.mcp.langsmith_tracer import langsmith_tracer
+
+    to_node = "fallback" if result.get("used_static_fallback") else "end"
+    task = asyncio.create_task(
+        langsmith_tracer.log_node_transition(
+            from_node="l1_classify", to_node=to_node, latency_ms=latency_ms
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
     return result

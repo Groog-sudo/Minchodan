@@ -1,8 +1,8 @@
-﻿# Minchodan 환경 변수 명세서
+# Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-13
-> **버전**: v0.4.16 (2026-07-13 §2.14 Tailscale 외부망 접속 변수와 iOS 앱 network_probe RTT 계측 변수 등재 + 이전 v0.4.15 이력 유지: WiFi/USB 이중 접속 변수(`EXPO_PUBLIC_WIFI_HOST`/`USB_HOST`/`DEFAULT_TRANSPORT`) 등재, `LAN_IP` 폴백 관계 정정)
+> **버전**: v0.4.17 (2026-07-13 §2.9 LangSmith API Key 실키 반영 및 CORS_ORIGINS 환경변수 동적 파싱 명세 추가)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -53,7 +53,7 @@
 | **`HEARTBEAT_INTERVAL`** | int | 선택 | (코드 기본값) | 하트비트 송신 주기(초). `server/api/config.py` (2026-07-07 추가 — 기존 명세서에 누락돼 있었음) | `server/api/config.py:30` |
 | **`HEARTBEAT_TIMEOUT`** | int | 선택 | `15` | 하트비트 미수신 타임아웃(초). 총 유예 시간은 `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 20초). **2026-07-10 변경**(기존 5): ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료되는 문제를 실기기 LTE 테스트로 확인해 상향 | `server/api/config.py:31` |
 | **`MAX_RECONNECT_ATTEMPTS`** | int | 선택 | (코드 기본값) | 서버 측 재연결 허용 횟수 | `server/api/config.py:32` |
-| **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-09 정정**: 필드는 존재했으나 `server/main.py`가 소비하지 않고 `allow_origins=["*"]`로 고정돼 있던 문제를 연결. 프로덕션 배포 시 반드시 콘솔 실제 도메인으로 override | `server/api/config.py`, `server/main.py` |
+| **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-13 개선**: Pydantic Settings 초기화 시 환경변수 `CORS_ORIGINS`의 JSON 포맷 또는 쉼표 구분값으로부터 동적으로 안전하게 파싱 및 바인딩되도록 개선. | `server/api/config.py`, `server/main.py` |
 | **`JWT_SECRET_KEY`** | string | 필수(운영) / 선택(개발) | (개발 전용 임시 키) | 관리자/유저·디바이스 JWT 서명 키. **2026-07-11 강화**: `APP_ENV=production`에서 미설정 시 `RuntimeError`로 서버 기동 거부(fail-closed). 개발 환경에서만 임시 키 폴백. `.env.example`에 등재됨 | `server/db/security.py` |
 | **`APP_ENV`** | string | 선택 | `development` | 배포 환경 구분(`development`/`production`). **2026-07-11 신설**: `production`이면 (1) `JWT_SECRET_KEY` 필수(기동 거부), (2) `DEVICE_STATIC_TOKENS` 미설정 시 정적 디바이스 토큰 경로 비활성화(JWT만 인정) | `server/db/security.py`, `server/api/auth.py` |
 | **`DEVICE_STATIC_TOKENS`** | string | 선택 | (개발 기본 2식) | 정적 디바이스 토큰 목록, `device_id:token` 쉼표 구분(예: `dev-001:token-abc-001,dev-002:token-abc-002`). **2026-07-11 신설**: 코드 하드코딩 딕셔너리를 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록 | `server/api/auth.py` |
@@ -114,7 +114,7 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`LANGCHAIN_API_KEY`** | string | 선택 | (미설정) | LangSmith Platform API 키. StateGraph 실행 경로 및 지연 추적 활성화 | [`architecture.md`](architecture.md) 13.4절 |
+| **`LANGCHAIN_API_KEY`** | string | 선택 | (미설정) | LangSmith Platform API 키. 실제 API Key 기입 시 Mocking 폴백이 해제되고 실제 SaaS 플랫폼 트레이싱 및 가드레일이 정상 작동합니다. | [`architecture.md`](architecture.md) 13.4절 |
 | **`LANGCHAIN_TRACING_V2`** | bool | 선택 | `false` | LangSmith Tracing v2 활성화 여부 (`true` 시 추적 시작) | [`architecture.md`](architecture.md) 13.4절 |
 
 > **선택적 명세**: LangSmith Trace MCP는 `architecture.md` 13.4절에서 "선택적으로 기입"으로 명시되어 있으며, 미설정 시 6단계 LangGraph 동작에는 영향을 주지 않습니다.

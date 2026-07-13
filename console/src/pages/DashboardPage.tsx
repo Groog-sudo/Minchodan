@@ -9,6 +9,7 @@ import { DetectionGuidanceLogTable } from "../components/DetectionGuidanceLogTab
 import { LatencySummaryPanel } from "../components/LatencySummaryPanel";
 import { LiveCameraFeed } from "../components/LiveCameraFeed";
 import { DeviceTelemetryPanel } from "../components/DeviceTelemetryPanel";
+import { McpValidationMonitor } from "../components/McpValidationMonitor";
 import type { DetectionGuidanceLogRow, MonitorState } from "../types/monitor";
 import type { useLiveFeed } from "../api/useLiveFeed";
 
@@ -106,6 +107,12 @@ export function DashboardPage({
           connected={liveFeedConnected}
           session={state.sessions.find((s) => s.device_id === "dev-001") || state.sessions[0] || null}
           ai={state.ai}
+        />
+        <McpValidationMonitor
+          audio={state.audio_validation}
+          cache={state.cache_suppression}
+          accessibility={state.accessibility_validation}
+          trace={state.langsmith_trace}
         />
       </section>
 

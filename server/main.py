@@ -123,6 +123,15 @@ async def lifespan(app: FastAPI):
 
     tts_prewarm_task = asyncio.create_task(_prewarm_tts_cache())
 
+    # 6. Redis Cache Monitor MCP 시작
+    from server.mcp.cache_monitor import cache_monitor
+
+    try:
+        cache_monitor.start_monitoring()
+        logger.info("Redis Cache Monitor MCP 시작 완료")
+    except Exception as e:
+        logger.error(f"Redis Cache Monitor MCP 시작 실패: {e}")
+
     yield
 
     frame_cleanup_task.cancel()
@@ -130,6 +139,9 @@ async def lifespan(app: FastAPI):
     stt_preload_task.cancel()
 
     tts_prewarm_task.cancel()
+
+    # Redis Cache Monitor MCP 중지
+    cache_monitor.stop_monitoring()
 
     logger.info("Minchodan API Server 종료 중...")
     # 3. DetectionConsumer 중지

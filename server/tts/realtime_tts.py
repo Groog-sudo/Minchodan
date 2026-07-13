@@ -8,6 +8,7 @@ import base64
 import io
 import logging
 import os
+import time
 import wave
 
 from dotenv import load_dotenv
@@ -25,6 +26,8 @@ load_dotenv(dotenv_path=os.path.join(_PROJECT_ROOT, ".env"))
 DEFAULT_SPEED = float(
     os.getenv("TTS_DEFAULT_SPEED", os.getenv("PIPER_DEFAULT_LENGTH_SCALE", "0.85"))
 )
+
+_background_tasks = set()
 
 
 def _wav_duration_ms(audio_bytes: bytes) -> float:
@@ -93,14 +96,55 @@ class RealtimeTTS:
         cache_key = (text, voice, float(speed))
         cached = self._cache.get(cache_key)
         if cached is not None:
+            # 캐시 적중 시에도 관제 콘솔 업데이트를 위해 비동기 검증 이벤트 전송 (0ms 지연)
+            try:
+                b64_audio, _ = cached
+                audio_bytes = base64.b64decode(b64_audio.encode("utf-8"))
+                from server.mcp.accessibility_simulator import accessibility_simulator
+                from server.mcp.audio_validator import audio_validator
+
+                # 캐시이므로 TTFB는 0ms로 인지
+                task1 = asyncio.create_task(
+                    audio_validator.validate_and_broadcast(audio_bytes, 0.0, text)
+                )
+                task2 = asyncio.create_task(
+                    accessibility_simulator.simulate_and_broadcast(text, text)
+                )
+                _background_tasks.add(task1)
+                _background_tasks.add(task2)
+                task1.add_done_callback(_background_tasks.discard)
+                task2.add_done_callback(_background_tasks.discard)
+            except Exception as e:
+                logger.warning(f"[TTS] 캐시 히트 검증 백그라운드 태스크 실패: {e}")
             return cached
 
         try:
+            start_time = time.perf_counter()
             audio_bytes = await asyncio.wait_for(
                 self.tts.generate(text=text, voice=voice, speed=speed), timeout=15.0
             )
+            ttfb_ms = (time.perf_counter() - start_time) * 1000.0
+
             # 음성 데이터가 정상적으로 생성된 경우
             if audio_bytes:
+                # Audio Validator MCP 비동기 실행 (0ms 지연 가드레일)
+                from server.mcp.audio_validator import audio_validator
+
+                task1 = asyncio.create_task(
+                    audio_validator.validate_and_broadcast(audio_bytes, ttfb_ms, text)
+                )
+
+                # Accessibility Simulator MCP 비동기 실행 (0ms 지연 가드레일)
+                from server.mcp.accessibility_simulator import accessibility_simulator
+
+                task2 = asyncio.create_task(
+                    accessibility_simulator.simulate_and_broadcast(text, text)
+                )
+                _background_tasks.add(task1)
+                _background_tasks.add(task2)
+                task1.add_done_callback(_background_tasks.discard)
+                task2.add_done_callback(_background_tasks.discard)
+
                 # 바이트 데이터를 베이스64 문자열로 변환
                 # 웹소켓 전송을 위해 문자열 형태로 만들어야 함
                 b64_audio = base64.b64encode(audio_bytes).decode("utf-8")

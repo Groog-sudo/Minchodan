@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.16 (2026-07-13 §2.5 network_probe/network_probe_ack 순수 WS RTT 계측 메시지 신설 + 이전 v0.4.15 이력 유지: §8.6 app_users 회원 프로필 확장 필드 반영)
+> **버전**: v0.4.17 (2026-07-13 §8.0 SSE 신규 MCP 4종 지표(audio_validation/accessibility_validation/cache_suppression/langsmith_trace) 페이로드 스펙 추가)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -661,15 +661,9 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `connection_established` | `{status: "ok"}` | 연결 직후 1회 |
 | `ping` | 없음 | 큐 1초 타임아웃마다 (keep-alive) |
 
-### 8.3 브리지 이벤트 계약 (Redis `mcp:metrics` 경유, 예약)
+### 8.3 브리지 이벤트 계약 (Redis `mcp:metrics` 경유, 실구현 완료)
 
-> **중요 (2026-07-11 실측)**: 현재 저장소에는 `mcp:metrics` 스트림에 실데이터를
-> 발행(xadd)하는 producer가 **없습니다**(스트림 생성용 init dummy 제외). 탐지
-> 파이프라인의 실발행 스트림은 `risk.events`이며 `mcp:metrics`와 연결되어 있지
-> 않습니다. 따라서 아래 이벤트는 **콘솔이 소비 준비를 마친 예약 계약**이고,
-> producer 구현(`risk.events`→`mcp:metrics` 브리지 또는 직접 발행)이 후속
-> 과제입니다(dev 개선 계획서 §5 "SSE 계약 정리"). producer 구현 시 반드시 아래
-> 필드명을 그대로 사용해야 콘솔 수정 없이 표시됩니다.
+> **중요 (2026-07-13 실구현)**: `mcp:metrics` 스트림에 실시간 메트릭 데이터를 발행(xadd)하는 `MCPManager.publish_metric()` 메서드를 신규 구현하여 메인 모듈들과의 실연동을 완료했습니다. 다중 프로세스(workers > 1) 환경에서도 Redis Streams를 매개로 유실 없이 실시간으로 전송되며, 프론트엔드 모니터 컴포넌트(`McpValidationMonitor.tsx`)에 정상 연동됩니다.
 
 | event_type | payload 필드 (콘솔 파서 기준) | 콘솔 처리 |
 | :--- | :--- | :--- |
@@ -678,6 +672,10 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `session_status` | `device_id:string`, `platform:string`, `status:"connected"\|"disconnected"`, `rtt_ms:number` | device_id 기준 upsert |
 | `detection_event` | `event_id`, `device_id`, `stream:"reflex"\|"cognitive"`, `class_name`, `confidence`, `inference_ms` | 최근 80건 누적 피드 |
 | `llm_status` / `rag_result` / `tts_status` / `stt_status` | `llm_provider`, `rag_query`, `rag_score`, `tts_engine`, `stt_status`, `last_guidance`/`guidance_text`, `inference_ms`, `reflex_bypass`, `surface` | AI 파이프라인 상태 갱신 |
+| `audio_validation` | `alert_id:string`, `ttfb_ms:float`, `sample_rate:int`, `channels:int`, `duration_sec:float`, `is_valid:bool`, `errors:list` | McpValidationMonitor 오디오 메트릭 업데이트 |
+| `cache_suppression` | `suppressed_keys:list[str]`, `ttl_seconds:int`, `details:list` | McpValidationMonitor 캐시 억제 키 메트릭 업데이트 |
+| `accessibility_validation` | `alert_id:string`, `is_valid:bool`, `similarity_score:float`, `warnings:list`, `details:dict` | McpValidationMonitor 접근성 정합 스코어 업데이트 |
+| `langsmith_trace` | `alert_id:string`, `from_node:string`, `to_node:string`, `latency_ms:float`, `enabled:bool` | McpValidationMonitor LangSmith 트랙 RTT 업데이트 |
 
 ### 8.4 데모 데이터 분리
 

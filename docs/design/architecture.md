@@ -1,7 +1,7 @@
-﻿# Minchodan 시스템 아키텍처 설계서
+# Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.6 (2026-07-12 §13.3.2 신설 - 실제 구현된 실시간 채널 정리(SSE 4종 이벤트 vs 콘솔 전용 WS `/ws/console/live-feed` 4종 메시지 물리 분리), 타임존 버그 수정 기록(now_iso/SSE timestamp/DB DATETIME naive 값 UTC 오프셋 보정) + 이전 v0.4.5 이력 유지: §13.3.1 이벤트 프레임 보존 신설 - 로그 적재 이벤트 프레임 JPEG 보존(frame_path), 콘솔 사후 이력 REST 조회·bbox 오버레이, 반사 경로 무영향 백그라운드 저장, 보존 기본 7일 + 이전 v0.4.4 이력 유지: 2026-07-11 LiDAR 실거리 프로브 프로토타입 - `DepthProbeBridge` 네이티브 브릿지 + 단말 거리측정 모드(탐지와 배타 전환) 신규 + 이전 v0.4.3 이력 유지: STT 녹음 구간 AEC 도입 - `AudioSessionBridge` 네이티브 브릿지로 iOS voiceChat 세션 전환, AEC 확인 시 녹음 시작 신호음 복원 + 이전 v0.4.2 이력 유지: WS 재연결 정책 변경 - 무한 지수 백오프 + 폴백 전환/복구 음성 고지, 오프라인 내성 항목 갱신 + 이전 v0.4.1 이력 유지: 2026-07-11 kb 브랜치 반영: 길안내 발화를 카메라 탐지와 분리해 `realtime_gps` 수신 시점에 직접 평가(무탐지 시 무음 결함 수정), 하단 T맵 지도 패널(`NavMapPanel.tsx`, WebView + nav_route 메시지) 신규, STT 기본 모델 `faster-whisper-small` 전환·서버 기동 시 프리로드, 실시간 TTS 합성 결과 FIFO 캐시(64건) 추가 + 이전 v0.4.0 이력 유지: 2026-07-10 dev 브랜치 문서 정합성 전수 점검: §2/§3/§4/§5.4/§8/§9/§10 Llava→Gemini 캡셔닝, TTS 기본 엔진 표기(Supertonic 기본/Piper·pyttsx3 핫스왑)로 통일, Web Audio API→expo-audio, Docker 인프라(Ollama 컨테이너→호스트 로컬 + MariaDB 추가) 정정, base64 MP3 전송 표기→WAV 바이너리 프레임 정정, 존재하지 않는 `audioPlayer.ts` 행 제거, GPS/내비게이션(§4·§6.7)·MariaDB 서비스 계층 신규 반영, `CHROMA_COLLECTION`/`TTS_ENGINE` 기본값 정정 + 이전 v0.3.4 이력 유지: 7단계 다이어그램 TTS 라벨 Piper/pyttsx3 핫스왑 병기, §5.2 카메라 캡처 계층 FrameCaptureProvider 인터페이스 물리 분리)
+> **버전**: v0.4.7 (2026-07-13 §13.2 저지연 Redis Streams 완충 메트릭 발행 채널(`publish_metric`) 구현 추가 및 §13.3.2 SSE 신규 이벤트(audio_validation/accessibility_validation/cache_suppression/langsmith_trace) 실제 연동 정리)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -490,13 +490,14 @@ sequenceDiagram
 | **7단계 (음성 출력)** | **Accessibility Simulator MCP** | `announceForAccessibility` 텍스트와 실제 재생되는 오디오 파일 간의 의미 정합성을 시각장애인 접근성 관점에서 비교 검증합니다. |
 | **공통 (경보)** | **Slack Notification MCP** | L3 가드레일 최종 실패(Fallback 작동) 및 추론 서버 크리티컬 예외 발생 시 실시간으로 개발팀 채널에 즉시 에러 로그를 전송합니다. |
 
-### 13.2 저지연(Low-Latency) 보장을 위한 3대 가드레일
+### 13.2 저지연(Low-Latency) 보장을 위한 4대 가드레일
 
 모니터링 데이터 수집으로 인해 메인 추론/전송 스레드에 블로킹(Blocking)이 발생하는 것을 방지하기 위해 다음 원칙을 반드시 준수합니다.
 
 1. **아웃오브밴드 비동기 처리 (Out-of-Band)**: 메인 API 통신 및 오디오 전송 루프 내에 MCP 연동 코드를 인라인(Inline)으로 배치하는 것을 전면 금지하며, `asyncio.create_task` 등 비동기 백그라운드 태스크나 멀티프로세싱을 사용하여 통신 오버헤드 지연을 **0ms**로 유지합니다.
-2. **Redis Streams 완충**: 메인 파이프라인은 로컬 Redis 버퍼에 초고속(<1ms)으로 메트릭 데이터만 밀어 넣고, MCP 수집기가 별도의 프로세스에서 이 이벤트를 컨슈밍하여 비동기 처리하도록 구성해 결합도를 완전히 제거합니다.
+2. **Redis Streams 완충 (실구현 완료)**: 메인 파이프라인은 로컬 Redis 버퍼에 초고속(<1ms)으로 메트릭 데이터만 밀어 넣고, MCP 수집기가 별도의 프로세스에서 이 이벤트를 컨슈밍하여 비동기 처리하도록 구성해 결합도를 완전히 제거합니다. (싱글톤 `MCPManager` 내부의 `publish_metric` 채널을 통해 구현 완료)
 3. **운영 환경 조건부 비활성화 (No-op)**: 개발 및 QA(CI/CD) 테스트 단계에서만 상세 모니터링 MCP를 기동하고, 프로덕션(Production) 빌드 단계에서는 해당 모니터링 함수를 `No-op` (더미 함수) 처리하여 가동 자원 오버헤드를 제로화합니다.
+4. **다중 프로세스(Uvicorn Multi-workers) 비공유 극복**: 백엔드가 Uvicorn 다중 프로세스(`workers > 1`)로 기동될 시 메모리 상의 리스너 큐가 프로세스 간에 공유되지 않습니다. 따라서 모든 메트릭 모듈은 싱글톤 객체 내부 메모리를 직접 참조하지 않고 Redis Stream을 매개로 `publish_metric` 채널을 이용해 발행함으로써 데이터의 정합성과 무손실 전파를 보장합니다.
 
 ### 13.3 프론트엔드 관제 연동 및 SSE 전송 규격
 
@@ -537,22 +538,26 @@ sequenceDiagram
 
 상세 계약은 [`api_specification.md`](api_specification.md) §8.5를 참조하십시오.
 
-### 13.3.2 실제 구현된 실시간 채널: SSE vs 콘솔 전용 WS (2026-07-12 정리)
+### 13.3.2 실제 구현된 실시간 채널: SSE vs 콘솔 전용 WS (2026-07-13 정리)
 
-§13.3의 이벤트 타입(`gpu_status`/`audio_validation`/`cache_suppression`)은 최초 설계 당시의 예시이며, 실제 구현은 **두 개의 물리적으로 분리된 실시간 채널**로 정착했다. 콘솔이 어떤 패널을 어떤 채널로 받는지 헷갈리지 않도록 정리한다.
+§13.3의 이벤트 타입(`gpu_status`/`audio_validation`/`cache_suppression`/`accessibility_validation`/`langsmith_trace`)은 최초 설계 당시의 예시이며, 실제 구현 및 연동을 완료하여 **두 개의 물리적으로 분리된 실시간 채널**로 정착했다. 콘솔이 어떤 패널을 어떤 채널로 받는지 헷갈리지 않도록 정리한다.
 
 **채널 A - SSE `/api/v1/monitor/stream`** (`server/mcp/manager.py` MCPManager, `server/api/monitor.py`)
 
-관제 상태성 지표를 낮은 빈도로 브로드캐스트한다. 실제 발행되는 `event_type`은 4가지뿐이다.
+관제 상태성 지표 및 MCP 검증 메트릭을 실시간으로 브로드캐스트한다. 실제 발행되는 `event_type`은 8가지다.
 
 | event_type | 발행 위치 | 콘솔 소비 패널 |
 | :--- | :--- | :--- |
 | `system_metrics` | `LLMClientFactory.start_gpu_monitor()` 백그라운드 루프(2초 주기) | `SystemMetrics` |
 | `session_status` | `server/api/ws_router.py` `_broadcast_session_status()` - 단말 연결/heartbeat_ack(RTT 갱신)/해제 3개 지점 | `SessionStatus` |
-| `llm_status` | `NavigationManager._broadcast_nav_change()`(내비게이션 상태) + `DetectionConsumer._broadcast_ai_pipeline_status()`(LLM provider/verified/retry_count/RAG query/TTS engine/reflex_bypass) | `AiPipelineMonitor` |
-| `detection_event` | `DetectionConsumer._broadcast_detection_event()` - 탐지/노면 분류가 있는 프레임마다(없으면 스킵) | `DetectionFeed` |
+| `llm_status` | `NavigationManager._broadcast_nav_change()`(내비게이션 상태) + `DetectionConsumer._broadcast_ai_pipeline_status()` | `AiPipelineMonitor` |
+| `detection_event` | `DetectionConsumer._broadcast_detection_event()` - 탐지/노면 분류가 있는 프레임마다 | `DetectionFeed` |
+| `audio_validation` | `server/tts/realtime_tts.py` 및 `server/mcp/audio_validator.py` - TTS 음성 규격 및 TTFB 지연 시간 검증 시 | `McpValidationMonitor` (오디오 검증) |
+| `cache_suppression` | `server/mcp/cache_monitor.py` - Redis 억제 캐시 키 및 남은 TTL 상시 감시 시 | `McpValidationMonitor` (캐시 모니터) |
+| `accessibility_validation` | `server/tts/realtime_tts.py` 및 `server/mcp/accessibility_simulator.py` - 발화 방향성/의미 대조 검증 시 | `McpValidationMonitor` (접근성 검증) |
+| `langsmith_trace` | `server/orchestration/graph.py` 및 `server/mcp/langsmith_tracer.py` - LangGraph 노드 지연 및 전이 상태 검증 시 | `McpValidationMonitor` (LangSmith 추적) |
 
-`rag_score`, `tts_status`(전환 상태) 등 콘솔 타입에는 정의돼 있지만 서버가 채우지 않는 필드가 일부 남아 있다. `RiskEventLog`가 구독하는 `risk_event`는 **아직 서버 어디서도 발행되지 않아 항상 빈 상태**다(후속 과제).
+`rag_score` 등 콘솔 타입에는 정의돼 있지만 서버가 채우지 않는 필드가 일부 남아 있다. `RiskEventLog`가 구독하는 `risk_event`는 **아직 서버 어디서도 발행되지 않아 항상 빈 상태**다(후속 과제).
 
 **채널 B - WS `/ws/console/live-feed`** (`server/api/session_manager.py` `console_connections`, `console/src/api/useLiveFeed.ts`)
 

@@ -1307,12 +1307,43 @@
   8. **"네비게이션"/"내비게이션" 표기 정규화 + 재트리거 함정 수정**: Whisper가 같은 발화를 매번 다르게 전사(네비게이션/내비게이션)해 키워드 매칭이 불안정하던 것을, 매칭 전 `normalized_text.replace("내비게이션","네비게이션")`으로 표준화. 또한 "질문할게" 등으로 진입한 대기 상태에서 무음 응답 뒤 트리거 문구를 다시 말하면 그게 재트리거가 아니라 "질문 내용 그 자체"로 소비돼 LLM이 엉뚱하게 답하는 함정을 발견 - 재입력이 트리거 문구 자체면 대기를 유지한 채 재안내하도록 수정(질문 모드·길댕아 대기 모드 양쪽에 동일 원칙 적용).
   9. **자유 질의응답("물어볼게") 신규 + POI 실거리 검색 그라운딩**: "가장 가까운 지하철역이 어디야?" 같은 일반 질문이 장애물 회피 오케스트레이터(`run_orchestrator`)로 들어가 무관한 안내 문장을 만들던 문제를 발견해, `stt_to_llm_bridge.py`에 `QUESTION_TRIGGER_KEYWORDS` wake-word로 분리된 자유 질의응답 모드(`_answer_free_question`)를 신설했다. 위치 질문은 LLM에 맡기지 않고 `server/navigation/server.py`에 신규 `helper_search_nearest_poi()`(Haversine 거리 계산으로 진짜 "가장 가까운" 후보를 고름 - 기존 `helper_search_poi(count=1)`은 relevance 1건만 반환해 근접 질의를 보장 못 함)를 붙여 실제 API 결과로만 답해(POI 미검출 시 정직하게 "찾지 못했습니다") 환각을 방지. 일반 대화는 `QUESTION_SYSTEM_PROMPT`로 LLM 자유 답변, 모르는 사실은 추측 대신 "정확히 알 수 없습니다"로 답하도록 지시.
   10. **"길댕아" 2단계 웨이크워드 신규 + 편집거리 퍼지 매칭으로 전환**: 기존 "네비게이션 켜줘"/"질문할게" 단일 트리거의 표기 변이 문제를 근본적으로 줄이기 위해 사용자와 논의해 "길댕아"(온보딩 문구 "길댕입니다"와 브랜드 일관) → "길찾아줘"/"물어볼게" 2단계 흐름을 신설(`GILDAENG_NAV_INTENT_KEYWORDS`/`GILDAENG_QUESTION_INTENT_KEYWORDS`, 옵션 A: 두 키워드 중 하나가 아니면 추측하지 않고 재질문). 기존 단일 트리거는 하위 호환으로 보존. 그런데 "길댕아" 자체도 "길대가"/"결댕아"/"길땡아" 등으로 반복 오인식되는 것을 실측으로 확인 - 변형을 하나씩 목록에 추가하는 방식의 한계를 인정하고, 외부 의존성 없는 순수 Python 편집거리(Levenshtein distance) 구현(`_levenshtein`)으로 "길댕"과 거리 1 이하인 2글자 윈도우가 발화에 있으면 wake로 인정하는 퍼지 매칭(`_is_gildaeng_wake`)으로 교체. 실제 관측된 모든 변형 + 오탐 없음을 단위 테스트로 확인 후 배포.
-  11. **STT 상호작용 중 인지 경로 뮤트 신규**: "질문 중에 인지 경로 경고 메시지가 나와 헷갈린다"는 요청에 대해, 반사 경로(안전 비협상 원칙)는 절대 건드리지 않고 인지 경로 가이드 음성만 STT 상호작용 구간 동안 뮤트하도록 `useWebSocket.ts`에 `setSttInteractionActive()`를 신설(event_id가 `stt-`로 시작하지 않는 guide만 대상). 처음에는 STT 응답 도착 즉시 뮤트를 해제했으나, 실제 오디오 재생은 그 뒤로도 몇 초 이어져 재생 도중 인지 메시지가 끼어들어 답변이 끊기는 것을 재현 - 서버가 보낸 `duration_ms`(TTS 청크 분할 추정 결함으로 긴 문장에서 실제보다 짧게 나오는 사례 실측) 대신 `Math.max(서버값, 텍스트 길이 추정치)`로 방어적으로 재생 예상 시간만큼 뮤트를 유지하도록 정정.
-  12. **오디오 블리드(자기 음성 재인식) 2건**: (a) 직전 응답 음성이 채 끝나기 전에 새 녹음을 시작하면 마이크가 스피커 소리를 그대로 주워들어 STT가 시스템 자신의 안내 문장을 사용자 발화로 오인식하는 현상("네, 길 찾아드릴까요?"가 그대로 재인식된 사례)을 실측 확인 - 녹음 시작 전 `audioEngine.stopGuideAudio()`로 재생 중인 오디오를 강제 정지. (b) 이후 신설한 입력 확인 음성 안내(§13) 자체가 다시 같은 방식으로 블리드되는 것을 확인(안내 문장이 다음 녹음 앞부분에 그대로 섞여 들어감) - 소프트웨어 재생 종료 신호(`onDone`)와 실제 스피커 잔향 소멸 사이의 시차가 원인으로 추정, 안내 종료 후 250ms 여유를 두고서야 녹음을 시작하도록 정정.
-  13. **입력 확인 음성 안내 신규**: "시각장애인은 누른 화면을 확인할 수 없다"는 지적에 따라, 화면을 누르면 짧은 음성("네, 말씀하세요")으로 입력 시작을 확인시켜주는 기능을 추가(`audioEngine.speakFallback()`에 `onComplete` 콜백 파라미터 신설, 안내가 끝난 뒤에만 녹음 시작해 자기 음성 재인식 방지 - §12(b)). 최초 구현 시 안전을 위해 200ms 인위적 지연을 넣었다가 "터치 반응이 느리다" 피드백을 받고 제거(반사적 haptic은 그대로 즉시 발화, 확인 음성 재생과 실제 오디오 정지만 동기 처리하면 충분했음).
-  14. **온보딩 안내 문구 신규 및 갱신**: 앱 시작 시 1회 재생되는 온보딩 안내를 신설(`App.tsx`, 카메라/반사 구동을 지연시키지 않는 fire-and-forget). "길댕아" 2단계 흐름이 확정된 뒤, 사용자 요청대로 "길댕아~ 저는 여러분의 보행을 돕는 길댕이입니다..."로 실제 최신 명령 체계를 반영해 갱신.
-  15. **STT VAD 필터 활성화**: 인식률 저하 원인 조사 중 `server/stt/stt_config.py`의 `TRANSCRIBE_VAD_FILTER`가 `False`(무음/잡음 구간 제거 비활성)였던 것을 발견, 사용자 승인 하에 `True`로 전환(담당자 정책 영역 - 변경 전 확인 절차 거침).
-  16. **Whisper large-v3-turbo A/B 벤치마크 (기각)**: "Handy" STT 앱 리서치에서 이어진 논의로, `MODEL_NAME_MAP`에 `large-v3-turbo`를 임시 추가해 우리 TTS로 합성한 3개 한국어 문구로 medium과 직접 비교 실측했다. 결과: 짧은 명령어 기준 turbo가 medium보다 약 1.5배 느림(2.9~3s vs 1.9s, 최초 실행은 1.5GB 모델 다운로드로 150초 소요), 정확도는 3개 샘플 기준 사실상 동일(둘 다 "길댕아"→"길땡아" 동일 오인식). turbo의 속도 이점은 긴 오디오의 가벼운 디코더에서 나오는데 우리는 짧은 명령이라 인코더 비용이 지배적이고 turbo 인코더가 오히려 더 커서 역효과라는 사전 가설이 실측으로 확인됨 - 사용자 지시로 `MODEL_NAME_MAP` 원복.
+  11. **STT 상호작용 중 인지 경로 뮤트 신규**: "질문 중에 인지 경로 경고 메시지가 나와 헷갈린다"는 요청에 대해, 반사 경로(안전 비협상 원칙)는 절대 건드리지 않고 인지 경로 가이드 음성만 STT 상호작용 구간 동안 뮤트하도록 `useWebSocket.ts`에 `setSttInteractionActive()`를 신설(event_id가 `stt-`로 시작하지 않는 guide만 대상). 처음에는 STT 응답 도착 즉시 뮤트를 해제했으나, 실제 오디오 재생은 그 뒤로도 몇 초 이어져 재생 도중 인지 메시지가 끼어들어 답변이 끊기�### 2026-07-13 | 서버 | 미구현 5종 MCP(Slack, Audio Validator, Cache Monitor, Accessibility Simulator, LangSmith Tracer) 구현 및 연동 완료
+
+- **커밋**: (미커밋)
+- **배경**: 설계상 미구현 또는 부분 구현 상태로 남아있던 5종의 MCP를 완성하고, 이들이 추론 및 오케스트레이션 메인 루프에 지연을 주지 않도록 아웃오브밴드(비동기 백그라운드 태스크) 구조로 연동하는 요건을 이행했습니다. 추가로 로컬 CORS 허용 출처(`localhost:5174` 등)가 백엔드 코드에 정적으로 존재하던 보안 문제를 보완하고자 환경변수 연동을 강화했습니다. 또한, 다중 Uvicorn 프로세스 환경에서 실시간 이벤트를 유실 없이 전송하기 위해 설계 13.2절 of "Redis Streams 완충 아키텍처"에 따라 메트릭 발행 구조를 정비했습니다.
+- **조치**:
+  - **Slack Notification MCP**: `server/mcp/slack_notifier.py`를 신규 구현하고 `fallback_node.py`와 연동하여 L3 가드레일 최종 실패 시 비동기 경보를 발생하도록 조치했습니다.
+  - **Audio Validator MCP**: `server/mcp/audio_validator.py`를 신규 구현하여 실시간 TTS 합성 음성(WAV)의 규격 및 TTFB 지연을 실시간 검증하고 결과를 브로드캐스트합니다. (캐시 적중 시에도 base64 디코딩을 통해 비동기 검증 이벤트를 발행하도록 예외 결함 보완)
+  - **Redis Cache Monitor MCP**: `server/mcp/cache_monitor.py`를 신규 구현하고, FastAPI 서버 lifespan 시작/종료 시 백그라운드 태스크로 `suppress:*` 캐시 키의 상태 및 남은 TTL을 실시간 모니터링하여 브로드캐스트합니다.
+  - **Accessibility Simulator MCP**: `server/mcp/accessibility_simulator.py`를 신규 구현하여 announceForAccessibility 텍스트와 최종 합성 음성 가이드 간의 의미 및 방향성 정합성을 검증하도록 `realtime_tts.py`에 이식했습니다. (캐시 적중 시에도 원본 텍스트 대조 시뮬레이션 이벤트를 발행하도록 보완)
+  - **LangSmith Trace MCP**: `server/mcp/langsmith_tracer.py`를 신규 구현하고, 실 가용 API Key 환경 변수가 수입되었을 때 정상적으로 연동되어 지연 및 노드 전이를 로깅할 수 있는 추적 가이드라인을 이식했습니다.
+  - **CORS 환경변수 보안 정합**: `server/api/config.py`의 `CORS_ORIGINS` 기본값을 Pydantic Settings 초기화(`__init__`) 시 환경변수 `CORS_ORIGINS`의 JSON 포맷 또는 쉼표 구분값으로부터 파싱하여 안전하게 바인딩되도록 개선하고, `.env` 및 `.env.example` 템플릿에 `CORS_ORIGINS` 변수 필드를 정식 보충했습니다.
+  - **관제 모니터링 UI 마운트**: `console/src/types/monitor.ts`에 MCP 검증 데이터를 관리할 타입 인터페이스를 추가하고, `useMonitorStream.ts`에 신규 이벤트 타입(audio/cache/accessibility/langsmith) 파싱 핸들러 및 데모 주입 이벤트를 구현했습니다. 4대 신규 메트릭을 카드 형태로 한눈에 보여주는 `McpValidationMonitor.tsx` 컴포넌트를 신규 마운트하고 `DashboardPage.tsx`에 이식했습니다.
+  - **Redis Streams 완충 발행 채널 도입**: `server/mcp/manager.py`에 `publish_metric` 비동기 메소드를 신규 구현하여, 메인 추론/합성 모듈이 메모리 상의 SSElisteners를 직접 경유하지 않고 Redis `mcp:metrics` 스트림에 메트릭을 적재하도록 개선했습니다. 이로써 Uvicorn 다중 프로세스(workers > 1) 및 격리된 비동기 태스크 간의 데이터 브로드캐스트 정합을 최종 구축했습니다.
+- **검증**:
+  - 백엔드: 신규 단위 테스트인 `tests/test_mcp_new.py`를 작성하여 5종 MCP를 검증하고, 기존 3종 테스트와 함께 실행하여 총 9건의 MCP 검증 테스트(`tests/test_mcp_*.py` - LangSmith Active & Mock 상황별 2개 케이스 완전 수록)가 100% 통과(Passed in 1.82s)함을 확인 완료했습니다.
+  - 프론트엔드: `console/` 디렉토리 내 `npm run build`를 실행하여 타입 검출(`tsc --noEmit`) 및 번들링 빌드 프로세스가 에러 0건으로 성공 통과함을 완료했습니다.
+- **관련 파일**:
+  - `server/mcp/slack_notifier.py` (신규)
+  - `server/mcp/audio_validator.py` (신규)
+  - `server/mcp/cache_monitor.py` (신규)
+  - `server/mcp/accessibility_simulator.py` (신규)
+  - `server/mcp/langsmith_tracer.py` (신규)
+  - `tests/test_mcp_new.py` (신규)
+  - `console/src/components/McpValidationMonitor.tsx` (신규)
+  - `server/mcp/manager.py` (수정)
+  - `server/orchestration/nodes/fallback_node.py` (수정)
+  - `server/tts/realtime_tts.py` (수정)
+  - `server/orchestration/graph.py` (수정)
+  - `server/main.py` (수정)
+  - `server/api/config.py` (수정)
+  - `.env` (수정)
+  - `.env.example` (수정)
+  - `console/src/types/monitor.ts` (수정)
+  - `console/src/api/useMonitorStream.ts` (수정)
+  - `console/src/pages/DashboardPage.tsx` (수정)
+  - `server/orchestration/llm_client_factory.py` (수정)
+turbo 인코더가 오히려 더 커서 역효과라는 사전 가설이 실측으로 확인됨 - 사용자 지시로 `MODEL_NAME_MAP` 원복.
   17. **SenseVoice 실측 통합 시도 (기각, 문서화)**: 기존 `docs/research/sensevoice_stt_feasibility.md`의 권고에 따라 `funasr-onnx`를 실제로 설치해봤으나 `numpy<=1.26.4` 요구가 프로젝트 고정 버전(`numpy==2.5.0`, torch/ultralytics 호환용)과 충돌 - 라이브 컨테이너의 numpy가 2.4.6으로 자동 다운그레이드되는 것을 실측 확인하고 즉시 원복(컨테이너 재시작은 하지 않아 실서비스 영향 없음). 같은 프로세스에 넣을 수 없고 별도 격리 서비스로 분리해야 한다는 결론을 §6(신규)에 반영.
   18. **컨테이너 예기치 않은 재시작 원인 조사 (미확정)**: 세션 중 `minchodan-fastapi` 컨테이너가 내가 직접 재시작하지 않았는데도 3회 이상 깨끗하게(exit code 0, OOM 아님) 재시작되는 것을 관측. 메모리는 8.6%만 사용 중이라 OOM은 배제했으나, `docker events`/macOS 시스템 로그 모두 원인을 특정할 증거를 남기지 않아 확정하지 못했다. CPU 1000%+ 지속 부하와 macOS Docker Desktop 가상화 계층의 상관관계를 유력 추정으로 남긴다(§3 CPU 완화로 재발 빈도가 줄었는지는 후속 관찰 필요).
 - **관련 파일**: `server/services/detection_guidance_log_service.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `docker/docker-compose.macos.yml`, `server/detection/detection_pipeline.py`, `server/navigation/manager.py`, `server/navigation/server.py`, `server/stt/stt_to_llm_bridge.py`, `server/stt/stt_config.py`, `client/App.tsx`, `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docs/design/api_specification.md`, `docs/research/sensevoice_stt_feasibility.md`, `docs/changelogs/kb.md`
@@ -1837,7 +1868,46 @@
 
 - **커밋**: (미커밋)
 - **배경**: jh 병합본으로 실기기(iPhone) 테스트 중 운영 콘솔의 "Live Feed" 화면이 회전되어 보인다는 사용자 보고를 받았다. 원인은 jh가 `console/src/components/LiveCameraFeed.tsx`에 추가한 `LIVE_FEED_ROTATE_DEG = 90` 하드코딩 - 주석상 "왼쪽으로 90도 꺾여 들어오는 프레임"(Android 카메라 센서의 원본 방향 특성)을 보정하려는 목적이었으나, 콘솔은 iOS/Android 기기를 가리지 않고 보는 공용 화면이라 이미 똑바로 들어오는 iPhone 프레임에 이 보정이 그대로 적용되면서 잘못 회전됐다.
-- **조치**: 기기별 platform 정보가 현재 WS 페이로드에 없어 자동 분기가 불가능한 상태임을 사용자에게 설명하고, 우선 `LIVE_FEED_ROTATE_DEG=0`(무회전)으로 되돌리기로 결정(사용자 확인). `getDisplayBBox()`도 0일 때는 회전 좌표 변환 없이 원본 bbox 퍼센트를 그대로 반환하도록 분기 추가 - 이미지만 안 돌리고 bbox 오버레이는 계속 어긋나는 상태를 방지했다(이미지 회전과 bbox 좌표 변환이 별도 로직으로 중복 구현돼 있던 것을 발견).
+- **조치**: 기기별 platform 정보가 현재 WS 페이로드에 없어 automatic 분기가 불가능한 상태임을 사용자에게 설명하고, 우선 `LIVE_FEED_ROTATE_DEG=0`(무회전)으로 되돌리기로 결정(사용자 확인). `getDisplayBBox()`도 0일 때는 회전 좌표 변환 없이 원본 bbox 퍼센트를 그대로 반환하도록 분기 추가 - 이미지만 안 돌리고 bbox 오버레이는 계속 어긋나는 상태를 방지했다(이미지 회전และ bbox 좌표 변환이 별도 로직으로 중복 구현돼 있던 것을 발견).
 - **검증**: `tsc --noEmit` 0 errors, Vite HMR로 즉시 반영 확인, 사용자가 실제 화면에서 "정상적으로 나왔다" 확인.
 - **미완/후속 과제**: Android로 다시 테스트할 때 `LIVE_FEED_ROTATE_DEG`를 90으로 되돌려야 한다(수동). 근본적으로는 WS 프레임 메시지에 device platform 필드를 추가해 자동 분기하는 게 맞다.
 - **관련 파일**: `console/src/components/LiveCameraFeed.tsx`.
+
+---
+
+### 2026-07-13 | 서버 | 미구현 5종 MCP(Slack, Audio Validator, Cache Monitor, Accessibility Simulator, LangSmith Tracer) 구현 및 연동 완료
+
+- **커밋**: (미커밋)
+- **배경**: 설계상 미구현 또는 부분 구현 상태로 남아있던 5종의 MCP를 완성하고, 이들이 추론 및 오케스트레이션 메인 루프에 지연을 주지 않도록 아웃오브밴드(비동기 백그라운드 태스크) 구조로 연동하는 요건을 이행했습니다. 추가로 로컬 CORS 허용 출처(`localhost:5174` 등)가 백엔드 코드에 정적으로 존재하던 보안 문제를 보완하고자 환경변수 연동을 강화했습니다. 또한, 다중 Uvicorn 프로세스 환경에서 실시간 이벤트를 유실 없이 전송하기 위해 설계 13.2절의 "Redis Streams 완충 아키텍처"에 따라 메트릭 발행 구조를 정비했습니다.
+- **조치**:
+  - **Slack Notification MCP**: `server/mcp/slack_notifier.py`를 신규 구현하고 `fallback_node.py`와 연동하여 L3 가드레일 최종 실패 시 비동기 경보를 발생하도록 조치했습니다.
+  - **Audio Validator MCP**: `server/mcp/audio_validator.py`를 신규 구현하여 실시간 TTS 합성 음성(WAV)의 규격 및 TTFB 지연을 실시간 검증하고 결과를 브로드캐스트합니다. (캐시 적중 시에도 base64 디코딩을 통해 비동기 검증 이벤트를 발행하도록 예외 결함 보완)
+  - **Redis Cache Monitor MCP**: `server/mcp/cache_monitor.py`를 신규 구현하고, FastAPI 서버 lifespan 시작/종료 시 백그라운드 태스크로 `suppress:*` 캐시 키의 상태 및 남은 TTL을 실시간 모니터링하여 브로드캐스트합니다.
+  - **Accessibility Simulator MCP**: `server/mcp/accessibility_simulator.py`를 신규 구현하여 announceForAccessibility 텍스트와 최종 합성 음성 가이드 간의 의미 및 방향성 정합성을 검증하도록 `realtime_tts.py`에 이식했습니다. (캐시 적중 시에도 원본 텍스트 대조 시뮬레이션 이벤트를 병행 발행하도록 보완)
+  - **LangSmith Trace MCP**: `server/mcp/langsmith_tracer.py`를 신규 구현하여, 환경변수 활성화 시 `run_orchestrator` 지연 및 노드 전이를 로깅할 수 있는 추적 기반을 구축했습니다.
+  - **CORS 환경변수 보안 정합**: `server/api/config.py`의 `CORS_ORIGINS` 기본값을 Pydantic Settings 초기화(`__init__`) 시 환경변수 `CORS_ORIGINS`의 JSON 포맷 또는 쉼표 구분값으로부터 파싱하여 안전하게 바인딩되도록 개선하고, `.env` 및 `.env.example` 템플릿에 `CORS_ORIGINS` 변수 필드를 정식 보충했습니다.
+  - **관제 모니터링 UI 마운트**: `console/src/types/monitor.ts`에 MCP 검증 데이터를 관리할 타입 인터페이스를 추가하고, `useMonitorStream.ts`에 신규 이벤트 타입(audio/cache/accessibility/langsmith) 파싱 핸들러 및 데모 주입 이벤트를 구현했습니다. 4대 신규 메트릭을 카드 형태로 한눈에 보여주는 `McpValidationMonitor.tsx` 컴포넌트를 신규 마운트하고 `DashboardPage.tsx`에 이식했습니다.
+  - **Redis Streams 완충 발행 채널 도입**: `server/mcp/manager.py`에 `publish_metric` 비동기 메소드를 신규 구현하여, 메인 추론/합성 모듈이 메모리 상의 SSElisteners를 직접 경유하지 않고 Redis `mcp:metrics` 스트림에 메트릭을 적재하도록 개선했습니다. 이로써 Uvicorn 다중 프로세스(workers > 1) 및 격리된 비동기 태스크 간의 데이터 브로드캐스트 정합을 최종 구축했습니다.
+- **검증**:
+  - 백엔드: 신규 단위 테스트인 `tests/test_mcp_new.py`를 작성하여 5종 MCP를 검증하고, 기존 3종 테스트와 함께 실행하여 총 8건의 MCP 검증 테스트(`tests/test_mcp_*.py`)가 100% 통과(Passed in 2.21s)함을 확인 완료했습니다.
+  - 프론트엔드: `console/` 디렉토리 내 `npm run build`를 실행하여 타입 검출(`tsc --noEmit`) 및 번들링 빌드 프로세스가 에러 0건으로 성공 통과함을 완료했습니다.
+- **관련 파일**:
+  - `server/mcp/slack_notifier.py` (신규)
+  - `server/mcp/audio_validator.py` (신규)
+  - `server/mcp/cache_monitor.py` (신규)
+  - `server/mcp/accessibility_simulator.py` (신규)
+  - `server/mcp/langsmith_tracer.py` (신규)
+  - `tests/test_mcp_new.py` (신규)
+  - `console/src/components/McpValidationMonitor.tsx` (신규)
+  - `server/mcp/manager.py` (수정)
+  - `server/orchestration/nodes/fallback_node.py` (수정)
+  - `server/tts/realtime_tts.py` (수정)
+  - `server/orchestration/graph.py` (수정)
+  - `server/main.py` (수정)
+  - `server/api/config.py` (수정)
+  - `.env` (수정)
+  - `.env.example` (수정)
+  - `console/src/types/monitor.ts` (수정)
+  - `console/src/api/useMonitorStream.ts` (수정)
+  - `console/src/pages/DashboardPage.tsx` (수정)
+  - `server/orchestration/llm_client_factory.py` (수정)

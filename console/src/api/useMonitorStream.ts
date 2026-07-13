@@ -56,6 +56,10 @@ const initialState: MonitorState = {
   detections: [],
   ai: null,
   raw_events: [],
+  audio_validation: null,
+  cache_suppression: null,
+  accessibility_validation: null,
+  langsmith_trace: null,
 };
 
 export function useMonitorStream(token: string | null = null) {
@@ -547,6 +551,38 @@ export function useMonitorStream(token: string | null = null) {
               */
             };
           }
+          case "audio_validation":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              audio_validation: payload as any,
+            };
+
+          case "cache_suppression":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              cache_suppression: payload as any,
+            };
+
+          case "accessibility_validation":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              accessibility_validation: payload as any,
+            };
+
+          case "langsmith_trace":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              langsmith_trace: payload as any,
+            };
+
           default:
             return {
               ...current,
@@ -667,6 +703,69 @@ export function useMonitorStream(token: string | null = null) {
       timestamp: new Date().toISOString(),
       payload: {
         stt_status: "idle",
+      },
+    });
+
+    applyEvent({
+      event_type: "audio_validation",
+      timestamp: new Date().toISOString(),
+      payload: {
+        alert_id: "cognitive_guidance",
+        is_valid: true,
+        error_reasons: [],
+        ttfb_ms: 124.5,
+        sample_rate: 22050,
+        channels: 1,
+        duration_sec: 1.85,
+        byte_size: 81620,
+      },
+    });
+
+    applyEvent({
+      event_type: "cache_suppression",
+      timestamp: new Date().toISOString(),
+      payload: {
+        suppressed_keys: ["suppress:ios-demo-01:ref_alert_001"],
+        ttl_seconds: 45,
+        details: [
+          {
+            key: "suppress:ios-demo-01:ref_alert_001",
+            device_id: "ios-demo-01",
+            alert_id: "ref_alert_001",
+            ttl_seconds: 45,
+          }
+        ],
+      },
+    });
+
+    applyEvent({
+      event_type: "accessibility_validation",
+      timestamp: new Date().toISOString(),
+      payload: {
+        alert_id: "accessibility",
+        is_valid: true,
+        similarity_score: 1.0,
+        warnings: [],
+        details: {
+          guidance_text: "전방에 보도블록 파손이 있으니 좌측으로 우회하세요",
+          synthesized_text: "전방에 보도블록 파손이 있으니 좌측으로 우회하세요",
+          similarity_score: 1.0,
+          is_aligned: true,
+          missing_directions: [],
+          warnings: [],
+        },
+      },
+    });
+
+    applyEvent({
+      event_type: "langsmith_trace",
+      timestamp: new Date().toISOString(),
+      payload: {
+        from_node: "l1_classify",
+        to_node: "end",
+        latency_ms: 384.2,
+        project: "minchodan-orchestration",
+        enabled: false,
       },
     });
   }

@@ -111,6 +111,51 @@ export interface AiPipelineStatus {
   awaiting_intent?: boolean;
 }
 
+export interface AudioValidationStatus {
+  alert_id: string;
+  is_valid: boolean;
+  error_reasons: string[];
+  ttfb_ms: number;
+  sample_rate: number;
+  channels: number;
+  duration_sec: number;
+  byte_size: number;
+}
+
+export interface CacheSuppressionStatus {
+  suppressed_keys: string[];
+  ttl_seconds: number;
+  details?: Array<{
+    key: string;
+    device_id: string;
+    alert_id: string;
+    ttl_seconds: number;
+  }>;
+}
+
+export interface AccessibilityValidationStatus {
+  alert_id: string;
+  is_valid: boolean;
+  similarity_score: number;
+  warnings: string[];
+  details?: {
+    guidance_text: string;
+    synthesized_text: string;
+    similarity_score: number;
+    is_aligned: boolean;
+    missing_directions: string[];
+    warnings: string[];
+  };
+}
+
+export interface LangsmithTraceStatus {
+  from_node: string;
+  to_node: string;
+  latency_ms: number;
+  project: string;
+  enabled: boolean;
+}
+
 export interface MonitorState {
   connection: ConnectionState;
   last_event_at: string | null;
@@ -120,6 +165,11 @@ export interface MonitorState {
   detections: DetectionFeedItem[];
   ai: AiPipelineStatus | null;
   raw_events: MonitorEvent[];
+  // 신규 MCP 관제 검증 상태
+  audio_validation?: AudioValidationStatus | null;
+  cache_suppression?: CacheSuppressionStatus | null;
+  accessibility_validation?: AccessibilityValidationStatus | null;
+  langsmith_trace?: LangsmithTraceStatus | null;
 }
 
 // 회원 관리 화면(server/api/admin_member_router.py) 타입 - 서버 DTO와 필드 1:1.
