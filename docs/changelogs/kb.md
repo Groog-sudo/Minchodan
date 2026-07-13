@@ -1809,3 +1809,35 @@
 - **검증**: 병합 자체는 `git merge origin/jy` 실행, 충돌 0건. 병합 후 `pytest tests/ --ignore=test_ws_echo.py` 214 passed, `cd client && npx tsc --noEmit` 0 errors(오히려 jy의 리팩토링이 기존 사전 존재 TS 에러 2건도 부수적으로 해소함).
 - **미완/후속 과제**: `api_specification.md`의 버전 헤더를 kb 자신의 "N시 방향" 변경분에 대해서는 올리지 않았던 것(jy가 먼저 v0.4.16을 씀) - 필요 시 v0.4.17로 별도 이력 추가할 것.
 - **관련 파일**: `client/.env`, `docs/ops/environment_variables.md`.
+
+---
+
+### 2026-07-13 | 서버+클라이언트 | jh 브랜치 병합 (STT 안정화, 생활지원 RAG, 콘솔 라이브피드 보정)
+
+- **커밋**: `5d710e1`
+- **배경**: `origin/jh`(STT 안정화 + `convenience_guidelines` 생활지원 RAG + 콘솔 라이브피드 보정)를 kb에 병합. jy 병합과 달리 실제 텍스트 충돌 8곳(`client/src/hooks/useWebSocket.ts` 3곳, `client/src/components/CameraView.tsx` 5곳)이 발생해 수동 조정했다.
+- **주요 판단**: `detection_control` 전송 useEffect는 jh 버전(거리측정 모드 `depthMode` 미고려)을 버리고 kb/jy의 기존 버전(depthMode 배제 포함)을 유지 - 중복 useEffect 및 거리측정 모드 중 반사 오탐 재활성화 방지. GPS `realtime_gps` 전송 블록은 jh가 파일을 재구성하며 위치만 옮긴 것이라 중복 없이 한 곳만 유지. WS 종료 핸들러는 jy의 `clearNetworkProbe()`와 jh의 `closeCode`/`reason` 로깅을 모두 보존.
+- **병합 후 발견/조치**: jh의 `MIN_STT_AUDIO_BYTES=4096` 가드로 기존 `tests/test_ws_router_stt.py`의 16바이트 더미 픽스처가 깨져 4096바이트 이상으로 패딩. `server/api/ws_router.py`의 불필요한 `# -*- coding: utf-8 -*-` 선언 제거(ruff UP009).
+- **검증**: `pytest` 214 passed, `tsc --noEmit` 0 errors, 도커 재기동 후 `/health` 200.
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `server/api/ws_router.py`, `tests/test_ws_router_stt.py`, 및 jh 원본 변경분(`server/rag/convenience_rag.py` 등 신규 파일 다수).
+
+---
+
+### 2026-07-13 | 공통 | dev 브랜치를 kb까지 fast-forward
+
+- **커밋**: (fast-forward, `1bc676c..5d710e1`)
+- **배경**: `origin/dev`의 HEAD가 kb/jy/jh 세 브랜치의 공통 조상과 정확히 일치해(오늘 작업 이전 상태에서 전혀 진행되지 않음), kb → dev 병합은 충돌 가능성이 원천적으로 없는 순수 fast-forward였다. `git merge-base --is-ancestor origin/dev kb`로 사전 확인 후 `git merge kb --ff-only` 실행.
+- **검증**: fast-forward 후 `pytest` 214 passed, `tsc --noEmit` 0 errors 재확인. `origin/dev`로 푸시 완료.
+- **참고**: `origin/jh`가 병합 시점(`a39a089`) 이후 changelog 문서 커밋 1개(`d5091a9`) 더 진행했으나 코드 변경 없음. `origin/dg2`(Android STT/마이크 권한 관련 커밋 5개)는 이번 kb/dev 작업에 전혀 포함되지 않은 별도 브랜치로 남아있음 - 향후 별도 병합 검토 필요.
+- **관련 파일**: 없음(fast-forward, 신규 diff 없음).
+
+---
+
+### 2026-07-13 | 콘솔 | Live Feed 화면 회전 버그 수정 (jh의 Android 전용 보정이 iOS에 잘못 적용됨)
+
+- **커밋**: (미커밋)
+- **배경**: jh 병합본으로 실기기(iPhone) 테스트 중 운영 콘솔의 "Live Feed" 화면이 회전되어 보인다는 사용자 보고를 받았다. 원인은 jh가 `console/src/components/LiveCameraFeed.tsx`에 추가한 `LIVE_FEED_ROTATE_DEG = 90` 하드코딩 - 주석상 "왼쪽으로 90도 꺾여 들어오는 프레임"(Android 카메라 센서의 원본 방향 특성)을 보정하려는 목적이었으나, 콘솔은 iOS/Android 기기를 가리지 않고 보는 공용 화면이라 이미 똑바로 들어오는 iPhone 프레임에 이 보정이 그대로 적용되면서 잘못 회전됐다.
+- **조치**: 기기별 platform 정보가 현재 WS 페이로드에 없어 자동 분기가 불가능한 상태임을 사용자에게 설명하고, 우선 `LIVE_FEED_ROTATE_DEG=0`(무회전)으로 되돌리기로 결정(사용자 확인). `getDisplayBBox()`도 0일 때는 회전 좌표 변환 없이 원본 bbox 퍼센트를 그대로 반환하도록 분기 추가 - 이미지만 안 돌리고 bbox 오버레이는 계속 어긋나는 상태를 방지했다(이미지 회전과 bbox 좌표 변환이 별도 로직으로 중복 구현돼 있던 것을 발견).
+- **검증**: `tsc --noEmit` 0 errors, Vite HMR로 즉시 반영 확인, 사용자가 실제 화면에서 "정상적으로 나왔다" 확인.
+- **미완/후속 과제**: Android로 다시 테스트할 때 `LIVE_FEED_ROTATE_DEG`를 90으로 되돌려야 한다(수동). 근본적으로는 WS 프레임 메시지에 device platform 필드를 추가해 자동 분기하는 게 맞다.
+- **관련 파일**: `console/src/components/LiveCameraFeed.tsx`.

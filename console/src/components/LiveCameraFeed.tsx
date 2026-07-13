@@ -9,7 +9,12 @@ interface LiveCameraFeedProps {
 
 const NAV_MAP_URL =
   import.meta.env.VITE_NAV_MAP_URL || "http://localhost:8000/navigation/?embed=true";
-const LIVE_FEED_ROTATE_DEG = 90;
+// 2026-07-13 정정: jh가 Android 테스트 중(카메라 센서가 90도 꺾여 들어오는 기종)
+// 이 값을 90으로 하드코딩해뒀는데, 콘솔은 iOS/Android 기기를 가리지 않고 보는
+// 공용 화면이라 iPhone 프레임에는 이 보정이 오히려 잘못 적용됐다(실기기 실측
+// 확인). 기기별 platform 정보가 WS 페이로드에 없어 자동 분기는 아직 불가하므로,
+// 우선 0(무회전)으로 되돌린다. Android로 다시 테스트할 때 필요하면 90으로 바꿀 것.
+const LIVE_FEED_ROTATE_DEG = 0;
 
 function getDisplayBBox(
   bbox: { x: number; y: number; w: number; h: number },
@@ -19,7 +24,16 @@ function getDisplayBBox(
   const srcW = natural.w;
   const srcH = natural.h;
 
-  // 왼쪽으로 90도 꺾여 들어오는 프레임을 모바일 시점(CW 90도)으로 보정.
+  if (LIVE_FEED_ROTATE_DEG === 0) {
+    return {
+      leftPct: (x / srcW) * 100,
+      topPct: (y / srcH) * 100,
+      widthPct: (w / srcW) * 100,
+      heightPct: (h / srcH) * 100,
+    };
+  }
+
+  // 왼쪽으로 90도 꺾여 들어오는 프레임(Android 등)을 모바일 시점(CW 90도)으로 보정.
   const rotatedX = srcH - (y + h);
   const rotatedY = x;
   const rotatedW = h;
