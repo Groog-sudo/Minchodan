@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import type { DetectionGuidanceLogRow, LiveLatencyEvent } from "../types/monitor";
+import { resolveApiBaseUrl } from "../config/network";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  `${window.location.protocol}//${window.location.hostname}:8000`;
+  resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const WS_LIVE_FEED_URL = API_BASE_URL.replace(/^http/, "ws") + "/ws/console/live-feed";
 const MAX_LIVE_LATENCY_EVENTS = 30;
 const MAX_LIVE_LOG_ROWS = 50;

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./LiveCameraFeed.css";
+import { resolveServiceUrl } from "../config/network";
 
 interface LiveCameraFeedProps {
   imageUrl: string | null;
@@ -8,7 +9,11 @@ interface LiveCameraFeedProps {
 }
 
 const NAV_MAP_URL =
-  import.meta.env.VITE_NAV_MAP_URL || "http://localhost:8000/navigation/?embed=true";
+  resolveServiceUrl(
+    import.meta.env.VITE_NAV_MAP_URL,
+    "/navigation/?embed=true",
+    import.meta.env.VITE_API_BASE_URL,
+  );
 const LIVE_FEED_ROTATE_DEG = 90;
 
 function getDisplayBBox(

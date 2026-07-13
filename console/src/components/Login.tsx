@@ -1,5 +1,10 @@
 import { useState } from "react";
 import "./Login.css";
+import { resolveApiBaseUrl } from "../config/network";
+
+const API_BASE_URL =
+  resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const LOGIN_ENDPOINT = `${API_BASE_URL}/api/v1/admin/login`;
 
 
 // ==========================================
@@ -27,7 +32,7 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
       formData.append("username", employeeNo.trim());
       formData.append("password", password);
 
-      const response = await fetch("http://localhost:8000/api/v1/admin/login", {
+      const response = await fetch(LOGIN_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type" : "application/x-www-form-urlencoded",

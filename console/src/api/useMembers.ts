@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppUserRow, MemberRegisterPayload } from "../types/monitor";
+import { resolveApiBaseUrl } from "../config/network";
 
 // 발표/면접 포인트:
 // - useDetectionLogs.ts와 동일한 서버 페이지네이션 패턴(offset/limit + X-Total-Count 헤더).
 const API_BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 const MEMBERS_ENDPOINT = `${API_BASE_URL}/api/v1/admin/members`;
 
