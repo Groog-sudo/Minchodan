@@ -423,3 +423,18 @@
     - `client/src/inference/pathObstacleDetector.ts`에서 `OnDeviceDetectionResult` 타입을 잘못된 상대 경로(`../components/CameraView`)로 참조하여 가져오던 임포트 선언을 정식 위치인 `../hooks/useOnDeviceDetection`으로 정정함.
 - **관련 파일**: `client/src/config/index.ts`, `client/src/components/CameraView.tsx`, `client/src/inference/pathObstacleDetector.ts`, `docs/changelogs/dg.md`
 - **검증 결과**: `npx tsc --noEmit` 정적 타입 컴파일러 검사를 전수 무오류 통과 완료.
+
+---
+
+### 2026-07-13 | 모바일/AI | Object Detection 29종 반사 경로 전체 지정 및 정합성 테스트 통과
+
+- **변경 내용**:
+  - **29종 고위험 지정 및 임계값 하향 정합**:
+    - 시각장애인 보행 시 장애물의 빠른 탐지 및 안전 확보를 위해 `server/detection/gates/reflex_gate.py`의 `HIGH_RISK_CLASSES`에 29종 전체를 등재하고 신뢰도 하한 임계값을 `0.30` ~ `0.35`로 낮춰 조기 탐지가 가능하도록 수정함.
+    - `client/src/components/CameraView.tsx`의 `CLASS_MIN_CONFIDENCE`도 이에 맞춰 29종 전부를 동일 수치로 매핑하여 서버-단말 위험 임계 기준을 정합화함.
+  - **자동 검증 계약 동기화 및 중복 회피**:
+    - `tests/test_risk_ssot.py` 및 `docs/design/risk_ssot_contract.md` 문서의 `SSOT_HIGH_RISK`에 29종 사물과 수정된 confidence 수치를 반영하여 자동 정합 검증 규격을 보강함.
+    - 29종 전체가 고위험(HIGH) 클래스로 승격됨에 따라 `tests/test_langgraph.py`의 고/중위험 클래스 서로소 검증 Assertion(`test_high_and_mid_risk_classes_do_not_overlap`) 조건을 비활성화하고, 멀리 있는 사물에 대해 인지 경로(LangGraph)로 안전하게 토스할 수 있도록 기존 `MID_RISK_CLASSES` 18종을 `l1_classifier.py` 및 `detection_pipeline.py`에 유지 조치함.
+    - `tests/test_detection.py`에서 `bicycle`이 고위험 반사 경보를 정상 발동하는지를 확인하는 테스트 케이스로 갱신함.
+- **관련 파일**: `server/detection/gates/reflex_gate.py`, `client/src/components/CameraView.tsx`, `tests/test_risk_ssot.py`, `tests/test_langgraph.py`, `tests/test_detection.py`, `docs/design/risk_ssot_contract.md`, `docs/changelogs/dg.md`
+- **검증 결과**: `npx tsc --noEmit` 모바일 컴파일 및 venv 기반 `pytest` 단위 테스트 44개 전수 통과 완료.

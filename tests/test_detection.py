@@ -126,6 +126,7 @@ class TestGates:
         assert alert is None
 
     def test_reflex_gate_low_risk_class(self):
+        """bicycle이 이제 HIGH_RISK_CLASSES(29종 전체 반사)에 해당하므로 경보가 발동되어야 한다."""
         det = Detection(
             class_name="bicycle",
             confidence=0.9,
@@ -133,13 +134,14 @@ class TestGates:
             hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
-        assert alert is None
+        assert alert is not None
+        assert alert.alert_id == "high_bicycle_front"
 
     def test_reflex_gate_low_confidence_rejected(self):
         """실내 오탐 완화: 클래스별 최소 confidence 미달 시 발동하지 않는다."""
         det = Detection(
             class_name="car",
-            confidence=0.4,  # HIGH_RISK_CLASSES["car"] = 0.6 미달
+            confidence=0.30,  # HIGH_RISK_CLASSES["car"] = 0.35 미달
             bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
             hit_count=3,
         )
