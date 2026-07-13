@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 WebSocket /ws/detect 엔드포인트 라우터.
 단말(React Native)과 GPU 서버 간 실시간 양방향 통신 채널을 제공합니다.
@@ -630,6 +631,22 @@ async def ws_detect(
                         }
                     )
 
+            elif msg_type == "network_probe":
+                payload = data.get("payload", "")
+                payload_bytes = len(payload.encode("utf-8")) if isinstance(payload, str) else 0
+                with contextlib.suppress(Exception):
+                    await ws.send_json(
+                        {
+                            "type": "network_probe_ack",
+                            "probe_id": data.get("probe_id", ""),
+                            "client_sent_ts": data.get("client_sent_ts"),
+                            "client_label": data.get("client_label", ""),
+                            "payload_bytes": payload_bytes,
+                            "server_received_ts": now_ts(),
+                            "server_sent_ts": now_ts(),
+                        }
+                    )
+
             elif msg_type == "detection":
                 payload = data.get("payload", {})
                 event_id = payload.get("event_id", "unknown")
@@ -739,7 +756,7 @@ async def ws_detect(
     except Exception as e:
         logger.error(f"[WS] 예기치 않은 오류: device_id={device_id}, error={e}")
     finally:
-        manager.disconnect(device_id)
+        manager.disconnect(device_id, ws)
         await _broadcast_session_status(device_id, "disconnected")
         if heartbeat:
             heartbeat.stop()

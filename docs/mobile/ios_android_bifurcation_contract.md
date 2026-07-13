@@ -1,7 +1,7 @@
 # iOS/Android 클라이언트 이원화 및 서버 정합성 통합 계약서
 
 > **작성일**: 2026-07-10
-> **버전**: v1.1.4 (2026-07-12 §4.5에 iOS 카메라 프레임 180도 방향 반전 버그·수정 내역 및 Android 작업자 검증 필수 경고 추가 - `captureViaTakePhoto`에 `applyIosOrientationFix` 매개변수 신설로 iOS만 보정, Android는 영향 없음 명시 + 이전 v1.1.3 이력 유지: §3에 iOS LiDAR 실거리 프로브 `DepthProbeBridge.swift/.mm`(iOS 전용)와 TS 래퍼 `depthProbe.ts`(공유 계약) 등재 + 이전 v1.1.2 이력 유지: §7.3 확장 - 네트워크 상수·디바이스 토큰의 `EXPO_PUBLIC_*` 환경 변수 우선 규칙 추가(상수는 개발 폴백으로 보존) + 이전 v1.1.1 이력 유지: §3 소유권 매트릭스에 iOS 오디오 세션(AEC) 브릿지 `AudioSessionBridge.swift/.mm`(iOS 전용)과 TS 래퍼 `audioSessionBridge.ts`(공유 계약, Android no-op) 등재 + 이전 v1.1.0 이력 유지: 2026-07-10 §4 카메라 캡처 계층 iOS 측 구현 완료 반영 - 실제 파일명을 `frameCaptureProvider*.ts`로 확정, §7.3 NETWORK_MODE 플래그 구현 완료)
+> **버전**: v1.1.7 (2026-07-13 §3에 iOS `거리측정` 계측용 버튼의 자체 세션 video+depth 동기화 프리뷰 및 1:1 crop 좌표 샘플링 계약 추가 + 이전 v1.1.6 이력 유지: iOS LiDAR bbox 거리 샘플링 helper와 `DetectionResult.distanceMeters` optional 계약 추가)
 > **설계 기준**: [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](ondevice_inference_engine_isolation_plan.md)(추론 계층 격리, 본 문서의 §5는 이 문서를 계승·확정한다), [`docs/design/api_specification.md`](../design/api_specification.md)(WS 프로토콜 단일 명세)
 > **근거**: kb 브랜치(iOS 작업, `bbfe812` 기준) ↔ dg2 브랜치(Android 작업, `249f51a` 기준) `git merge-tree` 실병합 시뮬레이션 결과 (2026-07-10 분석)
 > **적용 대상**: iOS 작업자(kb 계열 브랜치)와 Android 작업자(dg2 계열 브랜치)는 신규 작업 착수 전 본 문서를 먼저 읽고, 본 문서가 정의한 파일 소유권과 인터페이스 계약을 벗어나는 변경을 하지 않는다.
@@ -47,8 +47,9 @@ kb와 dg2는 같은 조상 커밋(`62b5aa4`)에서 독립적으로 분기해, iO
 | iOS 네이티브 Frame Processor | `client/ios/ReflexFrameProcessorPlugin.swift`, `.m` | iOS 전용 | iOS 작업자 단독 소유 |
 | iOS 오디오 세션(AEC) 브릿지 | `client/ios/AudioSessionBridge.swift`, `.mm` | iOS 전용 | iOS 작업자 단독 소유. STT 녹음 구간 voiceChat(AEC) 전환 (2026-07-11 신규) |
 | 오디오 세션 TS 래퍼 | `client/src/services/audioSessionBridge.ts` | 공유 (계약) | iOS는 네이티브 호출, Android는 no-op(null 반환). Android AEC(AcousticEchoCanceler) 구현 시 인터페이스(`setVoiceProcessing`/`getSessionInfo`) 유지 필수 |
-| iOS LiDAR 실거리 프로브 | `client/ios/DepthProbeBridge.swift`, `.mm` | iOS 전용 | iOS 작업자 단독 소유. LiDAR 미탑재 기기·Android는 하드웨어 부재로 대칭 구현 없음(프로토타입, 2026-07-11 신규) |
-| 실거리 프로브 TS 래퍼 | `client/src/services/depthProbe.ts` | 공유 (계약) | iOS Pro 계열만 동작, 그 외 null 반환. Android 대응(ARCore Depth 등) 검토 시 인터페이스(`startDepthProbe`/`stopDepthProbe`/`probeDepth`) 유지 필수 |
+| iOS LiDAR 실거리 프로브 | `client/ios/DepthProbeBridge.swift`, `.mm` | iOS 전용 | iOS 작업자 단독 소유. LiDAR 미탑재 기기·Android는 하드웨어 부재로 대칭 구현 없음. `거리측정` 버튼은 자체 `AVCaptureSession` 안에서 `AVCaptureVideoDataOutput` + `AVCaptureDepthDataOutput`을 `AVCaptureDataOutputSynchronizer`로 묶어 같은 좌표계의 1:1 프리뷰와 depth 샘플을 반환한다 |
+| 실거리 프로브 TS 래퍼 | `client/src/services/depthProbe.ts` | 공유 (계약) | iOS Pro 계열만 동작, 그 외 null 반환. `probeDepth` 결과는 `previewUri`, `sampleCount`, `synchronizedAt` optional 필드를 포함할 수 있다. Android 대응(ARCore Depth 등) 검토 시 인터페이스(`startDepthProbe`/`stopDepthProbe`/`probeDepth`) 유지 필수 |
+| iOS LiDAR bbox 거리 샘플러 | `client/ios/DepthProbeBridge.swift`, `client/src/services/depthProbe.ts` | iOS 전용 구현 + 공유 optional 계약 | `probeBoxes`는 640x640 bbox 중앙 50% 영역에서 7x7 grid를 샘플링하고 25퍼센타일을 반환한다. 현재는 프로브 세션 기반 helper이며, 정식 객체별 거리 경보로 승격하려면 video+depth 동일 세션 동기화 검증이 필요하다 |
 | Android 네이티브 Frame Processor (신규 필요) | `client/android/app/src/main/java/.../ReflexFrameProcessorPlugin.kt` | Android 전용 | Android 작업자 단독 소유 |
 | 온디바이스 추론 인터페이스 | `client/src/inference/localDetector.ts`, `types.ts` | 공유 (계약) | §5 표 변경 시에만, 양측 합의 필수 |
 | 온디바이스 추론 iOS 구현 | `client/src/inference/localDetectorSelect.ios.ts` | iOS 전용 | 이미 정상 분리됨. 유지 |
@@ -164,6 +165,7 @@ export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 
 | 항목 | 현재 상태 | 목표 (기존 설계 §4.2 폴백 전략과 별개, TC-INF-003 기준) |
 | --- | --- | --- |
+| 거리 필드 | `DetectionResult.distanceMeters?`, `distanceSource?`, `depthSampleCount?`, `depthAccuracy?` optional 계약 추가. iOS LiDAR 값이 있으면 CameraView가 우선 표시·반사 판정하고, 없으면 bbox 휴리스틱으로 fallback | Android/TFLite 및 서버 결과는 필드를 생략할 수 있다. 필드가 생략된 경우 앱은 기존 휴리스틱 동작을 유지한다 |
 | 코드 (`tfliteDetector.ts`) | `attrsPerBox: 33` (kb 현재) / `6`(dg2) | `6` (`[1,300,6]`: x1,y1,x2,y2,score,classId) |
 | 자산 (`object_detection.tflite`) | 33채널 raw, NMS-free 익스포트 | `yolo export ... nms=True` 로 재수출한 `[1,300,6]` |
 | `segmentation.tflite` | 변경 없음 (`attrsPerBox=38`) | 변경 없음 — TC-INF-003이 seg는 `[1,300,38]`로 별도 명시, dg2도 이 부분은 건드리지 않음 |
@@ -207,13 +209,15 @@ dg2가 추가한 `server_detection` 메시지(서버 YOLO/Seg 결과를 BBox 오
 
 ### 7.3 네트워크 접속 설정 (`client/src/config/index.ts`, 완료)
 
-`WIFI_HOST`(평상시 LAN/핫스팟)와 `USB_HOST`(`127.0.0.1` + adb reverse), `NGROK_DOMAIN`(외부망)을 **모두 유지**한다. `NETWORK_MODE: "lan" | "ngrok"` 로 ngrok 여부를 정하고, lan일 때는 앱 UI 토글(`연결: WiFi` / `연결: USB`)로 런타임 전환한다(2026-07-13, [android_wifi_usb_transport.md](../ops/android_wifi_usb_transport.md)). 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다.
+`WIFI_HOST`(평상시 LAN/핫스팟), `USB_HOST`(`127.0.0.1` + adb reverse), `NGROK_DOMAIN`(외부 터널), `TAILSCALE_HOST`(외부망 VPN)를 **모두 유지**한다. `NETWORK_MODE: "lan" | "ngrok" | "tailscale"` 로 외부망 여부를 정하고, lan일 때는 앱 UI 토글(`연결: WiFi` / `연결: USB`)로 런타임 전환한다(2026-07-13, [android_wifi_usb_transport.md](../ops/android_wifi_usb_transport.md)). 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다.
 
 **2026-07-11 확장**: 상수와 `NETWORK_MODE`/`DEVICE_ID`/`TOKEN`은 `EXPO_PUBLIC_*` 환경 변수(빌드 시 인라인)가 있으면 그 값이 우선하고, 기존 상수는 개발 폴백으로 유지된다(인증 기본값 분리 - `docs/ops/environment_variables.md` §2.14).
 
 **2026-07-13 th 실측**: PC가 아이폰 핫스팟을 받으면서(`172.20.10.2`) 다시 모바일 핫스팟을 쏠 때, 공기계가 써야 할 주소는 업링크 IP가 아니라 Windows 핫스팟 게이트웨이 **`192.168.137.1`** 이다. `EXPO_PUBLIC_WIFI_HOST`(또는 구 `EXPO_PUBLIC_LAN_IP`)로 학원 공용 Wi-Fi IP를 주입할 수 있다.
 
 ngrok 고정 도메인(`partake-primer-surround.ngrok-free.dev`)은 무료 티어라 **동시에 한 프로세스만** 터널을 열 수 있다(`ERR_NGROK_334` 충돌 실제 발생 이력 있음) — LTE/외부망 테스트 일정은 팀 채널에서 사전 조율한다.
+
+**2026-07-13 외부망 계측 확장**: iOS 앱은 `EXPO_PUBLIC_NETWORK_MODE=tailscale`이면 `ws://{EXPO_PUBLIC_TAILSCALE_HOST}:{EXPO_PUBLIC_SERVER_PORT}/ws/detect`로 접속한다. `EXPO_PUBLIC_NETWORK_BENCHMARK=true`이면 앱이 `network_probe`를 주기적으로 보내 최신 RTT와 최근 30개 평균을 화면 디버그 줄에 표시한다.
 
 ### 7.4 `requirements.txt` 플랫폼 마커
 

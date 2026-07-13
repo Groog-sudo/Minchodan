@@ -1,9 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.15 (2026-07-12 §8.6에 app_users 회원 프로필 확장 필드(birth_date/guardian_phone/address, 전부 선택) 반영 + 이전 v0.4.14 이력 유지: §8.6 회원(시각장애인) 관리 REST 신설 - 관리자 콘솔의 회원 등록/전환/목록 API, 익명 자동등록(anon: 접두사) 레코드를 실명으로 전환하는 분기 로직 명세, §8.5 사후 이력 조회 REST 신설 - detection-logs 목록·event-frames 이미지 서빙, 이벤트 프레임 저장 계약(frame_path·보존 7일·백그라운드 저장), 인지 로그 detected_objects_json에 bbox 포함)
+> **버전**: v0.4.16 (2026-07-13 §2.5 network_probe/network_probe_ack 순수 WS RTT 계측 메시지 신설 + 이전 v0.4.15 이력 유지: §8.6 app_users 회원 프로필 확장 필드 반영)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
-> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route 정합 확인.
+> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
 
 ---
@@ -113,7 +113,28 @@
 > 여부를 boolean으로 반환합니다. 반사 경보는 반환값이 `true`인 경우에만 60초 중복 억제를
 > 기록하므로, 연결 종료 경쟁 구간에서 전달되지 않은 경보가 전송 완료로 처리되지 않습니다.
 
-### 2.5 error (서버 → 단말)
+### 2.5 network_probe
+
+Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교하기 위한 계측 메시지입니다. 카메라 프레임 디코딩, YOLO 추론, RAG, TTS를 거치지 않고 `/ws/detect` 메인 루프에서 즉시 echo 응답합니다.
+
+| 방향 | 메시지 |
+| :--- | :--- |
+| 단말/스크립트 → 서버 | `{"type":"network_probe","probe_id":"ios-...","client_label":"ios-app","client_sent_ts":1720000000000,"payload":"xxx"}` |
+| 서버 → 단말/스크립트 | `{"type":"network_probe_ack","probe_id":"ios-...","client_sent_ts":1720000000000,"client_label":"ios-app","payload_bytes":256,"server_received_ts":1720000000001,"server_sent_ts":1720000000001}` |
+
+| 필드 | 타입 | 설명 |
+| :--- | :--- | :--- |
+| `probe_id` | string | 클라이언트가 생성한 probe 식별자. 응답 매칭에 사용 |
+| `client_label` | string | `ios-app`, `ngrok`, `tailscale` 등 측정 라벨 |
+| `client_sent_ts` | number | 클라이언트 송신 시각(epoch ms). 서버는 원문을 그대로 돌려줌 |
+| `payload` | string | 네트워크 페이로드 크기 고정용 문자열. 서버는 저장하지 않음 |
+| `payload_bytes` | number | 서버가 계산한 UTF-8 페이로드 바이트 수 |
+| `server_received_ts` | number | 서버가 응답을 만들 때 기록한 수신 근사 시각(epoch ms) |
+| `server_sent_ts` | number | 서버 응답 송신 직전 시각(epoch ms) |
+
+> 실제 개선율 계산은 클라이언트 기준 왕복 시간으로 산정합니다. 서버 시각은 참고용이며 단말과 서버의 시계가 동기화되어 있지 않아 단방향 지연 계산에는 사용하지 않습니다.
+
+### 2.6 error (서버 → 단말)
 
 ```json
 {
@@ -754,3 +775,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.11** | **2026-07-11** | **§6.4 폴백 모드 비고 갱신 - 클라이언트 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, 폴백 상태 welcome 수신 시 해제) 반영** |
 | **v0.4.12** | **2026-07-11** | **§8 SSE 계약 고정 - 실발행(8.2)/예약 브리지(8.3) 이벤트 분리, payload 필드를 콘솔 파서 기준으로 고정, `mcp:metrics` producer 부재 사실 명시(기존 "risk.events 실시간 뷰" 오기 정정), 데모 데이터 분리(8.4). §1 공통 필드 event_id 형식 구조화 반영** |
 | **v0.4.13** | **2026-07-12** | **§8.5 사후 이력 조회 REST 신설 - `GET /api/v1/admin/detection-logs` 목록, `GET /api/v1/admin/event-frames/{event_id}` 프레임 JPEG 서빙, 이벤트 프레임 저장 계약(frame_path 컬럼, data/event_frames/ 날짜 폴더, 보존 기본 7일, 백그라운드 저장으로 반사 경로 무영향), 인지 로그 detected_objects_json에 bbox 좌표 포함(콘솔 오탐 검증 오버레이용)** |
+| **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |

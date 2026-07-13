@@ -35,7 +35,7 @@ class SessionManager:
         if old_ws is not None:
             with contextlib.suppress(Exception):
                 await old_ws.close(code=1001, reason="replaced by new connection")
-            del self.active_connections[device_id]
+            self.active_connections.pop(device_id, None)
             logger.info(f"[Session] 잔류 세션 강제 종료: device_id={device_id}")
 
         await websocket.accept()
@@ -88,10 +88,14 @@ class SessionManager:
         for ws in stale_consoles:
             self.disconnect_console(ws)
 
-    def disconnect(self, device_id: str) -> None:
+    def disconnect(self, device_id: str, websocket: WebSocket | None = None) -> None:
         """연결 해제 및 등록 삭제."""
-        if device_id in self.active_connections:
-            del self.active_connections[device_id]
+        current = self.active_connections.get(device_id)
+        if current is None or (websocket is not None and current is not websocket):
+            return
+
+        self.active_connections.pop(device_id, None)
+        if current is not None:
             logger.info(
                 f"[Session] 해제: device_id={device_id}, "
                 f"현재 접속: {len(self.active_connections)}명"

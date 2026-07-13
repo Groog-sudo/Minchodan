@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-13
-> **버전**: v0.4.15 (2026-07-13 §2.14 WiFi/USB 이중 접속 변수(`EXPO_PUBLIC_WIFI_HOST`/`USB_HOST`/`DEFAULT_TRANSPORT`) 등재, `LAN_IP` 폴백 관계 정정 + 이전 v0.4.14 이력 유지: 2026-07-12 이벤트 프레임·`VITE_API_BASE_URL` + 이전 v0.4.13 인증 기본값 분리)
+> **버전**: v0.4.16 (2026-07-13 §2.14 Tailscale 외부망 접속 변수와 iOS 앱 network_probe RTT 계측 변수 등재 + 이전 v0.4.15 이력 유지: WiFi/USB 이중 접속 변수(`EXPO_PUBLIC_WIFI_HOST`/`USB_HOST`/`DEFAULT_TRANSPORT`) 등재, `LAN_IP` 폴백 관계 정정)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -160,12 +160,17 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값(코드 폴백) | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `lan` | 단말 접속 모드(`lan`/`ngrok`). `ngrok`이면 WiFi/USB 토글보다 WSS 우선 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `lan` | 단말 접속 모드(`lan`/`ngrok`/`tailscale`). `ngrok` 또는 `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_WIFI_HOST`** | string | 선택 | `192.168.137.1` | **평상시 WiFi 모드** PC 호스트. Windows 노트북 모바일 핫스팟 게이트웨이 기본값(2026-07-13) | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
 | **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | (WIFI_HOST 폴백) | 구 명칭. 설정 시 `WIFI_HOST`가 없으면 이 값을 WiFi 호스트로 사용 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_USB_HOST`** | string | 선택 | `127.0.0.1` | **개발 USB 모드** + `adb reverse` 호스트 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
+| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | 선택 | (`WIFI_HOST` 폴백) | **외부망 Tailscale 모드** 서버 호스트. iOS/Android 단말의 Tailscale VPN이 켜진 상태에서 서버의 `100.x` 주소 또는 MagicDNS 이름을 사용 | `client/src/config/index.ts`, `client/.env.example` |
+| **`EXPO_PUBLIC_SERVER_PORT`** | string | 선택 | `8000` | 단말이 접속할 FastAPI/WebSocket 포트. 기본 `/ws/detect` 포트와 동일 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEFAULT_TRANSPORT`** | string | 선택 | `wifi` | 앱 최초 기동 기본 수송(`wifi`/`usb`). 이후 선택은 단말에 영속 | `client/src/config/index.ts`, `client/src/services/serverTransport.ts` |
 | **`EXPO_PUBLIC_NGROK_DOMAIN`** | string | 선택 | `partake-primer-surround.ngrok-free.dev` | 외부망 터널 도메인 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_BENCHMARK`** | string | 선택 | `false` | `true`이면 iOS/Android 앱이 `network_probe`를 주기적으로 보내 최신 RTT와 최근 30개 평균을 디버그 정보에 표시 | `client/src/config/index.ts`, `client/src/hooks/useWebSocket.ts` |
+| **`EXPO_PUBLIC_NETWORK_BENCHMARK_INTERVAL_MS`** | int | 선택 | `1000` | 앱 내 `network_probe` 전송 간격(ms) | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_BENCHMARK_PAYLOAD_BYTES`** | int | 선택 | `256` | 앱 내 `network_probe` 페이로드 크기(bytes). 작은 고정값으로 순수 WS 왕복 지연을 비교 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEVICE_ID`** | string | 선택 | `dev-001` | 단말 식별자 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEVICE_TOKEN`** | string | 선택 | `token-abc-001`(개발 전용) | 디바이스 토큰. **2026-07-11 분리**: 코드 하드코딩에서 환경 변수 우선으로 전환. 실질 보안은 서버 JWT 발급 체계(`issue_device_token`)로 이관 예정 | `client/src/config/index.ts`, `server/api/auth.py` |
 | **`VITE_MONITOR_STREAM_URL`** | string | 선택 | `http://localhost:8000/api/v1/monitor/stream` | 콘솔 SSE 스트림 주소 | `console/src/api/useMonitorStream.ts`, `console/.env.example` |
