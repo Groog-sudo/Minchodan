@@ -438,3 +438,14 @@
     - `tests/test_detection.py`에서 `bicycle`이 고위험 반사 경보를 정상 발동하는지를 확인하는 테스트 케이스로 갱신함.
 - **관련 파일**: `server/detection/gates/reflex_gate.py`, `client/src/components/CameraView.tsx`, `tests/test_risk_ssot.py`, `tests/test_langgraph.py`, `tests/test_detection.py`, `docs/design/risk_ssot_contract.md`, `docs/changelogs/dg.md`
 - **검증 결과**: `npx tsc --noEmit` 모바일 컴파일 및 venv 기반 `pytest` 단위 테스트 44개 전수 통과 완료.
+
+---
+
+### 2026-07-13 | 모바일 | 앱 포그라운드 복귀(리로드) 시 마이크 권한 실시간 재동기화 로직 추가
+
+- **변경 내용**:
+  - **포그라운드 복귀(AppState active) 리스너 탑재**:
+    - 사용자가 스마트폰 시스템 설정에서 수동으로 마이크 권한을 허용한 경우, 앱을 재부팅(또는 삭제 후 재설치)하지 않고도 변경 사항이 즉시 런타임에 동기화될 수 있도록 `client/src/components/CameraView.tsx`에 `AppState` 리스너를 연동함.
+    - 앱이 background 상태에서 foreground(즉 `active`) 상태로 돌아올(리로드) 때마다 `requestSttPermissionEarly`를 트리거하여 마이크 권한 허용 여부를 실시간으로 재확인하고 앱 상태에 동기화하도록 구현함.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `docs/changelogs/dg.md`
+- **검증 결과**: `npx tsc --noEmit` 타입 검사를 무오류로 통과 완료.

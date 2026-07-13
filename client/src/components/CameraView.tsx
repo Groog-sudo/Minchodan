@@ -10,7 +10,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { Dimensions, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, Dimensions, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -246,6 +246,17 @@ export function CameraView() {
   useEffect(() => {
     if (isMockMode) return;
     void requestSttPermissionEarly();
+
+    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        void requestSttPermissionEarly();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
 
