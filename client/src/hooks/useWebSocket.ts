@@ -162,6 +162,7 @@ export function useWebSocket(
     setStatus((prev) => (prev === "fallback" ? prev : "connecting"));
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) return;
       // 주의: 재연결 카운터는 여기(TCP 연결)가 아니라 welcome(핸드셰이크 성공)에서
       // 리셋한다. 인증 실패 등으로 "연결 직후 끊김"이 반복되는 경우에도 백오프가
       // 계속 자라고 폴백 고지가 정상 동작해야 하기 때문이다.
@@ -186,6 +187,7 @@ export function useWebSocket(
     };
 
     ws.onmessage = (event: any) => {
+      if (wsRef.current !== ws) return;
       // guide 오디오 바이너리 프레임: 직전 "guide" JSON 메시지(transport:"binary")에
       // 이어 도착하는 원본 WAV 바이트다. base64 인코딩을 완전히 우회한다(2026-07-09).
       if (event.data instanceof ArrayBuffer) {
@@ -340,15 +342,20 @@ export function useWebSocket(
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: any) => {
       // 이전 소켓의 종료 콜백이 새 소켓의 재연결 상태를 덮어쓰지 않게 한다.
-      if (wsRef.current !== ws) return;
+      if (wsRef.current !== ws) {
+        console.log("[WS] 구 소켓 종료 이벤트 무시");
+        return;
+      }
       wsRef.current = null;
       // 폴백 모드는 재연결 성공까지 유지한다(위 connecting 주석과 동일한 이유).
       setStatus((prev) => (prev === "fallback" ? prev : "disconnected"));
       clearHeartbeat();
       clearNetworkProbe();
-      console.log("[WS] 연결 종료");
+      const closeCode = typeof event?.code === "number" ? event.code : -1;
+      const closeReason = typeof event?.reason === "string" ? event.reason : "";
+      console.log(`[WS] 연결 종료 code=${closeCode} reason=${closeReason}`);
 
       // 오디오 및 진동 피드백 즉각 종료
       audioEngine.stopBeep();
@@ -364,6 +371,9 @@ export function useWebSocket(
         RECONNECT_DELAY * 2 ** (reconnectCount.current - 1),
         RECONNECT_DELAY_MAX,
       );
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+      }
       reconnectTimer.current = setTimeout(() => connect(), backoffMs);
       console.log(
         `[WS] 재연결 예약: ${reconnectCount.current}회차, ${backoffMs}ms 후`,
@@ -384,6 +394,10 @@ export function useWebSocket(
     };
 
     ws.onerror = (error: any) => {
+      if (wsRef.current !== ws) {
+        console.log("[WS] 구 소켓 오류 이벤트 무시");
+        return;
+      }
       console.error("[WS] 오류:", error);
     };
   }, [
@@ -403,10 +417,14 @@ export function useWebSocket(
   }, []);
 
   const sendBinary = useCallback((data: Uint8Array) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      // RN WebSocket은 ArrayBufferView(Uint8Array)를 바이너리 프레임으로 직접 전송한다.
-      // base64 인코딩을 경유하지 않아 33% 페이로드 증가와 JS 인코딩/서버 디코딩 오버헤드를 제거한다.
-      wsRef.current.send(data);
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // RN WebSocket은 ArrayBufferView(Uint8Array)를 바이너리 프레임으로 직접 전송한다.
+    // 다만 readyState 검사 직후 onclose가 끼어들 수 있어(send 레이스), 예외를 흡수한다.
+    try {
+      ws.send(data);
+    } catch (error) {
+      console.warn("[WS] 바이너리 전송 스킵(소켓 상태 변경):", error);
     }
   }, []);
 

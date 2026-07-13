@@ -20,7 +20,7 @@ export const SERVER_PORT = process.env.EXPO_PUBLIC_SERVER_PORT ?? "8000";
 export const WIFI_HOST =
   process.env.EXPO_PUBLIC_WIFI_HOST ??
   process.env.EXPO_PUBLIC_LAN_IP ??
-  "192.168.137.1";
+  "192.168.0.163";
 
 /** 개발: USB + `adb reverse tcp:8000 tcp:8000` 일 때. */
 export const USB_HOST = process.env.EXPO_PUBLIC_USB_HOST ?? "127.0.0.1";

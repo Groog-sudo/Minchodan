@@ -442,3 +442,26 @@
 - **관련 파일**: `server/api/detection_guidance_log_router.py`, `server/main.py`, `docs/changelogs/jh.md`
 - **검증 결과**: `server/main.py` 기준 미정의 심볼 오류 제거 확인
 - **비고**: 라우터 구조 재설계 또는 WebSocket 경로 배선 방향 재검토 전의 정리 커밋임
+
+---
+
+### 2026-07-13 | RAG | 생활지원 통합 안내 RAG 파이프라인 추가
+
+- **커밋**: `feat(rag,stt): convenience_guidelines 기반 생활지원 RAG 구축 및 STT 질의 분기 연동`
+- **변경 내용**:
+  - `data/convenience_guidelines.json` 신규 추가: 기관/서비스/인물/긴급연락망/FAQ/통합 문서 기반의 생활지원 더미 코퍼스 구성
+  - `server/rag/convenience_rag.py` 신규 추가:
+    - JSON 코퍼스를 문서 단위(`organization`, `service`, `person`, `emergency_contact`, `faq`, `rag_document`)로 정규화
+    - Chroma 컬렉션(`convenience_guidelines`) 빌드/로딩 함수 추가
+    - 질의 키워드 기반 편의성 질문 판별(`looks_like_convenience_query`) 추가
+    - 검색 결과를 Gemini로 근거 기반 요약 응답하는 `ConvenienceKnowledgeBase.answer()` 구현
+  - `scripts/build_convenience_db.py` 신규 추가:
+    - convenience 전용 ChromaDB 빌드 CLI 스크립트 추가
+    - JSON 경로/저장경로/컬렉션/임베딩 모델을 인자로 주입 가능하도록 구성
+  - `server/stt/stt_to_llm_bridge.py` 수정:
+    - 자유 질의응답 경로에서 근접 POI 질의 다음 단계로 convenience RAG 분기 추가
+    - `question-convenience-rag` source와 RAG 메타(`rag_query`, `rag_results`, `rag_latency_ms`) 반환
+- **관련 파일**: `data/convenience_guidelines.json`, `server/rag/convenience_rag.py`, `scripts/build_convenience_db.py`, `server/stt/stt_to_llm_bridge.py`, `docs/changelogs/jh.md`
+- **검증 결과**:
+  - `git diff --cached --stat` 기준 4개 파일 `1646 insertions(+), 1 deletion(-)` 확인
+  - STT 브리지 캐시 diff에서 convenience RAG 분기 추가 내용 반영 확인
