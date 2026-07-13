@@ -7,18 +7,18 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 
 # ==========================================
 # 🧠 TH HARDCODE AREA (면접/발표 핵심 방어 영역)
-# 음성 명령 연락처: 서버는 파싱/세션 캐시, 영속화는 Android 주소록(ContactsBridge).
+# 음성 명령 연락처: 서버는 파싱/세션 캐시, 영속화는 RAG(ChromaDB) + 단말 주소록.
 # ==========================================
 #
-# 💡 [면접 대비 주석 - 왜 서버 DB가 아니라 단말 주소록 + RAM 캐시인가]
-# Q. AppUser 테이블도 있는데 왜 Contact를 MariaDB에 안 만듭니까?
-# A. "사용자가 체감하는 '저장' 위치는 폰 연락처 앱이다. 그래서 영속 SoT(Source of
-#    Truth)는 Android ContactsContract(WRITE_CONTACTS)로 두고, 서버 ContactStore는
-#    같은 세션 안에서 빠른 이름→번호 조회용 RAM 캐시만 맡는다. 서버 재시작으로
-#    RAM이 비어도 dial_action.device_lookup=True로 단말이 주소록을 다시 찾아
-#    건다. 보호자 긴급전화(_handle_emergency_call)는 이와 달리 AppUser.guardian_phone
-#    실제 DB를 쓰는 안전 기능이다 - '데이터 성격에 따라 영속화 계층을 다르게 골랐다'
-#    는 설계 판단으로 대비 설명하면 좋다."
+# 💡 [면접 대비 주석 - 왜 RAG 영속인가 (사용자 결정)]
+# Q. 연락처는 사실 데이터라 DB 정확 매칭이 맞지 않나요?
+# A. "2026-07-13 사용자 결정으로 user_contacts(MariaDB) 영속 계층을
+#    RAG(ChromaDB)로 전환했다. RAG 경로 종단 시연이 목적이다. 단, LLM 환각
+#    위험은 metadata에서 번호를 직접 꺼내 제거했고(see contact_rag.py),
+#    유사도 불확실성은 이름 정규화 후보 필터로 방어한다. ContactStore dict는
+#    같은 세션 빠른 조회용 RAM 캐시이며, WS 재접속 시
+#    ContactService.hydrate_cache로 RAG에서 복구한다. 단말 Android 주소록은
+#    사용자 체감 저장소로 유지된다."
 
 PHONE_NUMBER_PATTERN = re.compile(r"01[0-9][-\s]?\d{3,4}[-\s]?\d{4}")
 
@@ -129,12 +129,18 @@ def extract_call_target(text: str) -> str | None:
     return None
 
 
+def normalize_contact_name(raw: str) -> str:
+    """DB 검색키용 이름 정규화(조사/어미 제거)."""
+    return _trim_name(raw.strip())
+
+
 class ContactStore:
     """[TH HARDCODE] device_id별 연락처 세션 캐시(프로세스 메모리).
 
-    영속 SoT는 단말 Android 주소록(contact_save / device_lookup)이다.
-    여기 dict는 같은 서버 세션에서 이름→번호 조회를 빠르게 하기 위한 캐시이며,
-    재시작으로 비어도 단말이 주소록에서 다시 찾는다.
+    영속 SoT는 RAG(ChromaDB) + 단말 Android 주소록(contact_save /
+    device_lookup) 이중 구조다. 여기 dict는 같은 서버 세션에서 이름->번호 조회를
+    빠르게 하기 위한 캐시이며, WS 재접속 시 ContactService.hydrate_cache로
+    RAG에서 복구한다.
     """
 
     _contacts: ClassVar[dict[str, dict[str, str]]] = {}

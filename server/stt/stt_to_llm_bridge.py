@@ -7,7 +7,8 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from server.orchestration import run_orchestrator
 
-from .contact_store import ContactStore, extract_call_target, extract_save_command
+from .contact_service import ContactService
+from .contact_store import extract_call_target, extract_save_command
 from .stt_config import STT_ORCH_CLASS_NAME, STT_ORCH_RISK_HINT
 from .stt_runtime import validate_stt_bridge_config
 from .stt_schema import SttTranscribeResult
@@ -163,11 +164,10 @@ def _looks_like_question(text: str) -> bool:
 # 💡 [면접 대비 주석 - 긴급전화 vs 일반 연락처의 구현 차이]
 # Q. 이 셋 다 "전화 걸기"인데 왜 긴급전화만 따로 뺐습니까?
 # A. "긴급전화는 안전 기능이라 AppUser.guardian_phone DB를 조회하는 진짜 구현
-#    (_handle_emergency_call). 일반 연락처는 즉흥 등록이라 서버는 STT 의도/번호
-#    파싱만 하고, 영속화는 contact_save WS → Android ContactsContract에 위임한다.
-#    ContactStore RAM은 세션 캐시일 뿐이고, 미스 시 device_lookup으로 단말 주소록을
-#    다시 본다. '데이터 성격(안전 DB vs 사용자 주소록)에 맞춰 영속화 계층을 나눴다'
-#    는 설계 판단으로 발표하면 된다."
+#    (_handle_emergency_call). 일반 연락처는 RAG(ChromaDB) + 단말 주소록
+#    이중 SoT로 영속화하고, ContactStore RAM은 세션 캐시다. 미스 시 device_lookup으로
+#    단말 주소록을 다시 본다. '데이터 성격(안전 DB vs 사용자 연락처)에 맞춰
+#    영속화 계층을 나눴다'는 설계 판단으로 발표하면 된다."
 #
 # 💡 [면접 대비 주석 - 왜 질문 대기보다 연락처 분기를 앞에 두나]
 # Q. is_awaiting_question이 True면 그냥 LLM으로 보내면 안 되나요?
@@ -310,6 +310,46 @@ class SttToLlmBridge:
             },
         }
 
+    async def _handle_contact_save(self, device_id: str, name: str, phone: str) -> dict:
+        """연락처 저장: DB + RAM + 단말 주소록(contact_save WS)."""
+        from server.navigation.manager import nav_manager
+
+        await ContactService.save(device_id, name, phone)
+        if nav_manager.is_awaiting_question(device_id):
+            nav_manager.set_awaiting_question(device_id, False)
+        return {
+            "guidance_text": f"{name}님 번호를 휴대폰 주소록에 저장합니다.",
+            "used_fallback_llm": True,
+            "source": "contact-save-success",
+            "contact_save": {"contact_name": name, "phone_number": phone},
+        }
+
+    async def _handle_contact_call(self, device_id: str, normalized_text: str) -> dict:
+        """이름으로 전화: RAM -> DB -> device_lookup 순 조회."""
+        from server.navigation.manager import nav_manager
+
+        target_name = extract_call_target(normalized_text)
+        phone = await ContactService.lookup(device_id, target_name) if target_name else None
+        if nav_manager.is_awaiting_question(device_id):
+            nav_manager.set_awaiting_question(device_id, False)
+        if phone:
+            return {
+                "guidance_text": f"{target_name}님에게 전화를 겁니다.",
+                "used_fallback_llm": True,
+                "source": "contact-call-success",
+                "dial_action": {"contact_name": target_name, "phone_number": phone},
+            }
+        return {
+            "guidance_text": f"{target_name or '연락처'}님에게 전화를 겁니다.",
+            "used_fallback_llm": True,
+            "source": "contact-call-device-lookup",
+            "dial_action": {
+                "contact_name": target_name or "",
+                "phone_number": "",
+                "device_lookup": True,
+            },
+        }
+
     @staticmethod
     def build_orch_input(stt_result: SttTranscribeResult) -> dict:
         """
@@ -421,39 +461,9 @@ class SttToLlmBridge:
         )
         if _contact_save_early:
             name, phone = extract_save_command(normalized_text)  # type: ignore[misc]
-            # RAM 캐시(같은 세션 빠른 조회) + contact_save로 단말 영속화 위임.
-            ContactStore.save(device_id, name, phone)
-            if nav_manager.is_awaiting_question(device_id):
-                nav_manager.set_awaiting_question(device_id, False)
-            return {
-                "guidance_text": f"{name}님 번호를 휴대폰 주소록에 저장합니다.",
-                "used_fallback_llm": True,
-                "source": "contact-save-success",
-                "contact_save": {"contact_name": name, "phone_number": phone},
-            }
+            return await self._handle_contact_save(device_id, name, phone)
         if any(kw in normalized_text for kw in CONTACT_CALL_TRIGGER_WORDS):
-            # [TH HARDCODE] RAM 히트 → dial_action(번호 포함), 미스 → device_lookup.
-            target_name = extract_call_target(normalized_text)
-            phone = ContactStore.lookup(device_id, target_name) if target_name else None
-            if nav_manager.is_awaiting_question(device_id):
-                nav_manager.set_awaiting_question(device_id, False)
-            if phone:
-                return {
-                    "guidance_text": f"{target_name}님에게 전화를 겁니다.",
-                    "used_fallback_llm": True,
-                    "source": "contact-call-success",
-                    "dial_action": {"contact_name": target_name, "phone_number": phone},
-                }
-            return {
-                "guidance_text": f"{target_name or '연락처'}님에게 전화를 겁니다.",
-                "used_fallback_llm": True,
-                "source": "contact-call-device-lookup",
-                "dial_action": {
-                    "contact_name": target_name or "",
-                    "phone_number": "",
-                    "device_lookup": True,
-                },
-            }
+            return await self._handle_contact_call(device_id, normalized_text)
 
         # [하드 코딩 부분 - 핵심]
         # 자유 질의응답 모드 최우선 처리: "질문할게" 등으로 진입한 다음 발화는 그
@@ -605,44 +615,10 @@ class SttToLlmBridge:
             #    만들고, 실제 INSERT는 클라이언트의 ContactsBridgeModule이
             #    ContentProviderOperation으로 수행한다(역할 분리 = dial_action과 동일)."
             name, phone = extract_save_command(normalized_text)  # type: ignore[misc]
-            ContactStore.save(device_id, name, phone)
-            return {
-                "guidance_text": f"{name}님 번호를 휴대폰 주소록에 저장합니다.",
-                "used_fallback_llm": True,
-                "source": "contact-save-success",
-                "contact_save": {"contact_name": name, "phone_number": phone},
-            }
+            return await self._handle_contact_save(device_id, name, phone)
 
         elif is_contact_call_trigger:
-            # [TH HARDCODE] 음성으로 이름으로 전화 걸기.
-            # 💡 [면접 대비 주석] 서버는 통신사 회선을 직접 제어할 수 없다.
-            #    의도 해석 + (RAM 또는 device_lookup 위임) → dial_action WS →
-            #    클라이언트가 Linking "tel:"로 OS 다이얼러 실행.
-            #
-            # 💡 [면접 대비 주석 - device_lookup]
-            # Q. 서버 재시작 후 ContactStore가 비면 전화가 안 되지 않나요?
-            # A. "번호 없이 device_lookup=True만 보내면 단말이 READ_CONTACTS로
-            #    주소록을 다시 조회한다. RAM 캐시 소멸과 사용자 체감 저장이
-            #    분리돼 있다(실측 검증 2026-07-13)."
-            target_name = extract_call_target(normalized_text)
-            phone = ContactStore.lookup(device_id, target_name) if target_name else None
-            if phone:
-                return {
-                    "guidance_text": f"{target_name}님에게 전화를 겁니다.",
-                    "used_fallback_llm": True,
-                    "source": "contact-call-success",
-                    "dial_action": {"contact_name": target_name, "phone_number": phone},
-                }
-            return {
-                "guidance_text": f"{target_name or '연락처'}님에게 전화를 겁니다.",
-                "used_fallback_llm": True,
-                "source": "contact-call-device-lookup",
-                "dial_action": {
-                    "contact_name": target_name or "",
-                    "phone_number": "",
-                    "device_lookup": True,
-                },
-            }
+            return await self._handle_contact_call(device_id, normalized_text)
 
         elif is_question_trigger:
             # [바이브 코딩 부분] 다음 발화를 자유 질문으로 받기 위한 상태 전이.

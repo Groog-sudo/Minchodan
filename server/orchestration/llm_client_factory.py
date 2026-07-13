@@ -11,8 +11,16 @@ import os
 import sys
 
 import httpx
-import ollama
 from dotenv import load_dotenv
+
+# 💡 [면접 대비 주석 - 왜 ollama import를 top에서 빼나]
+# Q. ollama 패키지를 그냥 top에서 import하면 안 되나요?
+# A. "시연/운영 환경에서는 Ollama 프로세스를 띄우지 않고 상용 Gemini API만 쓴다.
+#    ollama 파이썬 패키지도 시연 환경에서는 설치하지 않으므로, top에서 import하면
+#    LLMClientFactory 모듈 로드 자체가 ImportError로 실패해 서버 기동이 막힌다.
+#    그래서 SimpleOllamaClient.__init__ 안에서 지연 import한다. 시연 환경에서는
+#    LLM_PROVIDER=gemini이므로 SimpleOllamaClient 인스턴스가 생성되지 않아
+#    ollama 패키지가 없어도 서버가 정상 기동한다."
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
 if sys.stdout.encoding != "utf-8":
@@ -46,6 +54,9 @@ class SimpleOllamaClient:
     """
 
     def __init__(self, model_name: str, base_url: str):
+        # ollama 패키지 지연 import (시연 환경에서는 ollama 패키지 미설치 허용)
+        import ollama
+
         self.model_name = model_name
         self.base_url = base_url
         # AsyncClient 인스턴스 생성 (CPU 환경의 Ollama Gemma4 추론 지연을 고려하여 타임아웃을 120초로 대폭 상향)
@@ -197,7 +208,8 @@ class LLMClientFactory:
     _ollama: SimpleOllamaClient = None
     _openai: SimpleOpenAIClient = None
     _gemini: SimpleGeminiClient = None
-    _current_provider: str = "ollama"
+    # 시연/운영 기본 gemini(상용 API). start_gpu_monitor가 LLM_PROVIDER로 덮어쓴다.
+    _current_provider: str = ""
     _monitor_task: asyncio.Task = None
     _gpu_monitor = None
 
@@ -209,9 +221,16 @@ class LLMClientFactory:
     @classmethod
     def get_ollama(cls) -> SimpleOllamaClient:
         if cls._ollama is None:
-            base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            model_name = os.getenv("GEMMA_MODEL", "gemma4:e4b")
-            cls._ollama = SimpleOllamaClient(model_name=model_name, base_url=base_url)
+            try:
+                base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+                model_name = os.getenv("GEMMA_MODEL", "gemma4:e4b")
+                cls._ollama = SimpleOllamaClient(model_name=model_name, base_url=base_url)
+            except ImportError as e:
+                sys.stderr.write(
+                    f"[ERROR] ollama 패키지 미설치: {e!s}. "
+                    f"시연 환경에서는 LLM_PROVIDER=gemini(openai)를 사용하세요.\n"
+                )
+                raise
         return cls._ollama
 
     @classmethod
@@ -244,8 +263,8 @@ class LLMClientFactory:
         if cls._gpu_monitor is None:
             cls._gpu_monitor = GPUMonitorMCP()
 
-        # 기본 provider를 환경변수에서 설정
-        cls._current_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+        # 기본 provider를 환경변수에서 설정 (시연/운영 기본 gemini)
+        cls._current_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
 
         async def _monitor_loop():
             while True:
@@ -258,12 +277,12 @@ class LLMClientFactory:
                             "[MCP HOTSWAP] GPU 부하 임계치 도달로 인해 OpenAI(gpt-4o-mini)로 핫스왑을 수행합니다."
                         )
                     elif not should_fallback and cls._current_provider == "openai":
-                        # 리소스 정상 복구 시 다시 ollama 복귀 (환경변수가 ollama로 고정된 상태일 때만)
-                        default_provider = os.getenv("LLM_PROVIDER", "ollama").lower()
-                        if default_provider == "ollama":
-                            cls._current_provider = "ollama"
+                        # 리소스 정상 복구 시 환경변수 기본 provider로 복귀
+                        default_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+                        if default_provider in ("ollama", "gemini"):
+                            cls._current_provider = default_provider
                             logger.info(
-                                "[MCP HOTSWAP] GPU 부하 정상 복구로 인해 로컬 Ollama(gemma4-e4b)로 복귀합니다."
+                                f"[MCP HOTSWAP] GPU 부하 정상 복구로 인해 {default_provider}로 복귀합니다."
                             )
 
                     # 관제 콘솔에 실시간 GPU 및 시스템 상태 브로드캐스트
@@ -292,9 +311,15 @@ class LLMClientFactory:
     def get_client(cls, provider: str | None = None):
         """
         지정된 provider 또는 환경변수 설정을 확인해 적절한 클라이언트를 반환합니다.
+        시연/운영 기본은 LLM_PROVIDER 환경변수(gemini 권장). 미설정 시 gemini.
         """
-        # start_gpu_monitor가 아직 호출되지 않았다면 기본값 기준 설정
-        target_provider = (provider or cls._current_provider).lower()
+        # start_gpu_monitor가 아직 호출되지 않았다면 환경변수 기준으로 결정한다.
+        target = (
+            provider
+            or cls._current_provider
+            or os.getenv("LLM_PROVIDER", "gemini")
+        )
+        target_provider = target.lower()
 
         if target_provider == "openai":
             try:
