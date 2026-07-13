@@ -10,7 +10,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { Dimensions, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -34,6 +34,7 @@ import {
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
+import { pathObstacleDetector } from "../inference/pathObstacleDetector";
 import {
   loadServerTransport,
   saveServerTransport,
@@ -358,6 +359,7 @@ export function CameraView() {
 
   const detectingRef = useRef(false);
   const lastDetectTsRef = useRef(0);
+  const lastAndroidTtsTsRef = useRef(0);
 
   // Mock 햅틱 시각 핸들러 등록
   useEffect(() => {
@@ -445,77 +447,123 @@ export function CameraView() {
         setDetectionsRef.current(allDetections);
       }
 
-      // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
-      const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
-        (d: OnDeviceDetectionResult) => OUTDOOR_SURFACE_CLASSES.includes(d.className) && d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE
-      );
-      // docs/design/indoor_fp_mitigation_design.md §4.4: seg 기반 co-occurrence 게이트(hasOutdoorSurface)와
-      // VNClassifyImageRequest 씬 분류(scene.isLikelyIndoor)를 AND로 결합한다(중첩 방어).
-      // scene이 없거나(Android, 계측 실패) 판정 불가면 true로 폴백해 기존 게이트만으로 동작시킨다.
-      const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
-      const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
-        // 안전 보행로는 화면을 아무리 채워도 장애물이 아니므로 반사 경보 판정에서 제외
-        if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
-        // 회귀 붕괴로 캔버스 크기를 초과하는 bbox는 기하학적으로 신뢰 불가 (§3 물리적 타당성 필터)
-        if (isGeometricallyImplausible(d.bbox)) return false;
-        if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
-        // 실외 보행로 신호가 전혀 없는 프레임(=실내로 추정)이면 어떤 클래스든 반사 경보 대상에서 제외.
-        // OUTDOOR_SURFACE_CLASSES 자신은 존재 자체가 hasOutdoorSurface를 true로 만들므로 자기 자신은 통과한다.
-        if (!hasOutdoorSurface) return false;
-        // §4.4 씬 분류 게이트: 지면/초목/도로 긍정 증거 없이 실내로 판정되면 제외
-        if (!isOutdoorByScene) return false;
-        return true;
-      });
-      if (validDetections.length > 0) {
-        let maxAreaRatio = 0;
-        let mostCriticalClass = "";
-
-        validDetections.forEach(d => {
-          const area = d.bbox.w * d.bbox.h;
-          const ratio = area / (FRAME_SIZE * FRAME_SIZE);
-          if (ratio > maxAreaRatio) {
-            maxAreaRatio = ratio;
-            mostCriticalClass = d.className;
-          }
-        });
-
-        // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
-        const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
-
-        // 주차센서식 거리 반비례 4단계 피드백 캘리브레이션
-        if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
-          // 1단계: 초접근 (연속음 + 강한 진동)
-          void hapticEngine.trigger("continuous");
-          void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
-          if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
-          }
-        } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
-          // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
+      // 💡 [안드로이드 전용: 통로 막힘 판정 및 회피 가이드 MVP]
+      if (Platform.OS === "android") {
+        const pathRes = pathObstacleDetector.analyze(allDetections);
+        
+        // 1. 비프음 및 햅틱 오케스트레이션
+        if (pathRes.state === "STOP") {
           void hapticEngine.trigger("double");
-          void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
+          void audioEngine.playBeep(0.0, 0); // 0ms (연속음)
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
+            console.log(`[PathObstacle] STOP 감지! score=${pathRes.riskScore.toFixed(2)}`);
           }
-        } else if (maxAreaRatio > 0.03) {
-          // 3단계: 중거리 (일반 점멸 + 단발 진동)
+        } else if (pathRes.state === "BLOCKED") {
           void hapticEngine.trigger("short");
-          void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
+          void audioEngine.playBeep(0.0, 200); // 200ms 고속
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
+            console.log(`[PathObstacle] BLOCKED 감지! score=${pathRes.riskScore.toFixed(2)}`);
+          }
+        } else if (pathRes.state === "CAUTION") {
+          void audioEngine.playBeep(0.0, 600); // 600ms 중속
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[PathObstacle] CAUTION 감지! score=${pathRes.riskScore.toFixed(2)}`);
           }
         } else {
-          // 4단계: 원거리 (매우 느린 점멸 + 무진동)
           hapticEngine.stopContinuous();
-          void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
-          if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
+          void audioEngine.stopBeep();
+        }
+
+        // 2. 좌우 회피 가이드 음성 송출 (사용자 인지 가이드 재생 중이지 않을 때 한해 중복 억제)
+        // 2.5초(2500ms) 쿨타임을 주어 음성이 무한 겹치는 것 방지
+        const nowTs = Date.now();
+        if (
+          (pathRes.state === "STOP" || pathRes.state === "BLOCKED") && 
+          !audioEngine.isGuidePlaying &&
+          nowTs - lastAndroidTtsTsRef.current >= 2500
+        ) {
+          lastAndroidTtsTsRef.current = nowTs;
+          let guidanceText = "정면 장애물";
+          if (pathRes.bestTurn === "left") {
+            guidanceText = "정면 장애물, 왼쪽 공간 넓음";
+          } else if (pathRes.bestTurn === "right") {
+            guidanceText = "정면 장애물, 오른쪽 공간 넓음";
           }
+          audioEngine.speakFallback(guidanceText);
+          console.log(`[PathObstacle] 회피 가이드 음성 송출: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`);
         }
       } else {
-        // 안전 상황: 햅틱 및 비프음 끔
-        hapticEngine.stopContinuous();
-        void audioEngine.stopBeep();
+        // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
+        const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
+          (d: OnDeviceDetectionResult) => OUTDOOR_SURFACE_CLASSES.includes(d.className) && d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE
+        );
+        // docs/design/indoor_fp_mitigation_design.md §4.4: seg 기반 co-occurrence 게이트(hasOutdoorSurface)와
+        // VNClassifyImageRequest 씬 분류(scene.isLikelyIndoor)를 AND로 결합한다(중첩 방어).
+        // scene이 없거나(Android, 계측 실패) 판정 불가면 true로 폴백해 기존 게이트만으로 동작시킨다.
+        const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
+        const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
+          // 안전 보행로는 화면을 아무리 채워도 장애물이 아니므로 반사 경보 판정에서 제외
+          if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
+          // 회귀 붕괴로 캔버스 크기를 초과하는 bbox는 기하학적으로 신뢰 불가 (§3 물리적 타당성 필터)
+          if (isGeometricallyImplausible(d.bbox)) return false;
+          if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
+          // 실외 보행로 신호가 전혀 없는 프레임(=실내로 추정)이면 어떤 클래스든 반사 경보 대상에서 제외.
+          // OUTDOOR_SURFACE_CLASSES 자신은 존재 자체가 hasOutdoorSurface를 true로 만들므로 자기 자신은 통과한다.
+          if (!hasOutdoorSurface) return false;
+          // §4.4 씬 분류 게이트: 지면/초목/도로 긍정 증거 없이 실내로 판정되면 제외
+          if (!isOutdoorByScene) return false;
+          return true;
+        });
+        if (validDetections.length > 0) {
+          let maxAreaRatio = 0;
+          let mostCriticalClass = "";
+
+          validDetections.forEach(d => {
+            const area = d.bbox.w * d.bbox.h;
+            const ratio = area / (FRAME_SIZE * FRAME_SIZE);
+            if (ratio > maxAreaRatio) {
+              maxAreaRatio = ratio;
+              mostCriticalClass = d.className;
+            }
+          });
+
+          // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
+          const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
+
+          // 주차센서식 거리 반비례 4단계 피드백 캘리브레이션
+          if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
+            // 1단계: 초접근 (연속음 + 강한 진동)
+            void hapticEngine.trigger("continuous");
+            void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
+            }
+          } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
+            // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
+            void hapticEngine.trigger("double");
+            void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
+            }
+          } else if (maxAreaRatio > 0.03) {
+            // 3단계: 중거리 (일반 점멸 + 단발 진동)
+            void hapticEngine.trigger("short");
+            void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
+            }
+          } else {
+            // 4단계: 원거리 (매우 느린 점멸 + 무진동)
+            hapticEngine.stopContinuous();
+            void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
+            }
+          }
+        } else {
+          hapticEngine.stopContinuous();
+          void audioEngine.stopBeep();
+        }
       }
 
       if (isMockModeRef.current) {
