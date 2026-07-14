@@ -48,5 +48,7 @@ class AudioSessionBridgeModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             promise.reject("AUDIO_INFO_ERROR", e.message)
         }
+
     }
+
 }

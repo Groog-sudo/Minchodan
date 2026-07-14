@@ -33,17 +33,20 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 env_path = os.path.join(project_root, ".env")
-if os.path.exists(env_path):
+if load_dotenv is not None and os.path.exists(env_path):
     load_dotenv(dotenv_path=env_path)
 
 MODELS = {
     "object_detection": os.path.join(
-        project_root, "server", "models", "yolo26n", "best_20260705.pt"
+        project_root, "server", "models", "yolo26n", "object_detection.pt"
     ),
-    "segmentation": os.path.join(project_root, "server", "models", "yolo26n", "best.pt"),
+    "segmentation": os.path.join(project_root, "server", "models", "yolo26n", "segmentation.pt"),
 }
 
 OUTPUT_DIR = os.path.join(project_root, "client", "assets", "models", "yolo26n")

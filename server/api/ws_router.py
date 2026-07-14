@@ -291,7 +291,10 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
         latency_stages["stt_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
-        logger.info(f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}")
+        logger.info(
+            f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
+            f"text={(stt_result.text or '')[:80]!r}"
+        )
         # [DEBUG TEMP 2026-07-13] 연락처 저장 재검증용 - 확인 후 제거
         _t = (stt_result.text or "").strip()
         if any(k in _t for k in ("저장", "전화")):
@@ -450,12 +453,18 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
 @router.websocket("/ws/console/live-feed")
 async def ws_console_live_feed(ws: WebSocket) -> None:
-    """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트."""
+    """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트.
+
+    receive_text()만 쓰면 클라이언트의 binary/disconnect 프레임에서 예외로
+    끊기거나, uvicorn 재기동 후 반쯤 열린(half-open) 소켓을 감지하기 어렵다.
+    receive()로 모든 메시지 타입을 흡수하고 disconnect만 정리한다.
+    """
     await manager.connect_console(ws)
     try:
         while True:
-            # ping/pong 및 연결 유지를 위해 메시지 수신 대기 (받은 메시지는 무시)
-            _ = await ws.receive_text()
+            message = await ws.receive()
+            if message.get("type") == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000), message.get("reason"))
     except WebSocketDisconnect:
         manager.disconnect_console(ws)
     except Exception as e:

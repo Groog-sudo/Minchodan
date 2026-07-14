@@ -47,6 +47,26 @@ QUESTION_HINT_WORDS = (
 GILDAENG_ROOT = "길댕"
 GILDAENG_FUZZY_MAX_DISTANCE = 1
 
+GILDAENG_NAV_INTENT_KEYWORDS = [
+    "길찾아줘",
+    "길 찾아줘",
+    "길찾아 줘",
+    "네비게이션 켜줘",
+    "길안내 시작해줘",
+    "길안내 시작",
+    "네비게이션 기능 켜줘",
+    "네비게이션 시작",
+]
+# 2026-07-10 정정(실기기 실측): "길댕아" 프롬프트 자체가 "질문 받을까요?"라고 묻는데
+# "물어볼게"만 받아주면 사용자가 프롬프트 표현 그대로 "질문할게"라고 답했을 때 튕겨나가
+# 재질문 루프에 빠졌다. QUESTION_TRIGGER_KEYWORDS(기존 직접 트리거)와 합쳐 받는다.
+GILDAENG_QUESTION_INTENT_KEYWORDS = [
+    "물어볼게",
+    "물어볼래",
+    "물어볼게요",
+    *QUESTION_TRIGGER_KEYWORDS,
+]
+
 
 def _levenshtein(a: str, b: str) -> int:
     """외부 의존성 없이 쓰는 표준 편집거리(Levenshtein distance) 구현."""
@@ -67,7 +87,19 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 def _is_gildaeng_wake(text: str) -> bool:
-    """발화 안에 "길댕"과 편집거리 1 이하인 2글자 구간이 있으면 wake로 인정한다."""
+    """발화 안에 "길댕"과 편집거리 1 이하인 2글자 구간이 있으면 wake로 인정한다.
+
+    2026-07-14 정정: "길찾아줘"의 부분문자열 "길찾"이 "길댕"과 편집거리 1이라
+    wake 오인되던 버그(목적지 대기 직후 IDLE로 되돌아가는 루프)를 막기 위해,
+    네비/질문 인텐트 키워드가 포함된 발화는 wake로 보지 않는다.
+    """
+    if not text:
+        return False
+    # 인텐트 키워드는 wake보다 우선 (부분문자열 퍼지 매칭 오인 방지)
+    if any(kw in text for kw in GILDAENG_NAV_INTENT_KEYWORDS):
+        return False
+    if any(kw in text for kw in GILDAENG_QUESTION_INTENT_KEYWORDS):
+        return False
     root_len = len(GILDAENG_ROOT)
     for i in range(len(text) - root_len + 1):
         window = text[i : i + root_len]
@@ -112,26 +144,6 @@ def _is_self_echo(transcript: str, recent_guidance: str) -> bool:
                 return True
     return False
 
-
-GILDAENG_NAV_INTENT_KEYWORDS = [
-    "길찾아줘",
-    "길 찾아줘",
-    "길찾아 줘",
-    "네비게이션 켜줘",
-    "길안내 시작해줘",
-    "길안내 시작",
-    "네비게이션 기능 켜줘",
-    "네비게이션 시작",
-]
-# 2026-07-10 정정(실기기 실측): "길댕아" 프롬프트 자체가 "질문 받을까요?"라고 묻는데
-# "물어볼게"만 받아주면 사용자가 프롬프트 표현 그대로 "질문할게"라고 답했을 때 튕겨나가
-# 재질문 루프에 빠졌다. QUESTION_TRIGGER_KEYWORDS(기존 직접 트리거)와 합쳐 받는다.
-GILDAENG_QUESTION_INTENT_KEYWORDS = [
-    "물어볼게",
-    "물어볼래",
-    "물어볼게요",
-    *QUESTION_TRIGGER_KEYWORDS,
-]
 
 # [하드 코딩 부분 - 핵심] 근접 POI 질의 판별용 키워드.
 # "가까운/근처/주변" + 장소 유형이 함께 있으면 T맵 실거리 검색으로 답한다(LLM 환각 방지).
@@ -377,12 +389,15 @@ class SttToLlmBridge:
         # [하드 코딩 부분 - 핵심]
         # 네비게이션 기능 켜기(Wake-up) 명령어 판별
         # 작성법: 동의어는 짧은 구문 위주로 추가하고, 의미가 겹치는 표현은 중복 등록하지 않는다.
+        # 2026-07-14: "길찾아줘"는 wake 퍼지와 충돌하던 탓에 여기에도 넣어, 인텐트 대기
+        # 없이 단독 발화되어도 목적지 대기로 들어가게 한다.
         wakeup_keywords = [
             "네비게이션 켜줘",
             "길안내 시작해줘",
             "길안내 시작",
             "네비게이션 기능 켜줘",
             "네비게이션 시작",
+            *GILDAENG_NAV_INTENT_KEYWORDS,
         ]
         is_wakeup = any(kw in normalized_text for kw in wakeup_keywords)
 
@@ -405,12 +420,14 @@ class SttToLlmBridge:
         is_gildaeng_wake = _is_gildaeng_wake(normalized_text)
 
         if is_gildaeng_wake:
-            # 2026-07-10 정정(실기기 실측): WAITING_FOR_DESTINATION 대기 중에 "길댕아"로
-            # 다시 진입하면 그 상태가 안 지워진 채 남아, 이후 발화가 엉뚱하게 목적지
-            # 파싱 분기로 새는 이중 대기 상태 버그가 있었다. 새 wake 진입 시 목적지
-            # 대기는 명시적으로 취소한다(경로/네비 자체가 NAVIGATING 중이면 유지).
+            # 2026-07-14 정정: 목적지 대기 중 "길찾아줘" 퍼지 오인/재웨크로
+            # WAITING을 깨고 인텐트 선택으로 되돌리던 동작을 막는다. 대기 유지 + 재안지만.
             if current_status == "WAITING_FOR_DESTINATION":
-                nav_manager.set_status(device_id, "IDLE")
+                return {
+                    "guidance_text": "목적지를 말씀해 주세요.",
+                    "used_fallback_llm": True,
+                    "source": "navigation-destination-reprompt",
+                }
             nav_manager.set_awaiting_intent(device_id, True)
             return {
                 "guidance_text": "네, 길 찾아드릴까요, 질문 받을까요?",
