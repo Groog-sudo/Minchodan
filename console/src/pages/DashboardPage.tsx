@@ -43,7 +43,7 @@ export function DashboardPage({
   liveFeed: ReturnType<typeof useLiveFeed>;
   isDemoMode: boolean;
 }) {
-  const { imageUrl, latestDetections, connected: liveFeedConnected, latencyEvents, guidanceLogEvents } =
+  const { imageUrl, latestDetections, connected: liveFeedConnected, latencyEvents, guidanceLogEvents, lastGps } =
     liveFeed;
 
   // 사후 이력 로그는 REST로 페이지 단위(offset/limit) 조회한다 (frame_path 이미지 포함).
@@ -101,6 +101,7 @@ export function DashboardPage({
           imageUrl={imageUrl}
           latestDetections={latestDetections}
           connected={liveFeedConnected}
+          lastGps={lastGps}
         />
         <DeviceTelemetryPanel
           latestDetections={latestDetections}

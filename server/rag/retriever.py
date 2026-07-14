@@ -35,6 +35,7 @@ class Retriever:
             vector_db: 조회할 주입된 VectorStore 인스턴스
         """
         self.vector_db = vector_db
+        self._cache = {}
 
     def search_guidance(self, detect_info: dict, k: int = 5) -> str:
         """
@@ -56,6 +57,10 @@ class Retriever:
             print("[Retriever Warning] detect_info에 class_name이 존재하지 않습니다.")
             return ""
 
+        class_name_key = class_name.lower().strip()
+        if class_name_key in self._cache:
+            return self._cache[class_name_key]
+
         query = f"{class_name} 보행 중 회피 방법"
 
         try:
@@ -63,9 +68,9 @@ class Retriever:
             # 만약 DB가 비어있거나 검색 중 오류 발생 시, 빈 결과를 리턴하도록 try-except 가드 적용 (비협상 가드)
             results = self.vector_db.similarity_search_with_score(query, k=k)
             if not results:
+                self._cache[class_name_key] = ""
                 return ""
 
-            class_name = class_name.lower().strip()
             best_doc = None
 
             # 면접/발표 포인트:
@@ -86,12 +91,13 @@ class Retriever:
                     objects = []
 
                 objects = [str(obj).lower().strip() for obj in objects]
-                if scene_type == class_name or class_name in objects:
+                if scene_type == class_name_key or class_name_key in objects:
                     best_doc = candidate_doc
                     break
 
             if best_doc is None:
                 print(f"[Retriever] 라벨 불일치 (질의: {class_name}) -> RAG 미적중 처리")
+                self._cache[class_name_key] = ""
                 return ""
 
             metadata = best_doc.metadata
@@ -104,7 +110,9 @@ class Retriever:
                 else:
                     guidance = content
 
-            return str(guidance)
+            result_str = str(guidance)
+            self._cache[class_name_key] = result_str
+            return result_str
 
         except Exception as e:
             # 검색 도중 예외가 발생하더라도 빈 문자열을 리턴하여 프로그램 중단을 막고 fallback으로 우회시킴

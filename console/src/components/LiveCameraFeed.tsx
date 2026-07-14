@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./LiveCameraFeed.css";
 
 interface LiveCameraFeedProps {
   imageUrl: string | null;
   latestDetections: any[];
   connected: boolean;
+  lastGps?: { lat: number; lon: number; heading: number } | null;
 }
 
 const NAV_MAP_URL =
@@ -59,9 +60,21 @@ function getColorForClass(className: string): string {
   return "#8b5cf6"; // Purple
 }
 
-export function LiveCameraFeed({ imageUrl, latestDetections, connected }: LiveCameraFeedProps) {
+export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps }: LiveCameraFeedProps) {
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // 앱 실기기 GPS 좌표가 갱신될 때마다 HUD 미니맵 iframe으로 주입한다.
+  // navigation/index.html의 window.message 리스너가 { type: 'inject_gps', lat, lon, heading }을 수신해
+  // 지도 마커를 실기기 위치로 갱신한다. PC 브라우저 GPS 부정확 문제를 완전히 우회한다.
+  useEffect(() => {
+    if (!lastGps || !iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      { type: "inject_gps", lat: lastGps.lat, lon: lastGps.lon, heading: lastGps.heading },
+      "*"
+    );
+  }, [lastGps]);
 
   return (
     <section className="panel live-feed-panel">
@@ -150,6 +163,7 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected }: LiveCa
                   </button>
                 </div>
                 <iframe
+                  ref={iframeRef}
                   src={NAV_MAP_URL}
                   title="스마트 가이드독 HUD 미니맵"
                   className="hud-minimap-iframe"

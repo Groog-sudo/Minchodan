@@ -87,6 +87,10 @@
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  transform: rotate(90deg);
+  /* 앱에서 세로(portrait) 방향으로 촬영되어 서버로 전송되는 JPEG는 */
+  /* 회전 메타데이터 없이 raw 픽셀 기준 가로로 저장된다. */
+  /* 콘솔에서 앱 화면과 동일한 방향(세로)으로 보려면 90도 회전이 필요하다. */
 }
 
 .live-feed-rotated {

@@ -35,7 +35,14 @@ services:
     restart: unless-stopped
     networks:
       - minchodan-net
-
+    # GPU 접근 (NVIDIA Container Toolkit 필요)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
   redis:
     image: redis:7-alpine
@@ -65,11 +72,7 @@ services:
       MARIADB_PASSWORD: ${COMPOSE_DB_PASSWORD:-minchodan_password}
       MARIADB_ROOT_PASSWORD: ${COMPOSE_DB_ROOT_PASSWORD:-minchodan_root_password}
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mariadb-admin ping -h 127.0.0.1 -u$${MARIADB_USER} -p$${MARIADB_PASSWORD} --silent",
-        ]
+      test: [ "CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u$${MARIADB_USER} -p$${MARIADB_PASSWORD} --silent" ]
       interval: 5s
       timeout: 5s
       retries: 20

@@ -5,6 +5,7 @@ LangGraph StateGraph를 조립하고 컴파일된 실행 객체(싱글톤)를 �
 
 import asyncio
 import contextlib
+import logging
 import sys
 import time
 
@@ -22,6 +23,8 @@ if sys.stdout.encoding != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
 _background_tasks = set()
 
+logger = logging.getLogger(__name__)
+
 
 def route_after_l3(state: dict) -> str:
     """
@@ -29,10 +32,19 @@ def route_after_l3(state: dict) -> str:
     검증이 통과되면 END로, 재시도 한계(MAX_RETRY=1)를 초과하면 fallback 노드로 분기하며,
     그렇지 않은 경우 L2(생성) 노드로 돌아가 재성공을 시도합니다.
     """
+    retry_count = state.get("retry_count", 0)
+    validation_errors = state.get("validation_errors", [])
     if state.get("verified"):
+        logger.info(f"[OrchGraph] L3 검증 통과 (retry_count: {retry_count})")
         return "end"
-    if state.get("retry_count", 0) > 1:
+
+    logger.info(
+        f"[OrchGraph] L3 검증 실패 - 에러: {validation_errors} (retry_count: {retry_count})"
+    )
+    if retry_count > 1:
+        logger.info("[OrchGraph] 재시도 한도 초과 -> Fallback 노드로 분기")
         return "fallback"
+    logger.info("[OrchGraph] L2 재성공 시도 (l2_generate)")
     return "l2_generate"
 
 

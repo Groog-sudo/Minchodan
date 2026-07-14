@@ -599,13 +599,17 @@ class DetectionConsumer:
         pipeline_start: float | None = None,
         departure_confirmed: bool = False,
     ) -> None:
-        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다.
+        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
 
-        2026-07-13: 원래 탐지 객체(detections)가 없으면 곧장 반환했으나, 보도 이탈이
-        히스테리시스(DEPARTURE_CONFIRM_STREAK)로 확정된 경우는 객체 탐지 없이 노면
-        정보만으로도 안내가 나가야 하므로 departure_confirmed일 때는 통과시킨다.
-        """
-        if not result.detections and not departure_confirmed:
+        # 💡 [면접 대비 주석]
+        # Q. 노면(surface) 정보가 감지되었을 때도 가이드를 생성하는 기준은 무엇인가요?
+        # A. 객체 탐지가 없어도 '주의 노면(caution)', '차도(roadway)', '점자블록(braille_normal)' 같은
+        #    시각장애인 보행에 유의미한 노면 정보가 감지되었거나, 보도 이탈이 확정된 경우에는
+        #    얼리 엑싯하지 않고 LangGraph 오케스트레이션(L1/L2/L3)으로 보내 정밀 가이드를 제공합니다.
+        has_significant_surface = any(
+            surf.class_name in ("caution", "roadway", "braille_normal") for surf in result.surface
+        )
+        if not result.detections and not departure_confirmed and not has_significant_surface:
             return
 
         # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이

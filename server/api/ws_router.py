@@ -187,6 +187,32 @@ async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> 
     )
 
 
+def _detect_audio_suffix(audio_bytes: bytes) -> str:
+    """magic bytes로 오디오 포맷을 감지하여 임시 파일 확장자를 결정한다.
+
+    Android는 MPEG-4/AAC(.m4a) 포맷으로 전송하는데 .wav로 저장하면
+    ffmpeg 디코딩이 실패하는 케이스가 있다. iOS는 .wav(RIFF) 또는 .m4a.
+    """
+    if len(audio_bytes) < 12:
+        return ".wav"
+    # MPEG-4 계열(m4a/mp4/aac): offset 4-8이 'ftyp' box 시그니처
+    if audio_bytes[4:8] == b"ftyp":
+        return ".m4a"
+    # RIFF/WAV
+    if audio_bytes[:4] == b"RIFF":
+        return ".wav"
+    # OGG
+    if audio_bytes[:4] == b"OggS":
+        return ".ogg"
+    # MP3 (ID3 tag or sync word)
+    if audio_bytes[:3] == b"ID3" or (
+        len(audio_bytes) >= 2 and audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0
+    ):
+        return ".mp3"
+    # 감지 실패 시 .wav 폴백 (ffmpeg이 내용 기반으로 재시도)
+    return ".wav"
+
+
 async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> None:
     model_name = data.get("model_name")
     # 레이턴시 계측: 실기기 -> STT -> LLM -> TTS -> DB저장 스테이지별 ms를 모아
@@ -232,7 +258,32 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
     saved_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
+        # magic bytes로 포맷 감지: Android = .m4a(MPEG-4/AAC), iOS = .wav(RIFF)
+        audio_suffix = _detect_audio_suffix(audio_bytes)
+        logger.info(
+            f"[WS] STT 오디오 포맷 감지: device_id={device_id}, suffix={audio_suffix}, size={len(audio_bytes)}"
+        )
+
+        # 0바이트 오디오 즉시 차단 - Whisper 예외 전에 안내 반환
+        if len(audio_bytes) == 0:
+            logger.warning(f"[WS] STT 오디오 0바이트: device_id={device_id}")
+            with contextlib.suppress(Exception):
+                await ws.send_json(
+                    {
+                        "type": "guide",
+                        "event_id": f"stt-empty-{device_id}-{now_ts()}",
+                        "risk_level": "low",
+                        "guidance_text": "음성이 녹음되지 않았습니다. 다시 시도해 주세요.",
+                        "audio_codec": "wav",
+                        "duration_ms": 0,
+                        "transport": "none",
+                        "source": "stt-empty-audio",
+                        "ts": now_ts(),
+                    }
+                )
+            return
+
+        with tempfile.NamedTemporaryFile(suffix=audio_suffix, delete=False) as temp_wav:
             temp_wav.write(audio_bytes)
             saved_path = Path(temp_wav.name)
 
@@ -750,6 +801,20 @@ async def ws_detect(
                         f"[WS] realtime_gps 수신: device_id={device_id}, "
                         f"lat={lat}, lon={lon}, heading={heading}"
                     )
+                    # 콘솔 HUD 미니맵 실시간 갱신: 앱 실기기 GPS 좌표를 콘솔로 브로드캐스트.
+                    # useLiveFeed가 이 메시지를 받아 lastGps 상태를 갱신하고,
+                    # LiveCameraFeed가 HUD 미니맵 iframe에 postMessage로 주입한다.
+                    with contextlib.suppress(Exception):
+                        await manager.broadcast_json_to_consoles(
+                            {
+                                "type": "realtime_gps",
+                                "lat": float(lat),
+                                "lon": float(lon),
+                                "heading": float(heading) if heading is not None else 0,
+                                "device_id": device_id,
+                                "ts": now_ts(),
+                            }
+                        )
                     # 2026-07-11 길안내 무음 수정: 기존에는 길안내 멘트 조회가
                     # DetectionConsumer._send_cognitive_guide 안에만 있어 카메라 탐지가
                     # 없으면(빈 장면) NAVIGATING 상태여도 안내가 전혀 나가지 않았다

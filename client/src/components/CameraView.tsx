@@ -10,7 +10,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { Dimensions, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, Dimensions, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -42,6 +42,7 @@ import {
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
+import { pathObstacleDetector } from "../inference/pathObstacleDetector";
 import {
   loadServerTransport,
   saveServerTransport,
@@ -92,27 +93,39 @@ const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
 // 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
 // YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
 // 자체를 모른다. 실내에서만 나타날 리 없는(즉 실외 전용) 클래스들이 실내 오탐 시 자주
-// 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 40%)보다 더 높은 하한선을
+// 걸리는 대상이라, 전역 confThreshold(사용자 슬라이더, 기본 20%)보다 더 높은 하한선을
 // 개별로 강제한다. 목록에 없는 클래스는 confThreshold를 그대로 사용한다.
 const CLASS_MIN_CONFIDENCE: Record<string, number> = {
-  // 2026-07-13 정정: car를 화면 표시 편의로 0.4로 낮췄었으나, 이 값은
-  // docs/design/risk_ssot_contract.md §2 SSOT 계약값(서버 reflex_gate.py의
-  // HIGH_RISK_CLASSES와 반드시 동일해야 함)과 동일한 상수를 공유하고 있어 반사
-  // 안전 게이트 문턱까지 같이 낮아지는 회귀였다(tests/test_risk_ssot.py가 검출).
-  // 0.6으로 원복. 실외 차량 표본 수집이 다시 필요하면 §2 절차대로 서버·문서와
-  // 함께 변경하거나, 표시 전용 별도 상수를 새로 만들어야 한다.
-  car: 0.6,
-  bus: 0.6,
-  truck: 0.6,
-  motorcycle: 0.55,
-  scooter: 0.5,
-  fire_hydrant: 0.55,
-  parking_meter: 0.55,
-  traffic_light: 0.55,
-  traffic_light_controller: 0.55,
-  traffic_sign: 0.55,
-  stop: 0.55,
-  roadway: 0.55,
+  barricade: 0.35,
+  bench: 0.3,
+  bicycle: 0.3,
+  bollard: 0.3,
+  bus: 0.35,
+  car: 0.35,
+  carrier: 0.3,
+  cat: 0.3,
+  chair: 0.3,
+  dog: 0.3,
+  fire_hydrant: 0.35,
+  kiosk: 0.3,
+  motorcycle: 0.35,
+  movable_signage: 0.3,
+  parking_meter: 0.35,
+  person: 0.3,
+  pole: 0.3,
+  potted_plant: 0.3,
+  power_controller: 0.3,
+  scooter: 0.3,
+  stop: 0.35,
+  stroller: 0.3,
+  table: 0.3,
+  traffic_light: 0.35,
+  traffic_light_controller: 0.35,
+  traffic_sign: 0.35,
+  tree_trunk: 0.3,
+  truck: 0.35,
+  wheelchair: 0.3,
+  roadway: 0.35,
 };
 
 // 클래스별 최소 confidence와 사용자 슬라이더(confThreshold) 중 더 높은 값을 유효 임계값으로 사용
@@ -200,6 +213,16 @@ function resolveDetectionDistance(detection: DetectionDistanceInput): ResolvedDe
 }
 
 export function CameraView() {
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [lastDetect, setLastDetect] = useState<string>("대기");
+  const [hapticFlash, setHapticFlash] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<number | null>(null);
+  const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
+  const [confThreshold, setConfThreshold] = useState(0.20);
+  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
+  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
+  const [detectionEnabled, setDetectionEnabled] = useState(false);
+
   // 평상시 WiFi / 개발 USB — 둘 다 설정에 두고 토글로 전환 (재시작 후에도 유지).
   const [serverTransport, setServerTransport] = useState<ServerTransport>(DEFAULT_SERVER_TRANSPORT);
   const [transportReady, setTransportReady] = useState(false);
@@ -352,6 +375,75 @@ export function CameraView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode, detectionEnabled]);
 
+  // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
+  // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
+  // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
+  const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
+  const sttPressActiveRef = useRef(false);
+  const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    status: sttStatus,
+    startRecording: startSttRecording,
+    stopRecordingAndSend: stopSttRecording,
+    requestPermissionEarly: requestSttPermissionEarly,
+  } = useSttRecorder(
+    (audioB64) => {
+      void hapticEngine.trigger("short");
+      setSttErrorInfo("");
+      send({ type: "stt_audio", audio_b64: audioB64 });
+    },
+    (reason, detail) => {
+      void hapticEngine.trigger("double");
+      setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
+    },
+  );
+
+  // 화면을 누르는 press-and-hold 도중 마이크 권한 다이얼로그가 뜨면 터치가 취소되어
+  // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
+  useEffect(() => {
+    if (isMockMode) return;
+    void requestSttPermissionEarly();
+
+    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        void requestSttPermissionEarly();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMockMode]);
+
+  useEffect(() => {
+    return () => {
+      sttPressActiveRef.current = false;
+      if (delayedSttStartTimerRef.current) {
+        clearTimeout(delayedSttStartTimerRef.current);
+        delayedSttStartTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // State variables moved to top of Component to avoid block-scope/TDZ errors.
+
+  // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
+  // WS 재연결 후에도 현재 토글 값을 다시 보낸다.
+  useEffect(() => {
+    if (status !== "connected") return;
+    send({ type: "detection_control", enabled: detectionEnabled, ts: Date.now() });
+  }, [status, detectionEnabled, send]);
+
+  // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
+  // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
+  // 경로 데이터(navRoute)는 useWebSocket이 전용 상태로 직접 보존한다
+  // (lastMessage 경유 시 고빈도 메시지에 덮여 유실 - 실기기 확인).
+  const [mapVisible, setMapVisible] = useState(false);
+  const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
+  const lastMapPosTsRef = useRef(0);
+
   useEffect(() => {
     if (!navRoute) {
       setMapVisible(false);
@@ -473,6 +565,7 @@ export function CameraView() {
   // (server/detection/detection_pipeline.py, 실내 바닥이 roadway/caution으로 오분류되는
   // 문제를 실기기 실측으로 확인).
   const isOutdoorBySceneRef = useRef<boolean | null>(null);
+  const lastAndroidTtsTsRef = useRef(0);
 
   // Mock 햅틱 시각 핸들러 등록
   useEffect(() => {
@@ -558,121 +651,160 @@ export function CameraView() {
       // 서버 server_detection 결과가 존재하면 위 수신 핸들러가 이를 덮어쓴다.
       setDetectionsRef.current(allDetections);
 
-      // 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
+      // 1. 공통 전처리: 반사 경보 유효성 필터 (씬/객체 신뢰도 기반)
       const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
         (d: OnDeviceDetectionResult) => OUTDOOR_SURFACE_CLASSES.includes(d.className) && d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE
       );
-      // docs/design/indoor_fp_mitigation_design.md §4.4: seg 기반 co-occurrence 게이트(hasOutdoorSurface)와
-      // VNClassifyImageRequest 씬 분류(scene.isLikelyIndoor)를 AND로 결합한다(중첩 방어).
-      // scene이 없거나(Android, 계측 실패) 판정 불가면 true로 폴백해 기존 게이트만으로 동작시킨다.
       const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
-      // 다음 프레임 전송분에 실어 서버 보도 이탈 판정을 게이팅한다(1프레임 지연 허용).
       isOutdoorBySceneRef.current = isOutdoorByScene;
+
       const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
-        // 안전 보행로는 화면을 아무리 채워도 장애물이 아니므로 반사 경보 판정에서 제외
         if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
-        // 회귀 붕괴로 캔버스 크기를 초과하는 bbox는 기하학적으로 신뢰 불가 (§3 물리적 타당성 필터)
         if (isGeometricallyImplausible(d.bbox)) return false;
         if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
-        // 실외 보행로 신호가 전혀 없는 프레임(=실내로 추정)이면 어떤 클래스든 반사 경보 대상에서 제외.
-        // OUTDOOR_SURFACE_CLASSES 자신은 존재 자체가 hasOutdoorSurface를 true로 만들므로 자기 자신은 통과한다.
         if (!hasOutdoorSurface) return false;
-        // §4.4 씬 분류 게이트: 지면/초목/도로 긍정 증거 없이 실내로 판정되면 제외
         if (!isOutdoorByScene) return false;
         return true;
       });
-      if (validDetections.length > 0) {
-        let maxAreaRatio = 0;
-        let mostCriticalClass = "";
-        let nearestLidarDetection: OnDeviceDetectionResult | null = null;
-        let nearestLidarMeters = Number.POSITIVE_INFINITY;
+      // 💡 [안드로이드 전용: 통로 막힘 판정 및 회피 가이드 MVP]
+      if (Platform.OS === "android") {
+        const pathRes = pathObstacleDetector.analyze(allDetections);
 
-        for (const d of validDetections) {
-          const area = d.bbox.w * d.bbox.h;
-          const ratio = area / (FRAME_SIZE * FRAME_SIZE);
-          if (ratio > maxAreaRatio) {
-            maxAreaRatio = ratio;
-            mostCriticalClass = d.className;
-          }
-
-          const resolvedDistance = resolveDetectionDistance(d);
-          if (resolvedDistance.source === "lidar" && resolvedDistance.meters !== null && resolvedDistance.meters < nearestLidarMeters) {
-            nearestLidarMeters = resolvedDistance.meters;
-            nearestLidarDetection = d;
-          }
-        }
-
-        // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
-        const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
-
-        if (nearestLidarDetection !== null) {
-          const lidarClass = nearestLidarDetection.className;
-          const samples = nearestLidarDetection.depthSampleCount ?? 0;
-          if (nearestLidarMeters <= 0.5) {
-            void hapticEngine.trigger("continuous");
-            void audioEngine.playBeep(0.0, 0);
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate][LiDAR] 초접근 경보! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> continuous / 0ms`);
-            }
-          } else if (nearestLidarMeters <= 1.0) {
-            void hapticEngine.trigger("double");
-            void audioEngine.playBeep(0.0, 200);
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate][LiDAR] 근접 주의! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> double / 200ms`);
-            }
-          } else if (nearestLidarMeters <= 1.5) {
-            void hapticEngine.trigger("short");
-            void audioEngine.playBeep(0.0, 600);
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate][LiDAR] 중거리 감지! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> short / 600ms`);
-            }
-          } else if (nearestLidarMeters <= 3.0) {
-            hapticEngine.stopContinuous();
-            void audioEngine.playBeep(0.0, 1200);
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate][LiDAR] 원거리 포착! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> none / 1200ms`);
-            }
-          } else {
-            hapticEngine.stopContinuous();
-            void audioEngine.stopBeep();
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate][LiDAR] 안전 거리 유지 class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
-            }
-          }
-        } else if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
-          // LiDAR 값이 없는 경우 기존 주차센서식 면적 기반 4단계 피드백으로 폴백한다.
-          // 1단계: 초접근 (연속음 + 강한 진동)
-          void hapticEngine.trigger("continuous");
-          void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
-          if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
-          }
-        } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
-          // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
+        // 1. 비프음 및 햅틱 오케스트레이션
+        if (pathRes.state === "STOP") {
           void hapticEngine.trigger("double");
-          void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
+          void audioEngine.playBeep(0.0, 0); // 0ms (연속음)
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
+            console.log(`[PathObstacle] STOP 감지! score=${pathRes.riskScore.toFixed(2)}`);
           }
-        } else if (maxAreaRatio > 0.03) {
-          // 3단계: 중거리 (일반 점멸 + 단발 진동)
+        } else if (pathRes.state === "BLOCKED") {
           void hapticEngine.trigger("short");
-          void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
+          void audioEngine.playBeep(0.0, 200); // 200ms 고속
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
+            console.log(`[PathObstacle] BLOCKED 감지! score=${pathRes.riskScore.toFixed(2)}`);
+          }
+        } else if (pathRes.state === "CAUTION") {
+          void audioEngine.playBeep(0.0, 600); // 600ms 중속
+          if (!audioEngine.isGuidePlaying) {
+            console.log(`[PathObstacle] CAUTION 감지! score=${pathRes.riskScore.toFixed(2)}`);
           }
         } else {
-          // 4단계: 원거리 (매우 느린 점멸 + 무진동)
           hapticEngine.stopContinuous();
-          void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
-          if (!audioEngine.isGuidePlaying) {
-            console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
+          void audioEngine.stopBeep();
+        }
+
+        // 2. 좌우 회피 가이드 음성 송출 (사용자 인지 가이드 재생 중이지 않을 때 한해 중복 억제)
+        // 2.5초(2500ms) 쿨타임을 주어 음성이 무한 겹치는 것 방지
+        const nowTs = Date.now();
+        if (
+          (pathRes.state === "STOP" || pathRes.state === "BLOCKED") &&
+          !audioEngine.isGuidePlaying &&
+          nowTs - lastAndroidTtsTsRef.current >= 2500
+        ) {
+          lastAndroidTtsTsRef.current = nowTs;
+          let guidanceText = "정면 장애물";
+          if (pathRes.bestTurn === "left") {
+            guidanceText = "정면 장애물, 왼쪽 공간 넓음";
+          } else if (pathRes.bestTurn === "right") {
+            guidanceText = "정면 장애물, 오른쪽 공간 넓음";
           }
+          audioEngine.speakFallback(guidanceText);
+          console.log(`[PathObstacle] 회피 가이드 음성 송출: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`);
         }
       } else {
-        // 안전 상황: 햅틱 및 비프음 끔
-        hapticEngine.stopContinuous();
-        void audioEngine.stopBeep();
+        // iOS/Default: 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
+        if (validDetections.length > 0) {
+          let maxAreaRatio = 0;
+          let mostCriticalClass = "";
+          let nearestLidarDetection: OnDeviceDetectionResult | null = null;
+          let nearestLidarMeters = Number.POSITIVE_INFINITY;
+
+          for (const d of validDetections) {
+            const area = d.bbox.w * d.bbox.h;
+            const ratio = area / (FRAME_SIZE * FRAME_SIZE);
+            if (ratio > maxAreaRatio) {
+              maxAreaRatio = ratio;
+              mostCriticalClass = d.className;
+            }
+
+            const resolvedDistance = resolveDetectionDistance(d);
+            if (resolvedDistance.source === "lidar" && resolvedDistance.meters !== null && resolvedDistance.meters < nearestLidarMeters) {
+              nearestLidarMeters = resolvedDistance.meters;
+              nearestLidarDetection = d;
+            }
+          }
+
+          // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
+          const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
+
+          if (nearestLidarDetection !== null) {
+            const lidarClass = nearestLidarDetection.className;
+            const samples = nearestLidarDetection.depthSampleCount ?? 0;
+            if (nearestLidarMeters <= 0.5) {
+              void hapticEngine.trigger("continuous");
+              void audioEngine.playBeep(0.0, 0);
+              if (!audioEngine.isGuidePlaying) {
+                console.log(`[ReflexGate][LiDAR] 초접근 경보! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> continuous / 0ms`);
+              }
+            } else if (nearestLidarMeters <= 1.0) {
+              void hapticEngine.trigger("double");
+              void audioEngine.playBeep(0.0, 200);
+              if (!audioEngine.isGuidePlaying) {
+                console.log(`[ReflexGate][LiDAR] 근접 주의! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> double / 200ms`);
+              }
+            } else if (nearestLidarMeters <= 1.5) {
+              void hapticEngine.trigger("short");
+              void audioEngine.playBeep(0.0, 600);
+              if (!audioEngine.isGuidePlaying) {
+                console.log(`[ReflexGate][LiDAR] 중거리 감지! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> short / 600ms`);
+              }
+            } else if (nearestLidarMeters <= 3.0) {
+              hapticEngine.stopContinuous();
+              void audioEngine.playBeep(0.0, 1200);
+              if (!audioEngine.isGuidePlaying) {
+                console.log(`[ReflexGate][LiDAR] 원거리 포착! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> none / 1200ms`);
+              }
+            } else {
+              hapticEngine.stopContinuous();
+              void audioEngine.stopBeep();
+              if (!audioEngine.isGuidePlaying) {
+                console.log(`[ReflexGate][LiDAR] 안전 거리 유지 class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
+              }
+            }
+          } else if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
+            // LiDAR 값이 없는 경우 기존 주차센서식 면적 기반 4단계 피드백으로 폴백한다.
+            // 1단계: 초접근 (연속음 + 강한 진동)
+            void hapticEngine.trigger("continuous");
+            void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
+            }
+          } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
+            // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
+            void hapticEngine.trigger("double");
+            void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
+            }
+          } else if (maxAreaRatio > 0.03) {
+            // 3단계: 중거리 (일반 점멸 + 단발 진동)
+            void hapticEngine.trigger("short");
+            void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
+            }
+          } else {
+            // 4단계: 원거리 (매우 느린 점멸 + 무진동)
+            hapticEngine.stopContinuous();
+            void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
+            if (!audioEngine.isGuidePlaying) {
+              console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
+            }
+          }
+        } else {
+          hapticEngine.stopContinuous();
+          void audioEngine.stopBeep();
+        }
       }
 
       if (isMockModeRef.current) {
