@@ -776,3 +776,13 @@
 - **관련 파일**: 본 세션 변경 전부 + `docs/changelogs/th.md`
 - **검증 결과**: 위 표 T1~T15. 서버 `/docs` 200, Edge 합성 스모크(WAV RIFF) 확인,
   pytest 브리지/편의기능 통과
+
+
+### 2026-07-14 | 부가(STT)+단말 | th 음성 편의기능 3종 제거 (jh 생활지원 RAG 유지)
+
+- **변경 내용**:
+  - th 담당 음성 편의기능(긴급전화 / 연락처 저장·전화걸기 / SMS 읽어주기) 및 dial_action/contact_save WS 계약을 제거했다.
+  - 삭제: contact_store/contact_service/contact_rag, contactsBridge, useSmsReader, Android SmsReader/ContactsBridge 모듈, 관련 pytest
+  - 유지: jh convenience_rag / convenience_guidelines / looks_like_convenience_query 분기, KB guardian_phone DB 컬럼
+  - 온보딩·API 명세서(§6.3/§6.7) 정합화
+- **관련 파일**: server/stt/stt_to_llm_bridge.py, server/api/ws_router.py, client hooks/types/App/CameraView, docs/design/api_specification.md, docs/changelogs/th.md
