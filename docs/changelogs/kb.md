@@ -2072,3 +2072,13 @@
   - 탐지 게이트 및 관제 모니터 타임라인 컴포넌트 고도화 및 문서 정합성 갱신
 - **관련 파일**: `console/src/components/GuidanceTraceTimeline.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `console/src/types/monitor.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `scripts/auto_publish_work.py`, `server/detection/consumer.py`, `server/detection/gates/head_level_gate.py`, `server/detection/gates/reflex_gate.py`, `server/detection/gates/surface_gate.py`, `server/detection/schemas.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_timeline_demo_patch
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - DashboardPage 데모 데이터 내 track_id 및 hit_count 보완
+- **관련 파일**: `onsole/src/pages/DashboardPage.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
