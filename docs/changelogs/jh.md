@@ -494,7 +494,7 @@
 
 - **커밋**:
   - `e407fb0` - `refactor(console): MCP 검증 모니터 레이아웃/스타일 정리 및 gitignore 추적 파일 제거`
-  - (후속) `fix(console): MCP/지연 요약 패널에 monitor-latency-layout 래퍼 연결`
+  - `df0d5b8` - `fix(console): MCP/지연 요약 패널에 monitor-latency-layout 래퍼 연결`
 - **변경 내용**:
   - `console/src/components/McpValidationMonitor.tsx`: 카드/그리드 인라인 스타일을 CSS 클래스(`panel-mcp`, `mcp-grid`, `mcp-card`)로 분리하고 루트 요소를 `section.panel.panel-mcp`로 정리
   - `console/src/pages/DashboardPage.tsx`: `McpValidationMonitor`와 `LatencySummaryPanel`을 상단 `dashboard-grid` 밖으로 재배치하고, `section.monitor-latency-layout`으로 감싸 2열 배치를 실제로 적용
