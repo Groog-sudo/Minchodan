@@ -151,6 +151,23 @@ tmp/
 *.jpg
 *.jpeg
 
+# 텍스트 파일 (YOLO 라벨 등 대용량 텍스트 무시)
+*.txt
+!requirements.txt
+
+# JSON 파일 (AI Hub BBox/Polygon 등 대용량 원본 데이터 무시)
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.*.json
+!app.json
+!babel.config.json
+!.eslintrc.json
+!.prettierrc.json
+!skills.json
+!manifest.json
+
 # 위 미디어 확장자 차단 규칙(*.wav/*.mp3/*.m4a/*.png/*.jpg/*.jpeg)은 학습/업로드용
 # 대용량 데이터(data/ 등)를 겨냥한 것이나, React Native 클라이언트 앱 번들 자산까지
 # 의도치 않게 git 추적에서 제외시키고 있었다(2026-07-09 발견: beep.wav, 반사 클립,
