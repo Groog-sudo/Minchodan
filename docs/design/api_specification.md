@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.17 (2026-07-13 §8.0 SSE 신규 MCP 4종 지표(audio_validation/accessibility_validation/cache_suppression/langsmith_trace) 페이로드 스펙 추가)
+> **버전**: v0.4.18 (2026-07-14 §4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -244,7 +244,10 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
   "distance": 1.0,
   "beep_interval_ms": 250,
   "haptic_pattern": "double",
-  "ts": 1719216000000
+  "ts": 1719216000000,
+  "track_id": 101,
+  "class_name": "car",
+  "hit_count": 5
 }
 ```
 
@@ -259,6 +262,9 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `distance` | 역산된 장애물 거리 (0.4m ~ 1.5m) |
 | `beep_interval_ms` | 비프음 주기 (ms, 0은 연속 경고음) |
 | `haptic_pattern` | 진동 패턴 (`short` \| `double` \| `continuous` \| `light`) |
+| `track_id` | ByteTrack 객체 트랙 식별자 (로깅 및 모니터링 추적용, null 가능) |
+| `class_name` | 탐지된 장애물의 클래스명 (null 가능) |
+| `hit_count` | 해당 트랙 객체의 연속 누적 프레임 탐지 횟수 (null 가능) |
 
 선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. 중복 억제는 서버 `setex(suppress:{alert_id}, 60)`로 처리합니다.
 

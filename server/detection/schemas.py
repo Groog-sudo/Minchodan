@@ -73,3 +73,9 @@ class ReflexAlert(BaseModel):
     haptic_pattern: str = "double"
     ts: float
     inference_ms: float = 0.0
+    # 2026-07-14 추가: 발화 추적용 객체 정보 (reflex_gate/head_level_gate가 채움).
+    # track_id는 ByteTrack이 부여한 식별자, class_name은 탐지된 객체 클래스,
+    # hit_count는 동일 track_id의 연속 프레임 유지 횟수(오탐 완화 MIN_HIT_COUNT 기반).
+    track_id: str | None = None
+    class_name: str = ""
+    hit_count: int = 0

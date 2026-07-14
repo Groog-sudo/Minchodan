@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { AiPipelineMonitor } from "../components/AiPipelineMonitor";
 import { DetectionFeed } from "../components/DetectionFeed";
+import { GuidanceTraceTimeline } from "../components/GuidanceTraceTimeline";
 import { RiskEventLog } from "../components/RiskEventLog";
 import { SessionStatus } from "../components/SessionStatus";
 import { SystemMetrics } from "../components/SystemMetrics";
@@ -122,6 +123,7 @@ export function DashboardPage({
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
       <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
+      <GuidanceTraceTimeline rows={detectionGuidanceLogs} />
       <DetectionGuidanceLogTable
         rows={detectionGuidanceLogs}
         token={token}
