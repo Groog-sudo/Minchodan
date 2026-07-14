@@ -1880,3 +1880,35 @@
   - `console/src/api/useMonitorStream.ts` (수정)
   - `console/src/pages/DashboardPage.tsx` (수정)
   - `server/orchestration/llm_client_factory.py` (수정)
+
+---
+
+### 2026-07-14 | 공통 | 개발 도구 CLI(Antigravity CLI, Claude Code, OpenCode) 버전 검토 및 업데이트 수행
+
+- **배경**: 개발자 로컬 환경 및 AI 에이전트 연동의 효율성을 위해 사용 중인 3대 핵심 CLI 도구(안티그래비티 CLI, 클로드 CLI, 오픈코드 CLI)의 버전 상태를 검토하고 최신 버전으로의 업데이트가 필요한지 점검함.
+- **조치**:
+  - **Antigravity CLI (`agy`)**: 버전 `1.1.2`로 이미 최신 상태임을 확인.
+  - **Claude Code CLI (`claude`)**: 버전 `2.1.207`로 이미 최신 상태임을 확인.
+  - **OpenCode CLI (`opencode`)**: 버전 `1.17.18`에서 최신인 `1.17.20`으로 업그레이드 가능함을 확인하고, `opencode upgrade`를 실행하여 `1.17.20` 버전으로 업데이트 완료.
+- **검증**: `agy --version`, `claude --version`, `opencode --version` 명령어를 통해 최신 버전 상태(각각 1.1.2, 2.1.207, 1.17.20)를 최종 확인함.
+- **관련 파일**: 없음 (개발 환경 CLI 패키지 업데이트).
+
+---
+
+### 2026-07-14 | 공통 | 프로젝트 전체 코드-문서 정합성 교차 검증 및 수정
+
+- **배경**: 6개 영역(이중 경로 분리, 기술 스택, 코드 구조, 환경 변수 3축, WebSocket 이벤트, KPI/지연 목표/브랜치)에 걸쳐 코드와 문서의 정합성을 전면 교차 검증. 검증 결과 정합성이 완벽히 유지된 영역(이중 경로 분리 원칙, YOLO 29/4클래스, KPI, STT, 클라이언트 TTS, 브랜치 전략)을 확인하는 한편, 문서-코드 모순 9건을 발견해 일괄 수정.
+- **P0 수정 (문서-코드 직접 모순)**:
+  - **`SLACK_WEBHOOK_URL` 명세 정정**: 환경변수 명세서 §2.8이 "SLACK_WEBHOOK_URL은 코드 어디에도 쓰이지 않는 미사용 변수"라고 단언했으나, `server/mcp/slack_notifier.py:49,59`에서 최우선 분기로 활성 사용 중인 것을 확인. Webhook 우선/Bot Token 폴백 이중 인증 구조로 명세를 코드 기준으로 되돌림(v0.4.18).
+  - **README.md `react-native-tts` 정정**: 클라이언트 라이브러리에 `react-native-tts (예비 TTS)`가 잔존했으나, `client/package.json` 및 소스 코드 모두에서 부재 확인. `expo-speech (한글 음성 합성, Voice 선택; react-native-tts 미사용)`로 정정.
+- **P1 수정 (문서 정합성)**:
+  - **AGENTS.md §4 server/ 구조**: 실제 구현됐으나 명세에 누락된 4폴더(`services/`, `stt/`, `navigation/`, `mcp/`) 추가. `models/` Git 추적 정책도 `object_detection.pt` 추적 / `det_best/segbest` git-ignore로 정정.
+  - **AGENTS.md §2 LLM 오케스트레이션**: "LangChain 래퍼 미사용"을 "LLM 호출 클라이언트는 raw 구현(메시지 스키마는 langchain_core.messages 사용)"로 정정. `SimpleGeminiClient` 클라이언트 나열에 추가.
+  - **환경변수 명세서 §2.15 신설**: 코드에서 활성 사용 중이나 명세에 누락된 13종 변수(CONVENIENCE_CHROMA_COLLECTION, GEMINI_MODEL, EDGE_TTS_SAMPLE_RATE, DATABASE_URL, LANGCHAIN_PROJECT 등) 일괄 등재.
+  - **README.md `data/reflex_clips/` 경로 정정**: 실제 반사 클립은 `client/assets/sounds/reflex_clips/`(WAV 5종 단말 번들)에 존재. 디렉토리 구조 트리를 실제 파일 시스템과 일치시킴.
+  - **`.env.example` `LLAVA_MODEL` 제거**: 코드 어디서도 소비되지 않는 미사용 잔재(Gemini 캡셔닝 전환 이전 로컬 Llava 계획)를 주석 처리 후 제거.
+- **P2 수정 (사소 정합성)**:
+  - **`server/tts/__init__.py`**: `Pyttsx3TTSService`가 `get_tts_service()` 팩토리에서 지원되나 `__all__`에 누락된 문제 수정 (임포트 및 `__all__` 추가).
+  - **`api_specification.md` §1**: 공통 `type` 필드 목록을 코드(`ws_router.py`/`consumer.py`)에서 실제 발행되는 전체 이벤트 타입으로 갱신 (v0.4.17).
+- **검증**: 모든 수정 후 git diff로 변경 사항 확인. 환경 변수 3축(명세/.env.example/코드) 교차 검증 완료.
+- **관련 파일**: `docs/ops/environment_variables.md`, `README.md`, `AGENTS.md`, `.env.example`, `docs/design/api_specification.md`, `server/tts/__init__.py`, `docs/changelogs/kb.md`

@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.3 (2026-07-13 §2 스택 명세화 및 VLM 스킬 표 정합: Llava→Gemini VLM 캡셔닝, edge-tts 추가, react-native-tts → expo-speech 갱신, RAG/LLM 계층 분리 기술 명세화)
+> **버전**: v0.3.4 (2026-07-14 코드-문서 정합성 교차 검증 기반 수정: §2 LLM 오케스트레이션 명세 정정(SimpleGeminiClient 추가, langchain_core.messages 사용 명시), §4 server/ 구조에 services/stt/navigation/mcp 4폴더 추가, models/ Git 추적 정책 정정(object_detection.pt 추적 / det_best/segbest git-ignore) + 기존 v0.3.3 이력 유지: §2 스택 명세화, Llava→Gemini VLM 캡셔닝, edge-tts 추가, react-native-tts → expo-speech 갱신)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 > **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
@@ -37,7 +37,7 @@
 - Segmentation: Ultralytics Yolo 26N - Segmentation
 - Tracking: ByteTrack
 - Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
-- LLM Orchestration: LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용. 단, RAG 검색 계층(server/rag/)은 ChromaDB 래퍼(langchain_community.vectorstores) 사용)
+- LLM Orchestration: LangGraph (LLM 호출 클라이언트는 raw 구현: SimpleOllamaClient/SimpleOpenAIClient/SimpleGeminiClient. LangChain 래퍼(LLMChain 등) 미사용이나, 메시지 스키마는 langchain_core.messages 사용. RAG 검색 계층(server/rag/)은 ChromaDB 래퍼(langchain_community.vectorstores) 사용)
 - Local LLM/Embedding: Ollama (gemma4-e4b, nomic-embed-text), Gemini API (gemini-2.5-flash-lite, 4단계 VLM 캡셔닝)
 - TTS: Supertonic (기본, ONNX 로컬), edge-tts (한국어 자연도 우선), Piper / pyttsx3 (핫스왑 폴백)
 - STT (부가, 음성 명령): faster-whisper (기본 small, hotwords 바이어싱, 서버 기동 시 프리로드)
@@ -78,7 +78,7 @@
 ## 4. Code Structure
 
 - `server/`: GPU 추론 서버 (FastAPI)
-  - `api/`: WebSocket `/ws/detect`, 세션 관리, 하트비트
+  - `api/`: WebSocket `/ws/detect`, 세션 관리, 하트비트, REST 라우터(auth/admin/user/detection_log/stt/monitor)
   - `capture/`: 프레임 디코딩, 이중 스트림 분기
   - `detection/`: Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack, Gates
   - `rag/`: Vector DB 구축(build/) 및 검색
@@ -86,7 +86,11 @@
   - `tts/`: 실시간 TTS, 반사 클립 전송, 중복 억제
   - `bus/`: Redis Streams 인터페이스
   - `db/`: RDB ORM/DTO/DDL (사용자, 단말, 관리자, 감사 로그)
-  - `models/`: 사전학습 가중치 Git 추적 (yolo26n/*.pt), 커스텀 학습 가중치 git-ignore
+  - `models/`: 사전학습 가중치 Git 추적 (yolo26n/object_detection.pt), 커스텀 학습 가중치(det_best_*.pt/segbest.pt)는 git-ignore
+  - `services/`: 비즈니스 로직 Service 계층 (Router-Service-Repository 3계층 중 Service). 관리자/사용자/단말/탐지로그 서비스, 이벤트 프레임 저장
+  - `stt/`: faster-whisper STT 서비스, 음성 명령-LLM 브릿지, 연락처 저장
+  - `navigation/`: TMAP 보행자 경로 API, NavigationManager, 내비게이션 전용 FastAPI(`/ws`)
+  - `mcp/`: MCP 연동 모듈 (GPU 모니터, Slack 알림, LangSmith 트레이서, 접근성 시뮬레이터, 오디오 검증, 캐시 모니터)
 - `client/`: React Native thin client
 - `console/`: React 운영자 모니터링 콘솔
 - `data/`: 학습·RAG 데이터

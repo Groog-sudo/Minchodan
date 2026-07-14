@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-13
-> **버전**: v0.4.17 (2026-07-13 §2.9 LangSmith API Key 실키 반영 및 CORS_ORIGINS 환경변수 동적 파싱 명세 추가)
+> **버전**: v0.4.18 (2026-07-14 §2.8 `SLACK_WEBHOOK_URL` 코드 재검증 기반 재등재 — Webhook 우선/Bot Token 폴백 이중 인증 구조 정정, §2.15 미등재 변수 13종 일괄 명세, 기존 v0.4.17 이력 유지: §2.9 LangSmith API Key 실키 반영 및 CORS_ORIGINS 환경변수 동적 파싱 명세 추가)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -103,12 +103,17 @@
 
 ### 2.8 Slack Integration (공통 경보)
 
+Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 방식을 사용합니다.
+
+**구현체 A: `server/mcp/slack_notifier.py` (서버 런타임 MCP)** — Webhook 우선 / Bot Token 폴백 이중 인증:
+
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`SLACK_BOT_TOKEN`** | string | 선택 | (미설정) | Slack Bot Token. `scripts/slack_publisher.py:52`에서 실제 사용 중(미설정 시 경고 로그) | `scripts/slack_publisher.py` |
-| **`SLACK_CHANNEL_ID`** | string | 선택 | `C0BCZSB5TJS`(코드 내 폴백값) | 경보 발송 대상 채널 ID. `scripts/slack_publisher.py:193`에서 실제 사용 중 | `scripts/slack_publisher.py` |
+| **`SLACK_WEBHOOK_URL`** | string | 선택 | (미설정) | Slack Incoming Webhook URL. **설정 시 최우선 순위**로 사용(`send_notification_sync` L59 `if self.webhook_url:` 분기). 미설정 시 Bot Token 경로로 폴백 | `server/mcp/slack_notifier.py:49,59` |
+| **`SLACK_BOT_TOKEN`** | string | 선택 | (미설정) | Slack Web API Bot Token. Webhook 미설정 시 폴백 순위 2로 사용(`elif self.bot_token and self.channel_id:` L80 분기) | `server/mcp/slack_notifier.py:51,80`, `scripts/slack_publisher.py:52` |
+| **`SLACK_CHANNEL_ID`** | string | 선택 | `C0BCZSB5TJS`(코드 내 폴백값) | 경보 발송 대상 채널 ID. Bot Token 방식 사용 시 필수 | `server/mcp/slack_notifier.py:52`, `scripts/slack_publisher.py:193` |
 
-> **2026-07-07 정정**: 이전 버전은 `SLACK_WEBHOOK_URL`(Incoming Webhook)로 단일화했다고 기술했으나, 실제 코드(`scripts/slack_publisher.py`)를 확인한 결과 `SLACK_WEBHOOK_URL`은 어디에도 쓰이지 않고 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`(Bot Token 방식)만 실제로 사용되고 있다. "폐기"라고 서술했던 방식이 오히려 유일하게 살아있는 구현이었으므로 표를 코드 기준으로 되돌린다.
+> **2026-07-14 정정**: 이전 명세(v0.4.17)는 "2026-07-07 재정정: `SLACK_WEBHOOK_URL`은 코드 어디에도 쓰이지 않는 미사용 변수"라고 단언했으나, **코드 재검증 결과 부정확**함이 확인됨. `server/mcp/slack_notifier.py:49`에서 `os.getenv("SLACK_WEBHOOK_URL")`로 로드하며 L59에서 **최우선 분기**로 활성 사용 중. 두 인증 방식(Webhook/Bot Token)은 `scripts/slack_publisher.py`(Bot Token 전용)와 `server/mcp/slack_notifier.py`(Webhook 우선/Bot Token 폴백)로 구현체가 분리되어 있으며, 본 명세서는 두 구현체 모두를 코드 기준으로 반영함.
 
 ### 2.9 LangSmith Trace (선택적 관측)
 
@@ -178,6 +183,27 @@
 | **`VITE_NAV_MAP_URL`** | string | 선택 | `http://localhost:8000/navigation/?embed=true` | 관제 지도 iframe 주소(2026-07-11 신설) | `console/src/components/OperatorLiveMap.tsx` |
 | **`VITE_API_BASE_URL`** | string | 선택 | `http://localhost:8000` | 콘솔 REST API 기본 주소(2026-07-12 신설). 사후 이력 로그 조회·이벤트 프레임 이미지 서빙에 사용 | `console/src/api/useDetectionLogs.ts`, api_specification §8.5 |
 
+### 2.15 코드 실사용 미등재 변수 (2026-07-14 일괄 명세)
+
+> **2026-07-14 정합성 검토**: 코드(`os.getenv`)에서 활성 사용 중이나 기존 명세(§2.1~2.14)에 누락되어 있던 변수들을 일괄 등재합니다. 대부분은 고급 튜닝·내부 분기용 선택 변수이므로 기본값 미설정 시 안전 폴백합니다.
+
+| 변수명 | 타입 | 필수/선택 | 기본값(코드) | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`CONVENIENCE_CHROMA_COLLECTION`** | string | 선택 | `convenience_guide` | 생활지원 RAG 전용 ChromaDB 컬렉션명. 안전 수칙(`safety_guidelines`)과 분리된 생활 정보 검색용 | `server/rag/retriever.py`, `scripts/` |
+| **`CONVENIENCE_EMBEDDING_MODEL`** | string | 선택 | (`EMBEDDING_MODEL` 폴백) | 생활지원 RAG 전용 임베딩 모델 | `server/rag/embedding_engine_factory.py` |
+| **`CONVENIENCE_EMBEDDING_PROVIDER`** | string | 선택 | (`LLM_PROVIDER` 폴백) | 생활지원 RAG 임베딩 공급자(`ollama`/`openai`) | `server/rag/embedding_engine_factory.py` |
+| **`GEMINI_MODEL`** | string | 선택 | `gemini-2.5-flash-lite` | Gemini 캡셔닝/LLM 모델명. 4단계 RAG 빌드 및 L2 가이드 생성(gemini provider) 시 사용 | `server/rag/build/gemini_captioner.py`, `server/orchestration/llm_client_factory.py` |
+| **`EDGE_TTS_SAMPLE_RATE`** | int | 선택 | `24000` | edge-tts 출력 샘플레이트(Hz) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_SPEED_MIN`** / **`SUPERTONIC_SPEED_MAX`** | float | 선택 | (코드 기본값) | Supertonic 발화 속도 허용 범위 | `server/tts/tts_service.py` |
+| **`DATABASE_URL`** | string | 선택 | (미설정) | SQLAlchemy 통합 DB 연결 URL. 설정 시 개별 `DB_HOST`/`DB_PORT`/... 조합보다 우선 | `server/db/connection.py` |
+| **`LANGCHAIN_PROJECT`** | string | 선택 | `minchodan` | LangSmith 트레이스 프로젝트명 | `server/mcp/langsmith_tracer.py` |
+| **`STT_CONFIG_SOURCE`** | string | 선택 | (코드 기본값) | STT 설정 소스 분기 | `server/stt/stt_config.py` |
+| **`TEST_VERIFY_MODE`** | bool | 선택 | `false` | 검증 테스트 모드 활성화(오프라인 검증 스크립트용) | `server/` |
+| **`DEVICE_TOKEN`** | string | 선택 | (미설정) | 디바이스 토큰(`scripts/` 유틸리티 스크립트 전용) | `scripts/` |
+| **`AIHUB_WALK_DATASET_ROOT`** | path | 선택 | (미설정) | AIHub 인도보행 영상 데이터셋 루트 경로(RAG 빌드 스크립트용) | `scripts/` |
+
+> **참고**: 이 변수들은 `.env.example`에 주석 처리 또는 미기재 상태일 수 있으며, 고급 사용자만 설정하는 튜닝 포인트입니다. 프로젝트 기동에는 영향을 주지 않습니다.
+
 ---
 
 ## 3. 환경 변수 로드 패턴
@@ -218,7 +244,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 | # | 항목 | 이전 상태 | 해소 후 |
 | :--- | :--- | :--- | :--- |
-| 1 | **Slack 인증 방식** | `.env.example`(`SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`) vs `architecture.md` 13.4절(`SLACK_WEBHOOK_URL`) | 2026-07-07 재정정: 실제 코드(`scripts/slack_publisher.py`)가 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`만 사용하므로 이 방식으로 확정. `SLACK_WEBHOOK_URL`은 코드 어디에도 없는 미사용 변수 |
+| 1 | **Slack 인증 방식** | `.env.example`(`SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`) vs `architecture.md` 13.4절(`SLACK_WEBHOOK_URL`) | 2026-07-14 코드 기준 확정: `server/mcp/slack_notifier.py`는 `SLACK_WEBHOOK_URL`(우선)+`SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`(폴백) 이중 인증 구조. `scripts/slack_publisher.py`는 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID` 전용. 두 구현체를 §2.8에 통합 명세 |
 | 2 | **`WS_HOST` 누락** | `.env.example`에만 존재, `architecture.md`·`README.md`에는 누락 | 본 명세서 2.4절에 통합 |
 | 3 | **`DETECTOR_TYPE` 누락** | `.env.example`에만 존재 | 본 명세서 2.5절에 통합 |
 | 4 | **`DATA_*` 경로 누락** | `.env.example`에만 존재 (5종) | 본 명세서 2.7절에 통합 |
