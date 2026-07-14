@@ -310,6 +310,17 @@ export function CameraView() {
   useEffect(() => {
     if (isMockMode) return;
     void requestSttPermissionEarly();
+
+    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        void requestSttPermissionEarly();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
 
@@ -365,57 +376,7 @@ export function CameraView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
 
-  // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
-  // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
-  // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
-  const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
-  const sttPressActiveRef = useRef(false);
-  const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const {
-    status: sttStatus,
-    startRecording: startSttRecording,
-    stopRecordingAndSend: stopSttRecording,
-    requestPermissionEarly: requestSttPermissionEarly,
-  } = useSttRecorder(
-    (audioB64) => {
-      void hapticEngine.trigger("short");
-      setSttErrorInfo("");
-      send({ type: "stt_audio", audio_b64: audioB64 });
-    },
-    (reason, detail) => {
-      void hapticEngine.trigger("double");
-      setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
-    },
-  );
 
-  // 화면을 누르는 press-and-hold 도중 마이크 권한 다이얼로그가 뜨면 터치가 취소되어
-  // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
-  useEffect(() => {
-    if (isMockMode) return;
-    void requestSttPermissionEarly();
-
-    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
-    const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "active") {
-        void requestSttPermissionEarly();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode]);
-
-  useEffect(() => {
-    return () => {
-      sttPressActiveRef.current = false;
-      if (delayedSttStartTimerRef.current) {
-        clearTimeout(delayedSttStartTimerRef.current);
-        delayedSttStartTimerRef.current = null;
-      }
-    };
-  }, []);
 
   // State variables moved to top of Component to avoid block-scope/TDZ errors.
 
