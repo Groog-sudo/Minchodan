@@ -101,7 +101,9 @@ const SAFE_SURFACE_CLASSES = ["sidewalk_normal", "braille_normal"];
 // segmentation 4클래스 자체(sidewalk_normal/caution/roadway/braille_normal)는 그 존재
 // 자체가 "실외 보행로를 보고 있다"는 근거이므로 이 게이트에서 자기 자신을 통과시킨다.
 const OUTDOOR_SURFACE_CLASSES = ["sidewalk_normal", "caution", "roadway", "braille_normal"];
-const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
+// [P3 2026-07-14] 노면 세그 신뢰도 최소값 0.15→0.35 상향 (논문 기준 0.35~0.50).
+// 0.15는 너무 낮아 저신뢰 오탐이 실외 판정을 통과해 반사 경보 오발동을 허용했음.
+const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.35;
 
 // 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
 // YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
