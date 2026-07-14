@@ -323,13 +323,6 @@ export function CameraView() {
     };
   }, []);
 
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const [lastDetect, setLastDetect] = useState<string>("대기");
-  const [hapticFlash, setHapticFlash] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState<number | null>(null);
-  const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
-  const [confThreshold, setConfThreshold] = useState(0.40);
-
   // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
   // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
   // 경로 데이터(navRoute)는 useWebSocket이 전용 상태로 직접 보존한다
