@@ -487,4 +487,20 @@
     - 탐지 활성(`detectionEnabled=true`) 상태에서만 카메라 위에 표시.
 - **관련 파일**: `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`
 - **검증 결과**: TypeScript 컴파일 정합성 확인 필요. Android 실기기 재빌드 후 Logcat `[TFLiteDetector]` 로그 및 ROI 오버레이 시각 확인 예정.
+
+---
+
+### 2026-07-14 | 모바일/AI | 노면 클래스 반사 경로 완전 제외 및 ROI/슬라이딩 윈도우 임계값 정합화
+
+- **커밋**: `fix: exclude seg classes from reflex path and fix roi/smoothing thresholds (P1-P4 + seg hazard gate)`
+- **변경 내용**:
+  - **P1 - 노면 세그 반사 경로 완전 제외** (`pathObstacleDetector.ts`): roadway/caution 전체를 depthMap 투영에서 제외. 노면은 서버 LLM TTS(인지 경로) 전담 (MDPI 2023 논문 기준).
+  - **P2 - ROI top-y 정합화** (`pathObstacleDetector.ts`): top-y 320px(50%) → 224px(35%). 서버 `PATH_ROI_FAR_Y_RATIO=0.35`와 일치.
+  - **P3 - 노면 신뢰도 임계값 상향** (`CameraView.tsx`): `OUTDOOR_SURFACE_MIN_CONFIDENCE` 0.15 → 0.35.
+  - **P4 - 슬라이딩 윈도우 폴백 수정** (`pathObstacleDetector.ts`): 3프레임 미달 시 `frameState` → `"CLEAR"` 폴백.
+  - **seg hazard gate 제거** (`useOnDeviceDetection.ts`): `[Reflex]` 위험 탐지 후보에서 seg 제거. roadway/caution이 Reflex 1순위로 올라 연속 STOP 경보를 유발하던 근본 원인 차단.
+- **진단 배경**: YouTube 영상 테스트 시 roadway(conf=0.487) 전체 화면 오탐으로 비프/햅틱 끊임없이 울림. 논문 조사(MDPI 2023, drpress 2023) 기반 P0~P4 순차 적용.
+- **관련 파일**: `client/src/inference/pathObstacleDetector.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useOnDeviceDetection.ts`
+- **검증 결과**: 실기기 보행 테스트 필요. 여전히 오경보 있으면 `near_07/near_15` 임계값 상향 검토.
+
 
