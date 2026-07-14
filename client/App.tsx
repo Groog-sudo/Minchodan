@@ -1,9 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Platform, StatusBar } from "react-native";
 import { setAudioModeAsync } from "expo-audio";
 
 import { CameraView } from "./src/components/CameraView";
+import { LoadingScreen } from "./src/components/LoadingScreen";
 import { audioEngine } from "./src/services/audioEngine";
+
+// 카메라/온보딩 오디오 세션 초기화가 끝날 시간을 벌어주는 최소 로딩 화면 노출 시간.
+// CameraView가 아직 별도의 "준비 완료" 콜백을 제공하지 않아 고정 시간으로 처리한다.
+const MIN_LOADING_DURATION_MS = 1800;
 
 // 앱 시작 시 1회 재생하는 온보딩 안내 문구. 문구 확정은 담당자 영역(SKILLS.md 협업 규칙)이며,
 // 실제 STT 트리거 흐름(길댕아 wake-word -> 길찾아줘/물어볼게, server/stt/stt_to_llm_bridge.py)과
@@ -16,6 +21,12 @@ export default function App() {
   // Fast Refresh로 이 컴포넌트가 다시 마운트돼도 같은 세션에서 온보딩 안내가 중복
   // 재생되지 않도록 막는다(카메라/반사 구동을 지연시키지 않기 위해 짧게 1회만 재생).
   const onboardingPlayedRef = useRef(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), MIN_LOADING_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     // 앱 기동 최상단에서 무음 모드 무시를 활성화하는 오디오 세션 선제 설정 (카메라 선점 우회)
@@ -51,7 +62,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <CameraView />
+      {isLoading ? <LoadingScreen /> : <CameraView />}
     </View>
   );
 }

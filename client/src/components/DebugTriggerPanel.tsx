@@ -93,20 +93,20 @@ export function DebugTriggerPanel() {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "rgba(0,0,0,0.85)",
+    backgroundColor: "rgba(10, 13, 16, 0.9)",
     borderTopWidth: 1,
-    borderColor: "#333333",
+    borderColor: "#222A30",
     padding: 8,
   },
   title: {
-    color: "#00FF00",
+    color: "#39FF14",
     fontSize: 12,
     fontWeight: "700",
     fontFamily: "monospace",
     marginBottom: 4,
   },
   label: {
-    color: "#CCCCCC",
+    color: "#9DA7BA",
     fontSize: 11,
     fontFamily: "monospace",
   },
@@ -120,13 +120,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 6,
     margin: 2,
-    backgroundColor: "#1F2937",
+    backgroundColor: "#12161A",
+    borderWidth: 1,
+    borderColor: "#222A30",
   },
   btnActive: {
-    backgroundColor: "#3B82F6",
+    backgroundColor: "rgba(0, 210, 255, 0.2)",
+    borderColor: "#00D2FF",
   },
   stopBtn: {
-    backgroundColor: "#374151",
+    backgroundColor: "rgba(255, 51, 51, 0.18)",
+    borderColor: "#FF3333",
   },
   btnText: {
     color: "#FFFFFF",
@@ -134,7 +138,7 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   last: {
-    color: "#00FF00",
+    color: "#39FF14",
     fontSize: 10,
     fontFamily: "monospace",
     marginTop: 4,

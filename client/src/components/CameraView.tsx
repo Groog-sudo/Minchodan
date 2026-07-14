@@ -55,6 +55,19 @@ import type { StreamType } from "../types/detection";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const FRAME_SIZE = 640;
 
+// GILDANG 브랜드 톤(콘솔 console/src/styles.css의 "Tactical" 다크 테마와 동일 팔레트).
+// 탐지 bbox 색상(getClassColor)은 위험도 시맨틱 색상이라 이 팔레트와 무관하게 유지한다.
+const COLOR_BG_BASE = "#0A0D10";
+const COLOR_BG_SURFACE = "#12161A";
+const COLOR_BORDER_TACTICAL = "#222A30";
+const COLOR_GILDANG_YELLOW = "#F9B700";
+const COLOR_OP_GREEN = "#39FF14";
+const COLOR_REFLEX_RED = "#FF3333";
+const COLOR_TECH_BLUE = "#00D2FF";
+const COLOR_TEXT_BASE = "#EDF2F9";
+const COLOR_TEXT_MUTED = "#9DA7BA";
+const COLOR_OVERLAY_BG = "rgba(10, 13, 16, 0.85)";
+
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
 
@@ -271,9 +284,6 @@ export function CameraView() {
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
-  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
-  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
-  const [detectionEnabled, setDetectionEnabled] = useState(false);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
@@ -309,6 +319,17 @@ export function CameraView() {
   useEffect(() => {
     if (isMockMode) return;
     void requestSttPermissionEarly();
+
+    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        void requestSttPermissionEarly();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
 
@@ -321,13 +342,6 @@ export function CameraView() {
       }
     };
   }, []);
-
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const [lastDetect, setLastDetect] = useState<string>("대기");
-  const [hapticFlash, setHapticFlash] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState<number | null>(null);
-  const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
-  const [confThreshold, setConfThreshold] = useState(0.40);
 
   // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
   // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
@@ -371,57 +385,7 @@ export function CameraView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
 
-  // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
-  // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
-  // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
-  const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
-  const sttPressActiveRef = useRef(false);
-  const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const {
-    status: sttStatus,
-    startRecording: startSttRecording,
-    stopRecordingAndSend: stopSttRecording,
-    requestPermissionEarly: requestSttPermissionEarly,
-  } = useSttRecorder(
-    (audioB64) => {
-      void hapticEngine.trigger("short");
-      setSttErrorInfo("");
-      send({ type: "stt_audio", audio_b64: audioB64 });
-    },
-    (reason, detail) => {
-      void hapticEngine.trigger("double");
-      setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
-    },
-  );
 
-  // 화면을 누르는 press-and-hold 도중 마이크 권한 다이얼로그가 뜨면 터치가 취소되어
-  // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
-  useEffect(() => {
-    if (isMockMode) return;
-    void requestSttPermissionEarly();
-
-    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
-    const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "active") {
-        void requestSttPermissionEarly();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode]);
-
-  useEffect(() => {
-    return () => {
-      sttPressActiveRef.current = false;
-      if (delayedSttStartTimerRef.current) {
-        clearTimeout(delayedSttStartTimerRef.current);
-        delayedSttStartTimerRef.current = null;
-      }
-    };
-  }, []);
 
   // State variables moved to top of Component to avoid block-scope/TDZ errors.
 
@@ -431,14 +395,6 @@ export function CameraView() {
     if (status !== "connected") return;
     send({ type: "detection_control", enabled: detectionEnabled, ts: Date.now() });
   }, [status, detectionEnabled, send]);
-
-  // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
-  // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
-  // 경로 데이터(navRoute)는 useWebSocket이 전용 상태로 직접 보존한다
-  // (lastMessage 경유 시 고빈도 메시지에 덮여 유실 - 실기기 확인).
-  const [mapVisible, setMapVisible] = useState(false);
-  const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
-  const lastMapPosTsRef = useRef(0);
 
   useEffect(() => {
     if (!navRoute) {
@@ -1053,7 +1009,7 @@ export function CameraView() {
         style={[styles.sttButton, sttStatus !== "idle" && styles.sttButtonActive]}
         pointerEvents="none"
       >
-        <Text style={styles.sttButtonText}>
+        <Text style={[styles.sttButtonText, sttStatus !== "idle" && styles.sttButtonTextActive]}>
           {sttStatus === "recording" ? "듣는 중..." : sttStatus === "sending" ? "전송 중..." : "화면을 누르고 말하기"}
         </Text>
         {sttErrorInfo !== "" && (
@@ -1302,24 +1258,25 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: COLOR_BG_BASE,
   },
   title: {
-    color: "#FFFFFF",
+    color: COLOR_GILDANG_YELLOW,
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 12,
     textAlign: "center",
     marginTop: 40,
+    letterSpacing: 1,
   },
   message: {
-    color: "#CCCCCC",
+    color: COLOR_TEXT_MUTED,
     fontSize: 14,
     marginBottom: 8,
     textAlign: "center",
   },
   button: {
-    backgroundColor: "#007AFF",
+    backgroundColor: COLOR_GILDANG_YELLOW,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -1327,21 +1284,21 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   buttonText: {
-    color: "#FFFFFF",
+    color: COLOR_BG_BASE,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   debugBox: {
     marginTop: 20,
     marginHorizontal: 16,
     padding: 12,
-    backgroundColor: "#1A1A1A",
+    backgroundColor: COLOR_BG_SURFACE,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#333333",
+    borderColor: COLOR_BORDER_TACTICAL,
   },
   debugText: {
-    color: "#00FF00",
+    color: COLOR_OP_GREEN,
     fontSize: 11,
     fontFamily: "monospace",
   },
@@ -1351,7 +1308,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: "rgba(239,68,68,0.35)",
+    backgroundColor: "rgba(255, 51, 51, 0.35)",
   },
   overlayTop: {
     position: "absolute",
@@ -1364,8 +1321,10 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     padding: 8,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: COLOR_OVERLAY_BG,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER_TACTICAL,
   },
   confThresholdRow: {
     position: "absolute",
@@ -1376,11 +1335,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     padding: 8,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: COLOR_OVERLAY_BG,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER_TACTICAL,
   },
   confThresholdLabel: {
-    color: "#FFFFFF",
+    color: COLOR_TEXT_BASE,
     fontSize: 12,
     fontFamily: "monospace",
   },
@@ -1391,13 +1352,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#007AFF",
+    backgroundColor: COLOR_GILDANG_YELLOW,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 8,
   },
   confThresholdButtonText: {
-    color: "#FFFFFF",
+    color: COLOR_BG_BASE,
     fontSize: 18,
     fontWeight: "bold",
   },
@@ -1407,20 +1368,20 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     padding: 10,
-    backgroundColor: "rgba(0,0,0,0.8)",
+    backgroundColor: COLOR_OVERLAY_BG,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#555555",
+    borderColor: COLOR_BORDER_TACTICAL,
   },
   detectionListTitle: {
-    color: "#F59E0B",
+    color: COLOR_GILDANG_YELLOW,
     fontSize: 12,
     fontWeight: "bold",
     fontFamily: "monospace",
     marginBottom: 4,
   },
   detectionListText: {
-    color: "#10B981",
+    color: COLOR_OP_GREEN,
     fontSize: 15,
     fontWeight: "bold",
     fontFamily: "monospace",
@@ -1439,6 +1400,8 @@ const styles = StyleSheet.create({
     height: 210,
     borderRadius: 8,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: COLOR_BORDER_TACTICAL,
   },
   mapToggleWrap: {
     position: "absolute",
@@ -1461,20 +1424,24 @@ const styles = StyleSheet.create({
     right: 12,
   },
   detectionToggleActive: {
-    backgroundColor: "rgba(16,185,129,0.85)",
+    backgroundColor: "rgba(57, 255, 20, 0.18)",
+    borderWidth: 1,
+    borderColor: COLOR_OP_GREEN,
   },
   transportToggleUsb: {
-    backgroundColor: "rgba(59,130,246,0.85)",
+    backgroundColor: "rgba(0, 210, 255, 0.18)",
+    borderWidth: 1,
+    borderColor: COLOR_TECH_BLUE,
   },
   detectionIdleBanner: {
     ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(10, 13, 16, 0.75)",
     paddingHorizontal: 24,
   },
   detectionIdleText: {
-    color: "#FFFFFF",
+    color: COLOR_TEXT_BASE,
     fontSize: 15,
     fontWeight: "600",
     textAlign: "center",
@@ -1484,26 +1451,28 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: "32%",
     alignSelf: "center",
-    backgroundColor: "rgba(0,0,0,0.72)",
+    backgroundColor: COLOR_OVERLAY_BG,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 16,
     minWidth: 220,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER_TACTICAL,
   },
   depthTitle: {
-    color: "#7FDBFF",
+    color: COLOR_TECH_BLUE,
     fontSize: 13,
     fontWeight: "700",
     marginBottom: 6,
   },
   depthRow: {
-    color: "#FFFFFF",
+    color: COLOR_TEXT_BASE,
     fontSize: 16,
     fontWeight: "600",
     lineHeight: 24,
   },
   depthError: {
-    color: "#FF6B6B",
+    color: COLOR_REFLEX_RED,
     fontSize: 13,
   },
   depthMarkerWrap: {
@@ -1516,8 +1485,8 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     borderWidth: 3,
-    borderColor: "#7FDBFF",
-    backgroundColor: "rgba(0,0,0,0.35)",
+    borderColor: COLOR_TECH_BLUE,
+    backgroundColor: "rgba(10, 13, 16, 0.5)",
   },
   depthMarkerLabel: {
     marginTop: 4,
@@ -1525,8 +1494,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     overflow: "hidden",
-    color: "#FFFFFF",
-    backgroundColor: "rgba(0,0,0,0.72)",
+    color: COLOR_TEXT_BASE,
+    backgroundColor: COLOR_OVERLAY_BG,
     fontSize: 11,
     fontWeight: "700",
   },
@@ -1534,10 +1503,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: COLOR_OVERLAY_BG,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER_TACTICAL,
   },
   mapToggleText: {
-    color: "#FFFFFF",
+    color: COLOR_TEXT_BASE,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -1549,20 +1520,23 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     paddingHorizontal: 28,
     borderRadius: 32,
-    backgroundColor: "#2563EB",
+    backgroundColor: COLOR_GILDANG_YELLOW,
     alignItems: "center",
     justifyContent: "center",
   },
   sttButtonActive: {
-    backgroundColor: "#DC2626",
+    backgroundColor: COLOR_REFLEX_RED,
   },
   sttButtonText: {
-    color: "#FFFFFF",
+    color: COLOR_BG_BASE,
     fontSize: 20,
     fontWeight: "700",
   },
+  sttButtonTextActive: {
+    color: "#FFFFFF",
+  },
   sttErrorText: {
-    color: "#FCA5A5",
+    color: "#FF9999",
     fontSize: 12,
     fontWeight: "600",
     marginTop: 4,
@@ -1590,6 +1564,6 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     overflow: "hidden",
     position: "relative",
-    backgroundColor: "#111111",
+    backgroundColor: COLOR_BG_SURFACE,
   },
 });
