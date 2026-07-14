@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "./LiveCameraFeed.css";
+import { resolveServiceUrl } from "../config/network";
 
 interface LiveCameraFeedProps {
   imageUrl: string | null;
@@ -9,7 +10,11 @@ interface LiveCameraFeedProps {
 }
 
 const NAV_MAP_URL =
-  import.meta.env.VITE_NAV_MAP_URL || "http://localhost:8000/navigation/?embed=true";
+  resolveServiceUrl(
+    import.meta.env.VITE_NAV_MAP_URL,
+    "/navigation/?embed=true",
+    import.meta.env.VITE_API_BASE_URL,
+  );
 // 2026-07-13 정정: jh가 Android 테스트 중(카메라 센서가 90도 꺾여 들어오는 기종)
 // 이 값을 90으로 하드코딩해뒀는데, 콘솔은 iOS/Android 기기를 가리지 않고 보는
 // 공용 화면이라 iPhone 프레임에는 이 보정이 오히려 잘못 적용됐다(실기기 실측

@@ -7,8 +7,13 @@ import type {
   RiskEvent,
   SessionStatus,
 } from "../types/monitor";
+import { resolveServiceUrl } from "../config/network";
 
-const DEFAULT_STREAM_URL = "http://localhost:8000/api/v1/monitor/stream";
+const DEFAULT_STREAM_URL = resolveServiceUrl(
+  import.meta.env.VITE_MONITOR_STREAM_URL,
+  "/api/v1/monitor/stream",
+  import.meta.env.VITE_API_BASE_URL,
+);
 
 /*
  * 실제 백엔드 코드 기준으로 직접 확인된 SSE 이벤트:
@@ -72,7 +77,13 @@ export function useMonitorStream(token: string | null = null) {
   const [state, setState] = useState<MonitorState>(initialState);
   const [streamUrl, setStreamUrl] = useState(DEFAULT_STREAM_URL);
   const resolvedUrl = useMemo(
-    () => streamUrl || import.meta.env.VITE_MONITOR_STREAM_URL || DEFAULT_STREAM_URL,
+    () =>
+      streamUrl ||
+      resolveServiceUrl(
+        import.meta.env.VITE_MONITOR_STREAM_URL,
+        "/api/v1/monitor/stream",
+        import.meta.env.VITE_API_BASE_URL,
+      ),
     [streamUrl],
   );
 

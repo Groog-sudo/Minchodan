@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DetectionGuidanceLogRow } from "../types/monitor";
+import { resolveApiBaseUrl } from "../config/network";
 
 // 발표/면접 포인트:
 // - detection_guidance_logs 사후 이력 조회 훅입니다. 실시간 SSE(useMonitorStream)와
@@ -10,7 +11,7 @@ import type { DetectionGuidanceLogRow } from "../types/monitor";
 //   전환했다(하단 "N건" 표시가 실제 로드된 50건만 반영해 DB 전체 건수와 안 맞는다는
 //   피드백). 전체 건수는 X-Total-Count 응답 헤더로 받는다.
 const API_BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 const LOGS_ENDPOINT = `${API_BASE_URL}/api/v1/admin/detection-logs`;
 const DEFAULT_POLL_MS = 30000;
