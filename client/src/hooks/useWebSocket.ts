@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Linking } from "react-native";
+import { AppState } from "react-native";
 
 import {
   DEVICE_ID,
@@ -19,7 +19,6 @@ import {
   TOKEN,
   WS_URL,
 } from "../config";
-import { findPhoneContact, savePhoneContact } from "../services/contactsBridge";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 import type { WSMessage, WSStatus } from "../types/detection";
@@ -290,50 +289,6 @@ export function useWebSocket(
               ? { appKey: data.app_key ?? "", waypoints: wps }
               : null,
           );
-        } else if (data.type === "contact_save") {
-          // [TH HARDCODE 아님 - 단말 영속화]
-          // 서버가 파싱한 이름/번호를 Android 주소록에 기록한다.
-          // 💡 [면접 대비] 서버 RAM만으로는 폰 연락처 앱에 안 보인다.
-          //    contact_save → savePhoneContact → ContactsContract INSERT.
-          const contactName = data.contact_name ?? "";
-          const phoneNumber = data.phone_number ?? "";
-          console.log(
-            `[WS] contact_save 수신: contact=${contactName}, phone=${phoneNumber}`,
-          );
-          if (contactName && phoneNumber) {
-            void savePhoneContact(contactName, phoneNumber).then((ok) => {
-              if (!ok) {
-                audioEngine.speakFallback(
-                  "주소록 저장에 실패했습니다. 연락처 권한을 확인해 주세요.",
-                );
-              }
-            });
-          }
-        } else if (data.type === "dial_action") {
-          // [TH HARDCODE 아님] 긴급전화/연락처 전화걸기: 서버는 번호(또는 이름만)
-          // 전달하고, 실제 다이얼은 OS Linking "tel:"에 위임한다.
-          // 💡 [면접 대비] phone 비고 + device_lookup → 단말 주소록 재조회.
-          //    (서버 재시작으로 ContactStore RAM이 비어도 전화 가능)
-          // Linking은 다이얼러 실행까지만 보장, 통화 연결 여부는 확인하지 않는다.
-          const contactName = data.contact_name ?? "";
-          let phoneNumber = data.phone_number ?? "";
-          console.log(
-            `[WS] dial_action 수신: contact=${contactName}, phone=${phoneNumber}, lookup=${data.device_lookup}`,
-          );
-          void (async () => {
-            if (!phoneNumber && data.device_lookup && contactName) {
-              phoneNumber = (await findPhoneContact(contactName)) ?? "";
-            }
-            if (phoneNumber) {
-              Linking.openURL(`tel:${phoneNumber}`).catch((err) =>
-                console.error("[WS] 전화 걸기 실패:", err),
-              );
-            } else {
-              audioEngine.speakFallback(
-                "저장된 번호를 찾을 수 없습니다. 먼저 번호를 저장해 주세요.",
-              );
-            }
-          })();
         } else {
           setLastMessage(data);
         }

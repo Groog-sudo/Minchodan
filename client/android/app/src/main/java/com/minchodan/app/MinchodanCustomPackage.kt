@@ -11,8 +11,6 @@ class MinchodanCustomPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
         val modules = ArrayList<NativeModule>()
         modules.add(AudioSessionBridgeModule(reactContext))
-        modules.add(SmsReaderModule(reactContext))
-        modules.add(ContactsBridgeModule(reactContext))
         return modules
     }
 

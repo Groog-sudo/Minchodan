@@ -384,50 +384,6 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                 f"waypoints={len(bridge_result['nav_waypoints'])}"
             )
 
-        # [TH HARDCODE 아님] 긴급전화/연락처 전화걸기 편의기능용. 서버는 통신사
-        # 회선을 직접 제어할 수 없으므로(전화는 통신사/캐리어 API 영역), 여기서는
-        # 의도 해석과 번호 조회 결과만 dial_action 메시지로 전달하고, 실제 다이얼
-        # 실행은 클라이언트의 OS 텔레포니 API(React Native Linking "tel:")에
-        # 위임한다(client/src/hooks/useWebSocket.ts 참조).
-        if "dial_action" in bridge_result:
-            dial_action = bridge_result["dial_action"]
-            with contextlib.suppress(Exception):
-                await ws.send_json(
-                    {
-                        "type": "dial_action",
-                        "contact_name": dial_action.get("contact_name", ""),
-                        "phone_number": dial_action.get("phone_number", ""),
-                        "device_lookup": bool(dial_action.get("device_lookup", False)),
-                        "ts": now_ts(),
-                    }
-                )
-            logger.info(
-                f"[WS] dial_action 전송: device_id={device_id}, "
-                f"contact={dial_action.get('contact_name')}"
-            )
-
-        # [TH HARDCODE 아님 - 전송 계층] 음성 연락처 저장.
-        # 💡 [면접 대비 주석]
-        # Q. 왜 guide TTS와 같이 서버에서 처리하지 않나요?
-        # A. "주소록은 단말 OS 권한(WRITE_CONTACTS)이 필요한 로컬 리소스다.
-        #    서버는 contact_save 이벤트만 브로드캐스트하고, 클라이언트
-        #    ContactsBridge가 실제 영속화를 수행한다(thin client + 역할 분리)."
-        if "contact_save" in bridge_result:
-            contact_save = bridge_result["contact_save"]
-            with contextlib.suppress(Exception):
-                await ws.send_json(
-                    {
-                        "type": "contact_save",
-                        "contact_name": contact_save.get("contact_name", ""),
-                        "phone_number": contact_save.get("phone_number", ""),
-                        "ts": now_ts(),
-                    }
-                )
-            logger.info(
-                f"[WS] contact_save 전송: device_id={device_id}, "
-                f"contact={contact_save.get('contact_name')}"
-            )
-
         logger.info(
             f"[WS] stt_audio 처리 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
             f"source={bridge_result.get('source')}"
@@ -590,14 +546,6 @@ async def ws_detect(
             await ensure_device_registered(device_id)
         except Exception as e:
             logger.error(f"[WS] 단말 자동 등록 실패: device_id={device_id}, {e}")
-        try:
-            from server.stt.contact_service import ContactService
-
-            hydrated = await ContactService.hydrate_cache(device_id)
-            if hydrated:
-                logger.info(f"[WS] 연락처 캐시 복구: device_id={device_id}, count={hydrated}")
-        except Exception as e:
-            logger.error(f"[WS] 연락처 캐시 복구 실패: device_id={device_id}, {e}")
         await ws.send_json({"type": "auth_ok", "device_id": device_id})
         await _broadcast_session_status(device_id, "connected")
         await redis_bus.connect()
