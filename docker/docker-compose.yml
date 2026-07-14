@@ -1,5 +1,5 @@
 # Minchodan Docker Compose
-# Redis + Ollama + FastAPI 3컨테이너 구성
+# Redis + MariaDB + FastAPI 3컨테이너 구성
 # 상세 명세: docs/deployment_guide.md 7절
 
 services:
@@ -77,22 +77,6 @@ services:
       timeout: 5s
       retries: 20
       start_period: 20s
-    restart: unless-stopped
-    networks:
-      - minchodan-net
-
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: minchodan-ngrok
-    environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
-    # FastAPI WebSocket 서버를 외부 HTTPS 터널로 노출
-    # 터널 URL은 http://localhost:4040 대시보드 또는 컨테이너 로그에서 확인
-    command: http fastapi:8000 --log=stdout
-    ports:
-      - "4041:4040"
-    depends_on:
-      - fastapi
     restart: unless-stopped
     networks:
       - minchodan-net

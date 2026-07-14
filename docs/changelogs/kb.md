@@ -1701,3 +1701,294 @@
   - iOS: xcodebuildmcp로 `Minchodan.xcworkspace`를 iPhone 17 Pro 시뮬레이터 대상 빌드 - **0 에러, `CoreMLInferenceBridge.swift` 관련 경고 0건**으로 컴파일 성공 확인. `client/` `tsc --noEmit`은 이번 세션에서 건드리지 않은 `CameraView.tsx`의 기존 오류 3건(무관, 이 작업 이전부터 존재)만 남고 `localDetectorSelect.ios.ts` 관련 오류 없음.
   - **실기기 실측은 수행하지 못함**: 물리 기기 접근이 불가능한 세션이라, 실제 카메라 프레임으로 (1) 서버 히스테리시스 임계값(3프레임)이 실사용에 적절한지, (2) 온디바이스 단일 기준점이 세그멘테이션 경계 근처에서 얼마나 자주 뒤집히는지(노이즈)는 검증되지 않았다. 위 로그(`[Pipeline] 보도 이탈 판정`, `[SurfaceDeparture][OnDevice]`)가 실기기 확인용으로 준비되어 있으니, 실보행 테스트로 다음 세션에서 확정할 것.
 - **관련 파일**: `server/detection/consumer.py`, `server/detection/surface_departure.py`, `server/orchestration/state.py`, `server/orchestration/nodes/l1_classifier.py`, `server/orchestration/nodes/l2_generator.py`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/localDetectorSelect.ios.ts`, `tests/test_departure_hysteresis.py`(신규), `tests/test_surface_departure.py`.
+
+---
+
+### 2026-07-13 | 인프라+클라이언트 | ngrok -> Tailscale 전환 및 정합성 검토 P0 조치
+
+- **커밋**: (미커밋)
+- **배경**: ngrok Free 플랜의 클라우드 프록시 경유 지연을 피하고 실기기(LTE 등 외부망)와 개발 PC 간 P2P 직결을 위해 Tailscale VPN으로 전환했다. 마침 팀 DB(RPi 호스트)가 이미 Tailscale로 연결되어 있어 같은 tailnet에 편입시키는 방향으로 진행. 이어서 별도 세션에서 산출된 "Minchodan 프로젝트 종합 분석 보고서"의 P0 지적사항 4건을 실제 코드와 대조 검증 후 반영했다.
+- **Tailscale 전환**: `client/src/config/index.ts`는 기존에 이미 `NETWORK_MODE=lan` + `EXPO_PUBLIC_LAN_IP` 구조를 갖추고 있어 코드 수정 없이 `client/.env`의 `EXPO_PUBLIC_LAN_IP`만 이 Mac(`sojiroh-macmini`)의 Tailscale IP(`100.121.247.4`)로 교체했다. `server/main.py`가 이미 `--host 0.0.0.0`으로 기동 중이라 서버 코드도 무변경. `curl http://100.121.247.4:8000/` 200 응답 및 실기기(iPhone) 앱에서 `WS: connected / WiFi(100.121.247.4)` 표시로 종단 검증 완료.
+- **ngrok 제거(Docker)**: 실행 중이던 `minchodan-ngrok` 컨테이너 중지·삭제. `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`에서 `ngrok` 서비스 정의 삭제(`docker compose config` 유효성 검증 통과). `.env`/`.env.example`의 `NGROK_AUTHTOKEN` 제거. 클라이언트 코드의 `NETWORK_MODE=ngrok` 분기(`config/index.ts`)와 `@expo/ngrok` 의존성은 폴백으로 의도적으로 보존(사용자 결정).
+- **정합성 보고서 P0 조치 4건** (전부 실제 코드/스크립트 대조로 재검증 후 반영):
+  1. `.gitignore` L264-311 병합 충돌 마커(`<<<<<<< HEAD`/`=======`/`>>>>>>> 8ee1cb3`) 해결 - 두 브랜치 규칙이 동일한 앞 4줄만 겹치고 한쪽이 나머지(`temp_smoke_*`, `node_modules/`, `.expo/`, 커스텀 가중치, `.zcode/`/`.claude/`, `**/Copy_*` 등)를 포함하는 상위집합이라 중복 없이 병합.
+  2. `.env.example` 누락 변수 4종 추가: `GOOGLE_API_KEY`(Gemini VLM 캡셔닝, `server/rag/build/gemini_captioner.py`), `TMAP_APP_KEY`(내비게이션, `server/navigation/`), `SLACK_BOT_TOKEN`/`SLACK_CHANNEL_ID`(`scripts/slack_publisher.py`) - `docs/ops/environment_variables.md`가 이미 이 불일치를 지적해두고 있었음. 죽은 변수 2종 제거: `SLACK_WEBHOOK_URL`(코드 어디서도 미참조, Bot Token 방식으로 이미 대체됨), `DATA_REFLEX_CLIPS`(미참조, 반사 클립은 단말 번들 방식).
+  3. `scripts/postwork.sh`의 `get_test_cmd()`가 존재하지 않는 파일명(`test_rag_retrieval.py`, `test_tts_reflex.py`)을 참조해 5/7단계 테스트가 항상 실패하던 것을 실제 파일명(`test_retriever.py`, `test_reflex_and_nav.py`)으로 수정.
+  4. `server/tts/reflex_clip_sender.py`의 `send_reflex_clip()` 데드 코드 제거 - `consumer.py._send_reflex_alert()`가 실제 반사 송출을 전담하고 이 함수는 어디서도 호출되지 않음을 grep 전수 검색으로 확인. 같은 파일의 `REFLEX_CLIP_MAP`/`DEFAULT_REFLEX_CLIP`도 자체 주석("어디서도 호출되지 않는다")과 grep 결과가 일치해 함께 제거. 단, `_resolve_reflex_patterns()`는 `tests/test_reflex_and_nav.py`가 직접 import해 사용 중이므로 보존.
+- **검증**: `tests/test_reflex_and_nav.py` 3건 통과, `pytest tests/ --collect-only` 193건 전체 수집 성공(임포트 깨짐 없음).
+- **미완/후속 과제**: 보고서의 P1 항목(`ws_router.py`/`stt_to_llm_bridge.py` 계층 분리, `AGENTS.md` LangChain 명세 정정, UTF-8 reconfigure 패턴 통일 등)은 이번 세션 범위에서 제외 - 사용자가 다음 스프린트로 명시적으로 유보.
+- **관련 파일**: `client/.env`, `.gitignore`, `.env`, `.env.example`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `scripts/postwork.sh`, `server/tts/reflex_clip_sender.py`.
+
+---
+
+### 2026-07-13 | 서버 | TTS 실시간 합성 캐시 문장 단위 프리워밍
+
+- **커밋**: (미커밋)
+- **배경**: 인지 경로 TTS 지연을 줄이는 방안으로 "DB 로그의 안내문을 분석해 청킹·캐싱"하는 아이디어가 나왔다. 확인 결과 `server/tts/realtime_tts.py`의 `RealtimeTTS`는 이미 `(text, voice, speed)` 키 인메모리 캐시(`CACHE_MAX_ENTRIES=64`, FIFO 축출)를 갖추고 있었으나, 서버 재기동마다 콜드 상태로 시작해 첫 재생마다 합성 지연을 그대로 떠안았다. 단어/구 단위 청킹(concatenative 방식)은 이어붙임 지점의 억양 부자연스러움 리스크가 커서 채택하지 않고, 문장 단위 프리워밍만 우선 구현했다.
+- **구현**: `server/db/repositories.py`의 `DetectionGuidanceLogRepository`에 `list_frequent_tts_texts()` 추가 - `detection_guidance_logs.tts_text`를 그룹핑해 등장 횟수 내림차순으로 반환하며, `stream_type=COGNITIVE`로 한정한다(반사 경로 로그의 `tts_text`는 `"[반사 클립] {clip}"` 플레이스홀더라 실제 합성 문장이 아님). `server/services/detection_guidance_log_service.py`에 `list_frequent_tts_texts()` 함수 추가 - `persist_detection_guidance_log`와 동일하게 `async_sessionmaker_factory`로 요청 컨텍스트 밖(lifespan)에서 자체 세션을 연다. `RealtimeTTS`에 `prewarm(texts)` 메서드 추가 - 문장별로 `synthesize()`를 호출해 캐시를 채우고, 개별 문장 합성 실패는 로그만 남기고 건너뛴다(프리워밍 실패가 서버 기동을 막지 않도록). `texts` 길이가 `CACHE_MAX_ENTRIES`를 넘으면 경고 로그만 남긴다(FIFO 축출로 앞쪽이 밀려남을 알림). `server/main.py`의 `lifespan()`에 5번째 기동 단계로 추가 - Whisper 프리로드와 동일하게 `asyncio.create_task`로 논블로킹 실행하고 예외를 흡수해 DB 조회 실패(신규 배포로 로그 없음 포함)해도 서버 기동을 막지 않는다. 신규 환경변수 `TTS_PREWARM_LIMIT`(기본 30, `CACHE_MAX_ENTRIES` 이내 권장), `TTS_PREWARM_MIN_COUNT`(기본 2) 추가.
+- **검증**: `tests/test_tts_prewarm.py` 신규 5건(빈도 집계·정렬·반사 경로 제외, limit 적용, 서비스의 세션 팩토리 배선, prewarm 캐시 채움·개별 실패 격리, 캐시 상한 초과 시 경고) 전부 통과. `pytest tests/ --collect-only` 198건 수집 성공. 실제 운영 MariaDB(Tailscale)에 대해 `list_frequent_tts_texts()`를 직접 실행해 실존 안내 문장 10건("직진하며 천천히 걸으세요." 등)이 빈도순으로 조회됨을 확인 - DB 조회 경로가 실동작함을 실측으로 검증(실제 TTS 합성까지는 비용상 스킵, 로직은 fake TTS 더블로 단위 검증). `ruff check`/`ruff format --check` 통과. `TestClient`로 `server.main.app` 기동·`/health` 200 확인(신규 lifespan 단계가 기존 기동 흐름을 깨지 않음).
+- **미완/후속 과제**: 실기기 실측으로 캐시 히트율 확인 필요. 히트율이 낮으면(LLM이 매번 다른 phrasing 생성) L2 프롬프트를 더 템플릿화하거나 청킹 방식 재검토.
+- **관련 파일**: `server/db/repositories.py`, `server/services/detection_guidance_log_service.py`, `server/tts/realtime_tts.py`, `server/main.py`, `.env.example`, `tests/test_tts_prewarm.py`(신규).
+
+---
+
+### 2026-07-13 | 서버+클라이언트 | 보도 이탈 판정 실내 오탐 게이팅 (온디바이스 씬 신호 서버 전달)
+
+- **커밋**: (미커밋)
+- **배경**: Tailscale 전환 후 실기기로 실외 테스트를 나가기 전, 실내에서 서버를 재기동하고 남은 세션을 관찰하던 중 `[Pipeline] 보도 이탈 판정` 로그가 10분간 190건이나 찍히는 것을 발견했다. 같은 시간대 DB 로그의 탐지 객체가 `kiosk`/`chair`/`table`/`movable_signage` 등 실내 사물이라 사용자가 실내에 있음이 명확했는데, 세그멘테이션 모델이 실내 바닥을 `roadway`/`caution`으로 오분류해 이탈 판정이 계속 발동하고 있었다(사용자 확인: "지금 실내 바닥이야, 오탐인 것 같아"). 원인을 추적한 결과, 클라이언트 온디바이스 씬 분류기(`scene.isLikelyIndoor`, §4.4 규칙)는 이미 존재하지만 반사 경로 필터링에만 쓰이고 서버로는 전혀 전송되지 않고 있었다 - 오늘 오전에 추가한 서버 측 보도 이탈 판정(세그멘테이션 폴리곤 기반)은 이 게이트가 아예 없는 상태로 설계돼 있었다.
+- **구현**: `client/src/components/CameraView.tsx`에 `isOutdoorBySceneRef` 추가 - 온디바이스 추론에서 계산한 `isOutdoorByScene`(scene 분류기 단독 판정)을 저장해뒀다가, **다음 프레임** 전송 시 `is_outdoor` 필드로 WS `detection` 메시지(바이너리/base64 양쪽 경로 모두)에 실어 보낸다. 현재 프레임 전송 시점엔 아직 이번 프레임의 온디바이스 추론이 끝나지 않아 1프레임 지연을 허용했다(인지 경로 1~2fps 기준 무시할 수준). `server/capture/frame_decoder.py`의 `_parse_frame_meta()`/`ProcessedFrame`에 `is_outdoor: bool | None` 필드 추가(`None`=클라이언트 미판정/구버전 → 기존처럼 신뢰). `server/detection/detection_pipeline.py`의 `run()`에 `is_outdoor` 파라미터를 추가해 `is_outdoor=False`(실내 확정)면 세그멘테이션 결과와 무관하게 이탈 판정을 걸지 않도록 게이팅. `server/detection/consumer.py`는 `processed.is_outdoor`를 그대로 전달.
+- **검증**: 신규 테스트 4건(프레임 디코더 `is_outdoor` 파싱 2건, 파이프라인 게이팅 회귀 방지 2건 - 미지정 시 기존처럼 이탈 판정, `is_outdoor=False`면 억제) 통과. 관련 회귀(`test_detection.py`, `test_frame_decode.py`) 전부 통과. `ruff check`/`format` 통과. 서버 재기동 후 실기기 재확인은 실외 이동 중 수행(아래 "몇 시 방향" 항목의 실외 세션과 동일 구간).
+- **미완/후속 과제**: 1프레임 지연이 실제로 문제가 되는 경계 상황(실내→실외 전환 순간)은 미검증. `scene.isLikelyIndoor` 자체의 실외 표본이 아직 얇다는 기존 한계([[indoor-fp-mitigation-progress]])가 이 게이트의 정확도에도 그대로 이어진다.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `server/capture/frame_decoder.py`, `server/detection/detection_pipeline.py`, `server/detection/consumer.py`, `tests/test_detection.py`, `tests/test_frame_decode.py`.
+
+---
+
+### 2026-07-13 | iOS | Tailscale/LTE 전환 시 "No script URL provided" 크래시 수정
+
+- **커밋**: (미커밋)
+- **배경**: 실외 실측을 위해 실기기를 Wi-Fi에서 LTE(Tailscale 경유)로 전환하자 앱이 `RCTFatal`로 즉시 크래시하며 "No script URL provided... unsanitizedScriptURLString = (null)" 레드박스가 떴다. 원인 추적 결과 `client/ios/Minchodan/AppDelegate.swift`의 `bundleURL()`이 `RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot:)`의 **자동 호스트 추정(Bonjour mDNS 탐색)** 에 의존하고 있었는데, 이 탐색이 기존 Wi-Fi LAN에서만 작동하고 Tailscale 가상 인터페이스나 LTE 망에서는 실패해 `jsLocation`이 `nil`로 남았다. USB로 재빌드·재설치해도 동일 증상이 재현돼(앱 재설치는 이 설정을 초기화하지 않음), 근본 수정이 필요했다.
+- **구현**: `bundleURL()`에서 `RCTBundleURLProvider.sharedSettings().jsLocation`을 자동 탐색에 맡기지 않고 명시적으로 지정하도록 변경 - `ProcessInfo.processInfo.environment["METRO_BUNDLER_HOST"]` 환경변수가 있으면 그 값을, 없으면 이 Mac의 Tailscale IP(`100.121.247.4:8081`)를 기본값으로 사용한다. 재빌드 없이 다른 호스트로 바꾸고 싶으면 `METRO_BUNDLER_HOST` 환경변수만 덮어쓰면 된다.
+- **검증**: `xcodebuildmcp`로 물리 기기(USB) 빌드·설치·실행 - 빌드 성공(8.9~12.7초), Metro 로그에 새 JS 번들 요청과 `[WS] 연결 성공, 세션 ID: dev-001`이 정상적으로 찍히는 것을 실측 확인. 이후 LTE 단독(Wi-Fi 끔) 상태에서도 동일하게 정상 로드됨을 확인.
+- **미완/후속 과제**: 하드코딩된 기본 IP(`100.121.247.4`)는 이 Mac의 Tailscale IP가 바뀌면(재설치 등) 같이 갱신해야 한다. 팀 공용으로 쓰려면 `METRO_BUNDLER_HOST`를 Xcode 스킴 환경변수나 `.xcode.env`로 빼는 것을 고려할 것.
+- **관련 파일**: `client/ios/Minchodan/AppDelegate.swift`.
+
+---
+
+### 2026-07-13 | 서버 | 인지 경로 "N시 방향" 안내 (좌측/우측 모호성 해소)
+
+- **커밋**: (미커밋)
+- **배경**: 실외 실측 중 사용자가 인지 경로 안내문("우측으로 돌아가세요" 류)이 모호하다며, 정면을 12시로 기준 삼아 실제 탐지 위치 기반의 "몇 시 방향" 형식으로 바꿔달라고 요청했다. 확인해보니 L2 프롬프트는 애초에 탐지 객체의 실제 화면 위치를 전혀 전달받지 않고 있었다 - RAG 템플릿(`data/safety_guidelines.json`)에 미리 박혀 있는 "좌측/우측" 문구나 LLM의 임의 생성에 의존하던 구조였다. 적용 범위는 인지 경로로 한정했다(반사 경로는 사전합성 고정 클립 3종 - front/front-left/front-right - 이라 시계 세분화 시 클립을 다시 녹음해야 해서 이중 경로 분리 원칙상 별도 검토 필요). 시간 구간은 카메라 전방 시야(~90도) 특성상 9시~3시 7단계로 한정했다(6시는 카메라 뒤쪽이라 물리적으로 탐지 불가).
+- **구현**: `server/detection/direction.py`에 `estimate_clock_direction(bbox, frame_width)` 추가 - bbox 중심 x좌표를 9,10,11,12,1,2,3시 7단계로 선형 매핑(반사 경로의 `estimate_direction`, front/front-left/front-right 3분대와는 무관한 별도 함수). `server/detection/consumer.py`의 `_send_cognitive_guide`에서 RAG 조회에 쓰던 최고 신뢰도 탐지 객체(`primary_det`)의 bbox로 클럭 방향을 계산해 `orch_input["clock_direction"]`에 실어 보낸다. `server/orchestration/state.py`의 `OrchState`에 `clock_direction: str` 필드 추가. `server/orchestration/nodes/l2_generator.py`: 시스템 프롬프트를 "좌/우 키워드 포함" 규칙에서 "`[탐지 방향]`에 주어진 값을 그대로 `N시 방향` 형식으로 사용" 규칙으로 교체하고, 실측값을 `[탐지 방향]` 줄로 프롬프트에 명시적으로 주입해 LLM이 방향을 임의로 짓지 못하게 했다. `extract_direction()`도 "N시" 패턴을 우선 인식하도록 확장(기존 좌/우/직진/정지 키워드는 하위호환 폴백으로 유지). **중요 발견**: `server/orchestration/nodes/l3_validator.py`의 방향 키워드 검증 목록(`좌/우/왼/오른/직진/정지/멈추/서세요/대기`)에 시계 패턴을 추가하지 않았다면, "2시 방향 주의하세요" 같은 정상 문장이 전부 "방향 키워드 미포함"으로 판정돼 재시도·정적 폴백("전방 주의, 천천히 멈추세요")으로 빠지는 회귀가 발생했을 것이다 - 발견 즉시 같은 작업에서 함께 수정했다.
+- **검증**: 신규 테스트 11건(`tests/test_clock_direction.py`: bbox→시각 경계값 매핑 4건, `extract_direction` 우선순위 3건, `validate_guidance`가 시계 방향만으로도 통과하는지 2건, L2 프롬프트 주입 여부 2건) 전부 통과. 관련 회귀(`test_langgraph.py`/`test_departure_hysteresis.py`) 전부 통과. 서버 재기동 후 실기기 실측으로 `"11시 방향 차 조심하세요."`, `"10시 방향으로 돌아가세요."` 등 실제 탐지 위치가 반영된 문장이 나오는 것을 확인.
+- **미완/후속 과제**: 사용자가 "실제 방향이랑 맞는지"를 물어봤으나 아직 정량 검증(실제 물체 위치 vs 보고된 시 방향 일치율)은 안 됨. 또한 LLM(1~2.8초)+TTS(0~2.4초) 지연 때문에, 보행 중에는 안내가 나올 때쯤 실제 위치가 이미 바뀌어 있을 수 있음을 별도로 확인(아래 LLM 모델 실험 항목 참조).
+- **관련 파일**: `server/detection/direction.py`, `server/detection/consumer.py`, `server/orchestration/state.py`, `server/orchestration/nodes/l2_generator.py`, `server/orchestration/nodes/l3_validator.py`, `tests/test_clock_direction.py`(신규).
+
+---
+
+### 2026-07-13 | 서버 | LLM 지연 개선을 위한 대체 모델 실험 (전부 기각, gemma4:e4b 유지)
+
+- **커밋**: (미커밋)
+- **배경**: "N시 방향" 안내가 걷는 속도 기준으로 체감 지연(1~4초)만큼 어긋난다는 지적을 받아, DB `latency_json`을 실측한 결과 지연의 대부분이 네트워크가 아니라 LLM 생성(1~2.8초)과 TTS 합성(0~2.4초) 순수 연산 시간임을 확인했다(도커 대역폭 우선순위 조정은 이 문제와 무관함을 사용자에게 설명). 이에 따라 더 작은/빠른 Ollama 모델로 교체를 시도했다.
+- **시도 및 결과**:
+  - `qwen2.5:1.5b-instruct`: 단독 curl 테스트에서 워밍업 후 298ms로 빨랐으나, `[탐지 방향]` 지시를 절반의 경우 무시하고 20자 제한도 매번 초과.
+  - `qwen2.5:3b-instruct`: 단독 테스트에서는 방향 반영 2/2, 속도 391~631ms로 유망해 보였으나, **실제 파이프라인에 투입하자 `llm_ms`가 오히려 1671~6895ms로 gemma4:e4b(1000~2800ms)보다 악화**됐다. 이 Mac은 CPU 전용 Ollama라 RAG 임베딩(`nomic-embed-text`)과 생성 모델이 번갈아 호출될 때마다 메모리에서 모델을 내렸다 올리는 리소스 경합이 있는 것으로 추정된다(단독 curl 테스트는 이 경합을 재현하지 못해 오판의 원인이 됐다).
+  - `gemma4:e2b`(같은 gemma4 계열의 더 작은 elastic 변형, 5.1B): 실제 파이프라인에서 `llm_ms` 5251~5706ms로 마찬가지로 악화, 게다가 검증 실패로 정적 폴백("전방 주의, 천천히 멈추세요")으로 반복 이탈.
+  - 세 모델 전부 되돌리고 `gemma4:e4b`로 최종 복귀.
+- **교훈**: 이 환경(CPU-only Ollama, 임베딩+생성 모델 동시 서빙)에서는 "모델이 작을수록 빠르다"는 가정이 성립하지 않는다. 실제 GPU 배포 환경(CUDA Blackwell)에서는 이 CPU 리소스 경합 자체가 없어지므로, 모델 교체를 통한 지연 개선은 그때 재평가하기로 함. 모델 성능 비교는 반드시 **실제 파이프라인**(RAG 임베딩과 동시 호출)에서 검증해야 하며, 격리된 curl 단독 테스트는 오판을 유발할 수 있음을 실측으로 확인.
+- **관련 파일**: `.env`(`GEMMA_MODEL`, 최종적으로 무변경 - `gemma4:e4b` 유지).
+
+---
+
+### 2026-07-13 | 서버 | 주행 통로 위험 비율 실험 (강사 추천 Depth+ROI 알고리즘의 저비용 근사, 관측 전용)
+
+- **커밋**: (미커밋)
+- **배경**: 담당 강사가 "핵심은 객체 인식이 아니라 내가 앞으로 지나갈 통로가 막혔는가"를 판정하는 Depth Map + 주행 ROI + 위험 픽셀 비율 알고리즘을 추천했다. 우리 프로젝트와 대조 검토한 결과, 사다리꼴 ROI(반사 게이트 `FRONT_BAND`와 동일 원리), 거리 구간 위험도(면적비 근사), 프레임 누적(오늘 만든 히스테리시스), 접근 속도(ByteTrack) 등 개념 상당수가 이미 구현돼 있었으나 **픽셀 단위 깊이맵 자체가 없다**는 근본 차이를 확인했다(2026-07-11 LiDAR 프로브 프로토타입은 있으나 Pro 기종 전용+카메라 세션 배타적이라 상시 사용 불가, 이미 알려진 한계). 새 깊이 모델(MiDaS류) 도입은 온디바이스 반사 경로 지연 예산을 위협해, 기존 세그멘테이션 폴리곤을 재사용하는 저비용 절충안만 먼저 실험하기로 사용자와 합의했다.
+- **구현**: `server/detection/path_risk.py` 신규. 사다리꼴 주행 통로 ROI(좌우 대역은 새로 발명하지 않고 `FRONT_BAND`의 near(0.20~0.80)/far(0.38~0.62) 값을 그대로 재사용, 상단 y비율 0.35)를 12x12 격자로 샘플링하고, 각 격자점이 `roadway`/`caution` 폴리곤 안에 있는지(`surface_departure.point_in_polygon` 재사용)를 세어 비율을 계산한다(`compute_path_risk_ratio`). 강사 추천 임계값(5%/20%)을 그대로 채택해 CLEAR/CAUTION/BLOCKED로 분류하는 `classify_path_risk`도 함께 추가. `detection_pipeline.py`에 로그 훅만 연결했고 **risk_hint나 안내문에는 아직 연결하지 않았다**(관측 전용 - 오늘 보도 이탈 판정도 처음엔 이 방식으로 시작했던 것과 동일한 단계적 검증 패턴).
+- **검증**: 신규 테스트 8건(전체 커버리지 시 비율 1.0, 미겹침 시 0.0, 부분 겹침 시 중간값, 안전 노면만 있을 때 0.0, 폴리곤 없는 위험 노면 무시, 프레임 크기 0 가드, 분류 임계값 경계) 전부 통과. 독립 마이크로벤치마크 결과 호출당 평균 **0.083ms**로 지연에 실질적 영향 없음을 실측 확인(파이프라인 `inference_ms`도 기존과 동일한 200~330ms대 유지). `ruff check`/`format` 통과.
+- **미완/후속 과제**: 아직 risk_hint/안내문 연동 전이라 실제 판정 정확도(진짜 막힌 상황 vs 뚫린 상황 구분력)는 검증되지 않았다. 실외에서 로그(`ratio`/`level`)를 더 쌓아 체감과 맞는지 확인 후, 맞다면 보도 이탈 판정처럼 히스테리시스+안내문 연동 단계로 승격할지 결정할 것.
+- **관련 파일**: `server/detection/path_risk.py`(신규), `server/detection/detection_pipeline.py`, `tests/test_path_risk.py`(신규).
+
+---
+
+### 2026-07-13 | 클라이언트 | CLASS_MIN_CONFIDENCE.car 조정 시도 및 SSOT 계약 위반 자체 발견/수정
+
+- **커밋**: (미커밋)
+- **배경**: 실외 실측 중 서버 원시 탐지 로그를 확인해보니 실제 차량 신뢰도가 0.35~0.5대에 몰려 있어, 화면 bbox 표시 임계값(`car: 0.6`)이 너무 높아 차가 잘 안 보인다고 판단해 0.4로 낮췄다. 이후 changelog/문서 업데이트를 위해 전체 회귀 테스트를 돌리다가 `tests/test_risk_ssot.py`의 `test_client_gate_matches_ssot`/`test_client_extension_does_not_conflict_with_ssot` 2건이 실패하는 것을 발견했다.
+- **원인**: `CameraView.tsx`의 `CLASS_MIN_CONFIDENCE`는 화면 표시 필터뿐 아니라 **반사(햅틱/비프) 안전 게이트의 confidence 문턱**으로도 동시에 쓰이는 상수였다. `docs/design/risk_ssot_contract.md` §2가 이 값을 서버 `reflex_gate.py`의 `HIGH_RISK_CLASSES`와 반드시 동일하게 유지해야 하는 SSOT로 명시하고 있었는데("실내 오탐 완화, 실외 전용 클래스 문턱 상향"이라는 안전 근거), 표시 편의를 위해 안전 문턱까지 실수로 함께 낮춘 것이었다. 즉 데이터 수집 목적의 변경이 반사 경로의 오탐 완화 안전장치를 조용히 무력화할 뻔했다.
+- **조치**: `car`를 0.6으로 즉시 원복. SSOT 계약(§4 변경 절차: 서버·단말·문서를 같은 커밋에서 함께 수정)을 어기지 않는 선에서, 차량 표시 표본을 더 모으고 싶다면 §2 절차대로 서버 게이트까지 같이 낮추거나 화면 표시 전용 별도 상수를 신설해야 한다는 것을 주석으로 남겼다. `test_risk_ssot.py` 3건 전부 재통과 확인.
+- **교훈**: 반사 경로 관련 상수를 만질 때는 항상 `docs/design/risk_ssot_contract.md`와 `test_risk_ssot.py`를 먼저 확인할 것 - 이름만 보고 "화면 표시용이겠지"라고 단정하면 안 된다. 이번엔 자동 회귀 테스트가 실수를 커밋 전에 잡아낸 사례로 남긴다.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `tests/test_risk_ssot.py`(수정 없음, 검증만 수행).
+
+---
+
+### 2026-07-13 | 서버+클라이언트 | jy 브랜치 병합 - Tailscale 연결 방식을 jy 표준으로 통일
+
+- **커밋**: (병합 예정)
+- **배경**: jy 브랜치를 kb에 병합하기 전 충돌·정합성을 검토했다(임시 워크트리에서 실제 병합 실행 후 `pytest` 214건, `tsc --noEmit` 0 errors까지 확인 - 텍스트 충돌은 없었음). 다만 같은 문제(외부망 Tailscale 접속)를 두 브랜치가 독립적으로 각자 해결한 것을 발견했다 - kb는 기존 `NETWORK_MODE=lan`+`EXPO_PUBLIC_LAN_IP`를 재사용(코드 변경 없음), jy는 전용 `NETWORK_MODE=tailscale`+`EXPO_PUBLIC_TAILSCALE_HOST`를 신설(`network_probe` RTT 계측과 통합). 또한 jy의 changelog(`docs/changelogs/jy.md`)는 "ngrok 컨테이너나 도메인 지원을 제거한 것이 아니라 확장한 것"이라고 기록돼 있었는데, kb는 같은 날 ngrok 도커 컨테이너와 `NGROK_AUTHTOKEN`을 완전히 제거한 상태라 전제가 어긋나 있었다.
+- **조치**: 사용자 결정에 따라 (1) 클라이언트 접속 방식은 jy의 전용 `tailscale` 모드를 팀 표준으로 채택 - `client/.env`를 `EXPO_PUBLIC_NETWORK_MODE=tailscale`+`EXPO_PUBLIC_TAILSCALE_HOST=100.121.247.4`+`EXPO_PUBLIC_SERVER_PORT=8000`으로 전환(기존 `lan`+`LAN_IP` 조합에서). (2) ngrok 도커 인프라는 kb의 완전 제거 상태를 유지 - jy 브랜치도 `docker-compose.yml`을 건드리지 않아 병합에 지장 없음. `docs/ops/environment_variables.md` §2.11을 이 결정에 맞게 갱신(기존 lan 재사용 서술 → jy 표준 채택 서술로 교체, ngrok 폴백 코드는 있으나 도커 인프라는 없다는 점 명시).
+- **검증**: 병합 자체는 `git merge origin/jy` 실행, 충돌 0건. 병합 후 `pytest tests/ --ignore=test_ws_echo.py` 214 passed, `cd client && npx tsc --noEmit` 0 errors(오히려 jy의 리팩토링이 기존 사전 존재 TS 에러 2건도 부수적으로 해소함).
+- **미완/후속 과제**: `api_specification.md`의 버전 헤더를 kb 자신의 "N시 방향" 변경분에 대해서는 올리지 않았던 것(jy가 먼저 v0.4.16을 씀) - 필요 시 v0.4.17로 별도 이력 추가할 것.
+- **관련 파일**: `client/.env`, `docs/ops/environment_variables.md`.
+
+---
+
+### 2026-07-13 | 서버+클라이언트 | jh 브랜치 병합 (STT 안정화, 생활지원 RAG, 콘솔 라이브피드 보정)
+
+- **커밋**: `5d710e1`
+- **배경**: `origin/jh`(STT 안정화 + `convenience_guidelines` 생활지원 RAG + 콘솔 라이브피드 보정)를 kb에 병합. jy 병합과 달리 실제 텍스트 충돌 8곳(`client/src/hooks/useWebSocket.ts` 3곳, `client/src/components/CameraView.tsx` 5곳)이 발생해 수동 조정했다.
+- **주요 판단**: `detection_control` 전송 useEffect는 jh 버전(거리측정 모드 `depthMode` 미고려)을 버리고 kb/jy의 기존 버전(depthMode 배제 포함)을 유지 - 중복 useEffect 및 거리측정 모드 중 반사 오탐 재활성화 방지. GPS `realtime_gps` 전송 블록은 jh가 파일을 재구성하며 위치만 옮긴 것이라 중복 없이 한 곳만 유지. WS 종료 핸들러는 jy의 `clearNetworkProbe()`와 jh의 `closeCode`/`reason` 로깅을 모두 보존.
+- **병합 후 발견/조치**: jh의 `MIN_STT_AUDIO_BYTES=4096` 가드로 기존 `tests/test_ws_router_stt.py`의 16바이트 더미 픽스처가 깨져 4096바이트 이상으로 패딩. `server/api/ws_router.py`의 불필요한 `# -*- coding: utf-8 -*-` 선언 제거(ruff UP009).
+- **검증**: `pytest` 214 passed, `tsc --noEmit` 0 errors, 도커 재기동 후 `/health` 200.
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `server/api/ws_router.py`, `tests/test_ws_router_stt.py`, 및 jh 원본 변경분(`server/rag/convenience_rag.py` 등 신규 파일 다수).
+
+---
+
+### 2026-07-13 | 공통 | dev 브랜치를 kb까지 fast-forward
+
+- **커밋**: (fast-forward, `1bc676c..5d710e1`)
+- **배경**: `origin/dev`의 HEAD가 kb/jy/jh 세 브랜치의 공통 조상과 정확히 일치해(오늘 작업 이전 상태에서 전혀 진행되지 않음), kb → dev 병합은 충돌 가능성이 원천적으로 없는 순수 fast-forward였다. `git merge-base --is-ancestor origin/dev kb`로 사전 확인 후 `git merge kb --ff-only` 실행.
+- **검증**: fast-forward 후 `pytest` 214 passed, `tsc --noEmit` 0 errors 재확인. `origin/dev`로 푸시 완료.
+- **참고**: `origin/jh`가 병합 시점(`a39a089`) 이후 changelog 문서 커밋 1개(`d5091a9`) 더 진행했으나 코드 변경 없음. `origin/dg2`(Android STT/마이크 권한 관련 커밋 5개)는 이번 kb/dev 작업에 전혀 포함되지 않은 별도 브랜치로 남아있음 - 향후 별도 병합 검토 필요.
+- **관련 파일**: 없음(fast-forward, 신규 diff 없음).
+
+---
+
+### 2026-07-13 | 콘솔 | Live Feed 화면 회전 버그 수정 (jh의 Android 전용 보정이 iOS에 잘못 적용됨)
+
+- **커밋**: `98833a3e767b987f6336ca2b8f301c2568eb3882`
+- **배경**: jh 병합본으로 실기기(iPhone) 테스트 중 운영 콘솔의 "Live Feed" 화면이 회전되어 보인다는 사용자 보고를 받았다. 원인은 jh가 `console/src/components/LiveCameraFeed.tsx`에 추가한 `LIVE_FEED_ROTATE_DEG = 90` 하드코딩 - 주석상 "왼쪽으로 90도 꺾여 들어오는 프레임"(Android 카메라 센서의 원본 방향 특성)을 보정하려는 목적이었으나, 콘솔은 iOS/Android 기기를 가리지 않고 보는 공용 화면이라 이미 똑바로 들어오는 iPhone 프레임에 이 보정이 그대로 적용되면서 잘못 회전됐다.
+- **조치**: 기기별 platform 정보가 현재 WS 페이로드에 없어 자동 분기가 불가능한 상태임을 사용자에게 설명하고, 우선 `LIVE_FEED_ROTATE_DEG=0`(무회전)으로 되돌리기로 결정(사용자 확인). `getDisplayBBox()`도 0일 때는 회전 좌표 변환 없이 원본 bbox 퍼센트를 그대로 반환하도록 분기 추가 - 이미지만 안 돌리고 bbox 오버레이는 계속 어긋나는 상태를 방지했다(이미지 회전과 bbox 좌표 변환이 별도 로직으로 중복 구현돼 있던 것을 발견).
+- **검증**: `tsc --noEmit` 0 errors, Vite HMR로 즉시 반영 확인, 사용자가 실제 화면에서 "정상적으로 나왔다" 확인.
+- **미완/후속 과제**: Android로 다시 테스트할 때 `LIVE_FEED_ROTATE_DEG`를 90으로 되돌려야 한다(수동). 근본적으로는 WS 프레임 메시지에 device platform 필드를 추가해 자동 분기하는 게 맞다.
+- **관련 파일**: `console/src/components/LiveCameraFeed.tsx`.
+
+---
+
+### 2026-07-13 | 서버 | 미구현 5종 MCP(Slack, Audio Validator, Cache Monitor, Accessibility Simulator, LangSmith Tracer) 구현 및 연동 완료
+
+- **커밋**: `723b6108d37c5ee652271ab99784954b8136ac2d`
+- **배경**: 설계상 미구현 또는 부분 구현 상태로 남아있던 5종의 MCP를 완성하고, 이들이 추론 및 오케스트레이션 메인 루프에 지연을 주지 않도록 아웃오브밴드(비동기 백그라운드 태스크) 구조로 연동하는 요건을 이행했습니다. 추가로 로컬 CORS 허용 출처(`localhost:5174` 등)가 백엔드 코드에 정적으로 존재하던 보안 문제를 보완하고자 환경변수 연동을 강화했습니다. 또한, 다중 Uvicorn 프로세스 환경에서 실시간 이벤트를 유실 없이 전송하기 위해 설계 13.2절의 "Redis Streams 완충 아키텍처"에 따라 메트릭 발행 구조를 정비했습니다.
+- **조치**:
+  - **Slack Notification MCP**: `server/mcp/slack_notifier.py`를 신규 구현하고 `fallback_node.py`와 연동하여 L3 가드레일 최종 실패 시 비동기 경보를 발생하도록 조치했습니다.
+  - **Audio Validator MCP**: `server/mcp/audio_validator.py`를 신규 구현하여 실시간 TTS 합성 음성(WAV)의 규격 및 TTFB 지연을 실시간 검증하고 결과를 브로드캐스트합니다. (캐시 적중 시에도 base64 디코딩을 통해 비동기 검증 이벤트를 발행하도록 예외 결함 보완)
+  - **Redis Cache Monitor MCP**: `server/mcp/cache_monitor.py`를 신규 구현하고, FastAPI 서버 lifespan 시작/종료 시 백그라운드 태스크로 `suppress:*` 캐시 키의 상태 및 남은 TTL을 실시간 모니터링하여 브로드캐스트합니다.
+  - **Accessibility Simulator MCP**: `server/mcp/accessibility_simulator.py`를 신규 구현하여 announceForAccessibility 텍스트와 최종 합성 음성 가이드 간의 의미 및 방향성 정합성을 검증하도록 `realtime_tts.py`에 이식했습니다. (캐시 적중 시에도 원본 텍스트 대조 시뮬레이션 이벤트를 병행 발행하도록 보완)
+  - **LangSmith Trace MCP**: `server/mcp/langsmith_tracer.py`를 신규 구현하여, 환경변수 활성화 시 `run_orchestrator` 지연 및 노드 전이를 로깅할 수 있는 추적 기반을 구축했습니다.
+  - **CORS 환경변수 보안 정합**: `server/api/config.py`의 `CORS_ORIGINS` 기본값을 Pydantic Settings 초기화(`__init__`) 시 환경변수 `CORS_ORIGINS`의 JSON 포맷 또는 쉼표 구분값으로부터 파싱하여 안전하게 바인딩되도록 개선하고, `.env` 및 `.env.example` 템플릿에 `CORS_ORIGINS` 변수 필드를 정식 보충했습니다.
+  - **관제 모니터링 UI 마운트**: `console/src/types/monitor.ts`에 MCP 검증 데이터를 관리할 타입 인터페이스를 추가하고, `useMonitorStream.ts`에 신규 이벤트 타입(audio/cache/accessibility/langsmith) 파싱 핸들러 및 데모 주입 이벤트를 구현했습니다. 4대 신규 메트릭을 카드 형태로 한눈에 보여주는 `McpValidationMonitor.tsx` 컴포넌트를 신규 마운트하고 `DashboardPage.tsx`에 이식했습니다.
+  - **Redis Streams 완충 발행 채널 도입**: `server/mcp/manager.py`에 `publish_metric` 비동기 메소드를 신규 구현하여, 메인 추론/합성 모듈이 메모리 상의 SSElisteners를 직접 경유하지 않고 Redis `mcp:metrics` 스트림에 메트릭을 적재하도록 개선했습니다. 이로써 Uvicorn 다중 프로세스(workers > 1) 및 격리된 비동기 태스크 간의 데이터 브로드캐스트 정합을 최종 구축했습니다.
+- **검증**:
+  - 백엔드: 신규 단위 테스트인 `tests/test_mcp_new.py`를 작성하여 5종 MCP를 검증하고, 기존 3종 테스트와 함께 실행하여 총 9건의 MCP 검증 테스트(`tests/test_mcp_*.py` - LangSmith Active & Mock 상황별 2개 케이스 완전 수록)가 100% 통과(Passed in 1.82s)함을 확인 완료했습니다.
+  - 프론트엔드: `console/` 디렉토리 내 `npm run build`를 실행하여 타입 검출(`tsc --noEmit`) 및 번들링 빌드 프로세스가 에러 0건으로 성공 통과함을 완료했습니다.
+- **관련 파일**:
+  - `server/mcp/slack_notifier.py` (신규)
+  - `server/mcp/audio_validator.py` (신규)
+  - `server/mcp/cache_monitor.py` (신규)
+  - `server/mcp/accessibility_simulator.py` (신규)
+  - `server/mcp/langsmith_tracer.py` (신규)
+  - `tests/test_mcp_new.py` (신규)
+  - `console/src/components/McpValidationMonitor.tsx` (신규)
+  - `server/mcp/manager.py` (수정)
+  - `server/orchestration/nodes/fallback_node.py` (수정)
+  - `server/tts/realtime_tts.py` (수정)
+  - `server/orchestration/graph.py` (수정)
+  - `server/main.py` (수정)
+  - `server/api/config.py` (수정)
+  - `.env` (수정)
+  - `.env.example` (수정)
+  - `console/src/types/monitor.ts` (수정)
+  - `console/src/api/useMonitorStream.ts` (수정)
+  - `console/src/pages/DashboardPage.tsx` (수정)
+  - `server/orchestration/llm_client_factory.py` (수정)
+
+---
+
+### 2026-07-14 | 공통 | 개발 도구 CLI(Antigravity CLI, Claude Code, OpenCode) 버전 검토 및 업데이트 수행
+
+- **배경**: 개발자 로컬 환경 및 AI 에이전트 연동의 효율성을 위해 사용 중인 3대 핵심 CLI 도구(안티그래비티 CLI, 클로드 CLI, 오픈코드 CLI)의 버전 상태를 검토하고 최신 버전으로의 업데이트가 필요한지 점검함.
+- **조치**:
+  - **Antigravity CLI (`agy`)**: 버전 `1.1.2`로 이미 최신 상태임을 확인.
+  - **Claude Code CLI (`claude`)**: 버전 `2.1.207`로 이미 최신 상태임을 확인.
+  - **OpenCode CLI (`opencode`)**: 버전 `1.17.18`에서 최신인 `1.17.20`으로 업그레이드 가능함을 확인하고, `opencode upgrade`를 실행하여 `1.17.20` 버전으로 업데이트 완료.
+- **검증**: `agy --version`, `claude --version`, `opencode --version` 명령어를 통해 최신 버전 상태(각각 1.1.2, 2.1.207, 1.17.20)를 최종 확인함.
+- **관련 파일**: 없음 (개발 환경 CLI 패키지 업데이트).
+
+---
+
+### 2026-07-14 | 공통 | 프로젝트 전체 코드-문서 정합성 교차 검증 및 수정
+
+- **배경**: 6개 영역(이중 경로 분리, 기술 스택, 코드 구조, 환경 변수 3축, WebSocket 이벤트, KPI/지연 목표/브랜치)에 걸쳐 코드와 문서의 정합성을 전면 교차 검증. 검증 결과 정합성이 완벽히 유지된 영역(이중 경로 분리 원칙, YOLO 29/4클래스, KPI, STT, 클라이언트 TTS, 브랜치 전략)을 확인하는 한편, 문서-코드 모순 9건을 발견해 일괄 수정.
+- **P0 수정 (문서-코드 직접 모순)**:
+  - **`SLACK_WEBHOOK_URL` 명세 정정**: 환경변수 명세서 §2.8이 "SLACK_WEBHOOK_URL은 코드 어디에도 쓰이지 않는 미사용 변수"라고 단언했으나, `server/mcp/slack_notifier.py:49,59`에서 최우선 분기로 활성 사용 중인 것을 확인. Webhook 우선/Bot Token 폴백 이중 인증 구조로 명세를 코드 기준으로 되돌림(v0.4.18).
+  - **README.md `react-native-tts` 정정**: 클라이언트 라이브러리에 `react-native-tts (예비 TTS)`가 잔존했으나, `client/package.json` 및 소스 코드 모두에서 부재 확인. `expo-speech (한글 음성 합성, Voice 선택; react-native-tts 미사용)`로 정정.
+- **P1 수정 (문서 정합성)**:
+  - **AGENTS.md §4 server/ 구조**: 실제 구현됐으나 명세에 누락된 4폴더(`services/`, `stt/`, `navigation/`, `mcp/`) 추가. `models/` Git 추적 정책도 `object_detection.pt` 추적 / `det_best/segbest` git-ignore로 정정.
+  - **AGENTS.md §2 LLM 오케스트레이션**: "LangChain 래퍼 미사용"을 "LLM 호출 클라이언트는 raw 구현(메시지 스키마는 langchain_core.messages 사용)"로 정정. `SimpleGeminiClient` 클라이언트 나열에 추가.
+  - **환경변수 명세서 §2.15 신설**: 코드에서 활성 사용 중이나 명세에 누락된 13종 변수(CONVENIENCE_CHROMA_COLLECTION, GEMINI_MODEL, EDGE_TTS_SAMPLE_RATE, DATABASE_URL, LANGCHAIN_PROJECT 등) 일괄 등재.
+  - **README.md `data/reflex_clips/` 경로 정정**: 실제 반사 클립은 `client/assets/sounds/reflex_clips/`(WAV 5종 단말 번들)에 존재. 디렉토리 구조 트리를 실제 파일 시스템과 일치시킴.
+  - **`.env.example` `LLAVA_MODEL` 제거**: 코드 어디서도 소비되지 않는 미사용 잔재(Gemini 캡셔닝 전환 이전 로컬 Llava 계획)를 주석 처리 후 제거.
+- **P2 수정 (사소 정합성)**:
+  - **`server/tts/__init__.py`**: `Pyttsx3TTSService`가 `get_tts_service()` 팩토리에서 지원되나 `__all__`에 누락된 문제 수정 (임포트 및 `__all__` 추가).
+  - **`api_specification.md` §1**: 공통 `type` 필드 목록을 코드(`ws_router.py`/`consumer.py`)에서 실제 발행되는 전체 이벤트 타입으로 갱신 (v0.4.17).
+- **검증**: 모든 수정 후 git diff로 변경 사항 확인. 환경 변수 3축(명세/.env.example/코드) 교차 검증 완료.
+- **관련 파일**: `docs/ops/environment_variables.md`, `README.md`, `AGENTS.md`, `.env.example`, `docs/design/api_specification.md`, `server/tts/__init__.py`, `docs/changelogs/kb.md`
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/SKILL.md`, `docs/changelogs/kb.md`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/SKILL.md`, `docs/changelogs/kb.md`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/SKILL.md`, `docs/changelogs/kb.md`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Update SKILLS.md and AGENTS.md indexes to include auto-publish-work skill
+- **관련 파일**: `GENTS.md`, `SKILLS.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | react_doctor_integration
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Integrate react-doctor quality checks into auto_publish_work.py and add config files
+- **관련 파일**: `lient/App.tsx`, `client/src/components/CameraView.tsx`, `console/src/App.tsx`, `console/src/api/useLiveFeed.ts`, `scripts/auto_publish_work.py`, `client/doctor.config.json`, `console/doctor.config.json`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | react_doctor_skill
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add react-doctor agent skill definition and update indexes
+- **관련 파일**: `GENTS.md`, `SKILLS.md`, `.agents/skills/react-doctor/`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | react_doctor_skill
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add react-doctor agent skill definition and update indexes
+- **관련 파일**: `.agents/skills/react-doctor/SKILL.md`, `AGENTS.md`, `SKILLS.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

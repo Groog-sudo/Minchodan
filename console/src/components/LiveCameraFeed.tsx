@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "./LiveCameraFeed.css";
+import { resolveServiceUrl } from "../config/network";
 
 interface LiveCameraFeedProps {
   imageUrl: string | null;
@@ -9,7 +10,50 @@ interface LiveCameraFeedProps {
 }
 
 const NAV_MAP_URL =
-  import.meta.env.VITE_NAV_MAP_URL || "http://localhost:8000/navigation/?embed=true";
+  resolveServiceUrl(
+    import.meta.env.VITE_NAV_MAP_URL,
+    "/navigation/?embed=true",
+    import.meta.env.VITE_API_BASE_URL,
+  );
+// 2026-07-13 정정: jh가 Android 테스트 중(카메라 센서가 90도 꺾여 들어오는 기종)
+// 이 값을 90으로 하드코딩해뒀는데, 콘솔은 iOS/Android 기기를 가리지 않고 보는
+// 공용 화면이라 iPhone 프레임에는 이 보정이 오히려 잘못 적용됐다(실기기 실측
+// 확인). 기기별 platform 정보가 WS 페이로드에 없어 자동 분기는 아직 불가하므로,
+// 우선 0(무회전)으로 되돌린다. Android로 다시 테스트할 때 필요하면 90으로 바꿀 것.
+const LIVE_FEED_ROTATE_DEG = 0;
+
+function getDisplayBBox(
+  bbox: { x: number; y: number; w: number; h: number },
+  natural: { w: number; h: number },
+): { leftPct: number; topPct: number; widthPct: number; heightPct: number } {
+  const { x, y, w, h } = bbox;
+  const srcW = natural.w;
+  const srcH = natural.h;
+
+  if (LIVE_FEED_ROTATE_DEG === 0) {
+    return {
+      leftPct: (x / srcW) * 100,
+      topPct: (y / srcH) * 100,
+      widthPct: (w / srcW) * 100,
+      heightPct: (h / srcH) * 100,
+    };
+  }
+
+  // 왼쪽으로 90도 꺾여 들어오는 프레임(Android 등)을 모바일 시점(CW 90도)으로 보정.
+  const rotatedX = srcH - (y + h);
+  const rotatedY = x;
+  const rotatedW = h;
+  const rotatedH = w;
+  const dstW = srcH;
+  const dstH = srcW;
+
+  return {
+    leftPct: (rotatedX / dstW) * 100,
+    topPct: (rotatedY / dstH) * 100,
+    widthPct: (rotatedW / dstW) * 100,
+    heightPct: (rotatedH / dstH) * 100,
+  };
+}
 
 function getColorForClass(className: string): string {
   const c = className.toLowerCase();
@@ -66,7 +110,8 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
             <img
               src={imageUrl}
               alt="실기기 실시간 화면"
-              className="feed-image frame-overlay-image"
+              className="feed-image frame-overlay-image live-feed-rotated"
+              style={{ transform: `rotate(${LIVE_FEED_ROTATE_DEG}deg)` }}
               onLoad={(event) => {
                 const img = event.currentTarget;
                 setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
@@ -76,16 +121,17 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
               latestDetections.map((det: any, index: number) => {
                 if (!det.bbox) return null;
                 const { x, y, w, h } = det.bbox;
+                const displayBBox = getDisplayBBox({ x, y, w, h }, naturalSize);
                 const color = getColorForClass(det.className);
                 return (
                   <div
                     key={index}
                     className="frame-overlay-box"
                     style={{
-                      left: `${(x / naturalSize.w) * 100}%`,
-                      top: `${(y / naturalSize.h) * 100}%`,
-                      width: `${(w / naturalSize.w) * 100}%`,
-                      height: `${(h / naturalSize.h) * 100}%`,
+                      left: `${displayBBox.leftPct}%`,
+                      top: `${displayBBox.topPct}%`,
+                      width: `${displayBBox.widthPct}%`,
+                      height: `${displayBBox.heightPct}%`,
                       borderColor: color,
                       boxShadow: `0 0 6px ${color}`,
                     }}

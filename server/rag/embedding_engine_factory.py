@@ -24,18 +24,21 @@ class EmbeddingEngineFactory:
 
     @staticmethod
     def get_embeddings(
-        provider: str = "ollama", model_name: str = "nomic-embed-text"
+        provider: str | None = None, model_name: str = "nomic-embed-text"
     ) -> Embeddings:
         """
         지정된 프로바이더와 모델명에 맞는 Embeddings 인스턴스를 반환합니다.
 
         Args:
-            provider: "ollama" | "mock" | "openai" (기본값 "ollama")
+            provider: "ollama" | "mock" | "openai" (기본값은 환경변수 EMBEDDING_PROVIDER,
+                      미설정 시 "ollama"). 시연 환경에서는 "mock" 권장(Ollama 미기동).
             model_name: 사용할 모델명 (기본값 "nomic-embed-text")
 
         Returns:
             Embeddings 객체
         """
+        if provider is None:
+            provider = os.getenv("EMBEDDING_PROVIDER", "ollama")
         provider = provider.lower().strip()
 
         if provider == "ollama":

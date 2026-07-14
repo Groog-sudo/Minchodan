@@ -93,6 +93,10 @@
   /* 콘솔에서 앱 화면과 동일한 방향(세로)으로 보려면 90도 회전이 필요하다. */
 }
 
+.live-feed-rotated {
+  transform-origin: center center;
+}
+
 .feed-overlay-scanner {
   position: absolute;
   top: 0;

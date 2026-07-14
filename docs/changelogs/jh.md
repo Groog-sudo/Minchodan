@@ -442,3 +442,48 @@
 - **관련 파일**: `server/api/detection_guidance_log_router.py`, `server/main.py`, `docs/changelogs/jh.md`
 - **검증 결과**: `server/main.py` 기준 미정의 심볼 오류 제거 확인
 - **비고**: 라우터 구조 재설계 또는 WebSocket 경로 배선 방향 재검토 전의 정리 커밋임
+
+---
+
+### 2026-07-13 | RAG | 생활지원 통합 안내 RAG 파이프라인 추가
+
+- **커밋**: `feat(rag,stt): convenience_guidelines 기반 생활지원 RAG 구축 및 STT 질의 분기 연동`
+- **변경 내용**:
+  - `data/convenience_guidelines.json` 신규 추가: 기관/서비스/인물/긴급연락망/FAQ/통합 문서 기반의 생활지원 더미 코퍼스 구성
+  - `server/rag/convenience_rag.py` 신규 추가:
+    - JSON 코퍼스를 문서 단위(`organization`, `service`, `person`, `emergency_contact`, `faq`, `rag_document`)로 정규화
+    - Chroma 컬렉션(`convenience_guidelines`) 빌드/로딩 함수 추가
+    - 질의 키워드 기반 편의성 질문 판별(`looks_like_convenience_query`) 추가
+    - 검색 결과를 Gemini로 근거 기반 요약 응답하는 `ConvenienceKnowledgeBase.answer()` 구현
+  - `scripts/build_convenience_db.py` 신규 추가:
+    - convenience 전용 ChromaDB 빌드 CLI 스크립트 추가
+    - JSON 경로/저장경로/컬렉션/임베딩 모델을 인자로 주입 가능하도록 구성
+  - `server/stt/stt_to_llm_bridge.py` 수정:
+    - 자유 질의응답 경로에서 근접 POI 질의 다음 단계로 convenience RAG 분기 추가
+    - `question-convenience-rag` source와 RAG 메타(`rag_query`, `rag_results`, `rag_latency_ms`) 반환
+- **관련 파일**: `data/convenience_guidelines.json`, `server/rag/convenience_rag.py`, `scripts/build_convenience_db.py`, `server/stt/stt_to_llm_bridge.py`, `docs/changelogs/jh.md`
+- **검증 결과**:
+  - `git diff --cached --stat` 기준 4개 파일 `1646 insertions(+), 1 deletion(-)` 확인
+  - STT 브리지 캐시 diff에서 convenience RAG 분기 추가 내용 반영 확인
+
+---
+
+### 2026-07-13 | Changelog | 오늘 커밋 작업 요약(추가 정리)
+
+- **요약 대상 커밋**:
+  - `84c9281` - `feat(rag,stt): convenience_guidelines 기반 생활지원 RAG 구축`
+  - `a39a089` - `feat(client,server,console): 실기기 WS/STT 안정화 및 콘솔 라이브피드 보정`
+- **커밋별 핵심 내용**:
+  - `84c9281`
+    - 생활지원 코퍼스(`data/convenience_guidelines.json`) 추가
+    - convenience 전용 RAG 모듈(`server/rag/convenience_rag.py`) 및 DB 빌드 스크립트(`scripts/build_convenience_db.py`) 추가
+    - STT 자유질의 경로에 convenience RAG 분기(`question-convenience-rag`) 연동
+  - `a39a089`
+    - 클라이언트 WS 재연결/종료 레이스 방지, STT 전송 전 연결 상태 가드 추가
+    - 서버 STT 짧은 오디오 가드(`MIN_STT_AUDIO_BYTES=4096`) 및 data URI base64 허용 보강
+    - STT WhisperModel 초기화 동시성 lock 적용
+    - 콘솔 라이브피드 90도 회전 보정 및 bbox 좌표 변환, 동적 API base URL/재연결 안정화
+    - `console/public/favicon.ico`, `console/public/favicon.svg`, `scripts/fix_android_usb_ws.ps1`, `package-lock.json` 반영
+- **검증 결과**:
+  - 두 커밋 모두 `origin/jh` 푸시 완료
+  - 현재 항목은 당일 작업 추적 강화를 위한 후속 정리 기록

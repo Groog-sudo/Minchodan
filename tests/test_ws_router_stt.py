@@ -34,7 +34,10 @@ class _FakeWebSocket:
 
 
 def _fake_wav_b64() -> str:
-    return base64.b64encode(b"RIFF....WAVEfmt ").decode("utf-8")
+    # jh 병합(2026-07-13)으로 추가된 MIN_STT_AUDIO_BYTES(4096) 가드를 통과시키기 위해
+    # 원래의 16바이트 더미보다 넉넉하게 패딩한다(이 테스트의 검증 대상은 길이 가드가
+    # 아니라 그 이후의 전사/가이드 생성 흐름이므로 최소 길이만 만족시키면 된다).
+    return base64.b64encode(b"RIFF....WAVEfmt " + b"\x00" * 4096).decode("utf-8")
 
 
 @pytest.mark.asyncio
@@ -92,9 +95,7 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
     assert payload["duration_ms"] == 900.0
     assert payload["source"] == "navigation-setup-wakeup"
     assert ws.sent_bytes == [b"fake-audio"]
-    assert persisted[0]["detections"] == [
-        {"source": "stt", "text_length": len(fake_result.text)}
-    ]
+    assert persisted[0]["detections"] == [{"source": "stt", "text_length": len(fake_result.text)}]
 
 
 @pytest.mark.asyncio

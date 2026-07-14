@@ -29,8 +29,13 @@ class OrchState(TypedDict, total=False):
     # server/detection/surface_departure.py의 판정 결과를 인지 경로 문장 생성에 전달한다.
     is_departing_confirmed: bool
     braille_direction: str
+    # 2026-07-13 추가: 주 탐지 객체의 실제 화면 위치를 12시(정면) 기준 9시~3시 시계
+    # 방향으로 환산한 값("2시" 등). L2가 "좌측/우측" 대신 이 값을 문장에 반영한다.
+    clock_direction: str
     guidance_text: str
-    direction: Literal["좌", "우", "직진", "정지", ""]
+    # 2026-07-13: extract_direction()이 "N시" 시계 방향을 우선 추출하도록 바뀌어
+    # 좌/우/직진/정지 외에 "9시"~"3시" 값도 들어올 수 있다.
+    direction: str
     verified: bool
     retry_count: int
     validation_errors: list[str]

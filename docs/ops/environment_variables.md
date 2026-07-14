@@ -1,8 +1,8 @@
-﻿# Minchodan 환경 변수 명세서
+# Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-13
-> **버전**: v0.4.15 (2026-07-13 §2.14 WiFi/USB 이중 접속 변수(`EXPO_PUBLIC_WIFI_HOST`/`USB_HOST`/`DEFAULT_TRANSPORT`) 등재, `LAN_IP` 폴백 관계 정정 + 이전 v0.4.14 이력 유지: 2026-07-12 이벤트 프레임·`VITE_API_BASE_URL` + 이전 v0.4.13 인증 기본값 분리)
+> **버전**: v0.4.18 (2026-07-14 §2.8 `SLACK_WEBHOOK_URL` 코드 재검증 기반 재등재 — Webhook 우선/Bot Token 폴백 이중 인증 구조 정정, §2.15 미등재 변수 13종 일괄 명세, 기존 v0.4.17 이력 유지: §2.9 LangSmith API Key 실키 반영 및 CORS_ORIGINS 환경변수 동적 파싱 명세 추가)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -27,7 +27,7 @@
 | **`OLLAMA_HOST`** | string | 선택 | (코드 기본값) | 임베딩 팩토리 전용 Ollama 호스트 (2026-07-07 추가 — `OLLAMA_BASE_URL`과 별개로 존재) | `server/rag/embedding_engine_factory.py:46` |
 | **`GEMMA_MODEL`** | string | 필수 | `gemma4:e4b` | L2 가이드 생성 모델 (로컬) | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
 | **`LLAVA_MODEL`** | string | 선택 | `llava` | 4단계 오프라인 캡셔닝 모델 (Ollama 로컬 경로 사용 시). Gemini 캡셔닝 선택 시 미사용 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
-| **`GOOGLE_API_KEY`** | string | 선택 | (미설정) | 4단계 캡셔닝 모델 Gemini API(`gemini-2.5-flash-lite`, `server/rag/build/gemini_captioner.py`) 사용 시 필수. 미설정 시 `ValueError` 발생(Llava 폴백 없음 — 2026-07-07 확인: 실제 캡셔너 구현체는 Gemini뿐). **2026-07-07 현재 `.env.example`에 이 변수가 없어 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | [`stage4_5_rag_design.md`](stage4_5_rag_design.md) 2.1절 |
+| **`GOOGLE_API_KEY`** | string | 선택 | (미설정) | 4단계 캡셔닝 모델 Gemini API(`gemini-2.5-flash-lite`, `server/rag/build/gemini_captioner.py`) 사용 시 필수. 미설정 시 `ValueError` 발생(Llava 폴백 없음 — 2026-07-07 확인: 실제 캡셔너 구현체는 Gemini뿐). **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0) | [`stage4_5_rag_design.md`](stage4_5_rag_design.md) 2.1절 |
 | **`EMBEDDING_MODEL`** | string | 필수 | `nomic-embed-text` | 임베딩 모델 (768차원) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`OPENAI_API_KEY`** | string | 선택 | (미설정) | OpenAI 핫스왑 시 필요. 미설정 시 OpenAI 클라이언트 초기화에서 `ValueError` 발생 후 Ollama로 폴백 | [`architecture.md`](architecture.md) 13.4절 |
 
@@ -53,7 +53,7 @@
 | **`HEARTBEAT_INTERVAL`** | int | 선택 | (코드 기본값) | 하트비트 송신 주기(초). `server/api/config.py` (2026-07-07 추가 — 기존 명세서에 누락돼 있었음) | `server/api/config.py:30` |
 | **`HEARTBEAT_TIMEOUT`** | int | 선택 | `15` | 하트비트 미수신 타임아웃(초). 총 유예 시간은 `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 20초). **2026-07-10 변경**(기존 5): ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료되는 문제를 실기기 LTE 테스트로 확인해 상향 | `server/api/config.py:31` |
 | **`MAX_RECONNECT_ATTEMPTS`** | int | 선택 | (코드 기본값) | 서버 측 재연결 허용 횟수 | `server/api/config.py:32` |
-| **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-09 정정**: 필드는 존재했으나 `server/main.py`가 소비하지 않고 `allow_origins=["*"]`로 고정돼 있던 문제를 연결. 프로덕션 배포 시 반드시 콘솔 실제 도메인으로 override | `server/api/config.py`, `server/main.py` |
+| **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-13 개선**: Pydantic Settings 초기화 시 환경변수 `CORS_ORIGINS`의 JSON 포맷 또는 쉼표 구분값으로부터 동적으로 안전하게 파싱 및 바인딩되도록 개선. | `server/api/config.py`, `server/main.py` |
 | **`JWT_SECRET_KEY`** | string | 필수(운영) / 선택(개발) | (개발 전용 임시 키) | 관리자/유저·디바이스 JWT 서명 키. **2026-07-11 강화**: `APP_ENV=production`에서 미설정 시 `RuntimeError`로 서버 기동 거부(fail-closed). 개발 환경에서만 임시 키 폴백. `.env.example`에 등재됨 | `server/db/security.py` |
 | **`APP_ENV`** | string | 선택 | `development` | 배포 환경 구분(`development`/`production`). **2026-07-11 신설**: `production`이면 (1) `JWT_SECRET_KEY` 필수(기동 거부), (2) `DEVICE_STATIC_TOKENS` 미설정 시 정적 디바이스 토큰 경로 비활성화(JWT만 인정) | `server/db/security.py`, `server/api/auth.py` |
 | **`DEVICE_STATIC_TOKENS`** | string | 선택 | (개발 기본 2식) | 정적 디바이스 토큰 목록, `device_id:token` 쉼표 구분(예: `dev-001:token-abc-001,dev-002:token-abc-002`). **2026-07-11 신설**: 코드 하드코딩 딕셔너리를 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록 | `server/api/auth.py` |
@@ -83,6 +83,8 @@
 | **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부(핫스왑 폴백용, `TTS_ENGINE=piper`일 때만 사용). **2026-07-09 정정**: 상주 프로세스화로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
 | **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위(핫스왑 폴백용) | `server/tts/tts_service.py` |
 | **`PIPER_DEFAULT_LENGTH_SCALE`** | float | 선택 | `0.85` | Piper 핫스왑·`TTS_DEFAULT_SPEED` 미지정 시 폴백 속도. **2026-07-13**: 접근성 기본 `0.9`→`0.85` | `server/tts/tts_service.py`, `server/tts/realtime_tts.py` |
+| **`TTS_PREWARM_LIMIT`** | int | 선택 | `30` | **2026-07-13 신규.** 서버 기동 시 DB(`detection_guidance_logs`) 이력에서 빈도 높은 안내 문장을 뽑아 `RealtimeTTS` 캐시를 미리 채우는 프리워밍 대상 건수. `RealtimeTTS.CACHE_MAX_ENTRIES`(64)를 넘으면 FIFO 축출로 앞쪽이 밀려나므로 이내로 권장 | `server/main.py`(lifespan), `server/tts/realtime_tts.py` |
+| **`TTS_PREWARM_MIN_COUNT`** | int | 선택 | `2` | **2026-07-13 신규.** 프리워밍 대상으로 뽑을 문장의 최소 등장 횟수(1회성 문장 제외) | `server/db/repositories.py`(`list_frequent_tts_texts`) |
 
 > **TTS 엔진 선택 이력**: piper → **supertonic(최종 선정, 2026-07-09 코드 반영 완료)**. 현재 코드 런타임(`get_tts_service()`)은 `supertonic`(기본)·`piper`·`pyttsx3` 3종 모두 구현되어 있으며, 미지원 값 입력 시 경고 로그 후 `supertonic`으로 강제 폴백합니다.
 
@@ -101,18 +103,23 @@
 
 ### 2.8 Slack Integration (공통 경보)
 
+Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 방식을 사용합니다.
+
+**구현체 A: `server/mcp/slack_notifier.py` (서버 런타임 MCP)** — Webhook 우선 / Bot Token 폴백 이중 인증:
+
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`SLACK_BOT_TOKEN`** | string | 선택 | (미설정) | Slack Bot Token. `scripts/slack_publisher.py:52`에서 실제 사용 중(미설정 시 경고 로그) | `scripts/slack_publisher.py` |
-| **`SLACK_CHANNEL_ID`** | string | 선택 | `C0BCZSB5TJS`(코드 내 폴백값) | 경보 발송 대상 채널 ID. `scripts/slack_publisher.py:193`에서 실제 사용 중 | `scripts/slack_publisher.py` |
+| **`SLACK_WEBHOOK_URL`** | string | 선택 | (미설정) | Slack Incoming Webhook URL. **설정 시 최우선 순위**로 사용(`send_notification_sync` L59 `if self.webhook_url:` 분기). 미설정 시 Bot Token 경로로 폴백 | `server/mcp/slack_notifier.py:49,59` |
+| **`SLACK_BOT_TOKEN`** | string | 선택 | (미설정) | Slack Web API Bot Token. Webhook 미설정 시 폴백 순위 2로 사용(`elif self.bot_token and self.channel_id:` L80 분기) | `server/mcp/slack_notifier.py:51,80`, `scripts/slack_publisher.py:52` |
+| **`SLACK_CHANNEL_ID`** | string | 선택 | `C0BCZSB5TJS`(코드 내 폴백값) | 경보 발송 대상 채널 ID. Bot Token 방식 사용 시 필수 | `server/mcp/slack_notifier.py:52`, `scripts/slack_publisher.py:193` |
 
-> **2026-07-07 정정**: 이전 버전은 `SLACK_WEBHOOK_URL`(Incoming Webhook)로 단일화했다고 기술했으나, 실제 코드(`scripts/slack_publisher.py`)를 확인한 결과 `SLACK_WEBHOOK_URL`은 어디에도 쓰이지 않고 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`(Bot Token 방식)만 실제로 사용되고 있다. "폐기"라고 서술했던 방식이 오히려 유일하게 살아있는 구현이었으므로 표를 코드 기준으로 되돌린다.
+> **2026-07-14 정정**: 이전 명세(v0.4.17)는 "2026-07-07 재정정: `SLACK_WEBHOOK_URL`은 코드 어디에도 쓰이지 않는 미사용 변수"라고 단언했으나, **코드 재검증 결과 부정확**함이 확인됨. `server/mcp/slack_notifier.py:49`에서 `os.getenv("SLACK_WEBHOOK_URL")`로 로드하며 L59에서 **최우선 분기**로 활성 사용 중. 두 인증 방식(Webhook/Bot Token)은 `scripts/slack_publisher.py`(Bot Token 전용)와 `server/mcp/slack_notifier.py`(Webhook 우선/Bot Token 폴백)로 구현체가 분리되어 있으며, 본 명세서는 두 구현체 모두를 코드 기준으로 반영함.
 
 ### 2.9 LangSmith Trace (선택적 관측)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`LANGCHAIN_API_KEY`** | string | 선택 | (미설정) | LangSmith Platform API 키. StateGraph 실행 경로 및 지연 추적 활성화 | [`architecture.md`](architecture.md) 13.4절 |
+| **`LANGCHAIN_API_KEY`** | string | 선택 | (미설정) | LangSmith Platform API 키. 실제 API Key 기입 시 Mocking 폴백이 해제되고 실제 SaaS 플랫폼 트레이싱 및 가드레일이 정상 작동합니다. | [`architecture.md`](architecture.md) 13.4절 |
 | **`LANGCHAIN_TRACING_V2`** | bool | 선택 | `false` | LangSmith Tracing v2 활성화 여부 (`true` 시 추적 시작) | [`architecture.md`](architecture.md) 13.4절 |
 
 > **선택적 명세**: LangSmith Trace MCP는 `architecture.md` 13.4절에서 "선택적으로 기입"으로 명시되어 있으며, 미설정 시 6단계 LangGraph 동작에는 영향을 주지 않습니다.
@@ -126,11 +133,9 @@
 
 > **개발 전용**: 이 변수들은 CUDA GPU가 감지되지 않은 개발·CI 환경에서 `GPUMonitorMCP`의 Mock 폴백 동작을 제어합니다. 프로덕션 환경에서는 무시됩니다.
 
-### 2.11 외부 터널링 (Ngrok) (야외 도로 테스트용)
+### 2.11 외부망 연결 (Tailscale, 야외 도로 테스트용)
 
-| 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`NGROK_AUTHTOKEN`** | string | 선택 | (미설정) | 야외 도로 테스트용 ngrok 터널 보안 인증 토큰. 무료 계정 터널 외부 노출 시 필요 | [`docs/changelogs/kb.md`](../changelogs/kb.md) |
+**2026-07-13 변경**: ngrok 프록시(클라우드 경유 지연)를 Tailscale P2P VPN으로 전면 교체. `NGROK_AUTHTOKEN` 변수 및 `docker-compose.yml`/`docker-compose.macos.yml`의 `ngrok` 서비스를 완전히 제거했다(서버 인프라 결정 - kb). 클라이언트 접속 방식은 처음엔 기존 `lan` 모드(`EXPO_PUBLIC_LAN_IP`)를 재사용해 구현했으나, jy 브랜치 병합 시 §2.14의 전용 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다(jy가 같은 세션에서 독립적으로 구현, `network_probe` RTT 계측과도 통합됨). 실기기는 `client/.env`에 `EXPO_PUBLIC_NETWORK_MODE=tailscale`, `EXPO_PUBLIC_TAILSCALE_HOST=<개발 PC의 Tailscale IP 또는 MagicDNS 이름>`을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다(서버 측 환경변수는 불요 - Tailscale 자체가 OS 레벨 네트워크 인터페이스). 클라이언트 쪽 `NETWORK_MODE=ngrok` 분기와 `@expo/ngrok` 의존성은 폴백으로 코드에 보존되어 있으나, ngrok 도커 인프라 자체는 없으므로 실제로 그 경로를 쓰려면 컨테이너를 별도로 다시 구성해야 한다. 상세: [`docs/changelogs/kb.md`](../changelogs/kb.md), [`docs/changelogs/jy.md`](../changelogs/jy.md) 2026-07-13 항목.
 
 ### 2.12 데이터베이스 (MariaDB)
 
@@ -152,7 +157,7 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **`.env.example`에 아직 등재되어 있지 않아 문서와 실제 파일이 불일치** — 값 설정 필요 시 `.env.example`에 직접 추가할 것 | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38`, `server/api/ws_router.py` |
+| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0) | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38`, `server/api/ws_router.py` |
 
 ### 2.14 클라이언트·콘솔 공개 변수 (빌드 시 인라인, 2026-07-11 신설)
 
@@ -160,18 +165,44 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값(코드 폴백) | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `lan` | 단말 접속 모드(`lan`/`ngrok`). `ngrok`이면 WiFi/USB 토글보다 WSS 우선 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `lan` | 단말 접속 모드(`lan`/`ngrok`/`tailscale`). `ngrok` 또는 `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_WIFI_HOST`** | string | 선택 | `192.168.137.1` | **평상시 WiFi 모드** PC 호스트. Windows 노트북 모바일 핫스팟 게이트웨이 기본값(2026-07-13) | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
 | **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | (WIFI_HOST 폴백) | 구 명칭. 설정 시 `WIFI_HOST`가 없으면 이 값을 WiFi 호스트로 사용 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_USB_HOST`** | string | 선택 | `127.0.0.1` | **개발 USB 모드** + `adb reverse` 호스트 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
+| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | 선택 | (`WIFI_HOST` 폴백) | **외부망 Tailscale 모드** 서버 호스트. iOS/Android 단말의 Tailscale VPN이 켜진 상태에서 서버의 `100.x` 주소 또는 MagicDNS 이름을 사용 | `client/src/config/index.ts`, `client/.env.example` |
+| **`EXPO_PUBLIC_SERVER_PORT`** | string | 선택 | `8000` | 단말이 접속할 FastAPI/WebSocket 포트. 기본 `/ws/detect` 포트와 동일 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEFAULT_TRANSPORT`** | string | 선택 | `wifi` | 앱 최초 기동 기본 수송(`wifi`/`usb`). 이후 선택은 단말에 영속 | `client/src/config/index.ts`, `client/src/services/serverTransport.ts` |
 | **`EXPO_PUBLIC_NGROK_DOMAIN`** | string | 선택 | `partake-primer-surround.ngrok-free.dev` | 외부망 터널 도메인 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_BENCHMARK`** | string | 선택 | `false` | `true`이면 iOS/Android 앱이 `network_probe`를 주기적으로 보내 최신 RTT와 최근 30개 평균을 디버그 정보에 표시 | `client/src/config/index.ts`, `client/src/hooks/useWebSocket.ts` |
+| **`EXPO_PUBLIC_NETWORK_BENCHMARK_INTERVAL_MS`** | int | 선택 | `1000` | 앱 내 `network_probe` 전송 간격(ms) | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_BENCHMARK_PAYLOAD_BYTES`** | int | 선택 | `256` | 앱 내 `network_probe` 페이로드 크기(bytes). 작은 고정값으로 순수 WS 왕복 지연을 비교 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEVICE_ID`** | string | 선택 | `dev-001` | 단말 식별자 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEVICE_TOKEN`** | string | 선택 | `token-abc-001`(개발 전용) | 디바이스 토큰. **2026-07-11 분리**: 코드 하드코딩에서 환경 변수 우선으로 전환. 실질 보안은 서버 JWT 발급 체계(`issue_device_token`)로 이관 예정 | `client/src/config/index.ts`, `server/api/auth.py` |
 | **`VITE_MONITOR_STREAM_URL`** | string | 선택 | `http://localhost:8000/api/v1/monitor/stream` | 콘솔 SSE 스트림 주소 | `console/src/api/useMonitorStream.ts`, `console/.env.example` |
 | **`VITE_ENABLE_DEMO_DATA`** | string | 선택 | `false` | 콘솔 데모 데이터 주입(개발 빌드 전용, api_specification §8.4) | `console/src/App.tsx` |
 | **`VITE_NAV_MAP_URL`** | string | 선택 | `http://localhost:8000/navigation/?embed=true` | 관제 지도 iframe 주소(2026-07-11 신설) | `console/src/components/OperatorLiveMap.tsx` |
 | **`VITE_API_BASE_URL`** | string | 선택 | `http://localhost:8000` | 콘솔 REST API 기본 주소(2026-07-12 신설). 사후 이력 로그 조회·이벤트 프레임 이미지 서빙에 사용 | `console/src/api/useDetectionLogs.ts`, api_specification §8.5 |
+
+### 2.15 코드 실사용 미등재 변수 (2026-07-14 일괄 명세)
+
+> **2026-07-14 정합성 검토**: 코드(`os.getenv`)에서 활성 사용 중이나 기존 명세(§2.1~2.14)에 누락되어 있던 변수들을 일괄 등재합니다. 대부분은 고급 튜닝·내부 분기용 선택 변수이므로 기본값 미설정 시 안전 폴백합니다.
+
+| 변수명 | 타입 | 필수/선택 | 기본값(코드) | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`CONVENIENCE_CHROMA_COLLECTION`** | string | 선택 | `convenience_guide` | 생활지원 RAG 전용 ChromaDB 컬렉션명. 안전 수칙(`safety_guidelines`)과 분리된 생활 정보 검색용 | `server/rag/retriever.py`, `scripts/` |
+| **`CONVENIENCE_EMBEDDING_MODEL`** | string | 선택 | (`EMBEDDING_MODEL` 폴백) | 생활지원 RAG 전용 임베딩 모델 | `server/rag/embedding_engine_factory.py` |
+| **`CONVENIENCE_EMBEDDING_PROVIDER`** | string | 선택 | (`LLM_PROVIDER` 폴백) | 생활지원 RAG 임베딩 공급자(`ollama`/`openai`) | `server/rag/embedding_engine_factory.py` |
+| **`GEMINI_MODEL`** | string | 선택 | `gemini-2.5-flash-lite` | Gemini 캡셔닝/LLM 모델명. 4단계 RAG 빌드 및 L2 가이드 생성(gemini provider) 시 사용 | `server/rag/build/gemini_captioner.py`, `server/orchestration/llm_client_factory.py` |
+| **`EDGE_TTS_SAMPLE_RATE`** | int | 선택 | `24000` | edge-tts 출력 샘플레이트(Hz) | `server/tts/tts_service.py` |
+| **`SUPERTONIC_SPEED_MIN`** / **`SUPERTONIC_SPEED_MAX`** | float | 선택 | (코드 기본값) | Supertonic 발화 속도 허용 범위 | `server/tts/tts_service.py` |
+| **`DATABASE_URL`** | string | 선택 | (미설정) | SQLAlchemy 통합 DB 연결 URL. 설정 시 개별 `DB_HOST`/`DB_PORT`/... 조합보다 우선 | `server/db/connection.py` |
+| **`LANGCHAIN_PROJECT`** | string | 선택 | `minchodan` | LangSmith 트레이스 프로젝트명 | `server/mcp/langsmith_tracer.py` |
+| **`STT_CONFIG_SOURCE`** | string | 선택 | (코드 기본값) | STT 설정 소스 분기 | `server/stt/stt_config.py` |
+| **`TEST_VERIFY_MODE`** | bool | 선택 | `false` | 검증 테스트 모드 활성화(오프라인 검증 스크립트용) | `server/` |
+| **`DEVICE_TOKEN`** | string | 선택 | (미설정) | 디바이스 토큰(`scripts/` 유틸리티 스크립트 전용) | `scripts/` |
+| **`AIHUB_WALK_DATASET_ROOT`** | path | 선택 | (미설정) | AIHub 인도보행 영상 데이터셋 루트 경로(RAG 빌드 스크립트용) | `scripts/` |
+
+> **참고**: 이 변수들은 `.env.example`에 주석 처리 또는 미기재 상태일 수 있으며, 고급 사용자만 설정하는 튜닝 포인트입니다. 프로젝트 기동에는 영향을 주지 않습니다.
 
 ---
 
@@ -213,7 +244,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 | # | 항목 | 이전 상태 | 해소 후 |
 | :--- | :--- | :--- | :--- |
-| 1 | **Slack 인증 방식** | `.env.example`(`SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`) vs `architecture.md` 13.4절(`SLACK_WEBHOOK_URL`) | 2026-07-07 재정정: 실제 코드(`scripts/slack_publisher.py`)가 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`만 사용하므로 이 방식으로 확정. `SLACK_WEBHOOK_URL`은 코드 어디에도 없는 미사용 변수 |
+| 1 | **Slack 인증 방식** | `.env.example`(`SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`) vs `architecture.md` 13.4절(`SLACK_WEBHOOK_URL`) | 2026-07-14 코드 기준 확정: `server/mcp/slack_notifier.py`는 `SLACK_WEBHOOK_URL`(우선)+`SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID`(폴백) 이중 인증 구조. `scripts/slack_publisher.py`는 `SLACK_BOT_TOKEN`+`SLACK_CHANNEL_ID` 전용. 두 구현체를 §2.8에 통합 명세 |
 | 2 | **`WS_HOST` 누락** | `.env.example`에만 존재, `architecture.md`·`README.md`에는 누락 | 본 명세서 2.4절에 통합 |
 | 3 | **`DETECTOR_TYPE` 누락** | `.env.example`에만 존재 | 본 명세서 2.5절에 통합 |
 | 4 | **`DATA_*` 경로 누락** | `.env.example`에만 존재 (5종) | 본 명세서 2.7절에 통합 |
@@ -221,7 +252,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 6 | **`LANGCHAIN_*` 누락** | `architecture.md` 13.4절에만 산재 | 본 명세서 2.9절에 통합 |
 | 7 | **`NGROK_AUTHTOKEN` 누락** | 야외 도로 테스트용 터널 인증 변수가 `.env.example`에만 존재 | 본 명세서 2.11절에 통합 |
 | 8 | **DB 환경 변수 누락** | `.env.example`에는 `DB_*` 6종이 있으나 본 명세서에는 누락 | 본 명세서 2.12절에 통합하고 `DB_NAME=minchodan_db` 기준으로 정합 |
-| 9 | **`TMAP_APP_KEY` 누락** | 코드(`server/navigation/`)에서 실사용되나 본 명세서·`.env.example` 모두 누락 | 본 명세서 2.13절에 신규 명세(`.env.example` 반영은 미완, 담당자 확인 필요) |
+| 9 | **`TMAP_APP_KEY` 누락** | 코드(`server/navigation/`)에서 실사용되나 본 명세서·`.env.example` 모두 누락 | 본 명세서 2.13절에 신규 명세. **2026-07-13**: `.env.example` 반영 완료 |
 
 ---
 

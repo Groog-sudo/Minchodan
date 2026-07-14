@@ -2,6 +2,7 @@ import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-aud
 import { Asset } from "expo-asset";
 import * as FileSystem from "expo-file-system/legacy";
 import { File, Paths } from "expo-file-system";
+import { Platform } from "react-native";
 import * as Speech from "expo-speech";
 
 /**
@@ -457,7 +458,19 @@ class AudioEngine {
     if (id.includes("google")) score += 40;
     if (id.includes("premium") || id.includes("enhanced") || id.includes("quality")) score += 30;
     if (id.includes("female") || id.includes("woman") || id.includes("여자")) score += 10;
-    if (id.includes("robot") || id.includes("compact") || id.includes("local")) score -= 30;
+    // 2026-07-13 실기기 발견(초반 인사말이 남성 기계음 "Eddy"로 재생됨): iOS의
+    // com.apple.eloquence.* 계열(Eddy/Reed/Rocko/Sandy 등)은 90년대풍 합성음 특화
+    // 보이스로 반드시 강하게 배제해야 한다. 기존 "compact" 패널티는 Android Google
+    // TTS 저품질 로컬 엔진을 겨냥한 규칙이었으나, iOS 기본 여성 음성(Yuna)의 식별자가
+    // 정확히 "com.apple.ttsbundle.Yuna-compact" 형태라 이 규칙에 걸려 Eddy보다 낮은
+    // 점수를 받는 역효과가 있었다(Eloquence 계열은 "compact"를 포함하지 않아 무감점).
+    // "compact" 패널티는 실제로 문제였던 Android에만 적용한다.
+    if (id.includes("eloquence")) score -= 80;
+    if (Platform.OS === "android" && (id.includes("robot") || id.includes("compact") || id.includes("local"))) {
+      score -= 30;
+    } else if (id.includes("robot") || id.includes("local")) {
+      score -= 30;
+    }
     return score;
   }
 

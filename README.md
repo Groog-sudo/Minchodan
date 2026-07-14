@@ -6,7 +6,7 @@
 **Minchodan**은 시각장애인 보행 보조를 위한 스마트 가이드독 AI 플랫폼입니다. 스마트폰 카메라로 주변을 인식하고, GPU 서버에서 실시간으로 장애물·노면 상태를 탐지한 뒤, 음성과 햅틱으로 즉시 안내합니다. 안전 대응은 **반사 경로**(즉시 경보)와 **인지 경로**(상세 가이드) 두 갈래로 물리 분리하는 것이 핵심 원칙입니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.4 (2026-07-10 dev 브랜치 문서 정합성 점검: 환경 변수 표의 `CHROMA_COLLECTION`·`TTS_ENGINE` 기본값이 상단 기술 스택 서술과 모순되던 것 정정(구 kokoro/coqui 잔재 제거), 존재하지 않는 env var `RDB` 행 제거, `HEARTBEAT_TIMEOUT`/`TMAP_APP_KEY`/`DB_HOST` 추가, 디렉토리 구조의 존재하지 않는 audioPlayer/reflexClipPlayer/utils 참조 정정 + 이전 v0.2.3 이력 유지: jy 브랜치 병합 Docker Compose에서 Ollama 컨테이너 제거·호스트 로컬 Ollama 연동 기준 반영, TTS 엔진 Piper→Supertonic 교체, 반사 캡처 takePhoto()→Frame Processor 전환)
+> **버전**: v0.2.5 (2026-07-14 코드-문서 정합성 전면 교차 검증 기반 수정: `react-native-tts`→`expo-speech` 정정(미사용 의존성 잔존 기술), `data/reflex_clips/`→`client/assets/sounds/reflex_clips/` 경로 정정(단말 번들로 이동), `LLAVA_MODEL`(미사용 잔재) 행 제거, `TTS_ENGINE` 표에 `edge` 추가 + 이전 v0.2.4 이력 유지: 환경 변수 표 모순 정정, jy 브랜치 병합 Docker Compose Ollama 호스트 로컬 전환, TTS 엔진 Piper→Supertonic 교체, 반사 캡처 Frame Processor 전환)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
 
 ---
@@ -71,7 +71,7 @@
 - react-native-vision-camera (후면 카메라, Frame Processor 기반 연속 캡처 + 스트림 분할; 2026-07-09 takePhoto()에서 전환 - AVCapturePhotoOutput의 오디오 세션 인터럽션 회피)
 - 온디바이스 추론: CoreML(iOS) / react-native-fast-tflite(Android)
 - expo-audio (단말 오디오 재생 계층, createAudioPlayer)
-- react-native-tts (예비 TTS)
+- expo-speech (한글 음성 합성, Voice 선택; react-native-tts 미사용)
 - expo-haptics (반사 햅틱)
 - Haptics + announceForAccessibility (접근성)
 
@@ -108,6 +108,7 @@ Minchodan/
 │       └── yolo26n/
 │
 ├── client/                          # React Native 앱 (thin client)
+│   ├── assets/sounds/reflex_clips/  # 사전합성 반사 음성 클립 (WAV 5종, 단말 번들)
 │   └── src/
 │       ├── hooks/                   # useWebSocket, useCamera, useLocation(GPS)
 │       ├── services/                # frameCaptureProvider(iOS/Android 이원화), audioEngine, hapticEngine
@@ -118,8 +119,7 @@ Minchodan/
 │   ├── frames/                      # 1fps 추출 프레임
 │   ├── deduped/                     # pHash 중복 제거 후 프레임
 │   ├── captions/                    # Gemini VLM 캡셔닝 결과 JSON
-│   ├── chroma_db/                   # ChromaDB persist 디렉토리
-│   └── reflex_clips/                # 사전합성 반사 음성 클립
+│   └── chroma_db/                   # ChromaDB persist 디렉토리
 │
 ├── training/                        # 모델 학습 (오프라인)
 │   ├── datasets/                    # detection, segmentation
@@ -249,7 +249,6 @@ bash scripts/build_chroma.sh
 | `COMPOSE_OLLAMA_BASE_URL` | Docker FastAPI 컨테이너에서 호스트 Ollama로 접속할 주소 | `http://host.docker.internal:11434` |
 | `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4:e4b`             |
 | `GOOGLE_API_KEY`    | 4단계 캡셔닝(Gemini) API 키               | (필수, 미설정 시 빌드 실패) |
-| `LLAVA_MODEL`       | (미사용, 구 로컬 Llava 계획 잔재)         | `llava`                  |
 | `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
@@ -257,7 +256,7 @@ bash scripts/build_chroma.sh
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
-| `TTS_ENGINE`        | TTS 엔진 (`supertonic` 기본, `piper`/`pyttsx3` 핫스왑) | `supertonic` |
+| `TTS_ENGINE`        | TTS 엔진 (`edge` 한국어 자연도/`supertonic` 로컬 기본/`piper`/`pyttsx3` 핫스왑) | `supertonic` |
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
 | `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키(내비게이션)  | (미설정)                 |
 | `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |

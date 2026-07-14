@@ -8,6 +8,7 @@ import base64
 import io
 import logging
 import os
+import time
 import wave
 
 from dotenv import load_dotenv
@@ -25,6 +26,8 @@ load_dotenv(dotenv_path=os.path.join(_PROJECT_ROOT, ".env"))
 DEFAULT_SPEED = float(
     os.getenv("TTS_DEFAULT_SPEED", os.getenv("PIPER_DEFAULT_LENGTH_SCALE", "0.85"))
 )
+
+_background_tasks = set()
 
 
 def _wav_duration_ms(audio_bytes: bytes) -> float:
@@ -93,14 +96,55 @@ class RealtimeTTS:
         cache_key = (text, voice, float(speed))
         cached = self._cache.get(cache_key)
         if cached is not None:
+            # 캐시 적중 시에도 관제 콘솔 업데이트를 위해 비동기 검증 이벤트 전송 (0ms 지연)
+            try:
+                b64_audio, _ = cached
+                audio_bytes = base64.b64decode(b64_audio.encode("utf-8"))
+                from server.mcp.accessibility_simulator import accessibility_simulator
+                from server.mcp.audio_validator import audio_validator
+
+                # 캐시이므로 TTFB는 0ms로 인지
+                task1 = asyncio.create_task(
+                    audio_validator.validate_and_broadcast(audio_bytes, 0.0, text)
+                )
+                task2 = asyncio.create_task(
+                    accessibility_simulator.simulate_and_broadcast(text, text)
+                )
+                _background_tasks.add(task1)
+                _background_tasks.add(task2)
+                task1.add_done_callback(_background_tasks.discard)
+                task2.add_done_callback(_background_tasks.discard)
+            except Exception as e:
+                logger.warning(f"[TTS] 캐시 히트 검증 백그라운드 태스크 실패: {e}")
             return cached
 
         try:
+            start_time = time.perf_counter()
             audio_bytes = await asyncio.wait_for(
                 self.tts.generate(text=text, voice=voice, speed=speed), timeout=15.0
             )
+            ttfb_ms = (time.perf_counter() - start_time) * 1000.0
+
             # 음성 데이터가 정상적으로 생성된 경우
             if audio_bytes:
+                # Audio Validator MCP 비동기 실행 (0ms 지연 가드레일)
+                from server.mcp.audio_validator import audio_validator
+
+                task1 = asyncio.create_task(
+                    audio_validator.validate_and_broadcast(audio_bytes, ttfb_ms, text)
+                )
+
+                # Accessibility Simulator MCP 비동기 실행 (0ms 지연 가드레일)
+                from server.mcp.accessibility_simulator import accessibility_simulator
+
+                task2 = asyncio.create_task(
+                    accessibility_simulator.simulate_and_broadcast(text, text)
+                )
+                _background_tasks.add(task1)
+                _background_tasks.add(task2)
+                task1.add_done_callback(_background_tasks.discard)
+                task2.add_done_callback(_background_tasks.discard)
+
                 # 바이트 데이터를 베이스64 문자열로 변환
                 # 웹소켓 전송을 위해 문자열 형태로 만들어야 함
                 b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
@@ -130,6 +174,36 @@ class RealtimeTTS:
             logger.warning("LLM 출력에서 합성 가능한 guidance_text를 찾지 못했습니다.")
             return None, 0.0
         return await self.synthesize(text=text, voice=voice, speed=speed)
+
+    async def prewarm(self, texts: list[str], voice: str = "ko", speed=DEFAULT_SPEED) -> int:
+        """서버 기동 시 DB 이력에서 뽑은 빈도 높은 문장을 미리 합성해 캐시를 채운다.
+
+        문장 하나가 실패해도 나머지는 계속 진행한다(프리워밍은 부가 기능이라
+        실패가 서버 기동이나 이후 실시간 합성을 막으면 안 된다). texts 길이가
+        CACHE_MAX_ENTRIES를 넘으면 FIFO 축출로 앞쪽 항목이 밀려나 프리워밍
+        효과가 사라지므로 상한을 넘지 않도록 호출측(list_frequent_tts_texts의
+        limit)에서 미리 제한해야 한다.
+
+        반환값: 실제로 캐시에 채워진(합성 성공한) 문장 수.
+        """
+        if len(texts) > self.CACHE_MAX_ENTRIES:
+            logger.warning(
+                f"[TTS] 프리워밍 대상({len(texts)}건)이 캐시 상한"
+                f"({self.CACHE_MAX_ENTRIES})을 초과해 앞쪽 항목이 밀려날 수 있습니다."
+            )
+
+        warmed = 0
+        for text in texts:
+            if not text or not text.strip():
+                continue
+            try:
+                b64_audio, _ = await self.synthesize(text=text, voice=voice, speed=speed)
+            except Exception as e:
+                logger.warning(f"[TTS] 프리워밍 합성 실패, 건너뜁니다: '{text}' ({e})")
+                continue
+            if b64_audio is not None:
+                warmed += 1
+        return warmed
 
 
 # 전역에서 사용할 수 있는 기본 인스턴스 생성

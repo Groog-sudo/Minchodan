@@ -390,6 +390,48 @@ class TestPipelineRobustness:
         assert result.risk_hint == "mid"
 
     @pytest.mark.asyncio
+    async def test_is_departing_true_by_default_when_polygon_covers_reference_point(
+        self, frame, mock_redis_bus
+    ):
+        """is_outdoor 미전달(None, 구버전 클라이언트 등)이면 기존처럼 세그멘테이션 결과를
+        그대로 신뢰해 이탈 판정이 나가야 한다(회귀 방지)."""
+        # frame은 480x640(H x W) - 기준점(0.5, 0.9) => (320, 432)를 덮는 폴리곤.
+        polygon = [[100.0, 300.0], [540.0, 300.0], [540.0, 480.0], [100.0, 480.0]]
+        segmentor = StubSegmentor(
+            surfaces=[SurfaceResult(class_name="roadway", centroid=[320.0, 400.0], polygon=polygon)]
+        )
+        pipeline = DetectionPipeline(
+            detector=StubDetector(detections=[]),
+            segmentor=segmentor,
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result, _, _ = await pipeline.run(frame, "test", "evt-departing-default", "dev-1")
+        assert result.is_departing is True
+
+    @pytest.mark.asyncio
+    async def test_is_departing_suppressed_when_client_reports_indoor(self, frame, mock_redis_bus):
+        """2026-07-13 실기기 실측: 실내 바닥이 roadway/caution으로 오분류돼 이탈 판정이
+        계속 발생하는 것을 확인. 클라이언트 온디바이스 씬 분류가 실내(is_outdoor=False)로
+        확정한 경우 세그멘테이션 결과와 무관하게 이탈 판정을 걸지 않아야 한다."""
+        polygon = [[100.0, 300.0], [540.0, 300.0], [540.0, 480.0], [100.0, 480.0]]
+        segmentor = StubSegmentor(
+            surfaces=[SurfaceResult(class_name="roadway", centroid=[320.0, 400.0], polygon=polygon)]
+        )
+        pipeline = DetectionPipeline(
+            detector=StubDetector(detections=[]),
+            segmentor=segmentor,
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result, _, _ = await pipeline.run(
+            frame, "test", "evt-departing-indoor", "dev-1", is_outdoor=False
+        )
+        assert result.is_departing is False
+
+    @pytest.mark.asyncio
     async def test_empty_inputs_return_none_risk(self, frame, mock_redis_bus):
         pipeline = DetectionPipeline(
             detector=StubDetector(detections=[]),

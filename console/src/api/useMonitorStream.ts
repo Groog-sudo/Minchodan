@@ -7,8 +7,13 @@ import type {
   RiskEvent,
   SessionStatus,
 } from "../types/monitor";
+import { resolveServiceUrl } from "../config/network";
 
-const DEFAULT_STREAM_URL = "http://localhost:8000/api/v1/monitor/stream";
+const DEFAULT_STREAM_URL = resolveServiceUrl(
+  import.meta.env.VITE_MONITOR_STREAM_URL,
+  "/api/v1/monitor/stream",
+  import.meta.env.VITE_API_BASE_URL,
+);
 
 /*
  * 실제 백엔드 코드 기준으로 직접 확인된 SSE 이벤트:
@@ -56,6 +61,10 @@ const initialState: MonitorState = {
   detections: [],
   ai: null,
   raw_events: [],
+  audio_validation: null,
+  cache_suppression: null,
+  accessibility_validation: null,
+  langsmith_trace: null,
 };
 
 export function useMonitorStream(token: string | null = null) {
@@ -68,7 +77,13 @@ export function useMonitorStream(token: string | null = null) {
   const [state, setState] = useState<MonitorState>(initialState);
   const [streamUrl, setStreamUrl] = useState(DEFAULT_STREAM_URL);
   const resolvedUrl = useMemo(
-    () => streamUrl || import.meta.env.VITE_MONITOR_STREAM_URL || DEFAULT_STREAM_URL,
+    () =>
+      streamUrl ||
+      resolveServiceUrl(
+        import.meta.env.VITE_MONITOR_STREAM_URL,
+        "/api/v1/monitor/stream",
+        import.meta.env.VITE_API_BASE_URL,
+      ),
     [streamUrl],
   );
 
@@ -456,8 +471,11 @@ export function useMonitorStream(token: string | null = null) {
           case "llm_status" :
           case "rag_result" :
           case "tts_status" :
-          // case "stt_status" : {  // STT는 7단계 파이프라인 범위 밖이므로 제외
-          {
+          case "stt_status" : {
+            // 2026-07-13 재활성화: server/api/ws_router.py가 stt_status(transcribing/idle)를
+            // 실제로 broadcast_event하고 있어 STT는 7단계 파이프라인 범위 밖이 아니라
+            // 실제 producer가 있는 이벤트였음(주석의 전제가 틀렸었다). 이 case가 주석
+            // 처리되어 있어 콘솔 MIC STATE가 항상 STANDBY로 고정되던 버그.
             /*
              * 발표/면접 대응 포인트:
              * - AI 파이프라인 상태는 누적 로그보다 최신 상태 확인이 중요합니다.
@@ -544,6 +562,38 @@ export function useMonitorStream(token: string | null = null) {
               */
             };
           }
+          case "audio_validation":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              audio_validation: payload as any,
+            };
+
+          case "cache_suppression":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              cache_suppression: payload as any,
+            };
+
+          case "accessibility_validation":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              accessibility_validation: payload as any,
+            };
+
+          case "langsmith_trace":
+            return {
+              ...current,
+              last_event_at: receivedAt,
+              raw_events,
+              langsmith_trace: payload as any,
+            };
+
           default:
             return {
               ...current,
@@ -664,6 +714,69 @@ export function useMonitorStream(token: string | null = null) {
       timestamp: new Date().toISOString(),
       payload: {
         stt_status: "idle",
+      },
+    });
+
+    applyEvent({
+      event_type: "audio_validation",
+      timestamp: new Date().toISOString(),
+      payload: {
+        alert_id: "cognitive_guidance",
+        is_valid: true,
+        error_reasons: [],
+        ttfb_ms: 124.5,
+        sample_rate: 22050,
+        channels: 1,
+        duration_sec: 1.85,
+        byte_size: 81620,
+      },
+    });
+
+    applyEvent({
+      event_type: "cache_suppression",
+      timestamp: new Date().toISOString(),
+      payload: {
+        suppressed_keys: ["suppress:ios-demo-01:ref_alert_001"],
+        ttl_seconds: 45,
+        details: [
+          {
+            key: "suppress:ios-demo-01:ref_alert_001",
+            device_id: "ios-demo-01",
+            alert_id: "ref_alert_001",
+            ttl_seconds: 45,
+          }
+        ],
+      },
+    });
+
+    applyEvent({
+      event_type: "accessibility_validation",
+      timestamp: new Date().toISOString(),
+      payload: {
+        alert_id: "accessibility",
+        is_valid: true,
+        similarity_score: 1.0,
+        warnings: [],
+        details: {
+          guidance_text: "전방에 보도블록 파손이 있으니 좌측으로 우회하세요",
+          synthesized_text: "전방에 보도블록 파손이 있으니 좌측으로 우회하세요",
+          similarity_score: 1.0,
+          is_aligned: true,
+          missing_directions: [],
+          warnings: [],
+        },
+      },
+    });
+
+    applyEvent({
+      event_type: "langsmith_trace",
+      timestamp: new Date().toISOString(),
+      payload: {
+        from_node: "l1_classify",
+        to_node: "end",
+        latency_ms: 384.2,
+        project: "minchodan-orchestration",
+        enabled: false,
       },
     });
   }

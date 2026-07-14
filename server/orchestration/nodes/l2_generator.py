@@ -6,6 +6,7 @@ L2 Generator Node.
 
 import contextlib
 import logging
+import re
 import sys
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -20,30 +21,42 @@ if sys.stdout.encoding != "utf-8":
 logger = logging.getLogger(__name__)
 
 # 설계서에 정의된 시스템 프롬프트 상수
+# 2026-07-13: "좌측/우측" 같은 모호한 표현 대신, 실제 탐지 위치를 12시(정면) 기준
+# 9시~3시 시계 방향으로 표현하도록 규칙을 바꿨다(실기기 실측으로 방향 모호성 제기됨).
 GUIDANCE_SYSTEM_PROMPT = """당신은 시각장애인 보행 보조 AI입니다.
 탐지된 장애물 정보와 안전 수칙을 바탕으로 즉각적인 회피 안내를 생성합니다.
 
 [규칙]
 1. 반드시 한국어 1문장으로 작성
 2. 20자 이내 (공백 포함)
-3. 방향 키워드(좌/우/직진/정지) 중 하나를 반드시 포함
-4. 존댓말 (~하세요, ~세요) 사용
-5. 간결하고 즉시 이해 가능한 표현 사용
+3. 방향은 반드시 "[탐지 방향]"에 주어진 값을 그대로 사용해 "N시 방향" 형식으로 표현
+   (예: 2시 방향, 10시 방향). 정면(12시)은 "전방"이라고 표현. 정지가 필요하면 "정지"
+4. [탐지 방향]이 주어지지 않으면(순수 노면 이탈 등) "좌측/우측" 없이 사실만 전달
+5. 존댓말 (~하세요, ~세요) 사용
+6. 간결하고 즉시 이해 가능한 표현 사용
 
 [좋은 예시]
-- "좌측으로 피하세요" (9자)
-- "우측 보도로 이동하세요" (11자)
+- "2시 방향 주의하세요" (10자)
+- "10시 방향으로 이동하세요" (12자)
 - "전방 주의, 정지하세요" (11자)
 """
+
+_CLOCK_PATTERN = re.compile(r"(9|10|11|12|1|2|3)시")
 
 
 def extract_direction(text: str) -> str:
     """
-    텍스트 내에서 방향성 키워드를 찾아내어, 문장의 최종 회피 지시 방향을 추출합니다.
-    (문장에서 가장 마지막에 등장하는 키워드가 최종 결정 지시어일 확률이 높습니다)
+    텍스트 내에서 방향 표현을 찾아내어, 문장의 최종 회피 지시 방향을 추출합니다.
+    "N시" 시계 방향 표현을 우선 탐색하고(정확도가 높음), 없으면 기존 좌/우/직진/정지
+    키워드로 폴백한다(LLM이 지시를 안 따른 경우의 하위호환).
     """
     if not text:
         return ""
+
+    clock_matches = list(_CLOCK_PATTERN.finditer(text))
+    if clock_matches:
+        # 가장 마지막에 나타난 시계 방향이 최종 지시일 확률이 높다.
+        return f"{clock_matches[-1].group(1)}시"
 
     keyword_mapping = {
         "좌": ["좌측", "좌", "왼쪽", "왼"],
@@ -80,9 +93,13 @@ async def l2_generator_node(state: dict) -> dict:
     errors = state.get("validation_errors", [])
     is_departing_confirmed = state.get("is_departing_confirmed", False)
     braille_direction = state.get("braille_direction", "")
+    clock_direction = state.get("clock_direction", "")
 
     classes_str = ", ".join(detected_classes) if detected_classes else "장애물 없음"
     nav_str = f"[길안내 멘트]: {navigation_guidance}\n" if navigation_guidance else ""
+    # 2026-07-13 추가: 주 탐지 객체의 실측 bbox 위치를 12시 기준 시계 방향으로 알려준다.
+    # LLM이 "좌측/우측"을 임의로 지어내지 않고 이 실측값을 그대로 문장에 반영하게 한다.
+    direction_str = f"[탐지 방향]: {clock_direction} 방향\n" if clock_direction else ""
 
     # 2026-07-13 추가: 보도 이탈이 확정되면(3단계 히스테리시스 통과) LLM 프롬프트에
     # 노면 상태를 별도 줄로 명시한다. 점자블록 방향을 알면 "왼쪽/오른쪽으로"까지
@@ -104,6 +121,7 @@ async def l2_generator_node(state: dict) -> dict:
     # 사용자 프롬프트 조립 (설계서 10.2절 프롬프트 및 내비게이션 멘트 융합)
     user_prompt = (
         f"[탐지 장애물]: {classes_str}\n"
+        f"{direction_str}"
         f"[위험도]: {risk_level}\n"
         f"[안전 수칙]:\n{rag_context}\n"
         f"{nav_str}"

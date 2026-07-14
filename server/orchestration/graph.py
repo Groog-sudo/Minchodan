@@ -3,7 +3,9 @@ graph.py
 LangGraph StateGraph를 조립하고 컴파일된 실행 객체(싱글톤)를 반환하는 오케스트레이터 모듈입니다.
 """
 
+import asyncio
 import contextlib
+import logging
 import sys
 import time
 
@@ -19,9 +21,8 @@ from server.orchestration.state import OrchState
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
+_background_tasks = set()
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 
@@ -36,8 +37,10 @@ def route_after_l3(state: dict) -> str:
     if state.get("verified"):
         logger.info(f"[OrchGraph] L3 검증 통과 (retry_count: {retry_count})")
         return "end"
-    
-    logger.info(f"[OrchGraph] L3 검증 실패 - 에러: {validation_errors} (retry_count: {retry_count})")
+
+    logger.info(
+        f"[OrchGraph] L3 검증 실패 - 에러: {validation_errors} (retry_count: {retry_count})"
+    )
     if retry_count > 1:
         logger.info("[OrchGraph] 재시도 한도 초과 -> Fallback 노드로 분기")
         return "fallback"
@@ -117,4 +120,17 @@ async def run_orchestrator(state: dict) -> dict:
 
     # 결과 상태 갱신
     result["total_latency_ms"] = latency_ms
+
+    # LangSmith Trace MCP를 사용하여 노드 전이 및 지연 추적 (비동기 아웃오브밴드)
+    from server.mcp.langsmith_tracer import langsmith_tracer
+
+    to_node = "fallback" if result.get("used_static_fallback") else "end"
+    task = asyncio.create_task(
+        langsmith_tracer.log_node_transition(
+            from_node="l1_classify", to_node=to_node, latency_ms=latency_ms
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
     return result

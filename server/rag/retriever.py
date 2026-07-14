@@ -140,9 +140,10 @@ def get_default_retriever() -> "Retriever | None":
         chroma_path = os.getenv("CHROMA_PATH", "data/chroma_db")
         collection_name = os.getenv("CHROMA_COLLECTION", "safety_guidelines")
         embedding_model = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+        embedding_provider = os.getenv("EMBEDDING_PROVIDER", "ollama")
 
         embeddings = EmbeddingEngineFactory.get_embeddings(
-            provider="ollama", model_name=embedding_model
+            provider=embedding_provider, model_name=embedding_model
         )
         vector_db = VectorDBFactory.get_vector_db(
             "chroma", chroma_path, embeddings, collection_name=collection_name

@@ -237,6 +237,17 @@ async def persist_detection_guidance_log(
 # [detected_at 원칙]
 # - 실제 사용 시에는 클라이언트 프레임 기준 탐지 시각을 넣어야 합니다.
 # ==========================================
+async def list_frequent_tts_texts(*, min_count: int = 2, limit: int = 30) -> list[str]:
+    """서버 기동 시 TTS 캐시 프리워밍에 쓸 빈도 높은 안내 문장 목록을 반환한다.
+
+    FastAPI 요청 컨텍스트 밖(lifespan 시작 단계)에서 호출되므로
+    persist_detection_guidance_log와 동일하게 세션을 직접 열고 닫는다.
+    """
+    async with async_sessionmaker_factory() as session:
+        repo = DetectionGuidanceLogRepository(session)
+        return await repo.list_frequent_tts_texts(min_count=min_count, limit=limit)
+
+
 def build_sample_payload() -> DetectionGuidanceLogCreate:
     return DetectionGuidanceLogCreate(
         event_id=None,

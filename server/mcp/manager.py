@@ -151,6 +151,46 @@ class MCPManager:
             await self._redis_client.close()
             logger.info("[MCP MANAGER] Redis connection closed.")
 
+    async def publish_metric(self, event_type: str, payload: dict[str, Any]):
+        """
+        Redis Streams(mcp:metrics)에 메트릭 이벤트를 발행합니다.
+        (메인 루프 RTT 지연 최소화 및 다중 워커 프로세스 간 데이터 브로드캐스트용)
+        """
+        import redis.asyncio as aioredis
+
+        client = self._redis_client
+        close_temp = False
+        if client is None:
+            url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            try:
+                client = aioredis.from_url(
+                    url,
+                    encoding="utf-8",
+                    decode_responses=True,
+                    socket_timeout=5.0,
+                    socket_connect_timeout=2.0,
+                )
+                close_temp = True
+            except Exception as e:
+                logger.error(f"[MCP MANAGER] 임시 Redis 연결 실패: {e}")
+                # 로컬 직접 전파로 폴백
+                await self.broadcast_event(event_type, payload)
+                return
+
+        try:
+            # Redis Stream에 메시지 발행 (payload는 json 직렬화하여 송신)
+            await client.xadd(
+                self.stream_key,
+                {"event_type": event_type, "payload": json.dumps(payload, ensure_ascii=False)},
+            )
+        except Exception as e:
+            logger.error(f"[MCP MANAGER] Redis Stream 메트릭 발행 실패: {e}")
+            # 로컬 직접 전파로 폴백
+            await self.broadcast_event(event_type, payload)
+        finally:
+            if close_temp and client:
+                await client.close()
+
 
 # 싱글톤 인스턴스
 mcp_manager = MCPManager()

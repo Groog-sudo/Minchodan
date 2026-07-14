@@ -1,9 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.15 (2026-07-12 §8.6에 app_users 회원 프로필 확장 필드(birth_date/guardian_phone/address, 전부 선택) 반영 + 이전 v0.4.14 이력 유지: §8.6 회원(시각장애인) 관리 REST 신설 - 관리자 콘솔의 회원 등록/전환/목록 API, 익명 자동등록(anon: 접두사) 레코드를 실명으로 전환하는 분기 로직 명세, §8.5 사후 이력 조회 REST 신설 - detection-logs 목록·event-frames 이미지 서빙, 이벤트 프레임 저장 계약(frame_path·보존 7일·백그라운드 저장), 인지 로그 detected_objects_json에 bbox 포함)
+> **버전**: v0.4.17 (2026-07-13 §8.0 SSE 신규 MCP 4종 지표(audio_validation/accessibility_validation/cache_suppression/langsmith_trace) 페이로드 스펙 추가)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
-> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route 정합 확인.
+> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
 
 ---
@@ -42,7 +42,7 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `type` | 메시지 타입 (hello, welcome, detection, ack, reflex_alert, guide, heartbeat, error) |
+| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
 | `event_id` | 이벤트 추적 식별자. 단말 detection 프레임은 `event-{device_id}-{stream}-{epoch_ms}` 형식(**2026-07-11 구조화** - 기존 `event-{epoch_ms}`는 반사/인지 타이머가 같은 ms에 발화하면 충돌해 DB UNIQUE 중복 방지 로직이 두 번째 로그를 유실), 서버 발신은 `stt-`/`nav-` 접두 또는 UUID |
 | `device_id` | 단말 식별자 |
 | `ts` | 타임스탬프 (epoch ms) |
@@ -113,7 +113,28 @@
 > 여부를 boolean으로 반환합니다. 반사 경보는 반환값이 `true`인 경우에만 60초 중복 억제를
 > 기록하므로, 연결 종료 경쟁 구간에서 전달되지 않은 경보가 전송 완료로 처리되지 않습니다.
 
-### 2.5 error (서버 → 단말)
+### 2.5 network_probe
+
+Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교하기 위한 계측 메시지입니다. 카메라 프레임 디코딩, YOLO 추론, RAG, TTS를 거치지 않고 `/ws/detect` 메인 루프에서 즉시 echo 응답합니다.
+
+| 방향 | 메시지 |
+| :--- | :--- |
+| 단말/스크립트 → 서버 | `{"type":"network_probe","probe_id":"ios-...","client_label":"ios-app","client_sent_ts":1720000000000,"payload":"xxx"}` |
+| 서버 → 단말/스크립트 | `{"type":"network_probe_ack","probe_id":"ios-...","client_sent_ts":1720000000000,"client_label":"ios-app","payload_bytes":256,"server_received_ts":1720000000001,"server_sent_ts":1720000000001}` |
+
+| 필드 | 타입 | 설명 |
+| :--- | :--- | :--- |
+| `probe_id` | string | 클라이언트가 생성한 probe 식별자. 응답 매칭에 사용 |
+| `client_label` | string | `ios-app`, `ngrok`, `tailscale` 등 측정 라벨 |
+| `client_sent_ts` | number | 클라이언트 송신 시각(epoch ms). 서버는 원문을 그대로 돌려줌 |
+| `payload` | string | 네트워크 페이로드 크기 고정용 문자열. 서버는 저장하지 않음 |
+| `payload_bytes` | number | 서버가 계산한 UTF-8 페이로드 바이트 수 |
+| `server_received_ts` | number | 서버가 응답을 만들 때 기록한 수신 근사 시각(epoch ms) |
+| `server_sent_ts` | number | 서버 응답 송신 직전 시각(epoch ms) |
+
+> 실제 개선율 계산은 클라이언트 기준 왕복 시간으로 산정합니다. 서버 시각은 참고용이며 단말과 서버의 시계가 동기화되어 있지 않아 단방향 지연 계산에는 사용하지 않습니다.
+
+### 2.6 error (서버 → 단말)
 
 ```json
 {
@@ -314,7 +335,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
   "type": "guide",
   "event_id": "uuid",
   "risk_level": "mid",
-  "guidance_text": "전방 킥보드, 우측으로 한 발 물러서세요",
+  "guidance_text": "2시 방향 킥보드 주의하세요",
   "audio_codec": "wav",
   "duration_ms": 4820.5,
   "transport": "binary",
@@ -330,7 +351,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함) |
+| `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함). **2026-07-13 변경**: 방향 표현을 "좌측/우측"에서 실측 bbox 위치 기반 "N시 방향"(9시~3시, 12시=전방)으로 교체 - `server/detection/direction.py`의 `estimate_clock_direction()`이 계산해 L2 프롬프트에 실어주고, `server/orchestration/nodes/l3_validator.py`가 시계 패턴도 방향 키워드로 인정 |
 | `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
 | `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
 | `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |
@@ -640,15 +661,9 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `connection_established` | `{status: "ok"}` | 연결 직후 1회 |
 | `ping` | 없음 | 큐 1초 타임아웃마다 (keep-alive) |
 
-### 8.3 브리지 이벤트 계약 (Redis `mcp:metrics` 경유, 예약)
+### 8.3 브리지 이벤트 계약 (Redis `mcp:metrics` 경유, 실구현 완료)
 
-> **중요 (2026-07-11 실측)**: 현재 저장소에는 `mcp:metrics` 스트림에 실데이터를
-> 발행(xadd)하는 producer가 **없습니다**(스트림 생성용 init dummy 제외). 탐지
-> 파이프라인의 실발행 스트림은 `risk.events`이며 `mcp:metrics`와 연결되어 있지
-> 않습니다. 따라서 아래 이벤트는 **콘솔이 소비 준비를 마친 예약 계약**이고,
-> producer 구현(`risk.events`→`mcp:metrics` 브리지 또는 직접 발행)이 후속
-> 과제입니다(dev 개선 계획서 §5 "SSE 계약 정리"). producer 구현 시 반드시 아래
-> 필드명을 그대로 사용해야 콘솔 수정 없이 표시됩니다.
+> **중요 (2026-07-13 실구현)**: `mcp:metrics` 스트림에 실시간 메트릭 데이터를 발행(xadd)하는 `MCPManager.publish_metric()` 메서드를 신규 구현하여 메인 모듈들과의 실연동을 완료했습니다. 다중 프로세스(workers > 1) 환경에서도 Redis Streams를 매개로 유실 없이 실시간으로 전송되며, 프론트엔드 모니터 컴포넌트(`McpValidationMonitor.tsx`)에 정상 연동됩니다.
 
 | event_type | payload 필드 (콘솔 파서 기준) | 콘솔 처리 |
 | :--- | :--- | :--- |
@@ -657,6 +672,10 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `session_status` | `device_id:string`, `platform:string`, `status:"connected"\|"disconnected"`, `rtt_ms:number` | device_id 기준 upsert |
 | `detection_event` | `event_id`, `device_id`, `stream:"reflex"\|"cognitive"`, `class_name`, `confidence`, `inference_ms` | 최근 80건 누적 피드 |
 | `llm_status` / `rag_result` / `tts_status` / `stt_status` | `llm_provider`, `rag_query`, `rag_score`, `tts_engine`, `stt_status`, `last_guidance`/`guidance_text`, `inference_ms`, `reflex_bypass`, `surface` | AI 파이프라인 상태 갱신 |
+| `audio_validation` | `alert_id:string`, `ttfb_ms:float`, `sample_rate:int`, `channels:int`, `duration_sec:float`, `is_valid:bool`, `errors:list` | McpValidationMonitor 오디오 메트릭 업데이트 |
+| `cache_suppression` | `suppressed_keys:list[str]`, `ttl_seconds:int`, `details:list` | McpValidationMonitor 캐시 억제 키 메트릭 업데이트 |
+| `accessibility_validation` | `alert_id:string`, `is_valid:bool`, `similarity_score:float`, `warnings:list`, `details:dict` | McpValidationMonitor 접근성 정합 스코어 업데이트 |
+| `langsmith_trace` | `alert_id:string`, `from_node:string`, `to_node:string`, `latency_ms:float`, `enabled:bool` | McpValidationMonitor LangSmith 트랙 RTT 업데이트 |
 
 ### 8.4 데모 데이터 분리
 
@@ -754,3 +773,5 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.11** | **2026-07-11** | **§6.4 폴백 모드 비고 갱신 - 클라이언트 재연결 정책 변경(무한 지수 백오프, 폴백 전환/복구 음성 고지, 폴백 상태 welcome 수신 시 해제) 반영** |
 | **v0.4.12** | **2026-07-11** | **§8 SSE 계약 고정 - 실발행(8.2)/예약 브리지(8.3) 이벤트 분리, payload 필드를 콘솔 파서 기준으로 고정, `mcp:metrics` producer 부재 사실 명시(기존 "risk.events 실시간 뷰" 오기 정정), 데모 데이터 분리(8.4). §1 공통 필드 event_id 형식 구조화 반영** |
 | **v0.4.13** | **2026-07-12** | **§8.5 사후 이력 조회 REST 신설 - `GET /api/v1/admin/detection-logs` 목록, `GET /api/v1/admin/event-frames/{event_id}` 프레임 JPEG 서빙, 이벤트 프레임 저장 계약(frame_path 컬럼, data/event_frames/ 날짜 폴더, 보존 기본 7일, 백그라운드 저장으로 반사 경로 무영향), 인지 로그 detected_objects_json에 bbox 좌표 포함(콘솔 오탐 검증 오버레이용)** |
+| **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
+| v0.4.17 | 2026-07-14 | §1 공통 `type` 필드 목록 정합 - 코드(`ws_router.py`/`consumer.py`)에서 실제 발행되는 전체 이벤트 타입을 망라하도록 갱신(auth_ok, server_detection, status, stt_audio, nav_route, realtime_gps, dial_action 추가 + 부가 이벤트 guidance_log_event/latency_event/contact_save/deviation_alert/guidance_audio/route_success/route_error/image_url 명시). 기존 누락 분기만 보완, 프로토콜 변경 없음 |
