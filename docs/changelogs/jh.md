@@ -374,6 +374,19 @@
 
 ---
 
+### 2026-07-14 | 콘솔 UI | 라이트박스 스크롤 위치를 컨테이너로 전환하고 상세 패널 폭을 확장
+
+- **커밋**: `fix(console): lightbox-content 스크롤 위치를 컨테이너로 전환하고 상세 패널 폭 확장`
+- **변경 내용**:
+  - `lightbox-content`에 세로 스크롤을 부여해 이미지 내부가 아니라 모달 본체에서 스크롤되도록 조정함
+  - `frame-overlay-lightbox`의 내부 스크롤과 높이 제한을 제거해 이미지가 별도 스크롤바를 만들지 않도록 정리함
+  - `frame-detail-body`, `frame-detail-header`, `lightbox-content`, `lightbox-summary`를 전체 폭으로 확장해 오른쪽 빈공간이 남지 않도록 보정함
+- **관련 파일**: `console/src/styles.css`, `console/src/components/DetectionGuidanceLogTable.tsx`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 라이트박스 상세 UI의 가로 여백과 세로 스크롤 위치를 사용자가 요청한 형태로 정리한 변경임
+
+---
+
 ### 2026-07-10 | DB | detction_guidance_logs 기본틀 및 하드코딩 템플릿 추가
 
 - **커밋**: `db: detction_guidance_logs 기본틀 및 하드코딩 템플릿 추가`
