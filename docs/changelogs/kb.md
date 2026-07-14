@@ -2006,3 +2006,40 @@
   - UI에 남아있던 이모지 요소(📡, 📷 등)를 제거하여 전문적인 작전 화면 품질 확보.
 - **관련 파일**: `console/public/gildang-logo.jpeg`, `console/src/App.tsx`, `console/src/styles.css`, `console/src/components/Login.tsx`, `console/src/components/Login.css`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/LiveCameraFeed.css`, `docs/changelogs/kb.md`
 - **검증 결과**: `npm run build`를 통해 tsc 및 vite 컴파일 빌드 검증 성공 완료.
+
+---
+
+### 2026-07-14 | 앱_GILDANG_브랜딩 | app_gildang_branding
+
+- **변경 내용**:
+  - 앱 로딩 화면 신규 구현(`LoadingScreen.tsx`): GILDANG 로고 + "Loading" 텍스트에 Tailwind `animate-bounce`와 동일한 리듬의 RN `Animated` 바운스 적용, `App.tsx`에서 기동 후 1.8초간 노출.
+  - 앱 아이콘/스플래시를 GILDANG 로고로 전면 교체(`scripts/generate_app_icons.py` 신규): 원본 로고(`client/assets/gildang-logo.jpeg`, 콘솔 `gildang-logo.jpeg`와 동일)의 실제 내용(강아지+GILDANG 텍스트) 바운딩박스만 크롭해 아이콘에 로고가 꽉 차 보이도록 처리. iOS(`icon.png`, `splash-icon.png`, `AppIcon.appiconset`), 안드로이드(5개 밀도 × foreground/background/monochrome/ic_launcher/ic_launcher_round), 웹(`favicon.png`)까지 전부 재생성.
+  - 이 프로젝트는 `expo prebuild`가 아니라 `ios/`, `android/` 네이티브 폴더를 직접 관리하므로, `app.json` 설정만으로는 반영되지 않아 iOS `Images.xcassets/AppIcon.appiconset`과 안드로이드 `mipmap-*` webp까지 스크립트에서 직접 갱신하도록 구현.
+  - 앱 표시 이름을 "Minchodan"(프로젝트 코드네임)에서 "GILDANG"(브랜드명)으로 변경: iOS `CFBundleDisplayName`, 안드로이드 `strings.xml`의 `app_name`, `app.json`의 `name` 필드.
+  - 앱 메인 화면(`CameraView.tsx`) 및 하위 컴포넌트(`ConnectionStatus.tsx`, `DebugTriggerPanel.tsx`, `NavMapPanel.tsx`)를 콘솔과 동일한 "Tactical" 다크 테마(배경 `#0A0D10`, 포인트 컬러 `#F9B700`, op-green `#39FF14`, reflex-red `#FF3333`, tech-blue `#00D2FF`)로 리스킨. 저채도 배경+원색 텍스트/테두리 배지 패턴(콘솔 `StatusBadge`와 동일 컨벤션)을 토글/상태 표시에 적용. bbox 탐지 색상(`getClassColor`, 위험도 시맨틱)은 브랜드 팔레트와 무관하게 유지.
+- **관련 파일**: `client/App.tsx`, `client/app.json`, `client/assets/gildang-logo.jpeg`, `client/assets/icon.png`, `client/assets/splash-icon.png`, `client/assets/favicon.png`, `client/assets/android-icon-*.png`, `client/android/app/src/main/res/mipmap-*/ic_launcher*.webp`, `client/android/app/src/main/res/values/strings.xml`, `client/ios/Minchodan/Info.plist`, `client/ios/Minchodan/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png`, `client/src/components/LoadingScreen.tsx`, `client/src/components/CameraView.tsx`, `client/src/components/ConnectionStatus.tsx`, `client/src/components/DebugTriggerPanel.tsx`, `client/src/components/NavMapPanel.tsx`, `scripts/generate_app_icons.py`
+- **검증 결과**: `npx tsc --noEmit` 통과. 실기기(고태현의 iPhone)에 Xcode 빌드/설치/실행하여 새 아이콘·앱 이름·로딩화면·다크 톤 UI 육안 확인.
+
+---
+
+### 2026-07-14 | YOLO26n_신규가중치_온디바이스연동 | yolo26n_260714_coreml_ondevice
+
+- **변경 내용**:
+  - 신규 파인튜닝 가중치(`object_detection260714.pt`, `segmentation260714.pt`, 클래스 스키마는 기존과 동일: 객체 29종/노면 4종) 검증 후 서버(인지 경로) `.env`/`.env.example`의 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG`를 교체(기존 `det_best_20260705.pt`/`segbest.pt`는 롤백용 보존).
+  - 온디바이스(iOS 반사 경로) CoreML 변환 중 새 `object_detection260714.pt`가 기존과 달리 `end2end=False`(표준 헤드, NMS-free one2one 아님)임을 발견. `--raw-head`(과거 실측으로 지연 3~5배 악화되어 롤백된 이력 있음, `docs/ops/ondevice_coreml_benchmark.md` 참조) 대신, ultralytics 표준 `nms=True` CoreML NMS 파이프라인(Vision 호환 `confidence`/`coordinates` 2-출력, ANE는 백본에서 그대로 유지)으로 재변환.
+  - `IOSDetectModel.forward()`의 80배수 클래스 패딩(ultralytics 기지 이슈 #22309 우회, 29클래스 → 80으로 제로 패딩)을 원인 규명해, 실사용에 지장 없음을 확인.
+  - `CoreMLInferenceBridge.swift`의 `runDetection()`에 `confidence`/`coordinates` 2-출력 파이프라인 포맷 파싱 분기(`parsePipelineOutput`) 신규 추가(기존 3차원 텐서 파싱 경로는 segmentation용으로 유지).
+  - 세그멘테이션은 보류: 새 `segmentation260714.pt`도 동일하게 `end2end=False`인데, ultralytics가 segment 태스크용 CoreML NMS 파이프라인 자체를 미지원(`# TODO CoreML Segment ... pipelining`)해 온디바이스는 기존 `segbest.pt` 유지, 새 세그멘테이션 가중치는 서버(인지 경로)에서만 사용.
+  - 실기기(고태현의 iPhone) 빌드/설치/실행 및 서버 A/B 실측(구/신 가중치 각 1분)으로 정성 확인 - 표본이 적어 정량 비교는 보류.
+- **관련 파일**: `.env`(git-ignore), `.env.example`, `client/ios/CoreMLInferenceBridge.swift`, `client/assets/models/yolo26n/ios/object_detection.mlpackage/`, `scripts/convert_yolo_to_coreml.py`(변경 없음, 기존 옵션 재확인)
+- **검증 결과**: 서버 컨테이너 재기동 후 `YoloDetector`/`YoloSegmentor` 로드 성공 로그 확인, `/docs` 200 확인. Xcode 시뮬레이터/실기기 빌드 성공(경고 없음). 온디바이스 raw-head 실험은 과거 문서화된 성능 회귀로 채택하지 않음.
+
+---
+
+### 2026-07-14 | 로컬_개발환경_보정 | local_dev_env_fix
+
+- **변경 내용**:
+  - `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`: 로컬에 실재하지 않는 `../Minchodan DB.session.sql` MariaDB 초기화 마운트 제거(파일 부재로 컨테이너 기동 실패 방지).
+  - `requirements.txt`: `torch`/`torchvision`을 `2.12.1+cu128`/`0.27.1+cu128`에서 `2.11.0+cu128`/`0.26.0+cu128`로 다운그레이드(이 macOS 로컬 Docker 빌드 환경 기준 실측 필요에 따른 조정).
+- **관련 파일**: `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `requirements.txt`
+- **검증 결과**: `docker compose up -d fastapi` 재기동 후 컨테이너 내 `torch.__version__` 확인(`2.11.0+cu128`), FastAPI `/docs` 200 확인.
