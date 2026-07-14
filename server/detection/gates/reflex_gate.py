@@ -84,14 +84,12 @@ def reflex_gate(
     if detection.confidence < min_confidence:
         return None
 
-    # 1-2. 동일 track_id가 최소 연속 프레임 수만큼 유지되지 않았다면 통과 (일시적 오탐 완화)
-    if detection.hit_count < MIN_HIT_COUNT:
+    # 1-2. 동일 track_id 최소 연속 프레임 제약 완화 (1프레임 즉각 반영)
+    if detection.hit_count < 1:
         return None
 
-    # 2. 사물의 바닥(bottom_y)이 화면 하단 15% 영역 안으로 들어왔는지 확인
+    # 2. PROXIMITY_THRESHOLD (하단 15% 진입) 가드 해제: 화면 전체에서 29종 탐지 시 즉각 반사 처리.
     bottom_y = detection.bbox.y + detection.bbox.h
-    if bottom_y <= frame_height * (1 - PROXIMITY_THRESHOLD):
-        return None
     # =========================================================================
 
     direction = estimate_direction(detection.bbox, frame_width, distance_class="near")
@@ -102,11 +100,8 @@ def reflex_gate(
     panning = (center_x / frame_width) * 2 - 1.0
     panning = max(-1.0, min(1.0, panning))
 
-    # 2. Distance 계산: 하단 경계부 밀착 정도에 따른 거리 역산 (0.4m ~ 1.5m 매핑)
-    # PROXIMITY_THRESHOLD는 0.15이므로 bottom_y가 frame_height * 0.85 ~ 1.0 범위에 속함
-    min_gate_y = frame_height * (1 - PROXIMITY_THRESHOLD)
-    range_y = frame_height * PROXIMITY_THRESHOLD
-    ratio = (bottom_y - min_gate_y) / range_y if range_y > 0 else 1.0
+    # 2. Distance 계산: 화면 전체(bottom_y: 0 ~ frame_height)에 따른 거리 역산 (0.4m ~ 1.5m 매핑)
+    ratio = bottom_y / frame_height if frame_height > 0 else 1.0
     ratio = max(0.0, min(1.0, ratio))
 
     # ratio가 1.0일수록 최하단에 인접해있으므로 거리(distance)는 짧아짐 (1.5m -> 0.4m)

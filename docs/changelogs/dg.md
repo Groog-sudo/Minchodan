@@ -503,4 +503,30 @@
 - **관련 파일**: `client/src/inference/pathObstacleDetector.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useOnDeviceDetection.ts`
 - **검증 결과**: 실기기 보행 테스트 필요. 여전히 오경보 있으면 `near_07/near_15` 임계값 상향 검토.
 
+---
+
+### 2026-07-14 | 서버/모바일 | 29종 객체 반사 경로 일원화, 신규 모델 가중치 적용 및 미터(m) ROI 설계
+
+- **커밋**: `fix: unify 29-class objects to reflex path and apply 0714 model weights`
+- **변경 내용**:
+  - **반사 경로 일원화 및 제약 해제** (`reflex_gate.py`):
+    - `MIN_HIT_COUNT`(동일 track_id 3프레임 연속 대기) 및 `PROXIMITY_THRESHOLD`(화면 하단 15% 밀착) 제한을 해제함.
+    - 객체가 검출되면 화면 위치와 누적 프레임에 상관없이 즉각 반사 비프/햅틱 경보가 작동하도록 수정.
+    - `distance` 계산용 ratio 범위를 국소 15%에서 화면 전체(`0` ~ `frame_height`)로 선형 매핑(1.5m ~ 0.4m)되도록 갱신.
+  - **L1 분류기(인지 경로) 객체 탐지 제거** (`l1_classifier.py`):
+    - 29종 객체는 전원 즉각 반사 경로로만 교신하고 인지 경로(LLM 상세가이드)로 중복 우회하는 현상을 차단하기 위해 `MID_RISK_CLASSES` 내 18개 클래스명을 비움 (`set()`).
+    - 이로 인해 인지 경로(mid)는 오직 노면 이탈(`is_departing_confirmed` = True) 판정만 전담하게 됨.
+  - **신규 파인튜닝 가중치 적용** (`.env`, `config.py`):
+    - 7월 14일 새로 파인튜닝 완료된 `object_detection260714.pt` (29클래스 객체) 및 `segmentation260714.pt` (4클래스 노면) 가중치 경로로 업데이트 적용.
+  - **사실관계 검증 완료**:
+    - Android 폰의 `float32` 입력이 `Float32Array(0)`으로 비어있음에도 `roadway` 오탐이 나왔던 현상은, `fast-tflite` 네이티브 모듈에 0바이트 버퍼 전달 시 예외를 내지 않고 텐서 출력을 반환해 모바일 로컬 `detectFrame` 단에서 오탐이 직접 발생하였음을 규명.
+  - **실거리(m) 기반 ROI 공식 설계**:
+    - iOS의 `depthProbe` 3스팟 측정치를 활용한 실시간 ROI y-band 선형보간법 설계.
+    - Android용 고정 장치 기하학 틸트각 변환 수식 $D(y) = h / \tan(\theta - FOV_v/2 + y \cdot FOV_v)$을 도출하여 화면 비율 대신 실제 미터 단위를 기준으로 ROI(0.5m ~ 1.5m)를 재정의하도록 함.
+  - **문서화** (`stage3_detection_design.md`):
+    - 위 아키텍처/가중치 변경 이력을 3단계 설계서 변경 이력 단락에 정식 반영하여 누락 없이 일괄 업데이트.
+- **관련 파일**: `server/detection/gates/reflex_gate.py`, `server/orchestration/nodes/l1_classifier.py`, `.env`, `server/detection/config.py`, `docs/stage-guides/stage3_detection_design.md`
+- **검증 결과**: git push 완료 및 local tsc 컴파일 무결성 검증.
+
+
 

@@ -1,7 +1,7 @@
 # Minchodan 3단계 탐지·분할·게이트 백엔드 설계서
 
-> **작성일**: 2026-06-25
-> **버전**: v0.3.0 (2026-07-07 실제 코드 기준 대량 정정: ByteTrackTracker 역할, ReflexAlert 스키마, HIGH_RISK_CLASSES 5종, direction/alert_id 실제 값, 노면 4클래스, 모델 가중치 경로)
+> **작성일**: 2026-07-14
+> **버전**: v0.3.1 (2026-07-14 29종 객체-반사 경로 일원화 설계 보강, PROXIMITY_THRESHOLD 및 MIN_HIT_COUNT 가드 제거, 새 모델 가중치(0714 버전) 교체 적용)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 3단계 (v1.1 듀얼헤드 + 이중 게이트)
 > **스킬 참조**: [`.agents/skills/yolo-obstacle-detection/SKILL.md`](../.agents/skills/yolo-obstacle-detection/SKILL.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md)
@@ -579,7 +579,16 @@ redis_bus.expire(f"ctx:{track_id}", 30)
 
 ---
 
-## 13. 참고 자료
+## 13. 변경 이력 (Changelog)
+
+### [v0.3.1] - 2026-07-14
+- **29종 객체-반사 경로 일원화**: 29종 위험 사물이 검출되었을 때 인지 경로(LLM)로 인텐트가 중복 우회하는 문제를 해결하기 위해, `l1_classifier.py`의 `MID_RISK_CLASSES`에서 객체 클래스들을 전원 배제함. 인지 경로(mid)는 오직 노면 이탈(`is_departing_confirmed`) 판정만 전담하도록 변경.
+- **반사 경로 게이트 제약 완화**: `reflex_gate.py` 내의 `PROXIMITY_THRESHOLD`(발밑 15% 밀착) 및 `MIN_HIT_COUNT`(3프레임 홀드) 제약을 완화함. 이로 인해 사물이 화면 어디에든 처음 탐지되면 즉시 반사 경로(비프/햅틱)가 반응함.
+- **신규 파인튜닝 가중치 적용**: 파인튜닝 가중치 파일명을 `.env` 및 `config.py` 기본값에 `object_detection260714.pt` 및 `segmentation260714.pt`로 업데이트 반영함.
+
+---
+
+## 14. 참고 자료
 
 | 문서 | 파일 | 참조 내용 |
 | --- | --- | --- |
