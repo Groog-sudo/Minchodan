@@ -1,5 +1,5 @@
 import { BrowserRouter, NavLink, Outlet, Route, Routes } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { StatusBadge } from "./components/StatusBadge";
 import { useMonitorStream } from "./api/useMonitorStream";
 import { useLiveFeed } from "./api/useLiveFeed";
@@ -66,6 +66,16 @@ export default function App() {
   const [token, setToken] = useState<string | null>(() => {
     return localStorage.getItem("admin_token");
   });
+
+  // 토큰 변경 시 localStorage 반영 사이드 이펙트를 useEffect로 격리
+  useEffect(() => {
+    if (token) {
+      localStorage.setItem("admin_token", token);
+    } else {
+      localStorage.removeItem("admin_token");
+    }
+  }, [token]);
+
   const { state, streamUrl, injectDemoEvents } = useMonitorStream(token);
   // 대시보드/회원관리 두 화면이 같은 실시간 연결(SSE+WS)을 공유하도록 App 최상단에서
   // 1번만 구독한다(페이지 전환마다 재연결되지 않게).
@@ -78,7 +88,6 @@ export default function App() {
     return (
       <Login
         onLogin={(newToken) => {
-          localStorage.setItem("admin_token", newToken);
           setToken(newToken);
         }}
       />
@@ -95,7 +104,6 @@ export default function App() {
               isDemoMode={isDemoMode}
               onInjectDemo={injectDemoEvents}
               onLogout={() => {
-                localStorage.removeItem("admin_token");
                 setToken(null);
               }}
             />

@@ -72,6 +72,51 @@ def check_ruff():
     return True
 
 
+def check_react_doctor():
+    """React/React Native 코드 건강도 검사(react-doctor)를 수행합니다."""
+    print_header("React Doctor 코드 건강도 검사")
+
+    # 1. console 디렉토리 스캔
+    console_dir = os.path.join(PROJECT_ROOT, "console")
+    if os.path.exists(console_dir):
+        print_info("console 디렉토리 react-doctor 검사 중...")
+        try:
+            res = subprocess.run(
+                ["npx", "-y", "react-doctor@latest", "--blocking", "error"],
+                cwd=console_dir,
+                capture_output=True,
+                text=True,
+            )  # nosec B603 B607
+            if res.returncode != 0:
+                print_error("console react-doctor 검사 실패:")
+                print(res.stdout)
+                return False
+            print_ok("console react-doctor 검사 통과.")
+        except Exception as e:
+            print_warn(f"console react-doctor 실행 실패: {e!s}")
+
+    # 2. client 디렉토리 스캔
+    client_dir = os.path.join(PROJECT_ROOT, "client")
+    if os.path.exists(client_dir):
+        print_info("client 디렉토리 react-doctor 검사 중...")
+        try:
+            res = subprocess.run(
+                ["npx", "-y", "react-doctor@latest", "--blocking", "error"],
+                cwd=client_dir,
+                capture_output=True,
+                text=True,
+            )  # nosec B603 B607
+            if res.returncode != 0:
+                print_error("client react-doctor 검사 실패:")
+                print(res.stdout)
+                return False
+            print_ok("client react-doctor 검사 통과.")
+        except Exception as e:
+            print_warn(f"client react-doctor 실행 실패: {e!s}")
+
+    return True
+
+
 def check_dual_path():
     """이중 경로 분리 원칙 위반을 정적 분석으로 검사합니다.
     반사 경로 코드(server/detection/gates/)에서 RAG, LLM, TTS 모듈 임포트를 금지합니다.
@@ -398,6 +443,10 @@ def main():
 
     # 2. 이중 경로 검사
     if not check_dual_path():
+        sys.exit(1)
+
+    # React Doctor 코드 건강도 검사
+    if not check_react_doctor():
         sys.exit(1)
 
     # 3. 금지 파일 검사

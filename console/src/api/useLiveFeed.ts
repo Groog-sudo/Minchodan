@@ -22,12 +22,14 @@ export function useLiveFeed() {
 
   useEffect(() => {
     let active = true;
+    let wsInstance: WebSocket | null = null;
 
     function connect() {
       if (!active) return;
 
       const ws = new WebSocket(WS_LIVE_FEED_URL);
       wsRef.current = ws;
+      wsInstance = ws;
 
       ws.binaryType = "blob";
 
@@ -89,6 +91,7 @@ export function useLiveFeed() {
         if (wsRef.current !== ws) return;
         if (active) {
           wsRef.current = null;
+          wsInstance = null;
           setConnected(false);
           setLatestDetections([]);
           // latencyEvents는 재연결 후에도 최근 이력으로 유지한다 (bbox 오버레이와 달리
@@ -113,11 +116,8 @@ export function useLiveFeed() {
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
       }
-      if (wsRef.current) {
-        const state = wsRef.current.readyState;
-        if (state === WebSocket.OPEN) {
-          wsRef.current.close();
-        }
+      if (wsInstance) {
+        wsInstance.close();
       }
       if (prevUrlRef.current) {
         URL.revokeObjectURL(prevUrlRef.current);

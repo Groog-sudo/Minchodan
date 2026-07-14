@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { SafeAreaView, StyleSheet } from "react-native";
+import { View, StyleSheet, Platform, StatusBar } from "react-native";
 import { setAudioModeAsync } from "expo-audio";
 
 import { CameraView } from "./src/components/CameraView";
@@ -45,15 +45,16 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <CameraView />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
     backgroundColor: "#000000",
   },
 });

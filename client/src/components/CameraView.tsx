@@ -376,7 +376,7 @@ export function CameraView() {
   useEffect(() => {
     if (!depthMode) return;
     let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let timerId: ReturnType<typeof setInterval> | null = null;
     (async () => {
       // vision-camera가 isActive=false 렌더로 세션을 놓을 시간을 준 뒤 프로브를 켠다.
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -391,7 +391,7 @@ export function CameraView() {
         return;
       }
       setDepthError(null);
-      timer = setInterval(async () => {
+      timerId = setInterval(async () => {
         const result = await probeDepth(DEPTH_PROBE_POINTS);
         if (!cancelled && result) {
           setDepthResult(result);
@@ -407,7 +407,9 @@ export function CameraView() {
     })();
     return () => {
       cancelled = true;
-      if (timer) clearInterval(timer);
+      if (timerId) {
+        clearInterval(timerId);
+      }
       void stopDepthProbe();
       setDepthResult(null);
       setDepthError(null);
