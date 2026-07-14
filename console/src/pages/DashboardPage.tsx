@@ -111,13 +111,15 @@ export function DashboardPage({
         />
       </section>
 
-      <McpValidationMonitor
-        audio={state.audio_validation}
-        cache={state.cache_suppression}
-        accessibility={state.accessibility_validation}
-        trace={state.langsmith_trace}
-      />
-      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
+      <section className="monitor-latency-layout">
+        <McpValidationMonitor
+          audio={state.audio_validation}
+          cache={state.cache_suppression}
+          accessibility={state.accessibility_validation}
+          trace={state.langsmith_trace}
+        />
+        <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
+      </section>
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,

@@ -993,6 +993,11 @@ td {
   min-height: unset;
 }
 
+/* 좌측 MCP 열에서는 4카드가 2x2로 배치되도록 좁힌다. */
+.monitor-latency-layout .mcp-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .mcp-grid {
   display: grid;
   gap: 12px;

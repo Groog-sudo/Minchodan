@@ -492,19 +492,23 @@
 
 ### 2026-07-14 | 콘솔 UI | MCP 검증 모니터 레이아웃 정리 및 gitignore 추적 정리
 
-- **커밋**: `refactor(console): MCP 검증 모니터 레이아웃/스타일 정리 및 gitignore 추적 파일 제거`
+- **커밋**:
+  - `e407fb0` - `refactor(console): MCP 검증 모니터 레이아웃/스타일 정리 및 gitignore 추적 파일 제거`
+  - (후속) `fix(console): MCP/지연 요약 패널에 monitor-latency-layout 래퍼 연결`
 - **변경 내용**:
   - `console/src/components/McpValidationMonitor.tsx`: 카드/그리드 인라인 스타일을 CSS 클래스(`panel-mcp`, `mcp-grid`, `mcp-card`)로 분리하고 루트 요소를 `section.panel.panel-mcp`로 정리
-  - `console/src/pages/DashboardPage.tsx`: `McpValidationMonitor`와 `LatencySummaryPanel`을 상단 그리드 섹션 밖으로 재배치해 대시보드 모니터 영역 구조를 정리
+  - `console/src/pages/DashboardPage.tsx`: `McpValidationMonitor`와 `LatencySummaryPanel`을 상단 `dashboard-grid` 밖으로 재배치하고, `section.monitor-latency-layout`으로 감싸 2열 배치를 실제로 적용
   - `console/src/styles.css`: `.panel-title`, `.panel-content`, `.panel-mcp`, `.mcp-grid`, `.mcp-card`, `.monitor-latency-layout` 및 반응형(1024px/720px) 그리드 규칙 추가
+  - `console/src/styles.css`: 좌측 MCP 열에서 카드가 2x2로 보이도록 `.monitor-latency-layout .mcp-grid` 오버라이드 추가
   - `.claude/` 하위 스킬·설정 파일의 Git 추적을 제거해 `.gitignore`의 `.claude/` 정책과 정합화 (로컬 스킬은 `.agents/skills/` 기준 유지)
   - `server/models/piper/piper-kss-korean.onnx` Git 추적 제거 (`*.onnx` gitignore 정책 정합, 로컬 폴백 가중치는 필요 시 별도 배치)
   - `scratch/create_default_admin.py` 제거 (`scratch/` gitignore 정책 정합)
   - `docs/ops/reports/` 임시 역활 보고서(TTS 반사경로·Navigation 가이드 기준 연동 적용 완료 보고서) 삭제
 - **관련 파일**: `console/src/components/McpValidationMonitor.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `.claude/**`, `server/models/piper/piper-kss-korean.onnx`, `scratch/create_default_admin.py`, `docs/ops/reports/`, `docs/changelogs/jh.md`
 - **검증 결과**:
-  - `git status` 기준으로 콘솔 3파일 수정 + gitignore 대상 추적 파일 삭제 반영 확인
-  - 콘솔 로고(`console/public/gildang-logo.jpeg`)는 UI 참조 유지로 복원하여 본 커밋에서 제외
+  - 1차 커밋 `e407fb0` GitHub `origin/jh` 반영 확인 완료
+  - 후속 수정: CSS에만 있던 `.monitor-latency-layout`을 DashboardPage에 연결해 레이아웃 미적용 상태 해소
+  - 콘솔 로고(`console/public/gildang-logo.jpeg`)는 UI 참조 유지로 복원하여 제외
   - 정적 레이아웃 리팩터 위주 변경으로 단위 테스트 미실행
 - **비고**: 기능 변경 없이 콘솔 모니터 패널 구조/스타일 정리와 저장소 추적 정리에 초점
 
