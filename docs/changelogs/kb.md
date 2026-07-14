@@ -1992,3 +1992,17 @@
   - Add react-doctor agent skill definition and update indexes
 - **관련 파일**: `.agents/skills/react-doctor/SKILL.md`, `AGENTS.md`, `SKILLS.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 관제콘솔_디자인_구현 | console_design_implementation
+
+- **변경 내용**:
+  - GILDANG 시각장애인 보행 보조 플랫폼 관제 콘솔의 UI를 SpaceX + Linear 스타일의 미특수작전 다크 HUD 테마로 리팩토링.
+  - GILDANG 로고의 메인 칼라인 골든 옐로우(`#F9B700`)를 액센트 및 상황Caution 컬러로 지정하고, CSS 변수(토큰)를 정의하여 적용.
+  - 제공된 실기기 리트리버 VR 로고 이미지 파일을 React public 폴더(`gildang-logo.jpeg`)로 복사하고, 콘솔 상단 탑바(Layout) 좌측에 원형 엠블럼 형태로 항시 노출되도록 마크업 및 전술적 테두리 CSS 추가.
+  - 로그인 화면(Login)도 전술 다크모드로 리팩토링을 수행하여, 상단에 원형 GILDANG 엠블럼 로고를 삽입하고 코너 브래킷 및 각진 인풋 필드, 옐로우 액센트 버튼을 적용.
+  - LiveCameraFeed에서 일반 BBox와 노면 세그멘테이션 마스크(model === "segmentation")를 분기 처리하여, 세그멘테이션 마스크는 반투명 점선(dashed) 오버레이로 항시 표시되도록 구현.
+  - UI에 남아있던 이모지 요소(📡, 📷 등)를 제거하여 전문적인 작전 화면 품질 확보.
+- **관련 파일**: `console/public/gildang-logo.jpeg`, `console/src/App.tsx`, `console/src/styles.css`, `console/src/components/Login.tsx`, `console/src/components/Login.css`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/LiveCameraFeed.css`, `docs/changelogs/kb.md`
+- **검증 결과**: `npm run build`를 통해 tsc 및 vite 컴파일 빌드 검증 성공 완료.

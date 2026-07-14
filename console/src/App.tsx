@@ -32,9 +32,12 @@ function Layout({
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Minchodan Operator Console</p>
-          <h1>스마트 가이드독 실시간 관제</h1>
+        <div className="topbar-left">
+          <img src="/gildang-logo.jpeg" alt="GILDANG Logo" className="gildang-logo" />
+          <div>
+            <p className="eyebrow">GILDANG Operator Console</p>
+            <h1>스마트 가이드독 실시간 관제</h1>
+          </div>
         </div>
         <div className="topbar-actions">
           <StatusBadge label={connection} tone={connectionTone(connection)} />

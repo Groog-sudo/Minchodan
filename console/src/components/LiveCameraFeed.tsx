@@ -123,17 +123,23 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
                 const { x, y, w, h } = det.bbox;
                 const displayBBox = getDisplayBBox({ x, y, w, h }, naturalSize);
                 const color = getColorForClass(det.className);
+                const isSeg = det.model === "segmentation";
                 return (
                   <div
                     key={index}
-                    className="frame-overlay-box"
+                    className={isSeg ? "frame-overlay-box frame-overlay-seg" : "frame-overlay-box"}
                     style={{
                       left: `${displayBBox.leftPct}%`,
                       top: `${displayBBox.topPct}%`,
                       width: `${displayBBox.widthPct}%`,
                       height: `${displayBBox.heightPct}%`,
                       borderColor: color,
-                      boxShadow: `0 0 6px ${color}`,
+                      borderStyle: isSeg ? "dashed" : "solid",
+                      borderWidth: isSeg ? "1px" : "2px",
+                      backgroundColor: isSeg ? `${color}33` : "transparent",
+                      boxShadow: isSeg
+                        ? `inset 0 0 10px ${color}, 0 0 4px ${color}`
+                        : `0 0 6px ${color}`,
                     }}
                   >
                     <span
@@ -144,7 +150,7 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
                         fontWeight: 900
                       }}
                     >
-                      {det.className.toUpperCase()} ({(det.confidence * 100).toFixed(0)}%)
+                      {det.className.toUpperCase()} {isSeg ? "" : `(${(det.confidence * 100).toFixed(0)}%)`}
                     </span>
                   </div>
                 );
@@ -183,7 +189,7 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
                 className="hud-restore-btn"
                 onClick={() => setMapVisible(true)}
               >
-                📡 HUD MAP ON
+                HUD MAP ON
               </button>
             )}
 
@@ -191,7 +197,7 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
           </div>
         ) : (
           <div className="feed-placeholder">
-            <div className="placeholder-icon">📷</div>
+            <div className="placeholder-icon">VIDEO</div>
             <p className="placeholder-text">
               {connected
                 ? "실기기 영상 프레임을 수신 대기 중입니다..."

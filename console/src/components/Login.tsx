@@ -61,8 +61,11 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
   return (
     <div className="login-container">
       <form onSubmit={handleLogin} className="login-form">
-        <h2 className="login-title">Minchodan Console</h2>
-        <p className="login-subtitle">관리자 로그인이 필요합니다.</p>
+        <div className="login-logo-container">
+          <img src="/gildang-logo.jpeg" alt="GILDANG Logo" className="login-logo" />
+        </div>
+        <h2 className="login-title">GILDANG Tactical Console</h2>
+        <p className="login-subtitle">보행관제 오퍼레이터 인증이 필요합니다.</p>
 
         <input
           type="text"
@@ -84,7 +87,7 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
         {error && <div className="login-error">{error}</div>}
 
         <button type="submit" className="login-button">
-          로그인 (JWT 발급)
+          인증 및 접속 (JWT)
         </button>
       </form>
     </div>
