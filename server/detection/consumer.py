@@ -543,6 +543,9 @@ class DetectionConsumer:
             "beep_interval_ms": alert.beep_interval_ms,
             "haptic_pattern": alert.haptic_pattern,
             "ts": alert.ts or now_ts(),
+            "track_id": alert.track_id,
+            "class_name": alert.class_name,
+            "hit_count": alert.hit_count,
         }
         try:
             sent = await manager.send_json(device_id, payload)
