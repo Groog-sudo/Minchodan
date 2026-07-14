@@ -366,6 +366,18 @@ class DetectionConsumer:
                 decode_ms=processed.processing_time_ms,
                 pipeline_start=pipeline_start,
             )
+            # [2026-07-14] 반사 경보(정지) 발동 800ms 후 인지(설명/우회방향) 가이드를 후속 트리거
+            asyncio.create_task(
+                self._trigger_delayed_cognitive_guide(
+                    device_id=processed.device_id,
+                    alert=result,
+                    detections=detections,
+                    surfaces=surfaces,
+                    frame=frame,
+                    decode_ms=processed.processing_time_ms,
+                    pipeline_start=pipeline_start,
+                )
+            )
         elif isinstance(result, DetectionResult):
             self._last_status.update(
                 {
@@ -592,6 +604,40 @@ class DetectionConsumer:
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
+
+    async def _trigger_delayed_cognitive_guide(
+        self,
+        device_id: str,
+        alert: ReflexAlert,
+        detections: list,
+        surfaces: list,
+        frame: np.ndarray | None,
+        decode_ms: float,
+        pipeline_start: float | None,
+    ) -> None:
+        """반사 경보(비프/햅틱) 발동 800ms 후 인지 가이드(LLM TTS 우회)를 연계 트리거한다."""
+        await asyncio.sleep(0.8)  # 반사 진동/비프음 인지용 딜레이
+        
+        # 29종 객체 탐지 클래스들을 모아 DetectionResult 스키마로 인지 경로에 피딩
+        cognitive_res = DetectionResult(
+            event_id=alert.event_id,
+            detections=detections,
+            surface=surfaces,
+            risk_hint="high",  # 반사 경보 직후 상황임을 명시하기 위해 high 위험도 부여
+            inference_ms=alert.inference_ms,
+            is_departing=False,
+            braille_direction="",
+        )
+        
+        # 인지 경로 전송
+        await self._send_cognitive_guide(
+            device_id=device_id,
+            result=cognitive_res,
+            frame=frame,
+            decode_ms=decode_ms,
+            pipeline_start=pipeline_start,
+            departure_confirmed=False,
+        )
 
     async def _send_cognitive_guide(
         self,

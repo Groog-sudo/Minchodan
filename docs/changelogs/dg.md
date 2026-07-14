@@ -518,14 +518,20 @@
     - 이로 인해 인지 경로(mid)는 오직 노면 이탈(`is_departing_confirmed` = True) 판정만 전담하게 됨.
   - **신규 파인튜닝 가중치 적용** (`.env`, `config.py`):
     - 7월 14일 새로 파인튜닝 완료된 `object_detection260714.pt` (29클래스 객체) 및 `segmentation260714.pt` (4클래스 노면) 가중치 경로로 업데이트 적용.
+  - **정지 후 우회 안내 시퀀싱 및 프롬프트 튜닝**:
+    - 반사(비프/햅틱)로 사용자가 멈춘 뒤 후속 설명이 부드럽게 이어지도록 `consumer.py`에 `_trigger_delayed_cognitive_guide` 비동기 헬퍼를 신설하여 반사 알림 800ms 후 인지 가이드(LLM TTS)를 지연 실행.
+    - `l2_generator.py`의 `GUIDANCE_SYSTEM_PROMPT`를 수정하여 정지 관련 명령("정지하세요", "천천히 멈추세요" 등)을 금지하고, 장애물 종류 및 시계방향 우회 방향("N시 방향 [장애물명] 주의/우회") 설명에 집중하게 함.
+  - **직접 충돌 위험 객체 필터 적용** (`reflex_gate.py`):
+    - 무차별적인 비프음 방지 및 인지 큐 지연 해소를 위해, 반사 조건을 '하단 5% 이내(극도 인접)' 및 '좌우 30% 여백을 제외한 중앙 40% 영역(정면 충돌 경로)'을 동시에 충족하는 사물로 재제한.
+    - 그 외의 사물들은 즉시 비프음(반사)을 발생시키지 않고 800ms 후 인지 경로를 통해 우회 안내 음성만 제공.
   - **사실관계 검증 완료**:
     - Android 폰의 `float32` 입력이 `Float32Array(0)`으로 비어있음에도 `roadway` 오탐이 나왔던 현상은, `fast-tflite` 네이티브 모듈에 0바이트 버퍼 전달 시 예외를 내지 않고 텐서 출력을 반환해 모바일 로컬 `detectFrame` 단에서 오탐이 직접 발생하였음을 규명.
   - **실거리(m) 기반 ROI 공식 설계**:
     - iOS의 `depthProbe` 3스팟 측정치를 활용한 실시간 ROI y-band 선형보간법 설계.
     - Android용 고정 장치 기하학 틸트각 변환 수식 $D(y) = h / \tan(\theta - FOV_v/2 + y \cdot FOV_v)$을 도출하여 화면 비율 대신 실제 미터 단위를 기준으로 ROI(0.5m ~ 1.5m)를 재정의하도록 함.
   - **문서화** (`stage3_detection_design.md`):
-    - 위 아키텍처/가중치 변경 이력을 3단계 설계서 변경 이력 단락에 정식 반영하여 누락 없이 일괄 업데이트.
-- **관련 파일**: `server/detection/gates/reflex_gate.py`, `server/orchestration/nodes/l1_classifier.py`, `.env`, `server/detection/config.py`, `docs/stage-guides/stage3_detection_design.md`
+    - 위 아키텍처/가중치/시퀀싱/가드 필터 변경 이력을 3단계 설계서 변경 이력 단락에 정식 반영하여 누락 없이 일괄 업데이트.
+- **관련 파일**: `server/detection/gates/reflex_gate.py`, `server/orchestration/nodes/l1_classifier.py`, `.env`, `server/detection/config.py`, `docs/stage-guides/stage3_detection_design.md`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`
 - **검증 결과**: git push 완료 및 local tsc 컴파일 무결성 검증.
 
 
