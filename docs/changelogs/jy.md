@@ -400,3 +400,23 @@
   - 이번 수정은 `거리측정` 버튼 자체를 줄자 검증 가능한 계측 화면으로 개선하는 작업입니다.
   - 일반 객체 탐지 bbox에 `LiDAR` 거리 라벨을 붙이는 정식 경로는 여전히 별도 과제이며, VisionCamera 탐지 프레임과 depth map을 같은 세션·같은 타임스탬프·같은 640x640 crop 좌표계로 묶는 후속 구현이 필요합니다.
   - 실기기에서 여전히 큰 오차가 나면 다음 우선 확인 대상은 프리뷰 방향 180도 보정 필요 여부, depth orientation, 렌즈 기준 줄자 위치, 기기와 벽의 수직 정렬입니다.
+
+---
+
+### 2026-07-14 | 운영 환경 | OS·아키텍처별 PyTorch 휠 분리 및 콘솔 favicon 갱신
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 병합 후 macOS Python 3.13 가상환경에서 `pip install -r requirements.txt`를 실행하면 공식 휠이 없는 `torch==2.12.1+cu128`을 요청하여 설치가 중단됐습니다.
+- **변경 내용**:
+  - macOS와 Apple Silicon 기반 Linux 컨테이너는 PyPI의 `torch==2.12.1`/`torchvision==0.27.1`을 사용하도록 환경 마커를 추가했습니다.
+  - Linux x86_64와 Windows GPU 환경은 공식 cu128 인덱스에 존재하는 `torch==2.11.0+cu128`/`torchvision==0.26.0+cu128` 호환 조합을 선택하도록 정정했습니다.
+  - `docs/ops/ai_model_hardware_setup.md`의 설치 기준을 실제 `requirements.txt`와 동기화했습니다.
+  - 운영 콘솔의 브라우저·Apple 디바이스 favicon 링크와 16x16·32x32·180x180 자산을 추가했습니다.
+- **관련 파일**: `requirements.txt`, `console/index.html`, `console/public/favicon.ico`, `console/public/favicon-16x16.png`, `console/public/favicon-32x32.png`, `console/public/apple-touch-icon.png`, `.gitignore`, `docs/ops/ai_model_hardware_setup.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - macOS arm64, Python 3.13.14 가상환경에서 `python -m pip install -r requirements.txt` 재실행 성공
+  - `python -m pip check` 및 `git diff --check` 통과
+  - `console` 운영 빌드(`tsc --noEmit`, `vite build`) 통과
+
+---
