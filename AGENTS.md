@@ -169,6 +169,7 @@
 | `tts-voice-streamer`        | 7    | `.agents/skills/tts-voice-streamer/`        | 이중 채널(반사=사전합성/인지=실시간 TTS), 선점                                  |
 | `xcode-build-management`    | -    | `.agents/skills/xcode-build-management/`    | iOS Xcode 프로젝트 빌드, 시뮬레이터 관리 및 Swift/SwiftUI 코드 리팩토링/디버깅 |
 | `auto-publish-work`         | -    | `.agents/skills/auto-publish-work/`         | 작업 완료 후 문서 정합성 분석, 린트/테스트 검증, Changelog 작성 및 Git 자동 마감 |
+| `react-doctor`              | -    | `.agents/skills/react-doctor/`              | react-doctor 정적 분석기를 활용한 React 및 React Native 코드 품질 관리 및 개선 |
 
 > 스킬은 `.agents/skills/` (opencode, 범용) 와 `.claude/skills/` (Claude Code) 양쪽에서 접근 가능합니다. `.claude/skills/`는 `.agents/skills/`의 junction 링크입니다.
 

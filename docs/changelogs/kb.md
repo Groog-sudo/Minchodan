@@ -1972,3 +1972,23 @@
   - Integrate react-doctor quality checks into auto_publish_work.py and add config files
 - **관련 파일**: `lient/App.tsx`, `client/src/components/CameraView.tsx`, `console/src/App.tsx`, `console/src/api/useLiveFeed.ts`, `scripts/auto_publish_work.py`, `client/doctor.config.json`, `console/doctor.config.json`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | react_doctor_skill
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add react-doctor agent skill definition and update indexes
+- **관련 파일**: `GENTS.md`, `SKILLS.md`, `.agents/skills/react-doctor/`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | react_doctor_skill
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add react-doctor agent skill definition and update indexes
+- **관련 파일**: `.agents/skills/react-doctor/SKILL.md`, `AGENTS.md`, `SKILLS.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
