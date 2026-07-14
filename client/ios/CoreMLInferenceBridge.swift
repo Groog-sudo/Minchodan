@@ -64,7 +64,8 @@ class CoreMLInferenceBridge: NSObject {
   @objc
   func loadModels(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
     do {
-      // object_detection (필수) - end2end raw tensor 모델
+      // object_detection (필수) - 2026-07-14부터 coremltools NMS 파이프라인 산출물
+      // ("confidence"/"coordinates" 2-출력, runDetection에서 분기 처리) 사용
       guard let detURL = Bundle.main.url(forResource: "object_detection", withExtension: "mlmodelc") else {
         reject("FILE_NOT_FOUND", "object_detection.modelc 에셋을 Bundle에서 찾을 수 없습니다.", nil)
         return
@@ -247,6 +248,16 @@ class CoreMLInferenceBridge: NSObject {
   }
 
   private func runDetection(prediction: MLFeatureProvider, modelType: String) -> [[String: Any]] {
+    // 2026-07-14: object_detection260714.pt는 end2end(NMS-free one2one) 헤드가 아닌
+    // 표준 헤드라, coremltools의 Vision 호환 NMS 파이프라인(nms=True)으로 변환한다.
+    // 이 경로는 출력이 이름 있는 2개 배열("confidence"[N,80(29+패딩)], "coordinates"[N,4])
+    // 로 나오며 NMS가 이미 CoreML 그래프 내부에서 끝난 상태다(Apple 표준 iOS Detection
+    // Model 포맷, VNRecognizedObjectObservation과 동일 계약).
+    if let confidence = prediction.featureValue(for: "confidence")?.multiArrayValue,
+       let coordinates = prediction.featureValue(for: "coordinates")?.multiArrayValue {
+      return parsePipelineOutput(confidence: confidence, coordinates: coordinates, modelType: modelType)
+    }
+
     // segmentation 모델은 출력이 2개다: [1, 300, 38](박스+마스크계수)와
     // [1, 32, 160, 160](프로토타입 마스크). featureNames는 Set 기반이라 순서가
     // 보장되지 않으므로 .first로 집으면 실기기에서 프로토 마스크 텐서를 집어
@@ -261,6 +272,77 @@ class CoreMLInferenceBridge: NSObject {
     }
 
     return parseYoloOutput(multiArray: outputMultiArray, modelType: modelType)
+  }
+
+  // coremltools NMS 파이프라인 출력 파싱. confidence: [numBoxes, nc(80 패딩)],
+  // coordinates: [numBoxes, 4](cx,cy,w,h, 0~1 정규화). NMS가 이미 완료된 상태라
+  // 여기서는 클래스별 최댓값 선택 + 픽셀 좌표 환산만 한다(IoU 억제 불필요).
+  private func parsePipelineOutput(
+    confidence: MLMultiArray,
+    coordinates: MLMultiArray,
+    modelType: String
+  ) -> [[String: Any]] {
+    let confShape = confidence.shape.map { $0.intValue }
+    let coordShape = coordinates.shape.map { $0.intValue }
+    guard confShape.count == 2, coordShape.count == 2, confShape[0] == coordShape[0] else {
+      print("[CoreMLBridge] 파이프라인 출력 shape 불일치: conf=\(confShape) coord=\(coordShape)")
+      return []
+    }
+
+    let numBoxes = confShape[0]
+    let nc = confShape[1]
+    let activeClassNames = (modelType == "segmentation") ? segClassNames : classNames
+    let numClasses = activeClassNames.count
+
+    let confPtr = UnsafeMutablePointer<Float32>(confidence.dataPointer.assumingMemoryBound(to: Float32.self))
+    let confStrides = confidence.strides.map { $0.intValue }
+    let coordPtr = UnsafeMutablePointer<Float32>(coordinates.dataPointer.assumingMemoryBound(to: Float32.self))
+    let coordStrides = coordinates.strides.map { $0.intValue }
+
+    var results: [[String: Any]] = []
+    for i in 0..<numBoxes {
+      let confBase = i * confStrides[0]
+      var bestClassId = -1
+      var bestScore: Float32 = -1
+      // 29~79는 ultralytics의 80배수 패딩 클래스(항상 0)이므로 실제 클래스 범위만 본다.
+      for c in 0..<min(nc, numClasses) {
+        let score = confPtr[confBase + c * confStrides[1]]
+        if score > bestScore {
+          bestScore = score
+          bestClassId = c
+        }
+      }
+      let conf = Double(bestScore)
+      if conf < confThreshold || bestClassId < 0 { continue }
+
+      // coordinates는 0~1 정규화 값(IOSDetectModel의 self.normalize = 1/640)이므로,
+      // 클라이언트가 기대하는 640 픽셀 단위로 되돌린다(prepareInput의 expectedSize와 동일 값).
+      let coordBase = i * coordStrides[0]
+      let cx = Double(coordPtr[coordBase + 0 * coordStrides[1]]) * 640.0
+      let cy = Double(coordPtr[coordBase + 1 * coordStrides[1]]) * 640.0
+      let w = Double(coordPtr[coordBase + 2 * coordStrides[1]]) * 640.0
+      let h = Double(coordPtr[coordBase + 3 * coordStrides[1]]) * 640.0
+      let className = activeClassNames[bestClassId] ?? "unknown"
+
+      results.append([
+        "model": modelType,
+        "className": className,
+        "confidence": conf,
+        "bbox": [
+          "x": cx - w / 2.0,
+          "y": cy - h / 2.0,
+          "w": w,
+          "h": h
+        ]
+      ])
+    }
+
+    results.sort { (a, b) -> Bool in
+      let confA = a["confidence"] as? Double ?? 0.0
+      let confB = b["confidence"] as? Double ?? 0.0
+      return confA > confB
+    }
+    return results
   }
 
   // =========================================================================
