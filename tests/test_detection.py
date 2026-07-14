@@ -432,6 +432,34 @@ class TestPipelineRobustness:
         assert result.is_departing is False
 
     @pytest.mark.asyncio
+    async def test_cognitive_publish_suppressed_when_client_reports_indoor(
+        self, frame, mock_redis_bus
+    ):
+        """2026-07-14 정책: 실내(is_outdoor=False)면 mid/low라도 risk.events(인지 TTS)를
+        발행하지 않는다. 실외 전용 모델의 실내 오탐이 음성 안내로 새는 것을 막기 위함."""
+        detector = StubDetector(
+            detections=[
+                Detection(
+                    class_name="bicycle",
+                    confidence=0.8,
+                    bbox=BBox(x=10.0, y=10.0, w=20.0, h=20.0),
+                )
+            ]
+        )
+        pipeline = DetectionPipeline(
+            detector=detector,
+            segmentor=StubSegmentor(surfaces=[]),
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result, _, _ = await pipeline.run(
+            frame, "test", "evt-mid-indoor", "dev-1", is_outdoor=False
+        )
+        assert result.risk_hint == "mid"
+        mock_redis_bus.publish_event.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_empty_inputs_return_none_risk(self, frame, mock_redis_bus):
         pipeline = DetectionPipeline(
             detector=StubDetector(detections=[]),

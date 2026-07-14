@@ -2132,3 +2132,45 @@
   - 관제 사후 이력 로그 썸네일 이미지 및 오버레이 바운딩 박스 90도 회전 동기화 패치
 - **관련 파일**: `onsole/src/components/DetectionGuidanceLogTable.tsx`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 클라이언트(iOS)+서버 | 씬 히스테리시스 + 실내 인지 TTS 억제 (시간 압박 스프린트)
+
+- **커밋**: `(미커밋, 사용자 요청 시 커밋)`
+- **변경 내용**:
+  - **범위**: iOS 우선. Android 씬 게이트는 이번 스프린트에서 제외.
+  - `client/src/components/CameraView.tsx`: `isLikelyIndoor` 최근 5프레임 중 3프레임 이상 실내면 실내 확정(`stabilizeIsOutdoorByScene`). 안정화된 값을 반사 게이트와 서버 `is_outdoor`에 동일 적용. `__DEV__`에서 `[SceneHysteresis]` 로그 출력.
+  - `server/detection/detection_pipeline.py`: `is_outdoor=False`이면 mid/low라도 `_publish_cognitive` 스킵(실내 TTS 오탐 차단). `None`은 기존 동작 유지.
+  - `tests/test_detection.py`: 실내 시 인지 publish 미발행 회귀 테스트 추가.
+  - `docs/design/indoor_fp_mitigation_design.md` v0.3.0: §4.7~§4.9 및 롤아웃 갱신.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `server/detection/detection_pipeline.py`, `tests/test_detection.py`, `docs/design/indoor_fp_mitigation_design.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest -k 'cognitive_publish_suppressed or mid_risk_publishes or is_departing_suppressed'` 4건 통과.
+- **남은 일**: §4.9 실외 보도 3~5분 + 실내 2분 현장 회귀(Metro `[SceneClassify]`/`[SceneHysteresis]`). 키워드 보강은 로그 보고 판단.
+
+
+---
+
+### 2026-07-14 | 클라이언트(Android) | ML Kit 씬 분류로 iOS isLikelyIndoor 동등 신호 추가
+
+- **커밋**: `(미커밋, 사용자 요청 시 커밋)`
+- **변경 내용**:
+  - `SceneClassifyBridgeModule.kt` 신규: Google ML Kit Image Labeling으로 `isLikelyIndoor`/`topLabels` 산출 (iOS VNClassifyImageRequest 대응).
+  - `app/build.gradle`: `com.google.mlkit:image-labeling:17.0.9` 추가.
+  - `tfliteDetector.ts`: detect 시 ML Kit 씬 분류를 det/seg와 병렬 호출, `scene` 반환.
+  - `CameraView.tsx`: Android `pathObstacle`도 실내 씬이면 경보/TTS 억제 (히스테리시스·`is_outdoor`는 iOS와 동일 경로).
+  - `indoor_fp_mitigation_design.md` §4.10 Android 확장 문서화.
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/SceneClassifyBridgeModule.kt`, `MinchodanCustomPackage.kt`, `app/build.gradle`, `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`, `client/src/inference/types.ts`, `docs/design/indoor_fp_mitigation_design.md`
+- **검증 결과**: TS 경로 연결 완료. **네이티브 모듈이라 Android 재빌드(`npx expo run:android`) 후 실기기에서 `[SceneClassify][Android]` 로그 확인 필요.**
+- **비고**: ML Kit 라벨 taxonomy는 Apple Vision과 다르므로 키워드 집합은 Android 실측으로 보강한다.
+
+
+---
+
+### 2026-07-14 | 3단계 | scene_hysteresis_mlkit_indoor_gate
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 씬 히스테리시스·실내 인지 TTS 억제·Android ML Kit 씬 분류 및 detection is_outdoor API 명세 반영
+- **관련 파일**: `lient/android/app/build.gradle`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/inference/types.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `docs/design/indoor_fp_mitigation_design.md`, `server/detection/detection_pipeline.py`, `tests/test_detection.py`, `client/android/app/src/main/java/com/minchodan/app/SceneClassifyBridgeModule.kt`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

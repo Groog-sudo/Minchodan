@@ -13,6 +13,7 @@ class MinchodanCustomPackage : ReactPackage {
         modules.add(AudioSessionBridgeModule(reactContext))
         modules.add(SmsReaderModule(reactContext))
         modules.add(ContactsBridgeModule(reactContext))
+        modules.add(SceneClassifyBridgeModule(reactContext))
         return modules
     }
 

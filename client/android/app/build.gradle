@@ -160,6 +160,10 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // iOS VNClassifyImageRequest 대응: 온디바이스 이미지 라벨링으로 실내/실외 씬 판정
+    // (docs/design/indoor_fp_mitigation_design.md §4 Android 확장)
+    implementation("com.google.mlkit:image-labeling:17.0.9")
+
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";

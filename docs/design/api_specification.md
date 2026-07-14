@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.18 (2026-07-14 §4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가)
+> **버전**: v0.4.19 (2026-07-14 §3.1/§3.2 detection 페이로드에 `is_outdoor` 씬 신호 추가 — 실내 시 서버 보도이탈·인지 TTS 억제)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -168,7 +168,8 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
     "ts": 1719216000000,
     "frame_id": 42,
     "stream": "reflex",
-    "transport": "binary"
+    "transport": "binary",
+    "is_outdoor": true
   }
 }
 ```
@@ -180,6 +181,7 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `payload.stream` | `reflex` (8~10fps) 또는 `cognitive` (1~2fps) |
 | `payload.frame_id` | 프레임 일련 번호 |
 | `payload.transport` | `"binary"` 고정 - 서버가 다음 바이너리 프레임을 이 메타와 짝지어야 함을 표시 |
+| `payload.is_outdoor` | **선택**. 온디바이스 씬 분류(iOS: `VNClassifyImageRequest`, Android: ML Kit Image Labeling) + 히스테리시스 결과. `true`=실외, `false`=실내, 생략/`null`=미판정(구버전). 서버는 `false`일 때 보도 이탈 판정과 mid/low `risk.events`(인지 TTS) 발행을 억제한다 (`indoor_fp_mitigation_design.md` §4.7~§4.10) |
 
 > **바이너리 전송 도입 사유 (2026-07-07)**: base64 인코딩은 페이로드 크기를 약 33% 증가시키고 JS/서버 양쪽에 인코딩·디코딩 CPU 오버헤드를 유발한다. 클라이언트는 `expo-file-system`의 `File(uri).bytes()`로 raw JPEG `Uint8Array`를 직접 얻어 `WebSocket.send(bytes)`로 전송하고, 서버(`server/api/ws_router.py`)는 `ws.receive()`로 텍스트/바이너리 프레임을 구분해 `decode_frame_binary()`(`server/capture/frame_decoder.py`)로 base64 디코딩 단계 없이 바로 `cv2.imdecode`한다.
 
@@ -196,7 +198,8 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
     "ts": 1719216000000,
     "frame_id": 42,
     "stream": "reflex",
-    "thumbnail_jpeg_b64": "/9j/4AAQ..."
+    "thumbnail_jpeg_b64": "/9j/4AAQ...",
+    "is_outdoor": true
   }
 }
 ```
@@ -204,6 +207,7 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | 필드 | 설명 |
 | :--- | :--- |
 | `payload.thumbnail_jpeg_b64` | **640x640 JPEG 압축 base64 프레임** (expo-image-manipulator 50% compress). `payload.transport`가 없으면 이 필드가 필수 |
+| `payload.is_outdoor` | §3.1과 동일 (선택, 실내/실외 씬 신호) |
 
 > **이미지 압축 규격 (2026-07-05 신설)**:
 > 단말 클라이언트는 `expo-image-manipulator`의 네이티브 GPU 가속을 통해 원본 캡처 이미지를 640x640 픽셀로 크롭하고 JPEG 50% 수준으로 압축하여 전송합니다. 장당 전송 크기는 약 12~92KB이며, 이는 원본(약 3.4MB) 대비 약 1/40 수준입니다. YOLO26n(640x640) 및 Llava(336x336) 추론 품질에 손실 없음이 검증되었습니다. (바이너리 전송 시에는 이 크기에서 base64의 33% 증가분이 추가로 빠진다.)
@@ -780,4 +784,5 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.12** | **2026-07-11** | **§8 SSE 계약 고정 - 실발행(8.2)/예약 브리지(8.3) 이벤트 분리, payload 필드를 콘솔 파서 기준으로 고정, `mcp:metrics` producer 부재 사실 명시(기존 "risk.events 실시간 뷰" 오기 정정), 데모 데이터 분리(8.4). §1 공통 필드 event_id 형식 구조화 반영** |
 | **v0.4.13** | **2026-07-12** | **§8.5 사후 이력 조회 REST 신설 - `GET /api/v1/admin/detection-logs` 목록, `GET /api/v1/admin/event-frames/{event_id}` 프레임 JPEG 서빙, 이벤트 프레임 저장 계약(frame_path 컬럼, data/event_frames/ 날짜 폴더, 보존 기본 7일, 백그라운드 저장으로 반사 경로 무영향), 인지 로그 detected_objects_json에 bbox 좌표 포함(콘솔 오탐 검증 오버레이용)** |
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
-| v0.4.17 | 2026-07-14 | §1 공통 `type` 필드 목록 정합 - 코드(`ws_router.py`/`consumer.py`)에서 실제 발행되는 전체 이벤트 타입을 망라하도록 갱신(auth_ok, server_detection, status, stt_audio, nav_route, realtime_gps, dial_action 추가 + 부가 이벤트 guidance_log_event/latency_event/contact_save/deviation_alert/guidance_audio/route_success/route_error/image_url 명시). 기존 누락 분기만 보완, 프로토콜 변경 없음 |
+| **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
+| **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
