@@ -150,8 +150,8 @@ tokenizers==0.23.1
 #    12.8 런타임을 휠 안에 정적으로 묶어 nvidia-* 패키지 의존을 끊는다.
 #    Blackwell(sm_120) 서버가 정석이므로 requirements.txt에서 강제한다."
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.12.1+cu128
-torchvision==0.27.1+cu128
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
 tqdm==4.68.3
 typer==0.25.1
 typing-inspection==0.4.2
