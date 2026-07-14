@@ -2102,3 +2102,13 @@
   - 반사 알림(reflex_alert) 실시간 웹소켓 페이로드 내 track_id/class_name/hit_count 누락 결함 수정
 - **관련 파일**: `erver/detection/consumer.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_timeline_parse_type_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 타임라인 JSON 데이터 타입 이원화 대응 (문자열/배열 방어적 파싱으로 track_id 출력 결함 해결)
+- **관련 파일**: `onsole/src/components/GuidanceTraceTimeline.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

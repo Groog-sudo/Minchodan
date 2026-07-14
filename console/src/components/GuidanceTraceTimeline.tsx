@@ -4,18 +4,28 @@ import type { DetectionGuidanceLogRow, GuidanceTraceRow, TrackedObject } from ".
 const MAX_TRACE_ROWS = 30;
 
 /**
- * detected_objects_json 문자열을 TrackedObject 배열로 안전하게 파싱한다.
- * 파싱 실패 시 빈 배열을 반환한다(방어적 코딩).
+ * detected_objects_json 데이터를 TrackedObject 배열로 안전하게 파싱한다.
+ * REST API(이미 역직렬화된 Array) 및 WS/데모(JSON string) 양쪽 모두 지원(방어적 코딩).
  */
-function parseTrackedObjects(jsonStr: string | null | undefined): TrackedObject[] {
-  if (!jsonStr) return [];
-  try {
-    const parsed = JSON.parse(jsonStr);
-    if (!Array.isArray(parsed)) return [];
-    return parsed as TrackedObject[];
-  } catch {
-    return [];
+function parseTrackedObjects(jsonVal: any): TrackedObject[] {
+  if (!jsonVal) return [];
+  if (Array.isArray(jsonVal)) {
+    return jsonVal as TrackedObject[];
   }
+  if (typeof jsonVal === "object") {
+    return [jsonVal] as any;
+  }
+  if (typeof jsonVal === "string") {
+    try {
+      const parsed = JSON.parse(jsonVal);
+      if (Array.isArray(parsed)) return parsed as TrackedObject[];
+      if (typeof parsed === "object" && parsed !== null) return [parsed] as any;
+      return [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 /**
