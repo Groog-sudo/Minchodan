@@ -620,3 +620,16 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/styles.css`, `console/src/components/DetectionGuidanceLogTable.tsx`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 라이트박스 상세 UI의 가로 여백과 세로 스크롤 위치를 사용자가 요청한 형태로 정리한 변경임
+
+---
+
+### 2026-07-15 | 콘솔 UI | 회원 등록 폼 1열 고정 복원 및 배치 규칙 단순화
+
+- **커밋**: `style(console): 회원 등록 폼 1열 고정 배치 복원`
+- **변경 내용**:
+  - `member-form` 그리드를 2열에서 1열(`grid-template-columns: 1fr`)로 되돌려 사용자 요청대로 고정 배치함
+  - 2열 전용 확장 규칙(`label:first-of-type`, `label:last-of-type`, 900px 미디어쿼리)을 제거해 스타일 충돌 가능성을 낮춤
+  - 등록 버튼을 1열 폼 흐름에 맞춰 `justify-self: stretch` 기준으로 정렬하고 최소 너비 제한을 해제함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 레이아웃 변경은 회원 등록 폼 영역에 한정되며 비즈니스 로직/API 변경 없음
