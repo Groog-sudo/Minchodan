@@ -2122,3 +2122,13 @@
   - 관제 데모 모드(isDemoMode) 시 DB 로그 데이터 존재 유무와 관계없이 데모 데이터 강제 덮어쓰기 로직 보완
 - **관련 파일**: `onsole/src/pages/DashboardPage.tsx`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_log_image_rotation_patch
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 사후 이력 로그 썸네일 이미지 및 오버레이 바운딩 박스 90도 회전 동기화 패치
+- **관련 파일**: `onsole/src/components/DetectionGuidanceLogTable.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
