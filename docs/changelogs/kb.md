@@ -1952,3 +1952,13 @@
   - Add auto_publish_work script and skill definition for git automation
 - **관련 파일**: `.agents/skills/auto-publish-work/SKILL.md`, `docs/changelogs/kb.md`, `scripts/auto_publish_work.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Update SKILLS.md and AGENTS.md indexes to include auto-publish-work skill
+- **관련 파일**: `GENTS.md`, `SKILLS.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
