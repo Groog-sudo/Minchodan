@@ -2082,3 +2082,13 @@
   - DashboardPage 데모 데이터 내 track_id 및 hit_count 보완
 - **관련 파일**: `onsole/src/pages/DashboardPage.tsx`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_timeline_virtual_class_patch
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 타임라인 비장애물 발화의 클래스 가시성 개선 (미탐지 대신 GPS/정기안내 동적 표기)
+- **관련 파일**: `onsole/src/components/GuidanceTraceTimeline.tsx`, `console/src/pages/DashboardPage.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

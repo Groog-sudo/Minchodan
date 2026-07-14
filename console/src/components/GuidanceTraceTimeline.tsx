@@ -87,12 +87,28 @@ function rowsToTraces(rows: DetectionGuidanceLogRow[]): GuidanceTraceRow[] {
         // 인지 경로는 log에 risk_level이 없으므로 stream_type으로 추정
         riskLevel = "mid";
       }
+      const text = row.tts_text ?? "";
+      const inferredClassName = obj?.class_name
+        ? obj.class_name
+        : (() => {
+            if (text.includes("경로") || text.includes("회전") || text.includes("방향") || text.includes("우회")) {
+              return "[GPS 내비게이션]";
+            }
+            if (text.includes("직진") || text.includes("안전") || text.includes("정상")) {
+              return "[정기 안전안내]";
+            }
+            if (text.includes("연결") || text.includes("서버") || text.includes("시작") || text.includes("종료")) {
+              return "[시스템 알림]";
+            }
+            return "[일반 안내]";
+          })();
+
       return {
         log_id: row.log_id,
         detected_at: row.detected_at,
         stream_type: row.stream_type,
         track_id: obj?.track_id ?? null,
-        class_name: obj?.class_name ?? "(미탐지)",
+        class_name: inferredClassName,
         hit_count: obj?.hit_count ?? 0,
         direction: obj?.direction ?? "-",
         risk_level: riskLevel,
