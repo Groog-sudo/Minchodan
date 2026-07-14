@@ -2,6 +2,9 @@
 # Python
 # ==========================================
 
+# ngrok local config (authtoken 포함, 절대 커밋 금지)
+ngrok.yml
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -158,7 +161,15 @@ tmp/
 !client/ios/**
 !client/android/**
 
-
+# 2026-07-13: 안드로이드 바이너리 데모/샘플 리소스는 로컬만 유지(git 미추적).
+# - index.android.bundle: 디버그 빌드 번들(빌드 시 재생성)
+# - assets_samples_frame_*.jpg: TFLite 추론 데모용 샘플 프레임
+# - res/raw/*.tflite, *.wav: 온디바이스 모델/반사 클립(빌드 자산이 아닌 로컬 리소스)
+# - keep.xml은 빌드 보존 설정(텍스트)이라 추적한다.
+client/android/app/src/main/assets/*.bundle
+client/android/app/src/main/res/drawable-mdpi/assets_samples_*.jpg
+client/android/app/src/main/res/raw/*.tflite
+client/android/app/src/main/res/raw/*.wav
 
 
 # ==========================================
@@ -305,3 +316,6 @@ scripts/launch_agents.sh
 # IDE scan and diagnostic scratch files
 project_scan_summary.json
 scratch/
+
+# Local PyTorch CUDA wheel cache (multi-GB)
+.wheel_cache/

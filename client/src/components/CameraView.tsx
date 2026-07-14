@@ -341,12 +341,12 @@ export function CameraView() {
   const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
   const lastMapPosTsRef = useRef(0);
 
-  // GPS 전송: 탐지 세션이 켜져 있을 때만 켠다(상시 watch는 배터리·부하).
+  // GPS 전송: 앱 부팅 직후부터 watch를 시작해 공기계의 첫 GPS fix 지연을 줄인다.
   // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
   // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
   // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
   useEffect(() => {
-    if (isMockMode || !detectionEnabled) return;
+    if (isMockMode) return;
     let cancelled = false;
 
     (async () => {
@@ -373,7 +373,7 @@ export function CameraView() {
       stopWatching();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode, detectionEnabled]);
+  }, [isMockMode]);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다

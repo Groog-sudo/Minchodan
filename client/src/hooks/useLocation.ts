@@ -22,8 +22,8 @@ export interface UseLocationReturn {
   stopWatching: () => void;
 }
 
-const LOCATION_UPDATE_INTERVAL_MS = 3000;
-const LOCATION_UPDATE_DISTANCE_M = 5;
+const LOCATION_UPDATE_INTERVAL_MS = 2000;
+const LOCATION_UPDATE_DISTANCE_M = 1;
 
 export function useLocation(): UseLocationReturn {
   const [hasPermission, setHasPermission] = useState(false);
@@ -56,7 +56,7 @@ export function useLocation(): UseLocationReturn {
 
         subscriptionRef.current = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Balanced,
+            accuracy: Location.Accuracy.High,
             timeInterval: LOCATION_UPDATE_INTERVAL_MS,
             distanceInterval: LOCATION_UPDATE_DISTANCE_M,
           },

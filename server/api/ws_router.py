@@ -590,6 +590,14 @@ async def ws_detect(
             await ensure_device_registered(device_id)
         except Exception as e:
             logger.error(f"[WS] 단말 자동 등록 실패: device_id={device_id}, {e}")
+        try:
+            from server.stt.contact_service import ContactService
+
+            hydrated = await ContactService.hydrate_cache(device_id)
+            if hydrated:
+                logger.info(f"[WS] 연락처 캐시 복구: device_id={device_id}, count={hydrated}")
+        except Exception as e:
+            logger.error(f"[WS] 연락처 캐시 복구 실패: device_id={device_id}, {e}")
         await ws.send_json({"type": "auth_ok", "device_id": device_id})
         await _broadcast_session_status(device_id, "connected")
         await redis_bus.connect()

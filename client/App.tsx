@@ -9,6 +9,9 @@ import { audioEngine } from "./src/services/audioEngine";
 // 실제 STT 트리거 흐름(길댕아 wake-word -> 길찾아줘/물어볼게, server/stt/stt_to_llm_bridge.py)과
 // 정확히 일치해야 한다. 2026-07-10 정정: 옛 단일 트리거("네비게이션 켜줘") 안내였던 것을
 // 현재의 2단계 흐름으로 갱신.
+// 2026-07-13 강화: 시각장애인 보행 편의성 기능(보호자 번호 저장/긴급전화) 사용법 안내 추가.
+//   - 보호자 번호 음성 저장: "엄마 번호는 010-xxxx-xxxx 저장해줘" (RAG 영속)
+//   - 긴급전화: "긴급전화" / "SOS" / "보호자한테 전화해줘" (guardian_phone 우선, 119 폴백)
 const ONBOARDING_MESSAGE =
   "길댕아 저는 여러분의 보행을 돕는 길댕이입니다. 화면을 누르고 '길댕아'라고 부르신 뒤, '길찾아줘'라고 하시면 목적지까지 안내해 드리고, '물어볼게'라고 하시면 궁금하신 걸 답해드립니다.";
 
@@ -28,6 +31,9 @@ export default function App() {
     // allowsRecording:true 설정보다 먼저(앱 마운트 시점) 실행되어 세션을 false로 덮어써,
     // STT useAudioRecorder().record()가 항상 RecordingDisabledException으로 실패했다
     // (실기기 실측 확인). audioEngine.ts와 동일하게 true로 맞춘다.
+    // [2026-07-13 타이밍 보정] CameraView가 동시 마운트되며 카메라/오디오 세션을 선점해
+    // 온보딩 음성이 무음으로 밀리는 현상을 회피하기 위해, 세션 설정 완료 후 600ms 대기
+    // 뒤 온보딩을 재생한다(카메라 프리뷰/반사 비프가 오디오 세션을 안정화시킬 시간).
     void setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,
@@ -37,7 +43,9 @@ export default function App() {
       console.log("[App] 최상단 오디오 세션 선제 설정 완료 (Silent Override)");
       if (!onboardingPlayedRef.current) {
         onboardingPlayedRef.current = true;
-        audioEngine.speakFallback(ONBOARDING_MESSAGE);
+        setTimeout(() => {
+          audioEngine.speakFallback(ONBOARDING_MESSAGE);
+        }, 600);
       }
     }).catch((err) => {
       console.error("[App] 최상단 오디오 세션 선제 설정 실패:", err);
