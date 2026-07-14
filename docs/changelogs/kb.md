@@ -1912,3 +1912,43 @@
   - **`api_specification.md` §1**: 공통 `type` 필드 목록을 코드(`ws_router.py`/`consumer.py`)에서 실제 발행되는 전체 이벤트 타입으로 갱신 (v0.4.17).
 - **검증**: 모든 수정 후 git diff로 변경 사항 확인. 환경 변수 3축(명세/.env.example/코드) 교차 검증 완료.
 - **관련 파일**: `docs/ops/environment_variables.md`, `README.md`, `AGENTS.md`, `.env.example`, `docs/design/api_specification.md`, `server/tts/__init__.py`, `docs/changelogs/kb.md`
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/SKILL.md`, `docs/changelogs/kb.md`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/SKILL.md`, `docs/changelogs/kb.md`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 1단계 | auto_publish_work
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Add auto_publish_work script and skill definition for git automation
+- **관련 파일**: `.agents/skills/auto-publish-work/SKILL.md`, `docs/changelogs/kb.md`, `scripts/auto_publish_work.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
