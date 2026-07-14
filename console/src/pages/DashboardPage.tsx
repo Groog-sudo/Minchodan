@@ -121,8 +121,11 @@ export function DashboardPage({
   // 1페이지(최신)에서만 병합한다 - 2페이지 이후는 특정 offset의 과거 스냅샷이라 실시간
   // 이벤트가 끼어들면 페이지 경계가 흔들린다. 병합 후에도 페이지 크기를 유지하도록 자른다.
   const detectionGuidanceLogs = useMemo(() => {
+    if (isDemoMode) {
+      return DEMO_GUIDANCE_LOGS;
+    }
     if (logPage !== 0) {
-      return isDemoMode && fetchedLogs.length === 0 ? DEMO_GUIDANCE_LOGS : fetchedLogs;
+      return fetchedLogs;
     }
     const byId = new Map<number, DetectionGuidanceLogRow>();
     for (const row of fetchedLogs) byId.set(row.log_id, row);
@@ -130,7 +133,7 @@ export function DashboardPage({
     const merged = Array.from(byId.values())
       .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime())
       .slice(0, LOG_PAGE_SIZE);
-    return isDemoMode && merged.length === 0 ? DEMO_GUIDANCE_LOGS : merged;
+    return merged;
   }, [fetchedLogs, guidanceLogEvents, isDemoMode, logPage]);
 
   return (

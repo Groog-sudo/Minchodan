@@ -2112,3 +2112,13 @@
   - 관제 타임라인 JSON 데이터 타입 이원화 대응 (문자열/배열 방어적 파싱으로 track_id 출력 결함 해결)
 - **관련 파일**: `onsole/src/components/GuidanceTraceTimeline.tsx`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_demo_mode_override_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 데모 모드(isDemoMode) 시 DB 로그 데이터 존재 유무와 관계없이 데모 데이터 강제 덮어쓰기 로직 보완
+- **관련 파일**: `onsole/src/pages/DashboardPage.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
