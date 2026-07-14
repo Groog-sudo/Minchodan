@@ -154,6 +154,48 @@ function getEffectiveConfThreshold(className: string, baseThreshold: number): nu
 // 반사 경보 판정에서 제외한다. 부동소수점 회귀 노이즈 감안 2% 여유만 허용.
 const CANVAS_OVERFLOW_MARGIN = 1.02;
 
+// 주행 통로 ROI 사다리꼴 상수 - server/detection/path_risk.py와 동일 값으로 유지해 좌표 정합.
+// NEAR: 화면 하단(가장 가까운 지점) 좌우 경계, FAR: 화면 상단(먼 지점) 좌우 경계.
+// FAR_Y_RATIO: ROI 상단이 화면 높이의 35% 지점에서 시작.
+const PATH_ROI_NEAR_BAND = [0.20, 0.80] as const; // 정규화 x 좌표 (0~1)
+const PATH_ROI_FAR_BAND  = [0.38, 0.62] as const;
+const PATH_ROI_FAR_Y_RATIO = 0.35;
+
+/**
+ * ROI 사다리꼴 꼭짓점 4개를 정규화 좌표(0~1)로 반환.
+ * 순서: 좌상 -> 우상 -> 우하 -> 좌하 (시계 방향)
+ */
+function roiPolygon(): [number, number][] {
+  const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
+  const [farLo, farHi] = PATH_ROI_FAR_BAND;
+  const yTop = PATH_ROI_FAR_Y_RATIO;
+  const yBottom = 1.0;
+  return [
+    [farLo,  yTop],    // 좌상
+    [farHi,  yTop],    // 우상
+    [nearHi, yBottom], // 우하
+    [nearLo, yBottom], // 좌하
+  ];
+}
+
+/**
+ * 점(px, py)이 볼록 다각형 polygon(정규화 좌표 배열) 내부에 있는지 판정.
+ * ray-casting 알고리즘 사용.
+ */
+function pointInPolygon(px: number, py: number, polygon: [number, number][]): boolean {
+  let inside = false;
+  const n = polygon.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersect =
+      yi > py !== yj > py &&
+      px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
   const maxSize = FRAME_SIZE * CANVAS_OVERFLOW_MARGIN;
   return bbox.w > maxSize || bbox.h > maxSize;
@@ -611,6 +653,7 @@ export function CameraView() {
       const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
       isOutdoorBySceneRef.current = isOutdoorByScene;
 
+      const roiPoly = roiPolygon();
       const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
         if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
         if (GROUND_HAZARDS.includes(d.className)) return false; // 바닥(roadway/caution)은 반사 경로 제외 - 인지 경로(TTS) 전담
@@ -618,6 +661,10 @@ export function CameraView() {
         if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
         if (!hasOutdoorSurface) return false;
         if (!isOutdoorByScene) return false;
+        // ROI 판정: bbox 중심점이 주행 통로 사다리꼴 내부에 없으면 반사 경로 제외
+        const cxNorm = (d.bbox.x + d.bbox.w / 2) / FRAME_SIZE;
+        const cyNorm = (d.bbox.y + d.bbox.h / 2) / FRAME_SIZE;
+        if (!pointInPolygon(cxNorm, cyNorm, roiPoly)) return false;
         return true;
       });
       // 💡 [안드로이드 전용: 통로 막힘 판정 및 회피 가이드 MVP]
@@ -918,6 +965,8 @@ export function CameraView() {
           </View>
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
+        {/* ROI 사다리꼴 오버레이: 주행 통로 시각화 (탐지 활성 시에만 표시) */}
+        {detectionEnabled && !depthMode && <ROIOverlay />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
       </View>
@@ -1253,6 +1302,73 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
           </Fragment>
         );
       })}
+    </View>
+  );
+}
+
+/**
+ * ROIOverlay: 주행 통로 사다리꼴 ROI를 화면에 반투명 테두리로 시각화한다.
+ * path_risk.py의 PATH_ROI_NEAR_BAND / PATH_ROI_FAR_BAND 와 동일 좌표 기준.
+ * BBoxOverlay와 동일한 absoluteFill + 절대좌표 View 방식을 사용한다.
+ */
+function ROIOverlay() {
+  const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
+  const [farLo, farHi] = PATH_ROI_FAR_BAND;
+  const yTopPct  = PATH_ROI_FAR_Y_RATIO * 100;
+  const yBotPct  = 100;
+  const heightPct = yBotPct - yTopPct;
+  // 사다리꼴 4변을 각각 얇은 View로 그린다.
+  // 상변 / 하변은 수평 선, 좌변 / 우변은 기울어진 선(width 계산 + transform).
+  const topWidthPct  = (farHi  - farLo)  * 100;
+  const botWidthPct  = (nearHi - nearLo) * 100;
+  const topLeftPct   = farLo  * 100;
+  const botLeftPct   = nearLo * 100;
+  const LINE_W = 2;
+  const COLOR  = "rgba(249, 183, 0, 0.75)"; // COLOR_GILDANG_YELLOW 반투명
+
+  // 좌변/우변 기울기 계산: 화면 비율 좌표 -> 실제 픽셀 변환은 % 사용으로 생략
+  // 단순화: 좌/우변을 작은 세그먼트로 근사하지 않고 두꺼운 사선 View 1개로 표현.
+  // (React Native는 SVG가 없으므로 4개 꼭짓점 방식 대신 상/하/좌/우 4변 직사각형으로 근사)
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {/* 상변 */}
+      <View style={{
+        position: "absolute",
+        left: `${topLeftPct}%`,
+        top: `${yTopPct}%`,
+        width: `${topWidthPct}%`,
+        height: LINE_W,
+        backgroundColor: COLOR,
+      }} />
+      {/* 하변 */}
+      <View style={{
+        position: "absolute",
+        left: `${botLeftPct}%`,
+        top: `${yBotPct - 0.5}%`,
+        width: `${botWidthPct}%`,
+        height: LINE_W,
+        backgroundColor: COLOR,
+      }} />
+      {/* 좌변 - 상하단 x차/y범위로 기울기 근사 */}
+      <View style={{
+        position: "absolute",
+        left: `${topLeftPct}%`,
+        top: `${yTopPct}%`,
+        width: LINE_W,
+        height: `${heightPct}%`,
+        backgroundColor: COLOR,
+        transform: [{ skewX: `${Math.atan2((farLo - nearLo) * 100, heightPct) * (180 / Math.PI)}deg` }],
+      }} />
+      {/* 우변 */}
+      <View style={{
+        position: "absolute",
+        left: `${farHi * 100}%`,
+        top: `${yTopPct}%`,
+        width: LINE_W,
+        height: `${heightPct}%`,
+        backgroundColor: COLOR,
+        transform: [{ skewX: `${Math.atan2((nearHi - farHi) * 100, heightPct) * (180 / Math.PI)}deg` }],
+      }} />
     </View>
   );
 }

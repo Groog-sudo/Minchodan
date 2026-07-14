@@ -465,4 +465,26 @@
     - **도커 이미지 ffmpeg 탑재**: `docker/Dockerfile`에 `ffmpeg` 패키지를 apt-get 설치 항목에 포함시키고, 현재 기동 중인 fastapi 컨테이너에도 직접 ffmpeg 바이너리를 수동 주입 설치하여 즉시 반영하였습니다.
     - **클라이언트 송신 가드레일 완화**: `client/src/hooks/useSttRecorder.ts`에서 짧은 오디오를 전송 전에 차단하던 `capture_truncated` 가드레일을 제거하여 서버 Whisper VAD(vad_filter=True)에 처리를 위임하고, 안정적인 짧은 웨이크워드 전송을 보장하였습니다.
 - **관련 파일**: `server/api/ws_router.py`, `docker/Dockerfile`, `client/src/hooks/useSttRecorder.ts`
-- **검증 결과**: 컨테이너 내 `SttService.transcribe_file` 호출을 통한 `.m4a` 오디오 디코딩 및 whisper 전사 정상 작동 확인.
+- **검증 결과**: 컨테이너 내 `SttService.transcribe_file` 호출을 통한 `.m4a` 오디오 디코딩 및 whisper 전사 정상 작동 확인.
+
+---
+
+### 2026-07-14 | 모바일/AI | Android 온디바이스 탐지 불작동 원인 조사(NNAPI 비활성화) 및 ROI 시각화/판정 신규 구현
+
+- **커밋**: `fix: disable nnapi delegate for android tflite and implement roi overlay with path filtering`
+- **변경 내용**:
+  - **Android NNAPI 델리게이트 비활성화 (탐지 불작동 1단계 조사)**:
+    - `client/src/inference/tfliteDetector.ts`: `ACCELERATION_DELEGATES`의 `android: ["nnapi"]`를 `android: []`로 변경하여 CPU 폴백을 강제함. NNAPI 드라이버 호환성 문제가 탐지 미작동의 원인으로 의심됨. 재빌드 후 로그로 효과를 확인해야 함.
+    - `detect()` 함수 진입부에 입력 shape 검증 로그(`frame.length === 1,228,800` 여부)를 추가하여 shape 불일치를 로그로 즉시 확인 가능하게 함.
+  - **ROI 사다리꼴 상수 추가 (서버-클라이언트 좌표 정합)**:
+    - `client/src/components/CameraView.tsx`에 `server/detection/path_risk.py`의 `PATH_ROI_NEAR_BAND=(0.20, 0.80)`, `PATH_ROI_FAR_BAND=(0.38, 0.62)`, `PATH_ROI_FAR_Y_RATIO=0.35`와 동일한 상수를 추가하여 좌표 계약을 일치시킴.
+  - **ROI 내부 판정(point-in-polygon) 로직 추가**:
+    - `roiPolygon()` 함수: NEAR/FAR 상수로 사다리꼴 4꼭짓점 정규화 좌표를 반환.
+    - `pointInPolygon()` 함수: ray-casting 알고리즘으로 bbox 중심점이 ROI 내부에 있는지 판정.
+    - `handleFrame`의 `validDetections` 필터에 ROI 조건 추가 — 중심점이 ROI 밖인 객체는 반사 경로에서 제외됨.
+  - **ROIOverlay 컴포넌트 신규 작성**:
+    - 사다리꼴 4변을 BBoxOverlay와 동일한 `absoluteFill + 절대좌표 View` 방식으로 황금색(`rgba(249,183,0,0.75)`) 반투명 테두리로 렌더링.
+    - 탐지 활성(`detectionEnabled=true`) 상태에서만 카메라 위에 표시.
+- **관련 파일**: `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`
+- **검증 결과**: TypeScript 컴파일 정합성 확인 필요. Android 실기기 재빌드 후 Logcat `[TFLiteDetector]` 로그 및 ROI 오버레이 시각 확인 예정.
+
