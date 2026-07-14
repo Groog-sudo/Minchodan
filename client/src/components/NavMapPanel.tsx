@@ -40,7 +40,7 @@ function buildMapHtml(appKey: string, waypoints: NavMapWaypoint[]): string {
   /* 정적 표시 전용: 지도 내부 터치/제스처 전면 차단 */
   #map { pointer-events: none; }
   /* Release 빌드는 JS 콘솔을 볼 수 없어 로딩 단계/오류를 패널 위에 직접 표시한다 */
-  #st { position:fixed; top:2px; left:4px; z-index:9999; color:#9CA3AF;
+  #st { position:fixed; top:2px; left:4px; z-index:9999; color:#9DA7BA;
         font:10px monospace; background:rgba(0,0,0,0.5); padding:1px 4px;
         border-radius:3px; pointer-events:none; }
 </style>
@@ -167,21 +167,21 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "#111827",
+    backgroundColor: "#12161A",
   },
   webview: {
     flex: 1,
-    backgroundColor: "#111827",
+    backgroundColor: "#12161A",
   },
   placeholder: {
     flex: 1,
     borderRadius: 8,
-    backgroundColor: "rgba(17, 24, 39, 0.85)",
+    backgroundColor: "rgba(18, 22, 26, 0.85)",
     alignItems: "center",
     justifyContent: "center",
   },
   placeholderText: {
-    color: "#9CA3AF",
+    color: "#9DA7BA",
     fontSize: 12,
     fontFamily: "monospace",
   },
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
     bottom: 2,
     right: 6,
     zIndex: 10,
-    color: "#9CA3AF",
+    color: "#9DA7BA",
     fontSize: 9,
     fontFamily: "monospace",
   },
