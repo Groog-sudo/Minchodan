@@ -84,14 +84,14 @@ def reflex_gate(
     if detection.confidence < min_confidence:
         return None
 
-    # 2. [2026-07-14] 끊임없는 비프음 방지 및 큐 지연 해소를 위한 직접 충돌 위험 객체 필터
-    # 조건 A: 사물의 바닥(bottom_y)이 화면 최하단 5% 영역 안으로 들어왔는가 (극도 인접)
+    # 2. [2026-07-14] 직접 충돌 위험 객체 필터 기준 완화 (기존 0.95는 너무 가혹해 무반응 발생)
+    # 조건 A: 사물의 바닥(bottom_y)이 화면 하단 18% 영역 안으로 들어왔는가 (인접 위험선)
     bottom_y = detection.bbox.y + detection.bbox.h
-    is_very_close = bottom_y > frame_height * 0.95 if frame_height > 0 else True
+    is_very_close = bottom_y > frame_height * 0.82 if frame_height > 0 else True
 
-    # 조건 B: 사물의 중심(center_x)이 좌우 30% 여백을 제외한 중앙 40% 영역 내에 있는가 (정면 충돌 회랑)
+    # 조건 B: 사물의 중심(center_x)이 좌우 20% 여백을 제외한 중앙 60% 영역 내에 있는가
     center_x = detection.bbox.x + detection.bbox.w / 2
-    is_centered = (frame_width * 0.3) <= center_x <= (frame_width * 0.7) if frame_width > 0 else True
+    is_centered = (frame_width * 0.2) <= center_x <= (frame_width * 0.8) if frame_width > 0 else True
 
     # 두 조건 중 하나라도 충족되지 않으면 즉각 반사(정지)에서 제외
     if not (is_very_close and is_centered):
