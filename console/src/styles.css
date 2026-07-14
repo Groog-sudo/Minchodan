@@ -185,6 +185,12 @@ h2 {
   grid-template-columns: minmax(340px, 1fr) minmax(560px, 2fr);
 }
 
+.monitor-stack-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .panel {
   background: var(--bg-tactical-surface);
   border: 1px solid var(--border-tactical);
@@ -681,10 +687,6 @@ td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .monitor-latency-layout {
-    grid-template-columns: 1fr;
-  }
-
   .mcp-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -697,6 +699,10 @@ td {
 @media (max-width: 720px) {
   .app-shell {
     padding: 16px;
+  }
+
+  .monitor-stack-layout {
+    gap: 16px;
   }
 
   .topbar {
@@ -993,14 +999,10 @@ td {
   min-height: unset;
 }
 
-/* 좌측 MCP 열에서는 4카드가 2x2로 배치되도록 좁힌다. */
-.monitor-latency-layout .mcp-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .mcp-grid {
   display: grid;
-  gap: 12px;
+  align-items: stretch;
+  gap: 14px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 

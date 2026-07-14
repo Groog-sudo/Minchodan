@@ -111,7 +111,7 @@ export function DashboardPage({
         />
       </section>
 
-      <section className="monitor-latency-layout">
+      <section className="monitor-stack-layout">
         <McpValidationMonitor
           audio={state.audio_validation}
           cache={state.cache_suppression}

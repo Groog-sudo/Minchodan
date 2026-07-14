@@ -1,3 +1,29 @@
+## Commit Message
+
+style(console): MCP 모니터와 지연 요약 패널 분리 및 MCP 1행 레이아웃 정리
+
+## Staged Changes (정확 기준)
+
+- 대상 파일: `console/src/pages/DashboardPage.tsx`
+  - `McpValidationMonitor`와 `LatencySummaryPanel`을 `monitor-stack-layout` 래퍼로 감싸 별도 섹션으로 분리
+  - 두 패널이 같은 블록 안에서 세로로 쌓이되, 서로 간격이 명시적으로 유지되도록 구조 정리
+
+- 대상 파일: `console/src/styles.css`
+  - `.monitor-stack-layout` 신규 추가
+    - `display: flex`
+    - `flex-direction: column`
+    - `gap: 20px` (모바일에서는 `16px`)
+  - `.mcp-grid`를 결과/출력량을 고려한 데스크톱 `1행 4열` 구조로 유지하면서 카드 간 여백을 `14px`로 조정
+  - `.mcp-grid`에 `align-items: stretch`를 추가해 카드 높이 차이로 레이아웃이 흔들리지 않도록 보정
+  - 기존 `.monitor-latency-layout` 의존 배치 흔적(중간 해상도 1열 전환 규칙, 좌측 2x2 전용 override)을 제거해 현재 구조와 스타일 규칙을 일치시킴
+
+## Scope
+
+- 관리자 콘솔 대시보드의 MCP 검증 패널 및 파이프라인 지연 요약 패널 배치/간격/UI 구조만 변경
+- API, 상태관리, 백엔드 로직, 데이터 계약 변경 없음
+
+---
+
 # 2026-07-14 Commit Note
 
 ## Commit Message
