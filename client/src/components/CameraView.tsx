@@ -589,6 +589,7 @@ export function CameraView() {
 
       const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
         if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
+        if (GROUND_HAZARDS.includes(d.className)) return false; // 바닥(roadway/caution)은 반사 경로 제외 - 인지 경로(TTS) 전담
         if (isGeometricallyImplausible(d.bbox)) return false;
         if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
         if (!hasOutdoorSurface) return false;
@@ -664,7 +665,7 @@ export function CameraView() {
           }
 
           // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
-          const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
+          const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass);
 
           if (nearestLidarDetection !== null) {
             const lidarClass = nearestLidarDetection.className;

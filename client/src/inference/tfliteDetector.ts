@@ -28,7 +28,7 @@ const AIHUB_CLASS_NAMES = [
   "traffic_sign", "tree_trunk", "truck", "wheelchair"
 ];
 
-const CONF_THRESHOLD = 0.50; // 오탐 방지를 위해 0.25에서 0.50으로 상향 (되돌림 복구)
+const CONF_THRESHOLD = 0.25; // 오탐 방지를 위해 0.25에서 0.50으로 상향 (되돌림 복구)
 const IOU_THRESHOLD = 0.45; // 중복 박스 제거(NMS) 기준
 
 function calculateIoU(box1: { x: number, y: number, w: number, h: number }, box2: { x: number, y: number, w: number, h: number }) {
