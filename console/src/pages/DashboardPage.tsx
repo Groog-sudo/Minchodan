@@ -109,19 +109,20 @@ export function DashboardPage({
           session={state.sessions.find((s) => s.device_id === "dev-001") || state.sessions[0] || null}
           ai={state.ai}
         />
-        <McpValidationMonitor
-          audio={state.audio_validation}
-          cache={state.cache_suppression}
-          accessibility={state.accessibility_validation}
-          trace={state.langsmith_trace}
-        />
       </section>
+
+      <McpValidationMonitor
+        audio={state.audio_validation}
+        cache={state.cache_suppression}
+        accessibility={state.accessibility_validation}
+        trace={state.langsmith_trace}
+      />
+      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
-      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
       <DetectionGuidanceLogTable
         rows={detectionGuidanceLogs}
         token={token}

@@ -179,6 +179,12 @@ h2 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.monitor-latency-layout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(340px, 1fr) minmax(560px, 2fr);
+}
+
 .panel {
   background: var(--bg-tactical-surface);
   border: 1px solid var(--border-tactical);
@@ -213,6 +219,20 @@ h2 {
   font-weight: 700;
   text-align: right;
   font-family: inherit;
+}
+
+.panel-title {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.panel-content {
+  display: block;
 }
 
 .metric-grid {
@@ -660,6 +680,18 @@ td {
   .dashboard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .monitor-latency-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .latency-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -677,6 +709,14 @@ td {
   }
 
   .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .latency-stat-grid {
     grid-template-columns: 1fr;
   }
 
@@ -905,7 +945,7 @@ td {
 .latency-stat-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .latency-stat-card {
@@ -947,6 +987,24 @@ td {
 
 .latency-stat-neutral .latency-stat-avg {
   color: var(--color-tech-blue);
+}
+
+.panel-mcp {
+  min-height: unset;
+}
+
+.mcp-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.mcp-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  min-height: 180px;
+  padding: 1rem;
 }
 
 /* 회원 관리 화면 */
