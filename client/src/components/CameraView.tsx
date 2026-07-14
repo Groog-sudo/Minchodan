@@ -275,10 +275,6 @@ export function CameraView() {
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
-  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
-  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
-  const [detectionEnabled, setDetectionEnabled] = useState(false);
-
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
   // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
@@ -326,21 +322,6 @@ export function CameraView() {
     };
   }, []);
 
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const [lastDetect, setLastDetect] = useState<string>("대기");
-  const [hapticFlash, setHapticFlash] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState<number | null>(null);
-  const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
-  const [confThreshold, setConfThreshold] = useState(0.40);
-
-  // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
-  // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
-  // 경로 데이터(navRoute)는 useWebSocket이 전용 상태로 직접 보존한다
-  // (lastMessage 경유 시 고빈도 메시지에 덮여 유실 - 실기기 확인).
-  const [mapVisible, setMapVisible] = useState(false);
-  const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
-  const lastMapPosTsRef = useRef(0);
-
   // GPS 전송: 앱 부팅 직후부터 watch를 시작해 공기계의 첫 GPS fix 지연을 줄인다.
   // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
   // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
@@ -374,58 +355,6 @@ export function CameraView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
-
-  // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
-  // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
-  // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
-  const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
-  const sttPressActiveRef = useRef(false);
-  const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const {
-    status: sttStatus,
-    startRecording: startSttRecording,
-    stopRecordingAndSend: stopSttRecording,
-    requestPermissionEarly: requestSttPermissionEarly,
-  } = useSttRecorder(
-    (audioB64) => {
-      void hapticEngine.trigger("short");
-      setSttErrorInfo("");
-      send({ type: "stt_audio", audio_b64: audioB64 });
-    },
-    (reason, detail) => {
-      void hapticEngine.trigger("double");
-      setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
-    },
-  );
-
-  // 화면을 누르는 press-and-hold 도중 마이크 권한 다이얼로그가 뜨면 터치가 취소되어
-  // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
-  useEffect(() => {
-    if (isMockMode) return;
-    void requestSttPermissionEarly();
-
-    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
-    const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "active") {
-        void requestSttPermissionEarly();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode]);
-
-  useEffect(() => {
-    return () => {
-      sttPressActiveRef.current = false;
-      if (delayedSttStartTimerRef.current) {
-        clearTimeout(delayedSttStartTimerRef.current);
-        delayedSttStartTimerRef.current = null;
-      }
-    };
-  }, []);
 
   // State variables moved to top of Component to avoid block-scope/TDZ errors.
 
@@ -490,9 +419,9 @@ export function CameraView() {
           // 실측 기록용(Release 빌드에서는 미출력) - 시나리오 기록은 화면 판독으로 수행
           console.log(
             `[DepthProbe] acc=${result.accuracy} ` +
-              result.samples
-                .map((s, i) => `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m`)
-                .join(", "),
+            result.samples
+              .map((s, i) => `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m`)
+              .join(", "),
           );
         }
       }, DEPTH_PROBE_INTERVAL_MS);
@@ -889,14 +818,14 @@ export function CameraView() {
   const activeDetections = depthMode
     ? []
     : detections.filter(
-        d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
-      );
+      d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
+    );
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
-        const distance = resolveDetectionDistance(d);
-        const distanceText = distance.meters !== null ? `${distance.meters.toFixed(1)}m ${distance.label}` : distance.label;
-        return `${d.className} ${distanceText} (${(d.confidence * 100).toFixed(0)}%)`;
-      }).join(", ")
+      const distance = resolveDetectionDistance(d);
+      const distanceText = distance.meters !== null ? `${distance.meters.toFixed(1)}m ${distance.label}` : distance.label;
+      return `${d.className} ${distanceText} (${(d.confidence * 100).toFixed(0)}%)`;
+    }).join(", ")
     : "없음";
 
   return (
