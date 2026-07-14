@@ -50,4 +50,8 @@ def surface_gate(
         clip=f"reflex_clips/{alert_id}.wav",
         haptic=True,
         ts=0.0,
+        # 2026-07-14 추가: 관제 콘솔 발화 추적용. surface는 track_id가 없으므로 class_name만 전달.
+        track_id=None,
+        class_name=surface_result.class_name,
+        hit_count=0,
     )

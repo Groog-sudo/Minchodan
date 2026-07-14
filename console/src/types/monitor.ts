@@ -203,3 +203,35 @@ export interface MemberRegisterPayload {
   guardian_phone?: string;
   address?: string;
 }
+
+// detected_objects_json 파싱 결과 - 반사/인지 경로 공용.
+// 서버 consumer.py의 log_detections dict 구조와 1:1 매칭.
+export interface TrackedObject {
+  track_id?: string | null;
+  class_name: string;
+  hit_count?: number;
+  direction?: string | null;
+  risk_level?: string;
+  confidence?: number;
+  distance?: number;
+  alert_id?: string;
+  bbox?: { x: number; y: number; w: number; h: number };
+}
+
+// 발화 추적 타임라인 행 (DetectionGuidanceLogRow에서 파생하여 화면 표시용으로 가공).
+// 한 로그 행에 여러 탐지 객체가 있을 수 있으나, 발화 추적에서는
+// "대표 객체 1개(신뢰도 최대 또는 첫 번째)"를 기준으로 행을 구성한다.
+export interface GuidanceTraceRow {
+  log_id: number;
+  detected_at: string;
+  stream_type: "reflex" | "cognitive" | "unknown";
+  track_id: string | null;
+  class_name: string;
+  hit_count: number;
+  direction: string;
+  risk_level: string;
+  // 발화 트리거 원인 (화면 표시용 자동 추론):
+  // "근접+연속히트" / "연속히트" / "접근" / "이탈" / "노면/기타"
+  trigger_reason: string;
+  tts_text: string;
+}

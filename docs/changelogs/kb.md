@@ -2043,3 +2043,42 @@
   - `requirements.txt`: `torch`/`torchvision`을 `2.12.1+cu128`/`0.27.1+cu128`에서 `2.11.0+cu128`/`0.26.0+cu128`로 다운그레이드(이 macOS 로컬 Docker 빌드 환경 기준 실측 필요에 따른 조정).
 - **관련 파일**: `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `requirements.txt`
 - **검증 결과**: `docker compose up -d fastapi` 재기동 후 컨테이너 내 `torch.__version__` 확인(`2.11.0+cu128`), FastAPI `/docs` 200 확인.
+
+---
+
+### 2026-07-14 | 콘솔 | 발화 추적 타임라인 패널 구현
+
+- **배경**: 관제 대시보드에서 ByteTrack 트랙 ID가 부여된 객체가 어떤 행동(연속 히트, 접근, 이탈)을 했을 때 어떤 발화가 나왔는지 추적할 수 없었다. 근본 원인은 track_id/class_name/hit_count가 `ReflexAlert` 스키마에 없고, `consumer.py`의 `log_detections`에서도 누락되어 DB `detected_objects_json`과 `guidance_log_event` WS 메시지에 트랙 정보가 전달되지 않았기 때문.
+- **백엔드 수정**:
+  - `server/detection/schemas.py`: `ReflexAlert`에 `track_id`, `class_name`, `hit_count` 3개 필드 추가 (기본값 있어 기존 호환성 유지).
+  - `server/detection/gates/reflex_gate.py`: `ReflexAlert` 생성 시 `detection.track_id`, `detection.class_name`, `detection.hit_count` 전달.
+  - `server/detection/gates/head_level_gate.py`: 동일 적용.
+  - `server/detection/gates/surface_gate.py`: surface는 track_id가 없으므로 `class_name`만 전달.
+  - `server/detection/consumer.py`: 반사 경로 `_send_reflex_alert`의 `log_detections`에 `track_id`/`class_name`/`hit_count` 추가, 인지 경로 `_send_cognitive_guide`의 `log_detections`에 `track_id`/`hit_count` 추가.
+- **프론트엔드 신규 구현**:
+  - `console/src/types/monitor.ts`: `TrackedObject`, `GuidanceTraceRow` 타입 추가.
+  - `console/src/components/GuidanceTraceTimeline.tsx` (신규): `DetectionGuidanceLogRow[]`에서 `detected_objects_json`을 파싱하여 트랙 ID별 발화 타임라인 표. 트리거 원인 자동 추론(근접+연속히트/연속히트/접근/이탈/노면/상체위험), track_id별 해시 기반 색상 배지, 반사/인지 경로 색상 구분.
+  - `console/src/pages/DashboardPage.tsx`: `LatencySummaryPanel`과 `DetectionGuidanceLogTable` 사이에 `GuidanceTraceTimeline` 배치. 기존 `detectionGuidanceLogs`(REST + WS 병합) 재사용.
+  - `console/src/styles.css`: `.trace-timeline-table`, `.track-badge`, `.stream-pill` 등 타임라인 전용 스타일 추가.
+- **검증**: Ruff format/lint 전부 Passed, `tsc --noEmit` 에러 없음. 반사 경로 지연 무영향 (스키마/dict 구성 단계만 변경, 실시간 전송 이전 완료).
+- **관련 파일**: `server/detection/schemas.py`, `server/detection/gates/reflex_gate.py`, `server/detection/gates/head_level_gate.py`, `server/detection/gates/surface_gate.py`, `server/detection/consumer.py`, `console/src/types/monitor.ts`, `console/src/components/GuidanceTraceTimeline.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`
+
+---
+
+### 2026-07-14 | 3단계 | console_design_implementation
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 탐지 게이트 및 관제 모니터 타임라인 컴포넌트 고도화 및 문서 정합성 갱신
+- **관련 파일**: `console/src/components/GuidanceTraceTimeline.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `console/src/types/monitor.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `scripts/auto_publish_work.py`, `server/detection/consumer.py`, `server/detection/gates/head_level_gate.py`, `server/detection/gates/reflex_gate.py`, `server/detection/gates/surface_gate.py`, `server/detection/schemas.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_timeline_demo_patch
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - DashboardPage 데모 데이터 내 track_id 및 hit_count 보완
+- **관련 파일**: `onsole/src/pages/DashboardPage.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

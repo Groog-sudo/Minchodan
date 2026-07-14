@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { AiPipelineMonitor } from "../components/AiPipelineMonitor";
 import { DetectionFeed } from "../components/DetectionFeed";
+import { GuidanceTraceTimeline } from "../components/GuidanceTraceTimeline";
 import { RiskEventLog } from "../components/RiskEventLog";
 import { SessionStatus } from "../components/SessionStatus";
 import { SystemMetrics } from "../components/SystemMetrics";
@@ -21,12 +22,40 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     device_id: 101,
     detected_at: "2026-07-10T10:15:00Z",
     stream_type: "reflex",
-    detected_objects_json: '[{"class_name":"pole","confidence":0.91}]',
-    tts_text: "전방에 기둥이 있습니다.",
+    detected_objects_json: '[{"class_name":"scooter","confidence":0.91,"track_id":"3","hit_count":5,"distance":0.4}]',
+    tts_text: "[반사 클립] reflex_clips/high_front.wav",
     frame_path: null,
     false_positive: null,
-    latency_json: '{"decode_ms":12.3,"inference_ms":58.1,"total_ms":75.4}',
-    created_at: "2026-07-10T10:15:12Z",
+    latency_json: '{"decode_ms":12.3,"inference_ms":58.1,"total_ms":70.4}',
+    created_at: "2026-07-10T10:15:01Z",
+  },
+  {
+    log_id: 2,
+    event_id: "demo-event-002",
+    user_id: 1,
+    device_id: 101,
+    detected_at: "2026-07-10T10:15:20Z",
+    stream_type: "cognitive",
+    detected_objects_json: '[{"class_name":"bollard","confidence":0.88,"track_id":"8","hit_count":12,"direction":"approaching"}]',
+    tts_text: "전방 오른쪽에 볼라드가 있습니다. 왼쪽으로 우회하십시오.",
+    frame_path: null,
+    false_positive: null,
+    latency_json: '{"decode_ms":11.2,"inference_ms":60.5,"rag_ms":22.1,"llm_ms":210.3,"tts_ms":180.2,"total_ms":484.3}',
+    created_at: "2026-07-10T10:15:21Z",
+  },
+  {
+    log_id: 3,
+    event_id: "demo-event-003",
+    user_id: 1,
+    device_id: 101,
+    detected_at: "2026-07-10T10:15:40Z",
+    stream_type: "reflex",
+    detected_objects_json: '[{"class_name":"crosswalk","confidence":1.0,"alert_id":"surface_crosswalk"}]',
+    tts_text: "[반사 클립] reflex_clips/surface_alert.wav",
+    frame_path: null,
+    false_positive: null,
+    latency_json: '{"decode_ms":10.5,"inference_ms":52.4,"total_ms":62.9}',
+    created_at: "2026-07-10T10:15:41Z",
   },
 ];
 
@@ -122,6 +151,7 @@ export function DashboardPage({
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
       <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
+      <GuidanceTraceTimeline rows={detectionGuidanceLogs} />
       <DetectionGuidanceLogTable
         rows={detectionGuidanceLogs}
         token={token}

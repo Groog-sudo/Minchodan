@@ -9,12 +9,11 @@ interface LiveCameraFeedProps {
   lastGps?: { lat: number; lon: number; heading: number } | null;
 }
 
-const NAV_MAP_URL =
-  resolveServiceUrl(
-    import.meta.env.VITE_NAV_MAP_URL,
-    "/navigation/?embed=true",
-    import.meta.env.VITE_API_BASE_URL,
-  );
+const NAV_MAP_URL = resolveServiceUrl(
+  import.meta.env.VITE_NAV_MAP_URL,
+  "/navigation/?embed=true",
+  import.meta.env.VITE_API_BASE_URL,
+);
 // 2026-07-13 정정: jh가 Android 테스트 중(카메라 센서가 90도 꺾여 들어오는 기종)
 // 이 값을 90으로 하드코딩해뒀는데, 콘솔은 iOS/Android 기기를 가리지 않고 보는
 // 공용 화면이라 iPhone 프레임에는 이 보정이 오히려 잘못 적용됐다(실기기 실측
@@ -58,15 +57,48 @@ function getDisplayBBox(
 function getColorForClass(className: string): string {
   const c = className.toLowerCase();
   if (c.includes("person") || c.includes("pedestrian")) return "#10b981"; // Emerald Green
-  if (c.includes("car") || c.includes("truck") || c.includes("bus") || c.includes("motorcycle") || c.includes("vehicle")) return "#ef4444"; // Vivid Red
-  if (c.includes("bollard") || c.includes("pole") || c.includes("tree") || c.includes("obstacle") || c.includes("barrier")) return "#f59e0b"; // Alert Amber
-  if (c.includes("caution") || c.includes("warning") || c.includes("danger") || c.includes("construction")) return "#ec4899"; // Pink/Magenta
-  if (c.includes("crosswalk") || c.includes("sidewalk") || c.includes("walkway")) return "#3b82f6"; // Blue
+  if (
+    c.includes("car") ||
+    c.includes("truck") ||
+    c.includes("bus") ||
+    c.includes("motorcycle") ||
+    c.includes("vehicle")
+  )
+    return "#ef4444"; // Vivid Red
+  if (
+    c.includes("bollard") ||
+    c.includes("pole") ||
+    c.includes("tree") ||
+    c.includes("obstacle") ||
+    c.includes("barrier")
+  )
+    return "#f59e0b"; // Alert Amber
+  if (
+    c.includes("caution") ||
+    c.includes("warning") ||
+    c.includes("danger") ||
+    c.includes("construction")
+  )
+    return "#ec4899"; // Pink/Magenta
+  if (
+    c.includes("crosswalk") ||
+    c.includes("sidewalk") ||
+    c.includes("walkway")
+  )
+    return "#3b82f6"; // Blue
   return "#8b5cf6"; // Purple
 }
 
-export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps }: LiveCameraFeedProps) {
-  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
+export function LiveCameraFeed({
+  imageUrl,
+  latestDetections,
+  connected,
+  lastGps,
+}: LiveCameraFeedProps) {
+  const [naturalSize, setNaturalSize] = useState<{
+    w: number;
+    h: number;
+  } | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -76,8 +108,13 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
   useEffect(() => {
     if (!lastGps || !iframeRef.current?.contentWindow) return;
     iframeRef.current.contentWindow.postMessage(
-      { type: "inject_gps", lat: lastGps.lat, lon: lastGps.lon, heading: lastGps.heading },
-      "*"
+      {
+        type: "inject_gps",
+        lat: lastGps.lat,
+        lon: lastGps.lon,
+        heading: lastGps.heading,
+      },
+      "*",
     );
   }, [lastGps]);
 
@@ -101,7 +138,9 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
             <span className="live-badge disconnected">OFFLINE</span>
           )}
         </div>
-        <span className="panel-kicker">실기기 카메라 화면 (실시간 BBox 및 GPS HUD 오버레이)</span>
+        <span className="panel-kicker">
+          실기기 카메라 화면 (실시간 BBox 및 GPS HUD 오버레이)
+        </span>
       </div>
 
       <div className="live-feed-viewport">
@@ -127,7 +166,11 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
                 return (
                   <div
                     key={index}
-                    className={isSeg ? "frame-overlay-box frame-overlay-seg" : "frame-overlay-box"}
+                    className={
+                      isSeg
+                        ? "frame-overlay-box frame-overlay-seg"
+                        : "frame-overlay-box"
+                    }
                     style={{
                       left: `${displayBBox.leftPct}%`,
                       top: `${displayBBox.topPct}%`,
@@ -147,10 +190,11 @@ export function LiveCameraFeed({ imageUrl, latestDetections, connected, lastGps 
                       style={{
                         backgroundColor: color,
                         color: "#000000",
-                        fontWeight: 900
+                        fontWeight: 900,
                       }}
                     >
-                      {det.className.toUpperCase()} {isSeg ? "" : `(${(det.confidence * 100).toFixed(0)}%)`}
+                      {det.className.toUpperCase()}{" "}
+                      {isSeg ? "" : `(${(det.confidence * 100).toFixed(0)}%)`}
                     </span>
                   </div>
                 );
