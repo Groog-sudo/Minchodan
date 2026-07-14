@@ -387,14 +387,6 @@ export function CameraView() {
     send({ type: "detection_control", enabled: detectionEnabled, ts: Date.now() });
   }, [status, detectionEnabled, send]);
 
-  // 2026-07-11 하단 T맵 지도 패널(운영자/데모용): 정적 표시 + 2초 마커 갱신 + 토글.
-  // 꺼져 있으면 WebView를 마운트하지 않아 단말 부하가 없다.
-  // 경로 데이터(navRoute)는 useWebSocket이 전용 상태로 직접 보존한다
-  // (lastMessage 경유 시 고빈도 메시지에 덮여 유실 - 실기기 확인).
-  const [mapVisible, setMapVisible] = useState(false);
-  const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
-  const lastMapPosTsRef = useRef(0);
-
   useEffect(() => {
     if (!navRoute) {
       setMapVisible(false);
