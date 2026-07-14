@@ -275,9 +275,6 @@ export function CameraView() {
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
-  // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
-  // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
-  const [detectionEnabled, setDetectionEnabled] = useState(false);
 
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
