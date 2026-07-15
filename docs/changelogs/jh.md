@@ -648,3 +648,16 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 회원 등록 폼의 정보 배치 가독성 개선 목적의 스타일 조정이며 API/비즈니스 로직 변경 없음
+
+---
+
+### 2026-07-15 | 콘솔 UI | refresh 버튼 자동 폭 복원 및 회원 등록 폭 비율 조정
+
+- **커밋**: `style(console): refresh 버튼 폭 자동화 및 회원 등록 폼 폭 40% 조정`
+- **변경 내용**:
+  - 공통 `.refresh-btn`의 고정 폭을 제거하고 `inline-flex + width: fit-content`로 변경해 `새로고침 중...` 텍스트가 버튼 상자 밖으로 넘치지 않도록 조정함
+  - `.member-form input` 폭을 `35%`에서 `40%`로 상향해 회원 등록 입력창 가독성을 개선함
+  - `.member-form .refresh-btn` 폭도 `35%`에서 `40%`로 함께 조정해 입력창과 버튼의 폭 기준을 통일함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 스타일 레이어만 조정했으며 API/데이터 로직 변경 없음
