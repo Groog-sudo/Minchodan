@@ -1174,6 +1174,68 @@ td {
   margin-bottom: 16px;
 }
 
+.panel-member-shell {
+  min-height: 0;
+}
+
+.member-shell-layout {
+  display: flex;
+  gap: 16px;
+}
+
+.member-shell-nav {
+  flex: 0 0 10%;
+  max-width: 10%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid var(--border-tactical);
+  padding-right: 10px;
+}
+
+.member-shell-nav-btn {
+  width: 100%;
+  border: 1px solid var(--border-tactical);
+  border-radius: 2px;
+  background: #171c22;
+  color: #6b7590;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px 6px;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.member-shell-nav-btn-active {
+  border-color: var(--color-gildang-yellow);
+  color: var(--color-gildang-yellow);
+  box-shadow: inset 0 0 0 1px rgba(249, 183, 0, 0.25);
+}
+
+.member-shell-content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .member-shell-layout {
+    flex-direction: column;
+  }
+
+  .member-shell-nav {
+    flex: none;
+    max-width: none;
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-tactical);
+    padding-right: 0;
+    padding-bottom: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .member-form-hint {
   color: #6b7590;
   font-size: 12px;
