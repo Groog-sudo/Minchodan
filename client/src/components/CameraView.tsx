@@ -1508,63 +1508,87 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
  * BBoxOverlay와 동일한 absoluteFill + 절대좌표 View 방식을 사용한다.
  */
 function ROIOverlay() {
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
   const [farLo, farHi] = PATH_ROI_FAR_BAND;
-  const yTopPct  = PATH_ROI_FAR_Y_RATIO * 100;
-  const yBotPct  = 100;
-  const heightPct = yBotPct - yTopPct;
-  // 사다리꼴 4변을 각각 얇은 View로 그린다.
-  // 상변 / 하변은 수평 선, 좌변 / 우변은 기울어진 선(width 계산 + transform).
-  const topWidthPct  = (farHi  - farLo)  * 100;
-  const botWidthPct  = (nearHi - nearLo) * 100;
-  const topLeftPct   = farLo  * 100;
-  const botLeftPct   = nearLo * 100;
+  const yTopPct  = PATH_ROI_FAR_Y_RATIO;
+  const yBotPct  = 1.0;
+  
   const LINE_W = 2;
   const COLOR  = "rgba(249, 183, 0, 0.75)"; // COLOR_GILDANG_YELLOW 반투명
 
-  // 좌변/우변 기울기 계산: 화면 비율 좌표 -> 실제 픽셀 변환은 % 사용으로 생략
-  // 단순화: 좌/우변을 작은 세그먼트로 근사하지 않고 두꺼운 사선 View 1개로 표현.
-  // (React Native는 SVG가 없으므로 4개 꼭짓점 방식 대신 상/하/좌/우 4변 직사각형으로 근사)
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* 상변 */}
-      <View style={{
-        position: "absolute",
-        left: `${topLeftPct}%`,
-        top: `${yTopPct}%`,
-        width: `${topWidthPct}%`,
-        height: LINE_W,
-        backgroundColor: COLOR,
-      }} />
-      {/* 하변 */}
-      <View style={{
-        position: "absolute",
-        left: `${botLeftPct}%`,
-        top: `${yBotPct - 0.5}%`,
-        width: `${botWidthPct}%`,
-        height: LINE_W,
-        backgroundColor: COLOR,
-      }} />
-      {/* 좌변 - 상하단 x차/y범위로 기울기 근사 */}
-      <View style={{
-        position: "absolute",
-        left: `${topLeftPct}%`,
-        top: `${yTopPct}%`,
-        width: LINE_W,
-        height: `${heightPct}%`,
-        backgroundColor: COLOR,
-        transform: [{ skewX: `${Math.atan2((farLo - nearLo) * 100, heightPct) * (180 / Math.PI)}deg` }],
-      }} />
-      {/* 우변 */}
-      <View style={{
-        position: "absolute",
-        left: `${farHi * 100}%`,
-        top: `${yTopPct}%`,
-        width: LINE_W,
-        height: `${heightPct}%`,
-        backgroundColor: COLOR,
-        transform: [{ skewX: `${Math.atan2((nearHi - farHi) * 100, heightPct) * (180 / Math.PI)}deg` }],
-      }} />
+    <View 
+      style={StyleSheet.absoluteFill} 
+      pointerEvents="none"
+      onLayout={(e) => setSize(e.nativeEvent.layout)}
+    >
+      {size.width > 0 && (
+        <>
+          {/* 상변 */}
+          <View style={{
+            position: 'absolute',
+            left: farLo * size.width,
+            top: yTopPct * size.height,
+            width: (farHi - farLo) * size.width,
+            height: LINE_W,
+            backgroundColor: COLOR,
+          }} />
+          {/* 하변 */}
+          <View style={{
+            position: 'absolute',
+            left: nearLo * size.width,
+            top: yBotPct * size.height - LINE_W,
+            width: (nearHi - nearLo) * size.width,
+            height: LINE_W,
+            backgroundColor: COLOR,
+          }} />
+          {/* 좌변 */}
+          {(() => {
+            const x1 = farLo * size.width;
+            const y1 = yTopPct * size.height;
+            const x2 = nearLo * size.width;
+            const y2 = yBotPct * size.height;
+            const cx = (x1 + x2) / 2;
+            const cy = (y1 + y2) / 2;
+            const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+            const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+            return (
+              <View style={{
+                position: 'absolute',
+                left: cx - length / 2,
+                top: cy - LINE_W / 2,
+                width: length,
+                height: LINE_W,
+                backgroundColor: COLOR,
+                transform: [{ rotate: `${angle}deg` }]
+              }} />
+            );
+          })()}
+          {/* 우변 */}
+          {(() => {
+            const x1 = farHi * size.width;
+            const y1 = yTopPct * size.height;
+            const x2 = nearHi * size.width;
+            const y2 = yBotPct * size.height;
+            const cx = (x1 + x2) / 2;
+            const cy = (y1 + y2) / 2;
+            const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+            const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+            return (
+              <View style={{
+                position: 'absolute',
+                left: cx - length / 2,
+                top: cy - LINE_W / 2,
+                width: length,
+                height: LINE_W,
+                backgroundColor: COLOR,
+                transform: [{ rotate: `${angle}deg` }]
+              }} />
+            );
+          })()}
+        </>
+      )}
     </View>
   );
 }

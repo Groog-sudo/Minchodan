@@ -10,8 +10,9 @@ function trimTrailingSlash(url: string): string {
 
 export function resolveApiBaseUrl(apiBaseUrlFromEnv?: string): string {
   const browserHost = window.location.hostname || "localhost";
+  const browserPort = window.location.port ? `:${window.location.port}` : "";
   const fallbackProtocol = window.location.protocol === "https:" ? "https:" : "http:";
-  const fallbackBaseUrl = `${fallbackProtocol}//${browserHost}:8000`;
+  const fallbackBaseUrl = `${fallbackProtocol}//${browserHost}${browserPort}`;
   const raw = (apiBaseUrlFromEnv || "").trim();
 
   if (!raw) {
@@ -25,6 +26,8 @@ export function resolveApiBaseUrl(apiBaseUrlFromEnv?: string): string {
     // rewrite to the current browser host so LAN access works without env edits.
     if (isLocalHost(parsed.hostname) && !isLocalHost(browserHost)) {
       parsed.hostname = browserHost;
+      parsed.port = window.location.port; // Inherit port to route through Vite proxy
+      parsed.protocol = window.location.protocol; // Inherit protocol to avoid mixed content
     }
 
     return trimTrailingSlash(parsed.toString());
@@ -50,6 +53,8 @@ export function resolveServiceUrl(
 
     if (isLocalHost(parsed.hostname) && !isLocalHost(browserHost)) {
       parsed.hostname = browserHost;
+      parsed.port = window.location.port; // Inherit port to route through Vite proxy
+      parsed.protocol = window.location.protocol; // Inherit protocol to avoid mixed content
     }
 
     return parsed.toString();

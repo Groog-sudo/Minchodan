@@ -415,7 +415,7 @@ export function useWebSocket(
         console.log("[WS] 구 소켓 오류 이벤트 무시");
         return;
       }
-      console.error("[WS] 오류:", error);
+      console.warn("[WS] 오류 (재연결 시도 중):", error);
     };
   }, [
     deviceId,
