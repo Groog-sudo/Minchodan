@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -6,7 +5,6 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import server.stt.stt_config as stt_config
 import server.stt.stt_runtime as stt_runtime
-
 
 # ============================================================
 # 테스트 파일 역할

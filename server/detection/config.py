@@ -22,7 +22,9 @@ DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "mock").strip().lower()
 YOLO26N_OBJECT_DET = os.getenv(
     "YOLO26N_OBJECT_DET", os.path.join("server", "models", "yolo26n", "object_detection260714.pt")
 )
-YOLO26N_SEG = os.getenv("YOLO26N_SEG", os.path.join("server", "models", "yolo26n", "segmentation260714.pt"))
+YOLO26N_SEG = os.getenv(
+    "YOLO26N_SEG", os.path.join("server", "models", "yolo26n", "segmentation260714.pt")
+)
 
 
 def resolve_path(path: str) -> str:

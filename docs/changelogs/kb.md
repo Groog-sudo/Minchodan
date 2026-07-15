@@ -2329,3 +2329,15 @@
   - 해결 방향: writer 단일화 / event_frames 공유 스토리지 / device_id 분리 (`whois`는 추적용).
 - **관련 파일**: `docs/ops/event_frame_image_loss_investigation.md`
 - **검증 결과**: 이 Mac `minchodan-fastapi` 구간 MISS 0/267. DB `frame_path` 527건 vs 로컬 JPEG 261건(2026-07-15).
+
+---
+
+### 2026-07-15 | 품질 | *Ruff 자동 포맷·린트 일괄 정리 (354→12)
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - `ruff format .` + `ruff check --fix .`로 50파일 스타일 정리(탭→스페이스, 공백/import/UTF-8 헤더 등).
+  - Ruff 전체 에러 354건 → 12건(수동 수정 필요)으로 축소. pre-commit 통과를 위해 잔여 14건 추가 수정.
+  - 잔여: `server/tts/tts_service.py`(RUF046) 1건.
+- **관련 파일**: `scripts/**`(28), `server/**`(14), `tests/**`(8)
+- **검증 결과**: `ruff check .` 12건 잔존 확인. pre-commit(Ruff) 통과 대상 파일 범위 내.

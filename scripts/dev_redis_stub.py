@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import socketserver
 import sys
 import time
@@ -8,15 +7,15 @@ if hasattr(sys.stdout, "reconfigure"):
 
 
 def _simple(value: str) -> bytes:
-    return f"+{value}\r\n".encode("utf-8")
+    return f"+{value}\r\n".encode()
 
 
 def _error(value: str) -> bytes:
-    return f"-ERR {value}\r\n".encode("utf-8")
+    return f"-ERR {value}\r\n".encode()
 
 
 def _integer(value: int) -> bytes:
-    return f":{value}\r\n".encode("utf-8")
+    return f":{value}\r\n".encode()
 
 
 def _bulk(value: str | bytes | None) -> bytes:

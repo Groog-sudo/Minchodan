@@ -51,9 +51,7 @@ class AlertSuppressor:
             try:
                 return int(exists) > 0
             except (TypeError, ValueError):
-                logger.warning(
-                    f"[Suppressor] EXISTS 응답 타입 이상: key={key}, value={exists!r}"
-                )
+                logger.warning(f"[Suppressor] EXISTS 응답 타입 이상: key={key}, value={exists!r}")
                 return False
         except Exception as e:
             logger.warning(f"[Suppressor] Redis 조회 실패 : {e}")

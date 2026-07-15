@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-import os
 import shutil
 from pathlib import Path
 
@@ -25,6 +23,7 @@ EXTERNAL_TO_OURS_MAPPING = {
     "bench": 1,
 }
 
+
 def setup_directories(merged_dir: Path):
     if merged_dir.exists():
         shutil.rmtree(merged_dir)
@@ -35,13 +34,16 @@ def setup_directories(merged_dir: Path):
     (merged_dir / "labels" / "val").mkdir(parents=True)
     print(f"[Info] {merged_dir} 폴더 구조 초기화 완료.")
 
-def merge_labels_and_images(src_dir: Path, dst_dir: Path, prefix: str, remap_dict: dict = None):
+
+def merge_labels_and_images(
+    src_dir: Path, dst_dir: Path, prefix: str, remap_dict: dict | None = None
+):
     """
     라벨을 읽어서 매핑 규칙에 맞게 변환한 뒤 대상 폴더로 복사합니다.
     """
     src_images = src_dir / "images"
     src_labels = src_dir / "labels"
-    
+
     if not src_images.exists() or not src_labels.exists():
         print(f"[Warning] {src_dir} 경로에 images/labels 폴더가 없어 스킵합니다.")
         return
@@ -49,13 +51,13 @@ def merge_labels_and_images(src_dir: Path, dst_dir: Path, prefix: str, remap_dic
     for subset in ["train", "val"]:
         img_subset = src_images / subset
         lbl_subset = src_labels / subset
-        
+
         if not img_subset.exists() or not lbl_subset.exists():
             continue
 
         for lbl_file in lbl_subset.glob("*.txt"):
             valid_lines = []
-            with open(lbl_file, "r", encoding="utf-8") as f:
+            with open(lbl_file, encoding="utf-8") as f:
                 lines = f.readlines()
                 for line in lines:
                     parts = line.strip().split()
@@ -67,26 +69,28 @@ def merge_labels_and_images(src_dir: Path, dst_dir: Path, prefix: str, remap_dic
             if valid_lines:
                 new_stem = f"{prefix}_{lbl_file.stem}"
                 new_lbl_path = dst_dir / "labels" / subset / f"{new_stem}.txt"
-                
+
                 with open(new_lbl_path, "w", encoding="utf-8") as f:
                     f.write("\n".join(valid_lines) + "\n")
-                
+
                 img_path = img_subset / f"{lbl_file.stem}.jpg"
                 if not img_path.exists():
                     img_path = img_subset / f"{lbl_file.stem}.png"
-                
+
                 if img_path.exists():
                     new_img_path = dst_dir / "images" / subset / f"{new_stem}{img_path.suffix}"
                     shutil.copy2(img_path, new_img_path)
+
 
 # =========================================================================
 # 👨‍💻 HARD CODE 영역 끝
 # =========================================================================
 
+
 def main():
     root_dir = Path(__file__).resolve().parent.parent
     merged_dir = root_dir / "training" / "datasets" / "detection" / "merged_aihub_external"
-    
+
     aihub_dir = root_dir / "training" / "datasets" / "detection" / "aihub_full"
     external_dir = root_dir / "data" / "external_dataset"
 
@@ -97,9 +101,12 @@ def main():
     merge_labels_and_images(aihub_dir, merged_dir, prefix="aihub")
 
     print("2️⃣ 외부 수집 데이터(취약 클래스) 매핑 및 병합 중...")
-    merge_labels_and_images(external_dir, merged_dir, prefix="ext", remap_dict=EXTERNAL_TO_OURS_MAPPING)
+    merge_labels_and_images(
+        external_dir, merged_dir, prefix="ext", remap_dict=EXTERNAL_TO_OURS_MAPPING
+    )
 
     print(f"✅ 병합 완료! 결과물 경로: {merged_dir}")
+
 
 if __name__ == "__main__":
     main()

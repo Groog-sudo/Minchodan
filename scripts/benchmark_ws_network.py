@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 WebSocket 네트워크 RTT 벤치마크 스크립트.
 
@@ -25,7 +24,9 @@ if sys.stdout.encoding != "utf-8":
 def parse_target(raw_target: str) -> tuple[str, str]:
     """label=ws_url 형식의 타깃 인자를 파싱합니다."""
     if "=" not in raw_target:
-        raise argparse.ArgumentTypeError("--target 값은 label=ws://host/ws/detect 형식이어야 합니다.")
+        raise argparse.ArgumentTypeError(
+            "--target 값은 label=ws://host/ws/detect 형식이어야 합니다."
+        )
     label, url = raw_target.split("=", 1)
     label = label.strip()
     url = url.strip()
@@ -63,7 +64,9 @@ def load_websockets_module() -> ModuleType:
     return websockets
 
 
-def summarize(label: str, url: str, rtt_values: list[float], failures: int, handshake_ms: float) -> dict:
+def summarize(
+    label: str, url: str, rtt_values: list[float], failures: int, handshake_ms: float
+) -> dict:
     """타깃별 RTT 샘플을 요약합니다."""
     sample_count = len(rtt_values)
     return {
@@ -138,7 +141,9 @@ async def run_target(
     rtt_values: list[float] = []
     failures = 0
 
-    async with websockets_module.connect(target_url, open_timeout=timeout_s, close_timeout=1.0) as ws:
+    async with websockets_module.connect(
+        target_url, open_timeout=timeout_s, close_timeout=1.0
+    ) as ws:
         handshake_ms = await authenticate(ws, device_id, token, timeout_s)
         total_iterations = warmup + count
         for sample_index in range(total_iterations):
@@ -287,7 +292,9 @@ async def async_main(args: argparse.Namespace) -> int:
         json_path = Path(args.json_out)
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(
-            json.dumps({"summaries": summaries, "samples": all_samples}, ensure_ascii=False, indent=2),
+            json.dumps(
+                {"summaries": summaries, "samples": all_samples}, ensure_ascii=False, indent=2
+            ),
             encoding="utf-8",
         )
     if args.csv_out:

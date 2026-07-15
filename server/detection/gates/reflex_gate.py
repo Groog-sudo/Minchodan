@@ -91,7 +91,9 @@ def reflex_gate(
 
     # 조건 B: 사물의 중심(center_x)이 좌우 20% 여백을 제외한 중앙 60% 영역 내에 있는가
     center_x = detection.bbox.x + detection.bbox.w / 2
-    is_centered = (frame_width * 0.2) <= center_x <= (frame_width * 0.8) if frame_width > 0 else True
+    is_centered = (
+        (frame_width * 0.2) <= center_x <= (frame_width * 0.8) if frame_width > 0 else True
+    )
 
     # 두 조건 중 하나라도 충족되지 않으면 즉각 반사(정지)에서 제외
     if not (is_very_close and is_centered):

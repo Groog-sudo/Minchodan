@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Iterator
-
-from PIL import Image
 
 from config import CLASS_ALIASES, CLASS_TO_ID, SETTINGS
+from PIL import Image
 
 
 @contextmanager
@@ -23,10 +22,8 @@ def safe_image_open(path: Path) -> Iterator[Image.Image | None]:
     except Exception:
         yield None
     finally:
-        try:
+        with suppress(Exception):
             image.close()  # type: ignore[name-defined]
-        except Exception:
-            pass
 
 
 def normalize_label(label: str) -> str:
@@ -114,7 +111,7 @@ class FormatConverter:
                 self.convert_coco_file(json_path)
 
     def convert_voc_file(self, xml_path: Path) -> Path | None:
-        root = ET.parse(xml_path).getroot()
+        root = ET.parse(xml_path).getroot()  # noqa: S314
         filename = root.findtext("filename")
         size = root.find("size")
         if not filename or size is None:
@@ -145,7 +142,9 @@ class FormatConverter:
 
     def convert_coco_file(self, json_path: Path) -> int:
         data = json.loads(json_path.read_text(encoding="utf-8"))
-        categories = {item["id"]: normalize_label(item["name"]) for item in data.get("categories", [])}
+        categories = {
+            item["id"]: normalize_label(item["name"]) for item in data.get("categories", [])
+        }
         images = {item["id"]: item for item in data.get("images", [])}
         grouped: dict[int, list[str]] = {}
 
@@ -155,7 +154,7 @@ class FormatConverter:
             image_info = images.get(annotation.get("image_id"))
             if class_id is None or image_info is None or "bbox" not in annotation:
                 continue
-            x, y, width, height = [float(value) for value in annotation["bbox"]]
+            x, y, width, height = (float(value) for value in annotation["bbox"])
             values = xyxy_to_yolo(
                 x,
                 y,

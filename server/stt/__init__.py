@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -29,11 +28,11 @@ __all__ = [
     "TRANSCRIBE_BEAM_SIZE",
     "TRANSCRIBE_LANGUAGE",
     "TRANSCRIBE_VAD_FILTER",
-    "load_optional_stt_env",
-    "validate_stt_runtime_config",
-    "validate_stt_bridge_config",
     "SegmentOut",
-    "SttTranscribeResult",
     "SttService",
     "SttToLlmBridge",
+    "SttTranscribeResult",
+    "load_optional_stt_env",
+    "validate_stt_bridge_config",
+    "validate_stt_runtime_config",
 ]
