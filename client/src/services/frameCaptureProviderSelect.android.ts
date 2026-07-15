@@ -46,7 +46,6 @@ const reflexFrameProcessorPlugin: FrameProcessorPlugin | undefined =
 /** 캡처 파이프라인 전체가 이 시간을 넘기면 강제 취소한다(무한 대기 방지). */
 const CAPTURE_TIMEOUT_MS = 3000;
 let didLogPluginStatus = false;
-let didLogStreamFrame = false;
 let didLogTakePhotoFallback = false;
 
 /** 순수 JS 기반 Base64 -> Uint8Array 디코더 (Hermes 환경 최적화). */
@@ -201,12 +200,10 @@ export function useFrameCaptureProvider(
       if (now - lastCaptureTsShared.value < intervalSharedValue.value) return;
       lastCaptureTsShared.value = now;
 
+      // worklet 컨텍스트에서는 모듈 스코프 let 변수에 대입할 수 없다
+      // (Hermes: invalid assignment left-hand side). 로그는 JS 스레드 콜백에서만.
       const result = reflexFrameProcessorPlugin.call(frame);
       if (typeof result === "string" && result.length > 0) {
-        if (!didLogStreamFrame) {
-          didLogStreamFrame = true;
-          console.log("[Camera/Android] frameProcessor 반사 스트림 첫 프레임 수신");
-        }
         onFrameBase64(result);
       }
     },

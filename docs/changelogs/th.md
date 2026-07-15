@@ -786,3 +786,30 @@
   - 유지: jh convenience_rag / convenience_guidelines / looks_like_convenience_query 분기, KB guardian_phone DB 컬럼
   - 온보딩·API 명세서(§6.3/§6.7) 정합화
 - **관련 파일**: server/stt/stt_to_llm_bridge.py, server/api/ws_router.py, client hooks/types/App/CameraView, docs/design/api_specification.md, docs/changelogs/th.md
+
+---
+
+### 2026-07-15 | 동기화 | dev 병합 2건 및 push 이력
+
+- **커밋**: 병합 커밋 2건 (fast-forward, 신규 커밋 생성 없음)
+- **변경 내용**:
+  - **1차 병합·push 완료** (`ba7e7f3` → `550d7f7`): `origin/dev`에서 `fix: 콘솔 SystemMetrics SSE 버퍼 방지·연결 직후 스냅샷·401 안내 및 API 명세 반영` 1개 커밋을 fast-forward 병합. `git push origin th`로 즉시 push 완료(`ba7e7f3..550d7f7 th -> th`).
+    - 내용: `server/api/monitor.py` SSE 응답에 `Cache-Control`/`X-Accel-Buffering: no`/`Connection: keep-alive` 헤더 추가, 연결 직후 `system_metrics` 스냅샷 1회 전송, keep-alive 주석 라인(`: keepalive`) 추가. 콘솔 `useMonitorStream.ts`는 `onerror` 시 동일 URL fetch 프로브로 401을 구별해 재로그인 안내. `SystemMetrics.tsx`/`DashboardPage.tsx`는 연결 상태별 빈 카드 안내 문구 분기. `api_specification.md` §8 v0.4.20 갱신.
+  - **2차 병합 완료, push 미실행** (`550d7f7` → `321db62`): `origin/dev`에서 3개 커밋을 fast-forward 병합.
+    - `9cb3548 feat(client): 앱 아이콘·Loading 스플래시 통일 및 CameraView 운영자 패널 분리` — iOS 앱 아이콘 회색 배경 제거(`scripts/generate_app_icons.py` 재작성), 로딩 화면 단일화(`expo-splash-screen` 연결), 스플래시 로고 비율 수정, `CameraView.tsx` 운영자 UI(연결상태·디버그·신뢰도 토글)를 카메라 프리뷰 아래 `ScrollView` 패널로 재배치, `DebugTriggerPanel`은 `__DEV__` 전용 마운트로 전환. 검증은 iOS 실기기만 확인(Android 실기기 검증 기록 없음).
+    - `9f0267c`, `321db62` — `docs/changelogs/kb.md` 커밋 해시 보완(문서 정정, 코드 변경 없음)
+    - 이 병합은 이후 `origin/th`에 함께 push됨(아래 WS 수정 커밋과 동일 push).
+- **관련 파일**: `docs/changelogs/th.md` (이력 기록), 원본 변경 파일은 `docs/changelogs/kb.md` 해당 일자 항목 참조
+- **검증 결과**: 두 병합 모두 `git merge origin/dev` 충돌 없이 fast-forward.
+
+---
+
+### 2026-07-15 | 수정 | WS Tailscale 폴백·Android Frame Processor·콘솔 표시
+
+- **커밋**: (본 엔트리와 동일 커밋)
+- **변경 내용**:
+  - **클라이언트 WS**: `getWsUrlCandidates()` 추가. WiFi 실패 시 Tailscale 호스트로 후보 순환, 성공 URL 승격 유지, `wsBaseUrl` 변경 시에만 소켓 재연결해 1000/1001/1006 플래핑 완화 (`useWebSocket.ts`, `config/index.ts`, `serverTransport.ts`).
+  - **Android Frame Processor**: worklet 내 모듈 `let` 대입 제거로 `invalid assignment left-hand side` 수정 (`frameCaptureProviderSelect.android.ts`).
+  - **콘솔**: `DeviceTelemetryPanel` 모델 표시명을 `object_detection260714.pt` / `segmentation260714.pt`로 갱신, `LiveCameraFeed` 회전값 조정.
+- **관련 파일**: `client/src/config/index.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/services/serverTransport.ts`, `client/src/services/frameCaptureProviderSelect.android.ts`, `console/src/components/DeviceTelemetryPanel.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/th.md`
+- **검증 결과**: Android 실기기(`dev-001`) Tailscale(`100.89.91.40:8000`)로 `welcome`/`auth_ok`/`realtime_gps` 지속 수신 확인. `CONTRIBUTING.md`는 커밋·push 대상에서 제외.

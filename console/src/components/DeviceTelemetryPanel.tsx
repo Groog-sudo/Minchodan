@@ -118,11 +118,11 @@ export function DeviceTelemetryPanel({ latestDetections, connected, session, ai 
             <div className="box-title">AI MODELS RUNTIME</div>
             <div className="telemetry-row">
               <span className="label">DETECTION MODEL:</span>
-              <span className="value green">det_best_20260705.pt</span>
+              <span className="value green">object_detection260714.pt</span>
             </div>
             <div className="telemetry-row">
               <span className="label">SEGMENT MODEL:</span>
-              <span className="value green">segbest.pt</span>
+              <span className="value green">segmentation260714.pt</span>
             </div>
             <div className="telemetry-row">
               <span className="label">REFLEX FRAME RATE:</span>
