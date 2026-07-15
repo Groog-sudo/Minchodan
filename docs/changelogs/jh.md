@@ -692,3 +692,34 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 서버/API 함수·import 변경 없이 화면 구조와 로컬 상태 기반 탭 전환만 구현한 UI 레이어 작업
+
+---
+
+### 2026-07-15 | 운영콘솔 UI | Detection Guidance Log 스트림 필터 드롭다운 및 깨진 이미지 fallback 보정
+
+- **커밋**: eat(console): Detection Guidance Log 스트림 선택 UI와 깨진 이미지 fallback 개선
+- **변경 내용**:
+  - DetectionGuidanceLogTable.tsx에 스트림 필터 상태(ll/reflex/cognitive)와 드롭다운 열기/닫기 상태를 추가하고, 전체/인지/반사 선택 기반 행 필터링을 구현함
+  - 필터 UI를 panel-header-actions에서 분리해 제목 아래 배치하고, 외부 클릭 시 닫히는 드롭다운 상호작용을 추가함
+  - FrameWithOverlay에 이미지 로드 실패 감지(onError)를 추가해 깨진 이미지에 rame-overlay-broken 클래스를 부여하고 bbox 렌더를 중단하도록 처리함
+  - styles.css에서 rame-detail-body, lightbox-content 내 깨진 이미지 fallback 크기를 40x40px로 통일해 레이아웃 붕괴를 방지함
+  - LatencySummaryPanel.tsx, DashboardPage.tsx의 최근 콘솔 레이아웃/표시 정비 변경을 함께 커밋 범위에 포함함
+- **관련 파일**: console/src/components/DetectionGuidanceLogTable.tsx, console/src/components/LatencySummaryPanel.tsx, console/src/pages/DashboardPage.tsx, console/src/styles.css, docs/changelogs/jh.md
+- **검증 결과**: 
+pm run build 성공
+- **비고**: 워킹트리의 client/src/services/frameCaptureProviderSelect.android.ts 변경은 사용자 지정 범위에 따라 이번 커밋에서 제외함
+
+---
+
+### 2026-07-15 | 운영콘솔 UI | Detection Guidance Log 스트림 필터 드롭다운 및 깨진 이미지 fallback 40x40 적용
+
+- **커밋**: feat(console): Detection Guidance Log 스트림 선택 UI와 깨진 이미지 fallback 40x40 적용
+- **변경 내용**:
+  - DetectionGuidanceLogTable.tsx에 스트림 필터 상태(all/reflex/cognitive)와 드롭다운 열기/닫기 상태를 추가하고, 전체/인지/반사 선택 기반 행 필터링을 구현함
+  - 필터 UI를 panel-header-actions에서 분리해 제목 아래 배치하고, 외부 클릭 시 닫히는 드롭다운 상호작용을 추가함
+  - FrameWithOverlay에 이미지 로드 실패 감지(onError)를 추가해 깨진 이미지에 frame-overlay-broken 클래스를 부여하고 bbox 렌더를 중단하도록 처리함
+  - styles.css에서 frame-detail-body, lightbox-content 내 깨진 이미지 fallback 크기를 40x40px로 통일해 레이아웃 붕괴를 방지함
+  - LatencySummaryPanel.tsx, DashboardPage.tsx의 최근 콘솔 레이아웃/표시 정비 변경을 함께 커밋 범위에 포함함
+- **관련 파일**: console/src/components/DetectionGuidanceLogTable.tsx, console/src/components/LatencySummaryPanel.tsx, console/src/pages/DashboardPage.tsx, console/src/styles.css, docs/changelogs/jh.md
+- **검증 결과**: npm run build 성공
+- **비고**: 워킹트리의 client/src/services/frameCaptureProviderSelect.android.ts 변경은 사용자 지정 범위에 따라 이번 커밋에서 제외함

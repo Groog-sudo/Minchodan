@@ -52,10 +52,11 @@ function computeStats(samples: LatencyStages[], windowSize: number): StageStat[]
     const avgMs = values.reduce((sum, v) => sum + v, 0) / values.length;
     const maxMs = Math.max(...values);
     return { key, label, count: values.length, avgMs, maxMs, targetMs };
-  }).filter((stat) => stat.count > 0);
+  });
 }
 
 function statusClass(stat: StageStat): string {
+  if (stat.count === 0) return "latency-stat-neutral";
   if (stat.targetMs === null) return "latency-stat-neutral";
   return stat.avgMs <= stat.targetMs ? "latency-stat-ok" : "latency-stat-over";
 }
@@ -97,10 +98,16 @@ export function LatencySummaryPanel({
           {stats.map((stat) => (
             <div key={stat.key} className={`latency-stat-card ${statusClass(stat)}`}>
               <span className="latency-stat-label">{stat.label}</span>
-              <span className="latency-stat-avg">{stat.avgMs.toFixed(0)}ms</span>
+              <span className="latency-stat-avg">
+                {stat.count > 0 ? `${stat.avgMs.toFixed(0)}ms` : "-"}
+              </span>
               <span className="latency-stat-sub">
-                최대 {stat.maxMs.toFixed(0)}ms · {stat.count}건
-                {stat.targetMs !== null ? ` · 목표 <${stat.targetMs}ms` : ""}
+                <span>
+                  {stat.count > 0 ? `최대 ${stat.maxMs.toFixed(0)}ms · ${stat.count}건` : "데이터 없음"}
+                </span>
+                {stat.targetMs !== null && (
+                  <span className="latency-stat-target-line">목표 · &lt;{stat.targetMs}ms</span>
+                )}
               </span>
             </div>
           ))}

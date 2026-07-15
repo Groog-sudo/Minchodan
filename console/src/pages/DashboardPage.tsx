@@ -147,6 +147,8 @@ export function DashboardPage({
         </strong>
       </section>
 
+      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
+
       <section className="dashboard-grid">
         <LiveCameraFeed
           imageUrl={imageUrl}
@@ -161,8 +163,6 @@ export function DashboardPage({
           ai={state.ai}
         />
       </section>
-
-      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,
