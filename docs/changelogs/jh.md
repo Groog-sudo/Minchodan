@@ -737,3 +737,18 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 회원 관리 등록 폼과 발화 추적 타임라인의 시각 밀도 조정만 포함하며 API/비즈니스 로직 변경은 없음
+
+---
+
+### 2026-07-16 | 콘솔 UI | 회원 등록 폼 2열(3:3) 배치 및 주소/버튼 전체폭 정렬
+
+- **커밋**: `style(console): 회원 등록 폼 2열 배치와 주소/버튼 폭 정렬`
+- **변경 내용**:
+  - `MembersPage.tsx` 회원 등록 필드 순서를 2열 3행 구조로 재배치함: `기기 식별자|장애 정도`, `이름|생년월일(선택)`, `전화번호|보호자 연락처(선택)`
+  - `MembersPage.tsx`의 `주소(선택)` 필드에 `member-form-field-full` 클래스를 추가해 단일 행 전체폭(2칸 span)으로 확장함
+  - `styles.css`에서 `.member-form`을 2열 그리드(`repeat(2, minmax(0, 30%))`)로 변경하고 좌측 기준 시작점(`padding-left: 45px`)을 유지함
+  - `styles.css`에서 일반 입력창은 칸 폭(`width: 100%`)을 사용하도록 통일하고, 주소 필드(`.member-form-field-full`)와 등록 버튼(`.member-form .refresh-btn`)을 `grid-column: 1 / span 2`로 맞춰 동일 길이로 정렬함
+  - `styles.css`에 `@media (max-width: 1100px)` 폴백을 추가해 작은 화면에서는 1열 레이아웃으로 안전하게 전환되도록 처리함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 회원 관리 화면의 폼 배치/스타일 변경만 포함하며 API/비즈니스 로직은 변경하지 않음
