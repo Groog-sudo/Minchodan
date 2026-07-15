@@ -182,10 +182,8 @@ def check_forbidden_files():
             # 스테이징된 파일인 경우만 검사
             if state in ["A", "M", "R"]:
                 # .env 파일 검사
-                if (
-                    file_path == ".env"
-                    or file_path.startswith(".env.")
-                    and not file_path.endswith(".example")
+                if file_path == ".env" or (
+                    file_path.startswith(".env.") and not file_path.endswith(".example")
                 ):
                     print_error(f"금지된 파일 스테이징 감지: {file_path} (보안 위반)")
                     forbidden_found = True

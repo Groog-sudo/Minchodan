@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import CLASS_TO_ID, SETTINGS
 from utils.format_converter import HashIndex, safe_image_open, xyxy_to_yolo
 
-
 LABEL_MAP = {
     "bench": "bench",
     "bicycle": "bicycle",
@@ -41,7 +40,11 @@ def import_scooterdet(zip_path: Path, output_root: Path, limit: int | None = Non
     exported = 0
 
     with zipfile.ZipFile(zip_path) as archive:
-        label_entries = [entry for entry in archive.namelist() if entry.startswith("Mixed/labels/") and entry.endswith(".json")]
+        label_entries = [
+            entry
+            for entry in archive.namelist()
+            if entry.startswith("Mixed/labels/") and entry.endswith(".json")
+        ]
         for label_entry in label_entries:
             data = json.loads(archive.read(label_entry).decode("utf-8"))
             shapes = data.get("shapes", [])
@@ -101,9 +104,15 @@ def import_scooterdet(zip_path: Path, output_root: Path, limit: int | None = Non
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Import ScooterDet scooter frames into YOLO format.")
+    parser = argparse.ArgumentParser(
+        description="Import ScooterDet scooter frames into YOLO format."
+    )
     parser.add_argument("zip_path", type=Path)
-    parser.add_argument("--output", type=Path, default=SETTINGS.object_detection_root / "external_exports" / "scooterdet_scooter")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=SETTINGS.object_detection_root / "external_exports" / "scooterdet_scooter",
+    )
     parser.add_argument("--limit", type=int, default=50)
     args = parser.parse_args()
 

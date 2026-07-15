@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -47,7 +46,7 @@ class FasterWhisperTestModeHarness:
     # 3) key는 "faster-whisper-<size>" 형식을 권장한다.
     # 4) value는 tiny/base/small/medium/large-v* 중 실제 지원값만 사용한다.
     # 5) key/value 공백, 오타를 허용하지 않는다.
-    MODEL_NAME_MAP: dict[str, str] = {
+    MODEL_NAME_MAP: ClassVar[dict[str, str]] = {
         # "faster-whisper-base": "base",
         "faster-whisper-base": "base",
         "faster-whisper-tiny": "tiny",
@@ -81,7 +80,7 @@ class FasterWhisperTestModeHarness:
     WHISPER_COMPUTE_TYPE = "int8"
 
     # [바이브 코딩 부분] 선택 캐시
-    _model_cache: dict[str, Any] = {}
+    _model_cache: ClassVar[dict[str, Any]] = {}
 
     @classmethod
     def has_input(cls, text: str) -> bool:
@@ -126,9 +125,10 @@ class FasterWhisperTestModeHarness:
             raise RuntimeError("faster-whisper import가 준비되지 않았습니다.")
 
         resolved_request_name = (request_model_name or "").strip() or cls.DEFAULT_MODEL_NAME
-        internal_model_name = cls.MODEL_NAME_MAP.get(resolved_request_name) or cls.MODEL_NAME_MAP[
-            cls.DEFAULT_MODEL_NAME
-        ]
+        internal_model_name = (
+            cls.MODEL_NAME_MAP.get(resolved_request_name)
+            or cls.MODEL_NAME_MAP[cls.DEFAULT_MODEL_NAME]
+        )
 
         if internal_model_name not in cls._model_cache:
             model = WhisperModelType(
@@ -221,7 +221,9 @@ def test_build_model_creates_and_reuses_cache(monkeypatch: pytest.MonkeyPatch) -
     assert created_calls == [("base", "cpu", "int8")]
 
 
-def test_transcribe_with_model_returns_stt_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_transcribe_with_model_returns_stt_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     wav_path = tmp_path / "sample.wav"
     wav_path.write_bytes(b"fake-wav")
 

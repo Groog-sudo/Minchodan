@@ -40,7 +40,9 @@ class KaggleMiner:
             target_dir = self.download_root / dataset_ref.replace("/", "__")
             target_dir.mkdir(parents=True, exist_ok=True)
             try:
-                self._client().dataset_download_files(dataset_ref, path=str(target_dir), quiet=False)
+                self._client().dataset_download_files(
+                    dataset_ref, path=str(target_dir), quiet=False
+                )
                 self._extract_archives(target_dir)
                 self.converter.convert_dataset_annotations(target_dir)
                 downloaded.append(target_dir)

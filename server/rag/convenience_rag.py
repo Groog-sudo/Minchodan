@@ -89,7 +89,11 @@ def _join(values) -> str:
 def _format_address(address: dict | None) -> str:
     if not address:
         return "주소 정보 없음"
-    parts = [_text(address.get("sido")), _text(address.get("sigungu")), _text(address.get("road_address"))]
+    parts = [
+        _text(address.get("sido")),
+        _text(address.get("sigungu")),
+        _text(address.get("road_address")),
+    ]
     parts = [part for part in parts if part]
     postal_code = _text(address.get("postal_code"))
     if postal_code:
@@ -161,7 +165,8 @@ def _build_dataset_overview(dataset_info: dict) -> Document:
         metadata={
             "source_type": "dataset_info",
             "source_id": _text(dataset_info.get("dataset_name")) or "dataset_info",
-            "title": _text(dataset_info.get("dataset_name")) or "시각장애인 생활지원 통합 안내 데이터",
+            "title": _text(dataset_info.get("dataset_name"))
+            or "시각장애인 생활지원 통합 안내 데이터",
             "category": "dataset_overview",
         },
     )
@@ -246,7 +251,11 @@ def build_convenience_documents(json_path: str | None = None) -> list[Document]:
         person_id = _text(person.get("person_id"))
         name = _text(person.get("name"))
         person_type = _text(person.get("person_type_ko"))
-        availability = person.get("availability") or person.get("working_hours") or person.get("working_schedule")
+        availability = (
+            person.get("availability")
+            or person.get("working_hours")
+            or person.get("working_schedule")
+        )
         page_content = (
             f"이름: {name}\n"
             f"구분: {person_type}\n"
@@ -358,7 +367,9 @@ def build_convenience_database(
         "CONVENIENCE_CHROMA_PATH",
         os.path.join(_project_root(), "data", "chroma_db", "convenience_guidelines"),
     )
-    collection = collection_name or os.getenv("CONVENIENCE_CHROMA_COLLECTION", "convenience_guidelines")
+    collection = collection_name or os.getenv(
+        "CONVENIENCE_CHROMA_COLLECTION", "convenience_guidelines"
+    )
 
     if embeddings is None:
         embeddings = EmbeddingEngineFactory.get_embeddings(

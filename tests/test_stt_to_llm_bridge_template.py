@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -12,7 +11,6 @@ import pytest
 import server.stt.stt_to_llm_bridge as stt_bridge_module
 from server.stt.stt_schema import SegmentOut, SttTranscribeResult
 from server.stt.stt_to_llm_bridge import SttToLlmBridge
-
 
 # ============================================================
 # 테스트 파일 역할
@@ -218,9 +216,7 @@ async def test_destination_wait_question_escapes_to_free_qa(
     monkeypatch.setattr(SttToLlmBridge, "_answer_free_question", _fake_answer)
 
     bridge = SttToLlmBridge()
-    response = await bridge.invoke_existing_llm(
-        _make_stt_result("지금 몇 시야"), "test-device"
-    )
+    response = await bridge.invoke_existing_llm(_make_stt_result("지금 몇 시야"), "test-device")
 
     assert response["source"] == "question-llm"
     assert fake_manager.status == "IDLE"

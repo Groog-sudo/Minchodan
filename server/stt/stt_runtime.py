@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -15,7 +14,6 @@ from server.stt.stt_config import (
     WHISPER_COMPUTE_TYPE,
     WHISPER_DEVICE,
 )
-
 
 # ============================================================
 # STT 런타임 검증 모듈
