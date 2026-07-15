@@ -201,39 +201,34 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
 }
 ```
 
-### 단계 2-2. frameCapture.ts — 프레임 전송
+### 단계 2-2. frameCaptureProvider — 프레임 캡처 계층
+
+> **2026-07-15 정정**: 레거시 `frameCapture.ts`(`generateEventId`/`buildDetectionEvent`/`sendFrame`)는 삭제됐다.
+> 캡처는 `frameCaptureProvider*`가, WS 전송 조립은 `useCamera`/`CameraView`가 담당한다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `client/src/services/frameCaptureProvider.ts` | `FrameData`/`FrameCaptureController` 인터페이스, `captureViaTakePhoto` 공용 크롭 |
+| `frameCaptureProviderSelect.ts` | Metro 진입점 (`.ios`/`.android`로 자동 분기) |
+| `frameCaptureProviderSelect.ios.ts` | Frame Processor 연속 캡처 (`supportsStream=true`) |
+| `frameCaptureProviderSelect.android.ts` | takePhoto 과도기 (`supportsStream=false`) |
 
 ```typescript
-// client/src/services/frameCapture.ts
-let frameCounter = 0;
-
-export function generateEventId(): string {
-  const ts = Date.now();
-  const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `evt-${ts}-${rand}`;
+// client/src/services/frameCaptureProvider.ts (요약)
+export interface FrameData {
+  float32: Float32Array;
+  stream: StreamType;
+  base64: string | null;
+  jpegBytes: Uint8Array | null;
 }
 
-export function buildDetectionEvent(base64: string, deviceId: string, stream: 'reflex' | 'cognitive') {
-  frameCounter += 1;
-  return {
-    type: 'detection',
-    payload: {
-      event_id: generateEventId(),
-      device_id: deviceId,
-      timestamp: new Date().toISOString(),
-      frame_id: frameCounter,
-      stream: stream,
-      thumbnail_jpeg_b64: base64,
-      detections: [],
-    },
-  };
+export interface FrameCaptureController {
+  readonly supportsStream: boolean;
+  readonly frameProcessor: unknown | undefined;
+  capturePhoto(stream: StreamType): Promise<FrameData | null>;
 }
 
-export function sendFrame(base64: string, stream: 'reflex' | 'cognitive', deviceId: string, send: (data: object) => void) {
-  const event = buildDetectionEvent(base64, deviceId, stream);
-  send(event);
-  console.log(`[전송] stream=${stream}, frame_id=${frameCounter}, size≈${Math.round(base64.length * 0.75 / 1024)}KB`);
-}
+export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 ```
 
 ### 단계 2-3. CameraView.tsx
@@ -245,12 +240,11 @@ import { StyleSheet, View, Text } from 'react-native';
 import { Camera } from 'react-native-vision-camera';
 import { useCamera } from '../hooks/useCamera';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { sendFrame } from '../services/frameCapture';
 
 interface CameraViewProps { deviceId: string; token: string; }
 
 export function CameraView({ deviceId, token }: CameraViewProps) {
-  const { status, send } = useWebSocket(deviceId, token);
+  const { status, send, sendBinary } = useWebSocket(deviceId, token);
   const { cameraRef, device, hasPermission, isCapturing, startCapture, stopCapture } = useCamera(10, 2);
 
   useEffect(() => {
@@ -258,8 +252,8 @@ export function CameraView({ deviceId, token }: CameraViewProps) {
     else if (status !== 'connected' && isCapturing) stopCapture();
   }, [status, isCapturing, startCapture, stopCapture]);
 
-  // frameCapture 서비스에서 sendFrame 호출 시 send 함수 전달
-  // 실제 구현에서는 useCamera 내부에서 send를 받거나 별도 훅으로 연결
+  // 프레임 획득 후 CameraView/useCamera에서 meta JSON + jpegBytes 바이너리로 WS 전송
+  // (레거시 sendFrame/base64-only 경로는 사용하지 않음)
 
   if (!hasPermission) return <View><Text>카메라 권한이 필요합니다.</Text></View>;
   if (!device) return <View><Text>카메라를 찾을 수 없습니다.</Text></View>;

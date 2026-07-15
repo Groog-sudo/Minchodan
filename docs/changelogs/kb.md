@@ -2273,3 +2273,30 @@
 - **관련 파일**: `client/App.tsx`, `client/src/components/CameraView.tsx`, `client/src/components/DebugTriggerPanel.tsx`, `client/app.json`, `scripts/generate_app_icons.py`, `client/assets/splash-loading.png`, `client/ios/Minchodan/SplashScreen.storyboard`, `client/ios/Minchodan/Images.xcassets/SplashScreen.imageset/`, `client/android/app/src/main/res/drawable/splashscreen.xml`
 - **검증 결과**: `npx tsc --noEmit`(client) 통과, `ruff check scripts/generate_app_icons.py` 통과, iOS 실기기 재빌드·재설치·기동 확인.
 - **비고**: 스플래시·AppIcon 변경은 Metro Reload로 반영되지 않음 — iOS/Android 네이티브 재빌드 필요. `.xcodebuildmcp/config.yaml` 개인값은 커밋 제외.
+
+---
+
+### 2026-07-15 | 클라이언트/콘솔 | react-doctor 고신뢰도 7건 수정
+
+- **커밋**: `fix(client,console): react-doctor 고신뢰도 7건 수정` (`3fdad96`)
+- **변경 내용**:
+  - `client/App.tsx`: 온보딩 `setTimeout`에 cancelled/`clearTimeout` cleanup 추가(언마운트 후 speakFallback 방지).
+  - `CameraView.tsx`: BBox `key`를 model+class+bbox 안정 키로 변경, debugInfo effect deps에 `detectionEnabled` 추가, MOCK_HAPTIC flash 타이머 cleanup.
+  - `LiveCameraFeed.tsx` / `DeviceTelemetryPanel.tsx`: 탐지 리스트 `key={index}`를 `track_id` 또는 class+bbox 키로 교체.
+  - `client/src/services/frameCapture.ts` 삭제(미사용 레거시, 실제 전송은 frameCaptureProvider 경로).
+- **관련 파일**: `client/App.tsx`, `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/DeviceTelemetryPanel.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit`(client/console) 통과. react-doctor 재스캔 client 43→44(27→24이슈), console 50→51(11→9이슈). App.tsx effect-cleanup 잔여 경고는 `.then()` 내부 타이머 정적 분석 한계(오탐).
+
+---
+
+### 2026-07-15 | 문서/스킬 | frameCapture.ts 삭제 후 문서·스킬 정합성 일괄 갱신
+
+- **커밋**: `docs: frameCapture.ts 삭제에 맞춘 문서·스킬 정합성 일괄 갱신` (`aa13706`)
+- **변경 내용**:
+  - 현행 코드(`frameCaptureProvider*`)와 어긋나던 문서/스킬을 일괄 정정.
+  - `docs/Directory_Structure.md`, `docs/ops/ios_android_bifurcation_contract.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
+  - `docs/mobile/mobile_*_implementation_plan.md`, `docs/research/post_mvp_hybrid_roadmap.md`
+  - `.agents/skills/camera-frame-capture/SKILL.md` ↔ `.claude/skills/camera-frame-capture/SKILL.md` 동기화
+  - 과거 changelog(`dg`/`th`/구 kb 엔트리)의 당시 파일명 기록은 이력으로 유지.
+- **관련 파일**: 위 문서·스킬 + `docs/changelogs/kb.md`
+- **검증 결과**: 활성 문서에서 `frameCapture.ts`를 현행 경로로 인용하는 항목 제거 확인(삭제 고지·이력 문구만 잔존).

@@ -38,7 +38,7 @@ React Native는 단일 TypeScript 코드베이스를 공유하므로, 플랫폼�
 | A | 서버 `/ws/detect` 라우터 | 전담 (구현) | **인터페이스 참조만** |
 | B | Expo Dev Client 프로젝트 초기화 | 주도 (공통 설정) | **Android 플러그인/권한 추가** |
 | C | `useWebSocket.ts` + 타입 정의 | 주도 (작성) | **검토 + Android 빌드 검증** |
-| D | `useCamera.ts` + `frameCapture.ts` + `CameraView.tsx` | 주도 (작성) | **검토 + Android 빌드 검증** |
+| D | `useCamera.ts` + `frameCaptureProvider*.ts` (구 `frameCapture.ts` 삭제) + `CameraView.tsx` | 주도 (작성) | **검토 + Android 빌드 검증** |
 | E | 실기기 테스트 | iOS 실기기 검증 | **Android 실기기/에뮬레이터 검증** |
 
 ### 1.3 핵심 원칙 (비협상)
@@ -191,7 +191,8 @@ client/
 │   │   ├── useWebSocket.ts       # 1단계 WS 연결/하트비트/재연결
 │   │   └── useCamera.ts          # 2단계 단일 캡처 타이머 + 스트림 분할
 │   ├── services/
-│   │   └── frameCapture.ts       # takePhoto → base64 → send
+│   │   ├── frameCaptureProvider.ts
+│   │   └── frameCaptureProviderSelect.{ios,android}.ts
 │   ├── components/
 │   │   ├── CameraView.tsx        # 카메라 + WS 연동
 │   │   └── ConnectionStatus.tsx  # 접속 상태 표시 (접근성)
@@ -271,7 +272,7 @@ sequenceDiagram
 | 파일 | 역할 | 상세 참조 |
 | --- | --- | --- |
 | `src/hooks/useCamera.ts` | 단일 캡처 타이머 + 스트림 분할 (반사 10fps/인지 2fps) | iOS 설계서 §6.1 |
-| `src/services/frameCapture.ts` | 프레임 전송 서비스 (base64 → WS) | iOS 설계서 §6.1 |
+| `src/services/frameCaptureProvider*.ts` | 프레임 캡처 계층 (Provider + 플랫폼 select) | iOS 설계서 §6.1 / bifurcation §4 |
 | `src/components/CameraView.tsx` | 카메라 + WS 연동 | iOS 설계서 §6.1 |
 | `src/services/hapticEngine.ts` | 햅틱 피드백 서비스 | iOS 설계서 §6.1 |
 
@@ -398,7 +399,7 @@ graph LR
 | `client/src/types/detection.ts` | 신규 | 타입 정의 | iOS 주도 (검토) |
 | `client/src/hooks/useWebSocket.ts` | 신규 | WS 연결/하트비트/재연결 | iOS 주도 (검토) |
 | `client/src/hooks/useCamera.ts` | 신규 | 단일 캡처 타이머 + 스트림 분할 | iOS 주도 (검토) |
-| `client/src/services/frameCapture.ts` | 신규 | 프레임 전송 서비스 | iOS 주도 (검토) |
+| `client/src/services/frameCaptureProvider.ts (구 frameCapture.ts 삭제, 2026-07-15)` | 신규 | 프레임 전송 서비스 | iOS 주도 (검토) |
 | `client/src/components/CameraView.tsx` | 신규 | 카메라 + WS 연동 | iOS 주도 (검토) |
 | `client/src/components/ConnectionStatus.tsx` | 신규 | 접속 상태 표시 | iOS 주도 (검토) |
 | `client/src/services/hapticEngine.ts` | 신규 | 햅틱 피드백 서비스 | iOS 주도 (검토) |
