@@ -2291,7 +2291,7 @@
 
 ### 2026-07-15 | 문서/스킬 | frameCapture.ts 삭제 후 문서·스킬 정합성 일괄 갱신
 
-- **커밋**: `(자동 커밋 예정)`
+- **커밋**: `docs: frameCapture.ts 삭제에 맞춘 문서·스킬 정합성 일괄 갱신` (`aa13706`)
 - **변경 내용**:
   - 현행 코드(`frameCaptureProvider*`)와 어긋나던 문서/스킬을 일괄 정정.
   - `docs/Directory_Structure.md`, `docs/ops/ios_android_bifurcation_contract.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
