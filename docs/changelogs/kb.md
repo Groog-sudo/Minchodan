@@ -2264,7 +2264,7 @@
 
 ### 2026-07-15 | 2단계 | 클라이언트 기동 UX·CameraView 레이아웃·스플래시 통일
 
-- **커밋**: `(자동 커밋 예정)`
+- **커밋**: `feat(client): 앱 아이콘·Loading 스플래시 통일 및 CameraView 운영자 패널 분리` (`9cb3548`)
 - **변경 내용**:
   - **Loading 단일화**: Download 단계 제거. 네이티브 스플래시(Metro/JS 로드 전)와 React `LoadingScreen` 모두 `LOADING` 텍스트·동일 다크 배경(`#0A0D10`)으로 통일. `App.tsx`에 `expo-splash-screen`(`preventAutoHideAsync`/`hideAsync`) 연결.
   - **스플래시 로고 비율**: `generate_app_icons.py`의 `circular_logo_from_jpeg()`를 React `Image` cover(비율 유지+중앙 크롭)와 동일하게 수정 — 가로형 `gildang-logo.jpeg` 강제 정사각 리사이즈로 세로 늘어나던 문제 해소.
