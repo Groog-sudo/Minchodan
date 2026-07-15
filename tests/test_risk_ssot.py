@@ -86,9 +86,9 @@ def test_client_gate_matches_ssot():
     """단말 온디바이스 게이트의 SSOT 5종 confidence가 계약 §2와 일치해야 한다."""
     client_map = _parse_client_class_min_confidence()
     for class_name, min_conf in SSOT_HIGH_RISK.items():
-        assert (
-            class_name in client_map
-        ), f"CameraView.tsx CLASS_MIN_CONFIDENCE에 SSOT 클래스 {class_name!r}가 없습니다."
+        assert class_name in client_map, (
+            f"CameraView.tsx CLASS_MIN_CONFIDENCE에 SSOT 클래스 {class_name!r}가 없습니다."
+        )
         assert client_map[class_name] == min_conf, (
             f"{class_name!r} confidence 불일치: 단말={client_map[class_name]}, "
             f"SSOT={min_conf} (docs/design/risk_ssot_contract.md §2)"
