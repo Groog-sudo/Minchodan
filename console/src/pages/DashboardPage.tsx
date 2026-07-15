@@ -181,7 +181,7 @@ export function DashboardPage({
             순서가 바뀌면(예: span-2 패널이 먼저 오면) 1행에 빈 칸이 생기고 1칸짜리
             패널이 다음 행에 혼자 떨어져 보이니 이 순서를 유지할 것. */}
       <section className="dashboard-grid">
-        <SystemMetrics metrics={state.system} />
+        <SystemMetrics metrics={state.system} connection={state.connection}/>
         <SessionStatus sessions={state.sessions} />
         <AiPipelineMonitor ai={state.ai} />
         <DetectionFeed items={state.detections} />

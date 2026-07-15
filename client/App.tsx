@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { View, StyleSheet, Platform, StatusBar } from "react-native";
 import { setAudioModeAsync } from "expo-audio";
+import * as ExpoSplashScreen from "expo-splash-screen";
 
 import { CameraView } from "./src/components/CameraView";
 import { LoadingScreen } from "./src/components/LoadingScreen";
 import { audioEngine } from "./src/services/audioEngine";
 
-// 카메라/온보딩 오디오 세션 초기화가 끝날 시간을 벌어주는 최소 로딩 화면 노출 시간.
+void ExpoSplashScreen.preventAutoHideAsync();
+
 // CameraView가 아직 별도의 "준비 완료" 콜백을 제공하지 않아 고정 시간으로 처리한다.
 const MIN_LOADING_DURATION_MS = 1800;
 
@@ -21,7 +23,16 @@ export default function App() {
   // Fast Refresh로 이 컴포넌트가 다시 마운트돼도 같은 세션에서 온보딩 안내가 중복
   // 재생되지 않도록 막는다(카메라/반사 구동을 지연시키지 않기 위해 짧게 1회만 재생).
   const onboardingPlayedRef = useRef(false);
+  const splashHiddenRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  useLayoutEffect(() => {
+    if (splashHiddenRef.current) {
+      return;
+    }
+    splashHiddenRef.current = true;
+    void ExpoSplashScreen.hideAsync();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), MIN_LOADING_DURATION_MS);
@@ -29,19 +40,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // 앱 기동 최상단에서 무음 모드 무시를 활성화하는 오디오 세션 선제 설정 (카메라 선점 우회)
-    // [2026-07-09 실측 수정] interruptionMode를 audioEngine.ensureSession()과 다르게
-    // "duckOthers"로 설정했었다. 두 setAudioModeAsync 호출 모두 await되지 않아 순서가
-    // 보장되지 않으므로, 첫 안내 음성 재생 도중 세션 모드가 두 값 사이에서 뒤바뀌며
-    // 하드웨어 레벨 순간 드롭아웃(음절 손실)을 유발할 수 있다는 의심이 있어 값을
-    // audioEngine과 동일한 "mixWithOthers"로 통일한다.
-    // [2026-07-10 정정] allowsRecording을 false로 두면 이 useEffect가 audioEngine.ensureSession()의
-    // allowsRecording:true 설정보다 먼저(앱 마운트 시점) 실행되어 세션을 false로 덮어써,
-    // STT useAudioRecorder().record()가 항상 RecordingDisabledException으로 실패했다
-    // (실기기 실측 확인). audioEngine.ts와 동일하게 true로 맞춘다.
-    // [2026-07-13 타이밍 보정] CameraView가 동시 마운트되며 카메라/오디오 세션을 선점해
-    // 온보딩 음성이 무음으로 밀리는 현상을 회피하기 위해, 세션 설정 완료 후 600ms 대기
-    // 뒤 온보딩을 재생한다(카메라 프리뷰/반사 비프가 오디오 세션을 안정화시킬 시간).
     void setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,
@@ -71,6 +69,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
-    backgroundColor: "#000000",
+    backgroundColor: "#0A0D10",
   },
 });
