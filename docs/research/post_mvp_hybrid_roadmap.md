@@ -120,7 +120,7 @@ client/src/
 ├── native/
 │   └── FrameProcessor.cpp       # [신규] Vision Camera 프레임 버퍼를 로컬 AI 모델로 전달하는 C++ 브릿지
 └── services/
-    ├── frameCapture.ts          # (기존) 서버 전송용 스냅샷 처리
+    ├── frameCaptureProvider*.ts  # 캡처 계층 (구 frameCapture.ts 삭제, 2026-07-15)
     ├── localDetector.ts         # [신규] CoreML / TFLite 로컬 추론 결과 파싱 (NMS-Free 처리)
     └── reflexClipPlayer.ts      # (기존 7단계) 반사 클립 즉시 재생 (선점 로직)
 ```
@@ -131,7 +131,7 @@ client/src/
 | ---- | ------- | ------------- |
 | `useCamera.ts` | 반사 10fps / 인지 2fps **모두 서버 전송** | **반사 10fps는 로컬 추론용으로 전환**, 인지 2fps 서버 전송 유지 |
 | `CameraView.tsx` | `setInterval` 기반 캡처 | `Frame Processor` 바인딩 추가 (로컬 추론 전용 경로) |
-| `frameCapture.ts` | 2fps 서버 전송 `buildDetectionEvent` | 변경 없음 (서버 전송 로직 유지) |
+| `frameCaptureProvider*.ts` | 반사/인지 캡처 후 CameraView가 WS 전송 | 레거시 `frameCapture.ts`/`buildDetectionEvent` 삭제됨 |
 
 ### 4.2 신규 컴포넌트 상세
 

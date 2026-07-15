@@ -285,7 +285,7 @@ open client/ios/Minchodan.xcworkspace
 | **권한** | 카메라, 마이크, 위치 권한 요청이 자연스러운지 | `Info.plist`, 권한 hook |
 | **카메라** | 후면 카메라 preview 또는 캡처 경로가 동작하는지 | `client/src`, VisionCamera 설정 |
 | **WebSocket** | 서버 주소, hello 메시지, ping/pong 흐름이 맞는지 | `client/src/hooks/useWebSocket.ts`, 서버 로그 |
-| **프레임 전송** | reflex/cognitive stream 구분과 frame id가 유지되는지 | `client/src/services/frameCapture.ts`, 서버 `/ws/detect` 로그 |
+| **프레임 전송** | reflex/cognitive stream 구분과 frame id가 유지되는지 | `client/src/services/frameCaptureProvider*.ts`, `useCamera`/`CameraView`, 서버 `/ws/detect` 로그 |
 | **오디오** | 반사 경보가 인지 음성을 선점하는지 | `audioEngine`, `expo-audio` 관련 코드 |
 | **햅틱** | high risk 수신 시 햅틱이 같이 울리는지 | `hapticEngine`, event handler |
 | **접근성** | 음성 안내와 접근성 알림이 충돌하지 않는지 | 접근성 API 호출부 |

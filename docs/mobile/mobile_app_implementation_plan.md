@@ -107,7 +107,7 @@ graph TB
         RC["반사 캡처 10fps"]
         CC["인지 캡처 2fps"]
         WSH["useWebSocket.ts<br/>hello/heartbeat/reconnect"]
-        FC["frameCapture.ts<br/>base64 인코딩"]
+        FC["frameCaptureProvider*.ts<br/>캡처 + jpegBytes/WS"]
         CH --> RC
         CH --> CC
         RC --> FC
@@ -267,7 +267,8 @@ client/
 │   │   ├── useWebSocket.ts       # 1단계 WS 연결/하트비트/재연결
 │   │   └── useCamera.ts          # 2단계 단일 캡처 타이머 + 스트림 분할
 │   ├── services/
-│   │   └── frameCapture.ts       # takePhoto → base64 → send
+│   │   ├── frameCaptureProvider.ts
+│   │   └── frameCaptureProviderSelect.{ios,android}.ts
 │   ├── components/
 │   │   ├── CameraView.tsx        # 카메라 + WS 연동
 │   │   └── ConnectionStatus.tsx  # 접속 상태 표시 (접근성)
@@ -375,7 +376,7 @@ sequenceDiagram
 | 가드레일 | `cameraRef.current` null 체크, `isCapturingRealFrame` ref 중복 캡처 방지, `takePhoto` 예외 시 `null` 반환 (에러 없이 스킵) |
 | 정리 | 언마운트 시 `clearInterval` 즉시 해제 (자원 누수 방지) |
 
-#### `src/services/frameCapture.ts` — 프레임 전송 서비스
+#### `src/services/frameCaptureProvider*.ts` — 프레임 캡처 계층 (구 `frameCapture.ts` 삭제)
 
 | 항목 | 내용 |
 | --- | --- |
@@ -533,7 +534,7 @@ graph LR
 | `client/src/types/detection.ts` | 신규 | 타입 정의 |
 | `client/src/hooks/useWebSocket.ts` | 신규 | WS 연결/하트비트/재연결 |
 | `client/src/hooks/useCamera.ts` | 신규 | 단일 캡처 타이머 + 스트림 분할 |
-| `client/src/services/frameCapture.ts` | 신규 | 프레임 전송 서비스 |
+| `client/src/services/frameCaptureProvider.ts (구 frameCapture.ts 삭제, 2026-07-15)` | 신규 | 프레임 전송 서비스 |
 | `client/src/components/CameraView.tsx` | 신규 | 카메라 + WS 연동 |
 | `client/src/components/ConnectionStatus.tsx` | 신규 | 접속 상태 표시 |
 | `client/src/services/hapticEngine.ts` | 신규 | 햅틱 피드백 서비스 |

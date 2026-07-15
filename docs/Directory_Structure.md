@@ -101,15 +101,17 @@ guidedog-ai/
 │   ├── src/
 │   │   ├── hooks/
 │   │   │   ├── useWebSocket.ts      # 1단계: WS 연결·hello/welcome 핸드셰이크
-│   │   │   └── useCamera.ts         # 2단계: useCameraDevice('back') + 이중 타이머
+│   │   │   ├── useCamera.ts         # 2단계: 캡처 오케스트레이션 + 이중 FPS
+│   │   │   └── useOnDeviceDetection.ts
 │   │   ├── services/
-│   │   │   ├── frameCapture.ts      # takePhoto({qualityPrioritization:'speed'})  base64
-│   │   │   ├── audioPlayer.ts       # 7단계: decodeAudioData() Web Audio 재생
-│   │   │   └── reflexClipPlayer.ts  # 반사 클립 즉시 재생 (선점 로직)
-│   │   ├── components/
-│   │   │   └── CameraView.tsx       # 카메라 프리뷰 (운영자용)
-│   │   └── utils/
-│   │       └── haptics.ts           # Haptics + announceForAccessibility
+│   │   │   ├── frameCaptureProvider.ts           # 공통 인터페이스 + takePhoto 공용 크롭
+│   │   │   ├── frameCaptureProviderSelect.ts     # Metro 진입점 (.ios/.android 분기)
+│   │   │   ├── frameCaptureProviderSelect.ios.ts # Frame Processor 연속 캡처
+│   │   │   ├── frameCaptureProviderSelect.android.ts # takePhoto 과도기 경로
+│   │   │   ├── audioEngine.ts                    # 7단계: expo-audio 재생
+│   │   │   └── hapticEngine.ts                   # 햅틱 + 접근성 알림
+│   │   └── components/
+│   │       └── CameraView.tsx       # 카메라 프리뷰 + 하단 운영자 패널
 │   ├── assets/
 │   │   └── reflex_clips/            # 사전합성 클립 앱 번들 (server/data와 동기화)
 │   └── package.json
