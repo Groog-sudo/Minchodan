@@ -978,6 +978,9 @@ td {
   padding: 6px 12px;
   transition: all 0.2s ease;
   white-space: nowrap;
+  display: flex;
+  justify-content: center;
+  width: 50%;
   text-transform: uppercase;
 }
 
@@ -1165,16 +1168,14 @@ td {
 .member-form-hint {
   color: #6b7590;
   font-size: 12px;
-  margin: 0 0 14px 0;
+  margin: 0 0 35px 0;
 }
 
 .member-form {
   display: grid;
-  row-gap: 14px;
+  row-gap: 10px;
   column-gap: 0;
   grid-template-columns: 1fr;
-  width: min(100%, 560px);
-  align-items: start;
 }
 
 .member-form label {
@@ -1183,13 +1184,17 @@ td {
   flex-direction: column;
   font-size: 11px;
   font-weight: 700;
-  row-gap: 8px;
+  row-gap: 14px;
   column-gap: 6px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border: 1px solid var(--border-tactical);
-  background: #141a20;
-  padding: 10px 12px;
+}
+
+.member-form-label-text {
+  display: block;
+  width: 35%;
+  margin: 0 auto;
+  text-align: left;
 }
 
 .member-form input {
@@ -1200,7 +1205,8 @@ td {
   font-size: 13px;
   padding: 8px 10px;
   font-family: inherit;
-  width: 100%;
+  width: 35%;
+  margin: 0 auto;
 }
 
 .member-form input:focus {
@@ -1210,9 +1216,9 @@ td {
 }
 
 .member-form .refresh-btn {
-  justify-self: stretch;
-  min-width: 0;
-  padding: 10px 16px;
+  width: 35%;
+  margin: 30px auto 0;
+  padding: 10px 10px;
 }
 
 .member-form-message-ok {

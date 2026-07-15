@@ -633,3 +633,18 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 레이아웃 변경은 회원 등록 폼 영역에 한정되며 비즈니스 로직/API 변경 없음
+
+---
+
+### 2026-07-15 | 콘솔 UI | 회원 등록 폼 라벨-입력 정렬 및 간격 미세 조정
+
+- **커밋**: `style(console): 회원 등록 폼 라벨/입력/버튼 정렬 미세 조정`
+- **변경 내용**:
+  - `MembersPage.tsx`의 회원 등록 각 `label` 텍스트를 `span.member-form-label-text`로 감싸 라벨 텍스트 위치를 입력창 기준으로 제어 가능하게 구조화함
+  - `styles.css`에서 `.member-form input`을 폭 `35%`와 중앙 정렬(`margin: 0 auto`)로 설정해 필드 길이를 MVP 데모 기준에 맞게 축소함
+  - `.member-form-label-text`를 동일 폭(`35%`)·왼쪽 정렬로 지정해 라벨 텍스트가 가운데 배치된 입력창의 좌상단에 맞춰 보이도록 조정함
+  - `.member-form .refresh-btn`도 폭 `35%`·중앙 정렬로 맞추고 상단 여백을 `5px`로 조정해 입력창과 버튼 간격을 일관화함
+  - `.member-form-hint`와 폼 사이 하단 간격을 `10px`로 줄여 시각적 밀도를 정리함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 회원 등록 폼의 정보 배치 가독성 개선 목적의 스타일 조정이며 API/비즈니스 로직 변경 없음
