@@ -1,0 +1,16 @@
+---
+description: 3단계 Yolo 26N 탐지/분할/추적 - 이중 게이트 위험도 분류
+globs: server/detection/**,training/**
+alwaysApply: false
+---
+
+# 3단계: Yolo 26N 탐지 파이프라인
+
+`server/detection/`(Object Detection/Segmentation/ByteTrack/Gates)이나 `training/`(오프라인 학습)을 수정할 때는 `.agents/skills/yolo-obstacle-detection/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- Yolo 26N Object Detection 29클래스 + Segmentation 4클래스 + ByteTrack 추적.
+- 이중 게이트(Reflex Gate + Surface Gate)로 위험도를 1차 분류한다.
+- 실제 배포 앱의 반사 경로는 온디바이스(CoreML/TFLite)로 수행하며, 이 서버 파이프라인은 로컬 WiFi MVP·학습/검증용이다.
+- `server/detection/gates/`를 수정할 경우 `01-reflex-path-guard.mdc`의 임포트 금지 규칙을 반드시 함께 확인한다.

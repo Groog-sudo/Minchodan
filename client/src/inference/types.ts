@@ -11,7 +11,8 @@ export interface DetectionResult {
 
 export type InferenceFrame = Float32Array;
 
-// docs/design/indoor_fp_mitigation_design.md §4.3 - VNClassifyImageRequest 씬 분류 결과 (iOS 전용).
+// docs/design/indoor_fp_mitigation_design.md §4 - 씬 분류 결과.
+// iOS: VNClassifyImageRequest / Android: ML Kit Image Labeling (SceneClassifyBridgeModule).
 export interface SceneClassification {
   isLikelyIndoor: boolean;
   confidence: number;

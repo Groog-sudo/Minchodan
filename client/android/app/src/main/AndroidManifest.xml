@@ -7,12 +7,6 @@
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
-  <!-- [TH HARDCODE] 메시지 읽어주기 편의기능(Android 전용). RECEIVE_SMS는 Google Play
-       정책상 "기본 문자 앱"만 상시 허용되는 민감 권한이다 - 데모/사이드로드 범위. -->
-  <uses-permission android:name="android.permission.RECEIVE_SMS"/>
-  <!-- 음성 연락처 저장: 서버 RAM이 아니라 단말 주소록에 영속화 (Android 전용). -->
-  <uses-permission android:name="android.permission.READ_CONTACTS"/>
-  <uses-permission android:name="android.permission.WRITE_CONTACTS"/>
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
   <uses-permission android:name="android.permission.VIBRATE"/>

@@ -291,7 +291,10 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
         latency_stages["stt_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
-        logger.info(f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}")
+        logger.info(
+            f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
+            f"text={(stt_result.text or '')[:80]!r}"
+        )
         # [DEBUG TEMP 2026-07-13] 연락처 저장 재검증용 - 확인 후 제거
         _t = (stt_result.text or "").strip()
         if any(k in _t for k in ("저장", "전화")):
@@ -384,50 +387,6 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                 f"waypoints={len(bridge_result['nav_waypoints'])}"
             )
 
-        # [TH HARDCODE 아님] 긴급전화/연락처 전화걸기 편의기능용. 서버는 통신사
-        # 회선을 직접 제어할 수 없으므로(전화는 통신사/캐리어 API 영역), 여기서는
-        # 의도 해석과 번호 조회 결과만 dial_action 메시지로 전달하고, 실제 다이얼
-        # 실행은 클라이언트의 OS 텔레포니 API(React Native Linking "tel:")에
-        # 위임한다(client/src/hooks/useWebSocket.ts 참조).
-        if "dial_action" in bridge_result:
-            dial_action = bridge_result["dial_action"]
-            with contextlib.suppress(Exception):
-                await ws.send_json(
-                    {
-                        "type": "dial_action",
-                        "contact_name": dial_action.get("contact_name", ""),
-                        "phone_number": dial_action.get("phone_number", ""),
-                        "device_lookup": bool(dial_action.get("device_lookup", False)),
-                        "ts": now_ts(),
-                    }
-                )
-            logger.info(
-                f"[WS] dial_action 전송: device_id={device_id}, "
-                f"contact={dial_action.get('contact_name')}"
-            )
-
-        # [TH HARDCODE 아님 - 전송 계층] 음성 연락처 저장.
-        # 💡 [면접 대비 주석]
-        # Q. 왜 guide TTS와 같이 서버에서 처리하지 않나요?
-        # A. "주소록은 단말 OS 권한(WRITE_CONTACTS)이 필요한 로컬 리소스다.
-        #    서버는 contact_save 이벤트만 브로드캐스트하고, 클라이언트
-        #    ContactsBridge가 실제 영속화를 수행한다(thin client + 역할 분리)."
-        if "contact_save" in bridge_result:
-            contact_save = bridge_result["contact_save"]
-            with contextlib.suppress(Exception):
-                await ws.send_json(
-                    {
-                        "type": "contact_save",
-                        "contact_name": contact_save.get("contact_name", ""),
-                        "phone_number": contact_save.get("phone_number", ""),
-                        "ts": now_ts(),
-                    }
-                )
-            logger.info(
-                f"[WS] contact_save 전송: device_id={device_id}, "
-                f"contact={contact_save.get('contact_name')}"
-            )
-
         logger.info(
             f"[WS] stt_audio 처리 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
             f"source={bridge_result.get('source')}"
@@ -494,12 +453,18 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
 @router.websocket("/ws/console/live-feed")
 async def ws_console_live_feed(ws: WebSocket) -> None:
-    """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트."""
+    """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트.
+
+    receive_text()만 쓰면 클라이언트의 binary/disconnect 프레임에서 예외로
+    끊기거나, uvicorn 재기동 후 반쯤 열린(half-open) 소켓을 감지하기 어렵다.
+    receive()로 모든 메시지 타입을 흡수하고 disconnect만 정리한다.
+    """
     await manager.connect_console(ws)
     try:
         while True:
-            # ping/pong 및 연결 유지를 위해 메시지 수신 대기 (받은 메시지는 무시)
-            _ = await ws.receive_text()
+            message = await ws.receive()
+            if message.get("type") == "websocket.disconnect":
+                raise WebSocketDisconnect(message.get("code", 1000), message.get("reason"))
     except WebSocketDisconnect:
         manager.disconnect_console(ws)
     except Exception as e:
@@ -590,14 +555,6 @@ async def ws_detect(
             await ensure_device_registered(device_id)
         except Exception as e:
             logger.error(f"[WS] 단말 자동 등록 실패: device_id={device_id}, {e}")
-        try:
-            from server.stt.contact_service import ContactService
-
-            hydrated = await ContactService.hydrate_cache(device_id)
-            if hydrated:
-                logger.info(f"[WS] 연락처 캐시 복구: device_id={device_id}, count={hydrated}")
-        except Exception as e:
-            logger.error(f"[WS] 연락처 캐시 복구 실패: device_id={device_id}, {e}")
         await ws.send_json({"type": "auth_ok", "device_id": device_id})
         await _broadcast_session_status(device_id, "connected")
         await redis_bus.connect()

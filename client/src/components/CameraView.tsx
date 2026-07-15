@@ -29,7 +29,6 @@ import { MOCK_HAPTIC } from "../config/mock";
 import { useCamera, type FrameData } from "../hooks/useCamera";
 import { useLocation, type GpsCoords } from "../hooks/useLocation";
 import { useOnDeviceDetection, type OnDeviceDetectionResult } from "../hooks/useOnDeviceDetection";
-import { useSmsReader } from "../hooks/useSmsReader";
 import { useSttRecorder } from "../hooks/useSttRecorder";
 import { useWebSocket } from "../hooks/useWebSocket";
 import {
@@ -101,7 +100,34 @@ const SAFE_SURFACE_CLASSES = ["sidewalk_normal", "braille_normal"];
 // segmentation 4클래스 자체(sidewalk_normal/caution/roadway/braille_normal)는 그 존재
 // 자체가 "실외 보행로를 보고 있다"는 근거이므로 이 게이트에서 자기 자신을 통과시킨다.
 const OUTDOOR_SURFACE_CLASSES = ["sidewalk_normal", "caution", "roadway", "braille_normal"];
-const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
+// [P3 2026-07-14] 노면 세그 신뢰도 최소값 0.15→0.35 상향 (논문 기준 0.35~0.50).
+// 0.15는 너무 낮아 저신뢰 오탐이 실외 판정을 통과해 반사 경보 오발동을 허용했음.
+const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.35;
+// 하단 15% (서버 reflex_gate / PROXIMITY_Y와 동일) — 근접 긴급은 outdoor 게이트 우회
+const PROXIMITY_BOTTOM_Y = FRAME_SIZE * 0.85;
+// 주차센서 면적비: 1단계(초접근) / 2단계(근접) — 이 이상은 실내에서도 즉시 경보
+const URGENT_AREA_RATIO = 0.12;
+const URGENT_HIGH_CLASS_AREA_RATIO = 0.08;
+
+// 2026-07-14: 씬 판정(isLikelyIndoor) 채터링 완화. 문/창가에서 프레임마다
+// 실내↔실외가 뒤집히면 반사 경보도 깜빡이므로, 최근 N프레임 다수결로 안정화한다.
+// 서버 DEPARTURE_CONFIRM_STREAK와 같은 "연속/다수 확정" 패턴. iOS 우선 반영.
+const SCENE_HYSTERESIS_WINDOW = 5;
+const SCENE_INDOOR_MAJORITY = 3;
+
+function stabilizeIsOutdoorByScene(
+  rawIsOutdoor: boolean,
+  indoorVotes: boolean[],
+): boolean {
+  // indoorVotes 에는 "실내인가?" 를 쌓는다 (true=실내).
+  indoorVotes.push(!rawIsOutdoor);
+  if (indoorVotes.length > SCENE_HYSTERESIS_WINDOW) {
+    indoorVotes.shift();
+  }
+  const indoorCount = indoorVotes.filter(Boolean).length;
+  const isIndoorStable = indoorCount >= SCENE_INDOOR_MAJORITY;
+  return !isIndoorStable;
+}
 
 // 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
 // YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
@@ -154,9 +180,171 @@ function getEffectiveConfThreshold(className: string, baseThreshold: number): nu
 // 반사 경보 판정에서 제외한다. 부동소수점 회귀 노이즈 감안 2% 여유만 허용.
 const CANVAS_OVERFLOW_MARGIN = 1.02;
 
+// 주행 통로 ROI 사다리꼴 상수 - server/detection/path_risk.py와 동일 값으로 유지해 좌표 정합.
+// NEAR: 화면 하단(가장 가까운 지점) 좌우 경계, FAR: 화면 상단(먼 지점) 좌우 경계.
+// FAR_Y_RATIO: ROI 상단이 화면 높이의 35% 지점에서 시작.
+const PATH_ROI_NEAR_BAND = [0.20, 0.80] as const; // 정규화 x 좌표 (0~1)
+const PATH_ROI_FAR_BAND  = [0.38, 0.62] as const;
+const PATH_ROI_FAR_Y_RATIO = 0.35;
+
+/**
+ * ROI 사다리꼴 꼭짓점 4개를 정규화 좌표(0~1)로 반환.
+ * 순서: 좌상 -> 우상 -> 우하 -> 좌하 (시계 방향)
+ */
+function roiPolygon(): [number, number][] {
+  const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
+  const [farLo, farHi] = PATH_ROI_FAR_BAND;
+  const yTop = PATH_ROI_FAR_Y_RATIO;
+  const yBottom = 1.0;
+  return [
+    [farLo,  yTop],    // 좌상
+    [farHi,  yTop],    // 우상
+    [nearHi, yBottom], // 우하
+    [nearLo, yBottom], // 좌하
+  ];
+}
+
+/**
+ * 점(px, py)이 볼록 다각형 polygon(정규화 좌표 배열) 내부에 있는지 판정.
+ * ray-casting 알고리즘 사용.
+ */
+function pointInPolygon(px: number, py: number, polygon: [number, number][]): boolean {
+  let inside = false;
+  const n = polygon.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersect =
+      yi > py !== yj > py &&
+      px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
   const maxSize = FRAME_SIZE * CANVAS_OVERFLOW_MARGIN;
   return bbox.w > maxSize || bbox.h > maxSize;
+}
+
+function detectionAreaRatio(bbox: { w: number; h: number }): number {
+  return (bbox.w * bbox.h) / (FRAME_SIZE * FRAME_SIZE);
+}
+
+function isBottomProximity(bbox: { x: number; y: number; w: number; h: number }): boolean {
+  return bbox.y + bbox.h >= PROXIMITY_BOTTOM_Y;
+}
+
+/** 초접근/근접 — LLM/실외 게이트 없이 즉시 비프·햅틱 대상 */
+function isProximityUrgent(
+  bbox: { x: number; y: number; w: number; h: number },
+  className: string,
+): boolean {
+  if (isBottomProximity(bbox)) return true;
+  const ratio = detectionAreaRatio(bbox);
+  const isHigh =
+    HIGH_HAZARDS.includes(className) || GROUND_HAZARDS.includes(className);
+  if (ratio > URGENT_AREA_RATIO) return true;
+  if (isHigh && ratio > URGENT_HIGH_CLASS_AREA_RATIO) return true;
+  return false;
+}
+
+/**
+ * 온디바이스 주차센서식 비프/햅틱 (LLM 미경유).
+ * @returns 경보를 올렸으면 true
+ */
+function applyLocalAreaReflex(
+  detections: OnDeviceDetectionResult[],
+  logTag: string,
+): boolean {
+  if (detections.length === 0) return false;
+
+  let maxAreaRatio = 0;
+  let mostCriticalClass = "";
+  let nearestLidarDetection: OnDeviceDetectionResult | null = null;
+  let nearestLidarMeters = Number.POSITIVE_INFINITY;
+
+  for (const d of detections) {
+    const ratio = detectionAreaRatio(d.bbox);
+    if (ratio > maxAreaRatio) {
+      maxAreaRatio = ratio;
+      mostCriticalClass = d.className;
+    }
+    const resolvedDistance = resolveDetectionDistance(d);
+    if (
+      resolvedDistance.source === "lidar" &&
+      resolvedDistance.meters !== null &&
+      resolvedDistance.meters < nearestLidarMeters
+    ) {
+      nearestLidarMeters = resolvedDistance.meters;
+      nearestLidarDetection = d;
+    }
+  }
+
+  const isHighClass =
+    HIGH_HAZARDS.includes(mostCriticalClass) ||
+    GROUND_HAZARDS.includes(mostCriticalClass);
+
+  const log = (msg: string) => {
+    if (!audioEngine.isGuidePlaying) {
+      console.log(`[LocalReflex]${logTag} ${msg}`);
+    }
+  };
+
+  if (nearestLidarDetection !== null) {
+    const lidarClass = nearestLidarDetection.className;
+    const samples = nearestLidarDetection.depthSampleCount ?? 0;
+    if (nearestLidarMeters <= 0.5) {
+      void hapticEngine.trigger("continuous");
+      void audioEngine.playBeep(0.0, 0);
+      log(`[LiDAR] 초접근 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
+      return true;
+    }
+    if (nearestLidarMeters <= 1.0) {
+      void hapticEngine.trigger("double");
+      void audioEngine.playBeep(0.0, 200);
+      log(`[LiDAR] 근접 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
+      return true;
+    }
+    if (nearestLidarMeters <= 1.5) {
+      void hapticEngine.trigger("short");
+      void audioEngine.playBeep(0.0, 600);
+      log(`[LiDAR] 중거리 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
+      return true;
+    }
+    if (nearestLidarMeters <= 3.0) {
+      hapticEngine.stopContinuous();
+      void audioEngine.playBeep(0.0, 1200);
+      log(`[LiDAR] 원거리 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
+      return true;
+    }
+    hapticEngine.stopContinuous();
+    void audioEngine.stopBeep();
+    return false;
+  }
+
+  if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
+    void hapticEngine.trigger("continuous");
+    void audioEngine.playBeep(0.0, 0);
+    log(`초접근 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+    return true;
+  }
+  if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
+    void hapticEngine.trigger("double");
+    void audioEngine.playBeep(0.0, 200);
+    log(`근접 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+    return true;
+  }
+  if (maxAreaRatio > 0.03) {
+    void hapticEngine.trigger("short");
+    void audioEngine.playBeep(0.0, 600);
+    log(`중거리 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+    return true;
+  }
+  hapticEngine.stopContinuous();
+  void audioEngine.playBeep(0.0, 1200);
+  log(`원거리 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+  return true;
 }
 
 type DistanceSource = "lidar" | "heuristic" | "none";
@@ -267,9 +455,6 @@ export function CameraView() {
     TOKEN,
     transportReady ? wsBaseUrl : wsUrlFor(DEFAULT_SERVER_TRANSPORT),
   );
-  // [TH HARDCODE] 발표용 편의기능: 수신 문자 메시지 읽어주기(Android 전용).
-  // 서버 왕복이 필요 없는 순수 로컬 기능이라 WS 파이프라인과 독립적으로 마운트한다.
-  useSmsReader();
   const {
     cameraRef,
     device,
@@ -288,7 +473,6 @@ export function CameraView() {
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
-
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
   // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
@@ -389,8 +573,6 @@ export function CameraView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMockMode]);
 
-
-
   // State variables moved to top of Component to avoid block-scope/TDZ errors.
 
   // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
@@ -445,9 +627,14 @@ export function CameraView() {
           setDepthResult(result);
           // 실측 기록용(Release 빌드에서는 미출력) - 시나리오 기록은 화면 판독으로 수행
           console.log(
-            `[DepthProbe] acc=${result.accuracy} ` +
+            `[DepthProbe] acc=${result.accuracy} quality=${result.quality} ` +
+              `calibrated=${result.calibrated === true} ` +
               result.samples
-                .map((s, i) => `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m`)
+                .map(
+                  (s, i) =>
+                    `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m` +
+                    `(z=${s.axialMeters?.toFixed(2) ?? "-"}m)`,
+                )
                 .join(", "),
           );
         }
@@ -521,6 +708,8 @@ export function CameraView() {
   // (server/detection/detection_pipeline.py, 실내 바닥이 roadway/caution으로 오분류되는
   // 문제를 실기기 실측으로 확인).
   const isOutdoorBySceneRef = useRef<boolean | null>(null);
+  // 씬 히스테리시스용 최근 N프레임 "실내" 투표 버퍼 (true=실내).
+  const sceneIndoorVotesRef = useRef<boolean[]>([]);
   const lastAndroidTtsTsRef = useRef(0);
 
   // Mock 햅틱 시각 핸들러 등록
@@ -607,52 +796,107 @@ export function CameraView() {
       // 서버 server_detection 결과가 존재하면 위 수신 핸들러가 이를 덮어쓴다.
       setDetectionsRef.current(allDetections);
 
-      // 1. 공통 전처리: 반사 경보 유효성 필터 (씬/객체 신뢰도 기반)
+      // 1. 공통 전처리: 기하/신뢰도 1차 → 근접 긴급은 outdoor 우회, 중·원거리만 실외 게이트
       const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
-        (d: OnDeviceDetectionResult) => OUTDOOR_SURFACE_CLASSES.includes(d.className) && d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE
+        (d: OnDeviceDetectionResult) =>
+          OUTDOOR_SURFACE_CLASSES.includes(d.className) &&
+          d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE,
       );
-      const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
+      // scene 미존재(허용적 폴백)면 히스테리시스 없이 실외로 간주해 기존 co-occurrence만 사용.
+      const rawIsOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
+      const isOutdoorByScene = scene
+        ? stabilizeIsOutdoorByScene(rawIsOutdoorByScene, sceneIndoorVotesRef.current)
+        : true;
       isOutdoorBySceneRef.current = isOutdoorByScene;
+      if (__DEV__ && scene) {
+        console.log(
+          `[SceneHysteresis] rawOutdoor=${rawIsOutdoorByScene} stableOutdoor=${isOutdoorByScene} ` +
+            `indoorVotes=${sceneIndoorVotesRef.current.filter(Boolean).length}/${sceneIndoorVotesRef.current.length}`,
+        );
+      }
 
-      const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
+      const roiPoly = roiPolygon();
+      const baseCandidates = allDetections.filter((d: OnDeviceDetectionResult) => {
         if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
+        if (GROUND_HAZARDS.includes(d.className)) return false; // 바닥(roadway/caution)은 반사 경로 제외 - 인지 경로(TTS) 전담
         if (isGeometricallyImplausible(d.bbox)) return false;
-        if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) return false;
-        if (!hasOutdoorSurface) return false;
-        if (!isOutdoorByScene) return false;
+        if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) {
+          return false;
+        }
+        // ROI 판정: bbox 중심점이 주행 통로 사다리꼴 내부에 없으면 반사 경로 제외.
+        // outdoor 게이트(hasOutdoorSurface/isOutdoorByScene)는 여기서 걸지 않는다 - 근접 긴급
+        // (urgentDetections)은 실내 판정이어도 충돌 회피가 우선이라 outdoor 게이트를 우회해야 한다.
+        const cxNorm = (d.bbox.x + d.bbox.w / 2) / FRAME_SIZE;
+        const cyNorm = (d.bbox.y + d.bbox.h / 2) / FRAME_SIZE;
+        if (!pointInPolygon(cxNorm, cyNorm, roiPoly)) return false;
         return true;
       });
-      // 💡 [안드로이드 전용: 통로 막힘 판정 및 회피 가이드 MVP]
+      const urgentDetections = baseCandidates.filter((d) =>
+        isProximityUrgent(d.bbox, d.className),
+      );
+      // 중·원거리 점진 비프: 실외 신호가 있을 때만 (실내 차량 오탐 억제)
+      const outdoorScopedDetections =
+        hasOutdoorSurface && isOutdoorByScene
+          ? baseCandidates.filter((d) => !isProximityUrgent(d.bbox, d.className))
+          : [];
+      const reflexDetections =
+        urgentDetections.length > 0
+          ? urgentDetections
+          : outdoorScopedDetections;
+
+      // 안드로이드: 통로 막힘 우선 → CLEAR여도 근접 긴급이면 면적 반사로 보조
+      // iOS: LiDAR/면적 주차센서 (공통 applyLocalAreaReflex)
+      // 2026-07-14: 씬 게이트(실내)면 Android pathObstacle 경보/TTS를 억제한다.
+      // is_outdoor 서버 전송은 위에서 이미 히스테리시스 안정화 값을 사용 중.
+      let pathRaisedAlert = false;
       if (Platform.OS === "android") {
+        if (!isOutdoorByScene) {
+          hapticEngine.stopContinuous();
+          void audioEngine.stopBeep();
+          if (__DEV__) {
+            console.log("[PathObstacle] 실내 씬 판정 — 통로 경보 억제");
+          }
+        } else {
         const pathRes = pathObstacleDetector.analyze(allDetections);
 
-        // 1. 비프음 및 햅틱 오케스트레이션
         if (pathRes.state === "STOP") {
           void hapticEngine.trigger("double");
-          void audioEngine.playBeep(0.0, 0); // 0ms (연속음)
+          void audioEngine.playBeep(0.0, 0);
+          pathRaisedAlert = true;
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[PathObstacle] STOP 감지! score=${pathRes.riskScore.toFixed(2)}`);
+            console.log(
+              `[LocalReflex][PathObstacle] STOP score=${pathRes.riskScore.toFixed(2)}`,
+            );
           }
         } else if (pathRes.state === "BLOCKED") {
           void hapticEngine.trigger("short");
-          void audioEngine.playBeep(0.0, 200); // 200ms 고속
+          void audioEngine.playBeep(0.0, 200);
+          pathRaisedAlert = true;
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[PathObstacle] BLOCKED 감지! score=${pathRes.riskScore.toFixed(2)}`);
+            console.log(
+              `[LocalReflex][PathObstacle] BLOCKED score=${pathRes.riskScore.toFixed(2)}`,
+            );
           }
         } else if (pathRes.state === "CAUTION") {
-          void audioEngine.playBeep(0.0, 600); // 600ms 중속
+          void audioEngine.playBeep(0.0, 600);
+          pathRaisedAlert = true;
           if (!audioEngine.isGuidePlaying) {
-            console.log(`[PathObstacle] CAUTION 감지! score=${pathRes.riskScore.toFixed(2)}`);
+            console.log(
+              `[LocalReflex][PathObstacle] CAUTION score=${pathRes.riskScore.toFixed(2)}`,
+            );
           }
+        } else if (reflexDetections.length > 0) {
+          // path CLEAR 이어도 가까운 사람/의자 등은 즉시 경보 (실내 포함)
+          applyLocalAreaReflex(reflexDetections, "[AndroidFallback]");
+          pathRaisedAlert = true;
         } else {
           hapticEngine.stopContinuous();
           void audioEngine.stopBeep();
         }
 
-        // 2. 좌우 회피 가이드 음성 송출 (사용자 인지 가이드 재생 중이지 않을 때 한해 중복 억제)
-        // 2.5초(2500ms) 쿨타임을 주어 음성이 무한 겹치는 것 방지
         const nowTs = Date.now();
         if (
+          pathRaisedAlert &&
           (pathRes.state === "STOP" || pathRes.state === "BLOCKED") &&
           !audioEngine.isGuidePlaying &&
           nowTs - lastAndroidTtsTsRef.current >= 2500
@@ -665,102 +909,16 @@ export function CameraView() {
             guidanceText = "정면 장애물, 오른쪽 공간 넓음";
           }
           audioEngine.speakFallback(guidanceText);
-          console.log(`[PathObstacle] 회피 가이드 음성 송출: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`);
+          console.log(
+            `[LocalReflex][PathObstacle] 회피 가이드: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`,
+          );
         }
+        }
+      } else if (reflexDetections.length > 0) {
+        applyLocalAreaReflex(reflexDetections, "[iOS]");
       } else {
-        // iOS/Default: 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)
-        if (validDetections.length > 0) {
-          let maxAreaRatio = 0;
-          let mostCriticalClass = "";
-          let nearestLidarDetection: OnDeviceDetectionResult | null = null;
-          let nearestLidarMeters = Number.POSITIVE_INFINITY;
-
-          for (const d of validDetections) {
-            const area = d.bbox.w * d.bbox.h;
-            const ratio = area / (FRAME_SIZE * FRAME_SIZE);
-            if (ratio > maxAreaRatio) {
-              maxAreaRatio = ratio;
-              mostCriticalClass = d.className;
-            }
-
-            const resolvedDistance = resolveDetectionDistance(d);
-            if (resolvedDistance.source === "lidar" && resolvedDistance.meters !== null && resolvedDistance.meters < nearestLidarMeters) {
-              nearestLidarMeters = resolvedDistance.meters;
-              nearestLidarDetection = d;
-            }
-          }
-
-          // 긴급 회피 클래스 목록 (이동체 + 노면 위험 구간)
-          const isHighClass = HIGH_HAZARDS.includes(mostCriticalClass) || GROUND_HAZARDS.includes(mostCriticalClass);
-
-          if (nearestLidarDetection !== null) {
-            const lidarClass = nearestLidarDetection.className;
-            const samples = nearestLidarDetection.depthSampleCount ?? 0;
-            if (nearestLidarMeters <= 0.5) {
-              void hapticEngine.trigger("continuous");
-              void audioEngine.playBeep(0.0, 0);
-              if (!audioEngine.isGuidePlaying) {
-                console.log(`[ReflexGate][LiDAR] 초접근 경보! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> continuous / 0ms`);
-              }
-            } else if (nearestLidarMeters <= 1.0) {
-              void hapticEngine.trigger("double");
-              void audioEngine.playBeep(0.0, 200);
-              if (!audioEngine.isGuidePlaying) {
-                console.log(`[ReflexGate][LiDAR] 근접 주의! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> double / 200ms`);
-              }
-            } else if (nearestLidarMeters <= 1.5) {
-              void hapticEngine.trigger("short");
-              void audioEngine.playBeep(0.0, 600);
-              if (!audioEngine.isGuidePlaying) {
-                console.log(`[ReflexGate][LiDAR] 중거리 감지! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> short / 600ms`);
-              }
-            } else if (nearestLidarMeters <= 3.0) {
-              hapticEngine.stopContinuous();
-              void audioEngine.playBeep(0.0, 1200);
-              if (!audioEngine.isGuidePlaying) {
-                console.log(`[ReflexGate][LiDAR] 원거리 포착! class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples} -> none / 1200ms`);
-              }
-            } else {
-              hapticEngine.stopContinuous();
-              void audioEngine.stopBeep();
-              if (!audioEngine.isGuidePlaying) {
-                console.log(`[ReflexGate][LiDAR] 안전 거리 유지 class=${lidarClass} distance=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
-              }
-            }
-          } else if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
-            // LiDAR 값이 없는 경우 기존 주차센서식 면적 기반 4단계 피드백으로 폴백한다.
-            // 1단계: 초접근 (연속음 + 강한 진동)
-            void hapticEngine.trigger("continuous");
-            void audioEngine.playBeep(0.0, 0); // 0ms는 정지/연속 반복음
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate] 초접근 경보! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> continuous / 0ms`);
-            }
-          } else if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
-            // 2단계: 근접 (빠른 핑퐁 점멸 + Warning 진동)
-            void hapticEngine.trigger("double");
-            void audioEngine.playBeep(0.0, 200); // 200ms 고속 점멸
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate] 근접 주의! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> double / 200ms`);
-            }
-          } else if (maxAreaRatio > 0.03) {
-            // 3단계: 중거리 (일반 점멸 + 단발 진동)
-            void hapticEngine.trigger("short");
-            void audioEngine.playBeep(0.0, 600); // 600ms 중속 점멸
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate] 중거리 감지! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> short / 600ms`);
-            }
-          } else {
-            // 4단계: 원거리 (매우 느린 점멸 + 무진동)
-            hapticEngine.stopContinuous();
-            void audioEngine.playBeep(0.0, 1200); // 1200ms 저속 점멸
-            if (!audioEngine.isGuidePlaying) {
-              console.log(`[ReflexGate] 원거리 포착! class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)} -> none / 1200ms`);
-            }
-          }
-        } else {
-          hapticEngine.stopContinuous();
-          void audioEngine.stopBeep();
-        }
+        hapticEngine.stopContinuous();
+        void audioEngine.stopBeep();
       }
 
       if (isMockModeRef.current) {
@@ -845,14 +1003,14 @@ export function CameraView() {
   const activeDetections = depthMode
     ? []
     : detections.filter(
-        d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
-      );
+      d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
+    );
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
-        const distance = resolveDetectionDistance(d);
-        const distanceText = distance.meters !== null ? `${distance.meters.toFixed(1)}m ${distance.label}` : distance.label;
-        return `${d.className} ${distanceText} (${(d.confidence * 100).toFixed(0)}%)`;
-      }).join(", ")
+      const distance = resolveDetectionDistance(d);
+      const distanceText = distance.meters !== null ? `${distance.meters.toFixed(1)}m ${distance.label}` : distance.label;
+      return `${d.className} ${distanceText} (${(d.confidence * 100).toFixed(0)}%)`;
+    }).join(", ")
     : "없음";
 
   return (
@@ -920,6 +1078,8 @@ export function CameraView() {
           </View>
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
+        {/* ROI 사다리꼴 오버레이: 주행 통로 시각화 (탐지 활성 시에만 표시) */}
+        {detectionEnabled && !depthMode && <ROIOverlay />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
       </View>
@@ -1059,7 +1219,8 @@ export function CameraView() {
       {depthMode && (
         <View style={styles.depthOverlay} pointerEvents="none">
           <Text style={styles.depthTitle}>
-            LiDAR 실거리 (동기화 프리뷰, 정확도: {depthResult?.accuracy ?? "-"})
+            LiDAR 실거리 (동기화·보정: {depthResult?.calibrated ? "적용" : "대기"}, 정확도:{" "}
+            {depthResult?.accuracy ?? "-"}, 품질: {depthResult?.quality ?? "-"})
           </Text>
           {depthError ? (
             <Text style={styles.depthError}>{depthError}</Text>
@@ -1070,7 +1231,9 @@ export function CameraView() {
                 <Text key={point.label} style={styles.depthRow}>
                   {point.label}:{" "}
                   {sample && sample.meters != null
-                    ? `${sample.meters.toFixed(2)} m (${sample.sampleCount ?? 0})`
+                    ? `${sample.meters.toFixed(2)} m ` +
+                      `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
+                      `${sample.sampleCount ?? 0})`
                     : "측정 불가"}
                 </Text>
               );
@@ -1255,6 +1418,73 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
           </Fragment>
         );
       })}
+    </View>
+  );
+}
+
+/**
+ * ROIOverlay: 주행 통로 사다리꼴 ROI를 화면에 반투명 테두리로 시각화한다.
+ * path_risk.py의 PATH_ROI_NEAR_BAND / PATH_ROI_FAR_BAND 와 동일 좌표 기준.
+ * BBoxOverlay와 동일한 absoluteFill + 절대좌표 View 방식을 사용한다.
+ */
+function ROIOverlay() {
+  const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
+  const [farLo, farHi] = PATH_ROI_FAR_BAND;
+  const yTopPct  = PATH_ROI_FAR_Y_RATIO * 100;
+  const yBotPct  = 100;
+  const heightPct = yBotPct - yTopPct;
+  // 사다리꼴 4변을 각각 얇은 View로 그린다.
+  // 상변 / 하변은 수평 선, 좌변 / 우변은 기울어진 선(width 계산 + transform).
+  const topWidthPct  = (farHi  - farLo)  * 100;
+  const botWidthPct  = (nearHi - nearLo) * 100;
+  const topLeftPct   = farLo  * 100;
+  const botLeftPct   = nearLo * 100;
+  const LINE_W = 2;
+  const COLOR  = "rgba(249, 183, 0, 0.75)"; // COLOR_GILDANG_YELLOW 반투명
+
+  // 좌변/우변 기울기 계산: 화면 비율 좌표 -> 실제 픽셀 변환은 % 사용으로 생략
+  // 단순화: 좌/우변을 작은 세그먼트로 근사하지 않고 두꺼운 사선 View 1개로 표현.
+  // (React Native는 SVG가 없으므로 4개 꼭짓점 방식 대신 상/하/좌/우 4변 직사각형으로 근사)
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {/* 상변 */}
+      <View style={{
+        position: "absolute",
+        left: `${topLeftPct}%`,
+        top: `${yTopPct}%`,
+        width: `${topWidthPct}%`,
+        height: LINE_W,
+        backgroundColor: COLOR,
+      }} />
+      {/* 하변 */}
+      <View style={{
+        position: "absolute",
+        left: `${botLeftPct}%`,
+        top: `${yBotPct - 0.5}%`,
+        width: `${botWidthPct}%`,
+        height: LINE_W,
+        backgroundColor: COLOR,
+      }} />
+      {/* 좌변 - 상하단 x차/y범위로 기울기 근사 */}
+      <View style={{
+        position: "absolute",
+        left: `${topLeftPct}%`,
+        top: `${yTopPct}%`,
+        width: LINE_W,
+        height: `${heightPct}%`,
+        backgroundColor: COLOR,
+        transform: [{ skewX: `${Math.atan2((farLo - nearLo) * 100, heightPct) * (180 / Math.PI)}deg` }],
+      }} />
+      {/* 우변 */}
+      <View style={{
+        position: "absolute",
+        left: `${farHi * 100}%`,
+        top: `${yTopPct}%`,
+        width: LINE_W,
+        height: `${heightPct}%`,
+        backgroundColor: COLOR,
+        transform: [{ skewX: `${Math.atan2((nearHi - farHi) * 100, heightPct) * (180 / Math.PI)}deg` }],
+      }} />
     </View>
   );
 }

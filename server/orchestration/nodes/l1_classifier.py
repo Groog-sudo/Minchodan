@@ -16,26 +16,10 @@ if sys.stdout.encoding != "utf-8":
 # 완료된 29클래스 Object Detection 모델에 존재하지 않는 클래스명이었다(전동킥보드는 실제로는
 # "scooter"이며 이미 반사 게이트 고위험으로 분류됨). server/detection/detection_pipeline.py의
 # _classify_risk와 동일한 실제 클래스 기준 목록으로 정정하여 두 분류기 간 불일치를 해소한다.
-MID_RISK_CLASSES = {
-    "barricade",
-    "bench",
-    "bicycle",
-    "bollard",
-    "carrier",
-    "chair",
-    "fire_hydrant",
-    "kiosk",
-    "movable_signage",
-    "parking_meter",
-    "pole",
-    "potted_plant",
-    "power_controller",
-    "stroller",
-    "table",
-    "traffic_light_controller",
-    "tree_trunk",
-    "wheelchair",
-}
+# [2026-07-14] 29종 객체 탐지는 무조건 반사 경로(비프/햅틱)로 처리되므로,
+# 인지 경로(LLM)의 MID_RISK_CLASSES에서 객체 클래스를 전부 제거합니다.
+# 인지 경로(mid)는 오직 노면 이탈(is_departing_confirmed) 판정만 타겟팅합니다.
+MID_RISK_CLASSES = set()
 
 
 def classify_risk(detected_classes: list) -> str:

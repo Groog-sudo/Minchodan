@@ -84,13 +84,17 @@ def reflex_gate(
     if detection.confidence < min_confidence:
         return None
 
-    # 1-2. 동일 track_id가 최소 연속 프레임 수만큼 유지되지 않았다면 통과 (일시적 오탐 완화)
-    if detection.hit_count < MIN_HIT_COUNT:
-        return None
-
-    # 2. 사물의 바닥(bottom_y)이 화면 하단 15% 영역 안으로 들어왔는지 확인
+    # 2. [2026-07-14] 직접 충돌 위험 객체 필터 기준 완화 (기존 0.95는 너무 가혹해 무반응 발생)
+    # 조건 A: 사물의 바닥(bottom_y)이 화면 하단 18% 영역 안으로 들어왔는가 (인접 위험선)
     bottom_y = detection.bbox.y + detection.bbox.h
-    if bottom_y <= frame_height * (1 - PROXIMITY_THRESHOLD):
+    is_very_close = bottom_y > frame_height * 0.82 if frame_height > 0 else True
+
+    # 조건 B: 사물의 중심(center_x)이 좌우 20% 여백을 제외한 중앙 60% 영역 내에 있는가
+    center_x = detection.bbox.x + detection.bbox.w / 2
+    is_centered = (frame_width * 0.2) <= center_x <= (frame_width * 0.8) if frame_width > 0 else True
+
+    # 두 조건 중 하나라도 충족되지 않으면 즉각 반사(정지)에서 제외
+    if not (is_very_close and is_centered):
         return None
     # =========================================================================
 
@@ -102,11 +106,8 @@ def reflex_gate(
     panning = (center_x / frame_width) * 2 - 1.0
     panning = max(-1.0, min(1.0, panning))
 
-    # 2. Distance 계산: 하단 경계부 밀착 정도에 따른 거리 역산 (0.4m ~ 1.5m 매핑)
-    # PROXIMITY_THRESHOLD는 0.15이므로 bottom_y가 frame_height * 0.85 ~ 1.0 범위에 속함
-    min_gate_y = frame_height * (1 - PROXIMITY_THRESHOLD)
-    range_y = frame_height * PROXIMITY_THRESHOLD
-    ratio = (bottom_y - min_gate_y) / range_y if range_y > 0 else 1.0
+    # 2. Distance 계산: 화면 전체(bottom_y: 0 ~ frame_height)에 따른 거리 역산 (0.4m ~ 1.5m 매핑)
+    ratio = bottom_y / frame_height if frame_height > 0 else 1.0
     ratio = max(0.0, min(1.0, ratio))
 
     # ratio가 1.0일수록 최하단에 인접해있으므로 거리(distance)는 짧아짐 (1.5m -> 0.4m)
@@ -140,4 +141,8 @@ def reflex_gate(
         beep_interval_ms=beep_interval_ms,
         haptic_pattern=haptic_pattern,
         ts=0.0,
+        # 2026-07-14 추가: 관제 콘솔 발화 추적용 객체 정보 전달.
+        track_id=detection.track_id,
+        class_name=detection.class_name,
+        hit_count=detection.hit_count,
     )

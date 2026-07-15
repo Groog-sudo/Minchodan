@@ -184,7 +184,10 @@ class DetectionPipeline:
                     f"ratio={path_risk_ratio:.2f}, level={classify_path_risk(path_risk_ratio)}"
                 )
 
-        if risk_hint in ("mid", "low"):
+        # 2026-07-14 정책: 클라이언트가 실내(is_outdoor=False)로 확정하면 인지 경로
+        # (Redis risk.events → LLM → TTS)도 발행하지 않는다. 실외 전용 det/seg 모델의
+        # 실내 오탐이 TTS로 새는 것을 막기 위함. None(구버전/미판정)은 기존처럼 발행.
+        if risk_hint in ("mid", "low") and is_outdoor is not False:
             await self._publish_cognitive(event_id, detections, surfaces, risk_hint)
 
         res = DetectionResult(

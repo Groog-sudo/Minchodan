@@ -1256,3 +1256,90 @@ td {
   color: var(--color-op-green);
   border: 1px solid rgba(57, 255, 20, 0.3);
 }
+
+/* =========================================================================
+   발화 추적 타임라인 (GuidanceTraceTimeline)
+   트랙 ID별 발화 트리거(연속 히트, 접근, 이탈 등)와 발화문 인과 추적 테이블.
+   ========================================================================= */
+
+.stream-pill {
+  border-radius: 2px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: inherit;
+}
+
+.trace-timeline-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.trace-timeline-table thead th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-tactical);
+  color: var(--color-text-dim, #9CA3AF);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.trace-timeline-table tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(34, 42, 48, 0.5);
+  white-space: nowrap;
+}
+
+.trace-timeline-table tbody tr:hover {
+  background: rgba(249, 183, 0, 0.05);
+}
+
+.trace-time {
+  color: var(--color-text-dim, #9CA3AF);
+  font-family: "Share Tech Mono", "JetBrains Mono", monospace;
+}
+
+.track-badge {
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid;
+  font-family: "Share Tech Mono", "JetBrains Mono", monospace;
+  white-space: nowrap;
+}
+
+.trace-class {
+  color: var(--color-text, #edf2f9);
+  font-weight: 600;
+}
+
+.trace-hit {
+  text-align: center;
+  font-family: "Share Tech Mono", "JetBrains Mono", monospace;
+  color: var(--color-gildang-yellow, #F9B700);
+}
+
+.trace-dir {
+  color: var(--color-text-dim, #9CA3AF);
+}
+
+.trace-trigger {
+  color: var(--color-op-green, #39FF14);
+  font-size: 11px;
+}
+
+.trace-tts {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text, #edf2f9);
+}

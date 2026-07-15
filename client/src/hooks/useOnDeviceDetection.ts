@@ -100,14 +100,13 @@ export function useOnDeviceDetection() {
       // ====================================================================
       // [기존 Beep음 & 햅틱(hapticEngine) 발동 코드 100% 동일하게 보존 및 가동]
       // ====================================================================
+      // [2026-07-14] seg(노면 세그)를 Reflex 즉각 경보 후보에서 제외한다.
+      // 설계 원칙: 노면 클래스는 인지 경로(서버 LLM TTS) 전담이며 즉각 비프/햅틱 발동 불가.
+      // det(object_detection 29클래스)만 반사 경로 위험군 대상이다.
       let highest: OnDeviceDetectionResult | null = null;
-      const all = [...det, ...seg]; // det 우선순위 적용
+      const all = [...det, ...seg];
       for (const d of all) {
-        const isDetHazard = d.model === "object_detection";
-        const isSegHazard =
-          d.model === "segmentation" &&
-          SEG_HAZARD.has(SEG_CLASS_NAMES.indexOf(d.className));
-        if (isDetHazard || isSegHazard) {
+        if (d.model === "object_detection") {
           highest = d;
           if (!audioEngine.isGuidePlaying) {
             console.log(`[Reflex] 위험 탐지: ${d.model}/${d.className} conf=${d.confidence.toFixed(3)} bbox=${JSON.stringify(d.bbox)}`);
