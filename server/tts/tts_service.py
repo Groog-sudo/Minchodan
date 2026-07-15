@@ -486,7 +486,7 @@ class EdgeTTSService(TTSService):
     def _speed_to_rate(speed: float) -> str:
         """RealtimeTTS speed(1.0=표준)를 edge-tts rate 문자열(+0%/-15%)로 변환한다."""
         clamped = max(0.5, min(2.0, float(speed)))
-        rate_pct = int(round((clamped - 1.0) * 100))
+        rate_pct = round((clamped - 1.0) * 100)
         return f"{rate_pct:+d}%"
 
     def _mp3_to_wav(self, mp3_bytes: bytes) -> bytes | None:
