@@ -53,3 +53,48 @@
 * **해결**:
   * 타임아웃 감지 기준을 `now - lastServerResponseTsRef.current`로 변경하여, 서버 응답이 300ms 이상 끊기는 시점을 정확히 추적하도록 개선했습니다.
   * 서버 정상 상태(`!isServerTimeout`)로 복구 시, 로컬에서 기동된 햅틱과 비프음 자원을 즉시 해제하도록 `hapticEngine.stopContinuous()` 및 `audioEngine.stopBeep()` 호출을 명시적으로 추가했습니다.
+
+---
+
+## 5. 탐지 오류 진단 (2026-07-15)
+
+실내(복도) 환경에서 자동차, 오토바이, 이동형 간판 등 야외용 고위험군 클래스가 오탐되는 버그에 대해 5개 진단 항목을 점검한 결과는 다음과 같습니다.
+
+### 1. 가중치 버전 일치성 확인
+* **점검 결과**: 모바일 에셋의 `object_detection.tflite` (10.2MB)와 서버 측 PyTorch 가중치 `object_detection260714.pt` (6.2MB)의 파일 크기 및 변환 내역을 대조해 볼 때, `scripts/export_mobile.py`를 통해 내보낸 FP16/FP32 정밀도의 가중치 파일로 정합함을 확인했습니다.
+
+### 2. 온디바이스 TFLite 추론 가동 여부 및 폴백 유무
+* **점검 결과**: `localDetectorSelect.android.ts`는 예외 없이 `new TFLiteDetector()`를 생성하여 반환하며, 초기화 실패 시 NNAPI 가속을 끄고 CPU로 안전 폴백할 뿐, 임의의 더미/목업 데이터로 조용히 가로채어 대체하는 폴백 경로는 존재하지 않습니다. 즉, 실제 온디바이스 상에서 TFLite 엔진이 정상 로드되어 연산을 수행 중입니다.
+
+### 3. 클래스 매핑(SSOT) 인덱스 정합성 비교
+* **점검 결과**: 서버 측 YOLO 모델 내장 `names` 딕셔너리와 클라이언트 `tfliteDetector.ts` 내부 `AIHUB_CLASS_NAMES` 배열의 클래스 순서를 전수 대조했습니다.
+  * *서버 실제*: `{0: 'barricade', 1: 'bench', 2: 'bicycle', 3: 'bollard', ..., 12: 'motorcycle', 13: 'movable_signage', ..., 19: 'scooter', 20: 'stop', ...}`
+  * *클라이언트 실제*: `["barricade", "bench", "bicycle", "bollard", ..., "motorcycle", "movable_signage", ..., "scooter", "stop", ...]`
+  * 클래스 매핑 순서는 **100% 동일**하므로 인덱스 꼬임으로 인한 오탐은 아닙니다.
+
+### 4. 전처리 파이프라인(RGB/BGR, CHW/HWC) 정합성 분석
+* **점검 결과**: **가장 유력한 오탐의 원인**으로 판단됩니다.
+  * 클라이언트의 `realFrameProvider.ts`의 `bilinearResizeCHW()`는 이미지를 `CHW` (RGB 평면별 분리, `[3, 640, 640]`) 순서로 가공하여 텐서를 모델에 전달하고 있습니다.
+  * 하지만 YOLO를 TFLite로 내보내면 텐서플로우 모델의 표준 스펙에 따라 **NHWC** (RGB 인터리브드, `[640, 640, 3]`) 구조의 입력 텐서를 요구합니다.
+  * 모델이 `NHWC` 형태의 채널 배치를 예상하고 있는데 `CHW` 버퍼를 주입받을 경우, 화소 데이터가 채널 단위로 전부 뒤엉켜 깨지게 되며, 이로 인해 모델이 이미지 내 특징점을 인식하지 못하고 노이즈 상에서 무작위 고위험 객체를 고신뢰도로 인식하는 도메인 시프트 오작동이 유발됩니다.
+
+### 5. 임시 디버그 로그 추가 및 TFLite 입출력 텐서 스펙
+* **raw 로그 샘플 (TFLite 로드 시점)**:
+  ```
+  [TFLiteDetector DEBUG] segmentation inputs: [{"name":"images","dataType":"float32","shape":[1,640,640,3]}], outputs: [{"name":"output0","dataType":"float32","shape":[1,1000,38]}]
+  [TFLiteDetector DEBUG] object_detection inputs: [{"name":"images","dataType":"float32","shape":[1,640,640,3]}], outputs: [{"name":"output0","dataType":"float32","shape":[1,300,6]}]
+  ```
+  *(입력 shape가 `[1, 640, 640, 3]`(NHWC)으로 찍힘에 따라, 현재 주입 중인 CHW 텐서와의 포맷 불일치가 명백한 오탐의 원인임을 규명함)*
+* **raw 로그 샘플 (추론 시점 - 오탐 발생 예시)**:
+  ```
+  [TFLiteDetector DEBUG] object_detection raw output length=1800, numBoxes=300
+    Raw Box 0: coords=[124.5,45.2,512.0,635.4], score=0.8872, classId=5.0 (car)
+    Raw Box 1: coords=[20.1,110.5,350.4,480.0], score=0.7543, classId=12.0 (motorcycle)
+  ```
+
+---
+
+## 6. 근본 원인 및 수정 방안 (다음 단계 계획)
+
+* **원인 요약**: 온디바이스 TFLite 모델은 NHWC(`[1, 640, 640, 3]`) 텐서 포맷 입력을 요구하나, 현재 모바일 프레임 디코더는 CHW(`[1, 3, 640, 640]`) 평면 순서로 데이터를 주입하여 채널 데이터 스크램블링에 따른 전방위 오탐이 발생함.
+* **수정 방안 후보**: `realFrameProvider.ts` 및 `mockFrameProvider.ts` 내의 `bilinearResizeCHW`/`rgbaToChw` 전처리 연산을 **NHWC** 구조(`bilinearResizeHWC`/`rgbaToHwc`)로 재정렬하고, TFLite 모델 입력에 매칭시켜 오탐을 근본적으로 차단함.

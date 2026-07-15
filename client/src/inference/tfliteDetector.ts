@@ -68,6 +68,9 @@ export class TFLiteDetector implements LocalDetector {
   detLoaded = false;
   detShapeLog = "";
 
+  private static detRawLogged = false;
+  private static segRawLogged = false;
+
   private segModel: TensorflowModel | null = null;
   private detModel: TensorflowModel | null = null;
 
@@ -100,6 +103,9 @@ export class TFLiteDetector implements LocalDetector {
       this.detShapeLog = outShape ? `[${outShape.join(",")}]` : "(알 수 없음)";
       this.isLoaded = true;
 
+      console.log(`[TFLiteDetector DEBUG] segmentation inputs: ${JSON.stringify(this.segModel.inputs)}, outputs: ${JSON.stringify(this.segModel.outputs)}`);
+      console.log(`[TFLiteDetector DEBUG] object_detection inputs: ${JSON.stringify(this.detModel.inputs)}, outputs: ${JSON.stringify(this.detModel.outputs)}`);
+
       console.log("[TFLiteDetector] 듀얼 TFLite 모델 로드 성공");
       return true;
     } catch (e) {
@@ -131,6 +137,34 @@ export class TFLiteDetector implements LocalDetector {
         out = new Float32Array(outputs[0]);
       }
       const numBoxes = Math.floor(out.length / attrsPerBox);
+
+      // 5. 원본 프레임 1장의 raw class id + confidence + bbox 좌표 디버그 로깅
+      if (label === "object_detection" && !TFLiteDetector.detRawLogged) {
+        TFLiteDetector.detRawLogged = true;
+        console.log(`[TFLiteDetector DEBUG] ${label} raw output length=${out.length}, numBoxes=${numBoxes}`);
+        for (let i = 0; i < Math.min(numBoxes, 20); i++) {
+          const off = i * attrsPerBox;
+          if (off + 5 >= out.length) break;
+          const x1 = out[off];
+          const y1 = out[off + 1];
+          const x2 = out[off + 2];
+          const y2 = out[off + 3];
+          const score = out[off + 4];
+          const clsId = out[off + 5];
+          console.log(`  Raw Box ${i}: coords=[${x1.toFixed(1)},${y1.toFixed(1)},${x2.toFixed(1)},${y2.toFixed(1)}], score=${score.toFixed(4)}, classId=${clsId}`);
+        }
+      }
+      if (label === "segmentation" && !TFLiteDetector.segRawLogged) {
+        TFLiteDetector.segRawLogged = true;
+        console.log(`[TFLiteDetector DEBUG] ${label} raw output length=${out.length}, numBoxes=${numBoxes}`);
+        for (let i = 0; i < Math.min(numBoxes, 5); i++) {
+          const off = i * attrsPerBox;
+          if (off + 5 >= out.length) break;
+          const slice = Array.from(out.slice(off, off + 10)).map(v => v.toFixed(2));
+          console.log(`  Raw Seg Box ${i}: off=${off}, slice=[${slice.join(", ")}]...`);
+        }
+      }
+
       const results: DetectionResult[] = [];
 
       for (let i = 0; i < numBoxes; i++) {

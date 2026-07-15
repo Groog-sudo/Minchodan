@@ -552,6 +552,9 @@
     - 온디바이스 `CONF_THRESHOLD` 및 `confThreshold` 기본값을 서버와 동일한 `0.35`로 상향하여 저신뢰 오탐 억제.
     - 로컬 위험 검출 시 동일 방향에 대해 3초 쿨다운 디바운스를 적용하여 사전합성 음성 겹침을 방지하고, 연속 2프레임 이상 탐지 시에만 발화하는 안정화 필터 결합.
     - `isServerTimeout` 시간차 버그 수정 및 서버 정상 복구 시 로컬 비프/햅틱 상태를 즉시 클리어(`stopBeep`, `stopContinuous`)하도록 보강.
+  - **온디바이스 오탐 원인 분석 (진단 모드)** (`tfliteDetector.ts`):
+    - TFLite 모델 입력 스펙(NHWC `[1, 640, 640, 3]`)과 프레임 전처리 텐서 공급 레이아웃(CHW `[1, 3, 640, 640]`) 간 채널 배열 불일치(스크램블링)가 실내 야외 객체 오탐의 근본 원인임을 진단함.
+    - 모델 로딩 시 `inputs`/`outputs` 텐서 형태를 로깅하고 첫 프레임 raw bounding box 예측값을 1회 콘솔에 출력하는 임시 디버그 로그 추가.
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
 
