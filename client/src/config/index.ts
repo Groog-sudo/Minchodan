@@ -13,23 +13,21 @@
 export type ServerTransport = "wifi" | "usb";
 export type NetworkMode = "lan" | "ngrok" | "tailscale";
 
-export const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "lan") as NetworkMode;
+export const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "tailscale") as NetworkMode;
 export const SERVER_PORT = process.env.EXPO_PUBLIC_SERVER_PORT ?? "8000";
 
 /** 평상시: PC 모바일 핫스팟(공기계→노트북). Windows 기본 게이트웨이. */
 export const WIFI_HOST =
   process.env.EXPO_PUBLIC_WIFI_HOST ??
   process.env.EXPO_PUBLIC_LAN_IP ??
-  "192.168.0.163";
+  "222.112.165.158";
 
 /** 개발: USB + `adb reverse tcp:8000 tcp:8000` 일 때. */
 export const USB_HOST = process.env.EXPO_PUBLIC_USB_HOST ?? "127.0.0.1";
 
 export const TAILSCALE_HOST =
   process.env.EXPO_PUBLIC_TAILSCALE_HOST ??
-  process.env.EXPO_PUBLIC_WIFI_HOST ??
-  process.env.EXPO_PUBLIC_LAN_IP ??
-  WIFI_HOST;
+  "100.82.167.31";
 
 export const NGROK_DOMAIN =
   process.env.EXPO_PUBLIC_NGROK_DOMAIN ?? "partake-primer-surround.ngrok-free.dev";

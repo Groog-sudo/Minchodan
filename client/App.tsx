@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { View, StyleSheet, Platform, StatusBar } from "react-native";
+import { View, StyleSheet, Platform, StatusBar, AppState } from "react-native";
 import { setAudioModeAsync } from "expo-audio";
 import * as ExpoSplashScreen from "expo-splash-screen";
 
@@ -78,6 +78,15 @@ export default function App() {
         clearTimeout(onboardingTimer);
       }
     };
+  }, []);
+
+  const [appState, setAppState] = useState(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      setAppState(nextAppState);
+    });
+    return () => subscription.remove();
   }, []);
 
   return (
