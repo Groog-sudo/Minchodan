@@ -1,0 +1,6 @@
+source_weights=object_detection260714.pt / segmentation260714.pt
+exported_at=2026-07-15
+det_coreml=nms=True
+seg_coreml=nms=False channels-first [1,40,8400]
+det_tflite=nms=True [1,300,6]
+seg_tflite=channels-first [1,40,8400]

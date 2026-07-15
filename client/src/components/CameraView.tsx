@@ -1090,7 +1090,7 @@ export function CameraView() {
           </View>
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
-        {/* ROI 사다리꼴 오버레이: 주행 통로 시각화 (탐지 활성 시에만 표시) */}
+        {/* 실제 화면 픽셀에 투영한 원근 주행 통로 (탐지 활성 시에만 표시) */}
         {detectionEnabled && !depthMode && <ROIOverlay />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
@@ -1412,9 +1412,8 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 }
 
 /**
- * ROIOverlay: 주행 통로 사다리꼴 ROI를 화면에 반투명 테두리로 시각화한다.
- * path_risk.py의 PATH_ROI_NEAR_BAND / PATH_ROI_FAR_BAND 와 동일 좌표 기준.
- * BBoxOverlay와 동일한 absoluteFill + 절대좌표 View 방식을 사용한다.
+ * 보행 통로 ROI를 실제 카메라 픽셀 좌표로 투영한다.
+ * 같은 거리 간격이 소실점에서 촘촘해 보이도록 y=t² 원근 눈금을 함께 표시한다.
  */
 function ROIOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -1425,6 +1424,8 @@ function ROIOverlay() {
   
   const LINE_W = 2;
   const COLOR  = "rgba(249, 183, 0, 0.75)"; // COLOR_GILDANG_YELLOW 반투명
+  const GRID_COLOR = "rgba(249, 183, 0, 0.38)";
+  const DEPTH_STEPS = [0.22, 0.45, 0.7];
 
   return (
     <View 
@@ -1496,6 +1497,29 @@ function ROIOverlay() {
               }} />
             );
           })()}
+          {/* 소실점 쪽은 촘촘하고 발밑 쪽은 넓어지는 원근 깊이 눈금 */}
+          {DEPTH_STEPS.map((depth) => {
+            const perspective = depth * depth;
+            const topY = yTopPct * size.height;
+            const bottomY = yBotPct * size.height - LINE_W;
+            const left = (farLo + (nearLo - farLo) * perspective) * size.width;
+            const right = (farHi + (nearHi - farHi) * perspective) * size.width;
+            const top = topY + (bottomY - topY) * perspective;
+            return (
+              <View
+                key={depth}
+                style={{
+                  position: "absolute",
+                  left,
+                  top,
+                  width: right - left,
+                  height: LINE_W,
+                  borderRadius: LINE_W / 2,
+                  backgroundColor: GRID_COLOR,
+                }}
+              />
+            );
+          })}
         </>
       )}
     </View>
