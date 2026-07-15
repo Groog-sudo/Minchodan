@@ -40,9 +40,31 @@ async def fallback_node(state: dict) -> dict:
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
+    detected_classes = state.get("detected_classes", [])
+    clock_direction = state.get("clock_direction", "")
+
+    # [2026-07-14] 장애물이 탐지되었을 때는 정적 정지 명령 대신 동적 설명+방향 멘트로 폴백
+    if detected_classes:
+        primary_obj = detected_classes[0]
+        korean_names = {
+            "car": "차량", "bus": "버스", "truck": "트럭", "motorcycle": "오토바이", "scooter": "킥보드",
+            "bicycle": "자전거", "person": "보행자", "bollard": "볼라드", "pole": "기둥", "bench": "벤치",
+            "chair": "의자", "carrier": "캐리어", "dog": "개", "cat": "고양이", "stroller": "유모차",
+            "wheelchair": "휠체어", "barricade": "바리케이트", "fire_hydrant": "소화전", "kiosk": "키오스크",
+            "movable_signage": "이동식 표지판", "parking_meter": "주차요금기", "potted_plant": "화분",
+            "power_controller": "배전반", "table": "테이블", "traffic_light": "신호등",
+            "traffic_light_controller": "제어기", "traffic_sign": "표지판", "tree_trunk": "나무",
+            "stop": "정지선"
+        }
+        kor_name = korean_names.get(primary_obj, primary_obj)
+        dir_str = f"{clock_direction} 방향" if clock_direction else "전방"
+        fallback_msg = f"{dir_str} {kor_name} 주의하세요"
+    else:
+        fallback_msg = FALLBACK_MESSAGE
+
     return {
-        "guidance_text": FALLBACK_MESSAGE,
-        "direction": "정지",
+        "guidance_text": fallback_msg,
+        "direction": "우회" if clock_direction else "정지",
         "used_static_fallback": True,
         "verified": True,
     }

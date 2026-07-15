@@ -66,6 +66,8 @@ class DetectionConsumer:
         # DB 로그 저장은 반사/인지 응답 전송 경로를 막지 않도록 fire-and-forget으로
         # 실행한다 - 참조를 들고 있지 않으면 태스크가 GC되어 조기 취소될 수 있다.
         self._log_tasks: set[asyncio.Task] = set()
+        # 반사 경보 후 800ms 지연 인지 가이드도 동일한 이유로 참조를 들고 있어야 한다.
+        self._delayed_guide_tasks: set[asyncio.Task] = set()
         # device_id별 마지막 인지 가이드 전송 시각(초)과 그 오디오 재생 길이(초).
         # 이전 안내 음성이 끝나기 전에 다음 안내가 겹쳐 재생을 끊는 문제를 막기 위한
         # 간격 쿨다운. 고정값 하나로는 문장 길이에 따라 달라지는 실제 WAV 재생 시간을
@@ -188,6 +190,8 @@ class DetectionConsumer:
         self._cognitive_task = None
         for log_task in list(self._log_tasks):
             log_task.cancel()
+        for guide_task in list(self._delayed_guide_tasks):
+            guide_task.cancel()
         logger.info("[DetectionConsumer] 중지")
 
     def _schedule_log_persist(
@@ -366,6 +370,20 @@ class DetectionConsumer:
                 decode_ms=processed.processing_time_ms,
                 pipeline_start=pipeline_start,
             )
+            # [2026-07-14] 반사 경보(정지) 발동 800ms 후 인지(설명/우회방향) 가이드를 후속 트리거
+            delayed_guide_task = asyncio.create_task(
+                self._trigger_delayed_cognitive_guide(
+                    device_id=processed.device_id,
+                    alert=result,
+                    detections=detections,
+                    surfaces=surfaces,
+                    frame=frame,
+                    decode_ms=processed.processing_time_ms,
+                    pipeline_start=pipeline_start,
+                )
+            )
+            self._delayed_guide_tasks.add(delayed_guide_task)
+            delayed_guide_task.add_done_callback(self._delayed_guide_tasks.discard)
         elif isinstance(result, DetectionResult):
             self._last_status.update(
                 {
@@ -595,6 +613,40 @@ class DetectionConsumer:
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
+
+    async def _trigger_delayed_cognitive_guide(
+        self,
+        device_id: str,
+        alert: ReflexAlert,
+        detections: list,
+        surfaces: list,
+        frame: np.ndarray | None,
+        decode_ms: float,
+        pipeline_start: float | None,
+    ) -> None:
+        """반사 경보(비프/햅틱) 발동 800ms 후 인지 가이드(LLM TTS 우회)를 연계 트리거한다."""
+        await asyncio.sleep(0.8)  # 반사 진동/비프음 인지용 딜레이
+
+        # 29종 객체 탐지 클래스들을 모아 DetectionResult 스키마로 인지 경로에 피딩
+        cognitive_res = DetectionResult(
+            event_id=alert.event_id,
+            detections=detections,
+            surface=surfaces,
+            risk_hint="high",  # 반사 경보 직후 상황임을 명시하기 위해 high 위험도 부여
+            inference_ms=alert.inference_ms,
+            is_departing=False,
+            braille_direction="",
+        )
+
+        # 인지 경로 전송
+        await self._send_cognitive_guide(
+            device_id=device_id,
+            result=cognitive_res,
+            frame=frame,
+            decode_ms=decode_ms,
+            pipeline_start=pipeline_start,
+            departure_confirmed=False,
+        )
 
     async def _send_cognitive_guide(
         self,

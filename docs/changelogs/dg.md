@@ -465,4 +465,74 @@
     - **도커 이미지 ffmpeg 탑재**: `docker/Dockerfile`에 `ffmpeg` 패키지를 apt-get 설치 항목에 포함시키고, 현재 기동 중인 fastapi 컨테이너에도 직접 ffmpeg 바이너리를 수동 주입 설치하여 즉시 반영하였습니다.
     - **클라이언트 송신 가드레일 완화**: `client/src/hooks/useSttRecorder.ts`에서 짧은 오디오를 전송 전에 차단하던 `capture_truncated` 가드레일을 제거하여 서버 Whisper VAD(vad_filter=True)에 처리를 위임하고, 안정적인 짧은 웨이크워드 전송을 보장하였습니다.
 - **관련 파일**: `server/api/ws_router.py`, `docker/Dockerfile`, `client/src/hooks/useSttRecorder.ts`
-- **검증 결과**: 컨테이너 내 `SttService.transcribe_file` 호출을 통한 `.m4a` 오디오 디코딩 및 whisper 전사 정상 작동 확인.
+- **검증 결과**: 컨테이너 내 `SttService.transcribe_file` 호출을 통한 `.m4a` 오디오 디코딩 및 whisper 전사 정상 작동 확인.
+
+---
+
+### 2026-07-14 | 모바일/AI | Android 온디바이스 탐지 불작동 원인 조사(NNAPI 비활성화) 및 ROI 시각화/판정 신규 구현
+
+- **커밋**: `fix: disable nnapi delegate for android tflite and implement roi overlay with path filtering`
+- **변경 내용**:
+  - **Android NNAPI 델리게이트 비활성화 (탐지 불작동 1단계 조사)**:
+    - `client/src/inference/tfliteDetector.ts`: `ACCELERATION_DELEGATES`의 `android: ["nnapi"]`를 `android: []`로 변경하여 CPU 폴백을 강제함. NNAPI 드라이버 호환성 문제가 탐지 미작동의 원인으로 의심됨. 재빌드 후 로그로 효과를 확인해야 함.
+    - `detect()` 함수 진입부에 입력 shape 검증 로그(`frame.length === 1,228,800` 여부)를 추가하여 shape 불일치를 로그로 즉시 확인 가능하게 함.
+  - **ROI 사다리꼴 상수 추가 (서버-클라이언트 좌표 정합)**:
+    - `client/src/components/CameraView.tsx`에 `server/detection/path_risk.py`의 `PATH_ROI_NEAR_BAND=(0.20, 0.80)`, `PATH_ROI_FAR_BAND=(0.38, 0.62)`, `PATH_ROI_FAR_Y_RATIO=0.35`와 동일한 상수를 추가하여 좌표 계약을 일치시킴.
+  - **ROI 내부 판정(point-in-polygon) 로직 추가**:
+    - `roiPolygon()` 함수: NEAR/FAR 상수로 사다리꼴 4꼭짓점 정규화 좌표를 반환.
+    - `pointInPolygon()` 함수: ray-casting 알고리즘으로 bbox 중심점이 ROI 내부에 있는지 판정.
+    - `handleFrame`의 `validDetections` 필터에 ROI 조건 추가 — 중심점이 ROI 밖인 객체는 반사 경로에서 제외됨.
+  - **ROIOverlay 컴포넌트 신규 작성**:
+    - 사다리꼴 4변을 BBoxOverlay와 동일한 `absoluteFill + 절대좌표 View` 방식으로 황금색(`rgba(249,183,0,0.75)`) 반투명 테두리로 렌더링.
+    - 탐지 활성(`detectionEnabled=true`) 상태에서만 카메라 위에 표시.
+- **관련 파일**: `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`
+- **검증 결과**: TypeScript 컴파일 정합성 확인 필요. Android 실기기 재빌드 후 Logcat `[TFLiteDetector]` 로그 및 ROI 오버레이 시각 확인 예정.
+
+---
+
+### 2026-07-14 | 모바일/AI | 노면 클래스 반사 경로 완전 제외 및 ROI/슬라이딩 윈도우 임계값 정합화
+
+- **커밋**: `fix: exclude seg classes from reflex path and fix roi/smoothing thresholds (P1-P4 + seg hazard gate)`
+- **변경 내용**:
+  - **P1 - 노면 세그 반사 경로 완전 제외** (`pathObstacleDetector.ts`): roadway/caution 전체를 depthMap 투영에서 제외. 노면은 서버 LLM TTS(인지 경로) 전담 (MDPI 2023 논문 기준).
+  - **P2 - ROI top-y 정합화** (`pathObstacleDetector.ts`): top-y 320px(50%) → 224px(35%). 서버 `PATH_ROI_FAR_Y_RATIO=0.35`와 일치.
+  - **P3 - 노면 신뢰도 임계값 상향** (`CameraView.tsx`): `OUTDOOR_SURFACE_MIN_CONFIDENCE` 0.15 → 0.35.
+  - **P4 - 슬라이딩 윈도우 폴백 수정** (`pathObstacleDetector.ts`): 3프레임 미달 시 `frameState` → `"CLEAR"` 폴백.
+  - **seg hazard gate 제거** (`useOnDeviceDetection.ts`): `[Reflex]` 위험 탐지 후보에서 seg 제거. roadway/caution이 Reflex 1순위로 올라 연속 STOP 경보를 유발하던 근본 원인 차단.
+- **진단 배경**: YouTube 영상 테스트 시 roadway(conf=0.487) 전체 화면 오탐으로 비프/햅틱 끊임없이 울림. 논문 조사(MDPI 2023, drpress 2023) 기반 P0~P4 순차 적용.
+- **관련 파일**: `client/src/inference/pathObstacleDetector.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useOnDeviceDetection.ts`
+- **검증 결과**: 실기기 보행 테스트 필요. 여전히 오경보 있으면 `near_07/near_15` 임계값 상향 검토.
+
+---
+
+### 2026-07-14 | 서버/모바일 | 29종 객체 반사 경로 일원화, 신규 모델 가중치 적용 및 미터(m) ROI 설계
+
+- **커밋**: `fix: unify 29-class objects to reflex path and apply 0714 model weights`
+- **변경 내용**:
+  - **반사 경로 일원화 및 제약 해제** (`reflex_gate.py`):
+    - `MIN_HIT_COUNT`(동일 track_id 3프레임 연속 대기) 및 `PROXIMITY_THRESHOLD`(화면 하단 15% 밀착) 제한을 해제함.
+    - 객체가 검출되면 화면 위치와 누적 프레임에 상관없이 즉각 반사 비프/햅틱 경보가 작동하도록 수정.
+    - `distance` 계산용 ratio 범위를 국소 15%에서 화면 전체(`0` ~ `frame_height`)로 선형 매핑(1.5m ~ 0.4m)되도록 갱신.
+  - **L1 분류기(인지 경로) 객체 탐지 제거** (`l1_classifier.py`):
+    - 29종 객체는 전원 즉각 반사 경로로만 교신하고 인지 경로(LLM 상세가이드)로 중복 우회하는 현상을 차단하기 위해 `MID_RISK_CLASSES` 내 18개 클래스명을 비움 (`set()`).
+    - 이로 인해 인지 경로(mid)는 오직 노면 이탈(`is_departing_confirmed` = True) 판정만 전담하게 됨.
+  - **신규 파인튜닝 가중치 적용** (`.env`, `config.py`):
+    - 7월 14일 새로 파인튜닝 완료된 `object_detection260714.pt` (29클래스 객체) 및 `segmentation260714.pt` (4클래스 노면) 가중치 경로로 업데이트 적용.
+  - **정지 후 우회 안내 시퀀싱 및 프롬프트 튜닝**:
+    - 반사(비프/햅틱)로 사용자가 멈춘 뒤 후속 설명이 부드럽게 이어지도록 `consumer.py`에 `_trigger_delayed_cognitive_guide` 비동기 헬퍼를 신설하여 반사 알림 800ms 후 인지 가이드(LLM TTS)를 지연 실행.
+    - `l2_generator.py`의 `GUIDANCE_SYSTEM_PROMPT`를 수정하여 정지 관련 명령("정지하세요", "천천히 멈추세요" 등)을 금지하고, 장애물 종류 및 시계방향 우회 방향("N시 방향 [장애물명] 주의/우회") 설명에 집중하게 함.
+  - **직접 충돌 위험 객체 필터 적용** (`reflex_gate.py`):
+    - 무차별적인 비프음 방지 및 인지 큐 지연 해소를 위해, 반사 조건을 '하단 5% 이내(극도 인접)' 및 '좌우 30% 여백을 제외한 중앙 40% 영역(정면 충돌 경로)'을 동시에 충족하는 사물로 재제한.
+    - 그 외의 사물들은 즉시 비프음(반사)을 발생시키지 않고 800ms 후 인지 경로를 통해 우회 안내 음성만 제공.
+  - **사실관계 검증 완료**:
+    - Android 폰의 `float32` 입력이 `Float32Array(0)`으로 비어있음에도 `roadway` 오탐이 나왔던 현상은, `fast-tflite` 네이티브 모듈에 0바이트 버퍼 전달 시 예외를 내지 않고 텐서 출력을 반환해 모바일 로컬 `detectFrame` 단에서 오탐이 직접 발생하였음을 규명.
+  - **실거리(m) 기반 ROI 공식 설계**:
+    - iOS의 `depthProbe` 3스팟 측정치를 활용한 실시간 ROI y-band 선형보간법 설계.
+    - Android용 고정 장치 기하학 틸트각 변환 수식 $D(y) = h / \tan(\theta - FOV_v/2 + y \cdot FOV_v)$을 도출하여 화면 비율 대신 실제 미터 단위를 기준으로 ROI(0.5m ~ 1.5m)를 재정의하도록 함.
+  - **문서화** (`stage3_detection_design.md`):
+    - 위 아키텍처/가중치/시퀀싱/가드 필터 변경 이력을 3단계 설계서 변경 이력 단락에 정식 반영하여 누락 없이 일괄 업데이트.
+- **관련 파일**: `server/detection/gates/reflex_gate.py`, `server/orchestration/nodes/l1_classifier.py`, `.env`, `server/detection/config.py`, `docs/stage-guides/stage3_detection_design.md`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`
+- **검증 결과**: git push 완료 및 local tsc 컴파일 무결성 검증.
+
+
+

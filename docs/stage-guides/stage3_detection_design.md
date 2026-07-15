@@ -1,7 +1,7 @@
 # Minchodan 3단계 탐지·분할·게이트 백엔드 설계서
 
-> **작성일**: 2026-06-25
-> **버전**: v0.3.0 (2026-07-07 실제 코드 기준 대량 정정: ByteTrackTracker 역할, ReflexAlert 스키마, HIGH_RISK_CLASSES 5종, direction/alert_id 실제 값, 노면 4클래스, 모델 가중치 경로)
+> **작성일**: 2026-07-14
+> **버전**: v0.3.1 (2026-07-14 29종 객체-반사 경로 일원화 설계 보강, PROXIMITY_THRESHOLD 및 MIN_HIT_COUNT 가드 제거, 새 모델 가중치(0714 버전) 교체 적용)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 3단계 (v1.1 듀얼헤드 + 이중 게이트)
 > **스킬 참조**: [`.agents/skills/yolo-obstacle-detection/SKILL.md`](../.agents/skills/yolo-obstacle-detection/SKILL.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md)
@@ -579,7 +579,25 @@ redis_bus.expire(f"ctx:{track_id}", 30)
 
 ---
 
-## 13. 참고 자료
+## 13. 변경 이력 (Changelog)
+
+### [v0.3.1] - 2026-07-14
+- **29종 객체-반사 경로 일원화**: 29종 위험 사물이 검출되었을 때 인지 경로(LLM)로 인텐트가 중복 우회하는 문제를 해결하기 위해, `l1_classifier.py`의 `MID_RISK_CLASSES`에서 객체 클래스들을 전원 배제함. 인지 경로(mid)는 오직 노면 이탈(`is_departing_confirmed`) 판정만 전담하도록 변경.
+- **정지 후 우회 안내 시퀀싱 구현**: 
+  - 반사(비프/햅틱)로 사용자가 멈추는 즉시 인지(음성 가이드)가 겹쳐서 모호한 안내가 나가지 않도록 구조를 이원화함.
+  - `consumer.py`에서 `ReflexAlert` 발동 800ms 후 비동기 지연 태스크(`_trigger_delayed_cognitive_guide`)를 통해 후속 설명("OO 발견, N시 방향으로 우회하세요")을 생성하도록 설계.
+  - `l2_generator.py`의 `GUIDANCE_SYSTEM_PROMPT`를 수정하여 이미 정지한 사용자에게 모호한 "정지/멈추세요" 명령을 중복 발화하지 않고 장애물 정보 및 우회 방향 설명에 집중하도록 프롬프트를 튜닝함.
+  - LLM 호출 실패 또는 L3 가드레일 탈락 시에도 최후 안전망인 `fallback_node.py`가 고정 정지 메시지("천천히 멈추세요") 대신, **"N시 방향 [장애물명] 주의하세요"** 형태의 동적 우회/주의 멘트를 동적으로 조합해 생성하도록 리팩토링함.
+- **직접 충돌 위험 객체 필터 추가 및 완화 보정** (`reflex_gate.py`):
+  - 무차별적인 반사 경보로 인한 피로 고갈 및 큐 지연을 막기 위해 반사 조건을 재조정함.
+  - **조건 1**: 사물의 바닥(bottom_y)이 화면 하단 18% 이내로 인접한 물체 (`bottom_y > frame_height * 0.82`).
+  - **조건 2**: 사물의 중심(center_x)이 좌우 20% 여백을 제외한 중앙 60% 충돌 회랑 내에 있는 물체 (`0.2 * width <= center_x <= 0.8 * width`).
+  - 위 두 조건(적정 위험 인접 + 정면 충돌 방향)을 모두 만족할 때만 즉각 비프음(반사)을 발생시키고, 그 외의 원경/측면 사물은 비프음 없이 800ms 뒤 부드러운 우회 가이드 음성으로만 설명하도록 차별화함 (실기기 0.95 기하 기준이 너무 가혹했던 버그 수정).
+- **신규 파인튜닝 가중치 적용**: 파인튜닝 가중치 파일명을 `.env` 및 `config.py` 기본값에 `object_detection260714.pt` 및 `segmentation260714.pt`로 업데이트 반영함.
+
+---
+
+## 14. 참고 자료
 
 | 문서 | 파일 | 참조 내용 |
 | --- | --- | --- |

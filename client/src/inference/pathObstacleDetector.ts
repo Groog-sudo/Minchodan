@@ -27,12 +27,13 @@ class PathObstacleDetector {
     const y = row * CELL_PIXELS + CELL_PIXELS / 2;
     const x = col * CELL_PIXELS + CELL_PIXELS / 2;
 
-    // 주행 앞선 영역만 타겟팅 (하단 절반 영역인 320~640px)
-    if (y < 320 || y > 640) return false;
+    // [P2 2026-07-14] top-y를 35%(224px)로 수정 - 서버 PATH_ROI_FAR_Y_RATIO=0.35 와 정합
+    // 기존 50%(320px)는 원경 ROI를 과도하게 제외함.
+    if (y < 224 || y > 640) return false;
 
-    // 원근 왜곡을 감안한 좌우 임계값 동적 계산 (y=320일 때 너비 160, y=640일 때 너비 400)
-    const progress = (y - 320) / 320; // 0.0 ~ 1.0
-    const halfWidth = 80 + progress * 120; // y=320일 때 80px(좌우 합 160), y=640일 때 200px(좌우 합 400)
+    // 원근 왜곡 보정: y=224(상단) 너비 96px, y=640(하단) 너비 384px
+    const progress = (y - 224) / 416; // 0.0 ~ 1.0
+    const halfWidth = 48 + progress * 144;
 
     const centerX = 320;
     return x >= centerX - halfWidth && x <= centerX + halfWidth;
@@ -44,10 +45,10 @@ class PathObstacleDetector {
   private isInLeftMask(col: number, row: number): boolean {
     const y = row * CELL_PIXELS + CELL_PIXELS / 2;
     const x = col * CELL_PIXELS + CELL_PIXELS / 2;
-    if (y < 320 || y > 640) return false;
+    if (y < 224 || y > 640) return false;
 
-    const progress = (y - 320) / 320;
-    const halfWidth = 80 + progress * 120;
+    const progress = (y - 224) / 416;
+    const halfWidth = 48 + progress * 144;
     const centerX = 320;
 
     return x < centerX - halfWidth;
@@ -59,10 +60,10 @@ class PathObstacleDetector {
   private isInRightMask(col: number, row: number): boolean {
     const y = row * CELL_PIXELS + CELL_PIXELS / 2;
     const x = col * CELL_PIXELS + CELL_PIXELS / 2;
-    if (y < 320 || y > 640) return false;
+    if (y < 224 || y > 640) return false;
 
-    const progress = (y - 320) / 320;
-    const halfWidth = 80 + progress * 120;
+    const progress = (y - 224) / 416;
+    const halfWidth = 48 + progress * 144;
     const centerX = 320;
 
     return x > centerX + halfWidth;
@@ -84,16 +85,12 @@ class PathObstacleDetector {
       // 원근 역산에 기반한 객체 거리 추정 (0.3m ~ 3.0m)
       let distance = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
 
-      // 세그멘테이션 노면 caution/roadway는 면적이 넓더라도 상대적인 경계 위험 거리를 1.2m ~ 1.5m로 투영
-      if (d.model === "segmentation") {
-        if (d.className === "caution") {
-          distance = Math.min(distance, 1.5);
-        } else if (d.className === "roadway") {
-          distance = Math.min(distance, 1.2);
-        } else {
-          continue; // sidewalk_normal, braille_normal은 진행 가능한 안전 보도이므로 장애물 뎁스 투영 제외
-        }
-      }
+      // [P1 2026-07-14] 노면 세그(roadway/caution/sidewalk_normal/braille_normal) 전체를
+      // depthMap 반사 경보 경로에서 제외한다.
+      // 설계 원칙(MDPI 2023): 노면 클래스는 인지 경로(서버 LLM TTS) 전담이며,
+      // 즉각 비프/햅틱(반사 경로)을 발동해서는 안 된다.
+      // 노면 위험 판정은 server/detection/path_risk.py에서 별도 수행한다.
+      if (d.model === "segmentation") continue;
 
       // 객체 바운딩 박스가 덮고 있는 격자 범위 계산
       const colStart = Math.max(0, Math.floor(x / CELL_PIXELS));
@@ -177,9 +174,10 @@ class PathObstacleDetector {
       }
     }
 
-    // 5프레임 중 3프레임 이상 매칭 조건을 엄격히 준수
+    // [P4 2026-07-14] 5프레임 중 3프레임 미달 시 CLEAR로 폴백 (방어적 설계).
+    // 기존 frameState 폴백은 단발 오탐을 스무딩 없이 그대로 반영해 오경보를 유발했다.
     if (maxCount < 3) {
-      smoothedState = frameState;
+      smoothedState = "CLEAR";
     }
 
     // 6. 회피 공간 계산 (30th percentile 기법 적용으로 소형 돌출 장애물 누락 차단)

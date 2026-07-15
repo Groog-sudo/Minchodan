@@ -12,7 +12,8 @@ const { SceneClassifyBridgeModule } = NativeModules;
 
 const ACCELERATION_DELEGATES: TensorflowModelDelegate[] = Platform.select({
   ios: ["core-ml"],
-  android: ["nnapi"],
+  // android: NNAPI 호환성 문제 우회 - CPU 모드로 강제해 탐지 미작동 원인 조사 (2026-07-14)
+  android: [],
   default: [],
 }) ?? [];
 
@@ -31,7 +32,7 @@ const AIHUB_CLASS_NAMES = [
   "traffic_sign", "tree_trunk", "truck", "wheelchair"
 ];
 
-const CONF_THRESHOLD = 0.50; // 오탐 방지를 위해 0.25에서 0.50으로 상향 (되돌림 복구)
+const CONF_THRESHOLD = 0.25; // 오탐 방지를 위해 0.25에서 0.50으로 상향 (되돌림 복구)
 const IOU_THRESHOLD = 0.45; // 중복 박스 제거(NMS) 기준
 
 function calculateIoU(box1: { x: number, y: number, w: number, h: number }, box2: { x: number, y: number, w: number, h: number }) {
@@ -168,6 +169,15 @@ export class TFLiteDetector implements LocalDetector {
 
   async detect(frame: Float32Array, base64: string | null): Promise<DualDetectionResult> {
     if (!this.isLoaded) return { seg: [], det: [] };
+
+    // 입력 shape 검증 로그: 640x640x3 = 1,228,800 이어야 모델 입력 스펙과 정합
+    const expectedLen = 640 * 640 * 3;
+    if (frame.length !== expectedLen) {
+      console.warn(`[TFLiteDetector] 입력 shape 불일치: 실제=${frame.length}, 기대=${expectedLen}`);
+    } else {
+      console.log(`[TFLiteDetector] 입력 shape OK: ${frame.length}`);
+    }
+
 
     const segFrame = frame.slice(0);
     const [seg, det, scene] = await Promise.all([
