@@ -41,8 +41,9 @@ kb와 dg2는 같은 조상 커밋(`62b5aa4`)에서 독립적으로 분기해, iO
 | 계층 | 경로 | 소유 | 변경 규칙 |
 | --- | --- | --- | --- |
 | 카메라 캡처 오케스트레이션 | `client/src/hooks/useCamera.ts` | **공유** (§4 인터페이스로 축소 후) | 인터페이스 시그니처 변경 시 양측 합의 필수. 구현 세부는 건드리지 않는다 |
-| 카메라 캡처 실구현 (신규) | `client/src/services/frameCapture.ios.ts` | iOS 전용 | iOS 작업자 단독 소유 |
-| 카메라 캡처 실구현 (신규) | `client/src/services/frameCapture.android.ts` | Android 전용 | Android 작업자 단독 소유 |
+| 카메라 캡처 실구현 (신규) | `client/src/services/frameCaptureProviderSelect.ios.ts` | iOS 전용 | iOS 작업자 단독 소유 |
+| 카메라 캡처 실구현 (신규) | `client/src/services/frameCaptureProviderSelect.android.ts` | Android 전용 | Android 작업자 단독 소유 |
+| 카메라 캡처 공통 인터페이스 | `client/src/services/frameCaptureProvider.ts` | 공유 | 인터페이스/`captureViaTakePhoto` 변경 시 양측 합의 |
 | iOS 네이티브 Frame Processor | `client/ios/ReflexFrameProcessorPlugin.swift`, `.m` | iOS 전용 | iOS 작업자 단독 소유 |
 | Android 네이티브 Frame Processor (신규 필요) | `client/android/app/src/main/java/.../ReflexFrameProcessorPlugin.kt` | Android 전용 | Android 작업자 단독 소유 |
 | 온디바이스 추론 인터페이스 | `client/src/inference/localDetector.ts`, `types.ts` | 공유 (계약) | §5 표 변경 시에만, 양측 합의 필수 |
@@ -70,11 +71,11 @@ kb와 dg2는 같은 조상 커밋(`62b5aa4`)에서 독립적으로 분기해, iO
 ```mermaid
 graph TD
     Hook["useCamera.ts<br/>(공통) 타이머·동적 FPS·Mock 분기<br/>오케스트레이션만 담당"]
-    Interface["FrameCaptureProvider (인터페이스)<br/>startStream() / capturePhoto() / stop()"]
-    IOSImpl["frameCapture.ios.ts<br/>useFrameProcessor + reflexFrameCapture 플러그인"]
-    AndroidImpl["frameCapture.android.ts<br/>(과도기) takePhoto 기반<br/>(목표) Kotlin Frame Processor 플러그인"]
+    Interface["FrameCaptureController (인터페이스)<br/>supportsStream / frameProcessor / capturePhoto()"]
+    IOSImpl["frameCaptureProviderSelect.ios.ts<br/>useFrameProcessor + reflexFrameCapture 플러그인"]
+    AndroidImpl["frameCaptureProviderSelect.android.ts<br/>(과도기) takePhoto 기반<br/>(목표) Kotlin Frame Processor 플러그인"]
 
-    Hook -->|"provider.startStream(onFrame)"| Interface
+    Hook -->|"useFrameCaptureProvider()"| Interface
     Interface -->|"Metro .ios 확장자"| IOSImpl
     Interface -->|"Metro .android 확장자"| AndroidImpl
     IOSImpl -->|"FrameData"| Hook
@@ -93,7 +94,7 @@ graph TD
 ### 4.3 인터페이스 정의 (제안)
 
 ```typescript
-// client/src/services/frameCapture.ts (공통 — 인터페이스 + Metro 진입점)
+// client/src/services/frameCaptureProvider.ts (공통 — 인터페이스 + takePhoto 공용 로직)
 
 import type { StreamType } from "../types/detection";
 
@@ -104,49 +105,45 @@ export interface FrameData {
   jpegBytes: Uint8Array | null;
 }
 
-export interface FrameCaptureProvider {
+export interface FrameCaptureController {
   /**
-   * 연속 스트림 캡처 시작 (프레임 프로세서 기반, 플랫폼 네이티브가 프레임을 밀어 넣는 방식).
-   * 네이티브 플러그인이 없는 플랫폼/상황에서는 null을 반환해 상위 계층이 capturePhoto()
-   * 폴백 루프로 전환하도록 한다 (방어적 코딩, course_codebase_guide.md §17.2 준수).
+   * true면 <Camera>가 frameProcessor(연속 스트림)로 구동돼야 한다.
+   * 네이티브 플러그인이 없는 플랫폼은 false를 두고 capturePhoto() 경로를 쓴다.
    */
-  startStream(onFrame: (frame: FrameData) => void, intervalMs: number): boolean;
-
-  /** 단발 촬영 기반 캡처 (레거시/폴백 경로). 스트림을 지원하지 않는 플랫폼의 기본 경로. */
-  capturePhoto(stream: StreamType): Promise<FrameData | null>;
-
-  /** 스트림 캡처 지원 여부 (상위 훅이 타이머 루프를 돌릴지 결정하는 데 사용) */
   readonly supportsStream: boolean;
-
-  stop(): void;
+  readonly frameProcessor: unknown | undefined;
+  capturePhoto(stream: StreamType): Promise<FrameData | null>;
 }
 
-export { createFrameCaptureProvider } from "./frameCaptureSelect";
+export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 ```
 
 ```typescript
-// client/src/services/frameCaptureSelect.ts (공통 진입 — Metro가 .ios/.android로 자동 분기)
+// client/src/services/frameCaptureProviderSelect.ts (공통 진입 — Metro가 .ios/.android로 자동 분기)
 // 형태는 client/src/inference/localDetectorSelect.ts와 동일
 ```
 
+> **2026-07-15 정정**: 레거시 `frameCapture.ts`(`buildDetectionEvent`/`sendFrame`)는 미사용으로 삭제됐다.
+> 실제 캡처·전송은 `frameCaptureProvider*` + `useCamera`/`CameraView` WS 경로가 담당한다.
+
 ### 4.4 iOS 구현 지침
 
-- `frameCapture.ios.ts`는 현재 `useCamera.ts`에 있는 `useFrameProcessor` + `reflexFrameProcessorPlugin` 로직을 그대로 이관한다. `ReflexFrameProcessorPlugin.swift`/`.m`은 변경 없음.
+- `frameCaptureProviderSelect.ios.ts`는 `useFrameProcessor` + `reflexFrameProcessorPlugin` 경로를 담당한다. `ReflexFrameProcessorPlugin.swift`/`.m`은 변경 없음.
 - `supportsStream = true` 고정.
 
 ### 4.5 Android 구현 지침
 
-**과도기 (즉시 적용 가능)**: `frameCapture.android.ts`는 `supportsStream = false`로 선언하고, dg2가 이미 검증한 `takePhoto()` 기반 `capturePhoto()`를 구현으로 사용한다. dg2에서 확정한 크롭/파일읽기 수정(`Image.getSize()` 기반 실측 해상도 획득, `FileSystem.readAsStringAsync` + 수동 base64 디코드)은 **이 파일 안에만** 넣는다 — 공유 `useCamera.ts`에는 절대 넣지 않는다.
+**과도기 (즉시 적용 가능)**: `frameCaptureProviderSelect.android.ts`는 `supportsStream = false`로 선언하고, 검증된 `takePhoto()` 기반 `capturePhoto()`를 사용한다. 크롭/파일읽기 수정은 **이 파일 안에만** 넣는다 — 공유 `useCamera.ts`/`frameCaptureProvider.ts`의 공용 로직과 충돌하지 않게 한다.
 
-**목표 (후속 작업)**: `client/android/app/src/main/java/.../ReflexFrameProcessorPlugin.kt`를 신규 작성해 iOS의 `ReflexFrameProcessorPlugin.swift`와 동일한 이름(`reflexFrameCapture`)·동일한 반환 계약(JPEG base64 문자열)으로 등록한다. 완료되면 `frameCapture.android.ts`의 `supportsStream`을 `true`로 전환하고 `capturePhoto()`는 폴백으로만 남긴다. react-native-vision-camera의 Android Frame Processor 플러그인 작성 가이드를 따른다(Kotlin, `FrameProcessorPlugin` 상속).
+**목표 (후속 작업)**: `client/android/app/src/main/java/.../ReflexFrameProcessorPlugin.kt`를 신규 작성해 iOS의 `ReflexFrameProcessorPlugin.swift`와 동일한 이름(`reflexFrameCapture`)·동일한 반환 계약(JPEG base64 문자열)으로 등록한다. 완료되면 `frameCaptureProviderSelect.android.ts`의 `supportsStream`을 `true`로 전환하고 `capturePhoto()`는 폴백으로만 남긴다. react-native-vision-camera의 Android Frame Processor 플러그인 작성 가이드를 따른다(Kotlin, `FrameProcessorPlugin` 상속).
 
 ### 4.6 useCamera.ts 리팩터링 방향
 
-`useCamera.ts`는 `createFrameCaptureProvider()`로 얻은 인스턴스의 `supportsStream` 값에 따라 스트림 루프 또는 타이머 기반 `capturePhoto()` 루프 중 하나를 선택하는 오케스트레이션만 담당하도록 축소한다. 동적 FPS 조절, Mock 분기, 반사/인지 비율 계산 로직은 그대로 공유 유지(현재도 문제없이 동작 중).
+`useCamera.ts`는 `useFrameCaptureProvider()`로 얻은 컨트롤러의 `supportsStream` 값에 따라 스트림 루프 또는 타이머 기반 `capturePhoto()` 루프 중 하나를 선택하는 오케스트레이션만 담당하도록 축소한다. 동적 FPS 조절, Mock 분기, 반사/인지 비율 계산 로직은 그대로 공유 유지(현재도 문제없이 동작 중).
 
 ### 4.7 CAPTURE_ENGINE 상수 처리
 
-전역 `CAPTURE_ENGINE` 상수(`client/src/config/capture.ts`)는 §4.6 리팩터링 이후 **삭제**한다. 스트림 지원 여부는 `FrameCaptureProvider.supportsStream`이 플랫폼별로 자동 결정하므로, 더 이상 사람이 수동으로 맞출 전역 스위치가 필요 없다. iOS 롤백이 필요하면 `frameCapture.ios.ts` 내부에서 `supportsStream`을 임시로 `false`로 바꾸면 된다(파일이 iOS 전용이므로 Android에 영향 없음).
+전역 `CAPTURE_ENGINE` 상수(`client/src/config/capture.ts`)는 §4.6 리팩터링 이후 **삭제**한다. 스트림 지원 여부는 `FrameCaptureController.supportsStream`이 플랫폼별로 자동 결정하므로, 더 이상 사람이 수동으로 맞출 전역 스위치가 필요 없다. iOS 롤백이 필요하면 `frameCaptureProviderSelect.ios.ts` 내부에서 `supportsStream`을 임시로 `false`로 바꾸면 된다(파일이 iOS 전용이므로 Android에 영향 없음).
 
 ---
 

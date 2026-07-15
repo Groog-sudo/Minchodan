@@ -2284,5 +2284,19 @@
   - `CameraView.tsx`: BBox `key`를 model+class+bbox 안정 키로 변경, debugInfo effect deps에 `detectionEnabled` 추가, MOCK_HAPTIC flash 타이머 cleanup.
   - `LiveCameraFeed.tsx` / `DeviceTelemetryPanel.tsx`: 탐지 리스트 `key={index}`를 `track_id` 또는 class+bbox 키로 교체.
   - `client/src/services/frameCapture.ts` 삭제(미사용 레거시, 실제 전송은 frameCaptureProvider 경로).
-- **관련 파일**: `client/App.tsx`, `client/src/components/CameraView.tsx`, `client/src/services/frameCapture.ts`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/DeviceTelemetryPanel.tsx`, `docs/changelogs/kb.md`
+- **관련 파일**: `client/App.tsx`, `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/DeviceTelemetryPanel.tsx`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx tsc --noEmit`(client/console) 통과. react-doctor 재스캔 client 43→44(27→24이슈), console 50→51(11→9이슈). App.tsx effect-cleanup 잔여 경고는 `.then()` 내부 타이머 정적 분석 한계(오탐).
+
+---
+
+### 2026-07-15 | 문서/스킬 | frameCapture.ts 삭제 후 문서·스킬 정합성 일괄 갱신
+
+- **커밋**: `(자동 커밋 예정)`
+- **변경 내용**:
+  - 현행 코드(`frameCaptureProvider*`)와 어긋나던 문서/스킬을 일괄 정정.
+  - `docs/Directory_Structure.md`, `docs/ops/ios_android_bifurcation_contract.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
+  - `docs/mobile/mobile_*_implementation_plan.md`, `docs/research/post_mvp_hybrid_roadmap.md`
+  - `.agents/skills/camera-frame-capture/SKILL.md` ↔ `.claude/skills/camera-frame-capture/SKILL.md` 동기화
+  - 과거 changelog(`dg`/`th`/구 kb 엔트리)의 당시 파일명 기록은 이력으로 유지.
+- **관련 파일**: 위 문서·스킬 + `docs/changelogs/kb.md`
+- **검증 결과**: 활성 문서에서 `frameCapture.ts`를 현행 경로로 인용하는 항목 제거 확인(삭제 고지·이력 문구만 잔존).
