@@ -2300,3 +2300,32 @@
   - 과거 changelog(`dg`/`th`/구 kb 엔트리)의 당시 파일명 기록은 이력으로 유지.
 - **관련 파일**: 위 문서·스킬 + `docs/changelogs/kb.md`
 - **검증 결과**: 활성 문서에서 `frameCapture.ts`를 현행 경로로 인용하는 항목 제거 확인(삭제 고지·이력 문구만 잔존).
+
+---
+
+### 2026-07-15 | 2단계/3단계 | *260714.pt 기준 온디바이스 CoreML/TFLite 재export
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - 서버와 동일 기준선 `object_detection260714.pt` / `segmentation260714.pt`에서 모바일 자산 재생성.
+  - CoreML: det=`nms=True`(confidence/coordinates), seg=channels-first `[1,40,8400]` + proto mask.
+  - TFLite: det=`[1,300,6]`(nms), seg=`[1,40,8400]`.
+  - `CoreMLInferenceBridge.swift` / `tfliteDetector.ts`에 seg channels-first 파서 추가.
+  - export 스크립트 기본 소스를 `*260714.pt`로 고정 (`convert_yolo_to_coreml.py`, `export_mobile.py`, `export_tflite.py`).
+  - Xcode 참조 `client/ios/segmentation.mlpackage`를 assets 산출물과 동기화.
+- **관련 파일**: `client/assets/models/yolo26n/**`, `client/ios/segmentation.mlpackage/**`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/tfliteDetector.ts`, `scripts/convert_yolo_to_coreml.py`, `scripts/export_mobile.py`, `scripts/export_tflite.py`
+- **검증 결과**: TFLite Interpreter shape 확인(det `[1,300,6]`, seg `[1,40,8400]`). `npx tsc --noEmit`(client) 통과. **iOS 실기기 재빌드·재설치 후** CoreML 번들 반영 필요.
+- **비고**: 구 `mlmodelc`(7/11)는 Xcode가 `.mlpackage`를 다시 컴파일하면 교체됨. Android는 Metro가 `assets/.../*.tflite`를 번들.
+
+---
+
+### 2026-07-15 | 2단계/운영 | *콘솔 event_frames MISS(266건) 원인 조사 문서
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - Detection Guidance Log 썸네일 `-` vs 404(MISS) 증상을 DB·디스크·API·다중 writer 관점에서 분류.
+  - 공유 MariaDB + 호스트별 로컬 `data/event_frames` 불일치가 MISS 266건 주원인임을 실측 근거로 정리.
+  - 단말 WS는 `100.121.247.4:8000` 고정, PROCESSLIST 상 타 Tailscale IP writer 3대 확인.
+  - 해결 방향: writer 단일화 / event_frames 공유 스토리지 / device_id 분리 (`whois`는 추적용).
+- **관련 파일**: `docs/ops/event_frame_image_loss_investigation.md`
+- **검증 결과**: 이 Mac `minchodan-fastapi` 구간 MISS 0/267. DB `frame_path` 527건 vs 로컬 JPEG 261건(2026-07-15).

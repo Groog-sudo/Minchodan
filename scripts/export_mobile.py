@@ -2,7 +2,7 @@
 """
 Post-MVP 포스트 A: 모바일 추론용 모델 익스포트 스크립트.
 
-학습된 yolo26n.pt (server/models/yolo26n/)를 CoreML/TFLite 포맷으로 변환한다.
+학습된 YOLO26n *260714.pt (server/models/yolo26n/)를 CoreML/TFLite 포맷으로 변환한다.
 변환된 파일은 client/assets/models/yolo26n/ 에 적재되어 단말 NPU 추론에 사용된다.
 
 Post-MVP 하이브리드 온디바이스 로드맵 (docs/post_mvp_hybrid_roadmap.md) 7.2절 참조.
@@ -43,10 +43,13 @@ if load_dotenv is not None and os.path.exists(env_path):
     load_dotenv(dotenv_path=env_path)
 
 MODELS = {
+    # 2026-07-15: 서버·앱 공통 기준선은 *260714.pt (object_detection.pt는 동일 해시 별칭)
     "object_detection": os.path.join(
-        project_root, "server", "models", "yolo26n", "object_detection.pt"
+        project_root, "server", "models", "yolo26n", "object_detection260714.pt"
     ),
-    "segmentation": os.path.join(project_root, "server", "models", "yolo26n", "segmentation.pt"),
+    "segmentation": os.path.join(
+        project_root, "server", "models", "yolo26n", "segmentation260714.pt"
+    ),
 }
 
 OUTPUT_DIR = os.path.join(project_root, "client", "assets", "models", "yolo26n")
