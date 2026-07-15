@@ -2278,7 +2278,7 @@
 
 ### 2026-07-15 | 클라이언트/콘솔 | react-doctor 고신뢰도 7건 수정
 
-- **커밋**: `(자동 커밋 예정)`
+- **커밋**: `fix(client,console): react-doctor 고신뢰도 7건 수정` (`3fdad96`)
 - **변경 내용**:
   - `client/App.tsx`: 온보딩 `setTimeout`에 cancelled/`clearTimeout` cleanup 추가(언마운트 후 speakFallback 방지).
   - `CameraView.tsx`: BBox `key`를 model+class+bbox 안정 키로 변경, debugInfo effect deps에 `detectionEnabled` 추가, MOCK_HAPTIC flash 타이머 cleanup.
