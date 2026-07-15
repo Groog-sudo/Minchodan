@@ -661,3 +661,18 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 스타일 레이어만 조정했으며 API/데이터 로직 변경 없음
+
+---
+
+### 2026-07-15 | 콘솔 UI | 대시보드 관제 우선순위 재배치 (Live/Telemetry 상단 고정)
+
+- **커밋**: `refactor(console): 대시보드 관제 패널 우선순위 순서 재배치`
+- **변경 내용**:
+  - `Live Feed` + `TELEMETRY FEED`를 대시보드 최상단 섹션으로 고정 배치함
+  - `파이프라인 지연 요약`을 그 아래 단독 섹션으로 이동해 운영 지연 확인 우선순위를 상향함
+  - `발화 추적 타임라인` 바로 아래에 `MCP 검증 모니터`가 오도록 순서를 정렬함
+  - `SystemMetrics`, `SessionStatus`, `AiPipelineMonitor`, `DetectionFeed` 4개 패널은 후순위 `dashboard-grid`로 하향 배치함
+  - 기존 `monitor-stack-layout` 래퍼 사용을 제거하고 섹션 단위 배치로 정리함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 컴포넌트 내부 로직 변경 없이 렌더링 순서만 조정한 레이아웃 리팩터링
