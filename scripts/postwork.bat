@@ -21,7 +21,7 @@ REM ============================================================================
 echo === Step A: Basic Information ===
 
 REM --- Initial ---
-set /p INITIAL=Enter your branch initial (dg/jh/jy/kb/th): 
+set /p INITIAL=Enter your branch initial (dg/jh/jy/kb/th):
 
 if "!INITIAL!"=="dg" goto :INITIAL_OK
 if "!INITIAL!"=="jh" goto :INITIAL_OK
@@ -36,7 +36,7 @@ exit /b 1
 echo [OK] Initial: !INITIAL!
 
 REM --- Stage ---
-set /p STAGE=Enter pipeline stage (1-7): 
+set /p STAGE=Enter pipeline stage (1-7):
 
 if "!STAGE!"=="1" goto :STAGE_OK
 if "!STAGE!"=="2" goto :STAGE_OK
@@ -53,7 +53,7 @@ exit /b 1
 echo [OK] Stage: !STAGE!
 
 REM --- Date ---
-set /p DATE=Enter today's date (YYYY-MM-DD): 
+set /p DATE=Enter today's date (YYYY-MM-DD):
 
 set "DATE_LEN=0"
 set "TMP_DATE=!DATE!"
@@ -102,7 +102,7 @@ echo     [ ] No emoji in code, commits, or docs
 echo     [ ] All files saved as UTF-8
 echo.
 
-set /p CODING_CHECK=Have you completed the above checks? (y/N): 
+set /p CODING_CHECK=Have you completed the above checks? (y/N):
 if /i not "!CODING_CHECK!"=="y" (
     echo [WARN] Coding rule check not confirmed. Review the checklist and re-run.
     exit /b 1
@@ -122,7 +122,7 @@ echo     [ ] Reflex path: NO real-time TTS synthesis
 echo     [ ] Reflex audio: only pre-synthesized clips in data\reflex_clips\
 echo.
 
-set /p DUAL_CHECK=Confirm no dual-path violations? (y/N): 
+set /p DUAL_CHECK=Confirm no dual-path violations? (y/N):
 if /i not "!DUAL_CHECK!"=="y" (
     echo [WARN] Dual-path violation not confirmed. Review reflex path code.
     exit /b 1
@@ -167,7 +167,7 @@ if "!STAGE!"=="7" (
 )
 
 echo.
-set /p TEST_PASS=Did all tests pass and KPI targets met? (y/N): 
+set /p TEST_PASS=Did all tests pass and KPI targets met? (y/N):
 if /i not "!TEST_PASS!"=="y" (
     echo [WARN] Tests not fully passed. Proceeding -- fix before PR merge.
 )
@@ -239,13 +239,13 @@ REM ============================================================================
 echo === Step G: Git Commit ===
 
 set /p PREFIX=Enter commit prefix (e.g. stage1, docs, infra, test):
-set /p DESC=Enter commit description: 
+set /p DESC=Enter commit description:
 
 set "COMMIT_MSG=!PREFIX!: !DESC!"
 echo.
 echo [INFO] Commit message: !COMMIT_MSG!
 
-set /p COMMIT_CONFIRM=Confirm commit message? (y/N): 
+set /p COMMIT_CONFIRM=Confirm commit message? (y/N):
 if /i not "!COMMIT_CONFIRM!"=="y" (
     echo [WARN] Commit cancelled by user.
     exit /b 1
@@ -280,10 +280,10 @@ REM ============================================================================
 echo === Step I: Pull Request (Optional) ===
 
 set "PR_STATUS=skipped"
-set /p CREATE_PR=Create a Pull Request to dev now? (y/N): 
+set /p CREATE_PR=Create a Pull Request to dev now? (y/N):
 
 if /i "!CREATE_PR!"=="y" (
-    set /p PR_TITLE=Enter PR title: 
+    set /p PR_TITLE=Enter PR title:
     gh pr create --base dev --head !INITIAL! --title "!PR_TITLE!"
     if errorlevel 1 (
         echo [WARN] PR creation failed. Create it manually.

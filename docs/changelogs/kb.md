@@ -2342,3 +2342,15 @@
   - RUF046(`tts_service.py`)는 `0e8be01`에서 수정.
 - **관련 파일**: `scripts/**`(28), `server/**`(15), `tests/**`(8, 50adfb1) + `server/tts/tts_service.py`(0e8be01)
 - **검증 결과**: `ruff check .` 0건. pre-commit `ruff-format`/`ruff` staged 파일 통과. `test_frame_decode`/`test_risk_ssot` pre-commit(0.6.9) Passed.
+
+---
+
+### 2026-07-15 | 품질 | *pre-commit ruff 0.15.20 통일 및 전체 훅 정리
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - `.pre-commit-config.yaml` ruff `v0.6.9` → `v0.15.20` (`1dd29bb` MVP).
+  - `requirements-dev.txt` `ruff>=0.15.0,<0.16.0` 핀, `docs/ops/code_quality_guide.md` v0.3.1 갱신.
+  - `pre-commit run --all-files`로 trailing whitespace/EOF 등 저장소 전역 정리.
+- **관련 파일**: `.pre-commit-config.yaml`, `requirements-dev.txt`, `docs/ops/code_quality_guide.md`, `pre-commit --all-files` 대상 파일
+- **검증 결과**: `pre-commit run --all-files` 전 훅 Passed. `ruff check .`·`ruff format --check .` 0건.
