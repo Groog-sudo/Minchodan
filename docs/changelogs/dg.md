@@ -548,7 +548,11 @@
     - 소켓 미연결 또는 300ms 타임아웃 감지 시 즉각 `isServerTimeout` 상태로 전환하여 온디바이스 로컬 TFLite 추론 결과에 의해 즉각 햅틱 및 비프음을 제어하는 로컬 fail-safe 루프 기동.
   - **서버-로컬 반사 경로 중복 경보 방지** (`CameraView.tsx`):
     - 서버 연결이 정상인 상황(`!isServerTimeout`)에서는 온디바이스의 반사 경보음 및 햅틱 출력을 명시적으로 억제(Suppress)함으로써 서버 수신 경보음과 로컬 추론 경보음이 중첩되어 울리는 현상 차단.
-- **관련 파일**: `client/src/components/CameraView.tsx`
+  - **온디바이스 반사 경보 연속 발화 및 오탐 디버깅 패치** (`CameraView.tsx`, `tfliteDetector.ts`):
+    - 온디바이스 `CONF_THRESHOLD` 및 `confThreshold` 기본값을 서버와 동일한 `0.35`로 상향하여 저신뢰 오탐 억제.
+    - 로컬 위험 검출 시 동일 방향에 대해 3초 쿨다운 디바운스를 적용하여 사전합성 음성 겹침을 방지하고, 연속 2프레임 이상 탐지 시에만 발화하는 안정화 필터 결합.
+    - `isServerTimeout` 시간차 버그 수정 및 서버 정상 복구 시 로컬 비프/햅틱 상태를 즉시 클리어(`stopBeep`, `stopContinuous`)하도록 보강.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
 
 

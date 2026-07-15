@@ -280,6 +280,7 @@ function estimateDirection(
 function applyLocalAreaReflex(
   detections: OnDeviceDetectionResult[],
   logTag: string,
+  lastLocalVoiceClipTs: Record<string, number>,
 ): boolean {
   if (detections.length === 0) return false;
 
@@ -325,8 +326,13 @@ function applyLocalAreaReflex(
 
   const playLocalReflexClip = (beepIntervalMs: number) => {
     if (beepIntervalMs > 100 && targetDet) {
-      const clipName = `reflex_clips/high_${direction}.wav`;
-      void audioEngine.playReflexClip(clipName);
+      const nowTs = Date.now();
+      const lastPlay = lastLocalVoiceClipTs[direction] || 0;
+      if (nowTs - lastPlay >= 3000) { // 동일 방향 경고 최소 3초 간격 보장 (쿨다운)
+        lastLocalVoiceClipTs[direction] = nowTs;
+        const clipName = `reflex_clips/high_${direction}.wav`;
+        void audioEngine.playReflexClip(clipName);
+      }
     }
   };
 
@@ -464,7 +470,7 @@ export function CameraView() {
   const [hapticFlash, setHapticFlash] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<number | null>(null);
   const [detections, setDetections] = useState<OnDeviceDetectionResult[]>([]);
-  const [confThreshold, setConfThreshold] = useState(0.20);
+  const [confThreshold, setConfThreshold] = useState(0.35);
   // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
   // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
   const [detectionEnabled, setDetectionEnabled] = useState(false);
@@ -725,6 +731,12 @@ export function CameraView() {
   // 최신 상태는 반드시 ref 를 통해 읽어야 한다.
   const lastFrameSentTsRef = useRef(0);
   const lastServerResponseTsRef = useRef(0);
+  const localReflexStreakRef = useRef(0);
+  const lastLocalVoiceClipTsRef = useRef<Record<string, number>>({
+    front: 0,
+    "front-left": 0,
+    "front-right": 0,
+  });
   const detectFrameRef = useRef(detectFrame);
   const isModelsLoadedRef = useRef(isModelsLoaded);
   const isMockModeRef = useRef(isMockMode);
@@ -895,19 +907,26 @@ export function CameraView() {
           ? urgentDetections
           : outdoorScopedDetections;
 
-      // 안드로이드: 통로 막힘 우선 → CLEAR여도 근접 긴급이면 면적 반사로 보조
-      // iOS: LiDAR/면적 주차센서 (공통 applyLocalAreaReflex)
-      // 2026-07-14: 씬 게이트(실내)면 Android pathObstacle 경보/TTS를 억제한다.
-      // is_outdoor 서버 전송은 위에서 이미 히스테리시스 안정화 값을 사용 중.
-      // 3. WebSocket 연결 끊김/타임아웃(300ms 초과) 감지
+      // 2. 단일 프레임 오탐 방지를 위한 연속 2프레임 안정화 필터 적용
+      if (reflexDetections.length > 0) {
+        localReflexStreakRef.current += 1;
+      } else {
+        localReflexStreakRef.current = 0;
+      }
+      const isReflexStable = localReflexStreakRef.current >= 2;
+      const stableReflexDetections = isReflexStable ? reflexDetections : [];
+
+      // 3. WebSocket 연결 끊김/타임아웃(300ms 초과) 감지 (마지막 수신 타임스탬프 기준)
       const isServerTimeout = wsStatusRef.current !== "connected" ||
         (lastFrameSentTsRef.current > lastServerResponseTsRef.current &&
-         now - lastFrameSentTsRef.current > 300);
+         now - lastServerResponseTsRef.current > 300);
 
       let pathRaisedAlert = false;
       if (Platform.OS === "android") {
         if (!isServerTimeout) {
-          // 4. 서버 정상 시 중복 경보 방지를 위해 온디바이스 반사 경보 억제
+          // 4. 서버 정상 시 중복 경보 방지를 위해 온디바이스 반사 경보 억제 및 사운드 즉각 회수
+          hapticEngine.stopContinuous();
+          void audioEngine.stopBeep();
           if (!audioEngine.isGuidePlaying && __DEV__) {
             console.log("[LocalReflex] 서버 연결 정상 — 온디바이스 반사 경보 억제");
           }
@@ -946,9 +965,9 @@ export function CameraView() {
                 `[LocalReflex][PathObstacle] CAUTION score=${pathRes.riskScore.toFixed(2)}`,
               );
             }
-          } else if (reflexDetections.length > 0) {
+          } else if (stableReflexDetections.length > 0) {
             // path CLEAR 이어도 가까운 사람/의자 등은 즉시 경보 (실내 포함)
-            applyLocalAreaReflex(reflexDetections, "[AndroidFallback]");
+            applyLocalAreaReflex(stableReflexDetections, "[AndroidFallback]", lastLocalVoiceClipTsRef.current);
             pathRaisedAlert = true;
           } else {
             hapticEngine.stopContinuous();
@@ -978,9 +997,11 @@ export function CameraView() {
       } else {
         // iOS: iOS관련 파일 수정 금지 제약이 있으므로, CameraView.tsx 내의 iOS 분기 로직은 최소한으로 우선순위 게이트만 씌움
         if (!isServerTimeout) {
-          // 서버 정상 시 온디바이스 반사 경보 억제
-        } else if (reflexDetections.length > 0) {
-          applyLocalAreaReflex(reflexDetections, "[iOS]");
+          // 서버 정상 시 온디바이스 반사 경보 억제 및 사운드 즉각 회수
+          hapticEngine.stopContinuous();
+          void audioEngine.stopBeep();
+        } else if (stableReflexDetections.length > 0) {
+          applyLocalAreaReflex(stableReflexDetections, "[iOS]", lastLocalVoiceClipTsRef.current);
         } else {
           hapticEngine.stopContinuous();
           void audioEngine.stopBeep();
