@@ -10,7 +10,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Dimensions, Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, Dimensions, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
 
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -1073,7 +1073,7 @@ export function CameraView() {
         {!depthMode && !detectionEnabled && !isMockMode && (
           <View style={styles.detectionIdleBanner} pointerEvents="none">
             <Text style={styles.detectionIdleText}>
-              탐지 대기 중 (카메라 OFF) — 오른쪽 &quot;탐지 시작&quot;을 누르면 화면이 켜집니다
+              탐지 대기 중 (카메라 OFF) — 아래 &quot;탐지 시작&quot;을 누르면 화면이 켜집니다
             </Text>
           </View>
         )}
@@ -1082,127 +1082,121 @@ export function CameraView() {
         {detectionEnabled && !depthMode && <ROIOverlay />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
-      </View>
 
-      {/* 2026-07-10: react-native-vision-camera의 <Camera> 네이티브 뷰가 자체 제스처
-          인식기를 갖고 있어 부모 Pressable로 터치가 버블링되지 않는 문제(실기기 실측
-          확인: onPressIn 미발화)가 있어, 조상(ancestor) 방식 대신 카메라 위에 별도의
-          전체화면 투명 터치 레이어를 형제(sibling)로 얹는다. 아래에 나오는 실제 버튼들
-          (신뢰도 조절, STT 상태 배지, 디버그 패널)은 JSX상 이 레이어보다 뒤에 위치해
-          터치 우선순위를 그대로 가져간다. */}
-      <Pressable
-        style={StyleSheet.absoluteFill}
-        onPressIn={() => {
-          sttPressActiveRef.current = true;
-          if (delayedSttStartTimerRef.current) {
-            clearTimeout(delayedSttStartTimerRef.current);
-            delayedSttStartTimerRef.current = null;
-          }
-          void hapticEngine.trigger("short");
-          // STT 질문 상호작용 시작 - 응답 도착(또는 타임아웃) 전까지 인지 경로 가이드
-          // 음성만 뮤트한다(반사 경로는 안전 비협상 원칙상 그대로 유지, useWebSocket 참조).
-          setSttInteractionActive(true);
-          // 2026-07-11 실기기 실측(메아리 버그 수정): TTS 응답 음성이 재생되는 도중
-          // 버튼을 누르면 stopGuideAudio()로 중단하더라도 잔여 스피커 출력이 마이크에
-          // 잡혀 안내문 통째로 전사되는 음향 블리드가 발생한다(13:24:07 로그 확인).
-          // stopGuideAudio 후 150ms 대기해 스피커가 물리적으로 완전히 멈춘 뒤 녹음을
-          // 시작한다 (서버 측 자기-에코 필터와 이중 방어).
-          if (audioEngine.isGuidePlaying) {
-            audioEngine.stopGuideAudio();
-            delayedSttStartTimerRef.current = setTimeout(() => {
+        {/* STT press-and-hold: 카메라 프리뷰(1:1) 위에서만 동작. 하단 운영자 패널 버튼과 터치 충돌 방지. */}
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPressIn={() => {
+            sttPressActiveRef.current = true;
+            if (delayedSttStartTimerRef.current) {
+              clearTimeout(delayedSttStartTimerRef.current);
               delayedSttStartTimerRef.current = null;
-              if (sttPressActiveRef.current) {
-                void startSttRecording();
-              }
-            }, 150);
-          } else {
-            void startSttRecording();
-          }
-        }}
-        onPressOut={() => {
-          sttPressActiveRef.current = false;
-          if (delayedSttStartTimerRef.current) {
-            clearTimeout(delayedSttStartTimerRef.current);
-            delayedSttStartTimerRef.current = null;
-            setSttInteractionActive(false);
-          }
-          void stopSttRecording();
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}. 화면을 누르고 있는 동안 음성 명령을 말하세요.`}
-        accessibilityHint="손을 떼면 서버로 전송되어 음성 명령을 인식합니다."
-      />
-
-      <View style={styles.overlayTop} pointerEvents="none">
-        <ConnectionStatus status={status} />
+            }
+            void hapticEngine.trigger("short");
+            setSttInteractionActive(true);
+            if (audioEngine.isGuidePlaying) {
+              audioEngine.stopGuideAudio();
+              delayedSttStartTimerRef.current = setTimeout(() => {
+                delayedSttStartTimerRef.current = null;
+                if (sttPressActiveRef.current) {
+                  void startSttRecording();
+                }
+              }, 150);
+            } else {
+              void startSttRecording();
+            }
+          }}
+          onPressOut={() => {
+            sttPressActiveRef.current = false;
+            if (delayedSttStartTimerRef.current) {
+              clearTimeout(delayedSttStartTimerRef.current);
+              delayedSttStartTimerRef.current = null;
+              setSttInteractionActive(false);
+            }
+            void stopSttRecording();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}. 카메라 화면을 누르고 있는 동안 음성 명령을 말하세요.`}
+          accessibilityHint="손을 떼면 서버로 전송되어 음성 명령을 인식합니다."
+        />
       </View>
 
-      <View style={styles.debugOverlay} pointerEvents="none">
-        {debugInfo.map((line, i) => (
-          <Text key={i} style={styles.debugText}>{line}</Text>
-        ))}
-      </View>
-
-      <View style={styles.confThresholdRow} pointerEvents="box-none">
-        <Text style={styles.confThresholdLabel}>신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%</Text>
-        <View style={styles.confThresholdButtons}>
-          <Pressable
-            style={styles.confThresholdButton}
-            onPress={() => setConfThreshold(v => Math.max(0.05, Math.round((v - 0.05) * 100) / 100))}
-          >
-            <Text style={styles.confThresholdButtonText}>-</Text>
-          </Pressable>
-          <Pressable
-            style={styles.confThresholdButton}
-            onPress={() => setConfThreshold(v => Math.min(0.95, Math.round((v + 0.05) * 100) / 100))}
-          >
-            <Text style={styles.confThresholdButtonText}>+</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <View style={styles.detectionListOverlay} pointerEvents="none">
-        <Text style={styles.detectionListTitle}>[실시간 감지]</Text>
-        <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
-      </View>
-
-      {/* 2026-07-10 정정: 시각장애인 사용자는 화면 속 작은 버튼 위치를 찾기 어려우므로,
-          STT 트리거는 이 상태 표시용 View가 아니라 최상위 컨테이너(Pressable) 전체가
-          담당한다. 화면 어디를 누르고 있어도 녹음이 시작된다. */}
-      <View
-        style={[styles.sttButton, sttStatus !== "idle" && styles.sttButtonActive]}
-        pointerEvents="none"
+      {/* 운영자/모니터링 UI: 카메라 시야(1:1) 아래 여백으로 분리 */}
+      <ScrollView
+        style={styles.operatorPanel}
+        contentContainerStyle={styles.operatorPanelContent}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.sttButtonText, sttStatus !== "idle" && styles.sttButtonTextActive]}>
-          {sttStatus === "recording" ? "듣는 중..." : sttStatus === "sending" ? "전송 중..." : "화면을 누르고 말하기"}
-        </Text>
-        {sttErrorInfo !== "" && (
-          <Text style={styles.sttErrorText}>{sttErrorInfo}</Text>
-        )}
-      </View>
+        <ConnectionStatus status={status} />
 
-      {/* 2026-07-10: bottom:0/left:0/right:0로 화면 하단 전폭을 차지하는 불투명 래퍼라
-          버튼이 아닌 빈 공간을 눌러도 STT 터치 레이어보다 먼저 터치를 가로챘다(실기기
-          실측: 하단을 누르면 STT가 반응하지 않음). box-none으로 자기 자신은 투명 처리하고
-          내부 실제 버튼들만 터치를 받도록 한다. */}
-      <View style={styles.panelWrap} pointerEvents="box-none">
-        <DebugTriggerPanel />
-      </View>
-
-      {/* 2026-07-11 하단 T맵 지도 패널: 정적 표시 전용(pointerEvents none이라 STT
-          press-and-hold 터치가 그대로 통과), 토글 켜짐일 때만 WebView 마운트.
-          켜면 하단 디버그 패널 위를 덮는다(발표·모니터링 용도 전제). */}
-      {mapVisible && navRoute && (
-        <View style={styles.navMapWrap} pointerEvents="none">
-          <NavMapPanel
-            appKey={navRoute.appKey}
-            waypoints={navRoute.waypoints}
-            current={mapPos}
-          />
+        <View style={styles.operatorCard} pointerEvents="none">
+          {debugInfo.map((line, i) => (
+            <Text key={i} style={styles.debugText}>{line}</Text>
+          ))}
         </View>
-      )}
-      {navRoute && (
-        <View style={styles.mapToggleWrap} pointerEvents="box-none">
+
+        <View style={styles.confThresholdRow}>
+          <Text style={styles.confThresholdLabel}>신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%</Text>
+          <View style={styles.confThresholdButtons}>
+            <Pressable
+              style={styles.confThresholdButton}
+              onPress={() => setConfThreshold(v => Math.max(0.05, Math.round((v - 0.05) * 100) / 100))}
+            >
+              <Text style={styles.confThresholdButtonText}>-</Text>
+            </Pressable>
+            <Pressable
+              style={styles.confThresholdButton}
+              onPress={() => setConfThreshold(v => Math.min(0.95, Math.round((v + 0.05) * 100) / 100))}
+            >
+              <Text style={styles.confThresholdButtonText}>+</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.detectionListCard} pointerEvents="none">
+          <Text style={styles.detectionListTitle}>[실시간 감지]</Text>
+          <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
+        </View>
+
+        <View
+          style={[styles.sttButton, sttStatus !== "idle" && styles.sttButtonActive]}
+          pointerEvents="none"
+        >
+          <Text style={[styles.sttButtonText, sttStatus !== "idle" && styles.sttButtonTextActive]}>
+            {sttStatus === "recording" ? "듣는 중..." : sttStatus === "sending" ? "전송 중..." : "카메라 화면을 누르고 말하기"}
+          </Text>
+          {sttErrorInfo !== "" && (
+            <Text style={styles.sttErrorText}>{sttErrorInfo}</Text>
+          )}
+        </View>
+
+        {depthMode && (
+          <View style={styles.operatorCard} pointerEvents="none">
+            <Text style={styles.depthTitle}>
+              LiDAR 실거리 (동기화·보정: {depthResult?.calibrated ? "적용" : "대기"}, 정확도:{" "}
+              {depthResult?.accuracy ?? "-"}, 품질: {depthResult?.quality ?? "-"})
+            </Text>
+            {depthError ? (
+              <Text style={styles.depthError}>{depthError}</Text>
+            ) : (
+              DEPTH_PROBE_POINTS.map((point, i) => {
+                const sample = depthResult?.samples?.[i];
+                return (
+                  <Text key={point.label} style={styles.depthRow}>
+                    {point.label}:{" "}
+                    {sample && sample.meters != null
+                      ? `${sample.meters.toFixed(2)} m ` +
+                        `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
+                        `${sample.sampleCount ?? 0})`
+                      : "측정 불가"}
+                  </Text>
+                );
+              })
+            )}
+          </View>
+        )}
+
+        {navRoute && (
           <Pressable
             style={styles.mapToggleButton}
             onPress={() => setMapVisible((v) => !v)}
@@ -1211,100 +1205,81 @@ export function CameraView() {
           >
             <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
           </Pressable>
-        </View>
-      )}
+        )}
 
-      {/* 2026-07-11 LiDAR 실거리 프로브(프로토타입, 운영자/계측용): 켜면 카메라
-          탐지·경보가 일시 정지되고 화면 3지점의 LiDAR 실거리를 표시한다. */}
-      {depthMode && (
-        <View style={styles.depthOverlay} pointerEvents="none">
-          <Text style={styles.depthTitle}>
-            LiDAR 실거리 (동기화·보정: {depthResult?.calibrated ? "적용" : "대기"}, 정확도:{" "}
-            {depthResult?.accuracy ?? "-"}, 품질: {depthResult?.quality ?? "-"})
-          </Text>
-          {depthError ? (
-            <Text style={styles.depthError}>{depthError}</Text>
-          ) : (
-            DEPTH_PROBE_POINTS.map((point, i) => {
-              const sample = depthResult?.samples?.[i];
-              return (
-                <Text key={point.label} style={styles.depthRow}>
-                  {point.label}:{" "}
-                  {sample && sample.meters != null
-                    ? `${sample.meters.toFixed(2)} m ` +
-                      `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
-                      `${sample.sampleCount ?? 0})`
-                    : "측정 불가"}
-                </Text>
-              );
-            })
-          )}
-        </View>
-      )}
-      <View style={styles.detectionToggleWrap} pointerEvents="box-none">
-        <Pressable
-          style={[
-            styles.mapToggleButton,
-            detectionEnabled && styles.detectionToggleActive,
-          ]}
-          onPress={() => {
-            setDetectionEnabled((v) => {
-              const next = !v;
-              if (!next) {
-                hapticEngine.stopContinuous();
-                void audioEngine.stopBeep();
-              }
-              return next;
-            });
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={detectionEnabled ? "탐지 중지" : "탐지 시작"}
-        >
-          <Text style={styles.mapToggleText}>
-            {detectionEnabled ? "탐지 중지" : "탐지 시작"}
-          </Text>
-        </Pressable>
-      </View>
+        {mapVisible && navRoute && (
+          <View style={styles.navMapPanel}>
+            <NavMapPanel
+              appKey={navRoute.appKey}
+              waypoints={navRoute.waypoints}
+              current={mapPos}
+            />
+          </View>
+        )}
 
-      <View style={styles.transportToggleWrap} pointerEvents="box-none">
-        <Pressable
-          style={[
-            styles.mapToggleButton,
-            serverTransport === "usb" && styles.transportToggleUsb,
-          ]}
-          onPress={() => {
-            if (NETWORK_MODE === "ngrok" || NETWORK_MODE === "tailscale") {
-              console.log(
-                `[ServerTransport] 외부망 고정 모드: ${transportLabel(serverTransport)} -> ${wsUrlFor(serverTransport)}`,
-              );
-              return;
-            }
-            const next: ServerTransport = serverTransport === "wifi" ? "usb" : "wifi";
-            setServerTransport(next);
-            void saveServerTransport(next);
-            console.log(`[ServerTransport] 전환: ${transportLabel(next)} -> ${wsUrlFor(next)}`);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={transportAccessibilityLabel(serverTransport)}
-        >
-          <Text style={styles.mapToggleText}>
-            {transportButtonText(serverTransport)}
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.depthToggleWrap} pointerEvents="box-none">
-        {isDepthProbeSupported() ? (
+        <View style={styles.controlRow}>
           <Pressable
-            style={styles.mapToggleButton}
-            onPress={() => setDepthMode((v) => !v)}
+            style={[
+              styles.mapToggleButton,
+              detectionEnabled && styles.detectionToggleActive,
+            ]}
+            onPress={() => {
+              setDetectionEnabled((v) => {
+                const next = !v;
+                if (!next) {
+                  hapticEngine.stopContinuous();
+                  void audioEngine.stopBeep();
+                }
+                return next;
+              });
+            }}
             accessibilityRole="button"
-            accessibilityLabel={depthMode ? "거리 측정 끄기" : "거리 측정 켜기"}
+            accessibilityLabel={detectionEnabled ? "탐지 중지" : "탐지 시작"}
           >
-            <Text style={styles.mapToggleText}>{depthMode ? "거리측정 끄기" : "거리측정"}</Text>
+            <Text style={styles.mapToggleText}>
+              {detectionEnabled ? "탐지 중지" : "탐지 시작"}
+            </Text>
           </Pressable>
-        ) : null}
-      </View>
+
+          <Pressable
+            style={[
+              styles.mapToggleButton,
+              serverTransport === "usb" && styles.transportToggleUsb,
+            ]}
+            onPress={() => {
+              if (NETWORK_MODE === "ngrok" || NETWORK_MODE === "tailscale") {
+                console.log(
+                  `[ServerTransport] 외부망 고정 모드: ${transportLabel(serverTransport)} -> ${wsUrlFor(serverTransport)}`,
+                );
+                return;
+              }
+              const next: ServerTransport = serverTransport === "wifi" ? "usb" : "wifi";
+              setServerTransport(next);
+              void saveServerTransport(next);
+              console.log(`[ServerTransport] 전환: ${transportLabel(next)} -> ${wsUrlFor(next)}`);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={transportAccessibilityLabel(serverTransport)}
+          >
+            <Text style={styles.mapToggleText}>
+              {transportButtonText(serverTransport)}
+            </Text>
+          </Pressable>
+
+          {isDepthProbeSupported() ? (
+            <Pressable
+              style={styles.mapToggleButton}
+              onPress={() => setDepthMode((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={depthMode ? "거리 측정 끄기" : "거리 측정 켜기"}
+            >
+              <Text style={styles.mapToggleText}>{depthMode ? "거리측정 끄기" : "거리측정"}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {__DEV__ && <DebugTriggerPanel />}
+      </ScrollView>
     </View>
   );
 }
@@ -1544,16 +1519,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "rgba(255, 51, 51, 0.35)",
   },
-  overlayTop: {
-    position: "absolute",
-    top: 60,
-    left: 16,
+  operatorPanel: {
+    flex: 1,
+    backgroundColor: COLOR_BG_BASE,
   },
-  debugOverlay: {
-    position: "absolute",
-    top: 100,
-    left: 16,
-    right: 16,
+  operatorPanelContent: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 24,
+    gap: 8,
+  },
+  operatorCard: {
     padding: 8,
     backgroundColor: COLOR_OVERLAY_BG,
     borderRadius: 8,
@@ -1561,10 +1537,6 @@ const styles = StyleSheet.create({
     borderColor: COLOR_BORDER_TACTICAL,
   },
   confThresholdRow: {
-    position: "absolute",
-    top: 216,
-    left: 16,
-    right: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1596,11 +1568,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-  detectionListOverlay: {
-    position: "absolute",
-    top: 300,
-    left: 16,
-    right: 16,
+  detectionListCard: {
     padding: 10,
     backgroundColor: COLOR_OVERLAY_BG,
     borderRadius: 8,
@@ -1620,42 +1588,17 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontFamily: "monospace",
   },
-  panelWrap: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  navMapWrap: {
-    position: "absolute",
-    bottom: 6,
-    left: 12,
-    right: 12,
+  navMapPanel: {
     height: 210,
     borderRadius: 8,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: COLOR_BORDER_TACTICAL,
   },
-  mapToggleWrap: {
-    position: "absolute",
-    bottom: 222,
-    right: 12,
-  },
-  depthToggleWrap: {
-    position: "absolute",
-    bottom: 262,
-    right: 12,
-  },
-  detectionToggleWrap: {
-    position: "absolute",
-    bottom: 302,
-    right: 12,
-  },
-  transportToggleWrap: {
-    position: "absolute",
-    bottom: 342,
-    right: 12,
+  controlRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
   detectionToggleActive: {
     backgroundColor: "rgba(57, 255, 20, 0.18)",
@@ -1680,18 +1623,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
     lineHeight: 22,
-  },
-  depthOverlay: {
-    position: "absolute",
-    top: "32%",
-    alignSelf: "center",
-    backgroundColor: COLOR_OVERLAY_BG,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    minWidth: 220,
-    borderWidth: 1,
-    borderColor: COLOR_BORDER_TACTICAL,
   },
   depthTitle: {
     color: COLOR_TECH_BLUE,
@@ -1747,13 +1678,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   sttButton: {
-    position: "absolute",
-    bottom: 180,
-    alignSelf: "center",
-    minWidth: 220,
-    paddingVertical: 18,
-    paddingHorizontal: 28,
-    borderRadius: 32,
+    alignSelf: "stretch",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 24,
     backgroundColor: COLOR_GILDANG_YELLOW,
     alignItems: "center",
     justifyContent: "center",
