@@ -2341,3 +2341,13 @@
   - 잔여: `server/tts/tts_service.py`(RUF046) 1건.
 - **관련 파일**: `scripts/**`(28), `server/**`(14), `tests/**`(8)
 - **검증 결과**: `ruff check .` 12건 잔존 확인. pre-commit(Ruff) 통과 대상 파일 범위 내.
+
+---
+
+### 2026-07-15 | 3단계 | ruff_zero
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - verify
+- **관련 파일**: `erver/tts/tts_service.py`, `tests/test_frame_decode.py`, `tests/test_risk_ssot.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
