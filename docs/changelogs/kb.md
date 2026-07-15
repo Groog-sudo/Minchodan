@@ -2245,3 +2245,31 @@
 - **관련 파일**: `server/api/monitor.py`, `console/src/api/useMonitorStream.ts`, `console/src/components/SystemMetrics.tsx`, `console/src/pages/DashboardPage.tsx`, `docs/design/api_specification.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 변경 파일 `ruff check` 통과, 이중 경로(gates) 위반 없음, 금지 파일 미스테이징, `console` `tsc --noEmit` 통과, SSE 스냅샷 실측(`system_metrics` 연결 직후 수신) 확인. 저장소 전체 `ruff check .`는 기존 이슈 354건으로 auto_publish 스크립트 전체 게이트는 우회하고 변경 범위 검증으로 대체.
 - **비고**: LiveCameraFeed(WebSocket)와 SystemMetrics 행(SSE+JWT)은 인증 경로가 다름. 재로그인 계정은 `admin`/`admin`.
+
+---
+
+### 2026-07-15 | 클라이언트 | iOS 앱 아이콘 여백·배경 대비 수정
+
+- **커밋**: (미커밋)
+- **변경 내용**:
+  - 원인: `gildang-logo.jpeg`의 회색 바탕(`#E7E7E9`)이 iOS 아이콘 정사각형 모서리에 남아 홈 화면 배경과 대비됨.
+  - `scripts/generate_app_icons.py`: 흰 원형 로고 영역 크롭 → 회색 픽셀 흰색 치환 → 강아지+GILDANG 내용 88% 세이프존 확대 파이프라인으로 재작성.
+  - `client/assets/icon.png`, `splash-icon.png`, `favicon.png`, `android-icon-*`, iOS `AppIcon.appiconset`, Android `mipmap-*` 전부 재생성.
+  - `client/app.json`: 안드로이드 adaptiveIcon `backgroundColor`를 `#FFFFFF`로 통일.
+- **관련 파일**: `scripts/generate_app_icons.py`, `client/app.json`, `client/assets/icon.png`, `client/ios/Minchodan/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png`
+- **검증 결과**: 1024 아이콘 네 모서리 RGB `(255,255,255)` 확인, 스크립트 재실행 성공.
+- **비고**: 실기기 반영에는 iOS 네이티브 재빌드·재설치 필요(`AppIcon.appiconset`은 Metro 핫리로드로 갱신되지 않음).
+
+---
+
+### 2026-07-15 | 2단계 | 클라이언트 기동 UX·CameraView 레이아웃·스플래시 통일
+
+- **커밋**: `(자동 커밋 예정)`
+- **변경 내용**:
+  - **Loading 단일화**: Download 단계 제거. 네이티브 스플래시(Metro/JS 로드 전)와 React `LoadingScreen` 모두 `LOADING` 텍스트·동일 다크 배경(`#0A0D10`)으로 통일. `App.tsx`에 `expo-splash-screen`(`preventAutoHideAsync`/`hideAsync`) 연결.
+  - **스플래시 로고 비율**: `generate_app_icons.py`의 `circular_logo_from_jpeg()`를 React `Image` cover(비율 유지+중앙 크롭)와 동일하게 수정 — 가로형 `gildang-logo.jpeg` 강제 정사각 리사이즈로 세로 늘어나던 문제 해소.
+  - **CameraView**: 운영자 UI(연결상태·디버그·신뢰도·탐지 토글 등)를 카메라 1:1 프리뷰 **아래** `ScrollView` 패널로 이동. STT press-and-hold는 카메라 영역만. `DebugTriggerPanel`은 `__DEV__`에서만 마운트(Release 숨김).
+  - **스플래시/아이콘 자산**: `splash-loading.png`, iOS `SplashScreen.imageset`, Android `splashscreen_logo`·`splashscreen.xml`, `app.json` splash 설정 추가.
+- **관련 파일**: `client/App.tsx`, `client/src/components/CameraView.tsx`, `client/src/components/DebugTriggerPanel.tsx`, `client/app.json`, `scripts/generate_app_icons.py`, `client/assets/splash-loading.png`, `client/ios/Minchodan/SplashScreen.storyboard`, `client/ios/Minchodan/Images.xcassets/SplashScreen.imageset/`, `client/android/app/src/main/res/drawable/splashscreen.xml`
+- **검증 결과**: `npx tsc --noEmit`(client) 통과, `ruff check scripts/generate_app_icons.py` 통과, iOS 실기기 재빌드·재설치·기동 확인.
+- **비고**: 스플래시·AppIcon 변경은 Metro Reload로 반영되지 않음 — iOS/Android 네이티브 재빌드 필요. `.xcodebuildmcp/config.yaml` 개인값은 커밋 제외.
