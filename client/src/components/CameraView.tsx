@@ -904,13 +904,13 @@ export function CameraView() {
           ? urgentDetections
           : outdoorScopedDetections;
 
-      // 2. 단일 프레임 오탐 방지를 위한 연속 2프레임 안정화 필터 적용
+      // 2. 단일 프레임 오탐 방지를 위한 연속 4프레임 안정화 필터 적용
       if (reflexDetections.length > 0) {
         localReflexStreakRef.current += 1;
       } else {
         localReflexStreakRef.current = 0;
       }
-      const isReflexStable = localReflexStreakRef.current >= 2;
+      const isReflexStable = localReflexStreakRef.current >= 4;
       const stableReflexDetections = isReflexStable ? reflexDetections : [];
 
       // 3. WebSocket 연결 끊김/타임아웃(300ms 초과) 감지 (마지막 수신 타임스탬프 기준)

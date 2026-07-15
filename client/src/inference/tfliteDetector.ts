@@ -184,7 +184,8 @@ export class TFLiteDetector implements LocalDetector {
         const maxScore = out[off + 4];
         const clsId = Math.round(Math.abs(out[off + 5]));
 
-        if (maxScore < CONF_THRESHOLD || clsId >= numClasses) continue;
+        const currentConfThreshold = label === "object_detection" ? 0.50 : CONF_THRESHOLD;
+        if (maxScore < currentConfThreshold || clsId >= numClasses) continue;
         if (w <= 1 || h <= 1) continue;
 
         results.push({

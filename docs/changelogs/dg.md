@@ -559,7 +559,10 @@
     - 이미지 캡처/디코딩 전처리를 기존 CHW에서 NHWC(`[1, 640, 640, 3]`) 텐서 포맷으로 완전히 교체하여 TFLite 모델 입력 채널 정합화 완료. 오탐 노이즈 소거 확인.
   - **class-agnostic 반사 경로 전환** (`reflex_gate.py`, `direction.py`, `CameraView.tsx`):
     - 사물 클래스 종류 분기를 제거하고 BBox의 중앙 40% 내 포지션 및 8% 면적 비율(근접도) 기준만으로 반사 경보를 트리거하도록 서버와 단말 판단 로직 단순화.
-- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`
+  - **OOD 실내 오탐 완화 조치** (`detection_pipeline.py`, `config.py`, `CameraView.tsx`, `tfliteDetector.ts`):
+    - BBox와 노면 segmentation mask의 공간적 겹침비(30% 미만 차단) 교차검증 게이트 및 겹치지 않는 OOD 환각 탐지비 로깅 추가.
+    - 서버(ByteTrack) 및 단말(Streak) 시간적 필터 강도를 4프레임으로 상향하고, 객체 탐지 Confidence 임계값을 0.35에서 0.50으로 격상.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/config.py`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
 
 
