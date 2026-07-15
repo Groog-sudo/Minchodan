@@ -147,9 +147,12 @@ export function DeviceTelemetryPanel({ latestDetections, connected, session, ai 
                 const areaRatio = (det.bbox.w * det.bbox.h) / (640 * 640);
                 const dist = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
                 const isCritical = det.className === "car" || det.className === "person" || det.className === "caution";
+                const hazardKey =
+                  det.track_id ??
+                  `${det.className ?? "unknown"}-${Math.round(det.bbox?.x ?? 0)}-${Math.round(det.bbox?.y ?? 0)}-${index}`;
 
                 return (
-                  <div key={index} className={`hazard-item ${isCritical ? "critical" : ""}`}>
+                  <div key={hazardKey} className={`hazard-item ${isCritical ? "critical" : ""}`}>
                     <span className="hazard-index">[{String(index + 1).padStart(2, "0")}]</span>
                     <span className="hazard-class">{det.className.toUpperCase()}</span>
                     <span className="hazard-dist">{dist.toFixed(2)}m</span>

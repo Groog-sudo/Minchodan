@@ -715,11 +715,23 @@ export function CameraView() {
   // Mock 햅틱 시각 핸들러 등록
   useEffect(() => {
     if (!MOCK_HAPTIC) return;
+    let flashTimer: ReturnType<typeof setTimeout> | null = null;
     hapticEngine.setMockHandler(() => {
       setHapticFlash(true);
-      setTimeout(() => setHapticFlash(false), 300);
+      if (flashTimer) {
+        clearTimeout(flashTimer);
+      }
+      flashTimer = setTimeout(() => {
+        flashTimer = null;
+        setHapticFlash(false);
+      }, 300);
     });
-    return () => hapticEngine.setMockHandler(null);
+    return () => {
+      if (flashTimer) {
+        clearTimeout(flashTimer);
+      }
+      hapticEngine.setMockHandler(null);
+    };
   }, []);
 
   // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
@@ -973,7 +985,7 @@ export function CameraView() {
     if (detShapeLog) info.push(`det shape: ${detShapeLog}`);
     info.push(`추론: ${lastDetect}`);
     setDebugInfo(info);
-  }, [isMockMode, permissionStatus, device, status, serverTransport, networkRttMs, networkRttAvgMs, isCapturing, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
+  }, [isMockMode, permissionStatus, device, status, serverTransport, networkRttMs, networkRttAvgMs, isCapturing, detectionEnabled, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
 
   // --- 권한 게이트 (실기기 전용) ---
   if (!isMockMode && !hasPermission) {
@@ -1350,7 +1362,7 @@ function getClassColor(className: string): string {
 function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {detections.map((d, i) => {
+      {detections.map((d) => {
         const color = getClassColor(d.className);
         const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
         const topPct = (d.bbox.y / FRAME_SIZE) * 100;
@@ -1366,8 +1378,10 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
         // 그 View가 0x0으로 collapse되어, 안쪽 %기반 left/top/width/height가 그 0x0
         // 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생함(실기기 재현 확인, 2026-07-07).
         // 반드시 두 View 모두 바깥 absoluteFill 컨테이너의 직계 자식으로 유지해야 한다.
+        // track_id가 없는 온디바이스 결과이므로 모델·클래스·반올림 bbox로 안정 키를 만든다.
+        const bboxKey = `${d.model}-${d.className}-${Math.round(d.bbox.x)}-${Math.round(d.bbox.y)}-${Math.round(d.bbox.w)}-${Math.round(d.bbox.h)}`;
         return (
-          <Fragment key={`${d.model}-${i}`}>
+          <Fragment key={bboxKey}>
             <View
               style={{
                 position: "absolute",

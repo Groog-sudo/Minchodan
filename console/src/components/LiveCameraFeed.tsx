@@ -163,9 +163,12 @@ export function LiveCameraFeed({
                 const displayBBox = getDisplayBBox({ x, y, w, h }, naturalSize);
                 const color = getColorForClass(det.className);
                 const isSeg = det.model === "segmentation";
+                const detKey =
+                  det.track_id ??
+                  `${det.className ?? "unknown"}-${Math.round(x)}-${Math.round(y)}-${Math.round(w)}-${Math.round(h)}-${index}`;
                 return (
                   <div
-                    key={index}
+                    key={detKey}
                     className={
                       isSeg
                         ? "frame-overlay-box frame-overlay-seg"

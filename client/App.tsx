@@ -40,22 +40,44 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let onboardingTimer: ReturnType<typeof setTimeout> | null = null;
+
     void setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,
       shouldPlayInBackground: false,
       interruptionMode: "mixWithOthers",
-    }).then(() => {
-      console.log("[App] 최상단 오디오 세션 선제 설정 완료 (Silent Override)");
-      if (!onboardingPlayedRef.current) {
-        onboardingPlayedRef.current = true;
-        setTimeout(() => {
-          audioEngine.speakFallback(ONBOARDING_MESSAGE);
-        }, 600);
+    })
+      .then(() => {
+        if (cancelled) return;
+        console.log("[App] 최상단 오디오 세션 선제 설정 완료 (Silent Override)");
+        if (!onboardingPlayedRef.current) {
+          onboardingPlayedRef.current = true;
+          onboardingTimer = setTimeout(() => {
+            if (!cancelled) {
+              audioEngine.speakFallback(ONBOARDING_MESSAGE);
+            }
+          }, 600);
+          // cleanup이 setTimeout 할당 직전에 돌았을 수 있으므로 즉시 재확인한다.
+          if (cancelled) {
+            clearTimeout(onboardingTimer);
+            onboardingTimer = null;
+          }
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("[App] 최상단 오디오 세션 선제 설정 실패:", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (onboardingTimer) {
+        clearTimeout(onboardingTimer);
       }
-    }).catch((err) => {
-      console.error("[App] 최상단 오디오 세션 선제 설정 실패:", err);
-    });
+    };
   }, []);
 
   return (
