@@ -562,7 +562,11 @@
   - **OOD 실내 오탐 완화 조치** (`detection_pipeline.py`, `config.py`, `CameraView.tsx`, `tfliteDetector.ts`):
     - BBox와 노면 segmentation mask의 공간적 겹침비(30% 미만 차단) 교차검증 게이트 및 겹치지 않는 OOD 환각 탐지비 로깅 추가.
     - 서버(ByteTrack) 및 단말(Streak) 시간적 필터 강도를 4프레임으로 상향하고, 객체 탐지 Confidence 임계값을 0.35에서 0.50으로 격상.
-- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/config.py`
+  - **금일 최종 진단 및 미결/방향 요약**:
+    - **진단 결과**: 실외 데이터셋 기반 모델 특성 상 실내를 OOD(분포 외) 환경으로 오판하여 차량 환각이 빈발했으며, 모바일 디코더 채널 스크램블링(CHW) 버그를 NHWC 전처리로 교정 완료.
+    - **미해결 상태**: 정면 외곽(1~2시 방향) 구석의 책상/노트북이 여전히 CAR 고신뢰도로 오탐 오발화하며, 실내 세그멘테이션 부재 시 노면 교차검증 게이트의 fail-open 우회 우려가 있음.
+    - **내일 방향**: 정면 외곽 방향 오발화 판단 로직을 우선 수정한 후, 모바일 온디바이스 씬 분류 결과(is_outdoor)를 공유받아 실내/실외 프로파일(Profile) 게이트 임계값을 다원 분기 설계.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/config.py`, `docs/handoff/2026-07-15_reflex_ood_handoff.md`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
 
 
