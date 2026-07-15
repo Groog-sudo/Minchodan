@@ -118,7 +118,7 @@ export async function probeDepth(
 }
 
 /** 640x640 bbox 목록의 중앙 50% 영역에서 LiDAR 거리(25퍼센타일)를 샘플링한다. */
-export async function probeDepthBoxes(
+async function probeDepthBoxes(
   boxes: { x: number; y: number; w: number; h: number }[],
 ): Promise<DepthBoxDistanceResult | null> {
   const mod = getModule();

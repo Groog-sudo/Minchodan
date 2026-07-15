@@ -57,6 +57,7 @@ function getColorForClass(className: string): string {
 }
 
 interface LoggedDetection {
+  track_id?: string | null;
   class_name?: string;
   confidence?: number;
   direction?: string | null;
@@ -212,7 +213,7 @@ function FrameWithOverlay({
           const displayBBox = getDisplayBBox({ x, y, w, h }, natural);
           return (
             <div
-              key={`${className}-${index}`}
+              key={det.track_id ?? `${className}-${index}`}
               className="frame-overlay-box"
               style={{
                 left: `${displayBBox.leftPct}%`,
@@ -431,22 +432,34 @@ export function DetectionGuidanceLogTable({
                   <tr
                     key={row.log_id}
                     className={row.log_id === selectedLogId ? "row-selected" : undefined}
+                    tabIndex={0}
                     onClick={() =>
                       setSelectedLogId(row.log_id === selectedLogId ? null : row.log_id)
                     }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedLogId(row.log_id === selectedLogId ? null : row.log_id);
+                      }
+                    }}
                   >
                     <td>
                       {canShowFrame(row) ? (
-                        <img
-                          src={eventFrameUrl(row.event_id!, token!)}
-                          alt="이벤트 썸네일 (클릭하면 확대)"
-                          className="frame-thumb"
-                          loading="lazy"
+                        <button
+                          type="button"
+                          className="frame-thumb-btn"
                           onClick={(event) => {
                             event.stopPropagation();
                             setLightboxLogId(row.log_id);
                           }}
-                        />
+                        >
+                          <img
+                            src={eventFrameUrl(row.event_id!, token!)}
+                            alt="이벤트 썸네일 (클릭하면 확대)"
+                            className="frame-thumb"
+                            loading="lazy"
+                          />
+                        </button>
                       ) : (
                         "-"
                       )}

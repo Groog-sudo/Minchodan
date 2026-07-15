@@ -476,6 +476,14 @@ td {
 }
 
 /* 이벤트 프레임 이미지 (오탐 검증용 상황 이미지) */
+.frame-thumb-btn {
+  background: none;
+  border: none;
+  cursor: zoom-in;
+  display: block;
+  padding: 0;
+}
+
 .frame-thumb {
   border-radius: 2px;
   border: 1px solid var(--border-tactical);

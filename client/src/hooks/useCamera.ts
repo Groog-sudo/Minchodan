@@ -31,7 +31,6 @@ import { MOCK_CAMERA } from "../config/mock";
 import type { StreamType } from "../types/detection";
 import {
   decodeBase64JpegToChw,
-  FRAME_TENSOR_LENGTH,
   getFrameProvider,
 } from "../services/frameProvider";
 import {
@@ -325,6 +324,3 @@ export function useCamera(
       : undefined,
   };
 }
-
-// FRAME_TENSOR_LENGTH re-export (사용처 참고용)
-export { FRAME_TENSOR_LENGTH };

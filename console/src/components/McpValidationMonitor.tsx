@@ -117,8 +117,8 @@ export function McpValidationMonitor({
                 <span style={{ color: "#9CA3AF", fontSize: "0.8rem" }}>억제 중인 경보 목록:</span>
                 {cache.details && cache.details.length > 0 ? (
                   <ul style={{ margin: "4px 0 0 0", paddingLeft: "1.2rem", fontSize: "0.8rem", color: "#A7F3D0" }}>
-                    {cache.details.map((item, idx) => (
-                      <li key={idx}>
+                    {cache.details.map((item) => (
+                      <li key={item.key}>
                         {item.alert_id} ({item.ttl_seconds}s 남음)
                       </li>
                     ))}

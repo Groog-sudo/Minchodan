@@ -2214,3 +2214,19 @@
 - **관련 파일**: `.cursor/rules/00-core-guidelines.mdc`, `.cursor/rules/01-reflex-path-guard.mdc`, `.cursor/rules/02-stage1-websocket-gateway.mdc`, `.cursor/rules/03-stage2-camera-frame-capture.mdc`, `.cursor/rules/04-stage3-yolo-obstacle-detection.mdc`, `.cursor/rules/05-stage4-rag-knowledge-builder.mdc`, `.cursor/rules/06-stage5-rag-realtime-search.mdc`, `.cursor/rules/07-stage6-llm-guidance-orchestrator.mdc`, `.cursor/rules/08-stage7-tts-voice-streamer.mdc`, `.cursor/rules/09-xcode-build-management.mdc`, `.cursor/rules/10-react-doctor.mdc`, `.cursor/rules/11-auto-publish-work.mdc`, `docs/changelogs/kb.md`
 - **검증 결과**: 실제 디렉토리 구조(`find client/src`, `server/*`)를 확인해 globs 경로 정확성 확보. `git check-ignore` 결과 `.cursor/`는 gitignore 대상이 아님 확인(현재 untracked). Cursor 런타임 동작 자체는 실기기/실앱 검증 불가 항목이라 파일 문법·경로만 정적 검증함.
 - **비고**: `.cursor/`는 아직 git add되지 않은 상태. 커밋 여부는 사용자 확인 후 진행.
+
+---
+
+### 2026-07-15 | 문서 | react-doctor 고신뢰도 항목 수정 (console/client)
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - `console/src/components/DetectionGuidanceLogTable.tsx`: bbox 오버레이 key를 index에서 `det.track_id ?? "${className}-${index}"`로 변경(`LoggedDetection`에 `track_id` 필드 보강). 이벤트 썸네일을 `role="button"` img 대신 실제 `<button>`으로 감싸(`.frame-thumb-btn` 리셋 스타일 추가) 키보드 접근성 확보, 테이블 행에도 `tabIndex`/`onKeyDown`(Enter/Space) 추가.
+  - `console/src/components/McpValidationMonitor.tsx`: 억제 목록 key를 index에서 서버가 내려주는 고유 키(`item.key`)로 변경.
+  - `client/src/hooks/useCamera.ts`, `useOnDeviceDetection.ts`, `services/depthProbe.ts`: 아무 모듈도 import하지 않는 export 3건(`FRAME_TENSOR_LENGTH` 재export, `DET_CLASS_NAMES`, `probeDepthBoxes`) 비공개화.
+  - `client/src/services/audioSessionBridge.ts`: `setVoiceProcessing()`의 Android 분기가 미구현 네이티브 호출을 `await`한 뒤 결과를 버리고 하드코딩 객체를 반환하던 구조를, 가드를 먼저 걸어 불필요한 네이티브 호출 자체를 생략하도록 순서 변경.
+  - iframe(`LiveCameraFeed.tsx`, `OperatorLiveMap.tsx`)에 `sandbox="allow-scripts allow-same-origin"`을 추가했다가, 이 조합이 "sandbox 자체 무력화 가능"이라는 새 보안 경고를 유발함을 재검증으로 확인하고 되돌림(지도 서브앱의 same-origin 필요 여부를 실행 검증할 수 없어 보류).
+  - `createLocalDetector`(`localDetectorSelect.ios/android/.ts`), `useFrameCaptureProvider`(`frameCaptureProviderSelect.ios/android/.ts`)의 "unused export" 경고는 React Native 플랫폼 확장자 자동 바인딩을 정적 분석기가 인식하지 못한 오탐으로 확인, 수정하지 않음(수정 시 빌드 파손 위험).
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/services/audioSessionBridge.ts`, `client/src/services/depthProbe.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/McpValidationMonitor.tsx`, `console/src/styles.css`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx react-doctor@latest`(console 48→50/100, client 이슈 30→27건) + `npx tsc --noEmit`(console/client 둘 다 0 에러) 통과.
+- **비고**: 인증 토큰 저장 방식(`App.tsx`, `config/index.ts`), 커스텀 모달→`<dialog>` 전환, `CameraView.tsx`의 나머지 버그류 항목(effect 정리·의존성 배열·giant-component 등), 미사용 파일(`DeviceUiMirror.tsx`/`OperatorLiveMap.tsx`) 삭제 여부는 아키텍처/UX 결정 또는 반사 경로 안전성 재검증이 필요해 이번 범위에서 제외.
