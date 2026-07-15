@@ -534,5 +534,23 @@
 - **관련 파일**: `server/detection/gates/reflex_gate.py`, `server/orchestration/nodes/l1_classifier.py`, `.env`, `server/detection/config.py`, `docs/stage-guides/stage3_detection_design.md`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`
 - **검증 결과**: git push 완료 및 local tsc 컴파일 무결성 검증.
 
+---
+
+### 2026-07-15 | 모바일/AI | 반사 경로 온디바이스 폴백 강화 및 중복 경보 방지 이중화
+
+- **커밋**: `fix: strengthen on-device fallback for reflex path and prevent duplicate alarms`
+- **변경 내용**:
+  - **반사 경보 온디바이스 조건 일치 및 헬퍼 추가** (`CameraView.tsx`):
+    - `estimateDirection` 헬퍼 함수를 추가하여 사물의 X좌표 기반 충돌 회랑 방향(`front`, `front-left`, `front-right`)을 3분대로 산출.
+    - `applyLocalAreaReflex` 함수를 수정하여 긴급하지 않은 비프 주기(100ms 초과)의 로컬 경보 발생 시, 감지 장애물의 방향에 매칭되는 사전합성 음성 파일(`reflex_clips/high_*.wav`)을 재생하는 오디오 엔진(`playReflexClip`)을 직접 트리거하도록 연결.
+  - **서버 타임아웃(300ms) 감지 및 fail-safe 분기 구현** (`CameraView.tsx`):
+    - `lastFrameSentTsRef`와 `lastServerResponseTsRef` 타임스탬프를 통해 매 프레임의 전송 후 300ms 초과 응답 지연 여부를 감지.
+    - 소켓 미연결 또는 300ms 타임아웃 감지 시 즉각 `isServerTimeout` 상태로 전환하여 온디바이스 로컬 TFLite 추론 결과에 의해 즉각 햅틱 및 비프음을 제어하는 로컬 fail-safe 루프 기동.
+  - **서버-로컬 반사 경로 중복 경보 방지** (`CameraView.tsx`):
+    - 서버 연결이 정상인 상황(`!isServerTimeout`)에서는 온디바이스의 반사 경보음 및 햅틱 출력을 명시적으로 억제(Suppress)함으로써 서버 수신 경보음과 로컬 추론 경보음이 중첩되어 울리는 현상 차단.
+- **관련 파일**: `client/src/components/CameraView.tsx`
+- **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
+
+
 
 

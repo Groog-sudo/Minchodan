@@ -249,6 +249,30 @@ function isProximityUrgent(
   return false;
 }
 
+type Direction = "front-left" | "front" | "front-right";
+
+/**
+ * BBox의 좌우 점유 및 거리를 기준으로 시각장애인 충돌 회랑 방향(3분대)을 산출합니다.
+ */
+function estimateDirection(
+  bbox: { x: number; w: number },
+  frameWidth: number,
+): Direction {
+  if (frameWidth <= 0) return "front";
+  const xMin = bbox.x;
+  const xMax = bbox.x + bbox.w;
+  const xMinN = xMin / frameWidth;
+  const xMaxN = xMax / frameWidth;
+
+  const frontLo = 0.20;
+  const frontHi = 0.80;
+
+  if (xMaxN >= frontLo && xMinN <= frontHi) {
+    return "front";
+  }
+  return xMaxN < frontLo ? "front-left" : "front-right";
+}
+
 /**
  * 온디바이스 주차센서식 비프/햅틱 (LLM 미경유).
  * @returns 경보를 올렸으면 true
@@ -263,12 +287,14 @@ function applyLocalAreaReflex(
   let mostCriticalClass = "";
   let nearestLidarDetection: OnDeviceDetectionResult | null = null;
   let nearestLidarMeters = Number.POSITIVE_INFINITY;
+  let mostCriticalDetection: OnDeviceDetectionResult | null = null;
 
   for (const d of detections) {
     const ratio = detectionAreaRatio(d.bbox);
     if (ratio > maxAreaRatio) {
       maxAreaRatio = ratio;
       mostCriticalClass = d.className;
+      mostCriticalDetection = d;
     }
     const resolvedDistance = resolveDetectionDistance(d);
     if (
@@ -291,6 +317,19 @@ function applyLocalAreaReflex(
     }
   };
 
+  const targetDet = nearestLidarDetection || mostCriticalDetection;
+  let direction: Direction = "front";
+  if (targetDet) {
+    direction = estimateDirection(targetDet.bbox, FRAME_SIZE);
+  }
+
+  const playLocalReflexClip = (beepIntervalMs: number) => {
+    if (beepIntervalMs > 100 && targetDet) {
+      const clipName = `reflex_clips/high_${direction}.wav`;
+      void audioEngine.playReflexClip(clipName);
+    }
+  };
+
   if (nearestLidarDetection !== null) {
     const lidarClass = nearestLidarDetection.className;
     const samples = nearestLidarDetection.depthSampleCount ?? 0;
@@ -303,18 +342,21 @@ function applyLocalAreaReflex(
     if (nearestLidarMeters <= 1.0) {
       void hapticEngine.trigger("double");
       void audioEngine.playBeep(0.0, 200);
+      playLocalReflexClip(200);
       log(`[LiDAR] 근접 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
       return true;
     }
     if (nearestLidarMeters <= 1.5) {
       void hapticEngine.trigger("short");
       void audioEngine.playBeep(0.0, 600);
+      playLocalReflexClip(600);
       log(`[LiDAR] 중거리 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
       return true;
     }
     if (nearestLidarMeters <= 3.0) {
       hapticEngine.stopContinuous();
       void audioEngine.playBeep(0.0, 1200);
+      playLocalReflexClip(1200);
       log(`[LiDAR] 원거리 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
       return true;
     }
@@ -332,17 +374,20 @@ function applyLocalAreaReflex(
   if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
     void hapticEngine.trigger("double");
     void audioEngine.playBeep(0.0, 200);
+    playLocalReflexClip(200);
     log(`근접 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
     return true;
   }
   if (maxAreaRatio > 0.03) {
     void hapticEngine.trigger("short");
     void audioEngine.playBeep(0.0, 600);
+    playLocalReflexClip(600);
     log(`중거리 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
     return true;
   }
   hapticEngine.stopContinuous();
   void audioEngine.playBeep(0.0, 1200);
+  playLocalReflexClip(1200);
   log(`원거리 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
   return true;
 }
@@ -655,6 +700,8 @@ export function CameraView() {
   useEffect(() => {
     if (!lastMessage) return;
 
+    lastServerResponseTsRef.current = Date.now();
+
     if (lastMessage.type === "reflex_alert") {
       const alertId = lastMessage.alert_id ?? "unknown";
       const risk = lastMessage.risk_level ?? "unknown";
@@ -676,6 +723,8 @@ export function CameraView() {
 
   // Stale Closure 방지용 useRef 미러: setInterval 콜백은 등록 시점의 값을 캡처하므로
   // 최신 상태는 반드시 ref 를 통해 읽어야 한다.
+  const lastFrameSentTsRef = useRef(0);
+  const lastServerResponseTsRef = useRef(0);
   const detectFrameRef = useRef(detectFrame);
   const isModelsLoadedRef = useRef(isModelsLoaded);
   const isMockModeRef = useRef(isMockMode);
@@ -749,6 +798,7 @@ export function CameraView() {
         }
       });
       sendBinaryRef.current(frame.jpegBytes);
+      lastFrameSentTsRef.current = now;
     } else if (frame.base64 && sendRef.current) {
       // 폴백(Mock 등 jpegBytes 미지원 경로): 기존 base64 방식 유지
       sendRef.current({
@@ -762,6 +812,7 @@ export function CameraView() {
           is_outdoor: isOutdoorBySceneRef.current,
         }
       });
+      lastFrameSentTsRef.current = now;
     }
 
     if (!isModelsLoadedRef.current) return;
@@ -848,77 +899,92 @@ export function CameraView() {
       // iOS: LiDAR/면적 주차센서 (공통 applyLocalAreaReflex)
       // 2026-07-14: 씬 게이트(실내)면 Android pathObstacle 경보/TTS를 억제한다.
       // is_outdoor 서버 전송은 위에서 이미 히스테리시스 안정화 값을 사용 중.
+      // 3. WebSocket 연결 끊김/타임아웃(300ms 초과) 감지
+      const isServerTimeout = wsStatusRef.current !== "connected" ||
+        (lastFrameSentTsRef.current > lastServerResponseTsRef.current &&
+         now - lastFrameSentTsRef.current > 300);
+
       let pathRaisedAlert = false;
       if (Platform.OS === "android") {
-        if (!isOutdoorByScene) {
+        if (!isServerTimeout) {
+          // 4. 서버 정상 시 중복 경보 방지를 위해 온디바이스 반사 경보 억제
+          if (!audioEngine.isGuidePlaying && __DEV__) {
+            console.log("[LocalReflex] 서버 연결 정상 — 온디바이스 반사 경보 억제");
+          }
+        } else if (!isOutdoorByScene) {
           hapticEngine.stopContinuous();
           void audioEngine.stopBeep();
           if (__DEV__) {
             console.log("[PathObstacle] 실내 씬 판정 — 통로 경보 억제");
           }
         } else {
-        const pathRes = pathObstacleDetector.analyze(allDetections);
+          const pathRes = pathObstacleDetector.analyze(allDetections);
 
-        if (pathRes.state === "STOP") {
-          void hapticEngine.trigger("double");
-          void audioEngine.playBeep(0.0, 0);
-          pathRaisedAlert = true;
-          if (!audioEngine.isGuidePlaying) {
+          if (pathRes.state === "STOP") {
+            void hapticEngine.trigger("double");
+            void audioEngine.playBeep(0.0, 0);
+            pathRaisedAlert = true;
+            if (!audioEngine.isGuidePlaying) {
+              console.log(
+                `[LocalReflex][PathObstacle] STOP score=${pathRes.riskScore.toFixed(2)}`,
+              );
+            }
+          } else if (pathRes.state === "BLOCKED") {
+            void hapticEngine.trigger("short");
+            void audioEngine.playBeep(0.0, 200);
+            pathRaisedAlert = true;
+            if (!audioEngine.isGuidePlaying) {
+              console.log(
+                `[LocalReflex][PathObstacle] BLOCKED score=${pathRes.riskScore.toFixed(2)}`,
+              );
+            }
+          } else if (pathRes.state === "CAUTION") {
+            void audioEngine.playBeep(0.0, 600);
+            pathRaisedAlert = true;
+            if (!audioEngine.isGuidePlaying) {
+              console.log(
+                `[LocalReflex][PathObstacle] CAUTION score=${pathRes.riskScore.toFixed(2)}`,
+              );
+            }
+          } else if (reflexDetections.length > 0) {
+            // path CLEAR 이어도 가까운 사람/의자 등은 즉시 경보 (실내 포함)
+            applyLocalAreaReflex(reflexDetections, "[AndroidFallback]");
+            pathRaisedAlert = true;
+          } else {
+            hapticEngine.stopContinuous();
+            void audioEngine.stopBeep();
+          }
+
+          const nowTs = Date.now();
+          if (
+            pathRaisedAlert &&
+            (pathRes.state === "STOP" || pathRes.state === "BLOCKED") &&
+            !audioEngine.isGuidePlaying &&
+            nowTs - lastAndroidTtsTsRef.current >= 2500
+          ) {
+            lastAndroidTtsTsRef.current = nowTs;
+            let guidanceText = "정면 장애물";
+            if (pathRes.bestTurn === "left") {
+              guidanceText = "정면 장애물, 왼쪽 공간 넓음";
+            } else if (pathRes.bestTurn === "right") {
+              guidanceText = "정면 장애물, 오른쪽 공간 넓음";
+            }
+            audioEngine.speakFallback(guidanceText);
             console.log(
-              `[LocalReflex][PathObstacle] STOP score=${pathRes.riskScore.toFixed(2)}`,
+              `[LocalReflex][PathObstacle] 회피 가이드: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`,
             );
           }
-        } else if (pathRes.state === "BLOCKED") {
-          void hapticEngine.trigger("short");
-          void audioEngine.playBeep(0.0, 200);
-          pathRaisedAlert = true;
-          if (!audioEngine.isGuidePlaying) {
-            console.log(
-              `[LocalReflex][PathObstacle] BLOCKED score=${pathRes.riskScore.toFixed(2)}`,
-            );
-          }
-        } else if (pathRes.state === "CAUTION") {
-          void audioEngine.playBeep(0.0, 600);
-          pathRaisedAlert = true;
-          if (!audioEngine.isGuidePlaying) {
-            console.log(
-              `[LocalReflex][PathObstacle] CAUTION score=${pathRes.riskScore.toFixed(2)}`,
-            );
-          }
+        }
+      } else {
+        // iOS: iOS관련 파일 수정 금지 제약이 있으므로, CameraView.tsx 내의 iOS 분기 로직은 최소한으로 우선순위 게이트만 씌움
+        if (!isServerTimeout) {
+          // 서버 정상 시 온디바이스 반사 경보 억제
         } else if (reflexDetections.length > 0) {
-          // path CLEAR 이어도 가까운 사람/의자 등은 즉시 경보 (실내 포함)
-          applyLocalAreaReflex(reflexDetections, "[AndroidFallback]");
-          pathRaisedAlert = true;
+          applyLocalAreaReflex(reflexDetections, "[iOS]");
         } else {
           hapticEngine.stopContinuous();
           void audioEngine.stopBeep();
         }
-
-        const nowTs = Date.now();
-        if (
-          pathRaisedAlert &&
-          (pathRes.state === "STOP" || pathRes.state === "BLOCKED") &&
-          !audioEngine.isGuidePlaying &&
-          nowTs - lastAndroidTtsTsRef.current >= 2500
-        ) {
-          lastAndroidTtsTsRef.current = nowTs;
-          let guidanceText = "정면 장애물";
-          if (pathRes.bestTurn === "left") {
-            guidanceText = "정면 장애물, 왼쪽 공간 넓음";
-          } else if (pathRes.bestTurn === "right") {
-            guidanceText = "정면 장애물, 오른쪽 공간 넓음";
-          }
-          audioEngine.speakFallback(guidanceText);
-          console.log(
-            `[LocalReflex][PathObstacle] 회피 가이드: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`,
-          );
-        }
-        }
-      } else if (reflexDetections.length > 0) {
-        applyLocalAreaReflex(reflexDetections, "[iOS]");
-      } else {
-        hapticEngine.stopContinuous();
-        void audioEngine.stopBeep();
       }
 
       if (isMockModeRef.current) {
