@@ -71,7 +71,7 @@ export class MockFrameProvider implements FrameProvider {
         formatAsRGBA: true,
         tolerantDecoding: true,
       });
-      const tensor = this.rgbaToChw(
+      const tensor = this.rgbaToHwc(
         decoded.data as Uint8Array,
         decoded.width,
         decoded.height,
@@ -138,12 +138,11 @@ export class MockFrameProvider implements FrameProvider {
   }
 
   /**
-   * RGBA Uint8Array(W x H)를 CHW float32(0~1 정규화)로 변환.
+   * RGBA Uint8Array(W x H)를 HWC float32(0~1 정규화)로 변환.
    * 입력이 640x640 이 아니면 좌상단 기준 crop.
    * 정규화: /255 (Ultralytics YOLO 표준, Python PT/TFLite 교차 검증 완료).
-   *   주: /5 는 bus.jpg 교차 검증에서 탐지 품질 저하를 일으켜 제거함.
    */
-  private rgbaToChw(rgba: Uint8Array, w: number, h: number): Float32Array {
+  private rgbaToHwc(rgba: Uint8Array, w: number, h: number): Float32Array {
     if (w !== FRAME_SIZE || h !== FRAME_SIZE) {
       console.warn(
         `[MockFrameProvider] 샘플 해상도 ${w}x${h} != ${FRAME_SIZE}. 좌상단 crop 시도`,
@@ -151,16 +150,15 @@ export class MockFrameProvider implements FrameProvider {
     }
     const useW = Math.min(w, FRAME_SIZE);
     const useH = Math.min(h, FRAME_SIZE);
-    const plane = FRAME_SIZE * FRAME_SIZE;
-    const out = new Float32Array(plane * 3);
+    const out = new Float32Array(FRAME_SIZE * FRAME_SIZE * 3);
 
     for (let y = 0; y < useH; y++) {
       for (let x = 0; x < useW; x++) {
         const srcIdx = (y * w + x) * 4;
-        const dstIdx = y * FRAME_SIZE + x;
+        const dstIdx = (y * FRAME_SIZE + x) * 3;
         out[dstIdx] = rgba[srcIdx] / 255;             // R (표준 정규화)
-        out[plane + dstIdx] = rgba[srcIdx + 1] / 255;   // G
-        out[plane * 2 + dstIdx] = rgba[srcIdx + 2] / 255; // B
+        out[dstIdx + 1] = rgba[srcIdx + 1] / 255;   // G
+        out[dstIdx + 2] = rgba[srcIdx + 2] / 255; // B
       }
     }
     return out;

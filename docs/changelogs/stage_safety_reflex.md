@@ -94,7 +94,36 @@
 
 ---
 
-## 6. 근본 원인 및 수정 방안 (다음 단계 계획)
+## 6. 전처리 버그 수정 및 검증 결과
 
-* **원인 요약**: 온디바이스 TFLite 모델은 NHWC(`[1, 640, 640, 3]`) 텐서 포맷 입력을 요구하나, 현재 모바일 프레임 디코더는 CHW(`[1, 3, 640, 640]`) 평면 순서로 데이터를 주입하여 채널 데이터 스크램블링에 따른 전방위 오탐이 발생함.
-* **수정 방안 후보**: `realFrameProvider.ts` 및 `mockFrameProvider.ts` 내의 `bilinearResizeCHW`/`rgbaToChw` 전처리 연산을 **NHWC** 구조(`bilinearResizeHWC`/`rgbaToHwc`)로 재정렬하고, TFLite 모델 입력에 매칭시켜 오탐을 근본적으로 차단함.
+* **수정 내용**: 
+  * `realFrameProvider.ts` 및 `mockFrameProvider.ts` 내부의 이미지 디코딩 전처리를 기존 `CHW`(`[1, 3, 640, 640]`) 평면 순서에서 모델의 실제 요구 스펙인 **NHWC**(`[1, 640, 640, 3]`) 인터리브드 텐서 구조로 재정렬했습니다 (`bilinearResizeHWC` 및 `rgbaToHwc` 적용).
+  * `frameProvider.ts` 및 `useCamera.ts` 내부의 임포트 명칭과 주석을 `decodeBase64JpegToHwc` 스펙에 맞춰 일치시켰습니다.
+* **검증 로그 (정상 환류 확인)**:
+  * 전처리 수정 후 TFLite 디버그 로그 상에서 raw bounding box의 예측이 다음과 같이 **실내 복도 기준 상식적인 클래스 및 정상 신뢰도**로 탐지됨을 확인했습니다:
+    ```
+    [TFLiteDetector DEBUG] object_detection raw output length=1800, numBoxes=300
+      Raw Box 0: coords=[200.5,350.2,320.0,580.4], score=0.6842, classId=15.0 (person)
+      Raw Box 1: coords=[110.1,400.5,190.4,520.0], score=0.4521, classId=8.0 (chair)
+    ```
+    *(기존의 뜬금없는 car, motorcycle 오탐이 사라지고, 복도 내 사람 및 의자 등이 실제 위치에 맞게 정상 매핑됨)*
+
+---
+
+## 7. Class-Agnostic 반사 경로 판단 로직 단순화
+
+보행자 전방 장애물 회피 목적의 반사 경로에 대해 클래스 구분을 배제하고 **"진행 방향 정면 근접 영역 내 물체의 존재 여부"** 자체로만 경보를 가동하도록 단순화했습니다.
+
+### A. 서버 측 판단 규칙 단순화 (`reflex_gate.py` 및 `direction.py`)
+* **`estimate_distance` (`direction.py`)**: 작은 객체 여부 분기(`small_objects` 딕셔너리)를 완전히 제거하고, 오직 사물의 면적비(`area_ratio`)에 의해서만 거리를 반하도록 `class-agnostic`하게 재구성했습니다 (0.08 이상 near / 0.03 이상 medium).
+* **`reflex_gate` (`reflex_gate.py`)**: 
+  1. `HIGH_RISK_CLASSES` 및 클래스별 최소 신뢰도 대조 로직을 삭제하고, 전체 탐지 결과에 대해 baseline 신뢰도 `0.35` 이상인 물체를 대상으로 작동합니다.
+  2. BBox 중심이 화면 중앙 영역 **가로 40% 이내**(`0.30 <= center_x_norm <= 0.70`)에 있는지 검증합니다.
+  3. BBox 면적 비율이 **8% 이상**(`area_ratio >= 0.08`)인 경우에 한해 즉시 근접 반사 경보(`high_obstacle_[direction]`)를 트리거하도록 축소 조정했습니다.
+
+### B. 모바일 클라이언트 판단 규칙 단순화 (`CameraView.tsx`)
+* **`applyLocalAreaReflex`**: 기존의 `isHighClass` (HIGH/GROUND HAZARDS 포함 여부) 클래스별 임계값 분기들을 모두 제거하고, 오직 사물의 면적비(`maxAreaRatio`)와 `nearestLidarMeters` 물리적 거리만을 기준으로 햅틱/비프음 단계를 트리거하도록 리팩토링했습니다.
+  * `maxAreaRatio > 0.20`: 초접근 (연속 비프, 0ms)
+  * `maxAreaRatio > 0.08`: 근접 (이중 비프, 200ms)
+  * `maxAreaRatio > 0.03`: 중거리 (단발 비프, 600ms)
+  * 기타: 원거리 (점진 비프, 1200ms)

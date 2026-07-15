@@ -555,7 +555,11 @@
   - **온디바이스 오탐 원인 분석 (진단 모드)** (`tfliteDetector.ts`):
     - TFLite 모델 입력 스펙(NHWC `[1, 640, 640, 3]`)과 프레임 전처리 텐서 공급 레이아웃(CHW `[1, 3, 640, 640]`) 간 채널 배열 불일치(스크램블링)가 실내 야외 객체 오탐의 근본 원인임을 진단함.
     - 모델 로딩 시 `inputs`/`outputs` 텐서 형태를 로깅하고 첫 프레임 raw bounding box 예측값을 1회 콘솔에 출력하는 임시 디버그 로그 추가.
-- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`
+  - **전처리 버그 수정 및 NHWC 정형화** (`realFrameProvider.ts`, `mockFrameProvider.ts`, `frameProvider.ts`, `useCamera.ts`):
+    - 이미지 캡처/디코딩 전처리를 기존 CHW에서 NHWC(`[1, 640, 640, 3]`) 텐서 포맷으로 완전히 교체하여 TFLite 모델 입력 채널 정합화 완료. 오탐 노이즈 소거 확인.
+  - **class-agnostic 반사 경로 전환** (`reflex_gate.py`, `direction.py`, `CameraView.tsx`):
+    - 사물 클래스 종류 분기를 제거하고 BBox의 중앙 40% 내 포지션 및 8% 면적 비율(근접도) 기준만으로 반사 경보를 트리거하도록 서버와 단말 판단 로직 단순화.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
 
 

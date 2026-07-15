@@ -308,10 +308,6 @@ function applyLocalAreaReflex(
     }
   }
 
-  const isHighClass =
-    HIGH_HAZARDS.includes(mostCriticalClass) ||
-    GROUND_HAZARDS.includes(mostCriticalClass);
-
   const log = (msg: string) => {
     if (!audioEngine.isGuidePlaying) {
       console.log(`[LocalReflex]${logTag} ${msg}`);
@@ -371,30 +367,31 @@ function applyLocalAreaReflex(
     return false;
   }
 
-  if (maxAreaRatio > 0.32 || (isHighClass && maxAreaRatio > 0.20)) {
+  // 💡 [설계 의도] 클래스 종류와 독립적(class-agnostic)으로 BBox 크기(면적비)만으로 온디바이스 반사 피드백을 제어합니다.
+  if (maxAreaRatio > 0.20) {
     void hapticEngine.trigger("continuous");
     void audioEngine.playBeep(0.0, 0);
-    log(`초접근 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+    log(`초접근 ratio=${maxAreaRatio.toFixed(2)}`);
     return true;
   }
-  if (maxAreaRatio > 0.12 || (isHighClass && maxAreaRatio > 0.08)) {
+  if (maxAreaRatio > 0.08) {
     void hapticEngine.trigger("double");
     void audioEngine.playBeep(0.0, 200);
     playLocalReflexClip(200);
-    log(`근접 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+    log(`근접 ratio=${maxAreaRatio.toFixed(2)}`);
     return true;
   }
   if (maxAreaRatio > 0.03) {
     void hapticEngine.trigger("short");
     void audioEngine.playBeep(0.0, 600);
     playLocalReflexClip(600);
-    log(`중거리 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+    log(`중거리 ratio=${maxAreaRatio.toFixed(2)}`);
     return true;
   }
   hapticEngine.stopContinuous();
   void audioEngine.playBeep(0.0, 1200);
   playLocalReflexClip(1200);
-  log(`원거리 class=${mostCriticalClass} ratio=${maxAreaRatio.toFixed(2)}`);
+  log(`원거리 ratio=${maxAreaRatio.toFixed(2)}`);
   return true;
 }
 

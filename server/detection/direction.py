@@ -54,33 +54,15 @@ def estimate_direction(bbox: BBoxLike, frame_width: float, distance_class: Dista
 def estimate_distance(
     bbox: BBoxLike, frame_width: float, frame_height: float, class_name: str
 ) -> Distance:
-    """bbox 면적 비율과 클래스별 특성을 고려하여 거리를 계산한다."""
+    """bbox 면적 비율을 고려하여 거리를 계산한다. (class-agnostic)"""
     area_ratio = bbox_area_ratio(bbox, frame_width, frame_height)
 
-    # =========================================================================
-    # 👨‍💻 HARD CODE 영역 시작: 클래스별 거리 임계값 보정 👨‍💻
-    # 💡 [면접 대비 주석]
-    # 질문: 왜 작은 객체(bollard, fire_hydrant 등)는 별도 거리 기준을 썼나요?
-    # 답변: 같은 거리라도 작은 객체는 bbox 면적이 작게 잡히기 때문에, 일반 차량 기준 면적
-    # 임계값을 그대로 쓰면 너무 멀다고 오판해 경보 시점이 늦어집니다.
-    # 그래서 작은 객체는 near/medium 기준을 더 낮춰 실제 보행 위험 타이밍에 맞게 조정했습니다.
-    # MVP 빠른 패치: 작은 객체는 면적 임계값을 하향 조정
-    small_objects = {"bollard", "kickboard", "planter", "fire_hydrant"}
-    normalized_class = class_name.strip().lower()
-
-    if normalized_class in small_objects:
-        if area_ratio >= 0.10:
-            return "near"
-        if area_ratio >= 0.04:
-            return "medium"
-        return "far"
-
-    if area_ratio >= 0.25:
+    # 클래스 구분 없이 일관된 면적 비율 기준으로 거리 판정
+    if area_ratio >= 0.08:
         return "near"
-    if area_ratio >= 0.10:
+    if area_ratio >= 0.03:
         return "medium"
     return "far"
-    # =========================================================================
 
 
 def bbox_area_ratio(bbox: BBoxLike, frame_width: float, frame_height: float) -> float:

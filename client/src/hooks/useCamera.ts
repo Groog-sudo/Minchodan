@@ -30,7 +30,7 @@ import { COGNITIVE_FPS, REFLEX_FPS } from "../config";
 import { MOCK_CAMERA } from "../config/mock";
 import type { StreamType } from "../types/detection";
 import {
-  decodeBase64JpegToChw,
+  decodeBase64JpegToHwc,
   getFrameProvider,
 } from "../services/frameProvider";
 import {
