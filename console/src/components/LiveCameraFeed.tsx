@@ -19,7 +19,7 @@ const NAV_MAP_URL = resolveServiceUrl(
 // 공용 화면이라 iPhone 프레임에는 이 보정이 오히려 잘못 적용됐다(실기기 실측
 // 확인). 기기별 platform 정보가 WS 페이로드에 없어 자동 분기는 아직 불가하므로,
 // 우선 0(무회전)으로 되돌린다. Android로 다시 테스트할 때 필요하면 90으로 바꿀 것.
-const LIVE_FEED_ROTATE_DEG: number = 90;
+const LIVE_FEED_ROTATE_DEG: number = 180;
 
 function getDisplayBBox(
   bbox: { x: number; y: number; w: number; h: number },
