@@ -123,6 +123,16 @@ export function MembersPage({ token }: { token: string }) {
                     />
                   </label>
                   <label>
+                    <span className="member-form-label-text">장애 정도</span>
+                    <input
+                      type="text"
+                      value={disabilitySeverity}
+                      onChange={(e) => setDisabilitySeverity(e.target.value)}
+                      placeholder="예: 시각장애 1급"
+                      required
+                    />
+                  </label>
+                  <label>
                     <span className="member-form-label-text">이름</span>
                     <input
                       type="text"
@@ -130,6 +140,14 @@ export function MembersPage({ token }: { token: string }) {
                       onChange={(e) => setName(e.target.value)}
                       placeholder="홍길동"
                       required
+                    />
+                  </label>
+                  <label>
+                    <span className="member-form-label-text">생년월일 (선택)</span>
+                    <input
+                      type="date"
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value)}
                     />
                   </label>
                   <label>
@@ -143,24 +161,6 @@ export function MembersPage({ token }: { token: string }) {
                     />
                   </label>
                   <label>
-                    <span className="member-form-label-text">장애 정도</span>
-                    <input
-                      type="text"
-                      value={disabilitySeverity}
-                      onChange={(e) => setDisabilitySeverity(e.target.value)}
-                      placeholder="예: 시각장애 1급"
-                      required
-                    />
-                  </label>
-                  <label>
-                    <span className="member-form-label-text">생년월일 (선택)</span>
-                    <input
-                      type="date"
-                      value={birthDate}
-                      onChange={(e) => setBirthDate(e.target.value)}
-                    />
-                  </label>
-                  <label>
                     <span className="member-form-label-text">보호자 연락처 (선택)</span>
                     <input
                       type="text"
@@ -169,7 +169,7 @@ export function MembersPage({ token }: { token: string }) {
                       placeholder="010-0000-0000"
                     />
                   </label>
-                  <label>
+                  <label className="member-form-field-full">
                     <span className="member-form-label-text">주소 (선택)</span>
                     <input
                       type="text"
