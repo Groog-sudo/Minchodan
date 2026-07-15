@@ -1,5 +1,5 @@
 """
-segbest.pt 세그멘테이션 모델을 모바일 온디바이스용 TFLite 포맷으로 변환하는 스크립트.
+server/models/yolo26n/의 최신 모델을 모바일 온디바이스용 TFLite 포맷으로 변환하는 스크립트.
 """
 
 import os
@@ -23,7 +23,7 @@ def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, ".."))
 
-    model_path = os.path.join(project_root, "server", "models", "yolo26n", "segbest.pt")
+    model_path = os.path.join(project_root, "server", "models", "yolo26n", "segmentation.pt")
 
     if not os.path.exists(model_path):
         print(f"Error: 모델 파일이 존재하지 않습니다: {model_path}")

@@ -194,7 +194,7 @@ export function useWebSocket(
           console.log(`[WS] STT 상호작용 중 - 인지 경로 오디오 뮤트(bytes=${event.data.byteLength})`);
           return;
         }
-        console.log(`[WS] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}`);
+          console.log(`[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}`);
         void audioEngine.playGuideAudioBytes(new Uint8Array(event.data));
         return;
       }
@@ -233,7 +233,7 @@ export function useWebSocket(
 
           if (!audioEngine.isGuidePlaying) {
             console.log(
-              `[WS] 반사 알림 수신: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}, channel=${isUrgentBeepOnly ? "beep-only" : "voice+beep"}`,
+              `[LocalReflex][WS] 서버 반사 알림: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}, channel=${isUrgentBeepOnly ? "beep-only" : "voice+beep"}`,
             );
           }
           audioEngine.playBeep(panning, beepInterval);
@@ -247,7 +247,7 @@ export function useWebSocket(
           // JSON에 싣지 않고, 이 메시지 직후 바이너리 프레임으로 원본 WAV 바이트를 보낸다
           // (transport:"binary"). 실제 재생은 위 ArrayBuffer 분기에서 이어서 처리한다.
           // transport가 "binary"가 아니면(서버 TTS 실패) 즉시 단말 TTS로 폴백한다.
-          console.log(`[WS] guide 수신: text="${data.guidance_text}", transport=${data.transport}`);
+          console.log(`[Cognitive] guide 수신: text="${data.guidance_text}", transport=${data.transport}`);
 
           // event_id가 "stt-"로 시작하면 STT 질문/네비게이션 응답(항상 재생),
           // 그 외(카메라 event-*)는 인지 경로 - STT 상호작용 중이면 뮤트 대상이다.

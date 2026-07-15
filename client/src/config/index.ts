@@ -54,7 +54,7 @@ export const WS_URL = buildWsUrl(DEFAULT_SERVER_TRANSPORT);
 
 export const DEVICE_ID = process.env.EXPO_PUBLIC_DEVICE_ID ?? "dev-001";
 export const TOKEN = process.env.EXPO_PUBLIC_DEVICE_TOKEN ?? "token-abc-001";
-export const REFLEX_FPS = 4;
+export const REFLEX_FPS = 8;
 export const COGNITIVE_FPS = 2;
 export const HEARTBEAT_INTERVAL = 5000;
 export const MAX_RECONNECT = 3;

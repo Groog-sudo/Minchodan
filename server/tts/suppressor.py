@@ -41,7 +41,20 @@ class AlertSuppressor:
                     return False
 
             exists = await redis_bus._redis.exists(key)
-            return bool(exists)
+            # 개발용 Redis 스텁이 EXISTS를 잘못 구현해 "+OK"를 반환하면
+            # bool("OK") == True 가 되어 모든 반사 경보가 영구 억제된다.
+            # 정수(존재 개수)만 신뢰하고, 그 외 타입은 억제하지 않는다.
+            if isinstance(exists, bool):
+                return exists
+            if isinstance(exists, int):
+                return exists > 0
+            try:
+                return int(exists) > 0
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"[Suppressor] EXISTS 응답 타입 이상: key={key}, value={exists!r}"
+                )
+                return False
         except Exception as e:
             logger.warning(f"[Suppressor] Redis 조회 실패 : {e}")
             return False  # 실패 시 억제하지 않음 (안전 측면)

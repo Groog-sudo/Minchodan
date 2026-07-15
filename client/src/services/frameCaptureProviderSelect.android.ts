@@ -1,9 +1,10 @@
 /**
- * Android 프레임 캡처 구현 (과도기).
+ * Android 프레임 캡처 구현.
  *
- * Android는 아직 iOS의 ReflexFrameProcessorPlugin.swift에 대응하는 네이티브 Frame
- * Processor 플러그인이 없다 (docs/mobile/ios_android_bifurcation_contract.md §4.5).
- * 그 전까지는 takePhoto() 기반 단발 촬영 루프(supportsStream=false)로 동작한다.
+ * Android도 이제 iOS와 동일한 이름("reflexFrameCapture")의 네이티브 Frame
+ * Processor 플러그인을 사용해 반사 스트림을 메모리 경로로 받을 수 있다.
+ * 다만 문서상 과도기 이력이 남아 있고, 플러그인 미등록/런타임 실패 시에는
+ * takePhoto() 기반 폴백 경로가 여전히 필요하다.
  *
  * 공용 captureViaTakePhoto(frameCaptureProvider.ts)를 쓰지 않고 Android 전용 캡처
  * 로직을 이 파일에 독립적으로 둔다 - iOS와 동일하게 photo.orientation 메타데이터를
@@ -15,10 +16,6 @@
  *
  * Android 실기기에서 new File(uri).bytes()가 rejected 에러로 실패하는 사례가 있어,
  * FileSystem.readAsStringAsync + 수동 base64 디코딩으로 우회한다.
- *
- * 후속 작업: Kotlin으로 "reflexFrameCapture" 이름의 Frame Processor 플러그인을
- * 작성해 등록하면, 이 파일의 supportsStream을 true로 전환하고 frameCaptureProviderSelect.ios.ts와
- * 동일한 구조(useFrameProcessor + VisionCameraProxy)로 교체한다.
  */
 
 import { useCallback, useRef } from "react";
@@ -48,6 +45,9 @@ const reflexFrameProcessorPlugin: FrameProcessorPlugin | undefined =
 
 /** 캡처 파이프라인 전체가 이 시간을 넘기면 강제 취소한다(무한 대기 방지). */
 const CAPTURE_TIMEOUT_MS = 3000;
+let didLogPluginStatus = false;
+let didLogStreamFrame = false;
+let didLogTakePhotoFallback = false;
 
 /** 순수 JS 기반 Base64 -> Uint8Array 디코더 (Hermes 환경 최적화). */
 function base64ToUint8Array(base64: string): Uint8Array {
@@ -179,6 +179,14 @@ export function useFrameCaptureProvider(
 ): FrameCaptureController {
   const { cameraRef, intervalSharedValue, lastCaptureTsShared, onStreamFrameBase64 } = params;
   const isCapturingRef = useRef(false);
+  const supportsStream = reflexFrameProcessorPlugin != null;
+
+  if (!didLogPluginStatus) {
+    console.log(
+      `[Camera/Android] reflexFrameCapture plugin ${supportsStream ? "등록됨" : "미등록"} - ${supportsStream ? "frameProcessor" : "takePhoto 폴백"} 경로 사용`,
+    );
+    didLogPluginStatus = true;
+  }
 
   const onFrameBase64 = useRunOnJS(
     (base64: string) => onStreamFrameBase64(base64),
@@ -195,6 +203,10 @@ export function useFrameCaptureProvider(
 
       const result = reflexFrameProcessorPlugin.call(frame);
       if (typeof result === "string" && result.length > 0) {
+        if (!didLogStreamFrame) {
+          didLogStreamFrame = true;
+          console.log("[Camera/Android] frameProcessor 반사 스트림 첫 프레임 수신");
+        }
         onFrameBase64(result);
       }
     },
@@ -202,13 +214,20 @@ export function useFrameCaptureProvider(
   );
 
   const capturePhoto = useCallback(
-    (stream: StreamType): Promise<FrameData | null> =>
-      captureViaTakePhotoAndroid(cameraRef, isCapturingRef, stream),
+    (stream: StreamType): Promise<FrameData | null> => {
+      if (!didLogTakePhotoFallback) {
+        didLogTakePhotoFallback = true;
+        console.warn(
+          "[Camera/Android] takePhoto 폴백 경로 진입 - 플러그인 미등록 또는 스트림 미사용 상태",
+        );
+      }
+      return captureViaTakePhotoAndroid(cameraRef, isCapturingRef, stream);
+    },
     [cameraRef],
   );
 
   return {
-    supportsStream: reflexFrameProcessorPlugin != null,
+    supportsStream,
     frameProcessor,
     capturePhoto,
   };
