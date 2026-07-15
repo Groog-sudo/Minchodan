@@ -487,3 +487,177 @@
 - **검증 결과**:
   - 두 커밋 모두 `origin/jh` 푸시 완료
   - 현재 항목은 당일 작업 추적 강화를 위한 후속 정리 기록
+
+---
+
+### 2026-07-14 | 콘솔 UI | MCP 검증 모니터 레이아웃 정리 및 gitignore 추적 정리
+
+- **커밋**:
+  - `e407fb0` - `refactor(console): MCP 검증 모니터 레이아웃/스타일 정리 및 gitignore 추적 파일 제거`
+  - `df0d5b8` - `fix(console): MCP/지연 요약 패널에 monitor-latency-layout 래퍼 연결`
+- **변경 내용**:
+  - `console/src/components/McpValidationMonitor.tsx`: 카드/그리드 인라인 스타일을 CSS 클래스(`panel-mcp`, `mcp-grid`, `mcp-card`)로 분리하고 루트 요소를 `section.panel.panel-mcp`로 정리
+  - `console/src/pages/DashboardPage.tsx`: `McpValidationMonitor`와 `LatencySummaryPanel`을 상단 `dashboard-grid` 밖으로 재배치하고, `section.monitor-latency-layout`으로 감싸 2열 배치를 실제로 적용
+  - `console/src/styles.css`: `.panel-title`, `.panel-content`, `.panel-mcp`, `.mcp-grid`, `.mcp-card`, `.monitor-latency-layout` 및 반응형(1024px/720px) 그리드 규칙 추가
+  - `console/src/styles.css`: 좌측 MCP 열에서 카드가 2x2로 보이도록 `.monitor-latency-layout .mcp-grid` 오버라이드 추가
+  - `.claude/` 하위 스킬·설정 파일의 Git 추적을 제거해 `.gitignore`의 `.claude/` 정책과 정합화 (로컬 스킬은 `.agents/skills/` 기준 유지)
+  - `server/models/piper/piper-kss-korean.onnx` Git 추적 제거 (`*.onnx` gitignore 정책 정합, 로컬 폴백 가중치는 필요 시 별도 배치)
+  - `scratch/create_default_admin.py` 제거 (`scratch/` gitignore 정책 정합)
+  - `docs/ops/reports/` 임시 역활 보고서(TTS 반사경로·Navigation 가이드 기준 연동 적용 완료 보고서) 삭제
+- **관련 파일**: `console/src/components/McpValidationMonitor.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `.claude/**`, `server/models/piper/piper-kss-korean.onnx`, `scratch/create_default_admin.py`, `docs/ops/reports/`, `docs/changelogs/jh.md`
+- **검증 결과**:
+  - 1차 커밋 `e407fb0` GitHub `origin/jh` 반영 확인 완료
+  - 후속 수정: CSS에만 있던 `.monitor-latency-layout`을 DashboardPage에 연결해 레이아웃 미적용 상태 해소
+  - 콘솔 로고(`console/public/gildang-logo.jpeg`)는 UI 참조 유지로 복원하여 제외
+  - 정적 레이아웃 리팩터 위주 변경으로 단위 테스트 미실행
+- **비고**: 기능 변경 없이 콘솔 모니터 패널 구조/스타일 정리와 저장소 추적 정리에 초점
+
+## Commit Message
+
+style(console): MCP 모니터와 지연 요약 패널 분리 및 MCP 1행 레이아웃 정리
+
+## Staged Changes (정확 기준)
+
+- 대상 파일: `console/src/pages/DashboardPage.tsx`
+  - `McpValidationMonitor`와 `LatencySummaryPanel`을 `monitor-stack-layout` 래퍼로 감싸 별도 섹션으로 분리
+  - 두 패널이 같은 블록 안에서 세로로 쌓이되, 서로 간격이 명시적으로 유지되도록 구조 정리
+
+- 대상 파일: `console/src/styles.css`
+  - `.monitor-stack-layout` 신규 추가
+    - `display: flex`
+    - `flex-direction: column`
+    - `gap: 20px` (모바일에서는 `16px`)
+  - `.mcp-grid`를 결과/출력량을 고려한 데스크톱 `1행 4열` 구조로 유지하면서 카드 간 여백을 `14px`로 조정
+  - `.mcp-grid`에 `align-items: stretch`를 추가해 카드 높이 차이로 레이아웃이 흔들리지 않도록 보정
+  - 기존 `.monitor-latency-layout` 의존 배치 흔적(중간 해상도 1열 전환 규칙, 좌측 2x2 전용 override)을 제거해 현재 구조와 스타일 규칙을 일치시킴
+
+## Scope
+
+- 관리자 콘솔 대시보드의 MCP 검증 패널 및 파이프라인 지연 요약 패널 배치/간격/UI 구조만 변경
+- API, 상태관리, 백엔드 로직, 데이터 계약 변경 없음
+
+---
+
+# 2026-07-14 Commit Note
+
+## Commit Message
+
+style(console): 회원등록 폼 1열 세로 정렬 및 등록 버튼 높이 조정
+
+## Staged Changes (정확 기준)
+
+- 대상 파일: `console/src/styles.css`
+- `.member-form` 레이아웃을 다열 자동 배치에서 1열 고정으로 변경
+  - `grid-template-columns: 1fr`
+  - `row-gap: 16px`, `column-gap: 0`
+- `.member-form label` 간격을 `gap` 단일값에서 축별 값으로 조정
+  - `row-gap: 14px`, `column-gap: 6px`
+- 회원등록 폼 내부 등록 버튼 세로 크기 증가
+  - `.member-form .refresh-btn { padding: 10px 10px; }`
+
+## Scope
+
+- 회원관리 페이지의 등록 폼 UI 배치 및 버튼 높이만 변경
+- 비즈니스 로직/API/상태관리 변경 없음
+
+---
+
+## Commit Message
+
+fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통화
+
+## Pending Changes (정확 기준)
+
+- 신규 파일 추가: `console/src/config/network.ts`
+  - `resolveApiBaseUrl(apiBaseUrlFromEnv?)`:
+    - `VITE_API_BASE_URL`이 없거나 파싱 실패 시 `http(s)://{현재브라우저호스트}:8000` 폴백
+    - env 주소가 `localhost/127.0.0.1/::1`인데 콘솔 접속 호스트가 원격이면 현재 브라우저 호스트로 자동 치환
+    - trailing slash 제거
+  - `resolveServiceUrl(envUrl, pathFromApiBase, apiBaseUrlFromEnv?)`:
+    - 서비스별 URL env(`VITE_MONITOR_STREAM_URL`, `VITE_NAV_MAP_URL`) 우선
+    - 없거나 파싱 실패 시 API Base + 경로로 생성
+    - localhost 원격접속 치환 동일 적용
+
+- 변경 파일: `console/src/components/Login.tsx`
+  - 로그인 엔드포인트를 `http://localhost:8000/api/v1/admin/login` 하드코딩에서
+    `resolveApiBaseUrl(...)` 기반 `LOGIN_ENDPOINT`로 변경
+
+- 변경 파일: `console/src/api/useMembers.ts`
+  - `API_BASE_URL` 생성 로직을 공통 `resolveApiBaseUrl(...)` 사용으로 변경
+
+- 변경 파일: `console/src/api/useDetectionLogs.ts`
+  - `API_BASE_URL` 생성 로직을 공통 `resolveApiBaseUrl(...)` 사용으로 변경
+
+- 변경 파일: `console/src/api/useLiveFeed.ts`
+  - `API_BASE_URL` 생성 로직을 공통 `resolveApiBaseUrl(...)` 사용으로 변경
+  - 이 값을 기반으로 WS URL(`.../ws/console/live-feed`) 유지
+
+- 변경 파일: `console/src/api/useMonitorStream.ts`
+  - `DEFAULT_STREAM_URL`을 고정 문자열에서 `resolveServiceUrl(...)` 계산값으로 변경
+  - `resolvedUrl` 계산도 공통 URL 해석 함수 사용하도록 변경
+
+- 변경 파일: `console/src/components/LiveCameraFeed.tsx`
+  - `NAV_MAP_URL`을 고정 기본값 대신 `resolveServiceUrl(...)` 기반으로 변경
+
+- 변경 파일: `console/src/components/OperatorLiveMap.tsx`
+  - `NAV_MAP_URL`을 고정 기본값 대신 `resolveServiceUrl(...)` 기반으로 변경
+
+## Scope
+
+- 콘솔의 API/SSE/WS/지도 URL 결정 로직 공통화
+- localhost 하드코딩으로 인한 원격 접속 `Failed to fetch` 재발 방지
+- UI/DB 스키마/백엔드 비즈니스 로직 변경 없음
+
+---
+
+### 2026-07-14 | 콘솔 UI | 라이트박스 스크롤 위치를 컨테이너로 전환하고 상세 패널 폭을 확장
+
+- **커밋**: `fix(console): lightbox-content 스크롤 위치를 컨테이너로 전환하고 상세 패널 폭 확장`
+- **변경 내용**:
+  - `lightbox-content`에 세로 스크롤을 부여해 이미지 내부가 아니라 모달 본체에서 스크롤되도록 조정함
+  - `frame-overlay-lightbox`의 내부 스크롤과 높이 제한을 제거해 이미지가 별도 스크롤바를 만들지 않도록 정리함
+  - `frame-detail-body`, `frame-detail-header`, `lightbox-content`, `lightbox-summary`를 전체 폭으로 확장해 오른쪽 빈공간이 남지 않도록 보정함
+- **관련 파일**: `console/src/styles.css`, `console/src/components/DetectionGuidanceLogTable.tsx`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 라이트박스 상세 UI의 가로 여백과 세로 스크롤 위치를 사용자가 요청한 형태로 정리한 변경임
+
+---
+
+### 2026-07-15 | 콘솔 UI | 회원 등록 폼 1열 고정 복원 및 배치 규칙 단순화
+
+- **커밋**: `style(console): 회원 등록 폼 1열 고정 배치 복원`
+- **변경 내용**:
+  - `member-form` 그리드를 2열에서 1열(`grid-template-columns: 1fr`)로 되돌려 사용자 요청대로 고정 배치함
+  - 2열 전용 확장 규칙(`label:first-of-type`, `label:last-of-type`, 900px 미디어쿼리)을 제거해 스타일 충돌 가능성을 낮춤
+  - 등록 버튼을 1열 폼 흐름에 맞춰 `justify-self: stretch` 기준으로 정렬하고 최소 너비 제한을 해제함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 레이아웃 변경은 회원 등록 폼 영역에 한정되며 비즈니스 로직/API 변경 없음
+
+---
+
+### 2026-07-15 | 콘솔 UI | 회원 등록 폼 라벨-입력 정렬 및 간격 미세 조정
+
+- **커밋**: `style(console): 회원 등록 폼 라벨/입력/버튼 정렬 미세 조정`
+- **변경 내용**:
+  - `MembersPage.tsx`의 회원 등록 각 `label` 텍스트를 `span.member-form-label-text`로 감싸 라벨 텍스트 위치를 입력창 기준으로 제어 가능하게 구조화함
+  - `styles.css`에서 `.member-form input`을 폭 `35%`와 중앙 정렬(`margin: 0 auto`)로 설정해 필드 길이를 MVP 데모 기준에 맞게 축소함
+  - `.member-form-label-text`를 동일 폭(`35%`)·왼쪽 정렬로 지정해 라벨 텍스트가 가운데 배치된 입력창의 좌상단에 맞춰 보이도록 조정함
+  - `.member-form .refresh-btn`도 폭 `35%`·중앙 정렬로 맞추고 상단 여백을 `5px`로 조정해 입력창과 버튼 간격을 일관화함
+  - `.member-form-hint`와 폼 사이 하단 간격을 `10px`로 줄여 시각적 밀도를 정리함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 회원 등록 폼의 정보 배치 가독성 개선 목적의 스타일 조정이며 API/비즈니스 로직 변경 없음
+
+---
+
+### 2026-07-15 | 콘솔 UI | refresh 버튼 자동 폭 복원 및 회원 등록 폭 비율 조정
+
+- **커밋**: `style(console): refresh 버튼 폭 자동화 및 회원 등록 폼 폭 40% 조정`
+- **변경 내용**:
+  - 공통 `.refresh-btn`의 고정 폭을 제거하고 `inline-flex + width: fit-content`로 변경해 `새로고침 중...` 텍스트가 버튼 상자 밖으로 넘치지 않도록 조정함
+  - `.member-form input` 폭을 `35%`에서 `40%`로 상향해 회원 등록 입력창 가독성을 개선함
+  - `.member-form .refresh-btn` 폭도 `35%`에서 `40%`로 함께 조정해 입력창과 버튼의 폭 기준을 통일함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 스타일 레이어만 조정했으며 API/데이터 로직 변경 없음

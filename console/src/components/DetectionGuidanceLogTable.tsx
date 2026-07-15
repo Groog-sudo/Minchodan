@@ -11,6 +11,41 @@ import { eventFrameUrl } from "../api/useDetectionLogs";
 //   원본 이미지를 보존해야 임계값/모델을 바꿔 재검증할 수 있기 때문입니다.
 // - 썸네일/상세 이미지를 클릭하면 라이트박스(확대 보기)가 열립니다.
 
+const LOG_IMAGE_ROTATE_DEG: number = 90;
+
+function getDisplayBBox(
+  bbox: { x: number; y: number; w: number; h: number },
+  natural: { w: number; h: number },
+): { leftPct: number; topPct: number; widthPct: number; heightPct: number } {
+  const { x, y, w, h } = bbox;
+  const srcW = natural.w;
+  const srcH = natural.h;
+
+  if (LOG_IMAGE_ROTATE_DEG === 0) {
+    return {
+      leftPct: (x / srcW) * 100,
+      topPct: (y / srcH) * 100,
+      widthPct: (w / srcW) * 100,
+      heightPct: (h / srcH) * 100,
+    };
+  }
+
+  // 왼쪽으로 90도 꺾여 들어오는 프레임(Android 등)을 모바일 시점(CW 90도)으로 보정
+  const rotatedX = srcH - (y + h);
+  const rotatedY = x;
+  const rotatedW = h;
+  const rotatedH = w;
+  const dstW = srcH;
+  const dstH = srcW;
+
+  return {
+    leftPct: (rotatedX / dstW) * 100,
+    topPct: (rotatedY / dstH) * 100,
+    widthPct: (rotatedW / dstW) * 100,
+    heightPct: (rotatedH / dstH) * 100,
+  };
+}
+
 function getColorForClass(className: string): string {
   const c = className.toLowerCase();
   if (c.includes("person") || c.includes("pedestrian")) return "#10b981"; // Emerald Green
@@ -22,6 +57,7 @@ function getColorForClass(className: string): string {
 }
 
 interface LoggedDetection {
+  track_id?: string | null;
   class_name?: string;
   confidence?: number;
   direction?: string | null;
@@ -162,7 +198,8 @@ function FrameWithOverlay({
       <img
         src={src}
         alt="이벤트 프레임"
-        className="frame-overlay-image"
+        className="frame-overlay-image live-feed-rotated"
+        style={{ transform: `rotate(${LOG_IMAGE_ROTATE_DEG}deg)` }}
         onLoad={(event) => {
           const img = event.currentTarget;
           setNatural({ w: img.naturalWidth, h: img.naturalHeight });
@@ -173,15 +210,16 @@ function FrameWithOverlay({
           const { x, y, w, h } = det.bbox!;
           const className = det.class_name ?? "unknown";
           const color = getColorForClass(className);
+          const displayBBox = getDisplayBBox({ x, y, w, h }, natural);
           return (
             <div
-              key={`${className}-${index}`}
+              key={det.track_id ?? `${className}-${index}`}
               className="frame-overlay-box"
               style={{
-                left: `${(x / natural.w) * 100}%`,
-                top: `${(y / natural.h) * 100}%`,
-                width: `${(w / natural.w) * 100}%`,
-                height: `${(h / natural.h) * 100}%`,
+                left: `${displayBBox.leftPct}%`,
+                top: `${displayBBox.topPct}%`,
+                width: `${displayBBox.widthPct}%`,
+                height: `${displayBBox.heightPct}%`,
                 borderColor: color,
                 boxShadow: `0 0 6px ${color}`,
               }}
@@ -236,44 +274,6 @@ function FrameLightbox({
     >
       <div className="lightbox-content" onClick={(event) => event.stopPropagation()}>
         <div className="lightbox-header">
-          <div>
-            <div className="lightbox-title-row">
-              <strong>{row.event_id}</strong>
-              <StreamBadge streamType={row.stream_type} />
-              <FalsePositiveBadge value={row.false_positive} />
-            </div>
-            <span className="lightbox-tts">
-              {formatDetectedAt(row.detected_at)} · {row.tts_text}
-            </span>
-            <div style={{ marginTop: "6px" }}>
-              <LatencyBadges latencyJson={row.latency_json} />
-            </div>
-            <div style={{ marginTop: "8px", display: "flex", gap: "6px" }}>
-              <button
-                type="button"
-                className={`fp-btn ${row.false_positive === false ? "fp-btn-active-false" : ""}`}
-                onClick={() => onUpdateFalsePositive?.(row.log_id, false)}
-              >
-                정탐 (TP)
-              </button>
-              <button
-                type="button"
-                className={`fp-btn ${row.false_positive === true ? "fp-btn-active-true" : ""}`}
-                onClick={() => onUpdateFalsePositive?.(row.log_id, true)}
-              >
-                오탐 (FP)
-              </button>
-              {row.false_positive !== null && (
-                <button
-                  type="button"
-                  className="fp-btn"
-                  onClick={() => onUpdateFalsePositive?.(row.log_id, null)}
-                >
-                  취소
-                </button>
-              )}
-            </div>
-          </div>
           <button
             type="button"
             className="lightbox-close"
@@ -283,11 +283,63 @@ function FrameLightbox({
             닫기 (Esc)
           </button>
         </div>
-        <FrameWithOverlay
-          src={eventFrameUrl(row.event_id!, token)}
-          detections={parseDetections(row.detected_objects_json)}
-          className="frame-overlay-lightbox"
-        />
+        <div className="lightbox-summary frame-detail-header">
+          <div className="frame-detail-headline">
+            <strong>{row.event_id}</strong>
+            <StreamBadge streamType={row.stream_type} />
+            <FalsePositiveBadge value={row.false_positive} />
+          </div>
+
+          <div className="frame-detail-grid">
+            <div className="frame-detail-item">
+              <span className="frame-detail-label">감지 시각</span>
+              <span className="frame-detail-value">{formatDetectedAt(row.detected_at)}</span>
+            </div>
+            <div className="frame-detail-item">
+              <span className="frame-detail-label">지연 스테이지</span>
+              <div className="frame-detail-value">
+                <LatencyBadges latencyJson={row.latency_json} />
+              </div>
+            </div>
+            <div className="frame-detail-item frame-detail-item-full">
+              <span className="frame-detail-label">TTS 안내문</span>
+              <span className="frame-detail-value">{row.tts_text}</span>
+            </div>
+          </div>
+
+          <div className="frame-detail-actions">
+            <button
+              type="button"
+              className={`fp-btn ${row.false_positive === false ? "fp-btn-active-false" : ""}`}
+              onClick={() => onUpdateFalsePositive?.(row.log_id, false)}
+            >
+              정탐 판정
+            </button>
+            <button
+              type="button"
+              className={`fp-btn ${row.false_positive === true ? "fp-btn-active-true" : ""}`}
+              onClick={() => onUpdateFalsePositive?.(row.log_id, true)}
+            >
+              오탐 판정
+            </button>
+            {row.false_positive !== null && (
+              <button
+                type="button"
+                className="fp-btn"
+                onClick={() => onUpdateFalsePositive?.(row.log_id, null)}
+              >
+                판정 취소
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="frame-detail-image">
+          <FrameWithOverlay
+            src={eventFrameUrl(row.event_id!, token)}
+            detections={parseDetections(row.detected_objects_json)}
+            className="frame-overlay-lightbox"
+          />
+        </div>
       </div>
     </div>
   );
@@ -380,22 +432,34 @@ export function DetectionGuidanceLogTable({
                   <tr
                     key={row.log_id}
                     className={row.log_id === selectedLogId ? "row-selected" : undefined}
+                    tabIndex={0}
                     onClick={() =>
                       setSelectedLogId(row.log_id === selectedLogId ? null : row.log_id)
                     }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedLogId(row.log_id === selectedLogId ? null : row.log_id);
+                      }
+                    }}
                   >
                     <td>
                       {canShowFrame(row) ? (
-                        <img
-                          src={eventFrameUrl(row.event_id!, token!)}
-                          alt="이벤트 썸네일 (클릭하면 확대)"
-                          className="frame-thumb"
-                          loading="lazy"
+                        <button
+                          type="button"
+                          className="frame-thumb-btn"
                           onClick={(event) => {
                             event.stopPropagation();
                             setLightboxLogId(row.log_id);
                           }}
-                        />
+                        >
+                          <img
+                            src={eventFrameUrl(row.event_id!, token!)}
+                            alt="이벤트 썸네일 (클릭하면 확대)"
+                            className="frame-thumb"
+                            loading="lazy"
+                          />
+                        </button>
                       ) : (
                         "-"
                       )}
@@ -448,57 +512,74 @@ export function DetectionGuidanceLogTable({
 
       {selected && canShowFrame(selected) && (
         <div className="frame-detail">
-          <div className="frame-detail-meta">
-            <div className="lightbox-title-row" style={{ marginBottom: "8px" }}>
-              <strong>{selected.event_id}</strong>
-              <StreamBadge streamType={selected.stream_type} />
-              <FalsePositiveBadge value={selected.false_positive} />
-            </div>
-            <span>{formatDetectedAt(selected.detected_at)}</span>
-            <span style={{ display: "block", margin: "4px 0 8px 0" }}>{selected.tts_text}</span>
-            <div style={{ margin: "0 0 8px 0" }}>
-              <LatencyBadges latencyJson={selected.latency_json} />
-            </div>
-            <div style={{ display: "flex", gap: "6px" }}>
-              <button
-                type="button"
-                className={`fp-btn ${selected.false_positive === false ? "fp-btn-active-false" : ""}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUpdateFalsePositive?.(selected.log_id, false);
-                }}
-              >
-                정탐 판정
-              </button>
-              <button
-                type="button"
-                className={`fp-btn ${selected.false_positive === true ? "fp-btn-active-true" : ""}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUpdateFalsePositive?.(selected.log_id, true);
-                }}
-              >
-                오탐 판정
-              </button>
-              {selected.false_positive !== null && (
+          <div className="frame-detail-body">
+            <div className="frame-detail-header">
+              <div className="frame-detail-headline">
+                <strong>{selected.event_id}</strong>
+                <StreamBadge streamType={selected.stream_type} />
+                <FalsePositiveBadge value={selected.false_positive} />
+              </div>
+
+              <div className="frame-detail-grid">
+                <div className="frame-detail-item">
+                  <span className="frame-detail-label">감지 시각</span>
+                  <span className="frame-detail-value">{formatDetectedAt(selected.detected_at)}</span>
+                </div>
+                <div className="frame-detail-item">
+                  <span className="frame-detail-label">지연 스테이지</span>
+                  <div className="frame-detail-value">
+                    <LatencyBadges latencyJson={selected.latency_json} />
+                  </div>
+                </div>
+                <div className="frame-detail-item frame-detail-item-full">
+                  <span className="frame-detail-label">TTS 안내문</span>
+                  <span className="frame-detail-value">{selected.tts_text}</span>
+                </div>
+              </div>
+
+              <div className="frame-detail-actions">
                 <button
                   type="button"
-                  className="fp-btn"
+                  className={`fp-btn ${selected.false_positive === false ? "fp-btn-active-false" : ""}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUpdateFalsePositive?.(selected.log_id, null);
+                    onUpdateFalsePositive?.(selected.log_id, false);
                   }}
                 >
-                  판정 취소
+                  정탐 판정
                 </button>
-              )}
+                <button
+                  type="button"
+                  className={`fp-btn ${selected.false_positive === true ? "fp-btn-active-true" : ""}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdateFalsePositive?.(selected.log_id, true);
+                  }}
+                >
+                  오탐 판정
+                </button>
+                {selected.false_positive !== null && (
+                  <button
+                    type="button"
+                    className="fp-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateFalsePositive?.(selected.log_id, null);
+                    }}
+                  >
+                    판정 취소
+                  </button>
+                )}
+              </div>
+              <div className="frame-detail-image">
+                <FrameWithOverlay
+                  src={eventFrameUrl(selected.event_id!, token!)}
+                  detections={parseDetections(selected.detected_objects_json)}
+                  onClick={() => setLightboxLogId(selected.log_id)}
+                />
+              </div>
             </div>
           </div>
-          <FrameWithOverlay
-            src={eventFrameUrl(selected.event_id!, token!)}
-            detections={parseDetections(selected.detected_objects_json)}
-            onClick={() => setLightboxLogId(selected.log_id)}
-          />
         </div>
       )}
 

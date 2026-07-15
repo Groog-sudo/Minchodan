@@ -11,8 +11,6 @@ from server.rag.convenience_rag import (
     looks_like_convenience_query,
 )
 
-from .contact_service import ContactService
-from .contact_store import extract_call_target, extract_save_command
 from .stt_config import STT_ORCH_CLASS_NAME, STT_ORCH_RISK_HINT
 from .stt_runtime import validate_stt_bridge_config
 from .stt_schema import SttTranscribeResult
@@ -49,6 +47,26 @@ QUESTION_HINT_WORDS = (
 GILDAENG_ROOT = "길댕"
 GILDAENG_FUZZY_MAX_DISTANCE = 1
 
+GILDAENG_NAV_INTENT_KEYWORDS = [
+    "길찾아줘",
+    "길 찾아줘",
+    "길찾아 줘",
+    "네비게이션 켜줘",
+    "길안내 시작해줘",
+    "길안내 시작",
+    "네비게이션 기능 켜줘",
+    "네비게이션 시작",
+]
+# 2026-07-10 정정(실기기 실측): "길댕아" 프롬프트 자체가 "질문 받을까요?"라고 묻는데
+# "물어볼게"만 받아주면 사용자가 프롬프트 표현 그대로 "질문할게"라고 답했을 때 튕겨나가
+# 재질문 루프에 빠졌다. QUESTION_TRIGGER_KEYWORDS(기존 직접 트리거)와 합쳐 받는다.
+GILDAENG_QUESTION_INTENT_KEYWORDS = [
+    "물어볼게",
+    "물어볼래",
+    "물어볼게요",
+    *QUESTION_TRIGGER_KEYWORDS,
+]
+
 
 def _levenshtein(a: str, b: str) -> int:
     """외부 의존성 없이 쓰는 표준 편집거리(Levenshtein distance) 구현."""
@@ -69,7 +87,19 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 def _is_gildaeng_wake(text: str) -> bool:
-    """발화 안에 "길댕"과 편집거리 1 이하인 2글자 구간이 있으면 wake로 인정한다."""
+    """발화 안에 "길댕"과 편집거리 1 이하인 2글자 구간이 있으면 wake로 인정한다.
+
+    2026-07-14 정정: "길찾아줘"의 부분문자열 "길찾"이 "길댕"과 편집거리 1이라
+    wake 오인되던 버그(목적지 대기 직후 IDLE로 되돌아가는 루프)를 막기 위해,
+    네비/질문 인텐트 키워드가 포함된 발화는 wake로 보지 않는다.
+    """
+    if not text:
+        return False
+    # 인텐트 키워드는 wake보다 우선 (부분문자열 퍼지 매칭 오인 방지)
+    if any(kw in text for kw in GILDAENG_NAV_INTENT_KEYWORDS):
+        return False
+    if any(kw in text for kw in GILDAENG_QUESTION_INTENT_KEYWORDS):
+        return False
     root_len = len(GILDAENG_ROOT)
     for i in range(len(text) - root_len + 1):
         window = text[i : i + root_len]
@@ -115,26 +145,6 @@ def _is_self_echo(transcript: str, recent_guidance: str) -> bool:
     return False
 
 
-GILDAENG_NAV_INTENT_KEYWORDS = [
-    "길찾아줘",
-    "길 찾아줘",
-    "길찾아 줘",
-    "네비게이션 켜줘",
-    "길안내 시작해줘",
-    "길안내 시작",
-    "네비게이션 기능 켜줘",
-    "네비게이션 시작",
-]
-# 2026-07-10 정정(실기기 실측): "길댕아" 프롬프트 자체가 "질문 받을까요?"라고 묻는데
-# "물어볼게"만 받아주면 사용자가 프롬프트 표현 그대로 "질문할게"라고 답했을 때 튕겨나가
-# 재질문 루프에 빠졌다. QUESTION_TRIGGER_KEYWORDS(기존 직접 트리거)와 합쳐 받는다.
-GILDAENG_QUESTION_INTENT_KEYWORDS = [
-    "물어볼게",
-    "물어볼래",
-    "물어볼게요",
-    *QUESTION_TRIGGER_KEYWORDS,
-]
-
 # [하드 코딩 부분 - 핵심] 근접 POI 질의 판별용 키워드.
 # "가까운/근처/주변" + 장소 유형이 함께 있으면 T맵 실거리 검색으로 답한다(LLM 환각 방지).
 NEARBY_TRIGGER_WORDS = ["가까운", "가까이", "근처", "주변", "가장"]
@@ -158,52 +168,6 @@ def _looks_like_question(text: str) -> bool:
     if "?" in text or "？" in text:
         return True
     return any(w in text for w in QUESTION_HINT_WORDS)
-
-
-# ==========================================
-# 🧠 TH HARDCODE AREA (면접/발표 핵심 방어 영역)
-# 음성 편의기능 3종 - 긴급전화 / 연락처 저장 / 이름으로 전화걸기
-# ==========================================
-#
-# 💡 [면접 대비 주석 - 긴급전화 vs 일반 연락처의 구현 차이]
-# Q. 이 셋 다 "전화 걸기"인데 왜 긴급전화만 따로 뺐습니까?
-# A. "긴급전화는 안전 기능이라 AppUser.guardian_phone DB를 조회하는 진짜 구현
-#    (_handle_emergency_call). 일반 연락처는 RAG(ChromaDB) + 단말 주소록
-#    이중 SoT로 영속화하고, ContactStore RAM은 세션 캐시다. 미스 시 device_lookup으로
-#    단말 주소록을 다시 본다. '데이터 성격(안전 DB vs 사용자 연락처)에 맞춰
-#    영속화 계층을 나눴다'는 설계 판단으로 발표하면 된다."
-#
-# 💡 [면접 대비 주석 - 왜 질문 대기보다 연락처 분기를 앞에 두나]
-# Q. is_awaiting_question이 True면 그냥 LLM으로 보내면 안 되나요?
-# A. "실측으로 질문 대기 중 '엄마 번호 저장'이 question-llm에 먹혀 '저장할 수
-#    없다'고 답하는 사고를 확인했다. 의도 분류는 규칙(키워드+번호 패턴)이
-#    LLM보다 먼저 확정해야 편의기능이 새지 않는다(긴급전화와 같은 우선순위)."
-
-# [TH HARDCODE] 긴급전화 직접 트리거 키워드. "SOS"는 실기기 STT가 영문 발화를
-# 안정적으로 인식하지 못할 가능성이 커 데모 시연에서는 한국어 트리거 위주로 쓴다.
-EMERGENCY_TRIGGER_WORDS = ["긴급전화", "긴급 전화", "긴급 상황", "SOS", "sos", "에스오에스"]
-
-# [TH HARDCODE] 연락처 저장/전화걸기 트리거 키워드
-CONTACT_SAVE_TRIGGER_WORDS = ["저장해줘", "저장해"]
-CONTACT_CALL_TRIGGER_WORDS = [
-    "전화 걸어줘",
-    "전화해줘",
-    "전화 걸어",
-    "전화해",
-    "전화 걸어줄래",
-    "전화 걸어주어",  # Whisper가 어미를 '주어'로 전사하는 실측 케이스
-]
-
-
-def _is_emergency_call_trigger(text: str) -> bool:
-    """긴급전화 트리거 판별. "긴급전화/SOS류" 직접 키워드와 "보호자한테 전화/연결"
-    자연어 패턴 두 가지를 모두 인식한다(실제 위급 상황에서 나올 법한 표현 둘 다 커버).
-    "보호자" 분기를 아래 일반 CONTACT_CALL_TRIGGER_WORDS보다 먼저 검사해야
-    "보호자한테 전화해줘"가 (등록 안 된) 일반 연락처 조회로 새지 않는다.
-    """
-    if any(kw in text for kw in EMERGENCY_TRIGGER_WORDS):
-        return True
-    return "보호자" in text and any(w in text for w in ("전화", "연결"))
 
 
 QUESTION_SYSTEM_PROMPT = """당신은 시각장애인 보행자를 돕는 음성 비서입니다.
@@ -261,98 +225,6 @@ class SttToLlmBridge:
             del cls._recent_guidance[device_id]
             return False
         return _is_self_echo(transcript, guidance_text)
-
-    # [TH HARDCODE 아님 - 실제 DB 연동] 보호자 긴급전화. 조회 실패/미등록 시에만
-    # 폴백 번호를 하드코딩으로 쓴다(아래 EMERGENCY_FALLBACK_NUMBER).
-    EMERGENCY_FALLBACK_NUMBER: ClassVar[str] = "119"
-    EMERGENCY_FALLBACK_LABEL: ClassVar[str] = "119 안전신고센터"
-
-    async def _handle_emergency_call(self, device_id: str) -> dict:
-        """보호자 전화번호(AppUser.guardian_phone)를 조회해 긴급 다이얼 액션을 만든다.
-
-        💡 [면접 대비 주석]
-        Q. 이 함수는 어떻게 device_id로 보호자 번호까지 찾아갑니까?
-        A. "WS 접속 시 device_registry_service.ensure_device_registered가 채워둔
-           (device_uuid -> user_id) 캐시를 get_cached_device_ids로 조회하고,
-           UserRepository.get_by_id로 실제 AppUser 로우를 읽어 guardian_phone을
-           꺼냅니다. Router->Service->Repository 계층을 그대로 재사용한 것이라
-           이 기능만은 새 저장소를 만들지 않았습니다."
-        """
-        from server.db.connection import async_sessionmaker_factory
-        from server.db.repositories import UserRepository
-        from server.services.device_registry_service import get_cached_device_ids
-
-        user_id, _ = get_cached_device_ids(device_id)
-        guardian_phone: str | None = None
-
-        if user_id is not None:
-            try:
-                async with async_sessionmaker_factory() as session:
-                    user = await UserRepository(session).get_by_id(user_id)
-                    guardian_phone = user.guardian_phone if user else None
-            except Exception as e:
-                print(f"[STT BRIDGE] 보호자 번호 조회 실패: device_id={device_id}, {e}")
-
-        if guardian_phone:
-            return {
-                "guidance_text": "보호자에게 긴급 전화를 겁니다.",
-                "used_fallback_llm": True,
-                "source": "emergency-call-guardian",
-                "dial_action": {"contact_name": "보호자", "phone_number": guardian_phone},
-            }
-
-        # [TH HARDCODE] 보호자 번호가 DB에 없을 때만 쓰는 고정 폴백 번호.
-        return {
-            "guidance_text": (
-                f"등록된 보호자 번호가 없어 {self.EMERGENCY_FALLBACK_LABEL}로 연결합니다."
-            ),
-            "used_fallback_llm": True,
-            "source": "emergency-call-fallback",
-            "dial_action": {
-                "contact_name": self.EMERGENCY_FALLBACK_LABEL,
-                "phone_number": self.EMERGENCY_FALLBACK_NUMBER,
-            },
-        }
-
-    async def _handle_contact_save(self, device_id: str, name: str, phone: str) -> dict:
-        """연락처 저장: DB + RAM + 단말 주소록(contact_save WS)."""
-        from server.navigation.manager import nav_manager
-
-        await ContactService.save(device_id, name, phone)
-        if nav_manager.is_awaiting_question(device_id):
-            nav_manager.set_awaiting_question(device_id, False)
-        return {
-            "guidance_text": f"{name}님 번호를 휴대폰 주소록에 저장합니다.",
-            "used_fallback_llm": True,
-            "source": "contact-save-success",
-            "contact_save": {"contact_name": name, "phone_number": phone},
-        }
-
-    async def _handle_contact_call(self, device_id: str, normalized_text: str) -> dict:
-        """이름으로 전화: RAM -> DB -> device_lookup 순 조회."""
-        from server.navigation.manager import nav_manager
-
-        target_name = extract_call_target(normalized_text)
-        phone = await ContactService.lookup(device_id, target_name) if target_name else None
-        if nav_manager.is_awaiting_question(device_id):
-            nav_manager.set_awaiting_question(device_id, False)
-        if phone:
-            return {
-                "guidance_text": f"{target_name}님에게 전화를 겁니다.",
-                "used_fallback_llm": True,
-                "source": "contact-call-success",
-                "dial_action": {"contact_name": target_name, "phone_number": phone},
-            }
-        return {
-            "guidance_text": f"{target_name or '연락처'}님에게 전화를 겁니다.",
-            "used_fallback_llm": True,
-            "source": "contact-call-device-lookup",
-            "dial_action": {
-                "contact_name": target_name or "",
-                "phone_number": "",
-                "device_lookup": True,
-            },
-        }
 
     @staticmethod
     def build_orch_input(stt_result: SttTranscribeResult) -> dict:
@@ -448,27 +320,6 @@ class SttToLlmBridge:
 
         current_status = nav_manager.get_status(device_id)
 
-        # 💡 [면접 대비 주석 - 긴급전화는 왜 이 위치에서 가장 먼저 검사하는가]
-        # Q. 목적지 대기/질문 대기 상태 분기보다도 위에서 검사하는 이유는요?
-        # A. "시각장애인 보행자가 위급 상황에서 '긴급전화'라고 외쳤는데, 마침
-        #    네비게이션 목적지를 묻는 중이었다는 이유로 무시되면 안 됩니다.
-        #    반사 경로의 안전 최우선 원칙(Dual Path Discipline)과 같은 취지로,
-        #    다른 모든 대화 상태보다 긴급전화 트리거를 우선 처리합니다."
-        if _is_emergency_call_trigger(normalized_text):
-            return await self._handle_emergency_call(device_id)
-
-        # [TH HARDCODE] 연락처 저장/전화 - 질문·네비 대기보다 앞(2026-07-13 실측).
-        # 한글 숫자 폴백은 contact_store.extract_save_command 쪽.
-        _contact_save_early = (
-            any(kw in normalized_text for kw in CONTACT_SAVE_TRIGGER_WORDS)
-            and extract_save_command(normalized_text) is not None
-        )
-        if _contact_save_early:
-            name, phone = extract_save_command(normalized_text)  # type: ignore[misc]
-            return await self._handle_contact_save(device_id, name, phone)
-        if any(kw in normalized_text for kw in CONTACT_CALL_TRIGGER_WORDS):
-            return await self._handle_contact_call(device_id, normalized_text)
-
         # [하드 코딩 부분 - 핵심]
         # 자유 질의응답 모드 최우선 처리: "질문할게" 등으로 진입한 다음 발화는 그
         # 내용과 무관하게(네비게이션 키워드가 우연히 섞여 있어도) 질문 자체로 취급한다.
@@ -538,12 +389,15 @@ class SttToLlmBridge:
         # [하드 코딩 부분 - 핵심]
         # 네비게이션 기능 켜기(Wake-up) 명령어 판별
         # 작성법: 동의어는 짧은 구문 위주로 추가하고, 의미가 겹치는 표현은 중복 등록하지 않는다.
+        # 2026-07-14: "길찾아줘"는 wake 퍼지와 충돌하던 탓에 여기에도 넣어, 인텐트 대기
+        # 없이 단독 발화되어도 목적지 대기로 들어가게 한다.
         wakeup_keywords = [
             "네비게이션 켜줘",
             "길안내 시작해줘",
             "길안내 시작",
             "네비게이션 기능 켜줘",
             "네비게이션 시작",
+            *GILDAENG_NAV_INTENT_KEYWORDS,
         ]
         is_wakeup = any(kw in normalized_text for kw in wakeup_keywords)
 
@@ -559,14 +413,6 @@ class SttToLlmBridge:
         ]
         is_shutdown = any(kw in normalized_text for kw in shutdown_keywords)
 
-        # [TH HARDCODE] 연락처 저장/전화걸기 트리거 판별. "저장" 키워드만으로는
-        # 오탐이 크므로 전화번호 정규식까지 실제로 매칭되어야 저장 트리거로 인정한다.
-        is_contact_save_trigger = (
-            any(kw in normalized_text for kw in CONTACT_SAVE_TRIGGER_WORDS)
-            and extract_save_command(normalized_text) is not None
-        )
-        is_contact_call_trigger = any(kw in normalized_text for kw in CONTACT_CALL_TRIGGER_WORDS)
-
         # [하드 코딩 부분 - 핵심] 자유 질의응답 진입 트리거 판별
         is_question_trigger = any(kw in normalized_text for kw in QUESTION_TRIGGER_KEYWORDS)
 
@@ -574,12 +420,14 @@ class SttToLlmBridge:
         is_gildaeng_wake = _is_gildaeng_wake(normalized_text)
 
         if is_gildaeng_wake:
-            # 2026-07-10 정정(실기기 실측): WAITING_FOR_DESTINATION 대기 중에 "길댕아"로
-            # 다시 진입하면 그 상태가 안 지워진 채 남아, 이후 발화가 엉뚱하게 목적지
-            # 파싱 분기로 새는 이중 대기 상태 버그가 있었다. 새 wake 진입 시 목적지
-            # 대기는 명시적으로 취소한다(경로/네비 자체가 NAVIGATING 중이면 유지).
+            # 2026-07-14 정정: 목적지 대기 중 "길찾아줘" 퍼지 오인/재웨크로
+            # WAITING을 깨고 인텐트 선택으로 되돌리던 동작을 막는다. 대기 유지 + 재안지만.
             if current_status == "WAITING_FOR_DESTINATION":
-                nav_manager.set_status(device_id, "IDLE")
+                return {
+                    "guidance_text": "목적지를 말씀해 주세요.",
+                    "used_fallback_llm": True,
+                    "source": "navigation-destination-reprompt",
+                }
             nav_manager.set_awaiting_intent(device_id, True)
             return {
                 "guidance_text": "네, 길 찾아드릴까요, 질문 받을까요?",
@@ -607,22 +455,6 @@ class SttToLlmBridge:
                 # 지도 패널의 경로 폴리라인 제거용(빈 배열 = 경로 해제).
                 "nav_waypoints": [],
             }
-
-        elif is_contact_save_trigger:
-            # [TH HARDCODE] 음성 연락처 저장(early 경로와 동일 계약).
-            # extract_save_command None이면 is_contact_save_trigger가 이미 False.
-            #
-            # 💡 [면접 대비 주석 - 서버가 주소록에 직접 쓰지 않는 이유]
-            # Q. FastAPI에서 폰 연락처를 어떻게 씁니까?
-            # A. "못 씁니다. GPU 서버는 단말 ContactsProvider에 접근할 수 없다.
-            #    서버는 이름/번호 파싱 + guidance_text + contact_save 페이로드만
-            #    만들고, 실제 INSERT는 클라이언트의 ContactsBridgeModule이
-            #    ContentProviderOperation으로 수행한다(역할 분리 = dial_action과 동일)."
-            name, phone = extract_save_command(normalized_text)  # type: ignore[misc]
-            return await self._handle_contact_save(device_id, name, phone)
-
-        elif is_contact_call_trigger:
-            return await self._handle_contact_call(device_id, normalized_text)
 
         elif is_question_trigger:
             # [바이브 코딩 부분] 다음 발화를 자유 질문으로 받기 위한 상태 전이.

@@ -19,28 +19,13 @@ export function McpValidationMonitor({
   trace,
 }: McpValidationMonitorProps) {
   return (
-    <div className="panel span-2" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <section className="panel panel-mcp">
       <div className="panel-header">
         <h3 className="panel-title">MCP 검증 및 저지연 모니터</h3>
       </div>
-      <div
-        className="panel-content"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: "1rem",
-        }}
-      >
+      <div className="panel-content mcp-grid">
         {/* 1. Audio Validator Card */}
-        <div
-          className="mcp-card"
-          style={{
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            borderRadius: "8px",
-            padding: "1rem",
-          }}
-        >
+        <div className="mcp-card">
           <h4 style={{ margin: "0 0 0.5rem 0", color: "#60A5FA", display: "flex", justifyContent: "space-between" }}>
             <span>Audio Validator</span>
             <span
@@ -73,15 +58,7 @@ export function McpValidationMonitor({
         </div>
 
         {/* 2. Accessibility Simulator Card */}
-        <div
-          className="mcp-card"
-          style={{
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            borderRadius: "8px",
-            padding: "1rem",
-          }}
-        >
+        <div className="mcp-card">
           <h4 style={{ margin: "0 0 0.5rem 0", color: "#F59E0B", display: "flex", justifyContent: "space-between" }}>
             <span>Accessibility Simulator</span>
             <span
@@ -118,15 +95,7 @@ export function McpValidationMonitor({
         </div>
 
         {/* 3. Redis Cache Monitor Card */}
-        <div
-          className="mcp-card"
-          style={{
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            borderRadius: "8px",
-            padding: "1rem",
-          }}
-        >
+        <div className="mcp-card">
           <h4 style={{ margin: "0 0 0.5rem 0", color: "#10B981", display: "flex", justifyContent: "space-between" }}>
             <span>Redis Cache Monitor</span>
             <span
@@ -148,8 +117,8 @@ export function McpValidationMonitor({
                 <span style={{ color: "#9CA3AF", fontSize: "0.8rem" }}>억제 중인 경보 목록:</span>
                 {cache.details && cache.details.length > 0 ? (
                   <ul style={{ margin: "4px 0 0 0", paddingLeft: "1.2rem", fontSize: "0.8rem", color: "#A7F3D0" }}>
-                    {cache.details.map((item, idx) => (
-                      <li key={idx}>
+                    {cache.details.map((item) => (
+                      <li key={item.key}>
                         {item.alert_id} ({item.ttl_seconds}s 남음)
                       </li>
                     ))}
@@ -165,15 +134,7 @@ export function McpValidationMonitor({
         </div>
 
         {/* 4. LangSmith Trace Card */}
-        <div
-          className="mcp-card"
-          style={{
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            borderRadius: "8px",
-            padding: "1rem",
-          }}
-        >
+        <div className="mcp-card">
           <h4 style={{ margin: "0 0 0.5rem 0", color: "#EC4899", display: "flex", justifyContent: "space-between" }}>
             <span>LangSmith Trace</span>
             <span
@@ -199,6 +160,6 @@ export function McpValidationMonitor({
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }

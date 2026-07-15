@@ -1,0 +1,14 @@
+---
+description: React/React Native 코드 품질 정적 분석 (react-doctor)
+globs: client/src/**/*.tsx,client/src/**/*.jsx,console/src/**/*.tsx,console/src/**/*.jsx
+alwaysApply: false
+---
+
+# React/React Native 코드 품질 (react-doctor)
+
+`client/src/`나 `console/src/`의 컴포넌트를 수정할 때는 `.agents/skills/react-doctor/SKILL.md`를 참고해 렌더링 병목, 부수 효과 누수, 접근성 요건을 점검한다.
+
+핵심 계약:
+
+- 작업 완료 후 `doctor.config.json` 기준 정적 분석을 실행해 통과 여부를 확인한다.
+- 시각장애인 보행 보조 특성상 끊김 없는 실시간 프레임/오디오 처리와 접근성(Haptics, announceForAccessibility)이 최우선이다.

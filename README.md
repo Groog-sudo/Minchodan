@@ -137,7 +137,7 @@ Minchodan/
 └── README.md
 ```
 
-상세 구조는 [`Directory_Structure.md`](Directory_Structure.md)를 참조합니다.
+상세 구조는 [`docs/Directory_Structure.md`](docs/Directory_Structure.md)를 참조합니다.
 
 ---
 
@@ -335,9 +335,9 @@ bash scripts/build_chroma.sh
 python tests\test_ws_echo.py          # 1단계: RTT < 100ms
 python tests\test_frame_decode.py     # 2단계: 캡처수신 < 50ms
 python tests\test_detection.py        # 3단계: conf≈0.87, < 80ms
-python tests\test_rag_retrieval.py    # 5단계: kickboard 쿼리 < 50ms
+python tests\test_retriever.py        # 5단계: kickboard 쿼리 < 50ms
 python tests\test_langgraph.py        # 6단계: bollard  20자/방향 포함
-python tests\test_tts_reflex.py       # 7단계: 반사 클립 선점 재생
+python tests\test_reflex_and_nav.py   # 7단계: 반사 클립 선점 재생
 python scripts\eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
 python scripts\verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
 ```
@@ -348,9 +348,9 @@ python scripts\verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
 python tests/test_ws_echo.py          # 1단계: RTT < 100ms
 python tests/test_frame_decode.py     # 2단계: 캡처수신 < 50ms
 python tests/test_detection.py        # 3단계: conf≈0.87, < 80ms
-python tests/test_rag_retrieval.py    # 5단계: kickboard 쿼리 < 50ms
+python tests/test_retriever.py        # 5단계: kickboard 쿼리 < 50ms
 python tests/test_langgraph.py        # 6단계: bollard  20자/방향 포함
-python tests/test_tts_reflex.py       # 7단계: 반사 클립 선점 재생
+python tests/test_reflex_and_nav.py   # 7단계: 반사 클립 선점 재생
 python scripts/eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
 python scripts/verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
 ```

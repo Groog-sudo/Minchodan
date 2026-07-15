@@ -6,7 +6,7 @@ import { hapticEngine } from "../services/hapticEngine";
 
 // Object Detection 29 커스텀 클래스 인덱스 명세
 // (CoreMLInferenceBridge.swift의 classNames 딕셔너리, det_best_20260705.mlpackage 기준과 순서 일치)
-export const DET_CLASS_NAMES = [
+const DET_CLASS_NAMES = [
   "barricade", "bench", "bicycle", "bollard", "bus",
   "car", "carrier", "cat", "chair", "dog",
   "fire_hydrant", "kiosk", "motorcycle", "movable_signage",

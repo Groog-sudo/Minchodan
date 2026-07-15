@@ -4,18 +4,28 @@ import type { DetectionGuidanceLogRow, GuidanceTraceRow, TrackedObject } from ".
 const MAX_TRACE_ROWS = 30;
 
 /**
- * detected_objects_json 문자열을 TrackedObject 배열로 안전하게 파싱한다.
- * 파싱 실패 시 빈 배열을 반환한다(방어적 코딩).
+ * detected_objects_json 데이터를 TrackedObject 배열로 안전하게 파싱한다.
+ * REST API(이미 역직렬화된 Array) 및 WS/데모(JSON string) 양쪽 모두 지원(방어적 코딩).
  */
-function parseTrackedObjects(jsonStr: string | null | undefined): TrackedObject[] {
-  if (!jsonStr) return [];
-  try {
-    const parsed = JSON.parse(jsonStr);
-    if (!Array.isArray(parsed)) return [];
-    return parsed as TrackedObject[];
-  } catch {
-    return [];
+function parseTrackedObjects(jsonVal: any): TrackedObject[] {
+  if (!jsonVal) return [];
+  if (Array.isArray(jsonVal)) {
+    return jsonVal as TrackedObject[];
   }
+  if (typeof jsonVal === "object") {
+    return [jsonVal] as any;
+  }
+  if (typeof jsonVal === "string") {
+    try {
+      const parsed = JSON.parse(jsonVal);
+      if (Array.isArray(parsed)) return parsed as TrackedObject[];
+      if (typeof parsed === "object" && parsed !== null) return [parsed] as any;
+      return [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 /**
@@ -87,12 +97,28 @@ function rowsToTraces(rows: DetectionGuidanceLogRow[]): GuidanceTraceRow[] {
         // 인지 경로는 log에 risk_level이 없으므로 stream_type으로 추정
         riskLevel = "mid";
       }
+      const text = row.tts_text ?? "";
+      const inferredClassName = obj?.class_name
+        ? obj.class_name
+        : (() => {
+            if (text.includes("경로") || text.includes("회전") || text.includes("방향") || text.includes("우회")) {
+              return "[GPS 내비게이션]";
+            }
+            if (text.includes("직진") || text.includes("안전") || text.includes("정상")) {
+              return "[정기 안전안내]";
+            }
+            if (text.includes("연결") || text.includes("서버") || text.includes("시작") || text.includes("종료")) {
+              return "[시스템 알림]";
+            }
+            return "[일반 안내]";
+          })();
+
       return {
         log_id: row.log_id,
         detected_at: row.detected_at,
         stream_type: row.stream_type,
         track_id: obj?.track_id ?? null,
-        class_name: obj?.class_name ?? "(미탐지)",
+        class_name: inferredClassName,
         hit_count: obj?.hit_count ?? 0,
         direction: obj?.direction ?? "-",
         risk_level: riskLevel,

@@ -31,7 +31,6 @@ import { MOCK_CAMERA } from "../config/mock";
 import type { StreamType } from "../types/detection";
 import {
   decodeBase64JpegToChw,
-  FRAME_TENSOR_LENGTH,
   getFrameProvider,
 } from "../services/frameProvider";
 import {
@@ -200,7 +199,7 @@ export function useCamera(
     }
   }, [reflexFps, cognitiveFps]);
 
-  // 플랫폼별 캡처 구현 (iOS: frameProcessor 스트림 / Android: 과도기 takePhoto).
+  // 플랫폼별 캡처 구현 (iOS/Android 모두 frameProcessor 가능, 실패 시 takePhoto 폴백).
   // Metro가 frameCaptureProviderSelect.ios.ts 또는 .android.ts를 자동 바인딩한다.
   const captureProvider = useFrameCaptureProvider({
     cameraRef,
@@ -231,7 +230,7 @@ export function useCamera(
         // 지속적으로 공급 중이므로(isCapturing=true가 됨과 동시에 onFrameRef가 유효해져
         // handleStreamFrameBase64가 실제로 dispatch를 시작), 여기서는 별도 타이머가 필요 없다.
         console.log(
-          `[Camera] Stream 캡처 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성)`,
+          `[Camera] Stream 캡처 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성, supportsStream=${captureProvider.supportsStream})`,
         );
         return;
       }
@@ -268,7 +267,7 @@ export function useCamera(
       reflexTimerRef.current = setTimeout(tick, currentIntervalRef.current);
 
       console.log(
-        `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성)`,
+        `[Camera] ${isMockMode ? "Mock" : "Real"} 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (동적 조절 활성, supportsStream=${captureProvider.supportsStream})`,
       );
     },
     [
@@ -325,6 +324,3 @@ export function useCamera(
       : undefined,
   };
 }
-
-// FRAME_TENSOR_LENGTH re-export (사용처 참고용)
-export { FRAME_TENSOR_LENGTH };

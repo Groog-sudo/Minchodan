@@ -15,6 +15,8 @@ export interface DepthSample {
   y: number;
   /** 실거리(m). 해당 지점의 유효 심도 샘플이 없으면 null. */
   meters: number | null;
+  /** 보정 전 카메라 광축(z축) 기준 원본 depth(m). */
+  axialMeters?: number | null;
   /** 해당 지점 주변에서 실제로 사용된 유효 depth 픽셀 수. */
   sampleCount?: number;
 }
@@ -25,7 +27,10 @@ export interface DepthProbeResult {
   height?: number;
   /** "absolute"면 LiDAR 실측(미터 단위 신뢰 가능), "relative"면 시차 기반 상대값. */
   accuracy?: "absolute" | "relative";
+  quality?: "high" | "low";
   filtered?: boolean;
+  /** cameraCalibrationData 기반 렌즈·광선 거리 보정 적용 여부. */
+  calibrated?: boolean;
   /** 같은 AVCapture 세션에서 depth와 동기화해 만든 1:1 계측 프리뷰. */
   previewUri?: string;
   previewWidth?: number;
@@ -45,7 +50,9 @@ export interface DepthBoxDistanceResult {
   width?: number;
   height?: number;
   accuracy?: "absolute" | "relative";
+  quality?: "high" | "low";
   filtered?: boolean;
+  calibrated?: boolean;
   distances: DepthBoxDistance[];
 }
 
@@ -111,7 +118,7 @@ export async function probeDepth(
 }
 
 /** 640x640 bbox 목록의 중앙 50% 영역에서 LiDAR 거리(25퍼센타일)를 샘플링한다. */
-export async function probeDepthBoxes(
+async function probeDepthBoxes(
   boxes: { x: number; y: number; w: number; h: number }[],
 ): Promise<DepthBoxDistanceResult | null> {
   const mod = getModule();

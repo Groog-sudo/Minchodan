@@ -1,0 +1,13 @@
+python-dotenv>=1.0.1
+kaggle>=1.6.17
+fiftyone>=0.24.0
+selenium>=4.22.0
+beautifulsoup4>=4.12.3
+requests>=2.32.3
+ultralytics>=8.2.0
+transformers>=4.42.0
+opencv-python>=4.10.0.84
+pandas>=2.2.2
+Pillow>=10.4.0
+ImageHash>=4.3.1
+tqdm>=4.66.4

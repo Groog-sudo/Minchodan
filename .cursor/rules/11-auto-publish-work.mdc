@@ -1,0 +1,15 @@
+---
+description: 작업 마감 체크리스트 - 문서 정합성 검증, 린트/테스트, Changelog 작성, Git 커밋/푸시 전 확인. 작업을 커밋하거나 마무리할 때 사용한다.
+alwaysApply: false
+---
+
+# 작업 마감 체크리스트 (auto-publish-work)
+
+작업을 커밋/푸시하기 전, 또는 사용자가 마무리·정리를 요청할 때 `.agents/skills/auto-publish-work/SKILL.md`를 읽고 다음을 확인한다.
+
+핵심 계약:
+
+- `git status --porcelain` / `git diff --stat`으로 변경 파일 목록을 먼저 파악한다.
+- 변경 성격에 맞는 문서(README, 설계 문서, API 명세 등)를 교차 검증하고 갱신한다.
+- 모델 가중치·`.env` 실값 등 민감 파일이 스테이징되지 않았는지 확인한다.
+- `docs/changelogs/[이니셜].md`에 changelog 엔트리를 추가한다.

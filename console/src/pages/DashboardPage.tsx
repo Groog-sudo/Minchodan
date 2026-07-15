@@ -57,6 +57,34 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     latency_json: '{"decode_ms":10.5,"inference_ms":52.4,"total_ms":62.9}',
     created_at: "2026-07-10T10:15:41Z",
   },
+  {
+    log_id: 4,
+    event_id: "demo-event-004",
+    user_id: 1,
+    device_id: 101,
+    detected_at: "2026-07-10T10:16:00Z",
+    stream_type: "cognitive",
+    detected_objects_json: '[]',
+    tts_text: "약 50미터 앞 우회전입니다. 경로를 유지하십시오.",
+    frame_path: null,
+    false_positive: null,
+    latency_json: '{"decode_ms":10.2,"inference_ms":54.1,"rag_ms":18.2,"llm_ms":195.4,"tts_ms":150.2,"total_ms":428.1}',
+    created_at: "2026-07-10T10:16:01Z",
+  },
+  {
+    log_id: 5,
+    event_id: "demo-event-005",
+    user_id: 1,
+    device_id: 101,
+    detected_at: "2026-07-10T10:16:20Z",
+    stream_type: "cognitive",
+    detected_objects_json: '[]',
+    tts_text: "경로가 안전합니다. 계속 직진하십시오.",
+    frame_path: null,
+    false_positive: null,
+    latency_json: '{"decode_ms":10.1,"inference_ms":53.2,"rag_ms":19.4,"llm_ms":201.2,"tts_ms":160.4,"total_ms":444.3}',
+    created_at: "2026-07-10T10:16:21Z",
+  },
 ];
 
 export function DashboardPage({
@@ -93,8 +121,11 @@ export function DashboardPage({
   // 1페이지(최신)에서만 병합한다 - 2페이지 이후는 특정 offset의 과거 스냅샷이라 실시간
   // 이벤트가 끼어들면 페이지 경계가 흔들린다. 병합 후에도 페이지 크기를 유지하도록 자른다.
   const detectionGuidanceLogs = useMemo(() => {
+    if (isDemoMode) {
+      return DEMO_GUIDANCE_LOGS;
+    }
     if (logPage !== 0) {
-      return isDemoMode && fetchedLogs.length === 0 ? DEMO_GUIDANCE_LOGS : fetchedLogs;
+      return fetchedLogs;
     }
     const byId = new Map<number, DetectionGuidanceLogRow>();
     for (const row of fetchedLogs) byId.set(row.log_id, row);
@@ -102,7 +133,7 @@ export function DashboardPage({
     const merged = Array.from(byId.values())
       .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime())
       .slice(0, LOG_PAGE_SIZE);
-    return isDemoMode && merged.length === 0 ? DEMO_GUIDANCE_LOGS : merged;
+    return merged;
   }, [fetchedLogs, guidanceLogEvents, isDemoMode, logPage]);
 
   return (
@@ -138,19 +169,22 @@ export function DashboardPage({
           session={state.sessions.find((s) => s.device_id === "dev-001") || state.sessions[0] || null}
           ai={state.ai}
         />
+      </section>
+
+      <section className="monitor-stack-layout">
         <McpValidationMonitor
           audio={state.audio_validation}
           cache={state.cache_suppression}
           accessibility={state.accessibility_validation}
           trace={state.langsmith_trace}
         />
+        <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
       </section>
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
-      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
       <GuidanceTraceTimeline rows={detectionGuidanceLogs} />
       <DetectionGuidanceLogTable
         rows={detectionGuidanceLogs}

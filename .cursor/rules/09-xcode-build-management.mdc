@@ -1,0 +1,14 @@
+---
+description: iOS Xcode 빌드/시뮬레이터 관리 및 Swift 네이티브 브릿지 작업
+globs: client/ios/**
+alwaysApply: false
+---
+
+# iOS Xcode 빌드 관리
+
+`client/ios/`(Swift 네이티브 브릿지, Xcode 프로젝트)를 수정하거나 빌드·시뮬레이터 검증이 필요할 때는 `.agents/skills/xcode-build-management/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- 외부 MCP가 아닌 native Xcode CLI(`xcodebuild`, `xcrun simctl`)를 우선 활용한다.
+- CoreML 온디바이스 반사 추론 브릿지(`CoreMLInferenceBridge.swift` 등) 변경 시 실기기 검증을 병행한다.

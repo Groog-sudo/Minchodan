@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.18 (2026-07-14 §4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가)
+> **버전**: v0.4.19 (2026-07-14 §3.1/§3.2 detection 페이로드에 `is_outdoor` 씬 신호 추가 — 실내 시 서버 보도이탈·인지 TTS 억제)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -168,7 +168,8 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
     "ts": 1719216000000,
     "frame_id": 42,
     "stream": "reflex",
-    "transport": "binary"
+    "transport": "binary",
+    "is_outdoor": true
   }
 }
 ```
@@ -180,6 +181,7 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `payload.stream` | `reflex` (8~10fps) 또는 `cognitive` (1~2fps) |
 | `payload.frame_id` | 프레임 일련 번호 |
 | `payload.transport` | `"binary"` 고정 - 서버가 다음 바이너리 프레임을 이 메타와 짝지어야 함을 표시 |
+| `payload.is_outdoor` | **선택**. 온디바이스 씬 분류(iOS: `VNClassifyImageRequest`, Android: ML Kit Image Labeling) + 히스테리시스 결과. `true`=실외, `false`=실내, 생략/`null`=미판정(구버전). 서버는 `false`일 때 보도 이탈 판정과 mid/low `risk.events`(인지 TTS) 발행을 억제한다 (`indoor_fp_mitigation_design.md` §4.7~§4.10) |
 
 > **바이너리 전송 도입 사유 (2026-07-07)**: base64 인코딩은 페이로드 크기를 약 33% 증가시키고 JS/서버 양쪽에 인코딩·디코딩 CPU 오버헤드를 유발한다. 클라이언트는 `expo-file-system`의 `File(uri).bytes()`로 raw JPEG `Uint8Array`를 직접 얻어 `WebSocket.send(bytes)`로 전송하고, 서버(`server/api/ws_router.py`)는 `ws.receive()`로 텍스트/바이너리 프레임을 구분해 `decode_frame_binary()`(`server/capture/frame_decoder.py`)로 base64 디코딩 단계 없이 바로 `cv2.imdecode`한다.
 
@@ -196,7 +198,8 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
     "ts": 1719216000000,
     "frame_id": 42,
     "stream": "reflex",
-    "thumbnail_jpeg_b64": "/9j/4AAQ..."
+    "thumbnail_jpeg_b64": "/9j/4AAQ...",
+    "is_outdoor": true
   }
 }
 ```
@@ -204,6 +207,7 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | 필드 | 설명 |
 | :--- | :--- |
 | `payload.thumbnail_jpeg_b64` | **640x640 JPEG 압축 base64 프레임** (expo-image-manipulator 50% compress). `payload.transport`가 없으면 이 필드가 필수 |
+| `payload.is_outdoor` | §3.1과 동일 (선택, 실내/실외 씬 신호) |
 
 > **이미지 압축 규격 (2026-07-05 신설)**:
 > 단말 클라이언트는 `expo-image-manipulator`의 네이티브 GPU 가속을 통해 원본 캡처 이미지를 640x640 픽셀로 크롭하고 JPEG 50% 수준으로 압축하여 전송합니다. 장당 전송 크기는 약 12~92KB이며, 이는 원본(약 3.4MB) 대비 약 1/40 수준입니다. YOLO26n(640x640) 및 Llava(336x336) 추론 품질에 손실 없음이 검증되었습니다. (바이너리 전송 시에는 이 크기에서 base64의 33% 증가분이 추가로 빠진다.)
@@ -429,19 +433,11 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `길찾아줘` (대기 중) | 목적지 대기 상태(`WAITING_FOR_DESTINATION`)로 전환 | 이어지는 발화를 목적지명으로 파싱해 TMAP POI 검색 + 경로 계산 수행 |
 | `물어볼게` (대기 중) | 자유 질의응답 대기 상태로 전환 | 이어지는 발화를 장애물 회피 오케스트레이터가 아닌 순수 LLM 대화로 처리(§ 아래 참조) |
 | `네비게이션 켜줘` / `질문할게` 등 | 위 2단계 웨이크워드 없이 바로 진입하는 기존 단일 트리거(하위 호환 유지) | "네비게이션"/"내비게이션" 표기는 매칭 전 정규화 |
-| 자유 질의(대기 상태에서) | "가까운/근처/주변" + 장소 유형(지하철역·편의점·화장실 등)이 감지되면 TMAP 실거리 검색(`helper_search_nearest_poi`, Haversine 거리순)으로 사실 기반 답변. 그 외는 LLM 자유 대화 | 위치 사실을 LLM에 맡기지 않고 실제 API 조회 결과로만 답해 환각을 방지 |
-| `긴급전화` / `보호자한테 전화해줘` / `SOS` | `AppUser.guardian_phone`(DB) 조회 후 `dial_action` 메시지(§6.7) 전송 | 대화 상태(목적지 대기/질문 대기 등)와 무관하게 최우선 처리. 보호자 번호 미등록 시 고정 폴백(`119`)으로 연결 |
-| `<이름> 번호 <전화번호> 저장해줘` | `ContactStore`(프로세스 메모리)에 이름/번호 저장 | 데모 시연 범위 임시 저장소(서버 재시작 시 소실) |
-| `<이름>한테 전화 걸어줘` | `ContactStore` 조회 후 `dial_action` 메시지(§6.7) 전송 | 미등록 이름이면 재입력 안내 |
+| 자유 질의(대기 상태에서) | "가까운/근처/주변" + 장소 유형(지하철역·편의점·화장실 등)이 감지되면 TMAP 실거리 검색(`helper_search_nearest_poi`, Haversine 거리순)으로 사실 기반 답변. 그 외는 LLM 자유 대화 / 생활지원 convenience RAG | 위치 사실을 LLM에 맡기지 않고 실제 API 조회 결과로만 답해 환각을 방지. 생활지원 질의는 jh `convenience_rag` 분기 |
 
-> **비고 (2026-07-12) - 음성 편의기능 3종 추가**: 긴급전화/연락처 저장/전화걸기
-> 트리거는 `server/stt/stt_to_llm_bridge.py`, 저장소는 `server/stt/contact_store.py`
-> 참조. 긴급전화만 `AppUser.guardian_phone` 실제 DB 컬럼을 조회하는 구현이고,
-> 일반 연락처는 별도 Contact 테이블이 없어 프로세스 메모리로 대체한 데모 범위
-> 기능이다(각 파일의 `TH HARDCODE`/`면접 대비 주석` 표시 참조). 함께 추가된
-> "수신 문자 읽어주기"(Android 전용, `client/src/hooks/useSmsReader.ts`)는 WS
-> 메시지가 아니라 단말 로컬에서만 동작하는 기능이라 이 계약에 포함되지 않는다.
-> **실기기 SIM을 통한 SMS 실제 수신 테스트는 아직 완료되지 않았다(미검증)**.
+> **비고 (2026-07-14)**: th 음성 편의기능 3종(긴급전화/연락처 저장·전화걸기/SMS 읽어주기)과
+> `dial_action`/`contact_save` WS 계약은 제거했다. 생활지원 질의응답 RAG는 jh
+> (`server/rag/convenience_rag.py`, `data/convenience_guidelines.json`)가 담당하며 유지한다.
 
 > **비고 (2026-07-10)**: 목적지 설정 시 `NavigationManager` 세션 키를 `"default_device"`로
 > 하드코딩해뒀던 결함이 있었다 - GPS 갱신(`realtime_gps`)과 턴바이턴 안내 조회
@@ -588,33 +584,6 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | WS 재접속(인증 직후) | `ws_router.ws_detect` | 서버 세션이 NAVIGATING이고 웨이포인트가 살아 있으면 재전송. 앱 재시작으로 단말 메모리의 경로가 사라져도 지도를 복원한다(실기기 확인 결함 수정) |
 
 클라이언트는 `nav_route`를 `lastMessage` 경유가 아닌 **전용 상태(`navRoute`)** 로 보존한다(고빈도 ack/탐지 메시지의 React 배칭에 저빈도 이벤트가 덮여 유실되는 문제 - guide 오디오와 동일한 이유). 지도 패널은 토글 켜짐일 때만 WebView를 마운트하고, 현재 위치 마커 갱신은 2초 스로틀을 적용한다.
-
----
-
-### 6.7 dial_action (서버 → 단말, 긴급전화/연락처 전화걸기, 2026-07-12 신설)
-
-긴급전화 또는 저장된 연락처로 전화 걸기 음성 명령(§6.3 표 참조)이 인식되면, 서버가 조회한 전화번호를 단말에 전달합니다. 서버는 통신사 회선을 직접 제어할 수 없으므로 실제 다이얼 실행은 단말의 OS 텔레포니 API에 위임합니다.
-
-```json
-{
-  "type": "dial_action",
-  "contact_name": "보호자",
-  "phone_number": "010-1234-5678",
-  "ts": 1720574000000
-}
-```
-
-| 필드 | 설명 |
-| :--- | :--- |
-| `contact_name` | 화면 표시/로그용 호출 대상 이름(`보호자`, `119 안전신고센터`, 사용자가 저장한 이름 등) |
-| `phone_number` | 실제 다이얼에 쓸 전화번호 |
-
-응답과 함께 §6.1 `guide` 메시지(예: `"보호자에게 긴급 전화를 겁니다."`)가 먼저/함께 전송되어 TTS로 안내되며, `dial_action`은 실제 다이얼 실행만 담당합니다. 클라이언트(`useWebSocket.ts`)는 수신 즉시 `Linking.openURL("tel:" + phone_number)`를 호출합니다 - 다이얼러 화면 진입까지만 보장하며, 통화 연결/응답 여부는 확인하지 않습니다.
-
-> **비고 (2026-07-12)**: 긴급전화는 `AppUser.guardian_phone`(관리자 회원 등록 화면에서
-> 입력한 실제 DB 값)을 조회하는 구현이고, 일반 연락처 저장/전화걸기는 별도 Contact
-> 테이블이 없어 서버 프로세스 메모리(`server/stt/contact_store.py`)로 대체한 데모
-> 범위 기능이다. 두 경로 모두 `dial_action` 메시지 포맷은 동일하다.
 
 ---
 
@@ -780,4 +749,5 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.12** | **2026-07-11** | **§8 SSE 계약 고정 - 실발행(8.2)/예약 브리지(8.3) 이벤트 분리, payload 필드를 콘솔 파서 기준으로 고정, `mcp:metrics` producer 부재 사실 명시(기존 "risk.events 실시간 뷰" 오기 정정), 데모 데이터 분리(8.4). §1 공통 필드 event_id 형식 구조화 반영** |
 | **v0.4.13** | **2026-07-12** | **§8.5 사후 이력 조회 REST 신설 - `GET /api/v1/admin/detection-logs` 목록, `GET /api/v1/admin/event-frames/{event_id}` 프레임 JPEG 서빙, 이벤트 프레임 저장 계약(frame_path 컬럼, data/event_frames/ 날짜 폴더, 보존 기본 7일, 백그라운드 저장으로 반사 경로 무영향), 인지 로그 detected_objects_json에 bbox 좌표 포함(콘솔 오탐 검증 오버레이용)** |
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
-| v0.4.17 | 2026-07-14 | §1 공통 `type` 필드 목록 정합 - 코드(`ws_router.py`/`consumer.py`)에서 실제 발행되는 전체 이벤트 타입을 망라하도록 갱신(auth_ok, server_detection, status, stt_audio, nav_route, realtime_gps, dial_action 추가 + 부가 이벤트 guidance_log_event/latency_event/contact_save/deviation_alert/guidance_audio/route_success/route_error/image_url 명시). 기존 누락 분기만 보완, 프로토콜 변경 없음 |
+| **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
+| **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |

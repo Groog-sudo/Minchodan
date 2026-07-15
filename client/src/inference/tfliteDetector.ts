@@ -1,11 +1,14 @@
-import { Platform } from "react-native";
+import { Platform, NativeModules } from "react-native";
 import {
   loadTensorflowModel,
   type TensorflowModel,
   type TensorflowModelDelegate,
 } from "react-native-fast-tflite";
 import { LocalDetector } from "./localDetector";
-import { DualDetectionResult, DetectionResult } from "./types";
+import { DualDetectionResult, DetectionResult, SceneClassification } from "./types";
+import { audioEngine } from "../services/audioEngine";
+
+const { SceneClassifyBridgeModule } = NativeModules;
 
 const ACCELERATION_DELEGATES: TensorflowModelDelegate[] = Platform.select({
   ios: ["core-ml"],
@@ -177,7 +180,7 @@ export class TFLiteDetector implements LocalDetector {
 
 
     const segFrame = frame.slice(0);
-    const [seg, det] = await Promise.all([
+    const [seg, det, scene] = await Promise.all([
       this.runModel(
         this.segModel,
         38,
@@ -194,9 +197,35 @@ export class TFLiteDetector implements LocalDetector {
         "object_detection",
         frame.buffer as ArrayBuffer
       ),
+      this.classifySceneAndroid(base64),
     ]);
 
-    return { seg, det };
+    return { seg, det, scene };
+  }
+
+  /**
+   * Android: ML Kit Image Labeling 네이티브 브릿지로 iOS scene.isLikelyIndoor 동등 신호 산출.
+   * 모듈/base64 없으면 undefined → CameraView는 허용적(실외) 폴백.
+   */
+  private async classifySceneAndroid(
+    base64: string | null,
+  ): Promise<SceneClassification | undefined> {
+    if (Platform.OS !== "android" || !base64 || !SceneClassifyBridgeModule?.classifyScene) {
+      return undefined;
+    }
+    try {
+      const scene = await SceneClassifyBridgeModule.classifyScene(base64) as SceneClassification;
+      if (scene?.topLabels?.length && !audioEngine.isGuidePlaying) {
+        const labels = scene.topLabels
+          .map((l) => `${l.identifier}(${l.confidence.toFixed(2)})`)
+          .join(", ");
+        console.log(`[SceneClassify][Android] indoor=${scene.isLikelyIndoor} ${labels}`);
+      }
+      return scene;
+    } catch (err) {
+      console.warn("[TFLiteDetector] SceneClassify 실패, 씬 게이트 스킵:", err);
+      return undefined;
+    }
   }
 
   dispose() {
