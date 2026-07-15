@@ -2305,7 +2305,7 @@
 
 ### 2026-07-15 | 2단계/3단계 | *260714.pt 기준 온디바이스 CoreML/TFLite 재export
 
-- **커밋**: `(미커밋)`
+- **커밋**: `5b56b14`
 - **변경 내용**:
   - 서버와 동일 기준선 `object_detection260714.pt` / `segmentation260714.pt`에서 모바일 자산 재생성.
   - CoreML: det=`nms=True`(confidence/coordinates), seg=channels-first `[1,40,8400]` + proto mask.
@@ -2321,7 +2321,7 @@
 
 ### 2026-07-15 | 2단계/운영 | *콘솔 event_frames MISS(266건) 원인 조사 문서
 
-- **커밋**: `(미커밋)`
+- **커밋**: `5b56b14`
 - **변경 내용**:
   - Detection Guidance Log 썸네일 `-` vs 404(MISS) 증상을 DB·디스크·API·다중 writer 관점에서 분류.
   - 공유 MariaDB + 호스트별 로컬 `data/event_frames` 불일치가 MISS 266건 주원인임을 실측 근거로 정리.
