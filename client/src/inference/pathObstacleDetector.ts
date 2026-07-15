@@ -81,7 +81,7 @@ class PathObstacleDetector {
     for (const d of detections) {
       const { x, y, w, h } = d.bbox;
       const areaRatio = (w * h) / (FRAME_SIZE * FRAME_SIZE);
-      
+
       // 원근 역산에 기반한 객체 거리 추정 (0.3m ~ 3.0m)
       let distance = Math.min(3.0, Math.max(0.3, 0.22 / Math.sqrt(areaRatio)));
 

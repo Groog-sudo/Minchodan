@@ -1,9 +1,11 @@
 # Minchodan 코드 품질 검증 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.3.0 (2026-07-07 실제 `.pre-commit-config.yaml` 기준으로 pre-push 관련 서술 정정 - pre-push 훅은 존재하지 않으며 mypy/jscpd/pip-audit는 CI 전용)
+> **버전**: v0.3.1 (2026-07-15 pre-commit ruff v0.15.20·requirements-dev 0.15.x 핀으로 로컬/CI/pre-commit Ruff 버전 통일)
 > **기준 문서**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.2(임포트 순서)·3.3(경로 처리)·17.2(방어적 코딩), [`docs/test_specification.md`](test_specification.md)
 > **적용 범위**: Python 서버 코드 (`server/`, `scripts/`, `tests/`). JS/TS(`client/`, `console/`)는 package.json 생성 시 본도 추가 예정.
+
+> **2026-07-15 Ruff 버전 통일**: `.pre-commit-config.yaml`의 `astral-sh/ruff-pre-commit` rev는 **v0.15.20**이며, `requirements-dev.txt`는 **`ruff>=0.15.0,<0.16.0`**으로 핀한다. 로컬 `pip install -r requirements-dev.txt`, pre-commit 훅, CI(`.github/workflows/lint.yml`)가 동일 0.15.x 계열을 사용하도록 맞춘다.
 
 > **2026-07-07 현황 정정**: 실제 `.pre-commit-config.yaml`은 **pre-commit 단계에 ruff-format + ruff + bandit만** 등록되어 있다(모든 훅이 `stages: [pre-commit]`). **pre-push 훅은 존재하지 않는다** — mypy/jscpd/pip-audit는 로컬 가상환경 의존성 문제로 pre-push에서 완전히 제거되어 `.github/workflows/lint.yml`(CI)에서만 실행된다(`.pre-commit-config.yaml` 파일 상단 주석에 이 결정이 명시돼 있다). 아래 §4.3의 `pre-commit install --hook-type pre-push` 안내와 §7 다이어그램의 "pre-push 훅" 단계는 이 변경 이전의 서술이므로, 로컬에서는 pre-commit 훅만 동작하고 mypy/jscpd/pip-audit는 PR을 올려야 CI에서 실행됨을 유의한다.
 
@@ -75,12 +77,14 @@ source .venv/bin/activate
 개발 전용 의존성은 `requirements-dev.txt`로 분리합니다. (운영 배포 `requirements.txt`에 포함 금지)
 
 ```text
-ruff>=0.6.0
+ruff>=0.15.0,<0.16.0
 mypy>=1.11.0
 bandit>=1.7.0
 pip-audit>=2.7.0
 pre-commit>=3.8.0
 ```
+
+> **2026-07-15**: Ruff는 0.15.x로 핀한다. `.pre-commit-config.yaml`의 `rev: v0.15.20`과 맞춘다.
 
 > **2026-07-07 정정**: 실제 `requirements-dev.txt`에는 `jscpd`가 없다. jscpd는 Node.js 기반 도구라 `npm install -g jscpd`(또는 `npm install --save-dev jscpd`)로 별도 설치하며, CI(`lint.yml`)도 `npx -y jscpd`로 실행한다.
 

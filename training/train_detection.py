@@ -41,15 +41,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    
+
     # [HARD CODE] (담당자 직접 작성 영역)
-    # 💡 [면접 대비 주석] 
+    # 💡 [면접 대비 주석]
     # Object Detection (YOLO 26N) 학습 실행 엔트리포인트입니다.
     # 54만 장 전체를 단순 풀 학습하는 대신, 클래스별 오탐 비중이 가장 낮은 이미지를 선별(클래스당 2,000장 수준)하여 학습을 수행했습니다.
     # 이 접근을 통해 데이터 라벨링 및 학습 시간을 획기적으로 줄이면서도 실무 환경에 최적화된 높은 정확도를 확보했습니다.
     best_pt = run_yolo_train(**vars(args))
     # [/HARD CODE]
-    
+
     # [VIBE CODE]
     print(f"학습 완료. best.pt: {best_pt}")
     return 0

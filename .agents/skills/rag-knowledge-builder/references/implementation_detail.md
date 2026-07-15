@@ -22,23 +22,23 @@ def get_image_hash(frame):
 def extract_and_deduplicate(video_path, output_dir, similarity_threshold=10):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-        
+
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_interval = int(fps) # 1초당 1프레임
-    
+
     count = 0
     saved_count = 0
     last_hash = None
-    
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-            
+
         if count % frame_interval == 0:
             current_hash = get_image_hash(frame)
-            
+
             # 이전 이미지와 유사도 비교 (해밍 거리 기준)
             if last_hash is not None:
                 distance = current_hash - last_hash
@@ -46,16 +46,16 @@ def extract_and_deduplicate(video_path, output_dir, similarity_threshold=10):
                     # 너무 유사한 프레임은 건너뜀
                     count += 1
                     continue
-            
+
             output_path = os.path.join(output_dir, f"frame_{saved_count:04d}.jpg")
             # 추론에 알맞게 640x640 크기로 조정하여 저장
             resized_frame = cv2.resize(frame, (640, 640))
             cv2.imwrite(output_path, resized_frame)
             last_hash = current_hash
             saved_count += 1
-            
+
         count += 1
-        
+
     cap.release()
     print(f"추출 및 중복 제거 완료: {video_path} -> {saved_count}개 프레임 저장됨.")
 
@@ -93,21 +93,21 @@ embeddings = OllamaEmbeddings(model="nomic-embed-text")
 def generate_vlm_caption(image_path):
     with open(image_path, "rb") as image_file:
         img_b64 = base64.b64encode(image_file.read()).decode('utf-8')
-        
+
     url = "http://localhost:11434/api/generate"
     prompt = (
         "이 이미지에서 시각장애인 보행 중 부딪히거나 위험할 수 있는 요소(예: 킥보드, 볼라드, 계단, 차량 등)를 찾아내고, "
         "이를 회피하기 위한 행동 지침을 한국어로 명확히 1~2문장으로 기술해 주세요. "
         "반드시 '오른쪽', '왼쪽', '정지', '우회' 등의 명확한 방향을 언급하십시오."
     )
-    
+
     payload = {
         "model": "llava:7b",
         "prompt": prompt,
         "images": [img_b64],
         "stream": False
     }
-    
+
     try:
         response = requests.post(url, json=payload, timeout=60)
         if response.status_code == 200:
@@ -121,11 +121,11 @@ def generate_vlm_caption(image_path):
 def build_vector_db(frame_dir, db_dir):
     image_files = glob.glob(os.path.join(frame_dir, "*.jpg"))
     documents = []
-    
+
     for idx, img_path in enumerate(image_files):
         print(f"[{idx+1}/{len(image_files)}] 캡셔닝 및 임베딩 진행 중: {os.path.basename(img_path)}")
         caption = generate_vlm_caption(img_path)
-        
+
         # 메타데이터 생성 규칙 (파일명이나 사물에 따라 단순 분류)
         objects = []
         if "kickboard" in caption.lower() or "킥보드" in caption:
@@ -134,7 +134,7 @@ def build_vector_db(frame_dir, db_dir):
             objects.append("bollard")
         if "stair" in caption.lower() or "계단" in caption:
             objects.append("stair")
-            
+
         doc = Document(
             page_content=caption,
             metadata={
@@ -144,7 +144,7 @@ def build_vector_db(frame_dir, db_dir):
             }
         )
         documents.append(doc)
-        
+
     # ChromaDB 로컬 디스크 저장
     db = Chroma.from_documents(
         documents=documents,
@@ -173,7 +173,7 @@ from langchain_community.embeddings import OllamaEmbeddings
 def evaluate_retrieval(db_dir):
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
     db = Chroma(persist_directory=db_dir, embedding_function=embeddings)
-    
+
     # 평가용 대표 테스트 쿼리셋
     eval_queries = [
         ("인도 위에 세워진 전동 킥보드 회피 방법", "kickboard"),
@@ -181,14 +181,14 @@ def evaluate_retrieval(db_dir):
         ("내리막 계단 또는 지하도 계단 조심하기", "stair"),
         ("인도를 침범한 배달 오토바이 보행 수칙", "motorcycle")
     ]
-    
+
     total = len(eval_queries)
     hits = 0
-    
+
     for query, target_obj in eval_queries:
         # 유사도 검색 실행 (Top 5)
         results = db.similarity_search_with_score(query, k=5)
-        
+
         # Top-5 내에 정답 객체 메타데이터가 존재하는지 확인
         hit_found = False
         for doc, score in results:
@@ -197,13 +197,13 @@ def evaluate_retrieval(db_dir):
             if target_obj in objects:
                 hit_found = True
                 break
-                
+
         if hit_found:
             hits += 1
             print(f"Query: '{query}' -> 성공 [Hit] (Score: {score:.4f})")
         else:
             print(f"Query: '{query}' -> 실패 [Miss]")
-            
+
     hit_rate = hits / total
     print("-" * 40)
     print(f"최종 Hit-Rate (Top-5): {hit_rate:.2f} (목표 >= 0.60)")

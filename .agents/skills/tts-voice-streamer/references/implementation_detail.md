@@ -94,7 +94,7 @@ key = f"suppress:{device_id}:{class_name}:{direction}"
 def bbox_to_panning(bbox_center_x: float, frame_width: int) -> float:
     """
     YOLO 감지 bbox 중심점 X좌표를 Stereo Panning 값으로 변환
-    
+
     카메라 프레임 기준:
     - 좌측 끝 (x=0)      panning = -1.0
     - 중앙   (x=width/2)  panning = 0.0
@@ -243,14 +243,14 @@ TTS_CONFIG = {
     "default_voice": "ko_female",
     "default_speed": 0.9,
     "high_severity_speed": 0.85,
-    
+
     "redis": {
         "url": "redis://localhost:6379",
         "suppress_ttl_default": 60,
         "suppress_ttl_high": 30,
         "suppress_ttl_low": 120
     },
-    
+
     "websocket": {
         "chunk_size_seconds": 2,
         "max_audio_duration": 30,
