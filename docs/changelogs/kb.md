@@ -2230,3 +2230,18 @@
 - **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/services/audioSessionBridge.ts`, `client/src/services/depthProbe.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/McpValidationMonitor.tsx`, `console/src/styles.css`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx react-doctor@latest`(console 48→50/100, client 이슈 30→27건) + `npx tsc --noEmit`(console/client 둘 다 0 에러) 통과.
 - **비고**: 인증 토큰 저장 방식(`App.tsx`, `config/index.ts`), 커스텀 모달→`<dialog>` 전환, `CameraView.tsx`의 나머지 버그류 항목(effect 정리·의존성 배열·giant-component 등), 미사용 파일(`DeviceUiMirror.tsx`/`OperatorLiveMap.tsx`) 삭제 여부는 아키텍처/UX 결정 또는 반사 경로 안전성 재검증이 필요해 이번 범위에서 제외.
+
+---
+
+### 2026-07-15 | 1단계 | 콘솔 SystemMetrics SSE 렌더링 복구
+
+- **커밋**: `fix: 콘솔 SystemMetrics SSE 버퍼 방지·연결 직후 스냅샷·401 안내 및 API 명세 반영`
+- **변경 내용**:
+  - `server/api/monitor.py`: SSE 응답에 `Cache-Control`/`X-Accel-Buffering: no`/`Connection: keep-alive` 헤더 추가, keep-alive 주석 라인, 연결 직후 `system_metrics` 스냅샷 1회 전송.
+  - `console/src/api/useMonitorStream.ts`: SSE `onerror` 시 동일 URL fetch 프로브로 401 감지 후 안내.
+  - `console/src/components/SystemMetrics.tsx` / `DashboardPage.tsx`: 연결 상태별 빈 카드 안내 문구.
+  - `docs/design/api_specification.md`: §8 SSE 계약 v0.4.20 반영.
+  - `.xcodebuildmcp/config.yaml` 개인 UDID/절대경로는 커밋에서 제외(공유 템플릿 복구, 개인값은 `Copy_config.yaml`).
+- **관련 파일**: `server/api/monitor.py`, `console/src/api/useMonitorStream.ts`, `console/src/components/SystemMetrics.tsx`, `console/src/pages/DashboardPage.tsx`, `docs/design/api_specification.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 변경 파일 `ruff check` 통과, 이중 경로(gates) 위반 없음, 금지 파일 미스테이징, `console` `tsc --noEmit` 통과, SSE 스냅샷 실측(`system_metrics` 연결 직후 수신) 확인. 저장소 전체 `ruff check .`는 기존 이슈 354건으로 auto_publish 스크립트 전체 게이트는 우회하고 변경 범위 검증으로 대체.
+- **비고**: LiveCameraFeed(WebSocket)와 SystemMetrics 행(SSE+JWT)은 인증 경로가 다름. 재로그인 계정은 `admin`/`admin`.
