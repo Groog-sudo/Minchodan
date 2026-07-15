@@ -90,7 +90,7 @@ export function MembersPage({ token }: { token: string }) {
         </p>
         <form className="member-form" onSubmit={handleSubmit}>
           <label>
-            기기 식별자(device_uuid)
+            <span className="member-form-label-text">기기 식별자(device_uuid)</span>
             <input
               type="text"
               value={deviceUuid}
@@ -100,7 +100,7 @@ export function MembersPage({ token }: { token: string }) {
             />
           </label>
           <label>
-            이름
+            <span className="member-form-label-text">이름</span>
             <input
               type="text"
               value={name}
@@ -110,7 +110,7 @@ export function MembersPage({ token }: { token: string }) {
             />
           </label>
           <label>
-            전화번호
+            <span className="member-form-label-text">전화번호</span>
             <input
               type="text"
               value={phone}
@@ -120,7 +120,7 @@ export function MembersPage({ token }: { token: string }) {
             />
           </label>
           <label>
-            장애 정도
+            <span className="member-form-label-text">장애 정도</span>
             <input
               type="text"
               value={disabilitySeverity}
@@ -130,7 +130,7 @@ export function MembersPage({ token }: { token: string }) {
             />
           </label>
           <label>
-            생년월일 (선택)
+            <span className="member-form-label-text">생년월일 (선택)</span>
             <input
               type="date"
               value={birthDate}
@@ -138,7 +138,7 @@ export function MembersPage({ token }: { token: string }) {
             />
           </label>
           <label>
-            보호자 연락처 (선택)
+            <span className="member-form-label-text">보호자 연락처 (선택)</span>
             <input
               type="text"
               value={guardianPhone}
@@ -147,7 +147,7 @@ export function MembersPage({ token }: { token: string }) {
             />
           </label>
           <label>
-            주소 (선택)
+            <span className="member-form-label-text">주소 (선택)</span>
             <input
               type="text"
               value={address}
