@@ -1,6 +1,12 @@
 import type { SystemMetrics as SystemMetricsData } from "../types/monitor";
 
-export function SystemMetrics({ metrics }: { metrics: SystemMetricsData | null }) {
+export function SystemMetrics({
+  metrics,
+  connection = "disconnected",
+}: {
+  metrics: SystemMetricsData | null;
+  connection?: string;
+}) {
   return (
     <section className="panel">
       <div className="panel-header">
@@ -17,8 +23,8 @@ export function SystemMetrics({ metrics }: { metrics: SystemMetricsData | null }
         system_metrics와 gpu_status 이벤트는 로그처럼 누적하지 않고 useMonitorStream.ts에서 system 객체를 덮어씁니다.
         그래서 이 컴포넌트는 현재 서버 상태를 빠르게 확인하는 목적입니다. */}
       <div className="placeholder-box">
-        { metrics ? (
-            <>
+        {metrics ? (
+          <>
             <div className="metric-grid">
               <div className="metric">
                 <span>GPU</span>
@@ -45,20 +51,26 @@ export function SystemMetrics({ metrics }: { metrics: SystemMetricsData | null }
                 <strong>{metrics.dropped_frames ?? "-"}</strong>
               </div>
             </div>
-        
+
             {metrics.last_error ? (
               <p className="error-line">{metrics.last_error}</p>
             ) : null}
           </>
-        ):(
-          <div className="placeholder-box">아직 시스템 메트릭이 없습니다.</div>
+        ) : (
+          <div className="placeholder-box">
+            {connection === "error"
+              ? "SSE 연결 실패. 상단 [LOGOUT] 후 admin/admin으로 다시 로그인하세요."
+              : connection === "connecting"
+                ? "SSE 연결 중..."
+                : "아직 시스템 메트릭이 없습니다. (SSE 인증·연결 확인)"}
+          </div>
         )}
       </div>
       {/*
         SystemMetrics는 이벤트 로그가 아니라 최신 서버 상태 카드입니다.
         GPU 사용률, 메모리, RTT, 큐 적체, 드롭 프레임을 보면 YOLO/SEG/LLM/TTS 병목이 서버 자원 문제인지 판단할 수 있습니다.
       */}
-      
+
 
     </section>
   );

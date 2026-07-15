@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.19 (2026-07-14 §3.1/§3.2 detection 페이로드에 `is_outdoor` 씬 신호 추가 — 실내 시 서버 보도이탈·인지 TTS 억제)
+> **버전**: v0.4.20 (2026-07-15 §8 SSE 버퍼 방지 헤더·연결 직후 system_metrics 스냅샷·콘솔 401 안내)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -625,15 +625,18 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | 항목 | 값 |
 | :--- | :--- |
 | 엔드포인트 | `GET /api/v1/monitor/stream` |
-| 인증 | 관리자 JWT 필수 (`Depends(get_current_admin)`, `server/api/monitor.py`) |
-| 서버 소비원 | Redis Stream `mcp:metrics` (`server/mcp/manager.py` MCPManager가 xread 후 리스너 큐로 브로드캐스트, `event_type` 누락 시 `system_status`로 폴백) |
-| 메시지 형식 | `data: {"event_type": "...", "payload": {...}, "ts": ...}\n\n` |
+| 인증 | 관리자 JWT 필수 (`Depends(get_current_admin)`, `server/api/monitor.py`). EventSource는 `Authorization` 헤더를 못 붙이므로 `?token=` 쿼리 허용 |
+| 서버 소비원 | Redis Stream `mcp:metrics` (`server/mcp/manager.py` MCPManager가 xread 후 리스너 큐로 브로드캐스트, `event_type` 누락 시 `system_status`로 폴백). `session_status`/`detection_event`/`llm_status` 등은 in-process `broadcast_event`로도 전달 |
+| 메시지 형식 | `data: {"event_type": "...", "payload": {...}, "timestamp": ...}\n\n` |
+| 응답 헤더 | `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, `X-Accel-Buffering: no` (Docker Desktop 등 중간 프록시가 SSE 청크를 버퍼링해 SystemMetrics 행이 비는 문제 방지, 2026-07-15) |
+| keep-alive | 큐 1초 타임아웃 시 SSE 주석 라인(`: keepalive`) + `ping` 이벤트 |
 
 ### 8.2 실발행 이벤트 (서버 코드가 직접 생성)
 
 | event_type | payload | 주기 |
 | :--- | :--- | :--- |
 | `connection_established` | `{status: "ok"}` | 연결 직후 1회 |
+| `system_metrics` | §8.3과 동일 필드 | **연결 직후 1회 스냅샷**(GPUMonitorMCP 즉시 조회) + 이후 GPU 모니터 루프(약 2초)가 Redis `mcp:metrics`로 주기 발행 |
 | `ping` | 없음 | 큐 1초 타임아웃마다 (keep-alive) |
 
 ### 8.3 브리지 이벤트 계약 (Redis `mcp:metrics` 경유, 실구현 완료)
@@ -751,3 +754,4 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.20** | **2026-07-15** | **§8 SSE: 버퍼 방지 응답 헤더, 연결 직후 `system_metrics` 스냅샷, keep-alive 주석 라인. 콘솔은 SSE 401 프로브·빈 카드 안내 문구 추가** |

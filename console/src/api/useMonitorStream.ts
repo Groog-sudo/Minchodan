@@ -168,12 +168,41 @@ export function useMonitorStream(token: string | null = null) {
       /*
        * 발표/면접 대응 포인트:
        * - SSE 연결 실패, 서버 중단, CORS 문제는 onerror로 들어옵니다.
-       * - 콘솔은 장애 상황을 숨기지 않고 connection="error"로 표시해야 운영자가 즉시 알아챌 수 있습니다.
+       * - EventSource는 HTTP 상태코드를 노출하지 않으므로, 401/만료 토큰은
+       *   동일 URL을 fetch로 한 번 프로브해 구별합니다.
        */
       setState((current) => ({
-        ...current ,
-        connection : "error",
+        ...current,
+        connection: "error",
       }));
+
+      void (async () => {
+        try {
+          const probe = await fetch(urlWithToken, {
+            method: "GET",
+            headers: { Accept: "text/event-stream" },
+            signal: AbortSignal.timeout(3000),
+          });
+          if (probe.status === 401) {
+            setState((current) => ({
+              ...current,
+              connection: "error",
+              system: {
+                ...current.system,
+                last_error: "SSE 인증 실패(401). 다시 로그인하세요.",
+              },
+            }));
+          }
+          // 프로브 응답 본문은 읽지 않고 즉시 중단(스트림 점유 방지)
+          try {
+            await probe.body?.cancel();
+          } catch {
+            /* ignore */
+          }
+        } catch {
+          /* 네트워크 오류는 connection=error 상태로 충분 */
+        }
+      })();
     };
 
     // 5. cleanup에서 source.close() 처리
