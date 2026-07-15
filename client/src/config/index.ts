@@ -49,6 +49,34 @@ export function buildWsUrl(transport: ServerTransport = DEFAULT_SERVER_TRANSPORT
   return `ws://${host}:${SERVER_PORT}/ws/detect`;
 }
 
+/**
+ * WS 접속 후보 목록.
+ * 학원 WiFi 기기격리 등으로 LAN이 실패할 때 Tailscale 호스트로 폴백한다.
+ * NETWORK_MODE=tailscale/ngrok이면 해당 경로만 반환한다.
+ */
+export function getWsUrlCandidates(
+  transport: ServerTransport = DEFAULT_SERVER_TRANSPORT,
+): string[] {
+  if (NETWORK_MODE === "ngrok") {
+    return [`wss://${NGROK_DOMAIN}/ws/detect`];
+  }
+  if (NETWORK_MODE === "tailscale") {
+    return [`ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`];
+  }
+
+  const primary = buildWsUrl(transport);
+  const candidates = [primary];
+  const tailscaleUrl = `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
+  if (
+    TAILSCALE_HOST &&
+    TAILSCALE_HOST !== "127.0.0.1" &&
+    !candidates.includes(tailscaleUrl)
+  ) {
+    candidates.push(tailscaleUrl);
+  }
+  return candidates;
+}
+
 /** 하위 호환: 기본 수송(WiFi) 기준 URL. 런타임은 buildWsUrl + 토글 사용. */
 export const WS_URL = buildWsUrl(DEFAULT_SERVER_TRANSPORT);
 
