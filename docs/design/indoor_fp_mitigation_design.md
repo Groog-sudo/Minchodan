@@ -1,7 +1,7 @@
 # Minchodan 실내 오탐 완화 2차 설계서 (물리적 타당성 필터 + 씬 분류기 게이트)
 
 > **작성일**: 2026-07-07
-> **버전**: v0.2.0 (§4.4 게이트 규칙을 실내 558건 + 실외 74건 실측 로그 분석 결과로 확정)
+> **버전**: v0.3.0 (2026-07-14 §4.7 씬 히스테리시스 + §4.8 실내 인지 TTS 억제 + §4.9 실외 회귀 최소 체크리스트, iOS 우선)
 > **설계 기준**: 2026-07-07 실기기(고태현 iPhone) 실내/실외 현장 테스트 로그 실측
 > **선행 조치**: `client/src/components/CameraView.tsx`의 클래스별 confidence 임계값(`CLASS_MIN_CONFIDENCE`), 연속 프레임 검증(서버 `MIN_HIT_COUNT`), 실외 노면 co-occurrence 게이트(`OUTDOOR_SURFACE_CLASSES`), 안전 노면 제외(`SAFE_SURFACE_CLASSES`) — 본 문서는 이 1차 완화책의 구조적 한계를 보완하는 2차 설계다.
 > **관련 문서**: [`docs/stage-guides/stage3_detection_design.md`](../stage-guides/stage3_detection_design.md), [`docs/design/behavior_and_risk_insight.md`](behavior_and_risk_insight.md)
@@ -266,16 +266,59 @@ const canFireReflex = hasOutdoorSurface && isOutdoorByScene;
 
 씬 분류 실행 중 예외가 발생하거나(`try handler.perform` 실패), `observations`가 비어 있거나, confidence가 낮아 판정을 신뢰할 수 없는 경우, `isLikelyIndoor`를 판정하지 않고(`scene` 필드를 생략하거나 `confidence: 0.0`으로 반환) JS 측에서 `isOutdoorByScene = true`로 처리해 **기존 co-occurrence 게이트만으로 동작**하도록 한다. 씬 분류기가 단일 장애점(SPOF)이 되지 않도록 설계한다.
 
+### 4.7 씬 판정 히스테리시스 (2026-07-14 iOS 우선)
+
+문/창가에서 `isLikelyIndoor`가 프레임마다 뒤집히면 반사 경보가 깜빡인다. `CameraView.tsx`에서 최근 **5프레임** 중 **3프레임 이상 실내**이면 실내로 확정하고, 그 결과(`isOutdoorByScene`)를 반사 게이트와 서버 `is_outdoor`에 동일하게 쓴다. `scene`이 없으면(허용적 폴백) 히스테리시스를 적용하지 않는다.
+
+| 상수 | 값 | 의미 |
+| --- | --- | --- |
+| `SCENE_HYSTERESIS_WINDOW` | 5 | 투표 버퍼 길이 |
+| `SCENE_INDOOR_MAJORITY` | 3 | 실내 확정에 필요한 최소 투표 수 |
+
+### 4.8 서버 인지 경로 정책 (2026-07-14)
+
+클라이언트가 `is_outdoor=False`(실내 확정)를 보내면 서버는 **보도 이탈 판정뿐 아니라 mid/low `risk.events` 발행(인지 TTS)** 도 억제한다. `is_outdoor=None`(구버전)은 기존처럼 발행한다. 제품 스코프가 실외 보행 보조이므로 실내 TTS 오탐을 막는 쪽을 택했다.
+
+### 4.9 실외 현장 회귀 체크리스트 (남은 시간용 최소판)
+
+코드보다 **수집 1회**가 우선이다. Android는 이번 스프린트에서 제외한다.
+
+| 순서 | 행동 | 합격 |
+| --- | --- | --- |
+| 1 | Metro 기동 후 iPhone으로 실외 보도 **3~5분** 보행 | `[SceneClassify]` / `[SceneHysteresis]` 로그 누적 |
+| 2 | 같은 날 실내(사무실) **2분** | 반사 비프 거의 없음, `stableOutdoor=false` 우세 |
+| 3 | 실외에서 사람/차량 근접 1회 | 정상 경보 유지(`stableOutdoor=true`) |
+| 4 | 로그에서 실외인데 `stableOutdoor=false`가 길면 | `outdoorPositiveIdentifiers`에 자주 나온 라벨 후보 추가 후 재빌드 |
+
+---
+
+### 4.10 Android 확장 — ML Kit Image Labeling (2026-07-14)
+
+iOS `VNClassifyImageRequest`에 대응하는 온디바이스 API로 **Google ML Kit Image Labeling**을 사용한다.
+
+| 항목 | iOS | Android |
+| --- | --- | --- |
+| API | `VNClassifyImageRequest` | ML Kit `ImageLabeling` (`SceneClassifyBridgeModule`) |
+| 호출 위치 | `CoreMLInferenceBridge.swift` | `tfliteDetector.ts` → 네이티브 브릿지 |
+| 출력 계약 | `SceneClassification` (`isLikelyIndoor`, `topLabels`) | **동일** |
+| 게이트 | `CameraView` 히스테리시스 + 반사 억제 | 동일 + `pathObstacle` 실내 억제 |
+| Taxonomy | Apple Vision identifiers | ML Kit 영문 라벨 (별도 키워드 집합) |
+
+네이티브 모듈이 없거나 실패하면 `scene`을 생략하고 허용적(실외) 폴백한다. Android 실기기에서 키워드 집합은 `[SceneClassify][Android]` 로그로 보강한다. **네이티브 변경이므로 `npx expo run:android` 재빌드가 필요**하다.
+
 ---
 
 ## 5. 구현 파일 목록
 
 | 파일 | 변경 유형 | 내용 |
 | --- | --- | --- |
-| `client/src/components/CameraView.tsx` | 수정 | §3 `isGeometricallyImplausible()` 추가 및 `validDetections` 필터 반영. §4 `isOutdoorByScene` 결합 로직 추가 |
+| `client/src/components/CameraView.tsx` | 수정 | §3 `isGeometricallyImplausible()` 추가 및 `validDetections` 필터 반영. §4 `isOutdoorByScene` AND 결합 + §4.7 히스테리시스 + Android pathObstacle 실내 억제 |
 | `client/ios/CoreMLInferenceBridge.swift` | 수정 | §4 `classifyScene()` 함수 추가, `detectFrame` 응답에 `scene` 필드 추가 |
+| `client/android/.../SceneClassifyBridgeModule.kt` | 신규 | §4.10 ML Kit 씬 분류 브릿지 |
+| `client/src/inference/tfliteDetector.ts` | 수정 | Android detect 시 scene 병렬 산출 |
 | `client/src/hooks/useOnDeviceDetection.ts` | 수정 | `SceneClassification` 타입 반영, `detectFrame` 반환값에 `scene` 전달 |
-| `client/src/inference/types.ts` (또는 동등 타입 정의 파일) | 수정 | `SceneClassification` 인터페이스 추가 |
+| `client/src/inference/types.ts` | 수정 | `SceneClassification` 인터페이스 (iOS/Android 공용) |
+| `server/detection/detection_pipeline.py` | 수정 | §4.8 실내 시 인지 publish 억제 |
 | 테스트 | 신규 | §3 단위 테스트(`isGeometricallyImplausible`), §4는 계측 단계 로그 수집 후 회귀 테스트 추가 |
 
 ---
@@ -284,8 +327,10 @@ const canFireReflex = hasOutdoorSurface && isOutdoorByScene;
 
 1. **완료**: §3 물리적 타당성 필터 구현 및 실기기 재현 테스트(3.5절)
 2. **완료**: §4 `classifyScene()` 로깅 전용 계측 배포 (게이트 미적용, `topLabels`만 로그 수집), 실내 558건 + 실내/실외 혼합 74건 로그 수집·분석
-3. **완료(규칙 확정, 코드 미반영)**: 4.3/4.4절 키워드 매핑 및 게이트 로직 확정. **다음 작업**: `CoreMLInferenceBridge.swift`의 `classifyScene()`을 4.3절 코드로 교체하고, `CameraView.tsx`에 4.4절 `isOutdoorByScene` AND 결합 로직을 실제 반영
-4. **검증(진행 필요)**: 코드 반영 후 실내(오탐 억제) + 실외(정상 탐지 유지, 특히 4.5절의 작은 실외 표본 보강) 양쪽 현장 재테스트로 §3, §4 각각의 효과와 부작용(false negative) 확인
+3. **완료**: 4.3/4.4절 키워드·게이트 코드 반영 (`classifyScene` + `CameraView` AND 결합)
+4. **완료(2026-07-14)**: §4.7 씬 히스테리시스 + §4.8 서버 인지 TTS 실내 억제 (iOS 우선)
+5. **완료(2026-07-14)**: §4.10 Android ML Kit 씬 분류 + pathObstacle 실내 억제 (네이티브 재빌드 필요)
+6. **검증(진행 필요)**: §4.9 체크리스트(iOS) + Android `[SceneClassify][Android]` 키워드 실측 보강
 
 ---
 
@@ -295,3 +340,4 @@ const canFireReflex = hasOutdoorSurface && isOutdoorByScene;
 - [`docs/design/behavior_and_risk_insight.md`](behavior_and_risk_insight.md) — 위험도 게이트 정의 근거
 - `client/src/components/CameraView.tsx` — 1차 완화책(클래스별 confidence, co-occurrence 게이트, 안전 노면 제외) 구현 위치
 - `server/detection/gates/reflex_gate.py` — 서버 측 1차 완화책(hit_count, 클래스별 confidence) 구현 위치
+- [`docs/design/scene_classifier_gate_guide.md`](scene_classifier_gate_guide.md) — 씬 게이트 학습용 해설

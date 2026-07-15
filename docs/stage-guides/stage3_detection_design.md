@@ -281,6 +281,9 @@ class ReflexAlert(BaseModel):
     beep_interval_ms: int = 250
     haptic_pattern: str = "double"
     ts: float
+    track_id: Optional[int] = None
+    class_name: Optional[str] = None
+    hit_count: Optional[int] = None
 ```
 
 > **2026-07-07 정정**: 위 스키마는 `server/detection/schemas.py`의 실제 `ReflexAlert` 필드와 일치시킨 것이다. `direction`은 `"front"/"left"/"right"/"stop"`이 아니라 `estimate_direction()`(`server/detection/direction.py`)이 산출하는 `"front-left"/"front"/"front-right"` 3종뿐이며, `alert_id`는 고정 목록(`high_front` 등)이 아니라 클래스명을 포함한 동적 문자열이다(§6.3 참조).

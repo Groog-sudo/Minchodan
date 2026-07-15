@@ -83,4 +83,8 @@ def head_level_gate(
         beep_interval_ms=100,
         haptic_pattern="continuous",
         ts=0.0,
+        # 2026-07-14 추가: 관제 콘솔 발화 추적용 객체 정보 전달.
+        track_id=detection.track_id,
+        class_name=detection.class_name,
+        hit_count=detection.hit_count,
     )

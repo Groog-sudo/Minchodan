@@ -1,0 +1,15 @@
+---
+description: 7단계 TTS 음성 스트리머 - 이중 채널(반사 사전합성/인지 실시간)
+globs: server/tts/**,client/src/services/audioEngine.ts,client/src/services/audioSessionBridge.ts
+alwaysApply: false
+---
+
+# 7단계: TTS 음성 스트리머
+
+`server/tts/`나 클라이언트 오디오 재생(`audioEngine.ts`, `audioSessionBridge.ts`)을 수정할 때는 `.agents/skills/tts-voice-streamer/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- 인지 경로: 로컬 TTS(Supertonic 기본, MIT/ONNX/99M) 실시간 합성 후 WS 바이너리(raw WAV bytes) 전송. Piper는 핫스왑 폴백으로 코드 보존(`TTS_ENGINE=piper`).
+- 반사 경로: 사전합성 고정 클립을 alert_id로 즉시 재생(선점, 실시간 합성 절대 금지).
+- 클라이언트 재생은 expo-audio(`createAudioPlayer`)를 사용한다. STT 녹음 구간은 AVAudioSession voiceChat(AEC)로 전환한다.

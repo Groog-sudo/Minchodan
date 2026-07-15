@@ -102,6 +102,26 @@ const SAFE_SURFACE_CLASSES = ["sidewalk_normal", "braille_normal"];
 const OUTDOOR_SURFACE_CLASSES = ["sidewalk_normal", "caution", "roadway", "braille_normal"];
 const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.15;
 
+// 2026-07-14: 씬 판정(isLikelyIndoor) 채터링 완화. 문/창가에서 프레임마다
+// 실내↔실외가 뒤집히면 반사 경보도 깜빡이므로, 최근 N프레임 다수결로 안정화한다.
+// 서버 DEPARTURE_CONFIRM_STREAK와 같은 "연속/다수 확정" 패턴. iOS 우선 반영.
+const SCENE_HYSTERESIS_WINDOW = 5;
+const SCENE_INDOOR_MAJORITY = 3;
+
+function stabilizeIsOutdoorByScene(
+  rawIsOutdoor: boolean,
+  indoorVotes: boolean[],
+): boolean {
+  // indoorVotes 에는 "실내인가?" 를 쌓는다 (true=실내).
+  indoorVotes.push(!rawIsOutdoor);
+  if (indoorVotes.length > SCENE_HYSTERESIS_WINDOW) {
+    indoorVotes.shift();
+  }
+  const indoorCount = indoorVotes.filter(Boolean).length;
+  const isIndoorStable = indoorCount >= SCENE_INDOOR_MAJORITY;
+  return !isIndoorStable;
+}
+
 // 2026-07-07 추가: 실내 오탐 완화용 클래스별 최소 confidence.
 // YOLO26n det/seg 둘 다 AI Hub 한국 인도(실외) 데이터셋만으로 학습되어 "실내"라는 개념
 // 자체를 모른다. 실내에서만 나타날 리 없는(즉 실외 전용) 클래스들이 실내 오탐 시 자주
@@ -517,6 +537,8 @@ export function CameraView() {
   // (server/detection/detection_pipeline.py, 실내 바닥이 roadway/caution으로 오분류되는
   // 문제를 실기기 실측으로 확인).
   const isOutdoorBySceneRef = useRef<boolean | null>(null);
+  // 씬 히스테리시스용 최근 N프레임 "실내" 투표 버퍼 (true=실내).
+  const sceneIndoorVotesRef = useRef<boolean[]>([]);
   const lastAndroidTtsTsRef = useRef(0);
 
   // Mock 햅틱 시각 핸들러 등록
@@ -607,8 +629,18 @@ export function CameraView() {
       const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
         (d: OnDeviceDetectionResult) => OUTDOOR_SURFACE_CLASSES.includes(d.className) && d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE
       );
-      const isOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
+      // scene 미존재(허용적 폴백)면 히스테리시스 없이 실외로 간주해 기존 co-occurrence만 사용.
+      const rawIsOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
+      const isOutdoorByScene = scene
+        ? stabilizeIsOutdoorByScene(rawIsOutdoorByScene, sceneIndoorVotesRef.current)
+        : true;
       isOutdoorBySceneRef.current = isOutdoorByScene;
+      if (__DEV__ && scene) {
+        console.log(
+          `[SceneHysteresis] rawOutdoor=${rawIsOutdoorByScene} stableOutdoor=${isOutdoorByScene} ` +
+            `indoorVotes=${sceneIndoorVotesRef.current.filter(Boolean).length}/${sceneIndoorVotesRef.current.length}`,
+        );
+      }
 
       const validDetections = allDetections.filter((d: OnDeviceDetectionResult) => {
         if (SAFE_SURFACE_CLASSES.includes(d.className)) return false;
@@ -619,7 +651,16 @@ export function CameraView() {
         return true;
       });
       // 💡 [안드로이드 전용: 통로 막힘 판정 및 회피 가이드 MVP]
+      // 2026-07-14: iOS와 동일하게 씬 게이트(실내)면 pathObstacle 경보/TTS를 억제한다.
+      // is_outdoor 서버 전송은 위에서 이미 히스테리시스 안정화 값을 사용 중.
       if (Platform.OS === "android") {
+        if (!isOutdoorByScene) {
+          hapticEngine.stopContinuous();
+          void audioEngine.stopBeep();
+          if (__DEV__) {
+            console.log("[PathObstacle] 실내 씬 판정 — 통로 경보 억제");
+          }
+        } else {
         const pathRes = pathObstacleDetector.analyze(allDetections);
 
         // 1. 비프음 및 햅틱 오케스트레이션
@@ -662,6 +703,7 @@ export function CameraView() {
           }
           audioEngine.speakFallback(guidanceText);
           console.log(`[PathObstacle] 회피 가이드 음성 송출: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`);
+        }
         }
       } else {
         // iOS/Default: 실시간 햅틱 및 입체 비프음 피드백 연동 (Reflex Gate - 주차 센서 다이내믹 피드백)

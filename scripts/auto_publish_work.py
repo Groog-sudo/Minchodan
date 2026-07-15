@@ -218,14 +218,15 @@ def check_forbidden_files():
 
 def get_test_cmd(stage):
     """지정된 단계에 맞는 테스트 명령을 반환합니다."""
+    py_bin = sys.executable
     test_cmds = {
-        1: "python tests/test_ws_echo.py",
-        2: "python tests/test_frame_decode.py",
-        3: "python scripts/verify_gpu.py && python tests/test_detection.py",
-        4: "python scripts/eval_hitrate.py",
-        5: "python tests/test_retriever.py",
-        6: "python tests/test_langgraph.py",
-        7: "python tests/test_reflex_and_nav.py",
+        1: f"{py_bin} tests/test_ws_echo.py",
+        2: f"{py_bin} tests/test_frame_decode.py",
+        3: f"{py_bin} scripts/verify_gpu.py && {py_bin} tests/test_detection.py",
+        4: f"{py_bin} scripts/eval_hitrate.py",
+        5: f"{py_bin} tests/test_retriever.py",
+        6: f"{py_bin} tests/test_langgraph.py",
+        7: f"{py_bin} tests/test_reflex_and_nav.py",
     }
     return test_cmds.get(stage)
 

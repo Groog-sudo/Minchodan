@@ -1,0 +1,15 @@
+---
+description: 2단계 카메라 프레임 캡처 - 이중 캡처(반사/인지), 바이너리 WebSocket 전송
+globs: client/src/components/CameraView.tsx,client/src/hooks/useCamera.ts,client/src/services/frameCapture*.ts,server/capture/**
+alwaysApply: false
+---
+
+# 2단계: 카메라 프레임 캡처
+
+React Native 카메라 캡처 파이프라인(반사 8~10fps / 인지 1~2fps 이중 캡처)이나 서버측 프레임 디코딩(`server/capture/`)을 수정할 때는 `.agents/skills/camera-frame-capture/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- react-native-vision-camera Frame Processor 기반 연속 캡처(takePhoto()에서 전환됨).
+- 바이너리(raw JPEG) WebSocket 전송이 기본이며 base64는 구버전 폴백이다.
+- 서버는 OpenCV로 디코딩한 뒤 Redis Streams에 발행한다.

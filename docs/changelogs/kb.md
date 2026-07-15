@@ -2043,3 +2043,174 @@
   - `requirements.txt`: `torch`/`torchvision`을 `2.12.1+cu128`/`0.27.1+cu128`에서 `2.11.0+cu128`/`0.26.0+cu128`로 다운그레이드(이 macOS 로컬 Docker 빌드 환경 기준 실측 필요에 따른 조정).
 - **관련 파일**: `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `requirements.txt`
 - **검증 결과**: `docker compose up -d fastapi` 재기동 후 컨테이너 내 `torch.__version__` 확인(`2.11.0+cu128`), FastAPI `/docs` 200 확인.
+
+---
+
+### 2026-07-14 | 콘솔 | 발화 추적 타임라인 패널 구현
+
+- **배경**: 관제 대시보드에서 ByteTrack 트랙 ID가 부여된 객체가 어떤 행동(연속 히트, 접근, 이탈)을 했을 때 어떤 발화가 나왔는지 추적할 수 없었다. 근본 원인은 track_id/class_name/hit_count가 `ReflexAlert` 스키마에 없고, `consumer.py`의 `log_detections`에서도 누락되어 DB `detected_objects_json`과 `guidance_log_event` WS 메시지에 트랙 정보가 전달되지 않았기 때문.
+- **백엔드 수정**:
+  - `server/detection/schemas.py`: `ReflexAlert`에 `track_id`, `class_name`, `hit_count` 3개 필드 추가 (기본값 있어 기존 호환성 유지).
+  - `server/detection/gates/reflex_gate.py`: `ReflexAlert` 생성 시 `detection.track_id`, `detection.class_name`, `detection.hit_count` 전달.
+  - `server/detection/gates/head_level_gate.py`: 동일 적용.
+  - `server/detection/gates/surface_gate.py`: surface는 track_id가 없으므로 `class_name`만 전달.
+  - `server/detection/consumer.py`: 반사 경로 `_send_reflex_alert`의 `log_detections`에 `track_id`/`class_name`/`hit_count` 추가, 인지 경로 `_send_cognitive_guide`의 `log_detections`에 `track_id`/`hit_count` 추가.
+- **프론트엔드 신규 구현**:
+  - `console/src/types/monitor.ts`: `TrackedObject`, `GuidanceTraceRow` 타입 추가.
+  - `console/src/components/GuidanceTraceTimeline.tsx` (신규): `DetectionGuidanceLogRow[]`에서 `detected_objects_json`을 파싱하여 트랙 ID별 발화 타임라인 표. 트리거 원인 자동 추론(근접+연속히트/연속히트/접근/이탈/노면/상체위험), track_id별 해시 기반 색상 배지, 반사/인지 경로 색상 구분.
+  - `console/src/pages/DashboardPage.tsx`: `LatencySummaryPanel`과 `DetectionGuidanceLogTable` 사이에 `GuidanceTraceTimeline` 배치. 기존 `detectionGuidanceLogs`(REST + WS 병합) 재사용.
+  - `console/src/styles.css`: `.trace-timeline-table`, `.track-badge`, `.stream-pill` 등 타임라인 전용 스타일 추가.
+- **검증**: Ruff format/lint 전부 Passed, `tsc --noEmit` 에러 없음. 반사 경로 지연 무영향 (스키마/dict 구성 단계만 변경, 실시간 전송 이전 완료).
+- **관련 파일**: `server/detection/schemas.py`, `server/detection/gates/reflex_gate.py`, `server/detection/gates/head_level_gate.py`, `server/detection/gates/surface_gate.py`, `server/detection/consumer.py`, `console/src/types/monitor.ts`, `console/src/components/GuidanceTraceTimeline.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`
+
+---
+
+### 2026-07-14 | 3단계 | console_design_implementation
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 탐지 게이트 및 관제 모니터 타임라인 컴포넌트 고도화 및 문서 정합성 갱신
+- **관련 파일**: `console/src/components/GuidanceTraceTimeline.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `console/src/types/monitor.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `scripts/auto_publish_work.py`, `server/detection/consumer.py`, `server/detection/gates/head_level_gate.py`, `server/detection/gates/reflex_gate.py`, `server/detection/gates/surface_gate.py`, `server/detection/schemas.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_timeline_demo_patch
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - DashboardPage 데모 데이터 내 track_id 및 hit_count 보완
+- **관련 파일**: `onsole/src/pages/DashboardPage.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_timeline_virtual_class_patch
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 타임라인 비장애물 발화의 클래스 가시성 개선 (미탐지 대신 GPS/정기안내 동적 표기)
+- **관련 파일**: `onsole/src/components/GuidanceTraceTimeline.tsx`, `console/src/pages/DashboardPage.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | reflex_alert_payload_track_id_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 반사 알림(reflex_alert) 실시간 웹소켓 페이로드 내 track_id/class_name/hit_count 누락 결함 수정
+- **관련 파일**: `erver/detection/consumer.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_timeline_parse_type_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 타임라인 JSON 데이터 타입 이원화 대응 (문자열/배열 방어적 파싱으로 track_id 출력 결함 해결)
+- **관련 파일**: `onsole/src/components/GuidanceTraceTimeline.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_demo_mode_override_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 데모 모드(isDemoMode) 시 DB 로그 데이터 존재 유무와 관계없이 데모 데이터 강제 덮어쓰기 로직 보완
+- **관련 파일**: `onsole/src/pages/DashboardPage.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 3단계 | console_log_image_rotation_patch
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 관제 사후 이력 로그 썸네일 이미지 및 오버레이 바운딩 박스 90도 회전 동기화 패치
+- **관련 파일**: `onsole/src/components/DetectionGuidanceLogTable.tsx`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-14 | 클라이언트(iOS)+서버 | 씬 히스테리시스 + 실내 인지 TTS 억제 (시간 압박 스프린트)
+
+- **커밋**: `(미커밋, 사용자 요청 시 커밋)`
+- **변경 내용**:
+  - **범위**: iOS 우선. Android 씬 게이트는 이번 스프린트에서 제외.
+  - `client/src/components/CameraView.tsx`: `isLikelyIndoor` 최근 5프레임 중 3프레임 이상 실내면 실내 확정(`stabilizeIsOutdoorByScene`). 안정화된 값을 반사 게이트와 서버 `is_outdoor`에 동일 적용. `__DEV__`에서 `[SceneHysteresis]` 로그 출력.
+  - `server/detection/detection_pipeline.py`: `is_outdoor=False`이면 mid/low라도 `_publish_cognitive` 스킵(실내 TTS 오탐 차단). `None`은 기존 동작 유지.
+  - `tests/test_detection.py`: 실내 시 인지 publish 미발행 회귀 테스트 추가.
+  - `docs/design/indoor_fp_mitigation_design.md` v0.3.0: §4.7~§4.9 및 롤아웃 갱신.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `server/detection/detection_pipeline.py`, `tests/test_detection.py`, `docs/design/indoor_fp_mitigation_design.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest -k 'cognitive_publish_suppressed or mid_risk_publishes or is_departing_suppressed'` 4건 통과.
+- **남은 일**: §4.9 실외 보도 3~5분 + 실내 2분 현장 회귀(Metro `[SceneClassify]`/`[SceneHysteresis]`). 키워드 보강은 로그 보고 판단.
+
+
+---
+
+### 2026-07-14 | 클라이언트(Android) | ML Kit 씬 분류로 iOS isLikelyIndoor 동등 신호 추가
+
+- **커밋**: `(미커밋, 사용자 요청 시 커밋)`
+- **변경 내용**:
+  - `SceneClassifyBridgeModule.kt` 신규: Google ML Kit Image Labeling으로 `isLikelyIndoor`/`topLabels` 산출 (iOS VNClassifyImageRequest 대응).
+  - `app/build.gradle`: `com.google.mlkit:image-labeling:17.0.9` 추가.
+  - `tfliteDetector.ts`: detect 시 ML Kit 씬 분류를 det/seg와 병렬 호출, `scene` 반환.
+  - `CameraView.tsx`: Android `pathObstacle`도 실내 씬이면 경보/TTS 억제 (히스테리시스·`is_outdoor`는 iOS와 동일 경로).
+  - `indoor_fp_mitigation_design.md` §4.10 Android 확장 문서화.
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/SceneClassifyBridgeModule.kt`, `MinchodanCustomPackage.kt`, `app/build.gradle`, `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`, `client/src/inference/types.ts`, `docs/design/indoor_fp_mitigation_design.md`
+- **검증 결과**: TS 경로 연결 완료. **네이티브 모듈이라 Android 재빌드(`npx expo run:android`) 후 실기기에서 `[SceneClassify][Android]` 로그 확인 필요.**
+- **비고**: ML Kit 라벨 taxonomy는 Apple Vision과 다르므로 키워드 집합은 Android 실측으로 보강한다.
+
+
+---
+
+### 2026-07-14 | 3단계 | scene_hysteresis_mlkit_indoor_gate
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 씬 히스테리시스·실내 인지 TTS 억제·Android ML Kit 씬 분류 및 detection is_outdoor API 명세 반영
+- **관련 파일**: `lient/android/app/build.gradle`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/inference/types.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `docs/design/indoor_fp_mitigation_design.md`, `server/detection/detection_pipeline.py`, `tests/test_detection.py`, `client/android/app/src/main/java/com/minchodan/app/SceneClassifyBridgeModule.kt`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-15 | 문서 | dev 브랜치 정합성 검토 후속 - README/env 템플릿 불일치 3건 수정
+
+- **커밋**: `(미커밋, 사용자 요청 시 커밋)`
+- **변경 내용**:
+  - `.env.example:69`: `TTS_ENGINE=edge` → `TTS_ENGINE=supertonic`으로 정정. 주석(66~68행)·README·`server/tts/tts_service.py`의 실제 기본값과 일치시킴. 기존 값은 `cp .env.example .env` 시 네트워크 필수인 Edge Neural TTS가 켜져 로컬 우선 설계 원칙과 어긋났음.
+  - `README.md` 검증 기준선 섹션(PowerShell/bash 두 블록): 존재하지 않는 `test_rag_retrieval.py` → 실제 파일 `tests/test_retriever.py`로, `test_tts_reflex.py` → 반사 클립 선점 로직(`reflex_clip_sender._resolve_reflex_patterns`)을 검증하는 `tests/test_reflex_and_nav.py`로 갱신.
+  - `README.md:140`, `docs/README.md:37`: `Directory_Structure.md` 링크 경로를 실제 위치인 `docs/Directory_Structure.md` 기준으로 수정(루트 README는 `docs/` 접두 추가, `docs/README.md`는 동일 디렉토리 상대 경로로 정정).
+- **관련 파일**: `.env.example`, `README.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `ls`/`grep`으로 대상 파일 실존 여부 및 참조 경로 재확인 후 수정. 자동화 테스트 대상 아님(문서/설정 변경).
+
+---
+
+### 2026-07-15 | 문서 | Cursor 코딩 에이전트 정합성 검토 후속 - AGENTS.md/스킬 동기화/중첩 문서 정리
+
+- **커밋**: `(미커밋, 사용자 요청 시 커밋)`
+- **변경 내용**:
+  - `AGENTS.md:174`: `.claude/skills/`가 `.agents/skills/`의 "junction 링크"라는 옛 서술을 `CLAUDE.md:158`의 정정 내용(서로 다른 실제 디렉토리, inode 다름, 수동 동기화 필요)과 일치시킴. Cursor는 루트 `AGENTS.md`를 네이티브로 읽으므로 이 문서가 실제 최신 사실을 담아야 함.
+  - `.claude/skills/auto-publish-work/SKILL.md`, `.claude/skills/react-doctor/SKILL.md`를 `.agents/skills/` 쪽 최신본으로 동기화(후행 공백 차이 제거, `diff -rq .claude/skills .agents/skills` 결과 0건 확인). 단, 사전 검증 결과 두 스킬은 실제로는 양쪽에 모두 존재했으며 "한쪽에만 존재"라는 보고서 표현은 부정확했음(트레일링 공백 차이만 존재).
+  - `docs/AGENTS.md`: 2026-07-07부터 스스로 폐기 대상으로 명시해온 구버전 본문을 전부 비우고 루트 `AGENTS.md`/`CLAUDE.md`로의 리다이렉트 안내만 남김. Cursor가 서브디렉토리 `AGENTS.md`를 자동 로드할 때 낡은 컨텍스트(구 기술스택, 무효 상대경로)가 주입되는 것을 차단하기 위함. 파일 자체는 changelog 등 과거 문서의 경로 참조가 남아있어 삭제 대신 리다이렉트로 처리.
+- **관련 파일**: `AGENTS.md`, `.claude/skills/auto-publish-work/SKILL.md`, `.claude/skills/react-doctor/SKILL.md`, `docs/AGENTS.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `grep`으로 junction 문구 수정 확인, `diff -rq`로 스킬 동기화 확인, `docs/AGENTS.md` 본문 교체 확인. 자동화 테스트 대상 아님(문서/설정 변경).
+
+---
+
+### 2026-07-15 | 문서 | Cursor .cursor/rules/*.mdc 신설 - 7단계 스킬 및 반사 경로 금칙 자동 첨부
+
+- **커밋**: `(미커밋, 사용자 요청 시 커밋)`
+- **변경 내용**:
+  - Cursor가 코딩 시작 시 Claude Code(`CLAUDE.md`/`SKILLS.md`)처럼 프로젝트 지침을 자동으로 읽도록 `.cursor/rules/*.mdc` 12개 신설.
+  - `00-core-guidelines.mdc`(`alwaysApply: true`): 이중 경로 원칙, 코딩 규칙, 한국어 커뮤니케이션, Git 브랜치 전략, changelog 규칙 등 `CLAUDE.md`/`AGENTS.md` 핵심을 항상 주입.
+  - `01-reflex-path-guard.mdc`(`globs: server/detection/gates/**`): 반사 게이트에서 orchestration/rag/실시간 tts 임포트 금지를 경로 스코프로 강제(이전 Cursor 정합성 검토 개선사항 4번 반영).
+  - `02`~`08` (`stage1`~`stage7`): 7단계 파이프라인 각각의 코드 경로(server/api·bus, client 카메라 캡처+server/capture, server/detection+training, server/rag/build, server/rag, server/orchestration, server/tts+client 오디오)에 globs로 매핑, 해당 `.agents/skills/<skill>/SKILL.md` 선독 및 핵심 계약 요약을 자동 첨부.
+  - `09-xcode-build-management.mdc`(`globs: client/ios/**`), `10-react-doctor.mdc`(`globs: client/src, console/src의 tsx/jsx`): 보조 스킬 매핑.
+  - `11-auto-publish-work.mdc`: 경로 비의존 작업이라 globs 없이 description 기반 Agent Requested 방식으로 구성(커밋/마무리 시점에 에이전트가 자체 판단으로 사용).
+- **관련 파일**: `.cursor/rules/00-core-guidelines.mdc`, `.cursor/rules/01-reflex-path-guard.mdc`, `.cursor/rules/02-stage1-websocket-gateway.mdc`, `.cursor/rules/03-stage2-camera-frame-capture.mdc`, `.cursor/rules/04-stage3-yolo-obstacle-detection.mdc`, `.cursor/rules/05-stage4-rag-knowledge-builder.mdc`, `.cursor/rules/06-stage5-rag-realtime-search.mdc`, `.cursor/rules/07-stage6-llm-guidance-orchestrator.mdc`, `.cursor/rules/08-stage7-tts-voice-streamer.mdc`, `.cursor/rules/09-xcode-build-management.mdc`, `.cursor/rules/10-react-doctor.mdc`, `.cursor/rules/11-auto-publish-work.mdc`, `docs/changelogs/kb.md`
+- **검증 결과**: 실제 디렉토리 구조(`find client/src`, `server/*`)를 확인해 globs 경로 정확성 확보. `git check-ignore` 결과 `.cursor/`는 gitignore 대상이 아님 확인(현재 untracked). Cursor 런타임 동작 자체는 실기기/실앱 검증 불가 항목이라 파일 문법·경로만 정적 검증함.
+- **비고**: `.cursor/`는 아직 git add되지 않은 상태. 커밋 여부는 사용자 확인 후 진행.

@@ -543,6 +543,9 @@ class DetectionConsumer:
             "beep_interval_ms": alert.beep_interval_ms,
             "haptic_pattern": alert.haptic_pattern,
             "ts": alert.ts or now_ts(),
+            "track_id": alert.track_id,
+            "class_name": alert.class_name,
+            "hit_count": alert.hit_count,
         }
         try:
             sent = await manager.send_json(device_id, payload)
@@ -575,6 +578,9 @@ class DetectionConsumer:
                 stream_type="reflex",
                 detections=[
                     {
+                        "track_id": alert.track_id,
+                        "class_name": alert.class_name,
+                        "hit_count": alert.hit_count,
                         "alert_id": alert.alert_id,
                         "direction": alert.direction,
                         "risk_level": alert.risk_level,
@@ -764,9 +770,11 @@ class DetectionConsumer:
             # (LLM 입력 orch_input에는 bbox를 넣지 않는다 - 프롬프트 오염 방지)
             log_detections = [
                 {
+                    "track_id": det.track_id,
                     "class_name": det.class_name,
                     "confidence": float(det.confidence),
                     "direction": det.direction,
+                    "hit_count": det.hit_count,
                     "bbox": {
                         "x": float(det.bbox.x),
                         "y": float(det.bbox.y),

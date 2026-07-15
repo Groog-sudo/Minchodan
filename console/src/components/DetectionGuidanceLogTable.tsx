@@ -11,6 +11,41 @@ import { eventFrameUrl } from "../api/useDetectionLogs";
 //   원본 이미지를 보존해야 임계값/모델을 바꿔 재검증할 수 있기 때문입니다.
 // - 썸네일/상세 이미지를 클릭하면 라이트박스(확대 보기)가 열립니다.
 
+const LOG_IMAGE_ROTATE_DEG: number = 90;
+
+function getDisplayBBox(
+  bbox: { x: number; y: number; w: number; h: number },
+  natural: { w: number; h: number },
+): { leftPct: number; topPct: number; widthPct: number; heightPct: number } {
+  const { x, y, w, h } = bbox;
+  const srcW = natural.w;
+  const srcH = natural.h;
+
+  if (LOG_IMAGE_ROTATE_DEG === 0) {
+    return {
+      leftPct: (x / srcW) * 100,
+      topPct: (y / srcH) * 100,
+      widthPct: (w / srcW) * 100,
+      heightPct: (h / srcH) * 100,
+    };
+  }
+
+  // 왼쪽으로 90도 꺾여 들어오는 프레임(Android 등)을 모바일 시점(CW 90도)으로 보정
+  const rotatedX = srcH - (y + h);
+  const rotatedY = x;
+  const rotatedW = h;
+  const rotatedH = w;
+  const dstW = srcH;
+  const dstH = srcW;
+
+  return {
+    leftPct: (rotatedX / dstW) * 100,
+    topPct: (rotatedY / dstH) * 100,
+    widthPct: (rotatedW / dstW) * 100,
+    heightPct: (rotatedH / dstH) * 100,
+  };
+}
+
 function getColorForClass(className: string): string {
   const c = className.toLowerCase();
   if (c.includes("person") || c.includes("pedestrian")) return "#10b981"; // Emerald Green
@@ -162,7 +197,8 @@ function FrameWithOverlay({
       <img
         src={src}
         alt="이벤트 프레임"
-        className="frame-overlay-image"
+        className="frame-overlay-image live-feed-rotated"
+        style={{ transform: `rotate(${LOG_IMAGE_ROTATE_DEG}deg)` }}
         onLoad={(event) => {
           const img = event.currentTarget;
           setNatural({ w: img.naturalWidth, h: img.naturalHeight });
@@ -173,15 +209,16 @@ function FrameWithOverlay({
           const { x, y, w, h } = det.bbox!;
           const className = det.class_name ?? "unknown";
           const color = getColorForClass(className);
+          const displayBBox = getDisplayBBox({ x, y, w, h }, natural);
           return (
             <div
               key={`${className}-${index}`}
               className="frame-overlay-box"
               style={{
-                left: `${(x / natural.w) * 100}%`,
-                top: `${(y / natural.h) * 100}%`,
-                width: `${(w / natural.w) * 100}%`,
-                height: `${(h / natural.h) * 100}%`,
+                left: `${displayBBox.leftPct}%`,
+                top: `${displayBBox.topPct}%`,
+                width: `${displayBBox.widthPct}%`,
+                height: `${displayBBox.heightPct}%`,
                 borderColor: color,
                 boxShadow: `0 0 6px ${color}`,
               }}
