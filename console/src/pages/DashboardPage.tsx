@@ -147,6 +147,8 @@ export function DashboardPage({
         </strong>
       </section>
 
+      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
+
       <section className="dashboard-grid">
         {/* 4열 그리드: LiveCameraFeed/DeviceTelemetryPanel이 각 2칸(span 2)을 차지하므로,
             1칸짜리 패널 4개(SystemMetrics/SessionStatus/AiPipelineMonitor/DetectionFeed)를
@@ -170,8 +172,6 @@ export function DashboardPage({
           ai={state.ai}
         />
       </section>
-
-      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,
