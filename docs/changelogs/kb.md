@@ -2347,7 +2347,7 @@
 
 ### 2026-07-15 | 품질 | *pre-commit ruff 0.15.20 통일 및 전체 훅 정리
 
-- **커밋**: `(미커밋)`
+- **커밋**: `24dbca8`
 - **변경 내용**:
   - `.pre-commit-config.yaml` ruff `v0.6.9` → `v0.15.20` (`1dd29bb` MVP).
   - `requirements-dev.txt` `ruff>=0.15.0,<0.16.0` 핀, `docs/ops/code_quality_guide.md` v0.3.1 갱신.
