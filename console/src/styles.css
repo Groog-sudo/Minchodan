@@ -1359,7 +1359,7 @@ td {
 .member-form-label-text {
   display: block;
   width: 35%;
-  margin: 0 auto;
+  margin: 0;
   text-align: left;
 }
 
@@ -1372,7 +1372,7 @@ td {
   padding: 8px 10px;
   font-family: inherit;
   width: 40%;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .member-form input:focus {
@@ -1383,7 +1383,7 @@ td {
 
 .member-form .refresh-btn {
   width: 40%;
-  margin: 30px auto 0;
+  margin: 30px 0 0;
   padding: 10px 10px;
 }
 
@@ -1443,7 +1443,7 @@ td {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .trace-timeline-table thead th {
@@ -1465,7 +1465,27 @@ td {
 
 .trace-timeline-table thead th:nth-child(1),
 .trace-timeline-table tbody td:nth-child(1) {
-  width: 7%;
+  padding-right: 1px;
+}
+
+.trace-timeline-table thead th:nth-child(2),
+.trace-timeline-table tbody td:nth-child(2) {
+  padding-left: 2px;
+}
+
+.trace-timeline-table thead th:nth-child(8),
+.trace-timeline-table tbody td:nth-child(8) {
+  padding-right: 2px;
+}
+
+.trace-timeline-table thead th:nth-child(9),
+.trace-timeline-table tbody td:nth-child(9) {
+  padding-left: 2px;
+}
+
+.trace-timeline-table thead th:nth-child(1),
+.trace-timeline-table tbody td:nth-child(1) {
+  width: calc(14% - 10px);
 }
 
 .trace-timeline-table thead th:nth-child(2),
@@ -1490,7 +1510,7 @@ td {
 
 .trace-timeline-table thead th:nth-child(6),
 .trace-timeline-table tbody td:nth-child(6) {
-  width: 7%;
+  width: 5%;
 }
 
 .trace-timeline-table thead th:nth-child(7),
@@ -1500,12 +1520,13 @@ td {
 
 .trace-timeline-table thead th:nth-child(8),
 .trace-timeline-table tbody td:nth-child(8) {
-  width: 8%;
+  width: 1%;
+  white-space: nowrap;
 }
 
 .trace-timeline-table thead th:nth-child(9),
 .trace-timeline-table tbody td:nth-child(9) {
-  width: 44%;
+  width: auto;
 }
 
 .trace-timeline-table tbody tr:hover {
@@ -1515,6 +1536,14 @@ td {
 .trace-time {
   color: var(--color-text-dim, #9CA3AF);
   font-family: "Share Tech Mono", "JetBrains Mono", monospace;
+}
+
+.trace-timeline-table tbody td.trace-time {
+  width: 130px;
+  min-width: 130px;
+  max-width: 130px;
+  padding-left: 2px;
+  padding-right: 0;
 }
 
 .track-badge {
@@ -1534,7 +1563,7 @@ td {
 }
 
 .trace-hit {
-  text-align: center;
+  text-align: left;
   font-family: "Share Tech Mono", "JetBrains Mono", monospace;
   color: var(--color-gildang-yellow, #F9B700);
 }

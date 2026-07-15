@@ -705,8 +705,8 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
   - styles.css에서 rame-detail-body, lightbox-content 내 깨진 이미지 fallback 크기를 40x40px로 통일해 레이아웃 붕괴를 방지함
   - LatencySummaryPanel.tsx, DashboardPage.tsx의 최근 콘솔 레이아웃/표시 정비 변경을 함께 커밋 범위에 포함함
 - **관련 파일**: console/src/components/DetectionGuidanceLogTable.tsx, console/src/components/LatencySummaryPanel.tsx, console/src/pages/DashboardPage.tsx, console/src/styles.css, docs/changelogs/jh.md
-- **검증 결과**: 
-pm run build 성공
+- **검증 결과**:
+  pm run build 성공
 - **비고**: 워킹트리의 client/src/services/frameCaptureProviderSelect.android.ts 변경은 사용자 지정 범위에 따라 이번 커밋에서 제외함
 
 ---
@@ -723,3 +723,17 @@ pm run build 성공
 - **관련 파일**: console/src/components/DetectionGuidanceLogTable.tsx, console/src/components/LatencySummaryPanel.tsx, console/src/pages/DashboardPage.tsx, console/src/styles.css, docs/changelogs/jh.md
 - **검증 결과**: npm run build 성공
 - **비고**: 워킹트리의 client/src/services/frameCaptureProviderSelect.android.ts 변경은 사용자 지정 범위에 따라 이번 커밋에서 제외함
+
+---
+
+### 2026-07-15 | 콘솔 UI | 회원 등록 좌측 정렬 및 발화 추적 타임라인 간격/폭 미세 조정
+
+- **커밋**: `style(console): 회원 등록 좌측 정렬 및 발화 추적 타임라인 밀도 조정`
+- **변경 내용**:
+  - `styles.css`에서 `.member-form-label-text`, `.member-form input`, `.member-form .refresh-btn`의 자동 가운데 정렬 마진을 제거해 회원 등록 입력창과 버튼을 좌측 기준으로 정렬함
+  - `trace-timeline-table`을 `table-layout: auto`로 전환하고 `시간`, `위험도`, `트리거`, `발화문` 열 폭을 다시 배분해 발화 추적 타임라인의 공백 비율을 축소함
+  - `td.trace-time`에 폭 `130px` 및 좌우 패딩 축소를 적용해 시간 셀의 과한 가로 여백을 줄임
+  - `시간-트랙`, `트리거-발화문` 경계 패딩을 미세 조정하고 `trace-hit` 정렬을 좌측으로 변경해 텍스트 겹침 없이 더 촘촘하게 보이도록 보정함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 회원 관리 등록 폼과 발화 추적 타임라인의 시각 밀도 조정만 포함하며 API/비즈니스 로직 변경은 없음
