@@ -171,21 +171,20 @@ export function DashboardPage({
         />
       </section>
 
-      <section className="monitor-stack-layout">
-        <McpValidationMonitor
-          audio={state.audio_validation}
-          cache={state.cache_suppression}
-          accessibility={state.accessibility_validation}
-          trace={state.langsmith_trace}
-        />
-        <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
-      </section>
+      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
 
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
       <GuidanceTraceTimeline rows={detectionGuidanceLogs} />
+      <McpValidationMonitor
+        audio={state.audio_validation}
+        cache={state.cache_suppression}
+        accessibility={state.accessibility_validation}
+        trace={state.langsmith_trace}
+      />
+
       <DetectionGuidanceLogTable
         rows={detectionGuidanceLogs}
         token={token}
