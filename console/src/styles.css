@@ -978,9 +978,10 @@ td {
   padding: 6px 12px;
   transition: all 0.2s ease;
   white-space: nowrap;
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  width: 50%;
+  width: fit-content;
   text-transform: uppercase;
 }
 
@@ -1205,7 +1206,7 @@ td {
   font-size: 13px;
   padding: 8px 10px;
   font-family: inherit;
-  width: 35%;
+  width: 40%;
   margin: 0 auto;
 }
 
@@ -1216,7 +1217,7 @@ td {
 }
 
 .member-form .refresh-btn {
-  width: 35%;
+  width: 40%;
   margin: 30px auto 0;
   padding: 10px 10px;
 }
