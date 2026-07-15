@@ -420,3 +420,47 @@
   - `console` 운영 빌드(`tsc --noEmit`, `vite build`) 통과
 
 ---
+
+### 2026-07-14 | iOS/클라이언트/문서 | LiDAR 동기화 데이터의 렌즈·광선 거리 보정 적용
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - `dev` 업데이트 후 새 iOS 앱 빌드에서 `거리측정` 기능이 실제 줄자 거리와 크게 어긋나는 현상이 확인됐습니다. 특히 0.5m 이하에서는 앱 표시가 1m 근방으로 튀고, 0.6m 이상에서는 실제 거리보다 짧아졌다가 멀어지는 값 흔들림이 간헐적으로 나타났습니다.
+  - 직전 개선으로 `DepthProbeBridge`는 같은 `AVCaptureSession` 안에서 video+depth를 동기화하고 1:1 crop 좌표를 맞추는 단계까지 적용됐지만, `AVDepthData`가 가질 수 있는 렌즈 왜곡과 픽셀별 카메라 광선 방향은 아직 거리 산식에 반영하지 않았습니다.
+  - Apple AVFoundation의 LiDAR depth 캡처 흐름은 RGB/depth 동기화와 `AVCameraCalibrationData` 활용을 전제로 하므로, 프레임 쌍이 같은 시각에 도착했는지뿐 아니라 해당 depth frame에 보정 데이터가 붙어 있는지도 계측 신뢰 조건으로 올렸습니다.
+  - 단, 렌즈·광선 보정은 특히 화면 가장자리와 비스듬한 표면에서 의미가 크며, 화면 중앙에서 0.5m가 1m로 두 배 튀는 현상을 단독으로 설명하기는 어렵습니다. 따라서 이번 수정은 왜곡·광선 산식 누락을 제거하는 1차 확정 조치이고, 실기기 줄자 검증으로 남은 원인 후보를 좁히는 구조까지 같이 마련했습니다.
+- **네이티브 동기화 변경 내용**:
+  - `AVCaptureDataOutputSynchronizer` delegate에서 `AVCaptureSynchronizedDepthData`와 `AVCaptureSynchronizedSampleBufferData`가 모두 존재하고 drop되지 않았을 때만 최신 depth/video frame을 갱신하도록 조건을 강화했습니다.
+  - `syncedDepth.depthData.cameraCalibrationData`가 없는 프레임은 계측 입력에서 제외하여, 보정 산식을 적용할 수 없는 depth map이 `probe()` 또는 `probeBoxes()` 결과에 섞이지 않게 했습니다.
+  - `depthOutput.alwaysDiscardsLateDepthData = true`를 설정해 늦게 도착한 depth frame이 최신 video frame과 섞일 가능성을 낮췄습니다.
+  - serial `queue` 안에서 `latestDepth`, `latestVideoBuffer`, `latestSynchronizedAt`을 함께 갱신하여 JS가 읽는 프리뷰와 depth 샘플의 시점 불일치를 줄였습니다.
+- **거리 보정 산식 변경 내용**:
+  - `DepthSampleValue`를 추가해 보정 전 z축 depth(`axialMeters`)와 보정 후 카메라-표면 거리(`calibratedMeters`)를 한 쌍으로 보관합니다.
+  - `lensDistortionLookupTable`, `lensDistortionCenter`, `intrinsicMatrixReferenceDimensions`를 사용해 샘플 좌표의 방사형 렌즈 왜곡을 보간 보정하는 `rectifiedPoint` helper를 추가했습니다.
+  - `intrinsicMatrix`의 `fx`, `fy`, `cx`, `cy`로 정규화 카메라 광선 벡터를 복원하고, `sqrt(1 + x^2 + y^2)` 광선 스케일을 원본 z축 depth에 곱해 카메라-표면 거리를 계산하는 `calibratedDistance` helper를 추가했습니다.
+  - `probe()`의 단일 지점 5x5 미디언과 `probeBoxes()`의 bbox 중앙 50% 영역 7x7 grid 25퍼센타일 모두 보정 거리 기준으로 반환하도록 바꿨습니다.
+  - 보정에 실패한 샘플은 유효 샘플에서 제외하여, 일부 픽셀만 보정 가능한 상태에서 무리하게 원본 z값을 섞지 않도록 했습니다.
+- **클라이언트 표시 및 디버깅 변경 내용**:
+  - `client/src/services/depthProbe.ts` 타입에 `axialMeters`, `quality`, `calibrated` 필드를 추가했습니다.
+  - `CameraView.tsx`의 거리측정 오버레이에 보정 적용 여부, depth 정확도, depth 품질을 표시하도록 했습니다.
+  - 화면 표시와 개발 로그에 보정 거리(`meters`)와 원본 z축 depth(`axialMeters`)를 함께 노출해, 실기기 A/B 측정 시 보정 산식이 실제로 값을 얼마나 바꾸는지 바로 비교할 수 있게 했습니다.
+- **문서 동기화 내용**:
+  - `docs/mobile/ios_android_bifurcation_contract.md`에 iOS 전용 `DepthProbeBridge`가 video/depth 동기화뿐 아니라 `cameraCalibrationData` 기반 렌즈·광선 거리 보정을 수행한다는 계약을 추가했습니다.
+  - `docs/design/risk_ssot_contract.md`에 단말 LiDAR 거리값은 보정 적용 상태까지 실기기 줄자 검증이 필요하며, 정식 객체별 반사 거리와 서버 bbox 휴리스틱은 아직 완전 동등하지 않다는 기술 부채를 명시했습니다.
+  - `docs/research/mitos_improvement_roadmap.md`의 거리 추정 항목을 `부분 해소` 상태로 갱신하고, 남은 과제를 계측용 버튼 줄자 실측과 객체 탐지 프레임-depth map 정식 fusion 검증으로 분리했습니다.
+- **관련 파일**: `client/ios/DepthProbeBridge.swift`, `client/src/services/depthProbe.ts`, `client/src/components/CameraView.tsx`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/design/risk_ssot_contract.md`, `docs/research/mitos_improvement_roadmap.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `cd client && npx tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - `xcodebuild -workspace client/ios/Minchodan.xcworkspace -scheme Minchodan -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath /tmp/minchodan-lidar-calibration-workspace-build CODE_SIGNING_ALLOWED=NO build` 통과
+  - 무서명 Debug iOS 앱 산출물 생성 확인: `/tmp/minchodan-lidar-calibration-workspace-build/Build/Products/Debug-iphoneos/Minchodan.app`
+- **잔여 실기기 검증**:
+  - 렌즈면 기준 0.3m, 0.5m, 1.0m, 2.0m의 평평한 무광 표면을 중앙·좌측·우측 지점에서 각각 측정해 보정 거리(`meters`)와 원본 z축 depth(`axialMeters`)를 함께 기록합니다.
+  - 같은 거리에서 단말을 벽과 수직으로 둔 경우와 10~20도 기울인 경우를 나눠 측정해, 렌즈·광선 보정이 가장자리와 기울어진 표면에서 기대한 방향으로 작동하는지 확인합니다.
+  - 0.5m 이하에서 여전히 1m 근방으로 표시되면 이번 보정 산식보다 orientation/crop 매핑, depth map 해상도 좌표 변환, 렌즈면이 아닌 화면/케이스 기준 줄자 측정, 유리·검정 유광 표면 같은 LiDAR 취약 표면을 우선 재점검합니다.
+  - 정식 객체별 거리 경보로 승격하려면 VisionCamera 탐지 프레임과 LiDAR depth의 동일 세션·동일 타임스탬프·동일 640x640 crop 좌표계 fusion 검증이 별도로 필요합니다.
+- **비고**:
+  - 이번 변경은 `거리측정` 계측 버튼 경로의 신뢰 조건과 보정 산식을 강화한 작업입니다. 일반 객체 탐지 bbox에 들어오는 `distanceMeters` 계약은 유지되지만, 모든 탐지 객체가 보정된 LiDAR 실거리를 받는 정식 fusion 단계까지 완료된 것은 아닙니다.
+  - 보정 후 값이 원본 z축 depth와 거의 같게 보이는 중앙 지점도 정상일 수 있습니다. 광선 스케일은 중심부에서 1에 가깝고, 차이는 보통 가장자리나 기기 각도 변화에서 더 잘 드러납니다.
+
+---

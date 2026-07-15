@@ -445,9 +445,14 @@ export function CameraView() {
           setDepthResult(result);
           // 실측 기록용(Release 빌드에서는 미출력) - 시나리오 기록은 화면 판독으로 수행
           console.log(
-            `[DepthProbe] acc=${result.accuracy} ` +
+            `[DepthProbe] acc=${result.accuracy} quality=${result.quality} ` +
+              `calibrated=${result.calibrated === true} ` +
               result.samples
-                .map((s, i) => `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m`)
+                .map(
+                  (s, i) =>
+                    `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m` +
+                    `(z=${s.axialMeters?.toFixed(2) ?? "-"}m)`,
+                )
                 .join(", "),
           );
         }
@@ -1059,7 +1064,8 @@ export function CameraView() {
       {depthMode && (
         <View style={styles.depthOverlay} pointerEvents="none">
           <Text style={styles.depthTitle}>
-            LiDAR 실거리 (동기화 프리뷰, 정확도: {depthResult?.accuracy ?? "-"})
+            LiDAR 실거리 (동기화·보정: {depthResult?.calibrated ? "적용" : "대기"}, 정확도:{" "}
+            {depthResult?.accuracy ?? "-"}, 품질: {depthResult?.quality ?? "-"})
           </Text>
           {depthError ? (
             <Text style={styles.depthError}>{depthError}</Text>
@@ -1070,7 +1076,9 @@ export function CameraView() {
                 <Text key={point.label} style={styles.depthRow}>
                   {point.label}:{" "}
                   {sample && sample.meters != null
-                    ? `${sample.meters.toFixed(2)} m (${sample.sampleCount ?? 0})`
+                    ? `${sample.meters.toFixed(2)} m ` +
+                      `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
+                      `${sample.sampleCount ?? 0})`
                     : "측정 불가"}
                 </Text>
               );

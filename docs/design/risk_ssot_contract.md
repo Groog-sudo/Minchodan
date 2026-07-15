@@ -1,7 +1,7 @@
 # 반사 위험도 SSOT 계약 (초안)
 
 > **작성일**: 2026-07-14
-> **버전**: v0.2.1 (2026-07-14 dg2의 29종 반사 경로 정합화 반영 및 dev의 LiDAR/ARKit depth 계측용 video+depth 동기화 기술 부채 정리 통합)
+> **버전**: v0.2.2 (2026-07-14 iOS LiDAR 계측 경로의 video+depth 동기화 및 cameraCalibrationData 기반 렌즈·광선 거리 보정 반영 + 이전 v0.2.1의 29종 반사 경로 정합화 유지)
 > **근거**: [`docs/ops/dev_8b2f606_improvement_plan.md`](../ops/dev_8b2f606_improvement_plan.md) §2 "반사 위험도 SSOT", [`docs/research/mitos_improvement_roadmap.md`](../research/mitos_improvement_roadmap.md) §2
 > **적용 대상**: 서버 반사 게이트(`server/detection/gates/reflex_gate.py`)와 단말 온디바이스 게이트(`client/src/components/CameraView.tsx`)
 
@@ -56,7 +56,7 @@
 | 영역 | 현황 | 계약 |
 | --- | --- | --- |
 | 단말 전용 추가 confidence 하한 | `roadway` (0.35), `fire_hydrant`, `parking_meter`, `traffic_light`, `traffic_light_controller`, `traffic_sign`, `stop` (각 0.55) | 단말 실내 오탐 완화 전용 확장으로 허용. 단, **§2의 29종 값과 충돌하는 항목을 추가할 수 없다** |
-| 거리 추정 산식 | 서버: bbox 하단 y 기반 의사 거리(`1.5 - ratio*1.1`, `reflex_gate.py`) / 단말: `distanceMeters`가 있으면 LiDAR 실거리 우선, 없으면 면적 기반 `0.22/sqrt(areaRatio)`(`CameraView.tsx`) 및 기존 면적 기반 반사 게이트로 fallback | **현재 불일치 상태를 인지된 기술 부채로 명시**. 단말은 LiDAR 값이 들어오는 경우 0.5/1.0/1.5/3.0m 임계값으로 우선 판정한다. 계측용 `거리측정` 버튼은 자체 `DepthProbeBridge` 세션 안에서 video+depth를 동기화한 1:1 프리뷰와 crop 좌표 샘플링으로 개선됐지만, 정식 수렴 조건은 탐지 video frame과 depth map의 동일 세션·동일 타임스탬프·동일 640x640 crop 좌표계 실기기 검증이다. 그 전까지 서버/단말 발동 거리 동등성은 시나리오로 검증한다 |
+| 거리 추정 산식 | 서버: bbox 하단 y 기반 의사 거리(`1.5 - ratio*1.1`, `reflex_gate.py`) / 단말: `distanceMeters`가 있으면 LiDAR 실거리 우선, 없으면 면적 기반 `0.22/sqrt(areaRatio)`(`CameraView.tsx`) 및 기존 면적 기반 반사 게이트로 fallback | **현재 불일치 상태를 인지된 기술 부채로 명시**. 단말은 LiDAR 값이 들어오는 경우 0.5/1.0/1.5/3.0m 임계값으로 우선 판정한다. 계측용 `거리측정` 버튼은 자체 `DepthProbeBridge` 세션 안에서 video+depth를 동기화하고, 동기화된 `cameraCalibrationData`의 렌즈 왜곡 LUT와 `intrinsicMatrix`를 이용해 원본 z축 depth를 카메라-표면 광선 거리로 보정한다. 정식 수렴 조건은 탐지 video frame과 depth map의 동일 세션·동일 타임스탬프·동일 640x640 crop 좌표계 및 보정 거리의 실기기 줄자 검증이다. 그 전까지 서버/단말 발동 거리 동등성은 시나리오로 검증한다 |
 | 방향 판정 | 서버 `direction.py` FRONT_BAND / 단말 자체 판정 | 좌표계 기준(카메라 프레임)이 동일하므로 허용. 착용 방식 확정 시 재검토 |
 
 ---
@@ -89,4 +89,4 @@
 | --- | --- |
 | 1 (본 초안) | 문서 계약 + 회귀 테스트로 복제 불일치 차단 |
 | 2 | 기계가독 단일 소스(예: `shared/risk_rules.json`)를 서버 import·단말 codegen으로 소비 (TH·Mobile 합의 필요) |
-| 3 | LiDAR/depth 기반 거리 단일화, 반사 억제 재설계(debounce·재진입 재경보)와 통합. 2026-07-13 단말 `distanceMeters` 우선 계약과 fallback 구조는 적용됐고, 계측용 `거리측정` 버튼은 자체 세션 내부 동기화 프리뷰로 개선됐다. 남은 조건은 객체 탐지 프레임 기준 video+depth 동기화 검증이다 |
+| 3 | LiDAR/depth 기반 거리 단일화, 반사 억제 재설계(debounce·재진입 재경보)와 통합. 단말 `distanceMeters` 우선 계약과 fallback 구조를 적용했고, 계측용 `거리측정` 버튼은 자체 세션 내부 동기화 및 `cameraCalibrationData` 기반 렌즈·광선 거리 보정을 적용했다. 남은 조건은 보정 거리 줄자 실측과 객체 탐지 프레임 기준 정식 video+depth fusion 검증이다 |
