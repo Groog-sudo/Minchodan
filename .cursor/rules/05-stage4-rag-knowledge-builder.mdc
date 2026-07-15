@@ -1,0 +1,15 @@
+---
+description: 4단계 RAG 지식 빌더 - Gemini 캡셔닝 + nomic-embed + ChromaDB 오프라인 구축
+globs: server/rag/build/**
+alwaysApply: false
+---
+
+# 4단계: RAG 지식 빌더 (오프라인)
+
+`server/rag/build/`를 수정할 때는 `.agents/skills/rag-knowledge-builder/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- VLM 캡셔닝은 Gemini API(gemini-2.5-flash-lite)를 사용한다(최초 계획이던 로컬 Llava에서 전환됨).
+- 임베딩은 로컬 Ollama nomic-embed-text를 사용한다.
+- 메타데이터는 3단계 분리 클래스(반사/인지/노면)와 일치시켜 검색 정합을 확보한다.
