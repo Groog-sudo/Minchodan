@@ -5,6 +5,32 @@
 
 ---
 
+### 2026-07-15 | Docker/Ollama | WSL/Linux 로컬 Ollama 자동 기동 보강
+
+- **커밋**: `infra: WSL/Linux 로컬 Ollama 실행 환경 보강`
+- **변경 내용**:
+  - `requirements.txt`에서 로컬 Ollama LLM 호출에 필요한 `ollama==0.6.2`를 실제 설치 대상에 포함했습니다.
+  - Linux Docker 시작 스크립트가 `systemd`에 의존하지 않고 `ollama serve`를 백그라운드 실행하도록 보강했습니다.
+  - 기본 Ollama 바인딩은 `127.0.0.1:11434`로 두고, Docker 컨테이너 접근을 위한 `0.0.0.0:11434` 바인딩은 `MINCHODAN_EXPOSE_OLLAMA=1` 명시 opt-in으로 제한했습니다.
+  - Docker 게이트웨이 단독 바인딩 및 브리지 프록시 대안을 검토했으나, 현재 로컬 Docker 네트워크에서는 컨테이너에서 호스트 게이트웨이 요청이 타임아웃되어 최종 반영하지 않았습니다.
+  - 시작 스크립트에서 `gemma4:e4b`, `nomic-embed-text` 모델 존재 여부를 확인하고 누락 시 pull하도록 추가했습니다.
+  - `.env.example`에 `OLLAMA_HOST`, `OLLAMA_KEEP_ALIVE`, `OLLAMA_MAX_LOADED_MODELS`를 추가해 Docker 컨테이너의 호스트 Ollama 접근 기준을 명시했습니다.
+  - 배포 및 하드웨어 구성 문서에 WSL/Linux `systemd` 미사용 환경의 Ollama 실행 기준을 반영했습니다.
+- **관련 파일**: `requirements.txt`, `.env.example`, `docker/linux_docker_start.sh`, `docs/ops/deployment_guide.md`, `docs/ops/ai_model_hardware_setup.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `bash -n docker/linux_docker_start.sh docker/macos_docker_start.sh` 통과
+  - `docker compose --env-file .env -f docker/docker-compose.yml config --quiet` 통과
+  - `git diff --check` 통과
+  - `nohup ollama serve`로 로컬 Ollama 서버 기동 후 `curl http://127.0.0.1:11434/api/version` 응답 확인
+  - `ollama list`에서 `gemma4:e4b`, `nomic-embed-text` 모델 설치 확인
+  - `.venv` 기준 `LLMClientFactory.get_client("ollama")` 실제 호출 성공 확인
+  - `EmbeddingEngineFactory.get_embeddings(provider="ollama")`로 `nomic-embed-text` 768차원 임베딩 호출 성공 확인
+  - `docker compose --env-file .env -f docker/docker-compose.yml build fastapi` 성공 및 `minchodan-fastapi` 재생성 완료
+  - `curl http://127.0.0.1:8008/health` 기준 FastAPI health 정상, `TTS_ENGINE=supertonic`, `CHROMA_COLLECTION=safety_guidelines` 반영 확인
+  - 현재 Docker 네트워크에서는 컨테이너에서 호스트 Ollama(`host.docker.internal:11434`) 접근이 타임아웃됩니다. 전체 인터페이스 바인딩(`OLLAMA_HOST=0.0.0.0:11434`)은 보안상 사용자 명시 승인 후 적용 대상으로 남겼습니다.
+
+---
+
 ### 2026-06-26 | 공통 | Changelog 관리 체계 전환 및 한국어 안내 자동화 스크립트 수정
 
 - **커밋**: `refactor: changelog per-member append system and localized scripts`
