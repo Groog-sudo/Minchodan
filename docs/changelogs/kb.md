@@ -2337,26 +2337,8 @@
 - **커밋**: `50adfb1`
 - **변경 내용**:
   - `ruff format .` + `ruff check --fix .`로 50파일 스타일 정리(탭→스페이스, 공백/import/UTF-8 헤더 등).
-  - Ruff 전체 에러 354건 → 0건. pre-commit 통과를 위해 잔여 14건 추가 수정(`50adfb1`), RUF046·누락 테스트 2건 보완(`0e8be01` 후속).
-- **관련 파일**: `scripts/**`(28), `server/**`(15), `tests/**`(10)
-- **검증 결과**: `ruff check .` 0건. `auto_publish_work.py` Ruff 게이트 통과.
-
----
-
-### 2026-07-15 | 품질 | *Ruff 누락 테스트 2파일 포맷 보완
-
-- **커밋**: `(미커밋)`
-- **변경 내용**:
-  - `50adfb1` 커밋 시 pre-commit stash 복원 과정에서 빠진 `test_frame_decode.py`, `test_risk_ssot.py` assert 줄바꿈 포맷 적용.
-- **관련 파일**: `tests/test_frame_decode.py`, `tests/test_risk_ssot.py`
-- **검증 결과**: `ruff format --check` 2파일 통과.
-
----
-
-### 2026-07-15 | 3단계 | verify
-
-- **커밋**: `(자동 커밋 완료)`
-- **변경 내용**:
-  - verify
-- **관련 파일**: `tests/test_frame_decode.py`, `tests/test_risk_ssot.py`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+  - Ruff 전체 에러 354건 → **0건** (`ruff check .`, 로컬 ruff 0.15). `auto_publish_work.py` Ruff 게이트 통과.
+  - `50adfb1`은 **49파일** 커밋. `test_frame_decode.py`·`test_risk_ssot.py`는 pre-commit ruff **0.6.9** 기준 이미 통과(로컬 0.15 `format --check`와 assert 줄바꿈 규칙만 상이).
+  - RUF046(`tts_service.py`)는 `0e8be01`에서 수정.
+- **관련 파일**: `scripts/**`(28), `server/**`(15), `tests/**`(8, 50adfb1) + `server/tts/tts_service.py`(0e8be01)
+- **검증 결과**: `ruff check .` 0건. pre-commit `ruff-format`/`ruff` staged 파일 통과. `test_frame_decode`/`test_risk_ssot` pre-commit(0.6.9) Passed.
