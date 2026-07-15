@@ -1,5 +1,6 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.2.0 (2026-07-09 Ollama를 Docker 컨테이너가 아닌 호스트 로컬 프로세스로 실행하도록 정정)
+> **수정일**: 2026-07-14
+> **버전**: v1.3.0 (OS·아키텍처별 PyTorch 휠 선택 기준 반영)
 > **설계 기준**: docs/ops/deployment_guide.md (v0.5.0)
 
 # Minchodan AI 모델 및 하드웨어 구성 지침
@@ -19,7 +20,7 @@
 | **NVIDIA Driver** | **v550.x** 이상 필수 | N/A |
 | **VRAM / RAM** | **VRAM 8GB** 이상 / RAM 16GB 이상 | RAM 16GB 이상 (Ollama 모델 로드 전제) |
 
-> **2026-07-07 참고**: `requirements.txt`는 `torch==2.12.1`/`torchvision==0.27.1`을 `+cu128` 태그나 `--extra-index-url` 없이 순정 PyPI 패키지로 설치하며, `docker/Dockerfile`도 `pip install -r requirements.txt`만 실행한다. 즉 cu128 빌드가 코드로 강제되어 있지 않으므로, 실제 CUDA 12.8 가속을 쓰려면 설치 환경에서 별도로 cu128 wheel을 지정해야 한다.
+> `requirements.txt`는 환경 마커로 PyTorch 휠을 분리합니다. macOS와 Apple Silicon 기반 Linux 컨테이너는 PyPI의 `torch==2.12.1`/`torchvision==0.27.1`을 사용하고, Blackwell 배포 대상인 Linux x86_64와 Windows는 공식 cu128 인덱스의 `torch==2.11.0+cu128`/`torchvision==0.26.0+cu128`을 사용합니다. GPU 환경은 설치 후 `scripts/verify_gpu.py`로 CUDA 바인딩을 별도 검증해야 합니다.
 
 ### 1.2 GPU 가속 연결 검증
 개발자는 컨테이너 기동 전 호스트 OS 상에서 파이썬 스크립트를 통해 GPU 연계 가능 여부를 사전 검증해야 합니다:

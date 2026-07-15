@@ -14,6 +14,7 @@ import AVFoundation
 import CoreImage
 import Foundation
 import React
+import simd
 import UIKit
 
 @objc(DepthProbeBridge)
@@ -28,6 +29,11 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
   private var latestVideoBuffer: CVPixelBuffer?
   private var latestSynchronizedAt: Double = 0
   private var configured = false
+
+  private struct DepthSampleValue {
+    let axialMeters: Double
+    let calibratedMeters: Double
+  }
 
   @objc static func requiresMainQueueSetup() -> Bool {
     return false
@@ -69,6 +75,7 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
     session.addOutput(depthOutput)
     // 홀 필링 스무딩: 반사율 낮은 표면(유리/검정 차체)의 NaN 구멍을 주변값으로 보간.
     depthOutput.isFilteringEnabled = true
+    depthOutput.alwaysDiscardsLateDepthData = true
     if let conn = videoOutput.connection(with: .video) {
       if conn.isVideoOrientationSupported {
         conn.videoOrientation = .portrait
@@ -127,21 +134,100 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
     guard
       let syncedDepth = synchronizedDataCollection.synchronizedData(for: depthOutput)
         as? AVCaptureSynchronizedDepthData,
-      !syncedDepth.depthDataWasDropped
-    else {
-      return
-    }
-    latestDepth = syncedDepth.depthData
-
-    if
+      !syncedDepth.depthDataWasDropped,
       let syncedVideo = synchronizedDataCollection.synchronizedData(for: videoOutput)
         as? AVCaptureSynchronizedSampleBufferData,
       !syncedVideo.sampleBufferWasDropped,
-      let pixelBuffer = CMSampleBufferGetImageBuffer(syncedVideo.sampleBuffer)
-    {
-      latestVideoBuffer = pixelBuffer
+      let pixelBuffer = CMSampleBufferGetImageBuffer(syncedVideo.sampleBuffer),
+      syncedDepth.depthData.cameraCalibrationData != nil
+    else {
+      return
     }
+
+    latestDepth = syncedDepth.depthData
+    latestVideoBuffer = pixelBuffer
     latestSynchronizedAt = Date().timeIntervalSince1970
+  }
+
+  private func rectifiedPoint(
+    _ point: CGPoint,
+    calibration: AVCameraCalibrationData
+  ) -> CGPoint {
+    guard
+      let lookupTable = calibration.lensDistortionLookupTable,
+      lookupTable.count >= MemoryLayout<Float>.size * 2
+    else {
+      return point
+    }
+
+    let center = calibration.lensDistortionCenter
+    let dimensions = calibration.intrinsicMatrixReferenceDimensions
+    let deltaX = point.x - center.x
+    let deltaY = point.y - center.y
+    let radius = hypot(deltaX, deltaY)
+    guard radius > 0 else { return point }
+
+    let maxDeltaX = max(center.x, dimensions.width - center.x)
+    let maxDeltaY = max(center.y, dimensions.height - center.y)
+    let maxRadius = hypot(maxDeltaX, maxDeltaY)
+    guard maxRadius > 0 else { return point }
+
+    let tableCount = lookupTable.count / MemoryLayout<Float>.size
+    let tablePosition = min(1.0, radius / maxRadius) * CGFloat(tableCount - 1)
+    let lowerIndex = Int(floor(tablePosition))
+    let upperIndex = min(lowerIndex + 1, tableCount - 1)
+    let fraction = Float(tablePosition - CGFloat(lowerIndex))
+    let magnificationDelta: Float = lookupTable.withUnsafeBytes { rawBuffer in
+      let values = rawBuffer.bindMemory(to: Float.self)
+      let lower = values[lowerIndex]
+      let upper = values[upperIndex]
+      return lower + (upper - lower) * fraction
+    }
+    let magnification = 1.0 + CGFloat(magnificationDelta)
+
+    return CGPoint(
+      x: center.x + deltaX * magnification,
+      y: center.y + deltaY * magnification
+    )
+  }
+
+  private func calibratedDistance(
+    axialMeters: Double,
+    pixelX: Int,
+    pixelY: Int,
+    depthWidth: Int,
+    depthHeight: Int,
+    calibration: AVCameraCalibrationData
+  ) -> Double? {
+    let referenceSize = calibration.intrinsicMatrixReferenceDimensions
+    guard
+      axialMeters.isFinite,
+      axialMeters > 0,
+      depthWidth > 1,
+      depthHeight > 1,
+      referenceSize.width > 1,
+      referenceSize.height > 1
+    else {
+      return nil
+    }
+
+    let referencePoint = CGPoint(
+      x: CGFloat(pixelX) / CGFloat(depthWidth - 1) * (referenceSize.width - 1),
+      y: CGFloat(pixelY) / CGFloat(depthHeight - 1) * (referenceSize.height - 1)
+    )
+    let rectified = rectifiedPoint(referencePoint, calibration: calibration)
+    let intrinsics = calibration.intrinsicMatrix
+    let focalX = Double(intrinsics.columns.0.x)
+    let focalY = Double(intrinsics.columns.1.y)
+    let principalX = Double(intrinsics.columns.2.x)
+    let principalY = Double(intrinsics.columns.2.y)
+    guard focalX > 0, focalY > 0 else { return nil }
+
+    let normalizedX = (Double(rectified.x) - principalX) / focalX
+    let normalizedY = (Double(rectified.y) - principalY) / focalY
+    let rayScale = sqrt(1.0 + normalizedX * normalizedX + normalizedY * normalizedY)
+    let distance = axialMeters * rayScale
+    return distance.isFinite && distance > 0 ? distance : nil
   }
 
   private func squareCropPoint(nx: Double, ny: Double, width: Int, height: Int) -> (Int, Int) {
@@ -198,7 +284,7 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     queue.async {
-      guard let raw = self.latestDepth else {
+      guard let raw = self.latestDepth, let calibration = raw.cameraCalibrationData else {
         resolve(["ready": false, "samples": []])
         return
       }
@@ -218,11 +304,25 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
       let rowBytes = CVPixelBufferGetBytesPerRow(map)
       let preview = self.latestVideoBuffer.flatMap { self.makePreviewUri(from: $0) }
 
-      func depthAt(_ px: Int, _ py: Int) -> Float? {
+      func depthAt(_ px: Int, _ py: Int) -> DepthSampleValue? {
         guard px >= 0, px < width, py >= 0, py < height else { return nil }
         let rowPtr = base.advanced(by: py * rowBytes).assumingMemoryBound(to: Float32.self)
         let value = rowPtr[px]
-        return (value.isFinite && value > 0) ? value : nil
+        guard value.isFinite, value > 0 else { return nil }
+        let axialMeters = Double(value)
+        guard
+          let calibratedMeters = self.calibratedDistance(
+            axialMeters: axialMeters,
+            pixelX: px,
+            pixelY: py,
+            depthWidth: width,
+            depthHeight: height,
+            calibration: calibration
+          )
+        else {
+          return nil
+        }
+        return DepthSampleValue(axialMeters: axialMeters, calibratedMeters: calibratedMeters)
       }
 
       var samples: [[String: Any]] = []
@@ -230,7 +330,7 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
         let nx = (point["x"] as? Double) ?? 0.5
         let ny = (point["y"] as? Double) ?? 0.5
         let (cx, cy) = self.squareCropPoint(nx: nx, ny: ny, width: width, height: height)
-        var neighborhood: [Float] = []
+        var neighborhood: [DepthSampleValue] = []
         for dy in -2...2 {
           for dx in -2...2 {
             if let v = depthAt(cx + dx, cy + dy) {
@@ -238,10 +338,19 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
             }
           }
         }
-        neighborhood.sort()
+        let sortedAxial = neighborhood.map(\.axialMeters).sorted()
+        let sortedCalibrated = neighborhood.map(\.calibratedMeters).sorted()
         let meters: Any =
-          neighborhood.isEmpty ? NSNull() : Double(neighborhood[neighborhood.count / 2])
-        samples.append(["x": nx, "y": ny, "meters": meters, "sampleCount": neighborhood.count])
+          sortedCalibrated.isEmpty ? NSNull() : sortedCalibrated[sortedCalibrated.count / 2]
+        let axialMeters: Any =
+          sortedAxial.isEmpty ? NSNull() : sortedAxial[sortedAxial.count / 2]
+        samples.append([
+          "x": nx,
+          "y": ny,
+          "meters": meters,
+          "axialMeters": axialMeters,
+          "sampleCount": neighborhood.count,
+        ])
       }
 
       var payload: [String: Any] = [
@@ -249,7 +358,9 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
         "width": width,
         "height": height,
         "accuracy": depthData.depthDataAccuracy == .absolute ? "absolute" : "relative",
+        "quality": depthData.depthDataQuality == .high ? "high" : "low",
         "filtered": depthData.isDepthDataFiltered,
+        "calibrated": true,
         "synchronizedAt": self.latestSynchronizedAt,
         "samples": samples,
       ]
@@ -271,7 +382,7 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     queue.async {
-      guard let raw = self.latestDepth else {
+      guard let raw = self.latestDepth, let calibration = raw.cameraCalibrationData else {
         resolve(["ready": false, "distances": []])
         return
       }
@@ -290,24 +401,38 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
       }
       let rowBytes = CVPixelBufferGetBytesPerRow(map)
 
-      func depthAt(_ px: Int, _ py: Int) -> Float? {
+      func depthAt(_ px: Int, _ py: Int) -> DepthSampleValue? {
         guard px >= 0, px < width, py >= 0, py < height else { return nil }
         let rowPtr = base.advanced(by: py * rowBytes).assumingMemoryBound(to: Float32.self)
         let value = rowPtr[px]
-        return (value.isFinite && value > 0) ? value : nil
+        guard value.isFinite, value > 0 else { return nil }
+        let axialMeters = Double(value)
+        guard
+          let calibratedMeters = self.calibratedDistance(
+            axialMeters: axialMeters,
+            pixelX: px,
+            pixelY: py,
+            depthWidth: width,
+            depthHeight: height,
+            calibration: calibration
+          )
+        else {
+          return nil
+        }
+        return DepthSampleValue(axialMeters: axialMeters, calibratedMeters: calibratedMeters)
       }
 
-      func percentile(_ values: [Float], ratio: Double) -> Double? {
+      func percentile(_ values: [Double], ratio: Double) -> Double? {
         guard !values.isEmpty else { return nil }
         let sorted = values.sorted()
         let position = Double(sorted.count - 1) * ratio
         let lowerIndex = Int(floor(position))
         let upperIndex = Int(ceil(position))
         if lowerIndex == upperIndex {
-          return Double(sorted[lowerIndex])
+          return sorted[lowerIndex]
         }
-        let lower = Double(sorted[lowerIndex])
-        let upper = Double(sorted[upperIndex])
+        let lower = sorted[lowerIndex]
+        let upper = sorted[upperIndex]
         return lower + (upper - lower) * (position - Double(lowerIndex))
       }
 
@@ -334,7 +459,7 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
         let sampleMaxX = min(modelFrameSize - 1.0, x + w * 0.75)
         let sampleMinY = max(0.0, y + h * 0.25)
         let sampleMaxY = min(modelFrameSize - 1.0, y + h * 0.75)
-        var validDepths: [Float] = []
+        var validDepths: [DepthSampleValue] = []
 
         for gy in 0..<gridCount {
           let yRatio = gridCount == 1 ? 0.5 : Double(gy) / Double(gridCount - 1)
@@ -357,7 +482,7 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
         let meters: Any
         if validDepths.count < minimumValidSamples {
           meters = NSNull()
-        } else if let p25 = percentile(validDepths, ratio: 0.25) {
+        } else if let p25 = percentile(validDepths.map(\.calibratedMeters), ratio: 0.25) {
           meters = p25
         } else {
           meters = NSNull()
@@ -374,7 +499,9 @@ class DepthProbeBridge: NSObject, AVCaptureDataOutputSynchronizerDelegate {
         "width": width,
         "height": height,
         "accuracy": depthData.depthDataAccuracy == .absolute ? "absolute" : "relative",
+        "quality": depthData.depthDataQuality == .high ? "high" : "low",
         "filtered": depthData.isDepthDataFiltered,
+        "calibrated": true,
         "distances": distances,
       ])
     }

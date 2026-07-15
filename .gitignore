@@ -148,6 +148,9 @@ tmp/
 
 # 이미지 파일
 *.png
+!console/public/apple-touch-icon.png
+!console/public/favicon-16x16.png
+!console/public/favicon-32x32.png
 *.jpg
 *.jpeg
 
