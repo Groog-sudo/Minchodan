@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.21 (2026-07-16 §8.5 pipeline_debug_json 관리자 콘솔 파이프라인 텍스트 디버그)
+> **버전**: v0.4.22 (2026-07-16 §6.1 STT 대기 안내·§8.3 risk_event 발행 위치·§8.5 pipeline_debug_json 확장 필드)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -372,6 +372,9 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
 | `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |
 | `sources` | RAG 근거 인용 (선택) |
+| `source` | 발화 출처 식별자 (선택). STT 대기 안내는 `"stt-wait-notice"`, 내비게이션은 `"nav-*"`, STT 브릿지는 `bridge_source` 값과 대응. 클라이언트는 `event_id`/`source`로 STT 상호작용 중 뮤트·에코 방어에 활용 |
+
+> **비고 (2026-07-16) - STT 대기 안내**: 경로 검색(TMAP POI)·convenience RAG·LLM 자유 대화 등 Whisper 전사 **이후** 후속 처리가 길어질 때, 서버(`ws_router._send_stt_wait_notice`)가 본 절 `guide` 형식으로 `guidance_text: "잠시만 기다려주세요!"`를 **최대 1회** 선행 전송한다. `event_id`는 `stt-wait-{device_id}-{ts}` 접두, `source`는 `"stt-wait-notice"`. 전사 전에도 `NavigationManager`가 목적지 대기(`WAITING_FOR_DESTINATION`) 또는 질문 답변 대기(`awaiting_free_question`) 상태이면 동일 안내를 보낸다(`stt_to_llm_bridge.should_play_stt_wait_notice`). 본 응답은 STT 에코 감지 메모리(`_record_guidance`)에 넣지 않는다.
 
 > **비고 (2026-07-09)**: 실기기에서 안내 음성이 문장 중간에 끊기던 근본 원인은 base64
 > 전송 방식이 아니라 (1) 서버 TTS 엔진(Piper) 자체의 발음 품질 한계와 (2) 반사 캡처가
@@ -661,6 +664,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `accessibility_validation` | `alert_id:string`, `is_valid:bool`, `similarity_score:float`, `warnings:list`, `details:dict` | McpValidationMonitor 접근성 정합 스코어 업데이트 |
 | `langsmith_trace` | `alert_id:string`, `from_node:string`, `to_node:string`, `latency_ms:float`, `enabled:bool` | McpValidationMonitor LangSmith 트랙 RTT 업데이트 |
 
+> **발행 위치 보강 (2026-07-16)**: `risk_event`는 Redis `risk.events` 스트림이 아니라 `DetectionConsumer._broadcast_risk_event()`가 반사/인지 경보 전송 성사 직후 `MCPManager.broadcast_event("risk_event", …)`로 in-process 발행한다. `detection_event`·`llm_status` 등과 동일 경로이며, 콘솔 `RiskEventLog`가 SSE로 수신한다.
+
 ### 8.4 데모 데이터 분리
 
 콘솔의 데모 데이터는 SSE로 수신되는 것이 아니라, **개발 빌드에서만**(`import.meta.env.DEV && VITE_ENABLE_DEMO_DATA === "true"`) 콘솔 로컬에서 주입됩니다(`console/src/App.tsx`). 운영 빌드에서는 원천 차단되므로 §8.2~8.3의 실이벤트와 혼동하지 않습니다. 단, 사후 이력 로그(§8.5)는 실조회 결과가 있으면 데모 데이터 대신 실데이터를 우선 표시합니다.
@@ -678,7 +683,14 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 
 **로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `false_positive`, `latency_json`, `pipeline_debug_json`, `created_at`
 
-**pipeline_debug_json** (2026-07-16, 관리자 콘솔 전용): 경로별 중간 텍스트 디버그 객체. `path`는 `reflex`/`cognitive`/`stt`. STT 경로는 `stt_transcript`·`bridge_source`·`llm_text`, 인지 경로는 `rag_query`·`rag_context`·`used_fast_lane`·`fast_lane_cache_key`·`l3_verified` 등을 포함한다. MariaDB JSON 컬럼 특성상 REST JSON 응답에서는 객체로 직렬화될 수 있다(콘솔은 string/object 모두 파싱).
+**pipeline_debug_json** (2026-07-16, 관리자 콘솔 전용): `server/services/pipeline_debug_builder.py`가 경로별 중간 텍스트를 직렬화한 JSON 객체. `path`는 `reflex`/`cognitive`/`stt`. MariaDB JSON 컬럼 특성상 REST 응답에서는 객체로 직렬화될 수 있다(콘솔은 string/object 모두 파싱).
+
+| path | 주요 필드 | 설명 |
+| :--- | :--- | :--- |
+| 공통 | `generation_mode` | 응답 생성 경로 식별 (`reflex_prebaked_clip`, `fast_lane_template`, `langgraph_l2_l3`, `llm_answer`, `echo_skipped` 등) |
+| `reflex` | `alert_id`, `clip`, `direction`, `class_name`, `distance`, `risk_level`, `detections_summary` | 반사 사전합성 클립·탐지 요약(최대 8건 bbox/confidence/direction) |
+| `cognitive` | `rag_query`, `rag_context`, `clock_direction`, `distance_class`, `object_ko`, `used_fast_lane`, `fast_lane_cache_key`, `l1_risk_level`, `l3_verified`, `l2_drafts`, `detections_summary`, `surfaces_summary`, `llm_text`, `response_text` | 인지 LangGraph/패스트레인·RAG·L2 초안·노면 요약 |
+| `stt` | `stt_transcript`, `bridge_source`, `generation_mode`, `response_text`, `rag_query`, `rag_results`, `llm_text`, `template_text`, `response_skipped`, `skip_reason` | STT 전사·브릿지 분기·RAG 미리보기(최대 5건)·에코 스킵 |
 
 **프레임 이미지 저장 계약** (`server/services/event_frame_store.py`):
 
@@ -762,5 +774,6 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.22** | **2026-07-16** | **§6.1 `source` 필드·STT 대기 안내(`stt-wait-notice`) 계약 추가. §8.3 `risk_event` 발행 위치(`DetectionConsumer._broadcast_risk_event`) 명시. §8.5 `pipeline_debug_json` 확장 필드 표 보강** |
 | **v0.4.21** | **2026-07-16** | **§8.5 `pipeline_debug_json`·`latency_json`·`false_positive` 로그 응답 필드 명세 보강(관리자 콘솔 STT/LLM/패스트레인 디버그)** |
 | **v0.4.20** | **2026-07-15** | **§8 SSE: 버퍼 방지 응답 헤더, 연결 직후 `system_metrics` 스냅샷, keep-alive 주석 라인. 콘솔은 SSE 401 프로브·빈 카드 안내 문구 추가** |
