@@ -110,8 +110,8 @@ def helper_search_poi(keyword):
         pass
 
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        print("[ERROR] TMAP API Key가 유효하지 않아 검색할 수 없습니다.")
-        return None
+        print("[WARNING] TMAP API Key가 유효하지 않아 가상의 목적지를 반환합니다.")
+        return {"name": f"{keyword} (가상)", "x": "126.8722", "y": "37.4590"}
 
     url = "https://apis.openapi.sk.com/tmap/pois"
     params = {
@@ -158,8 +158,13 @@ def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float
     "가까운 지하철역이 어디야" 같은 근접 질의에 정확히 답할 수 있다.
     """
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        print("[ERROR] TMAP API Key가 유효하지 않아 검색할 수 없습니다.")
-        return None
+        print("[WARNING] TMAP API Key가 유효하지 않아 가상의 인접 목적지를 반환합니다.")
+        return {
+            "name": f"가장 가까운 {keyword} (가상)",
+            "x": str(center_lon + 0.001),
+            "y": str(center_lat + 0.001),
+            "distance_m": 150.0,
+        }
 
     url = "https://apis.openapi.sk.com/tmap/pois"
     params = {
@@ -210,6 +215,36 @@ def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float
 
 def helper_fetch_route(start_poi, end_poi):
     """TMAP 보행자 경로 API를 호출해 경로 GeoJSON을 가져옵니다."""
+    if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
+        print("[WARNING] TMAP API Key가 유효하지 않아 가상의 경로를 반환합니다.")
+        return {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [start_poi["x"], start_poi["y"]]
+                    },
+                    "properties": {
+                        "description": "출발지를 떠나 직진하세요.",
+                        "facilityType": "11"
+                    }
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [end_poi["x"], end_poi["y"]]
+                    },
+                    "properties": {
+                        "description": f"{end_poi['name']} 목적지에 도착했습니다.",
+                        "facilityType": "11"
+                    }
+                }
+            ]
+        }
+
     url = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json"
     headers = {"appKey": APP_KEY, "Content-Type": "application/json"}
     payload = {

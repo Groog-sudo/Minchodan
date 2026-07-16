@@ -258,7 +258,7 @@ class CoreMLInferenceBridge: NSObject {
       return parsePipelineOutput(confidence: confidence, coordinates: coordinates, modelType: modelType)
     }
 
-    // segmentation 모델은 출력이 2개다: [1, 300, 38](박스+마스크계수)와
+    // segmentation 모델은 출력이 2개다: 박스 목록 텐서([1,300,38] 또는 [1,40,8400])와
     // [1, 32, 160, 160](프로토타입 마스크). featureNames는 Set 기반이라 순서가
     // 보장되지 않으므로 .first로 집으면 실기기에서 프로토 마스크 텐서를 집어
     // 파싱이 매 프레임 실패하는 문제가 있었다(2026-07-11 실기기 로그로 확인:
@@ -478,17 +478,60 @@ class CoreMLInferenceBridge: NSObject {
       return []
     }
 
-    let attrsPerBox = shape[2]
-    let numBoxes = shape[1]
     let ptr = UnsafeMutablePointer<Float32>(multiArray.dataPointer.assumingMemoryBound(to: Float32.self))
     let strides = multiArray.strides.map { $0.intValue }
 
     let activeClassNames = (modelType == "segmentation") ? segClassNames : classNames
     let numClasses = activeClassNames.count
+    let maskCoeffs = 32
+    let denseSegAttrs = 4 + numClasses + maskCoeffs // seg raw: xywh + classes + mask
+
+    // ultralytics CoreML segment 기본 export는 [1, C, N](channels-first)이다.
+    // 예: [1, 40, 8400] = (4 xywh + 4 class + 32 mask) × 8400 anchors.
+    // 기존 end2end/[boxes, attrs] 포맷([1, 300, 38])과 구분해 해석한다.
+    let channelsFirst =
+      shape[1] <= denseSegAttrs && shape[2] > shape[1]
+
+    var attrsPerBox = channelsFirst ? shape[1] : shape[2]
+    var numBoxes = channelsFirst ? shape[2] : shape[1]
 
     var results: [[String: Any]] = []
 
-    if attrsPerBox == 4 + numClasses {
+    if channelsFirst && (attrsPerBox == 4 + numClasses || attrsPerBox == denseSegAttrs) {
+      // channels-first 밀집: value(c, i) at [0, c, i], box=정규화 xywh(0~1)
+      for i in 0..<numBoxes {
+        var bestClassId = -1
+        var bestScore: Float32 = -1
+        for c in 0..<numClasses {
+          let score = ptr[0 * strides[0] + (4 + c) * strides[1] + i * strides[2]]
+          if score > bestScore {
+            bestScore = score
+            bestClassId = c
+          }
+        }
+        let confidence = Double(bestScore)
+        if confidence < confThreshold || bestClassId < 0 { continue }
+
+        let cx = Double(ptr[0 * strides[0] + 0 * strides[1] + i * strides[2]]) * 640.0
+        let cy = Double(ptr[0 * strides[0] + 1 * strides[1] + i * strides[2]]) * 640.0
+        let w = Double(ptr[0 * strides[0] + 2 * strides[1] + i * strides[2]]) * 640.0
+        let h = Double(ptr[0 * strides[0] + 3 * strides[1] + i * strides[2]]) * 640.0
+        if w <= 1 || h <= 1 { continue }
+        let className = activeClassNames[bestClassId] ?? "unknown"
+
+        results.append([
+          "model": modelType,
+          "className": className,
+          "confidence": confidence,
+          "bbox": [
+            "x": cx - w / 2.0,
+            "y": cy - h / 2.0,
+            "w": w,
+            "h": h
+          ]
+        ])
+      }
+    } else if attrsPerBox == 4 + numClasses {
       // 밀집 raw 포맷: (x1, y1, x2, y2, class0..classN 확률)
       for i in 0..<numBoxes {
         let baseOffset = i * strides[1]
@@ -556,7 +599,7 @@ class CoreMLInferenceBridge: NSObject {
         ])
       }
     } else {
-      print("[CoreMLBridge] 예상치 못한 출력 attrsPerBox: \(attrsPerBox)")
+      print("[CoreMLBridge] 예상치 못한 출력 shape=\(shape) attrsPerBox=\(attrsPerBox) numBoxes=\(numBoxes)")
       return []
     }
 

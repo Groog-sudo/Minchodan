@@ -2,8 +2,8 @@
 YOLO26n .pt 모델을 iOS CoreML (.mlpackage) 포맷으로 변환하는 스크립트.
 
 변환 대상:
-    - server/models/yolo26n/object_detection.pt  -> object_detection.mlpackage (NMS 내장)
-    - server/models/yolo26n/segmentation.pt      -> segmentation.mlpackage (NMS 미적용, segment task)
+    - server/models/yolo26n/object_detection260714.pt  -> object_detection.mlpackage (NMS 내장)
+    - server/models/yolo26n/segmentation260714.pt      -> segmentation.mlpackage (NMS 미적용, segment task)
 
 산출 위치:
     - client/assets/models/yolo26n/ios/<model_name>.mlpackage
@@ -65,12 +65,17 @@ def convert_model(model_name: str, imgsz: int, half: bool, nms: bool, raw_head: 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, ".."))
 
-    src_path = os.path.join(project_root, "server", "models", "yolo26n", f"{model_name}.pt")
+    # 서버·앱 공통 기준선: *260714.pt (없으면 <model_name>.pt 별칭으로 폴백)
+    src_primary = os.path.join(
+        project_root, "server", "models", "yolo26n", f"{model_name}260714.pt"
+    )
+    src_fallback = os.path.join(project_root, "server", "models", "yolo26n", f"{model_name}.pt")
+    src_path = src_primary if os.path.exists(src_primary) else src_fallback
     dst_dir = os.path.join(project_root, "client", "assets", "models", "yolo26n", "ios")
     dst_path = os.path.join(dst_dir, f"{model_name}.mlpackage")
 
     if not os.path.exists(src_path):
-        print(f"Error: 원본 모델 파일이 존재하지 않습니다: {src_path}")
+        print(f"Error: 원본 모델 파일이 존재하지 않습니다: {src_primary} 또는 {src_fallback}")
         sys.exit(1)
 
     print(f"변환 대상 모델 경로: {src_path}")

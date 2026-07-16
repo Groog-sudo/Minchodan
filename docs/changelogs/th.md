@@ -813,3 +813,15 @@
   - **콘솔**: `DeviceTelemetryPanel` 모델 표시명을 `object_detection260714.pt` / `segmentation260714.pt`로 갱신, `LiveCameraFeed` 회전값 조정.
 - **관련 파일**: `client/src/config/index.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/services/serverTransport.ts`, `client/src/services/frameCaptureProviderSelect.android.ts`, `console/src/components/DeviceTelemetryPanel.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/th.md`
 - **검증 결과**: Android 실기기(`dev-001`) Tailscale(`100.89.91.40:8000`)로 `welcome`/`auth_ok`/`realtime_gps` 지속 수신 확인. `CONTRIBUTING.md`는 커밋·push 대상에서 제외.
+
+---
+
+### 2026-07-16 | 수정 | 260714 모바일 모델 정합 및 iOS 원근 통로 표시
+
+- **변경 내용**:
+  - Android·iOS 모바일 모델을 `object_detection260714.pt` / `segmentation260714.pt` 변환 산출물로 교체했다.
+  - iOS CoreML 세그멘테이션의 channels-first 출력 `[1,40,8400]`을 파싱하고 640x640 화면 좌표로 환산하도록 수정했다.
+  - TFLite 출력 파서와 모바일 변환 스크립트를 최신 모델 출력 계약에 맞췄다.
+  - 고정 `skewX` ROI 선을 실제 카메라 픽셀 끝점 기반 원근 투영으로 교체하고, 소실점에서 촘촘해지는 깊이 눈금을 추가했다.
+- **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`, 모바일 모델 산출물, `scripts/export_mobile.py`, `scripts/export_tflite.py`, `scripts/convert_yolo_to_coreml.py`
+- **검증 결과**: `npx tsc --noEmit`, iOS Release `xcodebuild` 성공. iPhone 16 Pro Max 실기기에 `com.minchodan.app.th` 설치 및 실행 확인.

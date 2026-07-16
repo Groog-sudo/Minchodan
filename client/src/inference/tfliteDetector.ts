@@ -130,6 +130,42 @@ export class TFLiteDetector implements LocalDetector {
       if (out.length === 0 && outputs.length > 0) {
         out = new Float32Array(outputs[0]);
       }
+
+      // *260714 TFLite segment export: [1, 40, 8400] channels-first
+      // (4 xywh 정규화 + nc class + 32 mask) — end2end [1,300,38] 과 구분한다.
+      const denseSegAttrs = 4 + numClasses + 32;
+      if (
+        label === "segmentation" &&
+        (out.length === denseSegAttrs * 8400 || out.length === (4 + numClasses) * 8400)
+      ) {
+        const numAnchors = 8400;
+        const results: DetectionResult[] = [];
+        for (let i = 0; i < numAnchors; i++) {
+          let bestClassId = -1;
+          let bestScore = -1;
+          for (let c = 0; c < numClasses; c++) {
+            const score = out[(4 + c) * numAnchors + i];
+            if (score > bestScore) {
+              bestScore = score;
+              bestClassId = c;
+            }
+          }
+          if (bestScore < CONF_THRESHOLD || bestClassId < 0) continue;
+          const cx = out[0 * numAnchors + i] * 640;
+          const cy = out[1 * numAnchors + i] * 640;
+          const w = out[2 * numAnchors + i] * 640;
+          const h = out[3 * numAnchors + i] * 640;
+          if (w <= 1 || h <= 1) continue;
+          results.push({
+            model: label,
+            className: names[bestClassId] ?? `cls_${bestClassId}`,
+            confidence: bestScore,
+            bbox: { x: cx - w / 2, y: cy - h / 2, w, h },
+          });
+        }
+        return nonMaxSuppression(results, IOU_THRESHOLD);
+      }
+
       const numBoxes = Math.floor(out.length / attrsPerBox);
       const results: DetectionResult[] = [];
 
