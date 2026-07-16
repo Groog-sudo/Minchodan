@@ -443,6 +443,28 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             if audio_bytes_out:
                 await ws.send_bytes(audio_bytes_out)
 
+        dial_action = bridge_result.get("dial_action")
+        if isinstance(dial_action, dict):
+            phone_number = dial_action.get("phone_number")
+            if phone_number:
+                delay_ms = int(duration_ms or 0) + 800
+                with contextlib.suppress(Exception):
+                    await ws.send_json(
+                        {
+                            "type": "dial_action",
+                            "event_id": f"dial-{device_id}-{now_ts()}",
+                            "contact_name": dial_action.get("contact_name", ""),
+                            "phone_number": str(phone_number),
+                            "source": bridge_result.get("source", "stt-dial"),
+                            "delay_ms": delay_ms,
+                            "ts": now_ts(),
+                        }
+                    )
+                logger.info(
+                    f"[WS] dial_action 전송: device_id={device_id}, "
+                    f"contact={dial_action.get('contact_name')}, phone={phone_number}"
+                )
+
         # 2026-07-11 지도 패널용: 경로 설정/해제 시 좌표 목록을 nav_route 메시지로
         # 전달한다. TMap appKey는 클라이언트 하드코딩 대신 서버 환경변수를 재사용해
         # 저장소에 키가 남지 않게 한다(키 노출 범위는 동일하므로 TMap 콘솔에서

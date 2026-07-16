@@ -24,6 +24,7 @@ import {
 } from "../config";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
+import { placePhoneCall } from "../services/phoneDialBridge";
 import type { WSMessage, WSStatus } from "../types/detection";
 
 /**
@@ -355,6 +356,24 @@ export function useWebSocket(
               ? { appKey: data.app_key ?? "", waypoints: wps }
               : null,
           );
+        } else if (data.type === "dial_action") {
+          const phoneNumber = String(data.phone_number ?? "").replace(/\D/g, "");
+          const contactName = data.contact_name ?? "";
+          const delayMs =
+            typeof data.delay_ms === "number" && data.delay_ms > 0
+              ? data.delay_ms
+              : 1500;
+          console.log(
+            `[WS] dial_action 수신: contact=${contactName}, phone=${phoneNumber}, delayMs=${delayMs}`,
+          );
+          if (phoneNumber) {
+            setTimeout(() => {
+              void placePhoneCall(phoneNumber, contactName).catch((error: unknown) => {
+                console.warn(`[WS] dial_action 실패: ${String(error)}`);
+              });
+            }, delayMs);
+          }
+          setLastMessage(data);
         } else {
           setLastMessage(data);
         }

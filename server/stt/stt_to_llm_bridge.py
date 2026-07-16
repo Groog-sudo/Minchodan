@@ -377,6 +377,12 @@ class SttToLlmBridge:
                 "source": "stt-echo-detected",
             }
 
+        from server.stt.dial_resolver import resolve_dial_action
+
+        dial_result = await resolve_dial_action(device_id, normalized_text)
+        if dial_result is not None:
+            return dial_result
+
         # 2026-07-10 정정(실기기 실측): device_id를 "default_device"로 하드코딩했더니
         # 목적지 설정(WAITING_FOR_DESTINATION/NAVIGATING)은 이 가짜 ID의 세션에 저장되는
         # 반면, GPS 갱신(ws_router.py의 realtime_gps/detection 핸들러)과 실제 turn-by-turn

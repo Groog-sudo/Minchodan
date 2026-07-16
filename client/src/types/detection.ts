@@ -26,7 +26,8 @@ export type MessageType =
   | "error"
   | "server_detection"
   | "network_probe_ack"
-  | "nav_route";
+  | "nav_route"
+  | "dial_action";
 
 export interface BBox {
   x: number;
@@ -90,6 +91,10 @@ export interface WSMessage {
   waypoints?: { lat: number; lon: number }[];
   /** nav_route 메시지: TMap JS API appKey (서버 환경변수 재사용) */
   app_key?: string;
+  /** dial_action: 전화 연결 대상 */
+  contact_name?: string;
+  phone_number?: string;
+  delay_ms?: number;
 }
 
 export interface DetectionPayload {

@@ -210,3 +210,47 @@ async def test_stt_audio_transcribe_failure_sends_fallback_guide(
     assert payload["source"] == "stt-transcribe-error"
     assert payload["transport"] == "none"
     assert ws.sent_bytes == []
+
+
+@pytest.mark.asyncio
+async def test_stt_audio_dial_action_sends_after_guide(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_result = SttTranscribeResult(
+        model_name="faster-whisper-medium",
+        text="119로 연결해줘",
+        language="ko",
+        duration=1.0,
+        segments=[],
+        has_input=True,
+        saved_file="dummy.wav",
+    )
+    monkeypatch.setattr(
+        ws_router_module.SttService,
+        "transcribe_file",
+        classmethod(lambda cls, saved_path, model_name: fake_result),
+    )
+
+    monkeypatch.setattr(
+        ws_router_module._stt_bridge,
+        "should_play_stt_wait_notice",
+        lambda device_id, normalized_text=None: False,
+    )
+
+    async def _fake_synthesize(*_args, **_kwargs):
+        return "ZmFrZS1hdWRpbw==", 1200.0
+
+    monkeypatch.setattr(ws_router_module.realtime_tts, "synthesize", _fake_synthesize)
+
+    async def _fake_persist(**_kwargs):
+        return None
+
+    monkeypatch.setattr(ws_router_module, "persist_detection_guidance_log", _fake_persist)
+
+    ws = _FakeWebSocket()
+    await _handle_stt_audio(ws, "dev-001", {"type": "stt_audio", "audio_b64": _fake_wav_b64()})
+
+    assert len(ws.sent) == 2
+    assert ws.sent[0]["type"] == "guide"
+    assert ws.sent[0]["source"] == "stt-dial-emergency"
+    assert ws.sent[1]["type"] == "dial_action"
+    assert ws.sent[1]["phone_number"] == "119"
+    assert ws.sent[1]["delay_ms"] == 2000

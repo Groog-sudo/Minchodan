@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.23 (2026-07-16 §6.3 convenience RAG 재빌드·§8.5/8.6 콘솔 페이지네이션 UX)
+> **버전**: v0.4.25 (2026-07-16 §6.7 dial_action 자동 연결 PhoneDialBridge)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -444,9 +444,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `네비게이션 켜줘` / `질문할게` 등 | 위 2단계 웨이크워드 없이 바로 진입하는 기존 단일 트리거(하위 호환 유지) | "네비게이션"/"내비게이션" 표기는 매칭 전 정규화 |
 | 자유 질의(대기 상태에서) | "가까운/근처/주변" + 장소 유형(지하철역·편의점·화장실 등)이 감지되면 TMAP 실거리 검색(`helper_search_nearest_poi`, Haversine 거리순)으로 사실 기반 답변. 그 외는 LLM 자유 대화 / 생활지원 convenience RAG | 위치 사실을 LLM에 맡기지 않고 실제 API 조회 결과로만 답해 환각을 방지. 생활지원 질의는 jh `convenience_rag` 분기 |
 
-> **비고 (2026-07-14)**: th 음성 편의기능 3종(긴급전화/연락처 저장·전화걸기/SMS 읽어주기)과
-> `dial_action`/`contact_save` WS 계약은 제거했다. 생활지원 질의응답 RAG는 jh
-> (`server/rag/convenience_rag.py`, `data/convenience_guidelines.json`)가 담당하며 유지한다.
+> **비고 (2026-07-14)**: th 음성 편의기능 중 SMS 읽어주기와 `contact_save` WS 계약은 제거했다.
+> **2026-07-16 복원**: `dial_action` 전화 연결 계약을 STT+convenience RAG/보호자 DB/긴급번호 경로로 재도입했다(§6.7).
 
 > **비고 (2026-07-16) - convenience 코퍼스 음독 정규화**: `data/convenience_guidelines.json`의 STT/TTS 대상 문자열(전화번호·시간·날짜·주소 건물번호 등)은 아라비아 숫자 대신 **한글 음절 숫자**(`공일이…`)로 정규화한다. 시스템 키(`organization_id`)·좌표(`latitude`/`longitude`)는 검색/연동 호환을 위해 유지한다. JSON만 갱신해도 Chroma 임베딩은 자동 반영되지 않으므로 배포 시 `python scripts/build_convenience_db.py`로 `data/chroma_db/convenience_guidelines` 컬렉션을 **재빌드**해야 한다(기본 임베딩: Ollama `nomic-embed-text`).
 
@@ -478,6 +477,61 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > 삭제하며 DB에는 `text_length` 같은 비식별 메타만 남깁니다. 클라이언트의 캡처 길이
 > 검사는 비압축 PCM인 iOS에만 적용하고, Android MPEG-4/AAC에는 PCM 바이트 공식을
 > 적용하지 않습니다.
+
+| 발화(예시) | 동작 | 비고 |
+| :--- | :--- | :--- |
+| `119 연결해줘` / `보호자에게 전화해줘` | `guide` 확인 멘트 + TTS 후 `dial_action`으로 전화 앱 연결 | §6.7 |
+| `서울시 장애인 생활지원센터에 전화 걸어줘` | convenience RAG 코퍼스에서 기관명 매칭 후 동일 | 한글 숫자 표기는 서버에서 `tel:`용 숫자로 정규화 |
+
+### 6.7 dial_action (서버 → 단말, 2026-07-16 복원)
+
+STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘트·TTS 직후 별도 메시지로 **전화를 자동 연결**한다. 인지/STT 경로 전용이며 반사 경로에는 사용하지 않는다.
+
+```json
+{
+  "type": "dial_action",
+  "event_id": "dial-dev-001-1719216000000",
+  "contact_name": "서울시 장애인 생활지원센터",
+  "phone_number": "0222223690",
+  "source": "stt-dial-convenience",
+  "delay_ms": 2000,
+  "ts": 1719216000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `contact_name` | 연결 대상 표시명(기관·보호자·긴급번호 라벨) |
+| `phone_number` | `tel:` URL용 숫자만(`0222223690`, `119` 등). convenience 코퍼스 한글 숫자는 서버가 정규화 |
+| `source` | `stt-dial-emergency` / `stt-dial-guardian-db` / `stt-dial-convenience` / `stt-dial-not-found`(미발행) |
+| `delay_ms` | 확인 TTS 재생 후 전화 앱을 여는 지연(ms). 클라이언트 기본 1500 |
+
+**해석 우선순위** (`server/stt/dial_resolver.py`):
+
+| 순서 | 조건 | 번호 출처 |
+| :--- | :--- | :--- |
+| 1 | 119/112/1339 긴급 연결 | 고정 단축번호 |
+| 2 | `보호자` + 전화 의도 | `app_users.guardian_phone`(device 등록 회원) |
+| 3 | 기관·인물·긴급연락망 이름 매칭 | `data/convenience_guidelines.json` |
+
+클라이언트(`phoneDialBridge.ts` + `useWebSocket.ts`)는 확인 TTS 후 `delay_ms`만큼 대기한 뒤 네이티브 `PhoneDialBridge`로 연결한다.
+
+| 플랫폼 | 동작 | 비고 |
+| :--- | :--- | :--- |
+| **Android** | `Intent.ACTION_CALL`로 **즉시 발신** | `CALL_PHONE` 런타임 권한 필요. 거부 시 `tel:` 폴백 |
+| **iOS** | Siri App Intent + Shortcuts(`MinchodanDial`) | `tel:` 전화 앱 열기 미사용. 단축어 1회 설정 필요(아래 참조) |
+
+연결 직전 VoiceOver 안내(`AccessibilityInfo.announceForAccessibility`)와 햅틱(`double`)을 재생한다.
+
+**iOS Siri/Shortcuts 1회 설정** (단축어 앱):
+
+| 단계 | 동작 |
+| :--- | :--- |
+| 1 | 단축어 이름 `MinchodanDial` 생성 |
+| 2 | 동작: **입력 받기**(단축어 입력) → **전화 걸기**(입력값) |
+| 3 | 전화 걸기 동작에서 **실행 시 보여주기** 끔 |
+
+앱 내 STT(`119 연결해줘`) 또는 Siri(`길댕아 119 연결해`) 모두 위 경로를 사용한다.
 
 ### 6.4 server_detection (서버 → 단말, 실시간 BBox 업데이트)
 
@@ -778,6 +832,7 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.24** | **2026-07-16** | **§6.7 `dial_action` STT 전화 연결 복원(convenience RAG·보호자 DB·긴급번호), §6.3 발화 표 추가** |
 | **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |
 | **v0.4.22** | **2026-07-16** | **§6.1 `source` 필드·STT 대기 안내(`stt-wait-notice`) 계약 추가. §8.3 `risk_event` 발행 위치(`DetectionConsumer._broadcast_risk_event`) 명시. §8.5 `pipeline_debug_json` 확장 필드 표 보강** |
 | **v0.4.21** | **2026-07-16** | **§8.5 `pipeline_debug_json`·`latency_json`·`false_positive` 로그 응답 필드 명세 보강(관리자 콘솔 STT/LLM/패스트레인 디버그)** |
