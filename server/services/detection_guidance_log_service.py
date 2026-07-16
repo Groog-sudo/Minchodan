@@ -107,15 +107,22 @@ class DetectionGuidanceLogService:
         # raise NotImplementedError("HARDCODE PART: create_log()를 직접 구현하세요.")
 
     async def list_logs(
-        self, limit: int = 50, offset: int = 0
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        stream_type: str = "all",
     ) -> list[DetectionGuidanceLogResponse]:
         """콘솔 이력 조회용 최신 로그 목록을 응답 DTO 리스트로 반환합니다."""
-        rows = await self.log_repo.list_recent(limit=limit, offset=offset)
+        rows = await self.log_repo.list_recent(
+            limit=limit,
+            offset=offset,
+            stream_type=stream_type,
+        )
         return [DetectionGuidanceLogResponse.model_validate(row) for row in rows]
 
-    async def count_logs(self) -> int:
+    async def count_logs(self, stream_type: str = "all") -> int:
         """콘솔 페이지네이션용 전체 로그 건수."""
-        return await self.log_repo.count_all()
+        return await self.log_repo.count_all(stream_type=stream_type)
 
     async def get_log_by_event_id(self, event_id: str) -> DetectionGuidanceLogResponse | None:
         """event_id로 단건 로그를 조회합니다. 프레임 이미지 서빙 검증에 사용합니다."""

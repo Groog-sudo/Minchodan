@@ -5,6 +5,15 @@ import type { AppUserRow } from "../types/monitor";
 const PAGE_SIZE = 10;
 const PAGE_BUTTON_WINDOW = 10;
 
+type MemberFormFieldKey =
+  | "deviceUuid"
+  | "name"
+  | "phone"
+  | "disabilitySeverity"
+  | "birthDate"
+  | "guardianPhone"
+  | "address";
+
 /** 회원이 익명 자동등록 상태인지, 정식 등록됐는지 보여주는 배지. */
 function MemberStatusPill({ isAnonymous }: { isAnonymous: boolean }) {
   return isAnonymous ? (
@@ -32,6 +41,8 @@ export function MembersPage({ token }: { token: string }) {
   const [address, setAddress] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<MemberFormFieldKey, string>>>({});
+  const [touchedFields, setTouchedFields] = useState<Partial<Record<MemberFormFieldKey, boolean>>>({});
   const [isPageSearchOpen, setIsPageSearchOpen] = useState(false);
   const [pageSearchInput, setPageSearchInput] = useState("");
   const pageSearchRef = useRef<HTMLDivElement | null>(null);
@@ -74,6 +85,68 @@ export function MembersPage({ token }: { token: string }) {
     setIsPageSearchOpen(false);
   };
 
+  const validateField = (field: MemberFormFieldKey, value: string): string => {
+    const trimmed = value.trim();
+
+    if (field === "deviceUuid") {
+      if (!trimmed) return "기기 식별자(device_uuid)는 필수입니다.";
+      if (!/^[A-Za-z0-9-]+$/.test(trimmed) || !/\d{3}/.test(trimmed)) {
+        return "잘못된 입력 정보입니다. 일련번호 숫자 3자리를 포함하세요. 예: dev-001";
+      }
+      return "";
+    }
+
+    if (field === "name") {
+      if (!trimmed) return "이름은 필수입니다.";
+      if (trimmed.length < 2) return "잘못된 입력 정보입니다. 이름은 2자 이상 입력하세요.";
+      return "";
+    }
+
+    if (field === "phone") {
+      if (!trimmed) return "전화번호는 필수입니다.";
+      if (!/^01[0-9]-\d{3,4}-\d{4}$/.test(trimmed)) {
+        return "잘못된 입력 정보입니다. 예: 010-0000-0000";
+      }
+      return "";
+    }
+
+    if (field === "disabilitySeverity") {
+      if (!trimmed) return "장애 정도는 필수입니다.";
+      if (!/^장애등급\s*\d+급$/.test(trimmed)) {
+        return "잘못된 입력 정보입니다. 예: 장애등급 1급";
+      }
+      return "";
+    }
+
+    if (field === "guardianPhone") {
+      if (!trimmed) return "";
+      if (!/^01[0-9]-\d{3,4}-\d{4}$/.test(trimmed)) {
+        return "잘못된 입력 정보입니다. 예: 010-0000-0000";
+      }
+      return "";
+    }
+
+    if (field === "address") {
+      if (!trimmed) return "";
+      if (trimmed.length < 5) return "잘못된 입력 정보입니다. 주소를 더 구체적으로 입력하세요.";
+      return "";
+    }
+
+    return "";
+  };
+
+  const markTouched = (field: MemberFormFieldKey) => {
+    setTouchedFields((prev) => ({ ...prev, [field]: true }));
+  };
+
+  const setFieldError = (field: MemberFormFieldKey, value: string) => {
+    const error = validateField(field, value);
+    setFieldErrors((prev) => ({ ...prev, [field]: error }));
+    return error;
+  };
+
+  const hasFieldError = (field: MemberFormFieldKey) => Boolean(touchedFields[field] && fieldErrors[field]);
+
   // 익명 자동등록 행의 "회원 정보 입력" 버튼 클릭 시 폼에 device_uuid를 채워두고
   // 관리자가 이름/전화번호/장애정도만 입력하면 바로 전환되게 한다.
   const resetForm = () => {
@@ -84,6 +157,8 @@ export function MembersPage({ token }: { token: string }) {
     setBirthDate("");
     setGuardianPhone("");
     setAddress("");
+    setFieldErrors({});
+    setTouchedFields({});
   };
 
   const prefillFromAnonymous = (row: AppUserRow) => {
@@ -96,6 +171,31 @@ export function MembersPage({ token }: { token: string }) {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    const submitErrors: Partial<Record<MemberFormFieldKey, string>> = {
+      deviceUuid: validateField("deviceUuid", deviceUuid),
+      name: validateField("name", name),
+      phone: validateField("phone", phone),
+      disabilitySeverity: validateField("disabilitySeverity", disabilitySeverity),
+      guardianPhone: validateField("guardianPhone", guardianPhone),
+      address: validateField("address", address),
+    };
+
+    setTouchedFields({
+      deviceUuid: true,
+      name: true,
+      phone: true,
+      disabilitySeverity: true,
+      guardianPhone: true,
+      address: true,
+    });
+    setFieldErrors(submitErrors);
+
+    if (Object.values(submitErrors).some(Boolean)) {
+      setFormMessage({ ok: false, text: "입력값을 확인해주세요." });
+      return;
+    }
+
     if (!deviceUuid || !name || !phone || !disabilitySeverity) {
       setFormMessage({ ok: false, text: "기기 식별자/이름/전화번호/장애정도는 필수입니다." });
       return;
@@ -157,30 +257,66 @@ export function MembersPage({ token }: { token: string }) {
                     <input
                       type="text"
                       value={deviceUuid}
-                      onChange={(e) => setDeviceUuid(e.target.value)}
+                      className={hasFieldError("deviceUuid") ? "member-form-input-error" : ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDeviceUuid(value);
+                        if (touchedFields.deviceUuid) setFieldError("deviceUuid", value);
+                      }}
+                      onBlur={() => {
+                        markTouched("deviceUuid");
+                        setFieldError("deviceUuid", deviceUuid);
+                      }}
                       placeholder="예: dev-001"
                       required
                     />
+                    {hasFieldError("deviceUuid") && (
+                      <span className="member-form-inline-error">{fieldErrors.deviceUuid}</span>
+                    )}
                   </label>
                   <label>
                     <span className="member-form-label-text">장애 정도</span>
                     <input
                       type="text"
                       value={disabilitySeverity}
-                      onChange={(e) => setDisabilitySeverity(e.target.value)}
-                      placeholder="예: 시각장애 1급"
+                      className={hasFieldError("disabilitySeverity") ? "member-form-input-error" : ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDisabilitySeverity(value);
+                        if (touchedFields.disabilitySeverity) setFieldError("disabilitySeverity", value);
+                      }}
+                      onBlur={() => {
+                        markTouched("disabilitySeverity");
+                        setFieldError("disabilitySeverity", disabilitySeverity);
+                      }}
+                      placeholder="예: 장애등급 1급"
                       required
                     />
+                    {hasFieldError("disabilitySeverity") && (
+                      <span className="member-form-inline-error">{fieldErrors.disabilitySeverity}</span>
+                    )}
                   </label>
                   <label>
                     <span className="member-form-label-text">이름</span>
                     <input
                       type="text"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      className={hasFieldError("name") ? "member-form-input-error" : ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setName(value);
+                        if (touchedFields.name) setFieldError("name", value);
+                      }}
+                      onBlur={() => {
+                        markTouched("name");
+                        setFieldError("name", name);
+                      }}
                       placeholder="홍길동"
                       required
                     />
+                    {hasFieldError("name") && (
+                      <span className="member-form-inline-error">{fieldErrors.name}</span>
+                    )}
                   </label>
                   <label>
                     <span className="member-form-label-text">생년월일 (선택)</span>
@@ -195,28 +331,64 @@ export function MembersPage({ token }: { token: string }) {
                     <input
                       type="text"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      className={hasFieldError("phone") ? "member-form-input-error" : ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setPhone(value);
+                        if (touchedFields.phone) setFieldError("phone", value);
+                      }}
+                      onBlur={() => {
+                        markTouched("phone");
+                        setFieldError("phone", phone);
+                      }}
                       placeholder="010-0000-0000"
                       required
                     />
+                    {hasFieldError("phone") && (
+                      <span className="member-form-inline-error">{fieldErrors.phone}</span>
+                    )}
                   </label>
                   <label>
                     <span className="member-form-label-text">보호자 연락처 (선택)</span>
                     <input
                       type="text"
                       value={guardianPhone}
-                      onChange={(e) => setGuardianPhone(e.target.value)}
+                      className={hasFieldError("guardianPhone") ? "member-form-input-error" : ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setGuardianPhone(value);
+                        if (touchedFields.guardianPhone) setFieldError("guardianPhone", value);
+                      }}
+                      onBlur={() => {
+                        markTouched("guardianPhone");
+                        setFieldError("guardianPhone", guardianPhone);
+                      }}
                       placeholder="010-0000-0000"
                     />
+                    {hasFieldError("guardianPhone") && (
+                      <span className="member-form-inline-error">{fieldErrors.guardianPhone}</span>
+                    )}
                   </label>
                   <label className="member-form-field-full">
                     <span className="member-form-label-text">주소 (선택)</span>
                     <input
                       type="text"
                       value={address}
-                      onChange={(e) => setAddress(e.target.value)}
+                      className={hasFieldError("address") ? "member-form-input-error" : ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setAddress(value);
+                        if (touchedFields.address) setFieldError("address", value);
+                      }}
+                      onBlur={() => {
+                        markTouched("address");
+                        setFieldError("address", address);
+                      }}
                       placeholder="서울시 강남구 ..."
                     />
+                    {hasFieldError("address") && (
+                      <span className="member-form-inline-error">{fieldErrors.address}</span>
+                    )}
                   </label>
                   <button type="submit" className="refresh-btn" disabled={submitting}>
                     {submitting ? "등록 중..." : "등록"}
@@ -328,55 +500,59 @@ export function MembersPage({ token }: { token: string }) {
                       </button>
                     ))}
 
-                    <div className="page-search-anchor" ref={pageSearchRef}>
-                      <button
-                        type="button"
-                        className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
-                        onClick={() => setIsPageSearchOpen((open) => !open)}
-                        disabled={disablePaginationControls}
-                        aria-label="페이지 번호 검색"
-                      >
-                        ...
-                      </button>
+                    {pageWindowEnd < totalPages && (
+                      <>
+                        <div className="page-search-anchor" ref={pageSearchRef}>
+                          <button
+                            type="button"
+                            className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
+                            onClick={() => setIsPageSearchOpen((open) => !open)}
+                            disabled={disablePaginationControls}
+                            aria-label="페이지 번호 검색"
+                          >
+                            ...
+                          </button>
 
-                      {isPageSearchOpen && (
-                        <div className="page-search-popover">
-                          <label className="page-search-label" htmlFor="member-page-search-input">
-                            페이지 번호
-                          </label>
-                          <div className="page-search-row">
-                            <input
-                              id="member-page-search-input"
-                              type="number"
-                              className="page-search-input"
-                              min={1}
-                              max={totalPages}
-                              placeholder={`1-${totalPages}`}
-                              value={pageSearchInput}
-                              onChange={(event) => setPageSearchInput(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  jumpToPage();
-                                }
-                              }}
-                            />
-                            <button type="button" className="page-btn" onClick={jumpToPage}>
-                              이동
-                            </button>
-                          </div>
+                          {isPageSearchOpen && (
+                            <div className="page-search-popover">
+                              <label className="page-search-label" htmlFor="member-page-search-input">
+                                페이지 번호
+                              </label>
+                              <div className="page-search-row">
+                                <input
+                                  id="member-page-search-input"
+                                  type="number"
+                                  className="page-search-input"
+                                  min={1}
+                                  max={totalPages}
+                                  placeholder={`1-${totalPages}`}
+                                  value={pageSearchInput}
+                                  onChange={(event) => setPageSearchInput(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      event.preventDefault();
+                                      jumpToPage();
+                                    }
+                                  }}
+                                />
+                                <button type="button" className="page-btn" onClick={jumpToPage}>
+                                  이동
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
 
-                    <button
-                      type="button"
-                      className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
-                      onClick={() => setPage(totalPages - 1)}
-                      disabled={disablePaginationControls}
-                    >
-                      {totalPages}
-                    </button>
+                        <button
+                          type="button"
+                          className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
+                          onClick={() => setPage(totalPages - 1)}
+                          disabled={disablePaginationControls}
+                        >
+                          {totalPages}
+                        </button>
+                      </>
+                    )}
                   </div>
 
                   <button

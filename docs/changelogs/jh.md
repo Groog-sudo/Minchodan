@@ -806,3 +806,20 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
   - `python scripts/build_convenience_db.py`로 `data/chroma_db/convenience_guidelines` 재빌드(75문서, 한글화 JSON 반영).
   - `api_specification.md` v0.4.23: convenience 재빌드 절차·콘솔 페이지네이션 UX 명시.
 - **배포 전 확인**: dev/스테이징에서도 `build_convenience_db.py` 재실행(Ollama `nomic-embed-text` 필요).
+
+---
+
+### 2026-07-17 | 콘솔 UI | 회원 등록 입력 검증 강화, 페이지네이션 색상 조정, 스트림 선택 정렬/페이지네이션 보정
+
+- **커밋**: `fix(console): 회원 등록 검증 강화와 스트림 필터 페이지네이션 정합성 보정`
+- **변경 내용**:
+  - 회원 등록 폼의 입력값 검증을 필드 단위로 강화하고, 잘못된 형식 입력 시 해당 입력창에 인라인 경고 문구와 오류 스타일이 보이도록 적용함
+  - `기기 식별자(device_uuid)`는 일련번호 숫자 3자리를 반드시 포함하도록 규칙을 강화해, 규칙 미충족 시 즉시 fallback 경고 메시지가 노출되도록 구현함
+  - `장애 정도`는 `장애등급 N급` 형식 검증을 강제하고, 형식이 맞지 않으면 `잘못된 입력 정보입니다` 경고를 표시하도록 반영함
+  - 회원 등록 페이지네이션 비활성 버튼 색상을 가독성 개선 목적에 맞춰 최종적으로 흰색 톤으로 조정함(텍스트/테두리)
+  - Detection Guidance Log의 스트림 선택(전체/인지/반사) 시 해당 스트림 데이터만 표시되도록 필터를 강제하고, 선택 변경 시 1페이지로 리셋되도록 보정함
+  - 스트림별 실제 데이터 건수에 맞춰 서버/클라이언트 페이지네이션 총 페이지를 재계산하도록 연동했으며, 남은 페이지가 번호창 내에 모두 노출되는 경우 `...`/마지막 페이지 버튼을 숨기도록 정리함
+  - 인지/반사 선택 시 최신 데이터가 우선 노출되도록 `detected_at` 기준 내림차순 정렬을 화면 표시 단계에서 재확인하도록 반영함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/api/useDetectionLogs.ts`, `server/api/detection_log_router.py`, `server/services/detection_guidance_log_service.py`, `server/db/repositories.py`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 사용자 요청 3건(회원 등록 fallback 처리, 회원 목록 페이지네이션 색상, 스트림 선택 시 정렬/페이지 정합성)을 하나의 정합성 개선 커밋으로 묶어 반영함

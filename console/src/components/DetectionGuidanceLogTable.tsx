@@ -604,6 +604,8 @@ export function DetectionGuidanceLogTable({
   onRefresh,
   refreshing,
   live,
+  streamFilter = "all",
+  onStreamFilterChange,
   page = 0,
   pageSize = 10,
   totalCount,
@@ -617,6 +619,8 @@ export function DetectionGuidanceLogTable({
   onRefresh?: () => void;
   refreshing?: boolean;
   live?: boolean;
+  streamFilter?: StreamFilter;
+  onStreamFilterChange?: (filter: StreamFilter) => void;
   // 2026-07-12: 서버 페이지네이션으로 전환 - rows는 이미 서버가 offset/limit으로 잘라
   // 보낸 "현재 페이지" 데이터라 여기서 다시 슬라이싱하지 않는다. 페이지 이동은
   // onPrevPage/onNextPage로 부모(App.tsx)에 위임해 실제 REST 재조회를 트리거한다.
@@ -629,20 +633,21 @@ export function DetectionGuidanceLogTable({
 }) {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [lightboxLogId, setLightboxLogId] = useState<number | null>(null);
-  const [streamFilter, setStreamFilter] = useState<StreamFilter>("all");
   const [isStreamFilterOpen, setIsStreamFilterOpen] = useState(false);
   const [isPageSearchOpen, setIsPageSearchOpen] = useState(false);
   const [pageSearchInput, setPageSearchInput] = useState("");
   const streamFilterRef = useRef<HTMLDivElement | null>(null);
   const pageSearchRef = useRef<HTMLDivElement | null>(null);
-  const filteredRows = useMemo(
+  const displayRows = useMemo(
     () =>
-      rows.filter(
-        (row) =>
-          streamFilter === "all" ||
-          (streamFilter === "reflex" && row.stream_type === "reflex") ||
-          (streamFilter === "cognitive" && row.stream_type === "cognitive"),
-      ),
+      [...rows]
+        .filter(
+          (row) =>
+            streamFilter === "all" ||
+            (streamFilter === "reflex" && row.stream_type === "reflex") ||
+            (streamFilter === "cognitive" && row.stream_type === "cognitive"),
+        )
+        .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime()),
     [rows, streamFilter],
   );
   const totalPages = Math.max(1, Math.ceil((totalCount ?? rows.length) / pageSize));
@@ -653,19 +658,19 @@ export function DetectionGuidanceLogTable({
     { length: pageWindowEnd - pageWindowStart },
     (_, index) => pageWindowStart + index,
   );
-  const selected = filteredRows.find((row) => row.log_id === selectedLogId) ?? null;
-  const lightboxRow = filteredRows.find((row) => row.log_id === lightboxLogId) ?? null;
+  const selected = displayRows.find((row) => row.log_id === selectedLogId) ?? null;
+  const lightboxRow = displayRows.find((row) => row.log_id === lightboxLogId) ?? null;
   const canShowFrame = (row: DetectionGuidanceLogRow) =>
     Boolean(token && row.event_id && row.frame_path);
 
   useEffect(() => {
-    if (selectedLogId !== null && !filteredRows.some((row) => row.log_id === selectedLogId)) {
+    if (selectedLogId !== null && !displayRows.some((row) => row.log_id === selectedLogId)) {
       setSelectedLogId(null);
     }
-    if (lightboxLogId !== null && !filteredRows.some((row) => row.log_id === lightboxLogId)) {
+    if (lightboxLogId !== null && !displayRows.some((row) => row.log_id === lightboxLogId)) {
       setLightboxLogId(null);
     }
-  }, [filteredRows, selectedLogId, lightboxLogId]);
+  }, [displayRows, selectedLogId, lightboxLogId]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -757,7 +762,8 @@ export function DetectionGuidanceLogTable({
                 aria-selected={streamFilter === option}
                 className={`stream-filter-option ${streamFilter === option ? "stream-filter-option-active" : ""}`}
                 onClick={() => {
-                  setStreamFilter(option);
+                  onStreamFilterChange?.(option);
+                  onSetPage?.(0);
                   setIsStreamFilterOpen(false);
                 }}
               >
@@ -768,7 +774,7 @@ export function DetectionGuidanceLogTable({
         )}
       </div>
 
-      {filteredRows.length === 0 ? (
+      {displayRows.length === 0 ? (
         <p className="empty-text">아직 저장된 탐지/안내 이력이 없습니다.</p>
       ) : (
         <div className="table-wrap">
@@ -788,7 +794,7 @@ export function DetectionGuidanceLogTable({
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((row) => {
+              {displayRows.map((row) => {
                 const totalMs = parseLatency(row.latency_json).total_ms;
                 return (
                   <tr
@@ -875,55 +881,59 @@ export function DetectionGuidanceLogTable({
             </button>
           ))}
 
-          <div className="page-search-anchor" ref={pageSearchRef}>
-            <button
-              type="button"
-              className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
-              onClick={() => setIsPageSearchOpen((open) => !open)}
-              disabled={disablePaginationControls}
-              aria-label="페이지 번호 검색"
-            >
-              ...
-            </button>
+          {pageWindowEnd < totalPages && (
+            <>
+              <div className="page-search-anchor" ref={pageSearchRef}>
+                <button
+                  type="button"
+                  className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
+                  onClick={() => setIsPageSearchOpen((open) => !open)}
+                  disabled={disablePaginationControls}
+                  aria-label="페이지 번호 검색"
+                >
+                  ...
+                </button>
 
-            {isPageSearchOpen && (
-              <div className="page-search-popover">
-                <label className="page-search-label" htmlFor="log-page-search-input">
-                  페이지 번호
-                </label>
-                <div className="page-search-row">
-                  <input
-                    id="log-page-search-input"
-                    type="number"
-                    className="page-search-input"
-                    min={1}
-                    max={totalPages}
-                    placeholder={`1-${totalPages}`}
-                    value={pageSearchInput}
-                    onChange={(event) => setPageSearchInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        jumpToPage();
-                      }
-                    }}
-                  />
-                  <button type="button" className="page-btn" onClick={jumpToPage}>
-                    이동
-                  </button>
-                </div>
+                {isPageSearchOpen && (
+                  <div className="page-search-popover">
+                    <label className="page-search-label" htmlFor="log-page-search-input">
+                      페이지 번호
+                    </label>
+                    <div className="page-search-row">
+                      <input
+                        id="log-page-search-input"
+                        type="number"
+                        className="page-search-input"
+                        min={1}
+                        max={totalPages}
+                        placeholder={`1-${totalPages}`}
+                        value={pageSearchInput}
+                        onChange={(event) => setPageSearchInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            jumpToPage();
+                          }
+                        }}
+                      />
+                      <button type="button" className="page-btn" onClick={jumpToPage}>
+                        이동
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <button
-            type="button"
-            className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
-            onClick={() => onSetPage?.(totalPages - 1)}
-            disabled={disablePaginationControls}
-          >
-            {totalPages}
-          </button>
+              <button
+                type="button"
+                className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
+                onClick={() => onSetPage?.(totalPages - 1)}
+                disabled={disablePaginationControls}
+              >
+                {totalPages}
+              </button>
+            </>
+          )}
         </div>
 
         <button

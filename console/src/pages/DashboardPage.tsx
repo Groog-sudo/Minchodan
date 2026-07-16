@@ -114,20 +114,37 @@ export function DashboardPage({
   // 페이지를 넘길 때마다 해당 offset을 다시 조회하는 진짜 서버 페이지네이션으로 전환.
   const LOG_PAGE_SIZE = 10;
   const [logPage, setLogPage] = useState(0);
+  const [logStreamFilter, setLogStreamFilter] = useState<"all" | "reflex" | "cognitive">("all");
   const {
     rows: fetchedLogs,
     totalCount: logsTotalCount,
     updateLogFalsePositive,
     refresh: refreshLogs,
     loading: logsLoading,
-  } = useDetectionLogs(token, logPage, LOG_PAGE_SIZE);
+  } = useDetectionLogs(token, logPage, LOG_PAGE_SIZE, logStreamFilter);
+
+  const demoFilteredLogs = useMemo(() => {
+    const base =
+      logStreamFilter === "all"
+        ? DEMO_GUIDANCE_LOGS
+        : DEMO_GUIDANCE_LOGS.filter((row) => row.stream_type === logStreamFilter);
+    return [...base].sort(
+      (a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime(),
+    );
+  }, [logStreamFilter]);
+
+  const demoTotalCount = demoFilteredLogs.length;
 
   // REST 페이지(fetchedLogs)와 WS 실시간 푸시(guidanceLogEvents)를 log_id 기준으로 병합한다.
   // 1페이지(최신)에서만 병합한다 - 2페이지 이후는 특정 offset의 과거 스냅샷이라 실시간
   // 이벤트가 끼어들면 페이지 경계가 흔들린다. 병합 후에도 페이지 크기를 유지하도록 자른다.
   const detectionGuidanceLogs = useMemo(() => {
     if (isDemoMode) {
-      return DEMO_GUIDANCE_LOGS;
+      const offset = logPage * LOG_PAGE_SIZE;
+      return demoFilteredLogs.slice(offset, offset + LOG_PAGE_SIZE);
+    }
+    if (logStreamFilter !== "all") {
+      return fetchedLogs;
     }
     if (logPage !== 0) {
       return fetchedLogs;
@@ -139,7 +156,9 @@ export function DashboardPage({
       .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime())
       .slice(0, LOG_PAGE_SIZE);
     return merged;
-  }, [fetchedLogs, guidanceLogEvents, isDemoMode, logPage]);
+  }, [fetchedLogs, guidanceLogEvents, isDemoMode, logPage, logStreamFilter, demoFilteredLogs]);
+
+  const effectiveTotalCount = isDemoMode ? demoTotalCount : logsTotalCount;
 
   return (
     <>
@@ -202,19 +221,24 @@ export function DashboardPage({
         }}
         refreshing={logsLoading}
         live={logPage === 0 && guidanceLogEvents.length > 0}
+        streamFilter={logStreamFilter}
+        onStreamFilterChange={(nextFilter) => {
+          setLogStreamFilter(nextFilter);
+          setLogPage(0);
+        }}
         page={logPage}
         pageSize={LOG_PAGE_SIZE}
-        totalCount={logsTotalCount}
+        totalCount={effectiveTotalCount}
         onPrevPage={() => setLogPage((p) => Math.max(0, p - 1))}
         onNextPage={() =>
           setLogPage((p) =>
-            Math.min(Math.max(0, Math.ceil(logsTotalCount / LOG_PAGE_SIZE) - 1), p + 1),
+            Math.min(Math.max(0, Math.ceil(effectiveTotalCount / LOG_PAGE_SIZE) - 1), p + 1),
           )
         }
         onSetPage={(nextPage) =>
           setLogPage(
             Math.min(
-              Math.max(0, Math.ceil(logsTotalCount / LOG_PAGE_SIZE) - 1),
+              Math.max(0, Math.ceil(effectiveTotalCount / LOG_PAGE_SIZE) - 1),
               Math.max(0, nextPage),
             ),
           )
