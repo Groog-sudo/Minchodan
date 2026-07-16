@@ -2367,3 +2367,15 @@
   - `AGENTS.md`/`CLAUDE.md`/`.cursor/rules/00-core-guidelines.mdc`에 정본·사본·gitignore 정책을 명시. `CLAUDE.md` 스킬 표에 누락된 `auto-publish-work`·`react-doctor` 추가.
 - **관련 파일**: `.gitignore`, `.claude/skills/**`, `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/00-core-guidelines.mdc`, `docs/changelogs/kb.md`
 - **검증 결과**: `diff -rq .agents/skills .claude/skills` 0건. `git check-ignore`로 `settings.local.json` ignore·`skills/**` 추적 확인. 이중 경로·금지 파일·react-doctor 검사 통과 후 `origin/kb` 푸시.
+
+---
+
+### 2026-07-16 | 2단계 | ios_console_orientation_fix
+
+- **커밋**: `(자동 커밋 예정)`
+- **변경 내용**:
+  - iOS `ReflexFrameProcessorPlugin`: dg가 바꾼 `.oriented(.right)`(90도)를 kb 실측 정본 `.oriented(.down)`(180도)로 복구 — takePhoto(`rotate:180`)와 반사 스트림 방향 정합.
+  - 콘솔 `LiveCameraFeed` / `DetectionGuidanceLogTable` CSS 회전을 **0**으로 고정(단말에서 정자세 JPEG 전송, 콘솔 하드코딩 90/180 제거).
+  - `.xcodebuildmcp/config.yaml` 개인 절대경로/UDID는 커밋 제외(템플릿 유지).
+- **관련 파일**: `client/ios/ReflexFrameProcessorPlugin.swift`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 이중 경로 검사 통과. react-doctor client는 기존 `useWebSocket.ts` ref-during-render(본 변경 무관)로 실패 — 이번 스코프 제외. 실기기 재설치 및 콘솔 Live Feed 정자세 확인.

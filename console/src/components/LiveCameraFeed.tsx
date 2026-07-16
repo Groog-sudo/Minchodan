@@ -14,12 +14,9 @@ const NAV_MAP_URL = resolveServiceUrl(
   "/navigation/?embed=true",
   import.meta.env.VITE_API_BASE_URL,
 );
-// 2026-07-13 정정: jh가 Android 테스트 중(카메라 센서가 90도 꺾여 들어오는 기종)
-// 이 값을 90으로 하드코딩해뒀는데, 콘솔은 iOS/Android 기기를 가리지 않고 보는
-// 공용 화면이라 iPhone 프레임에는 이 보정이 오히려 잘못 적용됐다(실기기 실측
-// 확인). 기기별 platform 정보가 WS 페이로드에 없어 자동 분기는 아직 불가하므로,
-// 우선 0(무회전)으로 되돌린다. Android로 다시 테스트할 때 필요하면 90으로 바꿀 것.
-const LIVE_FEED_ROTATE_DEG: number = 180;
+// 2026-07-16: iOS ReflexFrameProcessor .down(180) 재설치 후 전송 JPEG은 정자세.
+// 콘솔 CSS 회전은 0. (90을 두면 정자세 프레임이 다시 옆으로 눕는다 — 방금 스크린샷 원인)
+const LIVE_FEED_ROTATE_DEG: number = 0;
 
 function getDisplayBBox(
   bbox: { x: number; y: number; w: number; h: number },
