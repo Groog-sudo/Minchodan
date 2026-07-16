@@ -47,14 +47,35 @@ async def fallback_node(state: dict) -> dict:
     if detected_classes:
         primary_obj = detected_classes[0]
         korean_names = {
-            "car": "차량", "bus": "버스", "truck": "트럭", "motorcycle": "오토바이", "scooter": "킥보드",
-            "bicycle": "자전거", "person": "보행자", "bollard": "볼라드", "pole": "기둥", "bench": "벤치",
-            "chair": "의자", "carrier": "캐리어", "dog": "개", "cat": "고양이", "stroller": "유모차",
-            "wheelchair": "휠체어", "barricade": "바리케이트", "fire_hydrant": "소화전", "kiosk": "키오스크",
-            "movable_signage": "이동식 표지판", "parking_meter": "주차요금기", "potted_plant": "화분",
-            "power_controller": "배전반", "table": "테이블", "traffic_light": "신호등",
-            "traffic_light_controller": "제어기", "traffic_sign": "표지판", "tree_trunk": "나무",
-            "stop": "정지선"
+            "car": "차량",
+            "bus": "버스",
+            "truck": "트럭",
+            "motorcycle": "오토바이",
+            "scooter": "킥보드",
+            "bicycle": "자전거",
+            "person": "보행자",
+            "bollard": "볼라드",
+            "pole": "기둥",
+            "bench": "벤치",
+            "chair": "의자",
+            "carrier": "캐리어",
+            "dog": "개",
+            "cat": "고양이",
+            "stroller": "유모차",
+            "wheelchair": "휠체어",
+            "barricade": "바리케이트",
+            "fire_hydrant": "소화전",
+            "kiosk": "키오스크",
+            "movable_signage": "이동식 표지판",
+            "parking_meter": "주차요금기",
+            "potted_plant": "화분",
+            "power_controller": "배전반",
+            "table": "테이블",
+            "traffic_light": "신호등",
+            "traffic_light_controller": "제어기",
+            "traffic_sign": "표지판",
+            "tree_trunk": "나무",
+            "stop": "정지선",
         }
         kor_name = korean_names.get(primary_obj, primary_obj)
         dir_str = f"{clock_direction} 방향" if clock_direction else "전방"

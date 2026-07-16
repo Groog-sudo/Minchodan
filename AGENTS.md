@@ -171,7 +171,7 @@
 | `auto-publish-work`         | -    | `.agents/skills/auto-publish-work/`         | 작업 완료 후 문서 정합성 분석, 린트/테스트 검증, Changelog 작성 및 Git 자동 마감 |
 | `react-doctor`              | -    | `.agents/skills/react-doctor/`              | react-doctor 정적 분석기를 활용한 React 및 React Native 코드 품질 관리 및 개선 |
 
-> 스킬은 `.agents/skills/` (opencode, 범용) 와 `.claude/skills/` (Claude Code) 양쪽에서 접근 가능합니다. 두 경로는 junction/symlink가 아니라 서로 다른 실제 디렉토리이므로(inode 다름, 2026-07-07 실측 확인), 신규 스킬 추가나 SKILL.md 수정 시 양쪽에 수동으로 반영해야 합니다.
+> 스킬 정본은 `.agents/skills/`(Git 추적)입니다. `.claude/skills/`는 Claude Code·Cursor(Claude skills 임포트)용 **동일 내용 사본**이며 junction/symlink가 아닙니다(inode 다름, 2026-07-07 실측). `.claude/`의 로컬 아티팩트(`settings.local.json` 등)는 gitignore하되 **`skills/`만 Git 추적**합니다. 스킬 추가·수정 시 `.agents/skills/`를 먼저 고치고 `.claude/skills/`에 동일 반영해야 합니다.
 
 ---
 

@@ -8,7 +8,6 @@ from pathlib import Path
 from config import CLASS_TO_ID, SETTINGS
 from utils.format_converter import HashIndex, safe_image_open
 
-
 SOURCE_CLASS_MAPS: dict[str, dict[str, str]] = {
     "coco-2017": {
         "person": "person",
@@ -74,7 +73,9 @@ class FiftyOneMiner:
             raise RuntimeError("Install fiftyone first: pip install fiftyone") from exc
 
         source_map = SOURCE_CLASS_MAPS[dataset_name]
-        normalized_source_map = {source_label.lower(): target_label for source_label, target_label in source_map.items()}
+        normalized_source_map = {
+            source_label.lower(): target_label for source_label, target_label in source_map.items()
+        }
         source_classes = self._source_classes_for_targets(source_map, target_classes)
         if target_classes and not source_classes:
             available_targets = sorted(set(source_map.values()))
@@ -118,7 +119,9 @@ class FiftyOneMiner:
                 self.hash_index.add(image, str(image_path))
             output_name = f"{dataset_name.replace('-', '_')}_{split}_{exported:06d}{image_path.suffix.lower()}"
             shutil.copy2(image_path, image_dir / output_name)
-            (label_dir / f"{Path(output_name).stem}.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            (label_dir / f"{Path(output_name).stem}.txt").write_text(
+                "\n".join(lines) + "\n", encoding="utf-8"
+            )
             exported += 1
 
         self.hash_index.save()
@@ -126,11 +129,19 @@ class FiftyOneMiner:
         return export_dir
 
     @staticmethod
-    def _source_classes_for_targets(source_map: dict[str, str], target_classes: list[str] | None) -> list[str]:
+    def _source_classes_for_targets(
+        source_map: dict[str, str], target_classes: list[str] | None
+    ) -> list[str]:
         if not target_classes:
             return list(source_map)
-        targets = {item.strip().lower().replace("-", "_").replace(" ", "_") for item in target_classes}
-        return [source_label for source_label, target_label in source_map.items() if target_label in targets]
+        targets = {
+            item.strip().lower().replace("-", "_").replace(" ", "_") for item in target_classes
+        }
+        return [
+            source_label
+            for source_label, target_label in source_map.items()
+            if target_label in targets
+        ]
 
     @staticmethod
     def _detect_label_field(dataset) -> str:
@@ -140,7 +151,9 @@ class FiftyOneMiner:
         for field_name in ("ground_truth", "detections"):
             if field_name in sample.field_names:
                 return field_name
-        raise RuntimeError(f"Cannot find detection label field in sample fields: {sample.field_names}")
+        raise RuntimeError(
+            f"Cannot find detection label field in sample fields: {sample.field_names}"
+        )
 
     @staticmethod
     def _detections_to_yolo_lines(detections, source_map: dict[str, str]) -> list[str]:
@@ -151,7 +164,7 @@ class FiftyOneMiner:
             if target_label is None:
                 continue
             target_id = CLASS_TO_ID[target_label]
-            x, y, width, height = [float(value) for value in detection.bounding_box]
+            x, y, width, height = (float(value) for value in detection.bounding_box)
             x_center = x + width / 2
             y_center = y + height / 2
             lines.append(f"{target_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")

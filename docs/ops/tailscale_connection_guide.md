@@ -32,7 +32,7 @@ graph TD
 
     App -- "1. exp://100.92.150.34:8081<br/>자체 빌드 로드" --> Metro
     App -- "2. ws://100.92.150.34:8000/ws/detect<br/>실시간 프레임 전송" --> FastAPI
-    
+
     linkStyle 0,1 stroke:#2ecd71,stroke-width:2px;
 ```
 

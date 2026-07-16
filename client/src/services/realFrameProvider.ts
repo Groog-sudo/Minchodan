@@ -1,17 +1,16 @@
 /**
  * Real Frame 디코더 (실기기 전용 유틸).
- * 입력 포맷: NCHW [1, 3, 640, 640] float32, 값 범위 0~1 (정규화)
+ * 입력 포맷: NHWC [1, 640, 640, 3] float32, 값 범위 0~1 (정규화)
  * - iPhone 원본(4224x2376)을 중앙 crop 후 640x640 bilinear 리사이즈
- * - CHW 채널 우선 배치 (R plane, G plane, B plane 순)
+ * - HWC 채널 우선 배치 (R, G, B 인터리브드 순)
  * - 정규화: /255 (Ultralytics YOLO 표준, Python PT/TFLite 교차 검증 완료)
- *   주: /5 는 bus.jpg 교차 검증에서 탐지 품질 저하를 일으켜 제거함.
  */
 
 import jpeg from "jpeg-js";
 
 const FRAME_SIZE = 640;
 
-export function decodeBase64JpegToChw(base64: string): Float32Array {
+export function decodeBase64JpegToHwc(base64: string): Float32Array {
   try {
     const jpegBytes = base64ToUint8(base64);
     const decoded = jpeg.decode(jpegBytes, {
@@ -23,7 +22,7 @@ export function decodeBase64JpegToChw(base64: string): Float32Array {
     const cropSize = Math.min(w, h);
     const cropX = Math.floor((w - cropSize) / 2);
     const cropY = Math.floor((h - cropSize) / 2);
-    return bilinearResizeCHW(data as Uint8Array, w, cropX, cropY, cropSize);
+    return bilinearResizeHWC(data as Uint8Array, w, cropX, cropY, cropSize);
   } catch (err) {
     console.error("[RealFrame] 디코딩 오류:", err);
     return new Float32Array(FRAME_SIZE * FRAME_SIZE * 3);
@@ -31,10 +30,10 @@ export function decodeBase64JpegToChw(base64: string): Float32Array {
 }
 
 /**
- * RGBA → center crop → bilinear 640x640 → CHW float32
- * CHW: [R(640x640), G(640x640), B(640x640)]
+ * RGBA → center crop → bilinear 640x640 → HWC float32
+ * HWC: [R0, G0, B0, R1, G1, B1, ...]
  */
-function bilinearResizeCHW(
+function bilinearResizeHWC(
   rgba: Uint8Array,
   srcW: number,
   cropX: number,
@@ -42,8 +41,7 @@ function bilinearResizeCHW(
   cropSize: number,
 ): Float32Array {
   const dst = FRAME_SIZE;
-  const plane = dst * dst;
-  const out = new Float32Array(plane * 3); // CHW
+  const out = new Float32Array(dst * dst * 3); // HWC
   const scale = cropSize / dst;
 
   for (let dy = 0; dy < dst; dy++) {
@@ -62,14 +60,14 @@ function bilinearResizeCHW(
       const i01 = (y1 * srcW + x0) * 4;
       const i11 = (y1 * srcW + x1) * 4;
 
-      const dstPx = dy * dst + dx;
+      const dstPx = (dy * dst + dx) * 3;
       for (let c = 0; c < 3; c++) {
         const v =
           rgba[i00 + c] * (1 - fx) * (1 - fy) +
           rgba[i10 + c] * fx * (1 - fy) +
           rgba[i01 + c] * (1 - fx) * fy +
           rgba[i11 + c] * fx * fy;
-        out[plane * c + dstPx] = v / 255; // CHW, Ultralytics 표준 정규화 (0~1)
+        out[dstPx + c] = v / 255; // HWC, Ultralytics 표준 정규화 (0~1)
       }
     }
   }

@@ -1,6 +1,6 @@
 > **작성일**: 2026-07-05
 > **수정일**: 2026-07-14
-> **버전**: v1.3.0 (OS·아키텍처별 PyTorch 휠 선택 기준 반영)
+> **버전**: v1.3.1 (WSL/Linux systemd 미사용 Ollama 실행 기준 반영)
 > **설계 기준**: docs/ops/deployment_guide.md (v0.5.0)
 
 # Minchodan AI 모델 및 하드웨어 구성 지침
@@ -35,6 +35,8 @@ python scripts/verify_gpu.py
 
 추론 서버의 LangGraph 오케스트레이터 및 RAG 검색을 위해 호스트 로컬 Ollama에 모델 패키지를 내려받아야 합니다. Docker Compose는 Ollama 컨테이너를 만들지 않으며, FastAPI 컨테이너가 `COMPOSE_OLLAMA_BASE_URL`을 통해 호스트 Ollama에 접속합니다.
 
+WSL2처럼 `systemd`가 실행되지 않는 환경에서는 서비스 등록이 되더라도 자동 기동되지 않을 수 있습니다. 이 경우 Linux 시작 스크립트가 `ollama serve`를 백그라운드로 실행합니다. 기본 바인딩은 안전한 루프백(`127.0.0.1:11434`)이며, Docker 컨테이너에서 호스트 Ollama에 직접 접근해야 할 때만 `MINCHODAN_EXPOSE_OLLAMA=1`과 `OLLAMA_HOST=0.0.0.0:11434`를 함께 설정합니다.
+
 ### 2.1 모델 패킹 정보 및 용량 명세
 
 | 모델 식별자 (Model Tag) | 모델 계열 및 성격 | 메모리상 로드 용량 | 용도 및 역할 |
@@ -47,6 +49,12 @@ python scripts/verify_gpu.py
 ### 2.2 모델 풀링 및 다운로드 명령어
 호스트 터미널에서 최초 1회 각각 실행하여 다운로드합니다:
 ```bash
+# WSL/Linux에서 수동으로 안전하게 띄울 때
+OLLAMA_HOST=127.0.0.1:11434 ollama serve
+
+# 신뢰할 수 있는 로컬망에서 전체 인터페이스 바인딩이 꼭 필요할 때만
+MINCHODAN_EXPOSE_OLLAMA=1 OLLAMA_HOST=0.0.0.0:11434 ollama serve
+
 # gemma4:e4b 모델 (9.6GB) 수신
 ollama pull gemma4:e4b
 
@@ -62,3 +70,5 @@ ollama pull nomic-embed-text
 
 - **`OLLAMA_MAX_LOADED_MODELS=2`**: 메모리(VRAM) 내에 생성 모델(`gemma4:e4b`)과 임베딩 모델(`nomic-embed-text`) 두 개가 스왑 지연 없이 동시에 상주하도록 허용합니다. (VRAM이 6GB 이하로 부족한 환경에서는 `1`로 낮추어 설정합니다.)
 - **`OLLAMA_KEEP_ALIVE=30m`**: 한 번 VRAM에 로드된 모델을 30분간 유지시켜, 첫 캡처 수신 시의 스타트 지연을 최소화합니다.
+- **`OLLAMA_HOST=127.0.0.1:11434`**: 기본값입니다. 호스트 로컬 CLI와 서버 직접 실행에 사용합니다.
+- **`MINCHODAN_EXPOSE_OLLAMA=1` + `OLLAMA_HOST=0.0.0.0:11434`**: Docker 컨테이너가 호스트 Ollama에 접속해야 할 때만 명시적으로 사용합니다. 개인 개발망에서만 사용하고, 외부망 노출 환경에서는 방화벽으로 포트 `11434` 접근을 제한합니다.

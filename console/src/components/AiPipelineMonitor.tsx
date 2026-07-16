@@ -29,7 +29,7 @@ export function AiPipelineMonitor({ ai }: { ai: AiPipelineStatus | null }) {
               </div>
               <div>
                 <span>Reflex Bypass</span>
-                {/* 💡 [면접 대비 주석 - 이중 경로 모니터링] 
+                {/* 💡 [면접 대비 주석 - 이중 경로 모니터링]
                     반사 경로를 탓다면 이 값이 true가 되면. LLM/RAG/TTS 상태는 멈춰 있어야 합니다. */}
                 <strong>
                   {typeof ai.reflex_bypass === "boolean"

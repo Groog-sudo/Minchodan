@@ -19,7 +19,7 @@ REM ============================================================================
 REM Step A -- Prompt for team initial
 REM =============================================================================
 echo === Step A: Branch Initial ===
-set /p INITIAL=Enter your branch initial (dg/jh/jy/kb/th): 
+set /p INITIAL=Enter your branch initial (dg/jh/jy/kb/th):
 
 if "!INITIAL!"=="dg" goto :INITIAL_OK
 if "!INITIAL!"=="jh" goto :INITIAL_OK
@@ -38,7 +38,7 @@ REM ============================================================================
 REM Step B -- Prompt for pipeline stage
 REM =============================================================================
 echo === Step B: Pipeline Stage ===
-set /p STAGE=Enter pipeline stage (1-7): 
+set /p STAGE=Enter pipeline stage (1-7):
 
 if "!STAGE!"=="1" goto :STAGE_OK
 if "!STAGE!"=="2" goto :STAGE_OK

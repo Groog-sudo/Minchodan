@@ -39,17 +39,23 @@ class MessageHint(TypedDict):
 
 CLASS_TO_HINT_ID: dict[str, MessageHintId] = {
     # 예: "stop": "STOP"
-    "stop": "STOP",         # 정지 표지판은 즉각 정지 명령
-    "barricade": "STOP",    # 바리케이드는 집입 불가이므로 정지 명령
-    "bollard": "CURB"       # 볼라드는 보통 보도블록 끝(연석)에 있으므로 연석으로 취급가능 (선택사항)
+    "stop": "STOP",  # 정지 표지판은 즉각 정지 명령
+    "barricade": "STOP",  # 바리케이드는 집입 불가이므로 정지 명령
+    "bollard": "CURB",  # 볼라드는 보통 보도블록 끝(연석)에 있으므로 연석으로 취급가능 (선택사항)
 }
 
 DANGER_CLASSES = {
     # 예: "car", "motorcycle", "scooter", "bollard", "barricade" 등 위험 객체 문자열
-    "car" , "truck" , "bus",                # 대형 / 고속 차량류
-    "motorcycle", "scooter", "bicycle",     # 갑자기 튀어나오는 이륜차류
-    "bollard", "pole",                      # 정강이나 머리를 부딪치기 쉬운 기동류
-    "barricade", "movable_signage"          # 길을 갑자기 막고 있 구조물
+    "car",
+    "truck",
+    "bus",  # 대형 / 고속 차량류
+    "motorcycle",
+    "scooter",
+    "bicycle",  # 갑자기 튀어나오는 이륜차류
+    "bollard",
+    "pole",  # 정강이나 머리를 부딪치기 쉬운 기동류
+    "barricade",
+    "movable_signage",  # 길을 갑자기 막고 있 구조물
 }
 
 DIRECTION_TEXT = {

@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
-import sys
 import contextlib
+import sys
 import threading
 
 if sys.stdout.encoding != "utf-8":
@@ -12,12 +11,14 @@ WINSOUND_AVAILABLE = False
 if sys.platform == "win32":
     try:
         import winsound
+
         WINSOUND_AVAILABLE = True
     except ImportError:
         pass
 
 try:
     import pyttsx3
+
     PYTTSX3_AVAILABLE = True
 except ImportError:
     PYTTSX3_AVAILABLE = False
@@ -50,7 +51,7 @@ class TTSEngine:
         Uses threading to prevent blocking the main loop (meeting latency requirements).
         """
         # Log to terminal immediately
-        print(f'\n[TTS VOICE OUTPUT]: "{text}" (Volume: {volume*100:.0f}%)')
+        print(f'\n[TTS VOICE OUTPUT]: "{text}" (Volume: {volume * 100:.0f}%)')
 
         # Immediate warning tone if high danger (Proposed Feature 1 & 2)
         if is_danger:
@@ -60,8 +61,9 @@ class TTSEngine:
             else:
                 # Bell signal fallback for non-Windows (macOS/Linux)
                 def non_windows_beep():
-                    sys.stdout.write('\a')
+                    sys.stdout.write("\a")
                     sys.stdout.flush()
+
                 threading.Thread(target=non_windows_beep, daemon=True).start()
 
         if self.tts_available and self.engine:

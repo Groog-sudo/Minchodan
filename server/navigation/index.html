@@ -513,7 +513,7 @@
         <!-- Developer Testing Panel -->
         <div class="test-panel">
             <div class="panel-title">⚙️ 개발자 테스트 컨트롤</div>
-            
+
             <!-- Manual Heading Slider -->
             <div class="control-group">
                 <div class="control-label">
@@ -579,21 +579,21 @@
         const textSearchBtn = document.getElementById('textSearchBtn');
         const voiceSearchBtn = document.getElementById('voiceSearchBtn');
         const routeStatusText = document.getElementById('routeStatusText');
-        
+
         const headingSlider = document.getElementById('headingSlider');
         const headingVal = document.getElementById('headingVal');
-        
+
         const autoAlignCheckbox = document.getElementById('autoAlignCheckbox');
         const autoCenterCheckbox = document.getElementById('autoCenterCheckbox');
-        
+
         const simWalkBtn = document.getElementById('simWalkBtn');
         const simSpeedSlider = document.getElementById('simSpeedSlider');
         const simSpeedVal = document.getElementById('simSpeedVal');
-        
+
         const voiceText = document.getElementById('voiceText');
         const consoleLogs = document.getElementById('consoleLogs');
         const coordDisplay = document.getElementById('coordDisplay');
-        
+
         const gpsDot = document.getElementById('gpsDot');
         const gpsText = document.getElementById('gpsText');
         const serverDot = document.getElementById('serverDot');
@@ -605,14 +605,14 @@
         let currentHeading = 0; // Degrees (0-359)
         let gpsWatcherId = null;
         let ws = null;
-        
+
         // Leaflet Map objects
         let map = null;
         let userMarker = null;
         let routePolyline = null;
         let activeWaypointMarker = null;
         let waypointMarkers = [];
-        
+
         // Simulation walking state
         let isSimulating = false;
         let routeCoordinates = []; // [[lat, lon], ...]
@@ -620,10 +620,10 @@
         let simCurrentCoordIdx = 0;
         let simIntervalId = null;
         let simSpeed = 1.0; // Speed multiplier (1x = 1.2 m/s)
-        
+
         // Browser TTS Speech Synthesis
         const synth = window.speechSynthesis;
-        
+
         // Map directions labels
         const directionLabels = ["북", "북동", "동", "남동", "남", "남서", "서", "북서"];
         function getDirectionLabel(degree) {
@@ -634,12 +634,12 @@
         // Initialize Map
         function initMap() {
             if (map) return;
-            
+
             const defaultLat = 37.5560;
             const defaultLon = 126.9722;
-            
+
             map = L.map('map').setView([defaultLat, defaultLon], 16);
-            
+
             // OpenStreetMap
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
@@ -652,28 +652,28 @@
         // Custom marker drawing
         function updateUserMarkerOnMap(lat, lon, heading) {
             if (!map) return;
-            
+
             const htmlContent = `
                 <div class="user-marker-container">
                     <div class="user-direction-cone" style="transform: rotate(${heading}deg);"></div>
                     <div class="user-core-dot"></div>
                 </div>
             `;
-            
+
             const customIcon = L.divIcon({
                 className: 'custom-user-marker',
                 html: htmlContent,
                 iconSize: [40, 40],
                 iconAnchor: [20, 20]
             });
-            
+
             if (userMarker) {
                 userMarker.setLatLng([lat, lon]);
                 userMarker.setIcon(customIcon);
             } else {
                 userMarker = L.marker([lat, lon], {icon: customIcon}).addTo(map);
             }
-            
+
             if (autoCenterCheckbox.checked) {
                 map.setView([lat, lon]);
             }
@@ -682,7 +682,7 @@
         // Initialize GPS
         function initGPS() {
             initMap();
-            
+
             // postMessage 주입: 콘솔 상위 페이지(iframe 부모)에서 앱 GPS 좌표를 전달할 수 있다.
             // 메시지 형식: { type: 'inject_gps', lat: number, lon: number, heading?: number }
             // PC 브라우저 GPS 부정확 문제를 우회하기 위해 콘솔이 앱으로부터 받은 realtime_gps
@@ -727,7 +727,7 @@
                         gpsText.innerText = "GPS 정상 수신 중";
                         coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
                         logMessage("success", `[GPS READY] 위치 감지 성공: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`);
-                        
+
                         updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
                         connectWebSocket();
                         startGPSTracking();
@@ -755,16 +755,16 @@
         // Real-time GPS tracker
         function startGPSTracking() {
             if (gpsWatcherId) navigator.geolocation.clearWatch(gpsWatcherId);
-            
+
             gpsWatcherId = navigator.geolocation.watchPosition(
                 (position) => {
                     // 시뮬레이션 작동 중에는 실제 GPS 업데이트 무시
                     if (isSimulating) return;
-                    
+
                     currentLat = position.coords.latitude;
                     currentLon = position.coords.longitude;
                     coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
-                    
+
                     updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
                     sendGPSUpdateToServer();
                 },
@@ -822,39 +822,39 @@
         // WebSocket Connection
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            
+
             // 마운트 경로(/navigation 등)를 동적으로 반영하여 WebSocket 엔드포인트 계산
             let path = window.location.pathname;
             if (!path.endsWith('/')) {
                 path += '/';
             }
             const wsUri = `${protocol}//${window.location.host}${path}ws`;
-            
+
             ws = new WebSocket(wsUri);
-            
+
             ws.onopen = () => {
                 serverDot.className = "status-dot active";
                 serverText.innerText = "서버 연결 완료 (온라인)";
                 logMessage("success", "[SYSTEM] 길안내 백엔드 서버와 실시간 웹소켓 통신 연결 수립.");
                 sendGPSUpdateToServer();
             };
-            
+
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                
+
                 // 1. 경로 수립 완료 이벤트
                 if (data.type === "route_success") {
                     const startName = data.start_name;
                     const endName = data.end_name;
                     routeCoordinates = data.coordinates; // [[lat1, lon1], [lat2, lon2], ...]
                     routeWaypoints = data.waypoints || [];
-                    
+
                     logMessage("success", `[경로탐색 성공] ${startName} ➔ ${endName}`);
                     logMessage("system", `  경로 라인 노드 수: ${routeCoordinates.length}개, 웨이포인트 지점 수: ${routeWaypoints.length}개`);
-                    
+
                     routeStatusText.innerText = `안내 중: ${endName}`;
                     speakTTS(`${endName}까지의 보행 경로 안내가 시작되었습니다.`, false);
-                    
+
                     // polyline 드로잉
                     if (routePolyline) map.removeLayer(routePolyline);
                     routePolyline = L.polyline(routeCoordinates, {
@@ -863,14 +863,14 @@
                         opacity: 0.85,
                         lineJoin: 'round'
                     }).addTo(map);
-                    
+
                     // 지도 뷰 맞춤
                     map.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
-                    
+
                     // 기존 웨이포인트 마커들 삭제
                     waypointMarkers.forEach(m => map.removeLayer(m));
                     waypointMarkers = [];
-                    
+
                     // 웨이포인트들 지도상 마커 그리기
                     routeWaypoints.forEach(wp => {
                         const markerColor = wp.facility_type ? '#ff0055' : '#00aaff';
@@ -884,14 +884,14 @@
                             .bindPopup(`<b>${wp.index}. ${wp.description}</b><br>시설코드: ${wp.facility_type || '없음'}`);
                         waypointMarkers.push(m);
                     });
-                    
+
                     // 시뮬레이션 버튼 활성화
                     simWalkBtn.disabled = false;
                     simWalkBtn.innerText = "보행 시뮬레이션 시작";
                     isSimulating = false;
                     simCurrentCoordIdx = 0;
                     if (simIntervalId) clearInterval(simIntervalId);
-                    
+
                     // 시뮬레이션을 위해 출발 위치로 좌표 순간이동
                     if (routeCoordinates.length > 0) {
                         currentLat = routeCoordinates[0][0];
@@ -899,7 +899,7 @@
                         updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
                     }
                 }
-                
+
                 // 2. 경로 검색 에러
                 else if (data.type === "route_error") {
                     const errMsg = data.message;
@@ -907,22 +907,22 @@
                     speakTTS(errMsg, true);
                     logMessage("danger", `[경로탐색 에러] ${errMsg}`);
                 }
-                
+
                 // 3. 실시간 음성 안내 TTS 이벤트
                 else if (data.type === "guidance_audio") {
                     const txt = data.text;
                     const isDanger = data.is_danger;
                     const activeWpIdx = data.active_waypoint_idx;
-                    
+
                     voiceText.innerText = txt;
                     voiceText.classList.remove('alert');
                     speakTTS(txt, isDanger);
                     logMessage("success", `[안내 음성] ${txt}`);
-                    
+
                     // 활성 웨이포인트 지도상 강조 표시
                     highlightActiveWaypoint(activeWpIdx);
                 }
-                
+
                 // 4. 경로 이탈 경고 알림 이벤트
                 else if (data.type === "deviation_alert") {
                     const txt = data.text;
@@ -930,13 +930,13 @@
                     voiceText.classList.add('alert');
                     speakTTS(txt, true);
                     logMessage("danger", `🚨 [이탈 경고] ${txt}`);
-                    
+
                     if (navigator.vibrate) {
                         navigator.vibrate([200, 100, 200, 100, 200]);
                     }
                 }
             };
-            
+
             ws.onclose = () => {
                 serverDot.className = "status-dot danger";
                 serverText.innerText = "서버 연결 종료 (오프라인)";
@@ -947,11 +947,11 @@
 
         function highlightActiveWaypoint(idx) {
             if (!routeWaypoints || routeWaypoints.length === 0) return;
-            
+
             // 인덱스 범위 보정
             if (idx >= 0 && idx < routeWaypoints.length) {
                 const wp = routeWaypoints[idx];
-                
+
                 if (activeWaypointMarker) {
                     activeWaypointMarker.setLatLng([wp.lat, wp.lon]);
                 } else {
@@ -981,20 +981,20 @@
         // HTML5 Speech synthesis Korean Voice Speak
         function speakTTS(text, isDanger) {
             if (!synth) return;
-            
+
             // 즉시 이전 말하기 차단 (딜레이 없는 가이드 전달용)
             synth.cancel();
-            
+
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'ko-KR';
             utterance.rate = 1.0; // 시각장애인 청각 마비 예방 최적 편안 속도
             utterance.volume = 1.0;
-            
+
             if (isDanger) {
                 // 스마트폰 브라우저 비프 사운드
                 playWebBeep(1000, 0.2);
             }
-            
+
             synth.speak(utterance);
         }
 
@@ -1007,13 +1007,13 @@
                 }
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
-                
+
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                
+
                 osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
                 gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-                
+
                 osc.start();
                 gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
                 osc.stop(audioCtx.currentTime + duration);
@@ -1071,7 +1071,7 @@
                 alert("목적지를 입력해 주세요.");
                 return;
             }
-            
+
             if (ws && ws.readyState === WebSocket.OPEN) {
                 routeStatusText.innerText = "경로 계산 중...";
                 ws.send(JSON.stringify({
@@ -1096,16 +1096,16 @@
             const recognition = new SpeechRecognition();
             recognition.continuous = false;
             recognition.lang = 'ko-KR';
-            
+
             recognition.onstart = () => {
                 voiceSearchBtn.innerText = "🎙️ 음성을 듣고 있습니다... 말씀하세요";
                 voiceSearchBtn.classList.add('recording');
                 if (navigator.vibrate) navigator.vibrate(50);
             };
-            
+
             recognition.onresult = (event) => {
                 const transcript = event.results[0][0].transcript.replace(/\.$/g, '').trim();
-                
+
                 // 음성 명령어 파싱 규칙 (명령어 패턴 매칭 및 목적지 키워드 정제)
                 const patterns = [
                     /(.+)로\s+안내해줘/,
@@ -1115,7 +1115,7 @@
                     /목적지\s+(.+)/,
                     /(.+)목적지\s+설정/
                 ];
-                
+
                 let keyword = transcript;
                 for (let pattern of patterns) {
                     const match = transcript.match(pattern);
@@ -1124,22 +1124,22 @@
                         break;
                     }
                 }
-                
+
                 textSearchInput.value = keyword;
                 logMessage("system", `[STT 음성인식] 명령어: "${transcript}" -> 추출된 목적지: "${keyword}"`);
                 triggerSearch();
             };
-            
+
             recognition.onerror = (e) => {
                 logMessage("danger", `[STT 에러] 음성 인식 실패: ${e.error}`);
                 speakTTS("목적지를 제대로 듣지 못했습니다. 다시 말씀해 주세요.", true);
             };
-            
+
             recognition.onend = () => {
                 voiceSearchBtn.innerText = "🎤 목적지 음성으로 말하기";
                 voiceSearchBtn.classList.remove('recording');
             };
-            
+
             voiceSearchBtn.addEventListener('click', () => {
                 speakTTS("목적지를 말씀해 주세요.", false);
                 setTimeout(() => {
@@ -1162,21 +1162,21 @@
         // Calculates smooth step movement on each tick
         function startSimulationWalk() {
             if (routeCoordinates.length === 0) return;
-            
+
             isSimulating = true;
             simWalkBtn.innerText = "보행 시뮬레이션 중지";
             simWalkBtn.classList.add('running');
             logMessage("system", `[시뮬레이터] ${simSpeed}배속으로 가상 보행을 시작합니다.`);
-            
+
             simCurrentCoordIdx = 0;
             // 초기 위치 지정
             currentLat = routeCoordinates[0][0];
             currentLon = routeCoordinates[0][1];
-            
+
             // 200ms 주기로 타이머 스텝 구동
             const tickRateMs = 200;
             let lastTickTime = Date.now();
-            
+
             simIntervalId = setInterval(() => {
                 if (simCurrentCoordIdx >= routeCoordinates.length - 1) {
                     // 목적지 완전 도달
@@ -1184,30 +1184,30 @@
                     isSimulating = false;
                     simWalkBtn.innerText = "보행 시뮬레이션 시작";
                     simWalkBtn.classList.remove('running');
-                    
+
                     currentLat = routeCoordinates[routeCoordinates.length - 1][0];
                     currentLon = routeCoordinates[routeCoordinates.length - 1][1];
                     updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
                     sendGPSUpdateToServer();
-                    
+
                     logMessage("success", "[시뮬레이터] 목적지에 무사히 도달하여 시뮬레이션을 완료했습니다.");
                     speakTTS("목적지에 무사히 도착했습니다. 안내를 종료합니다.", false);
                     return;
                 }
-                
+
                 const now = Date.now();
                 const dt = (now - lastTickTime) / 1000.0;
                 lastTickTime = now;
-                
+
                 // 보행 속도 기준: 1.2 m/s * 배속 * 경과 시간(dt)
                 const targetWalkSpeedMps = 1.2;
                 let stepDistanceMeters = targetWalkSpeedMps * simSpeed * dt;
-                
+
                 // 타겟 노드 이동 반복 판단
                 while (stepDistanceMeters > 0 && simCurrentCoordIdx < routeCoordinates.length - 1) {
                     const nextCoord = routeCoordinates[simCurrentCoordIdx + 1];
                     const distToNext = haversineDistance(currentLat, currentLon, nextCoord[0], nextCoord[1]);
-                    
+
                     if (distToNext <= stepDistanceMeters) {
                         // 다음 좌표를 넘어가므로 스냅(Snap) 후 잔여 거리로 재이동
                         currentLat = nextCoord[0];
@@ -1222,20 +1222,20 @@
                         stepDistanceMeters = 0;
                     }
                 }
-                
+
                 // Auto-align heading
                 if (autoAlignCheckbox.checked && simCurrentCoordIdx < routeCoordinates.length - 1) {
                     const nextNode = routeCoordinates[simCurrentCoordIdx + 1];
                     const nextBearing = calculateBearing(currentLat, currentLon, nextNode[0], nextNode[1]);
                     currentHeading = Math.round(nextBearing);
-                    
+
                     headingSlider.value = currentHeading;
                     headingVal.innerText = `${currentHeading}° (${getDirectionLabel(currentHeading)}쪽)`;
                 }
-                
+
                 updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
                 sendGPSUpdateToServer();
-                
+
             }, tickRateMs);
         }
 
@@ -1265,7 +1265,7 @@
             const phi2 = lat2 * Math.PI / 180;
             const deltaPhi = (lat2 - lat1) * Math.PI / 180;
             const deltaLambda = (lon2 - lon1) * Math.PI / 180;
-            
+
             const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
                       Math.cos(phi1) * Math.cos(phi2) *
                       Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
@@ -1278,11 +1278,11 @@
             const lat1Rad = lat1 * Math.PI / 180;
             const lat2Rad = lat2 * Math.PI / 180;
             const dLonRad = (lon2 - lon1) * Math.PI / 180;
-            
+
             const y = Math.sin(dLonRad) * Math.cos(lat2Rad);
             const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
                       Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLonRad);
-                      
+
             const brng = Math.atan2(y, x);
             return (brng * 180 / Math.PI + 360) % 360;
         }

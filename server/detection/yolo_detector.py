@@ -84,8 +84,12 @@ class YoloDetector(DetectorInterface):
         result = results[0]
         # 디버그용 로그 추가: 실제 YOLO 검출 개수와 신뢰도 로깅
         if result.boxes is not None and len(result.boxes) > 0:
-            box_classes = [result.names.get(int(cls), str(cls)) for cls in result.boxes.cls.tolist()]
-            logger.info(f"[YoloDetector DEBUG] 검출된 객체들: {box_classes}, confs: {result.boxes.conf.tolist()}")
+            box_classes = [
+                result.names.get(int(cls), str(cls)) for cls in result.boxes.cls.tolist()
+            ]
+            logger.info(
+                f"[YoloDetector DEBUG] 검출된 객체들: {box_classes}, confs: {result.boxes.conf.tolist()}"
+            )
         return self._parse_result(result)
 
     def _predict_without_tracking(self, frame: np.ndarray) -> list[Detection]:
@@ -153,12 +157,12 @@ class YoloDetector(DetectorInterface):
             #       따라서 '차량/오토바이 계열' 클래스이면서 BBox 면적이 전체 프레임 면적 대비 비정상적으로 클 경우 탐지를 무시(Drop)하도록 하드코딩하여 실내 오탐 피로도를 획기적으로 낮췄습니다.
             # =========================================================================
             # 담당자님, 여기에 실내 오탐 방지 필터 로직을 직접 타이핑해주세요!
-            # 예: 
+            # 예:
             # frame_area = result.orig_shape[0] * result.orig_shape[1]
             # bbox_area = (x2 - x1) * (y2 - y1)
             # if class_name in ["car", "motorcycle", "bus", "truck"] and (bbox_area / frame_area) > 0.7:
             #     continue
-            
+
             # =========================================================================
             # 👨‍💻 HARD CODE 영역 끝
             # =========================================================================

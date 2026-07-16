@@ -30,4 +30,4 @@ alwaysApply: true
 
 ## 단계별 스킬
 
-이 저장소는 7단계 파이프라인 + 보조 스킬로 구성된다(`.agents/skills/`, `.claude/skills/`에 동일 내용 보존). 작업 경로에 따라 `.cursor/rules/`의 stage별 규칙이 자동 첨부되며, 필요 시 해당 `.agents/skills/<skill>/SKILL.md` 전체를 읽는다.
+이 저장소는 7단계 파이프라인 + 보조 스킬로 구성된다. 스킬 정본은 `.agents/skills/`이며 `.claude/skills/`는 동일 내용 사본(둘 다 Git 추적). 작업 경로에 따라 `.cursor/rules/`의 stage별 규칙이 자동 첨부되며, 필요 시 해당 `.agents/skills/<skill>/SKILL.md` 전체를 읽는다.

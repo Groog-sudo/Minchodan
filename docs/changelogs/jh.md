@@ -661,3 +661,94 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 스타일 레이어만 조정했으며 API/데이터 로직 변경 없음
+
+---
+
+### 2026-07-15 | 콘솔 UI | 대시보드 관제 우선순위 재배치 (Live/Telemetry 상단 고정)
+
+- **커밋**: `refactor(console): 대시보드 관제 패널 우선순위 순서 재배치`
+- **변경 내용**:
+  - `Live Feed` + `TELEMETRY FEED`를 대시보드 최상단 섹션으로 고정 배치함
+  - `파이프라인 지연 요약`을 그 아래 단독 섹션으로 이동해 운영 지연 확인 우선순위를 상향함
+  - `발화 추적 타임라인` 바로 아래에 `MCP 검증 모니터`가 오도록 순서를 정렬함
+  - `SystemMetrics`, `SessionStatus`, `AiPipelineMonitor`, `DetectionFeed` 4개 패널은 후순위 `dashboard-grid`로 하향 배치함
+  - 기존 `monitor-stack-layout` 래퍼 사용을 제거하고 섹션 단위 배치로 정리함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 컴포넌트 내부 로직 변경 없이 렌더링 순서만 조정한 레이아웃 리팩터링
+
+---
+
+### 2026-07-15 | 콘솔 UI | 회원관리 단일 컨테이너화 및 좌측 카테고리 탭 전환 기본틀 구현
+
+- **커밋**: `feat(console): 회원 등록/목록 통합 컨테이너와 좌측 카테고리 탭 전환 추가`
+- **변경 내용**:
+  - `MembersPage.tsx`에 `activeCategory` 상태(`"register" | "list"`)를 추가해 단일 컨테이너 내 화면 전환 상태를 관리하도록 구현함
+  - 기존 분리되어 있던 `회원 등록` 패널과 `등록 회원 목록` 패널을 `panel-member-shell` 하나로 병합하고, 내부를 `member-shell-layout`(좌측 nav + 우측 content) 구조로 재배치함
+  - 좌측 네비게이션에 `회원 등록`, `등록 회원 목록` 버튼을 추가하고 클릭 시 `activeCategory` 값 변경으로 각 섹션만 렌더링되도록 조건부 렌더링을 적용함
+  - 목록의 `회원 정보 입력` 버튼 클릭 시 폼 프리필 동작과 함께 `setActiveCategory("register")`를 호출해 등록 탭으로 즉시 전환되도록 연결함
+  - `styles.css`에 `member-shell-nav`를 `10%` 폭(`flex-basis/max-width 10%`)으로 제한하는 규칙과 활성 버튼(`member-shell-nav-btn-active`) 스타일을 추가해 요구된 배치 기준을 반영함
+  - 반응형 대응으로 1024px 이하에서 좌측 nav를 상단 2열 버튼으로 전환하는 폴백 규칙을 추가해 좁은 화면에서의 사용성을 유지함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 서버/API 함수·import 변경 없이 화면 구조와 로컬 상태 기반 탭 전환만 구현한 UI 레이어 작업
+
+---
+
+### 2026-07-15 | 운영콘솔 UI | Detection Guidance Log 스트림 필터 드롭다운 및 깨진 이미지 fallback 보정
+
+- **커밋**: eat(console): Detection Guidance Log 스트림 선택 UI와 깨진 이미지 fallback 개선
+- **변경 내용**:
+  - DetectionGuidanceLogTable.tsx에 스트림 필터 상태(ll/reflex/cognitive)와 드롭다운 열기/닫기 상태를 추가하고, 전체/인지/반사 선택 기반 행 필터링을 구현함
+  - 필터 UI를 panel-header-actions에서 분리해 제목 아래 배치하고, 외부 클릭 시 닫히는 드롭다운 상호작용을 추가함
+  - FrameWithOverlay에 이미지 로드 실패 감지(onError)를 추가해 깨진 이미지에 rame-overlay-broken 클래스를 부여하고 bbox 렌더를 중단하도록 처리함
+  - styles.css에서 rame-detail-body, lightbox-content 내 깨진 이미지 fallback 크기를 40x40px로 통일해 레이아웃 붕괴를 방지함
+  - LatencySummaryPanel.tsx, DashboardPage.tsx의 최근 콘솔 레이아웃/표시 정비 변경을 함께 커밋 범위에 포함함
+- **관련 파일**: console/src/components/DetectionGuidanceLogTable.tsx, console/src/components/LatencySummaryPanel.tsx, console/src/pages/DashboardPage.tsx, console/src/styles.css, docs/changelogs/jh.md
+- **검증 결과**:
+  pm run build 성공
+- **비고**: 워킹트리의 client/src/services/frameCaptureProviderSelect.android.ts 변경은 사용자 지정 범위에 따라 이번 커밋에서 제외함
+
+---
+
+### 2026-07-15 | 운영콘솔 UI | Detection Guidance Log 스트림 필터 드롭다운 및 깨진 이미지 fallback 40x40 적용
+
+- **커밋**: feat(console): Detection Guidance Log 스트림 선택 UI와 깨진 이미지 fallback 40x40 적용
+- **변경 내용**:
+  - DetectionGuidanceLogTable.tsx에 스트림 필터 상태(all/reflex/cognitive)와 드롭다운 열기/닫기 상태를 추가하고, 전체/인지/반사 선택 기반 행 필터링을 구현함
+  - 필터 UI를 panel-header-actions에서 분리해 제목 아래 배치하고, 외부 클릭 시 닫히는 드롭다운 상호작용을 추가함
+  - FrameWithOverlay에 이미지 로드 실패 감지(onError)를 추가해 깨진 이미지에 frame-overlay-broken 클래스를 부여하고 bbox 렌더를 중단하도록 처리함
+  - styles.css에서 frame-detail-body, lightbox-content 내 깨진 이미지 fallback 크기를 40x40px로 통일해 레이아웃 붕괴를 방지함
+  - LatencySummaryPanel.tsx, DashboardPage.tsx의 최근 콘솔 레이아웃/표시 정비 변경을 함께 커밋 범위에 포함함
+- **관련 파일**: console/src/components/DetectionGuidanceLogTable.tsx, console/src/components/LatencySummaryPanel.tsx, console/src/pages/DashboardPage.tsx, console/src/styles.css, docs/changelogs/jh.md
+- **검증 결과**: npm run build 성공
+- **비고**: 워킹트리의 client/src/services/frameCaptureProviderSelect.android.ts 변경은 사용자 지정 범위에 따라 이번 커밋에서 제외함
+
+---
+
+### 2026-07-15 | 콘솔 UI | 회원 등록 좌측 정렬 및 발화 추적 타임라인 간격/폭 미세 조정
+
+- **커밋**: `style(console): 회원 등록 좌측 정렬 및 발화 추적 타임라인 밀도 조정`
+- **변경 내용**:
+  - `styles.css`에서 `.member-form-label-text`, `.member-form input`, `.member-form .refresh-btn`의 자동 가운데 정렬 마진을 제거해 회원 등록 입력창과 버튼을 좌측 기준으로 정렬함
+  - `trace-timeline-table`을 `table-layout: auto`로 전환하고 `시간`, `위험도`, `트리거`, `발화문` 열 폭을 다시 배분해 발화 추적 타임라인의 공백 비율을 축소함
+  - `td.trace-time`에 폭 `130px` 및 좌우 패딩 축소를 적용해 시간 셀의 과한 가로 여백을 줄임
+  - `시간-트랙`, `트리거-발화문` 경계 패딩을 미세 조정하고 `trace-hit` 정렬을 좌측으로 변경해 텍스트 겹침 없이 더 촘촘하게 보이도록 보정함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 회원 관리 등록 폼과 발화 추적 타임라인의 시각 밀도 조정만 포함하며 API/비즈니스 로직 변경은 없음
+
+---
+
+### 2026-07-16 | 콘솔 UI | 회원 등록 폼 2열(3:3) 배치 및 주소/버튼 전체폭 정렬
+
+- **커밋**: `style(console): 회원 등록 폼 2열 배치와 주소/버튼 폭 정렬`
+- **변경 내용**:
+  - `MembersPage.tsx` 회원 등록 필드 순서를 2열 3행 구조로 재배치함: `기기 식별자|장애 정도`, `이름|생년월일(선택)`, `전화번호|보호자 연락처(선택)`
+  - `MembersPage.tsx`의 `주소(선택)` 필드에 `member-form-field-full` 클래스를 추가해 단일 행 전체폭(2칸 span)으로 확장함
+  - `styles.css`에서 `.member-form`을 2열 그리드(`repeat(2, minmax(0, 30%))`)로 변경하고 좌측 기준 시작점(`padding-left: 45px`)을 유지함
+  - `styles.css`에서 일반 입력창은 칸 폭(`width: 100%`)을 사용하도록 통일하고, 주소 필드(`.member-form-field-full`)와 등록 버튼(`.member-form .refresh-btn`)을 `grid-column: 1 / span 2`로 맞춰 동일 길이로 정렬함
+  - `styles.css`에 `@media (max-width: 1100px)` 폴백을 추가해 작은 화면에서는 1열 레이아웃으로 안전하게 전환되도록 처리함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 회원 관리 화면의 폼 배치/스타일 변경만 포함하며 API/비즈니스 로직은 변경하지 않음
