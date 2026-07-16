@@ -68,6 +68,12 @@ export interface WSMessage {
   beep_interval_ms?: number;
   haptic_pattern?: HapticPattern | string;
   guidance_text?: string;
+  /** guide 구조화 필드 (Phase 2): 시계 방향. 음성 텍스트와 분리. */
+  clock_direction?: string;
+  /** guide 구조화 필드: near/medium/far (반사 reflex_alert의 미터 distance와 별개). */
+  distance_class?: "near" | "medium" | "far" | string;
+  /** guide 구조화 필드: 한국어 주 탐지 객체명. */
+  object_ko?: string;
   /** guide 오디오 전송 방식. "binary"면 이 메시지 직후 WS 바이너리 프레임으로 WAV 원본이 이어진다(2026-07-09 도입). */
   transport?: "binary" | "none";
   duration_ms?: number;
@@ -124,6 +130,9 @@ export interface GuidePayload {
   event_id: string;
   risk_level: "mid" | "low";
   guidance_text: string;
+  clock_direction?: string;
+  distance_class?: "near" | "medium" | "far" | string;
+  object_ko?: string;
   transport?: "binary" | "none";
   duration_ms?: number;
   ts: number;

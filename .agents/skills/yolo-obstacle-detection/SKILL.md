@@ -177,38 +177,38 @@ for track in tracks:
 
 ### 단계 3-6. Reflex Risk Gate (룰베이스, LLM 미경유)
 
+> **2026-07-16 Option A**: 게이트 **본문은 class-agnostic**이다.
+> `hit_count >= MIN_HIT_COUNT(3)`, `confidence >= 0.35`, 중앙 40%, `MIN_AREA_RATIO=0.10`을 모두 충족할 때만 발동.
+> `alert_id`는 억제 우회 방지를 위해 **`high_obstacle`** 고정(방향은 `direction`/`clip` 필드).
+> `HIGH_RISK_CLASSES` dict는 **단말 SSOT 참조용**으로 유지하며 본문 분기에 사용하지 않는다.
+> 상세: [`docs/design/risk_ssot_contract.md`](../../../docs/design/risk_ssot_contract.md) §2-B, [`outdoor_guidance_refinement_roadmap.md`](../../../docs/research/outdoor_guidance_refinement_roadmap.md).
+
 ```python
-# -*- coding: utf-8 -*-
-# server/detection/gates/reflex_gate.py
-import sys
-
-if hasattr(sys.stdout, "reconfigure"):
-    getattr(sys.stdout, "reconfigure")(encoding="utf-8")
-
-# 2026-07-07 정정: 실제 코드는 set이 아니라 {클래스: 최소 confidence} dict이며 scooter 포함(5종).
-# 실내 오탐(도메인 시프트) 완화를 위해 클래스별 confidence 하한 + 연속 프레임(hit_count) 검증을 함께 건다.
-HIGH_RISK_CLASSES: dict[str, float] = {
-    "car": 0.6, "truck": 0.6, "bus": 0.6, "motorcycle": 0.55, "scooter": 0.5,
-}
-PROXIMITY_THRESHOLD = 0.15  # 프레임 하단 면적 비율
-MIN_HIT_COUNT = 3  # 동일 track_id가 최소 이만큼 연속 프레임 유지되어야 발동
+# 요약 (실제 코드: server/detection/gates/reflex_gate.py)
+# HIGH_RISK_CLASSES: 단말 SSOT 참조 테이블 (본문 미사용)
+AGNOSTIC_MIN_CONFIDENCE = 0.35
+MIN_AREA_RATIO = 0.10
+MIN_HIT_COUNT = 3
+SUPPRESS_ALERT_ID = "high_obstacle"
 
 def reflex_gate(detection, frame_height, frame_width):
-    """고위험 클래스 && confidence 하한 && hit_count && 근접  즉시 alert_id + 방향"""
-    min_confidence = HIGH_RISK_CLASSES.get(detection.class_name)
-    if min_confidence is not None and detection.confidence >= min_confidence:
-        if detection.hit_count < MIN_HIT_COUNT:
-            return None
-        bbox = detection.bbox
-        # 하단 근접 체크: bbox 하단이 프레임 하단 15% 이내
-        bottom_y = bbox.y + bbox.h
-        if bottom_y > frame_height * (1 - PROXIMITY_THRESHOLD):
-            direction = _estimate_direction(bbox, frame_width)
-            alert_id = f"high_{detection.class_name}_{direction}"
-            return {"alert_id": alert_id, "direction": direction, "risk_level": "high"}
-    return None
+    if detection.hit_count < MIN_HIT_COUNT:
+        return None
+    if detection.confidence < AGNOSTIC_MIN_CONFIDENCE:
+        return None
+    # 중앙 존 + 면적 비율 충족 시에만 ReflexAlert(alert_id=high_obstacle, class_name=obstacle)
+    ...
+```
 
-def _estimate_direction(bbox, frame_width):
+```python
+# 레거시 참고용 스케치 (클래스 분기 시대 — Option B 재도입 시에만 참조)
+# HIGH_RISK_CLASSES.get(class_name) + bottom_y PROXIMITY — 현재 미사용
+```
+
+레거시 방향 헬퍼(현재는 `server/detection/direction.estimate_direction` 사용):
+
+```python
+def _estimate_direction_legacy(bbox, frame_width):
     center_x = bbox.x + bbox.w / 2
     if center_x < frame_width / 3: return "left"
     elif center_x > frame_width * 2 / 3: return "right"

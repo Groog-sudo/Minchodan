@@ -14,6 +14,7 @@ class AlertSuppressor:
     중복 경보 억제기
     - alert_id 기준으로 일정 시간 동안 동일 경보 재발행 방지
     - Redis SETEX 사용
+    - 반사 Option A: alert_id는 high_obstacle (방향 제외). 방향만 바뀌어 TTL을 우회하지 않는다.
     """
 
     DEFAULT_TTL = 60  # 기본 유효시간 60초
@@ -23,7 +24,7 @@ class AlertSuppressor:
         self.ttl = ttl
 
     def _make_key(self, device_id: str, alert_id: str) -> str:
-        """device_id까지 포함하면 더 정밀하게 억제 가능"""
+        """suppress:{device_id}:{alert_id} — 반사 근접은 alert_id=high_obstacle 고정."""
         return f"suppress:{device_id}:{alert_id}"
 
     async def should_suppress(self, device_id: str, alert_id: str) -> bool:

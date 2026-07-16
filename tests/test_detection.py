@@ -92,28 +92,29 @@ class TestSchemas:
 
 class TestGates:
     def test_reflex_gate_high_risk_bottom(self):
+        # class-agnostic: 중앙 + 면적>=10% + hit_count>=3
         det = Detection(
             class_name="car",
             confidence=0.9,
-            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),
             hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
-        assert alert.alert_id == "high_car_front"
+        assert alert.alert_id == "high_obstacle"
+        assert alert.class_name == "obstacle"
         assert alert.direction == "front"
 
-    def test_reflex_gate_left_direction(self):
+    def test_reflex_gate_off_center_rejected(self):
+        """중앙 존 밖이면 면적이 커도 반사 미발동 (측면은 인지/로컬 폴백 영역)."""
         det = Detection(
             class_name="truck",
             confidence=0.9,
-            bbox=BBox(x=10.0, y=420.0, w=50.0, h=60.0),
+            bbox=BBox(x=10.0, y=280.0, w=100.0, h=160.0),
             hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
-        assert alert is not None
-        assert alert.direction == "front-left"
-        assert alert.alert_id == "high_truck_front-left"
+        assert alert is None
 
     def test_reflex_gate_low_position(self):
         det = Detection(
@@ -125,36 +126,47 @@ class TestGates:
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is None
 
-    def test_reflex_gate_low_risk_class(self):
-        """bicycle이 이제 HIGH_RISK_CLASSES(29종 전체 반사)에 해당하므로 경보가 발동되어야 한다."""
+    def test_reflex_gate_any_class_near_center(self):
+        """class-agnostic: bicycle 등도 지오메트리만 충족하면 obstacle 경보."""
         det = Detection(
             class_name="bicycle",
             confidence=0.9,
-            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),
             hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
-        assert alert.alert_id == "high_bicycle_front"
+        assert alert.alert_id == "high_obstacle"
 
     def test_reflex_gate_low_confidence_rejected(self):
-        """실내 오탐 완화: 클래스별 최소 confidence 미달 시 발동하지 않는다."""
+        """존재 confidence 0.35 미달 시 발동하지 않는다."""
         det = Detection(
             class_name="car",
-            confidence=0.30,  # HIGH_RISK_CLASSES["car"] = 0.35 미달
-            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            confidence=0.30,
+            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),
             hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is None
 
     def test_reflex_gate_insufficient_hit_count_rejected(self):
-        """실내 오탐 완화: 연속 프레임 수(hit_count)가 MIN_HIT_COUNT 미만이면 발동하지 않는다."""
+        """연속 프레임 수(hit_count)가 MIN_HIT_COUNT 미만이면 발동하지 않는다."""
         det = Detection(
             class_name="car",
             confidence=0.9,
-            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),
             hit_count=1,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is None
+
+    def test_reflex_gate_small_area_rejected(self):
+        """면적 비율이 MIN_AREA_RATIO 미만이면 미발동."""
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),  # ~2.7% < 10%
+            hit_count=3,
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is None
@@ -327,16 +339,15 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_reflex_gate_triggers(self, frame, mock_redis_bus):
-        # 2026-07-07: 실내 오탐 완화를 위해 MIN_HIT_COUNT(3) 조건이 추가됨에 따라,
-        # track_id를 부여하고 직전 컨텍스트에 hit_count=2가 있었던 것으로 모킹하여
-        # 이번 프레임에서 hit_count=3(조건 충족)이 되도록 구성한다.
-        mock_redis_bus.get_track_context = AsyncMock(return_value={"hit_count": "2"})
+        # 파이프라인이 hit_count < 4 탐지를 필터하므로, 직전 컨텍스트 hit_count=3 → 이번 프레임 4.
+        # reflex_gate 자체는 MIN_HIT_COUNT=3.
+        mock_redis_bus.get_track_context = AsyncMock(return_value={"hit_count": "3"})
         detector = StubDetector(
             detections=[
                 Detection(
                     class_name="car",
                     confidence=0.9,
-                    bbox=BBox(x=250.0, y=420.0, w=140.0, h=60.0),
+                    bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),
                     track_id="T-0001",
                 )
             ]
@@ -350,7 +361,7 @@ class TestPipelineRobustness:
         )
         result, _, _ = await pipeline.run(frame, "test", "evt-reflex", "dev-1")
         assert isinstance(result, ReflexAlert)
-        assert result.alert_id == "high_car_front"
+        assert result.alert_id == "high_obstacle"
         assert result.direction == "front"
 
     @pytest.mark.asyncio

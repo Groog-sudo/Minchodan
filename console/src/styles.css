@@ -403,7 +403,7 @@ h2 {
 
 table {
   border-collapse: collapse;
-  min-width: 760px;
+  min-width: 1080px;
   width: 100%;
 }
 
@@ -426,6 +426,25 @@ th {
 td {
   color: #edf2f9;
   font-size: 13px;
+}
+
+td.pipeline-preview-cell,
+td.tts-text-cell {
+  white-space: normal;
+  vertical-align: top;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+td.pipeline-preview-cell {
+  max-width: 240px;
+  min-width: 160px;
+}
+
+td.tts-text-cell {
+  max-width: 220px;
+  min-width: 140px;
 }
 
 .risk-pill {
@@ -569,7 +588,18 @@ td {
 }
 
 .frame-detail-item-full {
-  grid-column: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.frame-detail-item-full .frame-detail-label {
+  flex: none;
+  width: 100%;
+}
+
+.frame-detail-item-full .frame-detail-value {
+  width: 100%;
 }
 
 .frame-detail-label {
@@ -1184,6 +1214,76 @@ td {
   background: rgba(249, 183, 0, 0.15);
   color: var(--color-gildang-yellow);
   border: 1px solid rgba(249, 183, 0, 0.3);
+}
+
+.pipeline-debug-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+}
+
+.pipeline-debug-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(107, 117, 144, 0.22);
+}
+
+.pipeline-debug-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.pipeline-debug-row:first-child {
+  padding-top: 0;
+}
+
+.pipeline-debug-label {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-debug-value {
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+  min-width: 0;
+}
+
+.pipeline-debug-value.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: 2px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(107, 117, 144, 0.25);
+}
+
+.pipeline-debug-empty {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pipeline-preview-cell {
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .panel-latency {
