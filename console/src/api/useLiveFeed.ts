@@ -140,8 +140,8 @@ export function useLiveFeed() {
         clearTimeout(reconnectTimerRef.current);
       }
       if (wsInstance) {
-        // 💡 이 디버그 로그 추가
-        console.log("[WS CLOSE 디버그] clean-up에 의해 소켓이 닫힙니다.");
+        // 카메라 렌더링을 위한 디버깅 코드
+        // console.log("[WS CLOSE 디버그] clean-up에 의해 소켓이 닫힙니다.");
         wsInstance.close();
       }
       if (prevUrlRef.current) {

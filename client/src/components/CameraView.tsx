@@ -802,7 +802,8 @@ export function CameraView() {
     const frameStream = frame.stream ?? "reflex";
     const eventId = `event-${DEVICE_ID}-${frameStream}-${now}`;
 
-    console.log(`[CameraView 디버그] handleFrame 호출됨! jpegBytes: ${!!frame.jpegBytes}, base64: ${!!frame.base64}, sendRef: ${!!sendRef.current}`);
+    // 카메라 렌더링 디버깅을 위한 코드
+    // console.log(`[CameraView 디버그] handleFrame 호출됨! jpegBytes: ${!!frame.jpegBytes}, base64: ${!!frame.base64}, sendRef: ${!!sendRef.current}`);
 
     // 로컬 추론 엔진 적재 여부와 관계없이 서버로 프레임 전송 수행 (WebSocket)
     // raw JPEG 바이트가 있으면(실기기) base64를 경유하지 않고 메타데이터(JSON) + 바이너리
