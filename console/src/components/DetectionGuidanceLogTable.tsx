@@ -11,7 +11,8 @@ import { eventFrameUrl } from "../api/useDetectionLogs";
 //   원본 이미지를 보존해야 임계값/모델을 바꿔 재검증할 수 있기 때문입니다.
 // - 썸네일/상세 이미지를 클릭하면 라이트박스(확대 보기)가 열립니다.
 
-const LOG_IMAGE_ROTATE_DEG: number = 90;
+// iOS 정자세 JPEG 재배포 후 Live Feed와 동일하게 0.
+const LOG_IMAGE_ROTATE_DEG: number = 0;
 
 function getDisplayBBox(
   bbox: { x: number; y: number; w: number; h: number },

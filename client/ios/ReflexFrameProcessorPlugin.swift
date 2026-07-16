@@ -49,8 +49,10 @@ public class ReflexFrameProcessorPlugin: FrameProcessorPlugin {
     // Info.plist UISupportedInterfaceOrientations에서 PortraitUpsideDown 제거로도
     // 미해결). react-native-vision-camera 4.7.3의 CMAccelerometerData+deviceOrientation.swift
     // 가속도계 부호 판정이 이 기기 조합에서 반대로 보고되는 것으로 추정되며, 라이브러리
-    // 내부(node_modules) 수정은 재설치 시 유실되므로 여기서 90도 보정 회전을 추가한다.
-    let oriented = sourceImage.oriented(cgOrientation).oriented(.right)
+    // 내부(node_modules) 수정은 재설치 시 유실되므로 여기서 180도 보정 회전을 추가한다.
+    // 2026-07-16 정정: dg가 .right(90도)로 바꾼 뒤 Live Feed가 가로로 누워 보임(실측).
+    // takePhoto 경로(applyIosOrientationFix=rotate 180)와 동일하게 .down으로 복구한다.
+    let oriented = sourceImage.oriented(cgOrientation).oriented(.down)
 
     // 중앙 정사각형 크롭 (미리보기와 모델 입력 기하 구조를 일치시켜 bbox 정합 유지,
     // captureRealFrame()의 크롭 규칙과 동일).
