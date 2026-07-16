@@ -13,23 +13,21 @@
 export type ServerTransport = "wifi" | "usb";
 export type NetworkMode = "lan" | "ngrok" | "tailscale";
 
-export const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "lan") as NetworkMode;
+export const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "tailscale") as NetworkMode;
 export const SERVER_PORT = process.env.EXPO_PUBLIC_SERVER_PORT ?? "8000";
 
 /** 평상시: PC 모바일 핫스팟(공기계→노트북). Windows 기본 게이트웨이. */
 export const WIFI_HOST =
   process.env.EXPO_PUBLIC_WIFI_HOST ??
   process.env.EXPO_PUBLIC_LAN_IP ??
-  "192.168.0.163";
+  "222.112.165.158";
 
 /** 개발: USB + `adb reverse tcp:8000 tcp:8000` 일 때. */
 export const USB_HOST = process.env.EXPO_PUBLIC_USB_HOST ?? "127.0.0.1";
 
 export const TAILSCALE_HOST =
   process.env.EXPO_PUBLIC_TAILSCALE_HOST ??
-  process.env.EXPO_PUBLIC_WIFI_HOST ??
-  process.env.EXPO_PUBLIC_LAN_IP ??
-  WIFI_HOST;
+  "100.82.167.31";
 
 export const NGROK_DOMAIN =
   process.env.EXPO_PUBLIC_NGROK_DOMAIN ?? "partake-primer-surround.ngrok-free.dev";
@@ -47,6 +45,34 @@ export function buildWsUrl(transport: ServerTransport = DEFAULT_SERVER_TRANSPORT
   }
   const host = transport === "usb" ? USB_HOST : WIFI_HOST;
   return `ws://${host}:${SERVER_PORT}/ws/detect`;
+}
+
+/**
+ * WS 접속 후보 목록.
+ * 학원 WiFi 기기격리 등으로 LAN이 실패할 때 Tailscale 호스트로 폴백한다.
+ * NETWORK_MODE=tailscale/ngrok이면 해당 경로만 반환한다.
+ */
+export function getWsUrlCandidates(
+  transport: ServerTransport = DEFAULT_SERVER_TRANSPORT,
+): string[] {
+  if (NETWORK_MODE === "ngrok") {
+    return [`wss://${NGROK_DOMAIN}/ws/detect`];
+  }
+  if (NETWORK_MODE === "tailscale") {
+    return [`ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`];
+  }
+
+  const primary = buildWsUrl(transport);
+  const candidates = [primary];
+  const tailscaleUrl = `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
+  if (
+    TAILSCALE_HOST &&
+    TAILSCALE_HOST !== "127.0.0.1" &&
+    !candidates.includes(tailscaleUrl)
+  ) {
+    candidates.push(tailscaleUrl);
+  }
+  return candidates;
 }
 
 /** 하위 호환: 기본 수송(WiFi) 기준 URL. 런타임은 buildWsUrl + 토글 사용. */

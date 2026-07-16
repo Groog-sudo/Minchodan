@@ -410,6 +410,12 @@ class SttToLlmBridge:
             "길안내 종료",
             "네비게이션 기능 꺼줘",
             "길안내 꺼줘",
+            "길댕아 꺼",
+            "네비게이션 꺼",
+            "네비게이션 기능 꺼",
+            "길안내 꺼",
+            "그만",
+            "안내 그만",
         ]
         is_shutdown = any(kw in normalized_text for kw in shutdown_keywords)
 
@@ -419,7 +425,19 @@ class SttToLlmBridge:
         # [하드 코딩 부분 - 핵심] "길댕아" 2단계 wake-word 진입 트리거 판별(퍼지 매칭)
         is_gildaeng_wake = _is_gildaeng_wake(normalized_text)
 
-        if is_gildaeng_wake:
+        if is_shutdown:
+            # [바이브 코딩 부분] 종료 요청 시 경로 캐시와 상태를 초기화
+            nav_manager.update_route(device_id, [])
+            nav_manager.set_status(device_id, "IDLE")
+            return {
+                "guidance_text": "네비게이션 안내를 종료합니다.",
+                "used_fallback_llm": True,
+                "source": "navigation-setup-shutdown",
+                # 지도 패널의 경로 폴리라인 제거용(빈 배열 = 경로 해제).
+                "nav_waypoints": [],
+            }
+
+        elif is_gildaeng_wake:
             # 2026-07-14 정정: 목적지 대기 중 "길찾아줘" 퍼지 오인/재웨크로
             # WAITING을 깨고 인텐트 선택으로 되돌리던 동작을 막는다. 대기 유지 + 재안지만.
             if current_status == "WAITING_FOR_DESTINATION":
@@ -442,18 +460,6 @@ class SttToLlmBridge:
                 "guidance_text": "네비게이션 기능을 시작합니다. 목적지를 말씀해 주세요.",
                 "used_fallback_llm": True,
                 "source": "navigation-setup-wakeup",
-            }
-
-        elif is_shutdown:
-            # [바이브 코딩 부분] 종료 요청 시 경로 캐시와 상태를 초기화
-            nav_manager.update_route(device_id, [])
-            nav_manager.set_status(device_id, "IDLE")
-            return {
-                "guidance_text": "네비게이션 안내를 종료합니다.",
-                "used_fallback_llm": True,
-                "source": "navigation-setup-shutdown",
-                # 지도 패널의 경로 폴리라인 제거용(빈 배열 = 경로 해제).
-                "nav_waypoints": [],
             }
 
         elif is_question_trigger:

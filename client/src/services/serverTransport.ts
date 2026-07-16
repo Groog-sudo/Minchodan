@@ -14,6 +14,7 @@ import {
   USB_HOST,
   WIFI_HOST,
   buildWsUrl,
+  getWsUrlCandidates,
   type ServerTransport,
 } from "../config";
 
@@ -65,4 +66,9 @@ export async function saveServerTransport(transport: ServerTransport): Promise<v
 
 export function wsUrlFor(transport: ServerTransport): string {
   return buildWsUrl(transport);
+}
+
+/** WiFi 실패 시 Tailscale 폴백을 포함한 WS 후보 목록. */
+export function wsUrlCandidatesFor(transport: ServerTransport): string[] {
+  return getWsUrlCandidates(transport);
 }

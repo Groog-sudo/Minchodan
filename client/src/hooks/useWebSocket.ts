@@ -16,12 +16,39 @@ import {
   NETWORK_BENCHMARK_PAYLOAD_BYTES,
   RECONNECT_DELAY,
   RECONNECT_DELAY_MAX,
+  SERVER_PORT,
+  TAILSCALE_HOST,
   TOKEN,
   WS_URL,
+  getWsUrlCandidates,
 } from "../config";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 import type { WSMessage, WSStatus } from "../types/detection";
+
+/**
+ * 현재 전달된 primary URL을 1순위로 두고, config 후보(LAN/Tailscale)를 합친다.
+ * 학원 WiFi 기기격리로 LAN이 실패해도 Tailscale로 넘어가게 한다.
+ */
+function expandWsUrlCandidates(primaryBase: string): string[] {
+  const base = primaryBase.replace(/\?.*$/, "").replace(/\/$/, "");
+  const merged = [base];
+  for (const url of getWsUrlCandidates()) {
+    const normalized = url.replace(/\?.*$/, "").replace(/\/$/, "");
+    if (!merged.includes(normalized)) {
+      merged.push(normalized);
+    }
+  }
+  const tailscaleUrl = `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
+  if (
+    TAILSCALE_HOST &&
+    TAILSCALE_HOST !== "127.0.0.1" &&
+    !merged.includes(tailscaleUrl)
+  ) {
+    merged.push(tailscaleUrl);
+  }
+  return merged;
+}
 
 export interface NavRouteData {
   appKey: string;
@@ -79,9 +106,16 @@ export function useWebSocket(
   // 폴백 모드 진입 음성 고지를 단절 1회당 한 번만 내보내기 위한 플래그.
   // true인 동안 재연결이 성공하면 복구 고지를 내보내고 다시 false로 돌린다.
   const fallbackAnnouncedRef = useRef(false);
+  // WiFi 실패 시 Tailscale 등 다음 후보 URL로 순환한다.
+  // 성공한 후보 우선순위는 welcome에서 승격하며, wsBaseUrl이 바뀔 때만 목록을 재생성한다.
+  const wsUrlCandidatesRef = useRef<string[]>(expandWsUrlCandidates(wsBaseUrl));
+  const wsUrlIndexRef = useRef(0);
+  const lastWsBaseUrlRef = useRef(wsBaseUrl);
   // 직전에 수신한 "guide" JSON 메시지가 인지(카메라) 출처인지 기록해, 뒤이어 오는
   // 바이너리 오디오 프레임(ArrayBuffer)도 같은 기준으로 뮤트할지 판단한다.
   const pendingGuideIsCognitiveRef = useRef(false);
+  // onclose/AppState 타이머가 항상 최신 connect를 호출하도록 한다.
+  const connectRef = useRef<() => void>(() => {});
 
   const setSttInteractionActive = useCallback(
     (active: boolean, timeoutMs: number = STT_INTERACTION_TIMEOUT_MS) => {
@@ -148,8 +182,27 @@ export function useWebSocket(
     const currentState = wsRef.current?.readyState;
     if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) return;
 
-    const wsUrl = `${wsBaseUrl}?device_id=${deviceId}`;
-    console.log(`[WS] 연결 시도 주소: ${wsUrl}`);
+    // wsBaseUrl(수송 토글)이 바뀐 경우에만 후보를 재생성한다.
+    // 매 재연결마다 재생성하면 welcome에서 승격한 Tailscale 우선순위가 사라진다.
+    if (lastWsBaseUrlRef.current !== wsBaseUrl) {
+      lastWsBaseUrlRef.current = wsBaseUrl;
+      wsUrlCandidatesRef.current = expandWsUrlCandidates(wsBaseUrl);
+      wsUrlIndexRef.current = 0;
+    }
+    const candidates = wsUrlCandidatesRef.current;
+    if (candidates.length > 1) {
+      wsUrlIndexRef.current = reconnectCount.current % candidates.length;
+    } else {
+      wsUrlIndexRef.current = 0;
+    }
+    const selectedBase = candidates[wsUrlIndexRef.current] ?? wsBaseUrl;
+    const wsUrl = `${selectedBase}?device_id=${deviceId}`;
+    console.log(
+      `[WS] 연결 시도 주소: ${wsUrl}` +
+        (candidates.length > 1
+          ? ` (후보 ${wsUrlIndexRef.current + 1}/${candidates.length})`
+          : ""),
+    );
     const ws = new WebSocket(wsUrl);
     // guide 오디오(WAV)를 서버가 바이너리 프레임으로 보내므로(2026-07-09 도입),
     // 수신 시 Blob이 아닌 ArrayBuffer로 받아 동기적으로 다루기 쉽게 한다.
@@ -206,6 +259,15 @@ export function useWebSocket(
           setLastMessage(data);
           setStatus("connected");
           reconnectCount.current = 0;
+          // 성공한 후보를 다음 재연결의 1순위로 고정한다.
+          const working = wsUrlCandidatesRef.current[wsUrlIndexRef.current];
+          if (working && wsUrlIndexRef.current > 0) {
+            wsUrlCandidatesRef.current = [
+              working,
+              ...wsUrlCandidatesRef.current.filter((url) => url !== working),
+            ];
+            wsUrlIndexRef.current = 0;
+          }
           console.log(`[WS] 연결 성공, 세션 ID: ${data.session_id}`);
           // 폴백 모드 고지 이후의 복구는 사용자에게 반드시 알린다. 사용자는 화면을
           // 볼 수 없으므로 음성 고지가 유일한 상태 전달 수단이다(Mitos 로드맵).
@@ -329,7 +391,7 @@ export function useWebSocket(
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
       }
-      reconnectTimer.current = setTimeout(() => connect(), backoffMs);
+      reconnectTimer.current = setTimeout(() => connectRef.current(), backoffMs);
       console.log(
         `[WS] 재연결 예약: ${reconnectCount.current}회차, ${backoffMs}ms 후`,
       );
@@ -353,7 +415,7 @@ export function useWebSocket(
         console.log("[WS] 구 소켓 오류 이벤트 무시");
         return;
       }
-      console.error("[WS] 오류:", error);
+      console.warn("[WS] 오류 (재연결 시도 중):", error);
     };
   }, [
     deviceId,
@@ -383,8 +445,10 @@ export function useWebSocket(
     }
   }, []);
 
+  connectRef.current = connect;
+
   useEffect(() => {
-    // 수송 모드(WiFi/USB) 변경 시 기존 소켓을 끊고 새 주소로 붙는다.
+    // 수송 모드(WiFi/USB) 또는 wsBaseUrl 변경 시에만 소켓을 교체한다.
     if (reconnectTimer.current) {
       clearTimeout(reconnectTimer.current);
       reconnectTimer.current = null;
@@ -398,7 +462,8 @@ export function useWebSocket(
     }
     reconnectCount.current = 0;
     fallbackAnnouncedRef.current = false;
-    connect();
+    lastWsBaseUrlRef.current = "";
+    connectRef.current();
     return () => {
       clearHeartbeat();
       clearNetworkProbe();
@@ -421,7 +486,8 @@ export function useWebSocket(
         wsRef.current = null;
       }
     };
-  }, [connect, clearHeartbeat, clearNetworkProbe]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- connect는 ref로 최신 유지, URL 변경만 재연결
+  }, [wsBaseUrl, clearHeartbeat, clearNetworkProbe]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -446,12 +512,12 @@ export function useWebSocket(
       if (previousState !== "active") {
         reconnectCount.current = 0;
         fallbackAnnouncedRef.current = false;
-        connect();
+        connectRef.current();
       }
     });
 
     return () => subscription.remove();
-  }, [connect, clearHeartbeat, clearNetworkProbe]);
+  }, [clearHeartbeat, clearNetworkProbe]);
 
   return {
     status,
