@@ -119,6 +119,7 @@ const LATENCY_STAGE_ORDER: Array<[keyof LatencyStages, string]> = [
   ["rag_ms", "RAG"],
   ["llm_ms", "LLM"],
   ["tts_ms", "TTS"],
+  ["stt_audio_upload_ms", "음성업로드"],
   ["db_save_ms", "DB저장"],
   ["total_ms", "총합"],
 ];

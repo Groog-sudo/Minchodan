@@ -17,6 +17,7 @@ import sys
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+import asyncio
 import logging
 import os
 import re
@@ -27,6 +28,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from dotenv import load_dotenv
+
+from server.services.remote_storage_client import is_remote_storage_enabled, upload_event_frame
 
 load_dotenv()
 
@@ -81,6 +84,45 @@ def save_event_frame(event_id: str, frame: np.ndarray) -> str | None:
     except Exception as e:
         logger.error(f"[EventFrameStore] 프레임 저장 실패: event_id={event_id}, {e}")
         return None
+
+
+def encode_event_frame_jpeg(event_id: str, frame: np.ndarray) -> bytes | None:
+    """프레임을 JPEG bytes로 인코딩합니다."""
+    if frame is None or not is_valid_event_id(event_id):
+        return None
+    try:
+        ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        if not ok:
+            logger.warning(f"[EventFrameStore] JPEG 인코딩 실패: event_id={event_id}")
+            return None
+        return encoded.tobytes()
+    except Exception as e:
+        logger.error(f"[EventFrameStore] JPEG 인코딩 예외: event_id={event_id}, {e}")
+        return None
+
+
+async def save_event_frame_async(event_id: str, frame: np.ndarray) -> str | None:
+    """이벤트 프레임을 저장하고 DB에 남길 object key 또는 상대 경로를 반환합니다.
+
+    원격 저장소가 켜져 있으면 Raspberry Pi 저장 API에 업로드하고, 성공한 object_key만
+    반환합니다. 원격 업로드 실패 시 로컬에 몰래 저장하지 않고 None을 반환해
+    다중 FastAPI writer 환경에서 MISS를 다시 만들지 않습니다.
+    """
+    if is_remote_storage_enabled():
+        jpeg_bytes = await asyncio.to_thread(encode_event_frame_jpeg, event_id, frame)
+        if jpeg_bytes is None:
+            return None
+        result = await upload_event_frame(event_id, jpeg_bytes)
+        if result.status == "available":
+            return result.object_key
+        logger.error(
+            "[EventFrameStore] 원격 프레임 저장 실패: event_id=%s, status=%s, error=%s",
+            event_id,
+            result.status,
+            result.error_code,
+        )
+        return None
+    return await asyncio.to_thread(save_event_frame, event_id, frame)
 
 
 def resolve_frame_path(frame_path: str | None) -> Path | None:

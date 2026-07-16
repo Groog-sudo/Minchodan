@@ -25,6 +25,7 @@ const STAGE_DEFS: Array<{ key: keyof LatencyStages; label: string; targetMs: num
   { key: "rag_ms", label: "RAG 검색", targetMs: 50 },
   { key: "llm_ms", label: "LLM(ainvoke)", targetMs: null },
   { key: "tts_ms", label: "실시간 TTS", targetMs: null },
+  { key: "stt_audio_upload_ms", label: "STT 음성 업로드", targetMs: null },
   { key: "db_save_ms", label: "DB 저장", targetMs: null },
   { key: "total_ms", label: "종단 총합", targetMs: null },
 ];

@@ -5,6 +5,61 @@
 
 ---
 
+### 2026-07-17 | 환경변수 | Raspberry Pi 중앙 저장소·Ollama 기준 `.env.example` 재작성
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - Raspberry Pi MariaDB, 중앙 저장 API, STT 원본 음성 저장, Ollama `gemma4:e4b` 사용 설정이 한 번에 늘어나면서 기존 `.env.example`의 어느 위치에 어떤 값을 넣어야 하는지 파악하기 어려웠습니다.
+  - 실제 `.env`에는 DB 비밀번호, 저장 API 토큰, TMAP 키, LLM API 키 등 민감값이 포함되므로, 사용자가 값만 채워 넣을 수 있는 별도 템플릿 정리가 필요했습니다.
+- **변경 내용**:
+  - 루트 `.env.example`을 새로 생성하여 `0. 실행 환경`부터 `16. 테스트 / 검증 보조`까지 번호가 있는 섹션으로 재구성했습니다.
+  - Raspberry Pi MariaDB 설정(`DB_HOST`, `DB_PASSWORD`)과 중앙 저장 API 설정(`EVENT_FRAME_STORAGE_BACKEND`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `WRITER_INSTANCE_ID`)을 별도 섹션으로 분리했습니다.
+  - 사용자가 실제 값을 채워야 하는 항목은 `[RASPBERRY_PI_TAILSCALE_IP]`, `[MARIADB_PASSWORD]`, `[IMAGE_SERVER_TOKEN]`, `[TMAP_APP_KEY]`처럼 대괄호 플레이스홀더로 통일했습니다.
+  - LLM 기본 사용 의도에 맞춰 Ollama 경로(`OLLAMA_BASE_URL`, `GEMMA_MODEL=gemma4:e4b`)와 RAG 임베딩 경로(`EMBEDDING_PROVIDER`, `EMBEDDING_MODEL=nomic-embed-text`)를 명확히 분리했습니다.
+  - 현재 코드 기준 미구현인 `kokoro/coqui`는 TTS 기본값에서 제외하고 `TTS_ENGINE=supertonic`을 기본 예시로 정리했습니다.
+  - 기존 임시 백업 템플릿 `01_.env.example`은 삭제하지 않고 보존했습니다.
+- **관련 파일**: `.env.example`, `01_.env.example`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `python-dotenv`로 `.env.example` 파싱 성공: 78개 key 인식
+  - 중앙 저장 핵심 key(`DB_HOST`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `EVENT_FRAME_STORAGE_BACKEND`) 누락 없음 확인
+  - `git diff --check .env.example` 통과
+- **비고**:
+  - 실제 `.env` 파일은 민감 정보 보호를 위해 열람하지 않았습니다.
+  - 운영 반영 시에는 `.env.example`을 복사한 뒤 대괄호 플레이스홀더만 실제 값으로 교체하면 됩니다.
+
+---
+
+### 2026-07-16 | DB/저장소/STT | Raspberry Pi 중앙 저장 API 연동 및 Log STT 원본 음성 메타데이터 기록
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 공유 MariaDB를 여러 FastAPI writer가 함께 쓰는 구조에서 이벤트 프레임 JPEG는 각 writer의 로컬 디스크에 흩어져 `frame_path`는 있으나 콘솔 이미지 조회가 404가 되는 MISS가 발생했습니다.
+  - STT 경로는 기존에 사용자가 말한 원본 음성 파일과 전사 문장을 `detection_guidance_logs`에 함께 남기지 않아, 사용자 발화 기반 이력 추적과 재검증이 어려웠습니다.
+- **변경 내용**:
+  - `server/services/remote_storage_client.py`를 추가해 Raspberry Pi 중앙 저장 API에 이벤트 프레임 JPEG와 STT 원본 음성 bytes를 업로드하도록 했습니다.
+  - `server/services/event_frame_store.py`와 `server/detection/consumer.py`를 수정해 원격 저장 사용 시 `frame_path`에 중앙 저장소 object key만 저장하도록 연결했습니다.
+  - `server/api/ws_router.py` STT 처리부에서 사용자가 말한 원본 오디오를 업로드하고, `stt_transcript_text`, `stt_audio_path`, `stt_audio_storage_status`, `stt_audio_size_bytes`, `stt_audio_duration_ms`, `stt_audio_sha256` 등을 Log에 저장하도록 했습니다.
+  - `server/api/detection_log_router.py`는 로컬 파일이 없으면 중앙 저장소에서 프레임을 조회해 콘솔에 프록시 응답하도록 보강했습니다.
+  - `detection_guidance_logs` ORM/DTO/SQLite DDL/마이그레이션에 STT 원본 음성 저장 메타데이터 컬럼과 조회 인덱스를 추가했습니다.
+  - 콘솔 타입과 지연 패널에 STT 음성 업로드 시간(`stt_audio_upload_ms`)을 반영했습니다.
+  - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`를 새 저장 구조에 맞춰 갱신했습니다.
+- **관련 파일**:
+  - `server/services/remote_storage_client.py`, `server/services/event_frame_store.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `server/api/detection_log_router.py`
+  - `server/db/models.py`, `server/db/schemas.py`, `server/db/schema.sql`, `server/db/migrations/20260716_001_add_stt_audio_columns_to_detection_guidance_logs.sql`
+  - `console/src/types/monitor.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LatencySummaryPanel.tsx`, `console/src/pages/DashboardPage.tsx`
+  - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`
+- **검증 결과**:
+  - `python -m py_compile` 대상 Python 파일 통과
+  - `pytest tests/test_event_frame_store.py tests/test_ws_router_stt.py tests/test_false_positive.py tests/test_tts_prewarm.py` 통과: 20 passed, 3 warnings
+  - `cd console && ./node_modules/.bin/tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - `ruff`는 현재 `.venv`와 PATH에 설치되어 있지 않아 실행하지 못했습니다.
+- **비고**:
+  - 이번 작업은 서버/DB/콘솔 저장 경로 연동 범위입니다. 작업 전부터 존재하던 iOS 네이티브/Podfile 변경은 이번 범위에서 수정하지 않았습니다.
+  - 실제 운영 반영 시 GPU FastAPI `.env`에 `EVENT_FRAME_STORAGE_BACKEND=remote`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `WRITER_INSTANCE_ID`를 설정하고 서버를 재시작해야 합니다.
+
+---
+
 ### 2026-07-15 | Docker/Ollama | WSL/Linux 로컬 Ollama 자동 기동 보강
 
 - **커밋**: `infra: WSL/Linux 로컬 Ollama 실행 환경 보강`
@@ -285,7 +340,7 @@
   - iOS 단말 빌드 반복 문서에는 환경 확인, 단말 연결 확인, Signing Team 설정, Metro 실행, CLI 빌드, `devicectl` 설치/실행, 앱 확인 체크리스트, 재빌드 판단 기준을 정리했습니다.
 - **관련 파일**: `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`, `docs/changelogs/jy.md`
 - **검증 결과**:
-  - `rg`로 `file:///`, `/Users/jjun`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
+  - `rg`로 `file:///`, `/Users/<LOCAL_USER>`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
   - `git diff --check -- docs/macOS_xcode_build docs/changelogs/jy.md` 통과
   - 기존 미추적 빌드 로그 `client/ios/build-device-debug.log`는 이번 문서 커밋 대상에서 제외했습니다.
 

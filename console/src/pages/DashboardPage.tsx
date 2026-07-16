@@ -14,8 +14,38 @@ import { McpValidationMonitor } from "../components/McpValidationMonitor";
 import type { DetectionGuidanceLogRow, MonitorState } from "../types/monitor";
 import type { useLiveFeed } from "../api/useLiveFeed";
 
+const DEMO_LOG_STORAGE_DEFAULTS = {
+  event_source: "detection",
+  stt_transcript_text: null,
+  stt_audio_path: null,
+  stt_audio_storage_status: "not_applicable",
+  stt_audio_format: null,
+  stt_audio_size_bytes: null,
+  stt_audio_duration_ms: null,
+  stt_audio_sha256: null,
+  stt_audio_error_code: null,
+  stt_audio_consent_at: null,
+  stt_audio_expires_at: null,
+  writer_instance_id: null,
+} satisfies Pick<
+  DetectionGuidanceLogRow,
+  | "event_source"
+  | "stt_transcript_text"
+  | "stt_audio_path"
+  | "stt_audio_storage_status"
+  | "stt_audio_format"
+  | "stt_audio_size_bytes"
+  | "stt_audio_duration_ms"
+  | "stt_audio_sha256"
+  | "stt_audio_error_code"
+  | "stt_audio_consent_at"
+  | "stt_audio_expires_at"
+  | "writer_instance_id"
+>;
+
 const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
   {
+    ...DEMO_LOG_STORAGE_DEFAULTS,
     log_id: 1,
     event_id: "demo-event-001",
     user_id: 1,
@@ -30,6 +60,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     created_at: "2026-07-10T10:15:01Z",
   },
   {
+    ...DEMO_LOG_STORAGE_DEFAULTS,
     log_id: 2,
     event_id: "demo-event-002",
     user_id: 1,
@@ -44,6 +75,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     created_at: "2026-07-10T10:15:21Z",
   },
   {
+    ...DEMO_LOG_STORAGE_DEFAULTS,
     log_id: 3,
     event_id: "demo-event-003",
     user_id: 1,
@@ -58,6 +90,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     created_at: "2026-07-10T10:15:41Z",
   },
   {
+    ...DEMO_LOG_STORAGE_DEFAULTS,
     log_id: 4,
     event_id: "demo-event-004",
     user_id: 1,
@@ -72,6 +105,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     created_at: "2026-07-10T10:16:01Z",
   },
   {
+    ...DEMO_LOG_STORAGE_DEFAULTS,
     log_id: 5,
     event_id: "demo-event-005",
     user_id: 1,

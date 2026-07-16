@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-13
-> **버전**: v0.4.18 (2026-07-14 §2.8 `SLACK_WEBHOOK_URL` 코드 재검증 기반 재등재 — Webhook 우선/Bot Token 폴백 이중 인증 구조 정정, §2.15 미등재 변수 13종 일괄 명세, 기존 v0.4.17 이력 유지: §2.9 LangSmith API Key 실키 반영 및 CORS_ORIGINS 환경변수 동적 파싱 명세 추가)
+> **수정일**: 2026-07-16
+> **버전**: v0.4.19 (2026-07-16 §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영. 기존 v0.4.18 이력 유지: §2.8 `SLACK_WEBHOOK_URL` 코드 재검증 기반 재등재, §2.15 미등재 변수 13종 일괄 명세)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -100,6 +100,12 @@
 | **`EVENT_FRAMES_DIR`** | path | 선택 | `data/event_frames` | 이벤트 프레임 이미지 저장소 루트(2026-07-12 신설). 탐지/안내 로그 적재 이벤트의 발생 시점 프레임 JPEG을 날짜 폴더로 보관 | `server/services/event_frame_store.py`, [`api_specification.md`](../design/api_specification.md) §8.5 |
 | **`EVENT_FRAME_RETENTION_DAYS`** | int | 선택 | `7` | 이벤트 프레임 보존 기간(일). 초과 날짜 폴더는 서버 기동 시 삭제. `0` 이하는 정리 비활성. 보행 중 촬영 이미지는 개인정보 포함 가능성으로 기간 한정 보존 | `server/services/event_frame_store.py` |
 | **`EVENT_FRAME_JPEG_QUALITY`** | int | 선택 | `80` | 이벤트 프레임 JPEG 품질(용량 통제 우선) | `server/services/event_frame_store.py` |
+| **`EVENT_FRAME_STORAGE_BACKEND`** | string | 선택 | `local` | 이벤트 프레임/STT 원본 음성 파일 저장 백엔드. `local`이면 기존 GPU 서버 로컬 디스크, `remote`이면 Raspberry Pi 중앙 저장 API에 업로드. 구 명칭 `EVENT_FRAME_BACKEND`도 코드에서 폴백 지원 | `server/services/event_frame_store.py`, `server/services/remote_storage_client.py` |
+| **`IMAGE_SERVER_BASE_URL`** | string | 선택(원격 저장 사용 시 필수) | (미설정) | Raspberry Pi 중앙 저장 API 기본 URL. 예: `http://100.x.x.x:8081`. 구 명칭 `EVENT_FRAME_REMOTE_URL`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`IMAGE_SERVER_TOKEN`** | string | 선택(원격 저장 사용 시 필수) | (미설정) | 중앙 저장 API Bearer 토큰. 서버 `.env`에만 저장하며 클라이언트/콘솔 공개 변수에 넣지 않습니다. 구 명칭 `EVENT_FRAME_REMOTE_TOKEN`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`IMAGE_UPLOAD_TIMEOUT_SECONDS`** | float | 선택 | `3` | 중앙 저장 API 업로드/조회 HTTP 타임아웃(초). 구 명칭 `EVENT_FRAME_UPLOAD_TIMEOUT_SEC`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`IMAGE_UPLOAD_MAX_RETRIES`** | int | 선택 | `1` | 중앙 저장 API 업로드 재시도 횟수. 5xx/네트워크/타임아웃 계열만 짧게 재시도합니다. 구 명칭 `EVENT_FRAME_UPLOAD_RETRIES`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`WRITER_INSTANCE_ID`** | string | 선택 | `HOSTNAME` 폴백 | 다중 FastAPI writer 식별자. `detection_guidance_logs.writer_instance_id`에 저장되어 어떤 서버가 로그를 썼는지 추적합니다 | `server/services/detection_guidance_log_service.py` |
 
 ### 2.8 Slack Integration (공통 경보)
 

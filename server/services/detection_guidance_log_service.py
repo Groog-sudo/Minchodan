@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import time
 from datetime import UTC, datetime
@@ -98,6 +99,18 @@ class DetectionGuidanceLogService:
             frame_path=payload.frame_path,
             false_positive=payload.false_positive,
             latency_json=payload.latency_json,
+            event_source=payload.event_source,
+            stt_transcript_text=payload.stt_transcript_text,
+            stt_audio_path=payload.stt_audio_path,
+            stt_audio_storage_status=payload.stt_audio_storage_status,
+            stt_audio_format=payload.stt_audio_format,
+            stt_audio_size_bytes=payload.stt_audio_size_bytes,
+            stt_audio_duration_ms=payload.stt_audio_duration_ms,
+            stt_audio_sha256=payload.stt_audio_sha256,
+            stt_audio_error_code=payload.stt_audio_error_code,
+            stt_audio_consent_at=payload.stt_audio_consent_at,
+            stt_audio_expires_at=payload.stt_audio_expires_at,
+            writer_instance_id=payload.writer_instance_id,
         )
 
         saved = await self.log_repo.create(log)
@@ -187,6 +200,18 @@ async def persist_detection_guidance_log(
     device_id: int | None = None,
     frame_path: str | None = None,
     latency_stages: dict[str, float] | None = None,
+    event_source: str | None = None,
+    stt_transcript_text: str | None = None,
+    stt_audio_path: str | None = None,
+    stt_audio_storage_status: str | None = None,
+    stt_audio_format: str | None = None,
+    stt_audio_size_bytes: int | None = None,
+    stt_audio_duration_ms: int | None = None,
+    stt_audio_sha256: str | None = None,
+    stt_audio_error_code: str | None = None,
+    stt_audio_consent_at: datetime | None = None,
+    stt_audio_expires_at: datetime | None = None,
+    writer_instance_id: str | None = None,
 ) -> DetectionGuidanceLogResponse:
     """FastAPI Depends(get_db) 요청 컨텍스트 밖(WS 컨슈머 등)에서 로그를 저장하는 헬퍼.
 
@@ -200,6 +225,13 @@ async def persist_detection_guidance_log(
     """
     stages = dict(latency_stages) if latency_stages else None
     db_save_start = time.perf_counter()
+    effective_event_source = event_source or (
+        "stt" if event_id is not None and event_id.startswith("stt-") else "detection"
+    )
+    effective_audio_status = stt_audio_storage_status or (
+        "not_saved" if effective_event_source == "stt" else "not_applicable"
+    )
+    effective_writer = writer_instance_id or os.getenv("WRITER_INSTANCE_ID") or os.getenv("HOSTNAME")
     payload = DetectionGuidanceLogCreate(
         event_id=event_id,
         user_id=user_id,
@@ -210,6 +242,18 @@ async def persist_detection_guidance_log(
         tts_text=tts_text,
         frame_path=frame_path,
         latency_json=json.dumps(stages, ensure_ascii=False) if stages else None,
+        event_source=effective_event_source,
+        stt_transcript_text=stt_transcript_text,
+        stt_audio_path=stt_audio_path,
+        stt_audio_storage_status=effective_audio_status,
+        stt_audio_format=stt_audio_format,
+        stt_audio_size_bytes=stt_audio_size_bytes,
+        stt_audio_duration_ms=stt_audio_duration_ms,
+        stt_audio_sha256=stt_audio_sha256,
+        stt_audio_error_code=stt_audio_error_code,
+        stt_audio_consent_at=stt_audio_consent_at,
+        stt_audio_expires_at=stt_audio_expires_at,
+        writer_instance_id=effective_writer,
     )
     async with async_sessionmaker_factory() as session:
         service = DetectionGuidanceLogService(session)

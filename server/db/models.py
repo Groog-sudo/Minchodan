@@ -338,6 +338,10 @@ class DetectionGuidanceLog(Base):
         Index("IDX_DETECTION_GUIDANCE_LOGS_DEVICE_ID", "device_id"),
         Index("IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT", "detected_at"),
         Index("IDX_DETECTION_GUIDANCE_LOGS_STREAM_TYPE", "stream_type"),
+        Index("idx_detection_guidance_logs_event_source_detected_at", "event_source", "detected_at"),
+        Index("idx_detection_guidance_logs_stt_audio_status", "stt_audio_storage_status", "detected_at"),
+        Index("idx_detection_guidance_logs_stt_audio_path", "stt_audio_path"),
+        Index("idx_detection_guidance_logs_writer_instance_id", "writer_instance_id"),
         {"sqlite_autoincrement": True},
     )
 
@@ -395,6 +399,34 @@ class DetectionGuidanceLog(Base):
         default=lambda: datetime.now(UTC),
         server_default=func.now(),
     )
+    event_source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="unknown",
+        server_default="unknown",
+    )
+    stt_transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stt_audio_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stt_audio_storage_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="not_applicable",
+        server_default="not_applicable",
+    )
+    stt_audio_format: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    stt_audio_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    stt_audio_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stt_audio_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stt_audio_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stt_audio_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    stt_audio_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    writer_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     user: Mapped[AppUser | None] = relationship(back_populates="detection_guidance_logs")
     device: Mapped[UserDevice | None] = relationship(back_populates="detection_guidance_logs")

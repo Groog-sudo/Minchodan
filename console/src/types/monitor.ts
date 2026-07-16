@@ -70,6 +70,23 @@ export interface DetectionGuidanceLogRow {
   // 인지 경로는 rag/llm/tts까지, STT 경로는 stt/llm/tts까지 포함한다(경유한 스테이지만 존재).
   latency_json: string | null;
   created_at: string;
+  event_source: "detection" | "stt" | "navigation" | "unknown";
+  stt_transcript_text: string | null;
+  stt_audio_path: string | null;
+  stt_audio_storage_status:
+    | "not_applicable"
+    | "not_saved"
+    | "available"
+    | "upload_failed"
+    | string;
+  stt_audio_format: string | null;
+  stt_audio_size_bytes: number | null;
+  stt_audio_duration_ms: number | null;
+  stt_audio_sha256: string | null;
+  stt_audio_error_code: string | null;
+  stt_audio_consent_at: string | null;
+  stt_audio_expires_at: string | null;
+  writer_instance_id: string | null;
 }
 
 // latency_json 파싱 결과 - 콘솔에서만 쓰는 화면 표시용 타입.
@@ -80,6 +97,7 @@ export interface LatencyStages {
   llm_ms?: number;
   tts_ms?: number;
   stt_ms?: number;
+  stt_audio_upload_ms?: number;
   db_save_ms?: number;
   total_ms?: number;
 }
