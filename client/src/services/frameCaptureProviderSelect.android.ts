@@ -188,7 +188,13 @@ export function useFrameCaptureProvider(
   }
 
   const onFrameBase64 = useRunOnJS(
-    (base64: string) => onStreamFrameBase64(base64),
+    (base64: string) => {
+      if (!didLogStreamFrame) {
+        didLogStreamFrame = true;
+        console.log("[Camera/Android] frameProcessor 반사 스트림 첫 프레임 수신");
+      }
+      onStreamFrameBase64(base64);
+    },
     [onStreamFrameBase64],
   );
 

@@ -67,31 +67,28 @@ def reflex_gate(
     frame_width: float,
 ) -> ReflexAlert | None:
     # =========================================================================
-    # 👨‍💻 담당자 직접 코딩 영역 시작: 2. 위험도 필터링 및 거리 판별 👨‍💻
-    # 💡 [면접 대비 주석]
-    # 질문: 시각장애인에게 사물의 위치와 거리를 어떻게 직관적으로 전달했나요?
-    # 답변: 단순히 사물이 있다는 것을 넘어, BBox의 X좌표를 기준으로 -1.0~1.0 사이의
-    #       Panning(입체음향 밸런스) 값을 도출해 해당 방향에서 소리가 나도록 했습니다.
-    #       또한, BBox의 하단(bottom_y)이 프레임 맨 밑바닥에 가까울수록 거리를 역산하여,
-    #       자동차 주차 센서처럼 거리가 가까워질수록 비프음이 급격히 빨라지고 진동이 강해지게 연산 로직을 직접 짰습니다.
+    # 👨‍💻 담당자 직접 코딩 영역 시작: 2. 위험도 필터링 및 거리 판별 (class-agnostic) 👨‍💻
+    # 💡 [설계 의도]
+    # 클래스명으로 분기하지 않고 "진행 방향 정면 근접 구역에 물체가 존재하는가" 자체로
+    # 반사 경보를 가동해 복잡성과 오탐 위험도를 줄였습니다.
     # =========================================================================
-    # 1. 감지된 사물이 HIGH_RISK_CLASSES에 없으면 통과(None 반환)
-    min_confidence = HIGH_RISK_CLASSES.get(detection.class_name)
-    if min_confidence is None:
+    if frame_width <= 0 or frame_height <= 0:
         return None
 
-    # 1-1. 클래스별 최소 confidence 미달 시 통과 (실내 오탐 완화)
-    if detection.confidence < min_confidence:
+    # 3. confidence는 클래스 신뢰도가 아닌 "물체 존재 신뢰도"로만 사용 (기준 0.35)
+    if detection.confidence < 0.35:
         return None
 
-    # 2. [2026-07-14] 직접 충돌 위험 객체 필터 기준 완화 (기존 0.95는 너무 가혹해 무반응 발생)
-    # 조건 A: 사물의 바닥(bottom_y)이 화면 하단 18% 영역 안으로 들어왔는가 (인접 위험선)
-    bottom_y = detection.bbox.y + detection.bbox.h
-    is_very_close = bottom_y > frame_height * 0.82 if frame_height > 0 else True
-
-    # 조건 B: 사물의 중심(center_x)이 좌우 20% 여백을 제외한 중앙 60% 영역 내에 있는가
+    # 1. bbox 중심이 화면 중앙 존 (가로 40% 이내: 30% ~ 70%)에 있는가
     center_x = detection.bbox.x + detection.bbox.w / 2
-    is_centered = (frame_width * 0.2) <= center_x <= (frame_width * 0.8) if frame_width > 0 else True
+    center_x_norm = center_x / frame_width
+    is_centered = 0.30 <= center_x_norm <= 0.70
+
+    # 2. bbox 크기 (면적 비율)로 근접도 추정
+    bbox_area = detection.bbox.w * detection.bbox.h
+    frame_area = frame_width * frame_height
+    area_ratio = bbox_area / frame_area
+    is_very_close = area_ratio >= 0.08
 
     # 두 조건 중 하나라도 충족되지 않으면 즉각 반사(정지)에서 제외
     if not (is_very_close and is_centered):
@@ -99,15 +96,15 @@ def reflex_gate(
     # =========================================================================
 
     direction = estimate_direction(detection.bbox, frame_width, distance_class="near")
-    alert_id = f"high_{detection.class_name}_{direction}"
+    alert_id = f"high_obstacle_{direction}"
 
     # 1. Panning 계산: center_x 위치 기준 -1.0(좌) ~ 1.0(우)
-    center_x = detection.bbox.x + detection.bbox.w / 2
     panning = (center_x / frame_width) * 2 - 1.0
     panning = max(-1.0, min(1.0, panning))
 
     # 2. Distance 계산: 화면 전체(bottom_y: 0 ~ frame_height)에 따른 거리 역산 (0.4m ~ 1.5m 매핑)
-    ratio = bottom_y / frame_height if frame_height > 0 else 1.0
+    bottom_y = detection.bbox.y + detection.bbox.h
+    ratio = bottom_y / frame_height
     ratio = max(0.0, min(1.0, ratio))
 
     # ratio가 1.0일수록 최하단에 인접해있으므로 거리(distance)는 짧아짐 (1.5m -> 0.4m)
@@ -133,7 +130,6 @@ def reflex_gate(
         alert_id=alert_id,
         direction=direction,
         # 클라이언트가 client/assets/sounds/reflex_clips/에 동일 파일명으로 번들 재생한다.
-        # (2026-07-09: mp3 인코더 없이 macOS say로 생성 가능한 wav로 확정)
         clip=f"reflex_clips/high_{direction}.wav",
         haptic=True,
         panning=panning,
@@ -141,8 +137,7 @@ def reflex_gate(
         beep_interval_ms=beep_interval_ms,
         haptic_pattern=haptic_pattern,
         ts=0.0,
-        # 2026-07-14 추가: 관제 콘솔 발화 추적용 객체 정보 전달.
         track_id=detection.track_id,
-        class_name=detection.class_name,
+        class_name="obstacle",
         hit_count=detection.hit_count,
     )

@@ -17,7 +17,11 @@ from server.detection.gates.reflex_gate import reflex_gate
 from server.detection.gates.surface_gate import surface_gate
 from server.detection.path_risk import classify_path_risk, compute_path_risk_ratio
 from server.detection.schemas import Detection, DetectionResult, ReflexAlert, SurfaceResult
-from server.detection.surface_departure import braille_follow_direction, check_sidewalk_departure
+from server.detection.surface_departure import (
+    braille_follow_direction,
+    check_sidewalk_departure,
+    point_in_polygon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +135,60 @@ class DetectionPipeline:
             surfaces = []
 
         detections = await self.tracker.update(detections, self.redis_bus)
+
+        # 1. 진단 및 2. 완화 조치 (교차검증 게이트 + 시간적 지속성)
+        filtered_detections = []
+        hallucination_count = 0
+        total_detections = len(detections)
+
+        # 1회성 진단 로깅을 위한 멤버 변수 설정
+        if not hasattr(self, "_has_logged_diagnostic"):
+            self._has_logged_diagnostic = False
+            self._hallucination_total = 0
+            self._detections_total = 0
+
+        for det in detections:
+            # 시간적 지속성 강화 (최소 4프레임 이상 유지된 경우만 승격, Mock/테스트 등은 예외)
+            if det.track_id is not None and det.hit_count < 4:
+                continue
+
+            overlap = 0.0
+            if surfaces:
+                # 3x3 격자 샘플링으로 bbox와 segmentation 폴리곤 간의 겹침 비율 계산
+                sample_points = []
+                for rx in [0.25, 0.5, 0.75]:
+                    for ry in [0.25, 0.5, 0.75]:
+                        px = det.bbox.x + det.bbox.w * rx
+                        py = det.bbox.y + det.bbox.h * ry
+                        sample_points.append((px, py))
+
+                hits = 0
+                for point in sample_points:
+                    for surf in surfaces:
+                        if not surf.polygon:
+                            continue
+                        if point_in_polygon(point, surf.polygon):
+                            hits += 1
+                            break
+                overlap = hits / len(sample_points)
+
+            # a) Detection-Segmentation 교차검증 게이트 (겹침 비율 30% 미만 무시)
+            if overlap < 0.30:
+                hallucination_count += 1
+                continue
+
+            filtered_detections.append(det)
+
+        if total_detections > 0:
+            if not self._has_logged_diagnostic:
+                self._hallucination_total += hallucination_count
+                self._detections_total += total_detections
+                if self._detections_total >= 30:
+                    ratio = self._hallucination_total / self._detections_total
+                    logger.info(f"[OOD DIAGNOSTIC] 겹치지 않는 탐지 (허공/환각 탐지) 비율: {ratio * 100:.1f}%")
+                    self._has_logged_diagnostic = True
+
+        detections = filtered_detections
 
         reflex_alert = self._evaluate_reflex(detections, height, width)
         if reflex_alert is not None:
