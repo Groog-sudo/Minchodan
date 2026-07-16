@@ -39,7 +39,7 @@
 
 - **커밋**: `fix: render bbox on client by sending server yolo detection results`
 - **변경 내용**:
-  - 원인 분석: 
+  - 원인 분석:
     - 안드로이드 실기기(REAL) 모드에서는 ANE 가속/TFLite 추론 시 발생하는 JS CPU 과부하 및 Watchdog SIGKILL 크래시를 방지하기 위해 캡처 후 변환된 Float32Array 텐서 데이터 전송을 생략(빈 텐서 전달)하여 온디바이스 추론이 동작하지 않았음.
     - 기존 클라이언트 BBox Overlay 렌더링 코드가 오직 온디바이스 추론 결과(`detections`)에만 의존하도록 설계되어 있었으며, 서버에서 실시간 YOLO/Segmentation 추론을 정상 처리함에도 탐지된 검출 결과를 모바일 앱으로 실어 보내는 전송 규격이 없었기에 BBox가 전혀 그려지지 않는 문제 발생.
   - 전송 규격 설계 및 도입:
@@ -104,7 +104,7 @@
 
 - **커밋**: `fix: prevent empty on-device detections from overwriting server detections in REAL mode`
 - **변경 내용**:
-  - 원인 분석: 
+  - 원인 분석:
     - 안드로이드 실기기(REAL) 모드에서는 텐서 디코딩 생략 정책으로 인해 온디바이스 추론 결과(`det` 및 `seg`)가 항상 빈 배열(`[]`)로 반환됨.
     - 그러나 단말 앱의 `CameraView.tsx` 내부 `handleFrame` 비동기 루프에서 매 120ms~300ms 주기마다 온디바이스 추론 결과를 `setDetectionsRef` 및 `setLastDetectRef`를 통해 상태에 직접 덮어쓰도록 설계되어 있었음.
     - 이로 인해 서버에서 실시간 전송한 `"server_detection"` 메시지 정보와 가이드 텍스트가 정상 수신되었음에도, 즉각적으로 온디바이스의 빈 배열(`[]`) 상태에 의해 지워지거나 덮어써져 BBox가 화면에 아예 렌더링되지 않았음.
@@ -295,7 +295,7 @@
 
 - **커밋**: `fix: resolve VisionCamera v4 kotlin compilation errors and fix metro loopback binding via custom uri scheme`
 - **변경 내용**:
-  - **코틀린 네이티브 소스 수술 (v4 규격 부합화)**: 
+  - **코틀린 네이티브 소스 수술 (v4 규격 부합화)**:
     - [MainApplication.kt](file:///client/android/app/src/main/java/com/minchodan/app/MainApplication.kt) 내에서 최신 SDK v4에서 폐기(Deprecated)된 네이티브 플러그인 등록 메서드인 `registerFrameProcessorPlugin` 호출 인터페이스를 공식 신규 규격인 `addFrameProcessorPlugin` 체계로 전면 개정하여 바인딩 정합성을 맞춤[cite: 4, 12].
     - [ReflexFrameProcessorPlugin.kt](file:///client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt) 내에서 기존에 카메라 화면 회전 처리를 위해 일반 `String` 상수로 단순 대입 처리하던 불안정한 코드를, 컴파일러가 요구하는 정식 `Orientation Enum` 매핑 구조로 원시 타입을 격상하여 그레이들 컴파일 에러를 해결함[cite: 4, 12].
   - **Localhost 루프백 바인딩 탈출 및 네트워크 정상화**:
@@ -315,7 +315,7 @@
 
 - **커밋**: `fix: resolve object detection failure by fixing aspect ratio distortion via center crop`
 - **변경 내용**:
-  - 원인 분석: 
+  - 원인 분석:
     - 안드로이드 실기기 캡처 시 스마트폰 고유의 직사각형 해상도(3:4 / 9:16) 이미지를 가로세로 비율 유지 없이 강제로 640x640 정사각형으로 압축하여 AI에게 전달하고 있었음.
     - 물체가 세로로 심하게 왜곡(찌그러짐)되어 정비율 데이터로 파인튜닝된 커스텀 YOLO 모델(`best_20260705.pt`)의 인식률이 급감하여 `[실시간 감지] 없음` 현상이 지속됨.
     - 또한 `CameraView.tsx` 프리뷰 UI는 정중앙 기준 1:1 정사각형 뷰를 렌더링하므로 AI가 인지한 좌표와 유저가 보는 화면 좌표 사이에 극심한 불일치(우주 미아 현상)가 발생했음.
@@ -336,7 +336,7 @@
 
 - **커밋**: `fix: implement server_detection validation guard and cleanup compilation anomalies`
 - **변경 내용**:
-  - **무선 통신 안정화 및 가드 주입**: 
+  - **무선 통신 안정화 및 가드 주입**:
     - 외부망 ngrok 터널링 환경에서 서버로부터 유입되는 `"server_detection"` 웹소켓 페이로드의 정합성을 검증하기 위해 `src/components/CameraView.tsx` 내에 `Array.isArray` 유효성 검사 및 빈 객체 방어 가드를 신설함.
     - 데이터 역직렬화 도중 비동기 타이림 desync로 인해 발생할 수 있던 클라이언트 앱의 즉사(크래시) 현상을 완벽히 차단함.
   - **빌드 파이프라인 정상화**:
@@ -386,9 +386,9 @@
 ### 2026-07-13 | 모바일/AI | 실기기 29종 객체 탐지 박스 화면 미표시 버그 해결을 위한 최소 신뢰도 임계값 완화
 
 - **변경 내용**:
-  - **원인 분석**: 
+  - **원인 분석**:
     - 서버에서 파인튜닝 YOLOv8 가중치(`best_20260705.pt`)를 통해 `fire_hydrant` 등의 객체를 성공적으로 검출하여 전송하고 있음에도 화면에 탐지 박스가 나타나지 않는 현상을 분석함.
-    - 모바일 앱의 [CameraView.tsx](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/components/CameraView.tsx) 내부에 실내 오탐 방지용으로 설계된 개별 클래스별 최소 신뢰도 기준(`CLASS_MIN_CONFIDENCE`)이 `0.5` ~ `0.6` 수준으로 매우 높게 하드코딩되어 있었음. 
+    - 모바일 앱의 [CameraView.tsx](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/components/CameraView.tsx) 내부에 실내 오탐 방지용으로 설계된 개별 클래스별 최소 신뢰도 기준(`CLASS_MIN_CONFIDENCE`)이 `0.5` ~ `0.6` 수준으로 매우 높게 하드코딩되어 있었음.
     - 그에 따라 신뢰도가 `0.53` 수준으로 정상 감지된 실물 객체 정보가 화면 드로잉 직전에 전부 필터링(무시)되고 있었음. (세그멘테이션 노면 결과는 서버단에서 무조건 `1.0` 으로 강제 주입해 쏘기 때문에 100% 보였음.)
   - **조치 내용**:
     - [CameraView.tsx](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/components/CameraView.tsx) 내 `CLASS_MIN_CONFIDENCE` 임계값 테이블을 현실적인 수치인 `0.30` ~ `0.35`로 일괄 인하 조치함.
@@ -570,6 +570,7 @@
     | **내일 방향** | 정면 외곽 방향 오발화 판단 로직을 우선 수정한 후, 모바일 온디바이스의 **Scene Classification(장면 분류)**을 통해 씬 분류 결과(`is_outdoor`)를 공유받아 실내/실외 **Profile(프로파일, 설정 프로필)** 게이트 임계값을 다원 분기 설계할 예정입니다. | 환경별 독립 임계치 프로파일 분기를 통한 환각 오탐 원천 차단 계획 |
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/config.py`, `docs/handoff/2026-07-15_reflex_ood_handoff.md`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
+<<<<<<< HEAD
 
 ---
 
@@ -586,3 +587,5 @@
 
 
 
+=======
+>>>>>>> dev
