@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(dotenv_path=os.path.join(_PROJECT_ROOT, ".env"))
 
+GUIDE_CLIPS_DIR = os.path.join(_PROJECT_ROOT, "data", "guide_clips")
+
 # 인지 경로 기본 발화 속도. Supertonic/Piper/pyttsx3 공통.
 # 0.85: 시각장애인 안내 가독성(너무 빠른 기계음 체감 완화). Piper 단독 보정은
 # PIPER_DEFAULT_LENGTH_SCALE로 덮어쓸 수 있다.
@@ -60,13 +62,53 @@ class RealtimeTTS:
     # 1.4~1.9초를 차지해 STT 왕복 체감 지연의 주요인이었다(실기기 실측).
     CACHE_MAX_ENTRIES = 64
 
-    def __init__(self, tts_service=None):
+    def __init__(self, tts_service=None, guide_clips_dir: str | None = None):
         # 전달받은 유효시간을 인스턴스 변수에 저장
         # 기본값은 클래스 상수인 60초를 사용
         self.tts = tts_service or get_tts_service()
+        self._guide_clips_dir = guide_clips_dir or GUIDE_CLIPS_DIR
         # (text, voice, speed) -> (b64_audio, duration_ms). 삽입 순서 유지되는
         # dict를 FIFO로 운용해 상한 초과 시 가장 오래된 항목부터 제거한다.
         self._cache: dict[tuple[str, str, float], tuple[str, float]] = {}
+        # 패스트 레인 사전합성 클립: cache_key -> (b64_audio, duration_ms)
+        self._guide_clip_cache: dict[str, tuple[str, float]] = {}
+
+    def _guide_clip_path(self, cache_key: str) -> str:
+        return os.path.join(self._guide_clips_dir, f"{cache_key}.wav")
+
+    def _load_guide_clip(self, cache_key: str) -> tuple[str, float] | None:
+        """data/guide_clips/{cache_key}.wav 사전합성 파일을 로드한다."""
+        if not cache_key:
+            return None
+        cached = self._guide_clip_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        clip_path = self._guide_clip_path(cache_key)
+        if not os.path.isfile(clip_path):
+            return None
+        try:
+            with open(clip_path, "rb") as f:
+                audio_bytes = f.read()
+            if not audio_bytes:
+                return None
+            b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
+            duration_ms = _wav_duration_ms(audio_bytes)
+            self._guide_clip_cache[cache_key] = (b64_audio, duration_ms)
+            logger.info(f"[TTS] 패스트 레인 클립 히트: {cache_key}")
+            return b64_audio, duration_ms
+        except OSError as e:
+            logger.warning(f"[TTS] 패스트 레인 클립 로드 실패({cache_key}): {e}")
+            return None
+
+    async def synthesize_fast_lane(
+        self, orch_output: dict, voice: str = "ko", speed=DEFAULT_SPEED
+    ) -> tuple[str | None, float]:
+        """패스트 레인 결과: 사전합성 클립 우선, 없으면 guidance_text 실시간 합성."""
+        cache_key = (orch_output or {}).get("fast_lane_cache_key", "")
+        clip = self._load_guide_clip(cache_key)
+        if clip is not None:
+            return clip
+        return await self.synthesize_from_llm(orch_output, voice=voice, speed=speed)
 
     async def synthesize(self, text, voice="ko", speed=DEFAULT_SPEED):
         """

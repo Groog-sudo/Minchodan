@@ -33,10 +33,11 @@ description: |
 
 [6단계: LLM 가이드 오케스트레이터]
    ├── L1: 룰 기반 위험도 분류 (high는 이미 반사 경로에서 처리됨, mid/low만 진입)
-   ├── L2: ChatOllama(gemma4:e4b) ainvoke — 20자/방향 포함
+   ├── Fast Lane (2026-07-16): 단일 객체+clock+distance → 템플릿 (<50ms, LLM 생략)
+   ├── L2: ChatOllama(gemma4:e4b) ainvoke — 20자/방향 포함 (복합/예외)
    └── L3: 가드레일 검증, RETRY(최대 1회)
 
-[7단계: 실시간 TTS]  guidance_text
+[7단계: 실시간 TTS]  guidance_text (패스트 레인: data/guide_clips/ 사전합성 우선)
 ```
 
 > **주의**: `high` 위험도는 3단계 Reflex/Surface Gate에서 이미 반사 경로(사전합성 클립)로 처리됩니다. L1은 **mid/low만 진입**시킵니다.
@@ -80,6 +81,7 @@ server/orchestration/
 ├── llm_client_factory.py      # BaseChatModel Ollama  gpt-4o-mini 핫스왑
 └── nodes/
     ├── l1_classifier.py       # L1: 룰 기반 위험도 분류 (mid/low만 진입)
+    ├── fast_lane.py           # 패스트 레인: 템플릿 안내 (단일 객체+구조화 필드)
     ├── l2_generator.py        # L2: ChatOllama(gemma4:e4b) ainvoke
     ├── l3_validator.py        # L3: 길이·방향 검증, RETRY(최대 1회)
     └── fallback_node.py       # 최종 실패  고정 문장

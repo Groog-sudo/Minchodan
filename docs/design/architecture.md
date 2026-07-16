@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.7 (2026-07-13 §13.2 저지연 Redis Streams 완충 메트릭 발행 채널(`publish_metric`) 구현 추가 및 §13.3.2 SSE 신규 이벤트(audio_validation/accessibility_validation/cache_suppression/langsmith_trace) 실제 연동 정리)
+> **버전**: v0.4.8 (2026-07-16 §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -544,7 +544,7 @@ sequenceDiagram
 
 **채널 A - SSE `/api/v1/monitor/stream`** (`server/mcp/manager.py` MCPManager, `server/api/monitor.py`)
 
-관제 상태성 지표 및 MCP 검증 메트릭을 실시간으로 브로드캐스트한다. 실제 발행되는 `event_type`은 8가지다.
+관제 상태성 지표 및 MCP 검증 메트릭을 실시간으로 브로드캐스트한다. in-process `MCPManager.broadcast_event()`로 직접 발행되는 `event_type`은 9가지다.
 
 | event_type | 발행 위치 | 콘솔 소비 패널 |
 | :--- | :--- | :--- |
@@ -552,12 +552,13 @@ sequenceDiagram
 | `session_status` | `server/api/ws_router.py` `_broadcast_session_status()` - 단말 연결/heartbeat_ack(RTT 갱신)/해제 3개 지점 | `SessionStatus` |
 | `llm_status` | `NavigationManager._broadcast_nav_change()`(내비게이션 상태) + `DetectionConsumer._broadcast_ai_pipeline_status()` | `AiPipelineMonitor` |
 | `detection_event` | `DetectionConsumer._broadcast_detection_event()` - 탐지/노면 분류가 있는 프레임마다 | `DetectionFeed` |
+| `risk_event` | `DetectionConsumer._broadcast_risk_event()` - 반사/인지 경보가 **실제 전송 성사**된 직후 | `RiskEventLog` |
 | `audio_validation` | `server/tts/realtime_tts.py` 및 `server/mcp/audio_validator.py` - TTS 음성 규격 및 TTFB 지연 시간 검증 시 | `McpValidationMonitor` (오디오 검증) |
 | `cache_suppression` | `server/mcp/cache_monitor.py` - Redis 억제 캐시 키 및 남은 TTL 상시 감시 시 | `McpValidationMonitor` (캐시 모니터) |
 | `accessibility_validation` | `server/tts/realtime_tts.py` 및 `server/mcp/accessibility_simulator.py` - 발화 방향성/의미 대조 검증 시 | `McpValidationMonitor` (접근성 검증) |
 | `langsmith_trace` | `server/orchestration/graph.py` 및 `server/mcp/langsmith_tracer.py` - LangGraph 노드 지연 및 전이 상태 검증 시 | `McpValidationMonitor` (LangSmith 추적) |
 
-`rag_score` 등 콘솔 타입에는 정의돼 있지만 서버가 채우지 않는 필드가 일부 남아 있다. `RiskEventLog`가 구독하는 `risk_event`는 **아직 서버 어디서도 발행되지 않아 항상 빈 상태**다(후속 과제).
+`rag_score` 등 콘솔 타입에는 정의돼 있지만 서버가 채우지 않는 필드가 일부 남아 있다. `risk_event`는 Redis `risk.events` 스트림이 아니라 위 표와 같이 `DetectionConsumer`가 SSE in-process 브로드캐스트한다(2026-07-16 wiring).
 
 **채널 B - WS `/ws/console/live-feed`** (`server/api/session_manager.py` `console_connections`, `console/src/api/useLiveFeed.ts`)
 

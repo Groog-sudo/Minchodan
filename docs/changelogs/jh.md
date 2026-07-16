@@ -503,6 +503,21 @@
   - `.claude/` 하위 스킬·설정 파일의 Git 추적을 제거해 `.gitignore`의 `.claude/` 정책과 정합화 (로컬 스킬은 `.agents/skills/` 기준 유지)
   - `server/models/piper/piper-kss-korean.onnx` Git 추적 제거 (`*.onnx` gitignore 정책 정합, 로컬 폴백 가중치는 필요 시 별도 배치)
   - `scratch/create_default_admin.py` 제거 (`scratch/` gitignore 정책 정합)
+
+---
+
+### 2026-07-16 | 콘솔 UI | 회원 목록 및 Detection Guidance Log 페이지네이션 UX 통일
+
+- **커밋**: `feat(console): 회원 목록 및 detection guidance log 페이지네이션 UX 통일`
+- **변경 내용**:
+  - `MembersPage`의 등록 회원 목록 페이지네이션을 이전/다음 화살표, 10개 번호창, `...` 점프 검색, 마지막 페이지 버튼 형태로 정리함
+  - `...` 점프 버튼 클릭 시 페이지 번호를 직접 입력하는 검색 팝오버를 추가해 버튼이 보이지 않는 구간으로도 바로 이동할 수 있게 함
+  - `totalCount <= 11`일 때는 페이지네이션 컨트롤을 비활성화해 소량 데이터에서 불필요한 조작을 막도록 정리함
+  - `DetectionGuidanceLogTable`에도 동일한 페이지네이션 UX를 적용하고, `DashboardPage`에서 직접 페이지 점프 콜백을 전달하도록 연결함
+  - 콘솔 스타일에 맞춰 점프 버튼 폭과 팝오버 스타일을 정리하고, 전체 건수 표시처럼 불필요한 문구는 제거함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`
+- **검증 결과**: `console` 빌드(`npm run build`) 성공 확인
+- **비고**: 회원 관리와 감지 이력의 페이지 이동 패턴을 동일하게 맞춰 운영자 콘솔의 조작 일관성을 높인 작업임
   - `docs/ops/reports/` 임시 역활 보고서(TTS 반사경로·Navigation 가이드 기준 연동 적용 완료 보고서) 삭제
 - **관련 파일**: `console/src/components/McpValidationMonitor.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `.claude/**`, `server/models/piper/piper-kss-korean.onnx`, `scratch/create_default_admin.py`, `docs/ops/reports/`, `docs/changelogs/jh.md`
 - **검증 결과**:
@@ -752,3 +767,29 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 회원 관리 화면의 폼 배치/스타일 변경만 포함하며 API/비즈니스 로직은 변경하지 않음
+
+---
+
+### 2026-07-16 | RAG 데이터 | STT/TTS 음독 안정화를 위한 숫자 한글화 정규화
+
+- **커밋**: `data(rag): convenience_guidelines 숫자 한글화 및 시간/날짜/전화/주소 표기 정규화`
+- **변경 내용**:
+  - `data/convenience_guidelines.json`의 STT/TTS 음독 대상 문자열에서 숫자 표기를 한글 음절(`공일이삼사오육칠팔구`) 기준으로 정규화함
+  - 전화번호를 하이픈 단위 한글 숫자 표기로 통일함
+  - 시간 표기를 `다시` 구분 형식으로 정리함
+  - 날짜 표기를 `다시` 구분 형식으로 정리함
+  - 주소의 건물번호/우편번호 숫자 표기를 한글 숫자로 변환함
+- **관련 파일**: `data/convenience_guidelines.json`, `docs/changelogs/jh.md`
+- **검증 결과**: JSON 파싱 검증 완료, 요청된 필드(시간/날짜/전화/주소) 숫자 한글화 반영 완료
+- **비고**: ID/타입 키 및 좌표(lat/lon)는 시스템 참조/연동 호환을 위해 유지함
+
+---
+
+### 2026-07-16 | Git·문서 | jh → dev 병합 및 convenience Chroma 재빌드
+
+- **커밋**: dev merge commit + docs sync
+- **변경 내용**:
+  - `origin/jh` 2커밋을 `dev`에 `--no-ff` 병합(충돌 없음, `DetectionGuidanceLogTable`/`DashboardPage`/`styles.css` 자동 병합).
+  - `python scripts/build_convenience_db.py`로 `data/chroma_db/convenience_guidelines` 재빌드(75문서, 한글화 JSON 반영).
+  - `api_specification.md` v0.4.23: convenience 재빌드 절차·콘솔 페이지네이션 UX 명시.
+- **배포 전 확인**: dev/스테이징에서도 `build_convenience_db.py` 재실행(Ollama `nomic-embed-text` 필요).

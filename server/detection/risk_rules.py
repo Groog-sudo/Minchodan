@@ -102,7 +102,16 @@ CLASS_TEXT = {
     "wheelchair": "휠체어",
 }
 
-# =========================================================================
+# Phase 2 SSoT: 인지 경로(L2/fallback/guide) 한국어 객체명은 본 테이블만 사용한다.
+
+
+def class_name_to_ko(class_name: str) -> str:
+    """영어 class_name을 한국어 표시명으로 변환. 미등록 시 입력값 그대로 반환."""
+    if not class_name:
+        return "장애물"
+    return CLASS_TEXT.get(class_name, class_name)
+
+
 # 👨‍💻 HARD CODE 영역 끝
 # =========================================================================
 

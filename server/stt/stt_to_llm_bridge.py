@@ -255,6 +255,80 @@ class SttToLlmBridge:
             "validation_errors": [],
         }
 
+    @staticmethod
+    def _normalize_stt_text(text: str | None) -> str:
+        normalized = (text or "").strip()
+        return normalized.replace("내비게이션", "네비게이션")
+
+    def should_play_stt_wait_notice(
+        self,
+        device_id: str,
+        normalized_text: str | None = None,
+    ) -> bool:
+        """경로 검색·RAG·LLM 등 장시간 후속 처리 전 대기 안내 멘트 재생 여부.
+
+        normalized_text가 None이면 전사 전(세션 상태만) 판별한다.
+        목적지 대기·질문 답변 대기처럼 Whisper+후속 API가 길어질 상황을 커버한다.
+        """
+        from server.navigation.manager import nav_manager
+
+        if normalized_text is None:
+            if nav_manager.get_status(device_id) == "WAITING_FOR_DESTINATION":
+                return True
+            return nav_manager.is_awaiting_question(device_id)
+
+        text = self._normalize_stt_text(normalized_text)
+        if not text:
+            return False
+        if self._check_self_echo(device_id, text):
+            return False
+
+        if nav_manager.is_awaiting_question(device_id):
+            return not any(kw in text for kw in QUESTION_TRIGGER_KEYWORDS)
+
+        if nav_manager.is_awaiting_intent(device_id):
+            return False
+
+        current_status = nav_manager.get_status(device_id)
+        if current_status == "WAITING_FOR_DESTINATION":
+            return True
+
+        shutdown_keywords = [
+            "네비게이션 꺼줘",
+            "길안내 종료해줘",
+            "길안내 종료",
+            "네비게이션 기능 꺼줘",
+            "길안내 꺼줘",
+            "길댕아 꺼",
+            "네비게이션 꺼",
+            "네비게이션 기능 꺼",
+            "길안내 꺼",
+            "그만",
+            "안내 그만",
+        ]
+        if any(kw in text for kw in shutdown_keywords):
+            return False
+
+        wakeup_keywords = [
+            "네비게이션 켜줘",
+            "길안내 시작해줘",
+            "길안내 시작",
+            "네비게이션 기능 켜줘",
+            "네비게이션 시작",
+            *GILDAENG_NAV_INTENT_KEYWORDS,
+        ]
+        if any(kw in text for kw in wakeup_keywords):
+            return False
+        if any(kw in text for kw in QUESTION_TRIGGER_KEYWORDS):
+            return False
+        if _is_gildaeng_wake(text) and current_status != "WAITING_FOR_DESTINATION":
+            return False
+
+        if (not nav_manager.is_detection_enabled(device_id)) or _looks_like_question(text):
+            return True
+
+        return True
+
     async def invoke_existing_llm(self, stt_result: SttTranscribeResult, device_id: str) -> dict:
         """
         [바이브 코딩 부분]
@@ -276,13 +350,7 @@ class SttToLlmBridge:
         validate_stt_bridge_config()
 
         # [바이브 코딩 부분] 공백/None 입력을 동일 규칙으로 처리하기 위한 정규화 단계
-        normalized_text = (stt_result.text or "").strip()
-
-        # [바이브 코딩 부분] 2026-07-10 추가: Whisper가 "네비게이션"을 표준 표기인
-        # "내비게이션"으로 인식하는 경우가 실기기에서 관측됨(같은 발화가 매번 다르게
-        # 전사됨) - 키워드 리스트마다 두 표기를 중복 등록하는 대신 여기서 한 번만
-        # 표준화해 이후 모든 키워드 매칭이 "네비게이션" 표기만 신경 쓰면 되게 한다.
-        normalized_text = normalized_text.replace("내비게이션", "네비게이션")
+        normalized_text = self._normalize_stt_text(stt_result.text)
 
         # [하드 코딩 부분 - 핵심] 입력 없음은 안전 우선 안내로 즉시 종료한다.
         if not normalized_text:

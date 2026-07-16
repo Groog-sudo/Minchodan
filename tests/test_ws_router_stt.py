@@ -41,6 +41,77 @@ def _fake_wav_b64() -> str:
 
 
 @pytest.mark.asyncio
+async def test_stt_audio_slow_path_sends_wait_notice_before_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_result = SttTranscribeResult(
+        model_name="faster-whisper-medium",
+        text="서울역으로 가줘",
+        language="ko",
+        duration=1.2,
+        segments=[],
+        has_input=True,
+        saved_file="dummy.wav",
+    )
+    monkeypatch.setattr(
+        ws_router_module.SttService,
+        "transcribe_file",
+        classmethod(lambda cls, saved_path, model_name: fake_result),
+    )
+
+    async def _fake_invoke(self, stt_result, device_id):
+        return {
+            "guidance_text": "서울역까지 보행 경로 안내를 시작합니다.",
+            "used_fallback_llm": True,
+            "source": "navigation-setup-success",
+        }
+
+    monkeypatch.setattr(ws_router_module.SttToLlmBridge, "invoke_existing_llm", _fake_invoke)
+
+    synth_calls: list[str] = []
+
+    async def _fake_synthesize(self, text, voice="ko", speed=0.9):
+        synth_calls.append(text)
+        return "ZmFrZS1hdWRpbw==", 900.0
+
+    monkeypatch.setattr(
+        ws_router_module.realtime_tts,
+        "synthesize",
+        _fake_synthesize.__get__(ws_router_module.realtime_tts),
+    )
+
+    class _FakeNav:
+        def get_status(self, device_id: str) -> str:
+            return "WAITING_FOR_DESTINATION"
+
+        def is_awaiting_question(self, device_id: str) -> bool:
+            return False
+
+        def is_awaiting_intent(self, device_id: str) -> bool:
+            return False
+
+        def is_detection_enabled(self, device_id: str) -> bool:
+            return True
+
+    monkeypatch.setattr("server.navigation.manager.nav_manager", _FakeNav())
+
+    async def _fake_persist(**_kwargs):
+        return None
+
+    monkeypatch.setattr(ws_router_module, "persist_detection_guidance_log", _fake_persist)
+
+    ws = _FakeWebSocket()
+    await _handle_stt_audio(ws, "dev-001", {"type": "stt_audio", "audio_b64": _fake_wav_b64()})
+
+    assert len(ws.sent) == 2
+    assert ws.sent[0]["source"] == "stt-wait-notice"
+    assert ws.sent[0]["guidance_text"] == "잠시만 기다려주세요!"
+    assert ws.sent[1]["source"] == "navigation-setup-success"
+    assert "잠시만 기다려주세요!" in synth_calls
+    assert len(ws.sent_bytes) == 2
+
+
+@pytest.mark.asyncio
 async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_result = SttTranscribeResult(
         model_name="faster-whisper-medium",
@@ -84,6 +155,21 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(ws_router_module, "persist_detection_guidance_log", _fake_persist)
 
+    class _FakeNavIdle:
+        def get_status(self, device_id: str) -> str:
+            return "IDLE"
+
+        def is_awaiting_question(self, device_id: str) -> bool:
+            return False
+
+        def is_awaiting_intent(self, device_id: str) -> bool:
+            return False
+
+        def is_detection_enabled(self, device_id: str) -> bool:
+            return True
+
+    monkeypatch.setattr("server.navigation.manager.nav_manager", _FakeNavIdle())
+
     ws = _FakeWebSocket()
     await _handle_stt_audio(ws, "dev-001", {"type": "stt_audio", "audio_b64": _fake_wav_b64()})
 
@@ -95,7 +181,8 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
     assert payload["duration_ms"] == 900.0
     assert payload["source"] == "navigation-setup-wakeup"
     assert ws.sent_bytes == [b"fake-audio"]
-    assert persisted[0]["detections"] == [{"source": "stt", "text_length": len(fake_result.text)}]
+    assert persisted[0]["detections"][0]["source"] == "stt"
+    assert persisted[0]["detections"][0]["text_length"] == len(fake_result.text)
 
 
 @pytest.mark.asyncio

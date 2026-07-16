@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.20 (2026-07-15 §8 SSE 버퍼 방지 헤더·연결 직후 system_metrics 스냅샷·콘솔 401 안내)
+> **버전**: v0.4.23 (2026-07-16 §6.3 convenience RAG 재빌드·§8.5/8.6 콘솔 페이지네이션 UX)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -345,7 +345,10 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
   "type": "guide",
   "event_id": "uuid",
   "risk_level": "mid",
-  "guidance_text": "2시 방향 킥보드 주의하세요",
+  "guidance_text": "전동 킥보드 주의하세요",
+  "clock_direction": "10시",
+  "distance_class": "near",
+  "object_ko": "전동 킥보드",
   "audio_codec": "wav",
   "duration_ms": 4820.5,
   "transport": "binary",
@@ -361,11 +364,17 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함). **2026-07-13 변경**: 방향 표현을 "좌측/우측"에서 실측 bbox 위치 기반 "N시 방향"(9시~3시, 12시=전방)으로 교체 - `server/detection/direction.py`의 `estimate_clock_direction()`이 계산해 L2 프롬프트에 실어주고, `server/orchestration/nodes/l3_validator.py`가 시계 패턴도 방향 키워드로 인정 |
+| `guidance_text` | L2/L3 생성 **음성 합성용** 텍스트 (한국어 1문장, 20자 내, 객체+행동 중심). 방향·거리는 구조화 필드로 분리(2026-07-16 Phase 2) |
+| `clock_direction` | 구조화 시계 방향 (예: `"10시"`, `"12시"`). `estimate_clock_direction()` 산출값. 음성 텍스트와 분리 |
+| `distance_class` | 구조화 거리 등급 (`near` / `medium` / `far`). `estimate_distance()` 산출값. **반사 `reflex_alert`의 미터 단위 `distance`와 별개** |
+| `object_ko` | 구조화 한국어 주 탐지 객체명 (`CLASS_TEXT` SSoT). 패스트 레인 캐시 키에 사용 |
 | `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
 | `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
 | `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |
 | `sources` | RAG 근거 인용 (선택) |
+| `source` | 발화 출처 식별자 (선택). STT 대기 안내는 `"stt-wait-notice"`, 내비게이션은 `"nav-*"`, STT 브릿지는 `bridge_source` 값과 대응. 클라이언트는 `event_id`/`source`로 STT 상호작용 중 뮤트·에코 방어에 활용 |
+
+> **비고 (2026-07-16) - STT 대기 안내**: 경로 검색(TMAP POI)·convenience RAG·LLM 자유 대화 등 Whisper 전사 **이후** 후속 처리가 길어질 때, 서버(`ws_router._send_stt_wait_notice`)가 본 절 `guide` 형식으로 `guidance_text: "잠시만 기다려주세요!"`를 **최대 1회** 선행 전송한다. `event_id`는 `stt-wait-{device_id}-{ts}` 접두, `source`는 `"stt-wait-notice"`. 전사 전에도 `NavigationManager`가 목적지 대기(`WAITING_FOR_DESTINATION`) 또는 질문 답변 대기(`awaiting_free_question`) 상태이면 동일 안내를 보낸다(`stt_to_llm_bridge.should_play_stt_wait_notice`). 본 응답은 STT 에코 감지 메모리(`_record_guidance`)에 넣지 않는다.
 
 > **비고 (2026-07-09)**: 실기기에서 안내 음성이 문장 중간에 끊기던 근본 원인은 base64
 > 전송 방식이 아니라 (1) 서버 TTS 엔진(Piper) 자체의 발음 품질 한계와 (2) 반사 캡처가
@@ -438,6 +447,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > **비고 (2026-07-14)**: th 음성 편의기능 3종(긴급전화/연락처 저장·전화걸기/SMS 읽어주기)과
 > `dial_action`/`contact_save` WS 계약은 제거했다. 생활지원 질의응답 RAG는 jh
 > (`server/rag/convenience_rag.py`, `data/convenience_guidelines.json`)가 담당하며 유지한다.
+
+> **비고 (2026-07-16) - convenience 코퍼스 음독 정규화**: `data/convenience_guidelines.json`의 STT/TTS 대상 문자열(전화번호·시간·날짜·주소 건물번호 등)은 아라비아 숫자 대신 **한글 음절 숫자**(`공일이…`)로 정규화한다. 시스템 키(`organization_id`)·좌표(`latitude`/`longitude`)는 검색/연동 호환을 위해 유지한다. JSON만 갱신해도 Chroma 임베딩은 자동 반영되지 않으므로 배포 시 `python scripts/build_convenience_db.py`로 `data/chroma_db/convenience_guidelines` 컬렉션을 **재빌드**해야 한다(기본 임베딩: Ollama `nomic-embed-text`).
 
 > **비고 (2026-07-10)**: 목적지 설정 시 `NavigationManager` 세션 키를 `"default_device"`로
 > 하드코딩해뒀던 결함이 있었다 - GPS 갱신(`realtime_gps`)과 턴바이턴 안내 조회
@@ -655,6 +666,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `accessibility_validation` | `alert_id:string`, `is_valid:bool`, `similarity_score:float`, `warnings:list`, `details:dict` | McpValidationMonitor 접근성 정합 스코어 업데이트 |
 | `langsmith_trace` | `alert_id:string`, `from_node:string`, `to_node:string`, `latency_ms:float`, `enabled:bool` | McpValidationMonitor LangSmith 트랙 RTT 업데이트 |
 
+> **발행 위치 보강 (2026-07-16)**: `risk_event`는 Redis `risk.events` 스트림이 아니라 `DetectionConsumer._broadcast_risk_event()`가 반사/인지 경보 전송 성사 직후 `MCPManager.broadcast_event("risk_event", …)`로 in-process 발행한다. `detection_event`·`llm_status` 등과 동일 경로이며, 콘솔 `RiskEventLog`가 SSE로 수신한다.
+
 ### 8.4 데모 데이터 분리
 
 콘솔의 데모 데이터는 SSE로 수신되는 것이 아니라, **개발 빌드에서만**(`import.meta.env.DEV && VITE_ENABLE_DEMO_DATA === "true"`) 콘솔 로컬에서 주입됩니다(`console/src/App.tsx`). 운영 빌드에서는 원천 차단되므로 §8.2~8.3의 실이벤트와 혼동하지 않습니다. 단, 사후 이력 로그(§8.5)는 실조회 결과가 있으면 데모 데이터 대신 실데이터를 우선 표시합니다.
@@ -663,6 +676,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 
 콘솔의 Detection Guidance Log 테이블은 SSE가 아니라 REST 폴링(기본 30초, `console/src/api/useDetectionLogs.ts`)으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 **이벤트 발생 시점 프레임 이미지**를 함께 제공합니다.
 
+**콘솔 페이지네이션 UX (2026-07-16)**: `DetectionGuidanceLogTable`·`MembersPage` 목록은 서버 `offset`/`limit` + `X-Total-Count` 기반 **서버 페이지네이션**을 사용한다. 기본 `pageSize`는 **10**. 하단 컨트롤은 이전/다음 화살표, 최대 10개 번호 버튼, `...` 페이지 점프 입력, 마지막 페이지 버튼으로 통일한다. `totalCount <= 11`이면 컨트롤을 비활성화한다. 스트림 필터(전체/반사/인지)는 **현재 페이지 rows**에만 클라이언트 필터를 적용하므로, 필터 적용 시 표시 행 수와 `totalCount`가 어긋날 수 있다.
+
 | 항목 | 값 |
 | :--- | :--- |
 | 로그 목록 | `GET /api/v1/admin/detection-logs?limit=50&offset=0` (limit 1~200) |
@@ -670,7 +685,16 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | 인증 | 관리자 JWT (`Depends(get_current_admin)`) — 목록은 `Authorization` 헤더, 이미지는 `<img>` 태그 제약상 `?token=` 쿼리 허용(SSE와 동일 우회) |
 | 라우터 | `server/api/detection_log_router.py` |
 
-**로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `created_at`
+**로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `false_positive`, `latency_json`, `pipeline_debug_json`, `created_at`
+
+**pipeline_debug_json** (2026-07-16, 관리자 콘솔 전용): `server/services/pipeline_debug_builder.py`가 경로별 중간 텍스트를 직렬화한 JSON 객체. `path`는 `reflex`/`cognitive`/`stt`. MariaDB JSON 컬럼 특성상 REST 응답에서는 객체로 직렬화될 수 있다(콘솔은 string/object 모두 파싱).
+
+| path | 주요 필드 | 설명 |
+| :--- | :--- | :--- |
+| 공통 | `generation_mode` | 응답 생성 경로 식별 (`reflex_prebaked_clip`, `fast_lane_template`, `langgraph_l2_l3`, `llm_answer`, `echo_skipped` 등) |
+| `reflex` | `alert_id`, `clip`, `direction`, `class_name`, `distance`, `risk_level`, `detections_summary` | 반사 사전합성 클립·탐지 요약(최대 8건 bbox/confidence/direction) |
+| `cognitive` | `rag_query`, `rag_context`, `clock_direction`, `distance_class`, `object_ko`, `used_fast_lane`, `fast_lane_cache_key`, `l1_risk_level`, `l3_verified`, `l2_drafts`, `detections_summary`, `surfaces_summary`, `llm_text`, `response_text` | 인지 LangGraph/패스트레인·RAG·L2 초안·노면 요약 |
+| `stt` | `stt_transcript`, `bridge_source`, `generation_mode`, `response_text`, `rag_query`, `rag_results`, `llm_text`, `template_text`, `response_skipped`, `skip_reason` | STT 전사·브릿지 분기·RAG 미리보기(최대 5건)·에코 스킵 |
 
 **프레임 이미지 저장 계약** (`server/services/event_frame_store.py`):
 
@@ -754,4 +778,7 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |
+| **v0.4.22** | **2026-07-16** | **§6.1 `source` 필드·STT 대기 안내(`stt-wait-notice`) 계약 추가. §8.3 `risk_event` 발행 위치(`DetectionConsumer._broadcast_risk_event`) 명시. §8.5 `pipeline_debug_json` 확장 필드 표 보강** |
+| **v0.4.21** | **2026-07-16** | **§8.5 `pipeline_debug_json`·`latency_json`·`false_positive` 로그 응답 필드 명세 보강(관리자 콘솔 STT/LLM/패스트레인 디버그)** |
 | **v0.4.20** | **2026-07-15** | **§8 SSE: 버퍼 방지 응답 헤더, 연결 직후 `system_metrics` 스냅샷, keep-alive 주석 라인. 콘솔은 SSE 401 프로브·빈 카드 안내 문구 추가** |

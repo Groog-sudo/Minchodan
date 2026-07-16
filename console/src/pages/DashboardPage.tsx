@@ -27,6 +27,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     frame_path: null,
     false_positive: null,
     latency_json: '{"decode_ms":12.3,"inference_ms":58.1,"total_ms":70.4}',
+    pipeline_debug_json: '{"path":"reflex","alert_id":"high_obstacle","clip":"reflex_clips/high_front.wav","class_name":"scooter"}',
     created_at: "2026-07-10T10:15:01Z",
   },
   {
@@ -41,6 +42,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     frame_path: null,
     false_positive: null,
     latency_json: '{"decode_ms":11.2,"inference_ms":60.5,"rag_ms":22.1,"llm_ms":210.3,"tts_ms":180.2,"total_ms":484.3}',
+    pipeline_debug_json: '{"path":"cognitive","rag_query":"bollard","rag_context":"볼라드 충돌 시 무릎 부상 위험","generation_mode":"langgraph_l2_l3","llm_text":"전방 오른쪽에 볼라드가 있습니다. 왼쪽으로 우회하십시오.","response_text":"전방 오른쪽에 볼라드가 있습니다. 왼쪽으로 우회하십시오.","l3_verified":true}',
     created_at: "2026-07-10T10:15:21Z",
   },
   {
@@ -55,6 +57,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     frame_path: null,
     false_positive: null,
     latency_json: '{"decode_ms":10.5,"inference_ms":52.4,"total_ms":62.9}',
+    pipeline_debug_json: null,
     created_at: "2026-07-10T10:15:41Z",
   },
   {
@@ -69,6 +72,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     frame_path: null,
     false_positive: null,
     latency_json: '{"decode_ms":10.2,"inference_ms":54.1,"rag_ms":18.2,"llm_ms":195.4,"tts_ms":150.2,"total_ms":428.1}',
+    pipeline_debug_json: null,
     created_at: "2026-07-10T10:16:01Z",
   },
   {
@@ -83,6 +87,7 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
     frame_path: null,
     false_positive: null,
     latency_json: '{"decode_ms":10.1,"inference_ms":53.2,"rag_ms":19.4,"llm_ms":201.2,"tts_ms":160.4,"total_ms":444.3}',
+    pipeline_debug_json: null,
     created_at: "2026-07-10T10:16:21Z",
   },
 ];
@@ -186,6 +191,14 @@ export function DashboardPage({
         onNextPage={() =>
           setLogPage((p) =>
             Math.min(Math.max(0, Math.ceil(logsTotalCount / LOG_PAGE_SIZE) - 1), p + 1),
+          )
+        }
+        onSetPage={(nextPage) =>
+          setLogPage(
+            Math.min(
+              Math.max(0, Math.ceil(logsTotalCount / LOG_PAGE_SIZE) - 1),
+              Math.max(0, nextPage),
+            ),
           )
         }
       />

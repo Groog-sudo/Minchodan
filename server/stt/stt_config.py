@@ -92,6 +92,8 @@ WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 STT_ORCH_RISK_HINT = "low"
 STT_ORCH_CLASS_NAME = "speech_to_text"
+# 경로 검색·RAG·LLM 등 장시간 STT 후속 처리 전 즉시 안내 멘트(반사 클립 아님, 인지 TTS).
+STT_WAIT_GUIDANCE_TEXT = "잠시만 기다려주세요!"
 
 
 def load_optional_stt_env() -> None:

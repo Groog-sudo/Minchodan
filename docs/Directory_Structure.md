@@ -121,7 +121,7 @@ guidedog-ai/
 │   │   ├── App.tsx
 │   │   ├── components/
 │   │   │   ├── DetectionFeed.tsx    # 탐지 결과 실시간 피드
-│   │   │   ├── RiskEventLog.tsx     # Redis risk.events 스트림 뷰
+│   │   │   ├── RiskEventLog.tsx     # SSE risk_event 누적 로그(DetectionConsumer 발행)
 │   │   │   └── SessionStatus.tsx    # WS 세션 상태
 │   │   └── hooks/
 │   │       └── useSSE.ts            # SSE or WS 서버 구독
