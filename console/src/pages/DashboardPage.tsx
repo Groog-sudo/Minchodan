@@ -147,16 +147,9 @@ export function DashboardPage({
         </strong>
       </section>
 
+      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
+
       <section className="dashboard-grid">
-        {/* 4열 그리드: LiveCameraFeed/DeviceTelemetryPanel이 각 2칸(span 2)을 차지하므로,
-            1칸짜리 패널 4개(SystemMetrics/SessionStatus/AiPipelineMonitor/DetectionFeed)를
-            먼저 배치해 1행을 꽉 채운 뒤 span-2 패널 2개가 2행을 채우게 한다.
-            순서가 바뀌면(예: span-2 패널이 먼저 오면) 1행에 빈 칸이 생기고 1칸짜리
-            패널이 다음 행에 혼자 떨어져 보이니 이 순서를 유지할 것. */}
-        <SystemMetrics metrics={state.system} connection={state.connection} />
-        <SessionStatus sessions={state.sessions} />
-        <AiPipelineMonitor ai={state.ai} />
-        <DetectionFeed items={state.detections} />
         <LiveCameraFeed
           imageUrl={imageUrl}
           latestDetections={latestDetections}
@@ -171,21 +164,29 @@ export function DashboardPage({
         />
       </section>
 
-      <section className="monitor-stack-layout">
-        <McpValidationMonitor
-          audio={state.audio_validation}
-          cache={state.cache_suppression}
-          accessibility={state.accessibility_validation}
-          trace={state.langsmith_trace}
-        />
-        <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
-      </section>
-
       {/* 발표/면접 포인트:
           DetectionFeed는 실시간 스트림 모니터링,
           DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
           실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
       <GuidanceTraceTimeline rows={detectionGuidanceLogs} />
+      <McpValidationMonitor
+        audio={state.audio_validation}
+        cache={state.cache_suppression}
+        accessibility={state.accessibility_validation}
+        trace={state.langsmith_trace}
+      />
+      {/* 4열 그리드: LiveCameraFeed/DeviceTelemetryPanel이 각 2칸(span 2)을 차지하므로,
+            1칸짜리 패널 4개(SystemMetrics/SessionStatus/AiPipelineMonitor/DetectionFeed)를
+            먼저 배치해 1행을 꽉 채운 뒤 span-2 패널 2개가 2행을 채우게 한다.
+            순서가 바뀌면(예: span-2 패널이 먼저 오면) 1행에 빈 칸이 생기고 1칸짜리
+            패널이 다음 행에 혼자 떨어져 보이니 이 순서를 유지할 것. */}
+      <section className="dashboard-grid">
+        <SystemMetrics metrics={state.system} connection={state.connection}/>
+        <SessionStatus sessions={state.sessions} />
+        <AiPipelineMonitor ai={state.ai} />
+        <DetectionFeed items={state.detections} />
+      </section>
+
       <DetectionGuidanceLogTable
         rows={detectionGuidanceLogs}
         token={token}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DetectionGuidanceLogRow, LatencyStages } from "../types/monitor";
 import { eventFrameUrl } from "../api/useDetectionLogs";
 
@@ -147,6 +147,14 @@ const STREAM_LABEL: Record<string, string> = {
   unknown: "미분류",
 };
 
+type StreamFilter = "all" | "reflex" | "cognitive";
+
+const STREAM_FILTER_LABEL: Record<StreamFilter, string> = {
+  all: "전체",
+  cognitive: "인지",
+  reflex: "반사",
+};
+
 /** 반사/인지/미분류를 한눈에 구분하는 배지. */
 function StreamBadge({ streamType }: { streamType: string }) {
   const known = streamType in STREAM_LABEL ? streamType : "unknown";
@@ -177,13 +185,14 @@ function FrameWithOverlay({
   onClick?: () => void;
 }) {
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const [isImageBroken, setIsImageBroken] = useState(false);
   const boxes = detections.filter(
     (det) => det.bbox && det.bbox.w > 0 && det.bbox.h > 0,
   );
 
   return (
     <div
-      className={`frame-overlay-wrap${className ? ` ${className}` : ""}`}
+      className={`frame-overlay-wrap${className ? ` ${className}` : ""}${isImageBroken ? " frame-overlay-broken" : ""}`}
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -202,7 +211,12 @@ function FrameWithOverlay({
         style={{ transform: `rotate(${LOG_IMAGE_ROTATE_DEG}deg)` }}
         onLoad={(event) => {
           const img = event.currentTarget;
+          setIsImageBroken(false);
           setNatural({ w: img.naturalWidth, h: img.naturalHeight });
+        }}
+        onError={() => {
+          setIsImageBroken(true);
+          setNatural(null);
         }}
       />
       {natural &&
@@ -375,11 +389,44 @@ export function DetectionGuidanceLogTable({
 }) {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [lightboxLogId, setLightboxLogId] = useState<number | null>(null);
+  const [streamFilter, setStreamFilter] = useState<StreamFilter>("all");
+  const [isStreamFilterOpen, setIsStreamFilterOpen] = useState(false);
+  const streamFilterRef = useRef<HTMLDivElement | null>(null);
+  const filteredRows = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          streamFilter === "all" ||
+          (streamFilter === "reflex" && row.stream_type === "reflex") ||
+          (streamFilter === "cognitive" && row.stream_type === "cognitive"),
+      ),
+    [rows, streamFilter],
+  );
   const totalPages = Math.max(1, Math.ceil((totalCount ?? rows.length) / pageSize));
-  const selected = rows.find((row) => row.log_id === selectedLogId) ?? null;
-  const lightboxRow = rows.find((row) => row.log_id === lightboxLogId) ?? null;
+  const selected = filteredRows.find((row) => row.log_id === selectedLogId) ?? null;
+  const lightboxRow = filteredRows.find((row) => row.log_id === lightboxLogId) ?? null;
   const canShowFrame = (row: DetectionGuidanceLogRow) =>
     Boolean(token && row.event_id && row.frame_path);
+
+  useEffect(() => {
+    if (selectedLogId !== null && !filteredRows.some((row) => row.log_id === selectedLogId)) {
+      setSelectedLogId(null);
+    }
+    if (lightboxLogId !== null && !filteredRows.some((row) => row.log_id === lightboxLogId)) {
+      setLightboxLogId(null);
+    }
+  }, [filteredRows, selectedLogId, lightboxLogId]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!streamFilterRef.current) return;
+      if (!streamFilterRef.current.contains(event.target as Node)) {
+        setIsStreamFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
 
   return (
     <section className="panel panel-table">
@@ -407,7 +454,42 @@ export function DetectionGuidanceLogTable({
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      <div className="stream-filter-row" ref={streamFilterRef}>
+        <button
+          type="button"
+          className="stream-filter-trigger"
+          aria-haspopup="listbox"
+          aria-expanded={isStreamFilterOpen}
+          onClick={() => setIsStreamFilterOpen((prev) => !prev)}
+        >
+          스트림 선택: {STREAM_FILTER_LABEL[streamFilter]}
+          <span className="stream-filter-caret" aria-hidden="true">
+            {isStreamFilterOpen ? "▲" : "▼"}
+          </span>
+        </button>
+
+        {isStreamFilterOpen && (
+          <div className="stream-filter-menu" role="listbox" aria-label="스트림 필터 목록">
+            {(["all", "cognitive", "reflex"] as StreamFilter[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="option"
+                aria-selected={streamFilter === option}
+                className={`stream-filter-option ${streamFilter === option ? "stream-filter-option-active" : ""}`}
+                onClick={() => {
+                  setStreamFilter(option);
+                  setIsStreamFilterOpen(false);
+                }}
+              >
+                {STREAM_FILTER_LABEL[option]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {filteredRows.length === 0 ? (
         <p className="empty-text">아직 저장된 탐지/안내 이력이 없습니다.</p>
       ) : (
         <div className="table-wrap">
@@ -426,7 +508,7 @@ export function DetectionGuidanceLogTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {filteredRows.map((row) => {
                 const totalMs = parseLatency(row.latency_json).total_ms;
                 return (
                   <tr

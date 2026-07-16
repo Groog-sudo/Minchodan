@@ -37,6 +37,8 @@ venv/
 env/
 ENV/
 .venv/
+.venv*/
+.tools/
 
 # ==========================================
 # Environment Variables

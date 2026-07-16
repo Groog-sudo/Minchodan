@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.5.0 (2026-07-09 Docker Compose에서 Ollama 컨테이너 제거, 호스트 로컬 Ollama 연동으로 전환)
+> **버전**: v0.5.1 (2026-07-15 WSL/Linux 로컬 Ollama 자동 기동 및 모델 준비 흐름 반영)
 > **설계 기준**: [`docs/architecture.md`](architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`docs/environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -48,6 +48,7 @@ graph TD
 | **mariadb** | `mariadb:11.4` (공식) | `${DB_HOST_PORT:-3306}:3306` | `mariadb_data:/var/lib/mysql`, `Minchodan DB.session.sql:/docker-entrypoint-initdb.d/01_minchodan_schema.sql` | 로컬 Compose용 MariaDB. 최초 빈 볼륨 생성 시 `minchodan_db` 스키마 초기화 |
 
 > Ollama는 Compose 서비스가 아닙니다. 호스트에서 `ollama serve`로 실행하고, FastAPI 컨테이너는 `COMPOSE_OLLAMA_BASE_URL` 값을 통해 호스트 Ollama에 접속합니다.
+> WSL2/Linux처럼 `systemd`가 동작하지 않는 환경에서는 `docker/linux_docker_start.sh`가 `ollama serve`를 백그라운드 실행합니다. 기본은 `127.0.0.1:11434`이며, Docker 컨테이너 접근을 위해 전체 인터페이스 바인딩이 필요할 때만 `MINCHODAN_EXPOSE_OLLAMA=1`과 `OLLAMA_HOST=0.0.0.0:11434`를 명시합니다.
 
 ### 2.2 GPU 접근 가드레일
 
@@ -93,7 +94,11 @@ cp .env.example .env
 
 ```bash
 # 별도 터미널에서 Ollama 서버 실행
-ollama serve
+# 안전한 로컬 기본값
+OLLAMA_HOST=127.0.0.1:11434 ollama serve
+
+# 신뢰할 수 있는 로컬망에서 전체 인터페이스 바인딩이 꼭 필요할 때만
+MINCHODAN_EXPOSE_OLLAMA=1 OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 # 모델 pull
 ollama pull gemma4:e4b
@@ -119,9 +124,8 @@ Copy-Item .env.example .env
 # 3. Docker 컨테이너 빌드 및 시작
 docker\windows_docker_start.bat
 
-# 4. Ollama 모델 다운로드 (최초 1회, 호스트에서 실행)
-ollama pull gemma4:e4b
-ollama pull nomic-embed-text
+# 4. Ollama 모델 다운로드
+# Linux 시작 스크립트는 누락 모델을 자동으로 pull합니다.
 
 # 5. RAG 지식베이스 빌드 (최초 1회, 4단계)
 bash scripts/build_chroma.sh
@@ -178,11 +182,12 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 | :--- | :--- | :--- |
 | 1 | Docker 데몬 실행 여부 확인 | 에러 메시지 출력 후 종료 |
 | 2 | `.env` 파일 존재 여부 확인 | 에러 메시지 출력 후 종료 |
-| 3 | `docker compose config` 유효성 검사 | 에러 메시지 출력 후 종료 |
-| 4 | `docker compose build` 이미지 빌드 | 에러 메시지 출력 후 종료 |
-| 5 | `docker compose up -d` 컨테이너 시작 | 에러 메시지 출력 후 종료 |
-| 6 | FastAPI 포트(8000) 연결 대기 (최대 60초) | 경고 출력 후 계속 |
-| 7 | 접속 URL 출력 | - |
+| 3 | Linux: 호스트 Ollama 실행 및 `gemma4:e4b`/`nomic-embed-text` 모델 확인 | Ollama 미설치·기동 실패·pull 실패 시 종료 |
+| 4 | `docker compose config` 유효성 검사 | 에러 메시지 출력 후 종료 |
+| 5 | `docker compose build` 이미지 빌드 | 에러 메시지 출력 후 종료 |
+| 6 | `docker compose up -d` 컨테이너 시작 | 에러 메시지 출력 후 종료 |
+| 7 | FastAPI 포트(8000) 연결 대기 (최대 60초) | 경고 출력 후 계속 |
+| 8 | 접속 URL 출력 | - |
 
 ### 5.2 스크립트 파일 매핑
 
@@ -315,7 +320,7 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 
 | 증상 | 원인 | 해결 방법 |
 | :--- | :--- | :--- |
-| FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동 또는 `COMPOSE_OLLAMA_BASE_URL`이 현재 Docker 런타임과 맞지 않음 | 호스트에서 `ollama serve` 실행 후 Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`로 설정 |
+| FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동, `127.0.0.1`로만 바인딩, 또는 `COMPOSE_OLLAMA_BASE_URL`이 현재 Docker 런타임과 맞지 않음 | Linux/WSL은 `bash docker/linux_docker_start.sh`로 자동 기동합니다. Docker 컨테이너 접근까지 필요하면 신뢰할 수 있는 로컬망에서만 `MINCHODAN_EXPOSE_OLLAMA=1`, `OLLAMA_HOST=0.0.0.0:11434`를 설정합니다. Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`로 설정 |
 | FastAPI 컨테이너가 Redis에 연결 불가 | `REDIS_URL`이 `localhost`로 설정됨 | `.env`에서 `REDIS_URL=redis://redis:6379`로 변경 |
 | FastAPI 컨테이너가 MariaDB에 연결 불가 | `DB_HOST`가 컨테이너 서비스 이름이 아니거나 MariaDB healthcheck 실패 | compose 환경에서는 `DB_HOST=mariadb`, `DB_PORT=3306` 오버라이드가 적용되는지 확인 |
 | MariaDB 컨테이너가 시작되지 않음 | `COMPOSE_DB_PASSWORD` 또는 `COMPOSE_DB_ROOT_PASSWORD` 누락, 호스트 포트 충돌 | `.env` 값 확인 또는 `DB_HOST_PORT`를 빈 포트로 변경 |
