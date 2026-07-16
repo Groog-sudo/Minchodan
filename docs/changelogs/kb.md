@@ -2384,7 +2384,7 @@
 
 ### 2026-07-16 | 문서 | outdoor_guidance_refinement_roadmap v1.1
 
-- **커밋**: `6dcbf74`
+- **커밋**: `556d338`
 - **변경 내용**:
   - `docs/research/outdoor_guidance_refinement_roadmap.md`를 v1.1.0으로 개정. dg2 class-agnostic `reflex_gate`·단말 `isServerTimeout` 억제·`high_obstacle_{direction}` 억제키를 반영.
   - Phase 1을 Option A(class-agnostic 고도화, 권장) / Option B(T1/T2/T3 재도입, 대안)로 분리. Phase 2 병렬 가능·경로(`services/audioEngine.ts`)·부록 정정표 추가.
@@ -2396,7 +2396,7 @@
 
 ### 2026-07-16 | 3단계 | outdoor Option A 반사 억제 1차 구현
 
-- **커밋**: `6dcbf74`
+- **커밋**: `556d338`
 - **변경 내용**:
   - Option A 채택: `reflex_gate`에 `MIN_HIT_COUNT` 본문 적용, `MIN_AREA_RATIO` 0.08→0.10, `alert_id`를 `high_obstacle`로 단순화(방향 버킷 TTL 우회 방지).
   - `hapticEngine` continuous 패턴 5초 자동 캡. `risk_ssot_contract` §2-B·로드맵 v1.1.1·yolo 스킬 정합.
@@ -2408,7 +2408,7 @@
 
 ### 2026-07-16 | 6단계 | Phase 2 인지 guide 구조화 필드 1차 구현
 
-- **커밋**: `6dcbf74`
+- **커밋**: `556d338`
 - **변경 내용**:
   - `consumer._send_cognitive_guide`: `estimate_distance`·`class_name_to_ko`(`CLASS_TEXT` SSoT) 주입, `orch_input`에 `distance`/`object_ko`/한국어 `detected_classes` 연결.
   - `OrchState`에 `distance`·`object_ko` 필드 추가. L2 프롬프트 `[탐지 거리]` 줄 추가. `fallback_node` 중복 `korean_names` 제거.
@@ -2421,7 +2421,7 @@
 
 ### 2026-07-16 | 6단계 | Phase 3 패스트 레인 1차 구현
 
-- **커밋**: `6dcbf74`
+- **커밋**: `556d338`
 - **변경 내용**:
   - `server/orchestration/nodes/fast_lane.py` 신설: 단일 객체+`clock_direction`+`distance`+`object_ko` 확정 시 템플릿 안내문 생성(LLM 생략).
   - `graph.py` L1 직후 조건부 분기: 패스트 레인 → END, 복합/이탈/내비/필드 누락 → L2.
@@ -2436,7 +2436,7 @@
 
 ### 2026-07-16 | 콘솔 | Detection Guidance Log 파이프라인 텍스트 디버그
 
-- **커밋**: `6dcbf74`
+- **커밋**: `556d338`
 - **변경 내용**:
   - `detection_guidance_logs.pipeline_debug_json` 컬럼 추가(마이그레이션 `20260716_001`). 관리자 콘솔 전용 STT 전사·RAG·LLM/패스트레인·브릿지 분기 텍스트 영속화.
   - `server/services/pipeline_debug_builder.py` 신설. `consumer.py`(반사/인지)·`ws_router.py`(STT)에서 `persist_detection_guidance_log`에 debug payload 전달.
