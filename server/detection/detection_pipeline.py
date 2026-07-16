@@ -152,9 +152,8 @@ class DetectionPipeline:
             if det.track_id is not None and det.hit_count < 4:
                 continue
 
-            overlap = 0.0
+            # 세그멘테이션이 없으면 교차검증을 건너뛴다(seg 실패 시 반사까지 전량 드롭 방지).
             if surfaces:
-                # 3x3 격자 샘플링으로 bbox와 segmentation 폴리곤 간의 겹침 비율 계산
                 sample_points = []
                 for rx in [0.25, 0.5, 0.75]:
                     for ry in [0.25, 0.5, 0.75]:
@@ -172,21 +171,22 @@ class DetectionPipeline:
                             break
                 overlap = hits / len(sample_points)
 
-            # a) Detection-Segmentation 교차검증 게이트 (겹침 비율 30% 미만 무시)
-            if overlap < 0.30:
-                hallucination_count += 1
-                continue
+                # Detection-Segmentation 교차검증 (겹침 비율 30% 미만 무시)
+                if overlap < 0.30:
+                    hallucination_count += 1
+                    continue
 
             filtered_detections.append(det)
 
-        if total_detections > 0:
-            if not self._has_logged_diagnostic:
-                self._hallucination_total += hallucination_count
-                self._detections_total += total_detections
-                if self._detections_total >= 30:
-                    ratio = self._hallucination_total / self._detections_total
-                    logger.info(f"[OOD DIAGNOSTIC] 겹치지 않는 탐지 (허공/환각 탐지) 비율: {ratio * 100:.1f}%")
-                    self._has_logged_diagnostic = True
+        if total_detections > 0 and not self._has_logged_diagnostic:
+            self._hallucination_total += hallucination_count
+            self._detections_total += total_detections
+            if self._detections_total >= 30:
+                ratio = self._hallucination_total / self._detections_total
+                logger.info(
+                    f"[OOD DIAGNOSTIC] 겹치지 않는 탐지 (허공/환각 탐지) 비율: {ratio * 100:.1f}%"
+                )
+                self._has_logged_diagnostic = True
 
         detections = filtered_detections
 

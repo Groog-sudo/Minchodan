@@ -27,7 +27,8 @@ from server.capture.stream_splitter import StreamSplitter, get_default_splitter
 from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
-from server.detection.direction import estimate_clock_direction
+from server.detection.direction import estimate_clock_direction, estimate_distance
+from server.detection.risk_rules import class_name_to_ko
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.orchestration.llm_client_factory import LLMClientFactory
@@ -35,6 +36,10 @@ from server.rag.retriever import get_default_retriever
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.services.device_registry_service import get_cached_device_ids
 from server.services.event_frame_store import save_event_frame
+from server.services.pipeline_debug_builder import (
+    build_cognitive_pipeline_debug,
+    build_reflex_pipeline_debug,
+)
 from server.tts.realtime_tts import realtime_tts
 from server.tts.suppressor import Alert_suppressor
 
@@ -205,6 +210,7 @@ class DetectionConsumer:
         latency_stages: dict[str, float] | None = None,
         user_id: int | None = None,
         device_id: int | None = None,
+        pipeline_debug: dict | None = None,
     ) -> None:
         task = asyncio.create_task(
             self._persist_log_safe(
@@ -216,6 +222,7 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=user_id,
                 device_id=device_id,
+                pipeline_debug=pipeline_debug,
             )
         )
         self._log_tasks.add(task)
@@ -232,6 +239,7 @@ class DetectionConsumer:
         latency_stages: dict[str, float] | None = None,
         user_id: int | None = None,
         device_id: int | None = None,
+        pipeline_debug: dict | None = None,
     ) -> None:
         # 프레임 저장(JPEG 인코딩+디스크 쓰기)은 백그라운드 로그 태스크 안에서만
         # 수행한다. 반사/인지 실시간 전송이 끝난 뒤 실행되므로 경로 지연에 영향 없다.
@@ -249,6 +257,7 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=user_id,
                 device_id=device_id,
+                pipeline_debug=pipeline_debug,
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] DB 로그 저장 실패: event_id={event_id}, {e}")
@@ -610,6 +619,13 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=reg_user_id,
                 device_id=reg_device_id,
+                pipeline_debug=build_reflex_pipeline_debug(
+                    alert_id=alert.alert_id,
+                    clip=alert.clip,
+                    direction=alert.direction,
+                    class_name=alert.class_name,
+                    distance=str(alert.distance) if alert.distance is not None else None,
+                ),
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
@@ -696,6 +712,8 @@ class DetectionConsumer:
         # detections가 비어 있는(순수 보도 이탈) 이벤트는 조회할 사물이 없으므로 건너뛴다.
         rag_context = ""
         clock_direction = ""
+        distance_class = ""
+        object_ko = ""
         rag_start = time.perf_counter()
         try:
             retriever = get_default_retriever()
@@ -709,14 +727,20 @@ class DetectionConsumer:
                             "confidence": primary_det.confidence,
                         },
                     )
-                # 2026-07-13: "좌측/우측" 같은 모호한 안내 대신 실제 탐지 위치 기반의
-                # 정확한 시계 방향("2시 방향" 등)을 L2 프롬프트에 실어준다. frame이 있어야
-                # 프레임 폭을 알 수 있으므로(항상 640x640 리사이즈), 없으면 계산을 건너뛴다.
                 if frame is not None:
                     clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
+                    distance_class = estimate_distance(
+                        primary_det.bbox,
+                        frame.shape[1],
+                        frame.shape[0],
+                        primary_det.class_name,
+                    )
+                object_ko = class_name_to_ko(primary_det.class_name)
         except Exception as e:
             logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
         rag_ms = (time.perf_counter() - rag_start) * 1000
+
+        korean_classes = [class_name_to_ko(det.class_name) for det in result.detections]
 
         orch_input = {
             "event": {
@@ -731,9 +755,11 @@ class DetectionConsumer:
                     for det in result.detections
                 ],
             },
-            "detected_classes": [det.class_name for det in result.detections],
+            "detected_classes": korean_classes,
             "positions": [det.direction or "" for det in result.detections],
             "clock_direction": clock_direction,
+            "distance": distance_class,
+            "object_ko": object_ko,
             "risk_level": result.risk_hint,
             "navigation_guidance": navigation_guidance,
             "rag_context": rag_context or "관련 수칙 없음",
@@ -771,7 +797,10 @@ class DetectionConsumer:
             )
 
             tts_start = time.perf_counter()
-            audio_b64, duration_ms = await realtime_tts.synthesize_from_llm(orch_result)
+            if orch_result.get("used_fast_lane"):
+                audio_b64, duration_ms = await realtime_tts.synthesize_fast_lane(orch_result)
+            else:
+                audio_b64, duration_ms = await realtime_tts.synthesize_from_llm(orch_result)
             tts_ms = (time.perf_counter() - tts_start) * 1000
 
             # 전송 직전 재검사: 오케스트레이션/TTS 처리 시간이 요청마다 달라(2~10s+),
@@ -803,6 +832,9 @@ class DetectionConsumer:
                 "event_id": result.event_id,
                 "risk_level": result.risk_hint,
                 "guidance_text": guidance_text,
+                "clock_direction": orch_result.get("clock_direction") or clock_direction,
+                "distance_class": orch_result.get("distance") or distance_class,
+                "object_ko": orch_result.get("object_ko") or object_ko,
                 "audio_codec": "wav",
                 "duration_ms": duration_ms,
                 "transport": "binary" if audio_bytes else "none",
@@ -849,6 +881,16 @@ class DetectionConsumer:
                 )
             await self._broadcast_latency_event(result.event_id, "cognitive", latency_stages)
             reg_user_id, reg_device_id = get_cached_device_ids(device_id)
+            cognitive_debug = build_cognitive_pipeline_debug(
+                guidance_text=guidance_text,
+                rag_query=rag_query,
+                rag_context=rag_context or "관련 수칙 없음",
+                orch_result=orch_result,
+                clock_direction=clock_direction,
+                distance_class=distance_class,
+                object_ko=object_ko,
+                llm_provider=LLMClientFactory.get_current_provider(),
+            )
             self._schedule_log_persist(
                 event_id=result.event_id,
                 stream_type="cognitive",
@@ -858,6 +900,7 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=reg_user_id,
                 device_id=reg_device_id,
+                pipeline_debug=cognitive_debug,
             )
         except Exception as e:
             logger.error(

@@ -90,12 +90,12 @@ async def l2_generator_node(state: dict) -> dict:
     is_departing_confirmed = state.get("is_departing_confirmed", False)
     braille_direction = state.get("braille_direction", "")
     clock_direction = state.get("clock_direction", "")
+    distance_class = state.get("distance", "")
 
     classes_str = ", ".join(detected_classes) if detected_classes else "장애물 없음"
     nav_str = f"[길안내 멘트]: {navigation_guidance}\n" if navigation_guidance else ""
-    # 2026-07-13 추가: 주 탐지 객체의 실측 bbox 위치를 12시 기준 시계 방향으로 알려준다.
-    # LLM이 "좌측/우측"을 임의로 지어내지 않고 이 실측값을 그대로 문장에 반영하게 한다.
     direction_str = f"[탐지 방향]: {clock_direction} 방향\n" if clock_direction else ""
+    distance_str = f"[탐지 거리]: {distance_class}\n" if distance_class else ""
 
     # 2026-07-13 추가: 보도 이탈이 확정되면(3단계 히스테리시스 통과) LLM 프롬프트에
     # 노면 상태를 별도 줄로 명시한다. 점자블록 방향을 알면 "왼쪽/오른쪽으로"까지
@@ -118,6 +118,7 @@ async def l2_generator_node(state: dict) -> dict:
     user_prompt = (
         f"[탐지 장애물]: {classes_str}\n"
         f"{direction_str}"
+        f"{distance_str}"
         f"[위험도]: {risk_level}\n"
         f"[안전 수칙]:\n{rag_context}\n"
         f"{nav_str}"

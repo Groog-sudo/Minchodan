@@ -181,6 +181,7 @@ class DetectionGuidanceLogCreate(BaseModel):
     frame_path: str | None = Field(default=None, max_length=255)
     false_positive: bool | None = Field(default=None)
     latency_json: str | None = Field(default=None)
+    pipeline_debug_json: str | None = Field(default=None)
 
 
 class DetectionGuidanceLogResponse(BaseModel):
@@ -199,6 +200,7 @@ class DetectionGuidanceLogResponse(BaseModel):
     frame_path: str | None
     false_positive: bool | None
     latency_json: str | None
+    pipeline_debug_json: str | None
     created_at: datetime
 
     _normalize_dates = field_validator("detected_at", "created_at", mode="before")(

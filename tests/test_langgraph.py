@@ -220,7 +220,7 @@ async def test_langgraph_api_error_fallback():
     """
     TC-LG-008: LLM API 호출 장애 발생 시 정적 Fallback으로 즉시 우회하여 파이프라인 영속성이 확보되는지 검증.
     """
-    initial_state = {"detected_classes": ["scooter"]}
+    initial_state = {"detected_classes": []}
 
     # ainvoke 호출 시 강제로 Exception을 발생시킴
     with patch(

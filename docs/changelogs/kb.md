@@ -2379,3 +2379,68 @@
   - `.xcodebuildmcp/config.yaml` 개인 절대경로/UDID는 커밋 제외(템플릿 유지).
 - **관련 파일**: `client/ios/ReflexFrameProcessorPlugin.swift`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`, `docs/changelogs/kb.md`
 - **검증 결과**: 이중 경로 검사 통과. react-doctor client는 기존 `useWebSocket.ts` ref-during-render(본 변경 무관)로 실패 — 이번 스코프 제외. 실기기 재설치 및 콘솔 Live Feed 정자세 확인.
+
+---
+
+### 2026-07-16 | 문서 | outdoor_guidance_refinement_roadmap v1.1
+
+- **커밋**: `6dcbf74`
+- **변경 내용**:
+  - `docs/research/outdoor_guidance_refinement_roadmap.md`를 v1.1.0으로 개정. dg2 class-agnostic `reflex_gate`·단말 `isServerTimeout` 억제·`high_obstacle_{direction}` 억제키를 반영.
+  - Phase 1을 Option A(class-agnostic 고도화, 권장) / Option B(T1/T2/T3 재도입, 대안)로 분리. Phase 2 병렬 가능·경로(`services/audioEngine.ts`)·부록 정정표 추가.
+  - `docs/README.md` research 인덱스에 해당 로드맵 등재.
+- **관련 파일**: `docs/research/outdoor_guidance_refinement_roadmap.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 현 `reflex_gate.py` / `CameraView.tsx` 본문과 교차 검증 후 문서만 갱신.
+
+---
+
+### 2026-07-16 | 3단계 | outdoor Option A 반사 억제 1차 구현
+
+- **커밋**: `6dcbf74`
+- **변경 내용**:
+  - Option A 채택: `reflex_gate`에 `MIN_HIT_COUNT` 본문 적용, `MIN_AREA_RATIO` 0.08→0.10, `alert_id`를 `high_obstacle`로 단순화(방향 버킷 TTL 우회 방지).
+  - `hapticEngine` continuous 패턴 5초 자동 캡. `risk_ssot_contract` §2-B·로드맵 v1.1.1·yolo 스킬 정합.
+  - `tests/test_detection.py` 게이트 기대를 class-agnostic에 맞게 갱신.
+- **관련 파일**: `server/detection/gates/reflex_gate.py`, `server/tts/suppressor.py`, `client/src/services/hapticEngine.ts`, `tests/test_detection.py`, `docs/design/risk_ssot_contract.md`, `docs/research/outdoor_guidance_refinement_roadmap.md`, `.agents/skills/yolo-obstacle-detection/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`
+- **검증 결과**: Option A 단위 17/17, 통합 스모크 5/5, Docker 게이트 14/14, `/health` 200·consumer 재기동 확인. 확장 48/50(실패 2건은 `MID_RISK_CLASSES=set()`·파이프라인 hit_count<4 기존 이슈, Option A 무관).
+
+---
+
+### 2026-07-16 | 6단계 | Phase 2 인지 guide 구조화 필드 1차 구현
+
+- **커밋**: `6dcbf74`
+- **변경 내용**:
+  - `consumer._send_cognitive_guide`: `estimate_distance`·`class_name_to_ko`(`CLASS_TEXT` SSoT) 주입, `orch_input`에 `distance`/`object_ko`/한국어 `detected_classes` 연결.
+  - `OrchState`에 `distance`·`object_ko` 필드 추가. L2 프롬프트 `[탐지 거리]` 줄 추가. `fallback_node` 중복 `korean_names` 제거.
+  - guide WS 페이로드에 `clock_direction`·`distance_class`·`object_ko` 구조화 필드 추가(반사 `distance` 미터와 분리).
+  - 클라이언트 `WSMessage`/`GuidePayload` 타입·로그 갱신. `tests/test_cognitive_fields.py` 신설. `api_specification` §6.1 갱신.
+- **관련 파일**: `server/detection/consumer.py`, `server/detection/risk_rules.py`, `server/orchestration/state.py`, `server/orchestration/nodes/l2_generator.py`, `server/orchestration/nodes/fallback_node.py`, `client/src/types/detection.ts`, `client/src/hooks/useWebSocket.ts`, `tests/test_cognitive_fields.py`, `docs/design/api_specification.md`, `docs/research/outdoor_guidance_refinement_roadmap.md`
+- **검증 결과**: `pytest` Phase2+OptionA **31 passed** (로컬). Docker `test_cognitive_fields`+`TestGates` 통과. `useWebSocket.ts` `connectRef` 렌더 순수성 수정 후 client react-doctor 통과.
+
+---
+
+### 2026-07-16 | 6단계 | Phase 3 패스트 레인 1차 구현
+
+- **커밋**: `6dcbf74`
+- **변경 내용**:
+  - `server/orchestration/nodes/fast_lane.py` 신설: 단일 객체+`clock_direction`+`distance`+`object_ko` 확정 시 템플릿 안내문 생성(LLM 생략).
+  - `graph.py` L1 직후 조건부 분기: 패스트 레인 → END, 복합/이탈/내비/필드 누락 → L2.
+  - `OrchState`에 `used_fast_lane`·`fast_lane_cache_key` 추가. `consumer` TTS 경로 `synthesize_fast_lane` 연동.
+  - `realtime_tts.py`: `data/guide_clips/{cache_key}.wav` 사전합성 클립 우선 로드, 미스 시 실시간 합성 폴백.
+  - `scripts/build_guide_clips.py` 오프라인 합성 스크립트, `data/guide_clips/` 디렉터리 추가.
+  - `tests/test_fast_lane.py` 11건 신설. 로드맵 v1.1.2 반영.
+- **관련 파일**: `server/orchestration/nodes/fast_lane.py`, `server/orchestration/graph.py`, `server/orchestration/state.py`, `server/detection/consumer.py`, `server/tts/realtime_tts.py`, `scripts/build_guide_clips.py`, `data/guide_clips/`, `tests/test_fast_lane.py`, `docs/research/outdoor_guidance_refinement_roadmap.md`
+- **검증 결과**: `pytest tests/test_fast_lane.py` **11/11 passed**. `build_guide_clips.py --dry-run` 조합 생성 확인.
+
+---
+
+### 2026-07-16 | 콘솔 | Detection Guidance Log 파이프라인 텍스트 디버그
+
+- **커밋**: `6dcbf74`
+- **변경 내용**:
+  - `detection_guidance_logs.pipeline_debug_json` 컬럼 추가(마이그레이션 `20260716_001`). 관리자 콘솔 전용 STT 전사·RAG·LLM/패스트레인·브릿지 분기 텍스트 영속화.
+  - `server/services/pipeline_debug_builder.py` 신설. `consumer.py`(반사/인지)·`ws_router.py`(STT)에서 `persist_detection_guidance_log`에 debug payload 전달.
+  - 콘솔 `DetectionGuidanceLogTable` 행 상세/라이트박스에 **파이프라인 텍스트** 패널 추가. STT 행(`frame_path` 없음)도 상세 열림, REST `pipeline_debug_json` 객체/문자열 파싱, 테이블 **파이프라인 텍스트** 컬럼 추가. `tests/test_pipeline_debug.py` 5건.
+- **관련 파일**: `server/db/migrations/20260716_001_add_pipeline_debug_json_to_detection_guidance_logs.sql`, `server/services/pipeline_debug_builder.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/types/monitor.ts`, `tests/test_pipeline_debug.py`
+- **검증 결과**: Docker `pytest tests/test_pipeline_debug.py` **5 passed**. `console` `tsc --noEmit` 통과.
+- **비고**: MariaDB 마이그레이션 적용 완료(호스트 Tailscale 경유). Mac Docker는 `docker/scripts/db_tailscale_proxy.sh` + `COMPOSE_DB_HOST=host.docker.internal`/`COMPOSE_DB_PORT=13306`로 DB 연결(`macos_docker_start.sh` 자동 기동).

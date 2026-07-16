@@ -32,6 +32,13 @@ class OrchState(TypedDict, total=False):
     # 2026-07-13 추가: 주 탐지 객체의 실제 화면 위치를 12시(정면) 기준 9시~3시 시계
     # 방향으로 환산한 값("2시" 등). L2가 "좌측/우측" 대신 이 값을 문장에 반영한다.
     clock_direction: str
+    # 2026-07-16 Phase 2: 인지 경로 구조화 필드 (guide WS / 패스트 레인 캐시 키용).
+    # near/medium/far — 반사 경로의 미터 단위 distance와 별개.
+    distance: str
+    object_ko: str
+    # 2026-07-16 Phase 3: 패스트 레인(LLM 생략) 경로 플래그 및 사전합성 TTS 캐시 키.
+    used_fast_lane: bool
+    fast_lane_cache_key: str
     guidance_text: str
     # 2026-07-13: extract_direction()이 "N시" 시계 방향을 우선 추출하도록 바뀌어
     # 좌/우/직진/정지 외에 "9시"~"3시" 값도 들어올 수 있다.

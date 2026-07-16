@@ -32,6 +32,7 @@ from server.services.device_registry_service import (
     ensure_device_registered,
     get_cached_device_ids,
 )
+from server.services.pipeline_debug_builder import build_stt_pipeline_debug
 from server.stt.stt_service import SttService
 from server.stt.stt_to_llm_bridge import SttToLlmBridge
 from server.tts.realtime_tts import realtime_tts
@@ -410,11 +411,21 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                 saved_log = await persist_detection_guidance_log(
                     event_id=stt_event_id,
                     stream_type="cognitive",
-                    detections=[{"source": "stt", "text_length": len(stt_result.text)}],
+                    detections=[
+                        {
+                            "source": "stt",
+                            "text_length": len(stt_result.text),
+                            "stt_transcript": (stt_result.text or "").strip(),
+                        }
+                    ],
                     tts_text=guidance_text,
                     latency_stages=latency_stages,
                     user_id=reg_user_id,
                     device_id=reg_device_id,
+                    pipeline_debug=build_stt_pipeline_debug(
+                        stt_transcript=stt_result.text or "",
+                        bridge_result=bridge_result,
+                    ),
                 )
                 # 콘솔 Detection Guidance Log 테이블 실시간 갱신 (consumer.py._broadcast_guidance_log_event와
                 # 동일 목적/채널 - DB 저장 완료 후에만 보내 콘솔이 즉시 썸네일을 요청해도 안전하다).

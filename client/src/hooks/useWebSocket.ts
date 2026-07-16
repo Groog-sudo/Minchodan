@@ -309,7 +309,11 @@ export function useWebSocket(
           // JSON에 싣지 않고, 이 메시지 직후 바이너리 프레임으로 원본 WAV 바이트를 보낸다
           // (transport:"binary"). 실제 재생은 위 ArrayBuffer 분기에서 이어서 처리한다.
           // transport가 "binary"가 아니면(서버 TTS 실패) 즉시 단말 TTS로 폴백한다.
-          console.log(`[Cognitive] guide 수신: text="${data.guidance_text}", transport=${data.transport}`);
+          console.log(
+            `[Cognitive] guide 수신: text="${data.guidance_text}", ` +
+              `dir=${data.clock_direction ?? "-"}, dist=${data.distance_class ?? "-"}, obj=${data.object_ko ?? "-"}, ` +
+              `transport=${data.transport}`,
+          );
 
           // event_id가 "stt-"로 시작하면 STT 질문/네비게이션 응답(항상 재생),
           // 그 외(카메라 event-*)는 인지 경로 - STT 상호작용 중이면 뮤트 대상이다.
@@ -445,7 +449,9 @@ export function useWebSocket(
     }
   }, []);
 
-  connectRef.current = connect;
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     // 수송 모드(WiFi/USB) 또는 wsBaseUrl 변경 시에만 소켓을 교체한다.

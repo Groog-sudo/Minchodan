@@ -157,6 +157,18 @@ elif [[ -z "${COMPOSE_OLLAMA_BASE_URL:-}" ]]; then
   export COMPOSE_OLLAMA_BASE_URL="http://host.docker.internal:11434"
 fi
 
+# Tailscale 원격 DB: Mac Docker NAT IP는 MariaDB 화이트리스트에 없을 수 있어
+# 호스트 socat 프록시(기본 13306)로 FastAPI 컨테이너를 중계한다.
+DB_PROXY_SCRIPT="$PROJECT_ROOT/docker/scripts/db_tailscale_proxy.sh"
+if [[ -x "$DB_PROXY_SCRIPT" ]]; then
+  env_db_host="$(grep -E '^DB_HOST=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' || true)"
+  if [[ -n "$env_db_host" && "$env_db_host" != "mariadb" && "$env_db_host" != "127.0.0.1" && "$env_db_host" != "localhost" ]]; then
+    "$DB_PROXY_SCRIPT" || echo "[WARN] DB Tailscale proxy start failed (see docker/scripts/db_tailscale_proxy.sh)"
+    export COMPOSE_DB_HOST=host.docker.internal
+    export COMPOSE_DB_PORT="${COMPOSE_DB_PROXY_PORT:-13306}"
+  fi
+fi
+
 # 3. docker compose 설정 유효성 검사
 echo "[1/4] Checking Docker Compose config..."
 if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --quiet; then

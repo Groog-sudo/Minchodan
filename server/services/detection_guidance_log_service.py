@@ -98,6 +98,7 @@ class DetectionGuidanceLogService:
             frame_path=payload.frame_path,
             false_positive=payload.false_positive,
             latency_json=payload.latency_json,
+            pipeline_debug_json=payload.pipeline_debug_json,
         )
 
         saved = await self.log_repo.create(log)
@@ -187,6 +188,7 @@ async def persist_detection_guidance_log(
     device_id: int | None = None,
     frame_path: str | None = None,
     latency_stages: dict[str, float] | None = None,
+    pipeline_debug: dict | None = None,
 ) -> DetectionGuidanceLogResponse:
     """FastAPI Depends(get_db) 요청 컨텍스트 밖(WS 컨슈머 등)에서 로그를 저장하는 헬퍼.
 
@@ -200,6 +202,8 @@ async def persist_detection_guidance_log(
     """
     stages = dict(latency_stages) if latency_stages else None
     db_save_start = time.perf_counter()
+    from server.services.pipeline_debug_builder import serialize_pipeline_debug
+
     payload = DetectionGuidanceLogCreate(
         event_id=event_id,
         user_id=user_id,
@@ -210,6 +214,7 @@ async def persist_detection_guidance_log(
         tts_text=tts_text,
         frame_path=frame_path,
         latency_json=json.dumps(stages, ensure_ascii=False) if stages else None,
+        pipeline_debug_json=serialize_pipeline_debug(pipeline_debug),
     )
     async with async_sessionmaker_factory() as session:
         service = DetectionGuidanceLogService(session)

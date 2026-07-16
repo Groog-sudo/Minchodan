@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DetectionGuidanceLogRow, LatencyStages } from "../types/monitor";
+import type { DetectionGuidanceLogRow, LatencyStages, PipelineDebug } from "../types/monitor";
 import { eventFrameUrl } from "../api/useDetectionLogs";
 
 // 발표/면접 포인트:
@@ -107,6 +107,137 @@ function parseLatency(json: string | null): LatencyStages {
   } catch {
     return {};
   }
+}
+
+function parsePipelineDebug(raw: string | PipelineDebug | null | undefined): PipelineDebug | null {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw as PipelineDebug;
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? (parsed as PipelineDebug) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 테이블 한 줄 요약용: STT 전사 / LLM 응답 / 패스트레인 등 핵심 텍스트 추출. */
+function summarizePipelineDebug(
+  debugJson: string | PipelineDebug | null | undefined,
+  detectedObjectsJson: string,
+): string {
+  const debug = parsePipelineDebug(debugJson);
+  if (debug?.stt_transcript) {
+    const parts = [debug.stt_transcript];
+    if (debug.llm_text && debug.llm_text !== debug.stt_transcript) {
+      parts.push(`-> ${debug.llm_text}`);
+    } else if (debug.response_text && debug.response_text !== debug.stt_transcript) {
+      parts.push(`-> ${debug.response_text}`);
+    }
+    return parts.join(" ");
+  }
+  if (debug?.llm_text) return debug.llm_text;
+  if (debug?.response_text) return debug.response_text;
+  if (debug?.rag_context) return debug.rag_context.slice(0, 80);
+
+  // pipeline_debug_json 이전 STT 로그 폴백: detected_objects_json.stt_transcript
+  try {
+    const objs = JSON.parse(detectedObjectsJson);
+    if (Array.isArray(objs)) {
+      const sttObj = objs.find((o) => o && typeof o === "object" && o.source === "stt");
+      if (sttObj?.stt_transcript) return String(sttObj.stt_transcript);
+    }
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
+const PATH_LABEL: Record<string, string> = {
+  reflex: "반사",
+  cognitive: "인지(비전)",
+  stt: "STT 음성",
+};
+
+/** 경로별 파이프라인 중간 텍스트를 관리자 디버그 패널로 표시한다. */
+function PipelineDebugPanel({
+  debugJson,
+  detectedObjectsJson,
+}: {
+  debugJson: string | PipelineDebug | null | undefined;
+  detectedObjectsJson?: string;
+}) {
+  const debug = parsePipelineDebug(debugJson);
+  if (!debug?.path) {
+    const fallback = detectedObjectsJson
+      ? summarizePipelineDebug(null, detectedObjectsJson)
+      : "";
+    if (fallback) {
+      return (
+        <div className="pipeline-debug-panel">
+          <div className="pipeline-debug-row">
+            <span className="pipeline-debug-label">STT 전사 (메타)</span>
+            <span className="pipeline-debug-value mono">{fallback}</span>
+          </div>
+        </div>
+      );
+    }
+    return <span className="pipeline-debug-empty">파이프라인 디버그 없음 (배포 이전 이력)</span>;
+  }
+
+  const rows: Array<{ label: string; value: string; mono?: boolean }> = [];
+  const pathLabel = PATH_LABEL[debug.path] ?? debug.path;
+  rows.push({ label: "경로", value: pathLabel });
+
+  if (debug.path === "stt") {
+    if (debug.stt_transcript) rows.push({ label: "STT 전사 (Whisper)", value: debug.stt_transcript, mono: true });
+    if (debug.bridge_source) rows.push({ label: "브릿지 분기", value: debug.bridge_source, mono: true });
+    if (debug.rag_query) rows.push({ label: "RAG 쿼리", value: debug.rag_query, mono: true });
+    if (debug.rag_context) rows.push({ label: "RAG 수칙", value: debug.rag_context, mono: true });
+    if (debug.llm_text) rows.push({ label: "LLM 응답", value: debug.llm_text, mono: true });
+    if (debug.response_text) rows.push({ label: "최종 안내문", value: debug.response_text, mono: true });
+  } else if (debug.path === "cognitive") {
+    if (debug.object_ko) rows.push({ label: "객체(한글)", value: debug.object_ko });
+    if (debug.clock_direction) rows.push({ label: "시계 방향", value: debug.clock_direction });
+    if (debug.distance_class) rows.push({ label: "거리 밴드", value: debug.distance_class });
+    if (debug.rag_query) rows.push({ label: "RAG 쿼리", value: debug.rag_query, mono: true });
+    if (debug.rag_context) rows.push({ label: "RAG 수칙", value: debug.rag_context, mono: true });
+    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
+    if (debug.used_fast_lane && debug.fast_lane_cache_key) {
+      rows.push({ label: "패스트 레인 키", value: debug.fast_lane_cache_key, mono: true });
+    }
+    if (debug.llm_provider) rows.push({ label: "LLM 제공자", value: debug.llm_provider, mono: true });
+    if (debug.llm_text) rows.push({ label: "LLM 응답", value: debug.llm_text, mono: true });
+    if (debug.response_text) rows.push({ label: "최종 안내문", value: debug.response_text, mono: true });
+    if (typeof debug.l3_verified === "boolean") {
+      rows.push({ label: "L3 검증", value: debug.l3_verified ? "통과" : "미통과" });
+    }
+    if (debug.validation_errors && debug.validation_errors.length > 0) {
+      rows.push({ label: "검증 오류", value: debug.validation_errors.join(", "), mono: true });
+    }
+    if (typeof debug.retry_count === "number" && debug.retry_count > 0) {
+      rows.push({ label: "LLM 재시도", value: String(debug.retry_count) });
+    }
+  } else if (debug.path === "reflex") {
+    if (debug.alert_id) rows.push({ label: "alert_id", value: debug.alert_id, mono: true });
+    if (debug.clip) rows.push({ label: "반사 클립", value: debug.clip, mono: true });
+    if (debug.class_name) rows.push({ label: "클래스", value: debug.class_name, mono: true });
+    if (debug.direction) rows.push({ label: "방향", value: debug.direction });
+    if (debug.distance) rows.push({ label: "거리", value: debug.distance });
+  }
+
+  return (
+    <div className="pipeline-debug-panel">
+      {rows.map((row) => (
+        <div key={row.label} className="pipeline-debug-row">
+          <span className="pipeline-debug-label">{row.label}</span>
+          <span className={row.mono ? "pipeline-debug-value mono" : "pipeline-debug-value"}>
+            {row.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // 실기기 -> STT/추론 -> RAG -> LLM -> TTS -> DB저장 순서로 고정 표시한다.
@@ -320,6 +451,15 @@ function FrameLightbox({
               <span className="frame-detail-label">TTS 안내문</span>
               <span className="frame-detail-value">{row.tts_text}</span>
             </div>
+            <div className="frame-detail-item frame-detail-item-full">
+              <span className="frame-detail-label">파이프라인 텍스트</span>
+              <div className="frame-detail-value">
+                <PipelineDebugPanel
+                  debugJson={row.pipeline_debug_json}
+                  detectedObjectsJson={row.detected_objects_json}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="frame-detail-actions">
@@ -501,6 +641,7 @@ export function DetectionGuidanceLogTable({
                 <th>감지 시각</th>
                 <th>스트림</th>
                 <th>이벤트 ID</th>
+                <th>파이프라인 텍스트</th>
                 <th>TTS 안내문</th>
                 <th>지연(ms)</th>
                 <th>오탐 판정</th>
@@ -552,6 +693,9 @@ export function DetectionGuidanceLogTable({
                       <StreamBadge streamType={row.stream_type} />
                     </td>
                     <td>{row.event_id ?? "-"}</td>
+                    <td className="pipeline-preview-cell">
+                      {summarizePipelineDebug(row.pipeline_debug_json, row.detected_objects_json) || "-"}
+                    </td>
                     <td>{row.tts_text}</td>
                     <td className="latency-total-cell">
                       {typeof totalMs === "number" ? totalMs.toFixed(0) : "-"}
@@ -593,7 +737,7 @@ export function DetectionGuidanceLogTable({
         </nav>
       )}
 
-      {selected && canShowFrame(selected) && (
+      {selected && (
         <div className="frame-detail">
           <div className="frame-detail-body">
             <div className="frame-detail-header">
@@ -617,6 +761,15 @@ export function DetectionGuidanceLogTable({
                 <div className="frame-detail-item frame-detail-item-full">
                   <span className="frame-detail-label">TTS 안내문</span>
                   <span className="frame-detail-value">{selected.tts_text}</span>
+                </div>
+                <div className="frame-detail-item frame-detail-item-full">
+                  <span className="frame-detail-label">파이프라인 텍스트</span>
+                  <div className="frame-detail-value">
+                    <PipelineDebugPanel
+                      debugJson={selected.pipeline_debug_json}
+                      detectedObjectsJson={selected.detected_objects_json}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -654,13 +807,15 @@ export function DetectionGuidanceLogTable({
                   </button>
                 )}
               </div>
-              <div className="frame-detail-image">
-                <FrameWithOverlay
-                  src={eventFrameUrl(selected.event_id!, token!)}
-                  detections={parseDetections(selected.detected_objects_json)}
-                  onClick={() => setLightboxLogId(selected.log_id)}
-                />
-              </div>
+              {canShowFrame(selected) && token && (
+                <div className="frame-detail-image">
+                  <FrameWithOverlay
+                    src={eventFrameUrl(selected.event_id!, token)}
+                    detections={parseDetections(selected.detected_objects_json)}
+                    onClick={() => setLightboxLogId(selected.log_id)}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>

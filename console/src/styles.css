@@ -1186,6 +1186,55 @@ td {
   border: 1px solid rgba(249, 183, 0, 0.3);
 }
 
+.pipeline-debug-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.pipeline-debug-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 120px 1fr;
+  align-items: start;
+}
+
+.pipeline-debug-label {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pipeline-debug-value {
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.pipeline-debug-value.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.pipeline-debug-empty {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pipeline-preview-cell {
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .panel-latency {
   min-height: unset;
   width: 100%;

@@ -388,6 +388,11 @@ class DetectionGuidanceLog(Base):
         Text().with_variant(MySQLJSON, "mysql"),
         nullable=True,
     )
+    # pipeline_debug_json: 관리자 콘솔용 경로별 중간 텍스트(STT 전사, RAG, LLM/패스트레인 등).
+    pipeline_debug_json: Mapped[str | None] = mapped_column(
+        Text().with_variant(MySQLJSON, "mysql"),
+        nullable=True,
+    )
     # created_at: DB 레코드 적재 시각 (마이크로초 6자리)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
