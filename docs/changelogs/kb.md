@@ -2354,3 +2354,13 @@
   - `pre-commit run --all-files`로 trailing whitespace/EOF 등 저장소 전역 정리.
 - **관련 파일**: `.pre-commit-config.yaml`, `requirements-dev.txt`, `docs/ops/code_quality_guide.md`, `pre-commit --all-files` 대상 파일
 - **검증 결과**: `pre-commit run --all-files` 전 훅 Passed. `ruff check .`·`ruff format --check .` 0건.
+
+---
+
+### 2026-07-16 | 1단계 | cursor_agent_consistency
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - .claude/skills Git 추적 예외 및 Cursor 에이전트 정합성 문서 보강
+- **관련 파일**: `cursor/rules/00-core-guidelines.mdc`, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `.claude/`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
