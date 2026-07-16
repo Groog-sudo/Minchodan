@@ -2472,7 +2472,7 @@
 
 ### 2026-07-16 | 1단계 | dial_action_siri_shortcuts
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `feat(stt,client): STT dial_action 전화 연결(Siri Shortcuts·Android ACTION_CALL)` (`60e4b65`)
 - **변경 내용**:
   - STT dial_action 전화 연결 복원(서버 번호 해석·WS·Android ACTION_CALL·iOS Siri Shortcuts MinchodanDial·단축어 설치 스크립트). api_spec v0.4.25. Docker pytest dial 8 passed.
 - **관련 파일**: `client/android/app/src/main/AndroidManifest.xml`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/ios/Minchodan/Info.plist`, `client/ios/Minchodan/PrivacyInfo.xcprivacy`, `client/ios/Podfile.lock`, `client/src/hooks/useWebSocket.ts`, `client/src/types/detection.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_ws_router_stt.py`, `client/android/app/src/main/java/com/minchodan/app/PhoneDialBridgeModule.kt`, `client/assets/shortcuts/`, `client/ios/MinchodanDialIntent.swift`, `client/ios/MinchodanSiriDialer.swift`, `client/ios/PhoneDialBridge.mm`, `client/ios/PhoneDialBridge.swift`, `client/src/services/phoneDialBridge.ts`, `scripts/create_minchodan_dial_shortcut.py`, `scripts/install_minchodan_dial_shortcut_ios.sh`, `server/rag/convenience_dial_resolver.py`, `server/stt/dial_resolver.py`, `server/stt/phone_utils.py`, `tests/test_convenience_dial_resolver.py`, `tests/test_dial_resolver.py`, `tests/test_phone_utils.py`
