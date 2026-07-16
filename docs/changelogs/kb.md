@@ -2372,7 +2372,7 @@
 
 ### 2026-07-16 | 2단계 | ios_console_orientation_fix
 
-- **커밋**: `(자동 커밋 예정)`
+- **커밋**: `d2d042b`
 - **변경 내용**:
   - iOS `ReflexFrameProcessorPlugin`: dg가 바꾼 `.oriented(.right)`(90도)를 kb 실측 정본 `.oriented(.down)`(180도)로 복구 — takePhoto(`rotate:180`)와 반사 스트림 방향 정합.
   - 콘솔 `LiveCameraFeed` / `DetectionGuidanceLogTable` CSS 회전을 **0**으로 고정(단말에서 정자세 JPEG 전송, 콘솔 하드코딩 90/180 제거).
