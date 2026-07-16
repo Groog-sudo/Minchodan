@@ -2460,6 +2460,16 @@
 
 ### 2026-07-16 | Git·문서 | kb → dev 병합 및 설계 문서 교차 검증
 
+- **커밋**: dev merge commit + docs sync (`aeea3bd`)
+- **변경 내용**:
+  - `origin/kb` 4커밋을 `dev`에 `--no-ff` 병합(충돌 없음).
+  - `architecture.md` §13.3.2: `risk_event` SSE 발행·`RiskEventLog` 연동 반영(stale 「미발행」 문구 제거).
+  - `api_specification.md` v0.4.22: §6.1 STT 대기 안내·`source` 필드, §8.3 `risk_event` producer, §8.5 `pipeline_debug_json` 확장 필드 표.
+  - `Directory_Structure.md`: `RiskEventLog` 주석을 SSE `risk_event`로 정정.
+- **배포 전 확인**: `20260716_001_add_pipeline_debug_json_to_detection_guidance_logs.sql` DDL 적용 여부.
+
+### 2026-07-16 | Git·문서 | kb → dev 병합 및 설계 문서 교차 검증
+
 - **커밋**: dev merge commit + docs sync
 - **변경 내용**:
   - `origin/kb` 4커밋을 `dev`에 `--no-ff` 병합(충돌 없음).
