@@ -382,6 +382,8 @@ const STREAM_FILTER_LABEL: Record<StreamFilter, string> = {
   reflex: "반사",
 };
 
+const PAGE_BUTTON_WINDOW = 10;
+
 /** 반사/인지/미분류를 한눈에 구분하는 배지. */
 function StreamBadge({ streamType }: { streamType: string }) {
   const known = streamType in STREAM_LABEL ? streamType : "unknown";
@@ -607,6 +609,7 @@ export function DetectionGuidanceLogTable({
   totalCount,
   onPrevPage,
   onNextPage,
+  onSetPage,
 }: {
   rows: DetectionGuidanceLogRow[];
   token?: string | null;
@@ -622,12 +625,16 @@ export function DetectionGuidanceLogTable({
   totalCount?: number;
   onPrevPage?: () => void;
   onNextPage?: () => void;
+  onSetPage?: (page: number) => void;
 }) {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [lightboxLogId, setLightboxLogId] = useState<number | null>(null);
   const [streamFilter, setStreamFilter] = useState<StreamFilter>("all");
   const [isStreamFilterOpen, setIsStreamFilterOpen] = useState(false);
+  const [isPageSearchOpen, setIsPageSearchOpen] = useState(false);
+  const [pageSearchInput, setPageSearchInput] = useState("");
   const streamFilterRef = useRef<HTMLDivElement | null>(null);
+  const pageSearchRef = useRef<HTMLDivElement | null>(null);
   const filteredRows = useMemo(
     () =>
       rows.filter(
@@ -639,6 +646,13 @@ export function DetectionGuidanceLogTable({
     [rows, streamFilter],
   );
   const totalPages = Math.max(1, Math.ceil((totalCount ?? rows.length) / pageSize));
+  const disablePaginationControls = (totalCount ?? rows.length) <= 11;
+  const pageWindowStart = Math.floor(page / PAGE_BUTTON_WINDOW) * PAGE_BUTTON_WINDOW;
+  const pageWindowEnd = Math.min(totalPages, pageWindowStart + PAGE_BUTTON_WINDOW);
+  const visiblePages = Array.from(
+    { length: pageWindowEnd - pageWindowStart },
+    (_, index) => pageWindowStart + index,
+  );
   const selected = filteredRows.find((row) => row.log_id === selectedLogId) ?? null;
   const lightboxRow = filteredRows.find((row) => row.log_id === lightboxLogId) ?? null;
   const canShowFrame = (row: DetectionGuidanceLogRow) =>
@@ -663,6 +677,35 @@ export function DetectionGuidanceLogTable({
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
+
+  useEffect(() => {
+    if (!isPageSearchOpen) {
+      return;
+    }
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!pageSearchRef.current) {
+        return;
+      }
+      if (!pageSearchRef.current.contains(event.target as Node)) {
+        setIsPageSearchOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isPageSearchOpen]);
+
+  const jumpToPage = () => {
+    const parsed = Number.parseInt(pageSearchInput.trim(), 10);
+    if (Number.isNaN(parsed)) {
+      return;
+    }
+    const clampedPage = Math.min(totalPages, Math.max(1, parsed));
+    onSetPage?.(clampedPage - 1);
+    setPageSearchInput("");
+    setIsPageSearchOpen(false);
+  };
 
   return (
     <section className="panel panel-table">
@@ -808,29 +851,91 @@ export function DetectionGuidanceLogTable({
         </div>
       )}
 
-      {totalPages > 1 && (
-        <nav className="log-pagination" aria-label="이력 페이지 이동">
+      <nav className="log-pagination" aria-label="이력 페이지 이동">
+        <button
+          type="button"
+          className="page-btn"
+          onClick={() => onPrevPage?.()}
+          disabled={disablePaginationControls || page === 0}
+          aria-label="이전 페이지"
+        >
+          ←
+        </button>
+
+        <div className="page-number-strip" aria-label="페이지 번호 목록">
+          {visiblePages.map((pageIndex) => (
+            <button
+              key={pageIndex}
+              type="button"
+              className={`page-btn ${page === pageIndex ? "page-btn-active" : ""}`}
+              onClick={() => onSetPage?.(pageIndex)}
+              disabled={disablePaginationControls}
+            >
+              {pageIndex + 1}
+            </button>
+          ))}
+
+          <div className="page-search-anchor" ref={pageSearchRef}>
+            <button
+              type="button"
+              className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
+              onClick={() => setIsPageSearchOpen((open) => !open)}
+              disabled={disablePaginationControls}
+              aria-label="페이지 번호 검색"
+            >
+              ...
+            </button>
+
+            {isPageSearchOpen && (
+              <div className="page-search-popover">
+                <label className="page-search-label" htmlFor="log-page-search-input">
+                  페이지 번호
+                </label>
+                <div className="page-search-row">
+                  <input
+                    id="log-page-search-input"
+                    type="number"
+                    className="page-search-input"
+                    min={1}
+                    max={totalPages}
+                    placeholder={`1-${totalPages}`}
+                    value={pageSearchInput}
+                    onChange={(event) => setPageSearchInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        jumpToPage();
+                      }
+                    }}
+                  />
+                  <button type="button" className="page-btn" onClick={jumpToPage}>
+                    이동
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
-            className="page-btn"
-            onClick={() => onPrevPage?.()}
-            disabled={page === 0}
+            className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
+            onClick={() => onSetPage?.(totalPages - 1)}
+            disabled={disablePaginationControls}
           >
-            이전
+            {totalPages}
           </button>
-          <span className="page-indicator">
-            {page + 1} / {totalPages} 페이지 · 전체 {totalCount ?? rows.length}건
-          </span>
-          <button
-            type="button"
-            className="page-btn"
-            onClick={() => onNextPage?.()}
-            disabled={page >= totalPages - 1}
-          >
-            다음
-          </button>
-        </nav>
-      )}
+        </div>
+
+        <button
+          type="button"
+          className="page-btn"
+          onClick={() => onNextPage?.()}
+          disabled={disablePaginationControls || page >= totalPages - 1}
+          aria-label="다음 페이지"
+        >
+          →
+        </button>
+      </nav>
 
       {selected && (
         <div className="frame-detail">

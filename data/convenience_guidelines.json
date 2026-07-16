@@ -1,7 +1,7 @@
 {
   "dataset_info": {
     "dataset_name": "시각장애인 생활지원 통합 안내 데이터",
-    "version": "1.0.0",
+    "version": "일점영점영",
     "language": "ko",
     "purpose": [
       "시각장애인 대상 기관 검색",
@@ -21,63 +21,38 @@
       "organization_type_ko": "공공기관",
       "name": "서울시 장애인 생활지원센터",
       "short_name": "서울 장애인지원센터",
-      "description": "장애인 복지 서비스, 이동 지원, 생활지원사 연계, 복지카드 및 지원제도 상담을 제공하는 공공기관입니다.",
+      "description": "장애인 복지 서비스, 이동 지원, 생활지원 연계를 제공하는 공공기관입니다.",
       "address": {
         "sido": "서울특별시",
         "sigungu": "중구",
-        "road_address": "서울특별시 중구 희망로 101",
-        "postal_code": "04501",
+        "road_address": "서울특별시 중구 희망로 일공일",
+        "postal_code": "공사오공일",
         "latitude": 37.5642,
         "longitude": 126.9971
       },
       "contact": {
-        "representative_phone": "02-0000-1001",
-        "counseling_phone": "02-0000-1002",
+        "representative_phone": "공이-이이이이-삼육구공",
+        "counseling_phone": "공이-이이이이-삼육구공",
         "emergency_phone": null,
         "email": "help001@example.org",
         "website": "https://example.org/public/001"
       },
       "business_hours": {
-        "weekday": "09:00-18:00",
+        "weekday": "구시 다시 십팔시",
         "saturday": "휴무",
         "sunday": "휴무",
-        "lunch_time": "12:00-13:00"
+        "lunch_time": "십이시 다시 십삼시"
       },
       "services": [
         {
           "service_id": "SVC-001",
           "service_name": "장애인 복지 상담",
-          "description": "장애인 등록, 복지카드, 활동지원 서비스 및 생활지원 제도를 안내합니다.",
-          "target_users": [
-            "시각장애인",
-            "보호자",
-            "장애인 가족"
-          ],
-          "application_method": [
-            "전화",
-            "방문",
-            "온라인"
-          ],
-          "required_documents": [
-            "신분증",
-            "장애인등록증 또는 복지카드"
-          ]
+          "description": "장애인 등록, 복지카드, 활동지원 서비스를 안내합니다."
         },
         {
           "service_id": "SVC-002",
           "service_name": "이동지원 서비스 연계",
-          "description": "장애인 콜택시, 병원 이동, 복지관 방문을 위한 이동 서비스를 연계합니다.",
-          "target_users": [
-            "보행이 불편한 장애인",
-            "중증 시각장애인"
-          ],
-          "application_method": [
-            "전화",
-            "방문"
-          ],
-          "required_documents": [
-            "복지카드"
-          ]
+          "description": "장애인 이동지원 서비스와 귀가 지원을 연계합니다."
         }
       ],
       "accessibility": {
@@ -90,13 +65,10 @@
       },
       "keywords": [
         "공공기관",
-        "복지카드",
-        "장애인 등록",
-        "활동지원",
-        "이동지원",
-        "장애인 콜택시"
+        "복지 상담",
+        "이동지원"
       ],
-      "rag_text": "서울시 장애인 생활지원센터는 장애인 복지 상담, 복지카드 안내, 활동지원 서비스 신청, 장애인 이동지원 연계를 제공한다. 평일 오전 9시부터 오후 6시까지 운영하며 시각장애인을 위한 음성 안내와 직원 동행 지원이 가능하다."
+      "rag_text": "서울시 장애인 생활지원센터는 복지 상담과 이동지원 연계를 제공한다."
     },
     {
       "organization_id": "ORG-002",
@@ -104,74 +76,43 @@
       "organization_type_ko": "시각장애인센터",
       "name": "한빛 시각장애인 자립지원센터",
       "short_name": "한빛 시각장애인센터",
-      "description": "시각장애인의 자립생활, 보행훈련, 정보화교육, 점자교육 및 일상생활 훈련을 지원합니다.",
+      "description": "시각장애인 보행훈련, 점자 교육, 정보화 교육, 자립훈련을 지원합니다.",
       "address": {
         "sido": "서울특별시",
         "sigungu": "영등포구",
-        "road_address": "서울특별시 영등포구 새빛길 25",
-        "postal_code": "07201",
+        "road_address": "서울특별시 영등포구 새빛길 이오",
+        "postal_code": "공칠이공일",
         "latitude": 37.5201,
         "longitude": 126.9104
       },
       "contact": {
-        "representative_phone": "02-0000-2001",
-        "counseling_phone": "02-0000-2002",
+        "representative_phone": "공이-육구공공-일이이공",
+        "counseling_phone": "공이-육구공공-일이이공",
         "emergency_phone": null,
         "email": "hanbit@example.org",
         "website": "https://example.org/visual-center/002"
       },
       "business_hours": {
-        "weekday": "09:00-18:00",
-        "saturday": "09:00-13:00",
+        "weekday": "구시 다시 십팔시",
+        "saturday": "구시 다시 십삼시",
         "sunday": "휴무",
-        "lunch_time": "12:00-13:00"
+        "lunch_time": "십이시 다시 십삼시"
       },
       "services": [
         {
           "service_id": "SVC-003",
           "service_name": "흰지팡이 보행훈련",
-          "description": "흰지팡이 사용법, 도로 횡단, 대중교통 이용, 실내외 방향 탐색 훈련을 제공합니다.",
-          "target_users": [
-            "시각장애인",
-            "중도 실명자"
-          ],
-          "application_method": [
-            "전화 예약",
-            "방문 상담"
-          ],
-          "required_documents": [
-            "복지카드",
-            "상담 신청서"
-          ]
+          "description": "흰지팡이 사용법, 도로 횡단, 대중교통 이용 훈련을 제공합니다."
         },
         {
           "service_id": "SVC-004",
           "service_name": "점자 및 정보화교육",
-          "description": "점자 읽기와 쓰기, 스크린리더, 스마트폰 접근성 기능을 교육합니다.",
-          "target_users": [
-            "시각장애인",
-            "보호자"
-          ],
-          "application_method": [
-            "전화",
-            "온라인 신청"
-          ],
-          "required_documents": []
+          "description": "점자 읽기와 쓰기, 스크린리더, 스마트폰 접근성 기능을 교육합니다."
         },
         {
           "service_id": "SVC-005",
           "service_name": "생활 자립훈련",
-          "description": "요리, 세탁, 의복 정리, 약 복용 관리 등 일상생활 자립훈련을 제공합니다.",
-          "target_users": [
-            "시각장애인",
-            "중도 실명자"
-          ],
-          "application_method": [
-            "상담 후 등록"
-          ],
-          "required_documents": [
-            "복지카드"
-          ]
+          "description": "일상생활 전반에 필요한 자립훈련을 제공합니다."
         }
       ],
       "accessibility": {
@@ -185,12 +126,11 @@
       "keywords": [
         "시각장애인센터",
         "보행훈련",
-        "흰지팡이",
         "점자",
-        "스크린리더",
-        "자립생활"
+        "정보화",
+        "자립훈련"
       ],
-      "rag_text": "한빛 시각장애인 자립지원센터는 흰지팡이 보행훈련, 점자교육, 스마트폰 접근성 교육, 스크린리더 교육, 일상생활 자립훈련을 제공한다. 중도 실명자와 시각장애인이 이용할 수 있으며 전화 예약 후 상담을 받을 수 있다."
+      "rag_text": "한빛 시각장애인 자립지원센터는 보행훈련, 점자와 정보화 교육, 자립훈련을 제공한다."
     },
     {
       "organization_id": "ORG-003",
@@ -198,75 +138,43 @@
       "organization_type_ko": "장애인복지관",
       "name": "푸른나무 장애인종합복지관",
       "short_name": "푸른나무 복지관",
-      "description": "장애인과 가족을 대상으로 재활, 직업훈련, 심리상담, 문화활동 및 가족지원 프로그램을 운영합니다.",
+      "description": "직업재활, 가족 상담, 문화와 여가 프로그램을 운영합니다.",
       "address": {
         "sido": "서울특별시",
         "sigungu": "강서구",
-        "road_address": "서울특별시 강서구 나눔로 77",
-        "postal_code": "07501",
+        "road_address": "서울특별시 강서구 나눔로 칠칠",
+        "postal_code": "공칠오공일",
         "latitude": 37.5514,
         "longitude": 126.8495
       },
       "contact": {
-        "representative_phone": "02-0000-3001",
-        "counseling_phone": "02-0000-3002",
+        "representative_phone": "공이-삼이칠삼-팔일공공",
+        "counseling_phone": "공이-삼이칠삼-팔일공공",
         "emergency_phone": null,
         "email": "green-tree@example.org",
         "website": "https://example.org/welfare/003"
       },
       "business_hours": {
-        "weekday": "09:00-18:00",
+        "weekday": "구시 다시 십팔시",
         "saturday": "프로그램별 운영",
         "sunday": "휴무",
-        "lunch_time": "12:00-13:00"
+        "lunch_time": "십이시 다시 십삼시"
       },
       "services": [
         {
           "service_id": "SVC-006",
           "service_name": "직업재활 상담",
-          "description": "직업능력 평가, 취업 준비, 직무교육 및 장애인 고용기관 연계를 지원합니다.",
-          "target_users": [
-            "취업을 희망하는 장애인"
-          ],
-          "application_method": [
-            "전화 예약",
-            "방문 상담"
-          ],
-          "required_documents": [
-            "신분증",
-            "복지카드",
-            "이력서"
-          ]
+          "description": "취업 상담, 직무교육, 고용기관 연계를 지원합니다."
         },
         {
           "service_id": "SVC-007",
           "service_name": "가족 심리상담",
-          "description": "장애인 당사자와 부모, 배우자, 보호자를 위한 가족상담을 제공합니다.",
-          "target_users": [
-            "장애인",
-            "부모",
-            "보호자",
-            "가족"
-          ],
-          "application_method": [
-            "전화 예약"
-          ],
-          "required_documents": []
+          "description": "이용자와 보호자를 위한 상담을 제공합니다."
         },
         {
           "service_id": "SVC-008",
           "service_name": "문화·여가 프로그램",
-          "description": "음악, 미술, 체육, 독서 모임 등 장애인 참여형 프로그램을 운영합니다.",
-          "target_users": [
-            "등록 장애인"
-          ],
-          "application_method": [
-            "온라인 신청",
-            "방문 신청"
-          ],
-          "required_documents": [
-            "복지카드"
-          ]
+          "description": "음악, 미술, 체육, 독서 모임 등 참여형 프로그램을 운영합니다."
         }
       ],
       "accessibility": {
@@ -280,11 +188,11 @@
       "keywords": [
         "장애인복지관",
         "직업재활",
-        "가족상담",
-        "문화활동",
-        "취업지원"
+        "가족 상담",
+        "문화",
+        "여가"
       ],
-      "rag_text": "푸른나무 장애인종합복지관은 장애인 직업재활, 취업 상담, 가족 심리상담, 문화 및 여가 프로그램을 운영한다. 시각장애인과 보호자가 함께 상담받을 수 있으며 안내견 출입이 가능하다."
+      "rag_text": "푸른나무 장애인종합복지관은 직업재활, 가족 상담, 문화와 여가 프로그램을 운영한다."
     },
     {
       "organization_id": "ORG-004",
@@ -292,60 +200,38 @@
       "organization_type_ko": "장애인 관련 협회",
       "name": "한국 시각장애인 생활안전협회",
       "short_name": "생활안전협회",
-      "description": "시각장애인의 보행 안전, 인권 보호, 생활 편의 증진 및 정책 제안을 수행하는 비영리 협회입니다.",
+      "description": "시각장애인 보행 안전, 권익 보호, 법률 연계를 지원하는 비영리 협회입니다.",
       "address": {
         "sido": "서울특별시",
         "sigungu": "마포구",
-        "road_address": "서울특별시 마포구 동행로 18",
-        "postal_code": "04101",
+        "road_address": "서울특별시 마포구 동행로 일팔",
+        "postal_code": "공사일공일",
         "latitude": 37.5563,
         "longitude": 126.9238
       },
       "contact": {
-        "representative_phone": "02-0000-4001",
-        "counseling_phone": "02-0000-4002",
+        "representative_phone": "공이-육구오이-사칠공공",
+        "counseling_phone": "공이-육구오이-사칠공공",
         "emergency_phone": null,
         "email": "safety-association@example.org",
         "website": "https://example.org/association/004"
       },
       "business_hours": {
-        "weekday": "09:30-17:30",
+        "weekday": "구시 삼십분 다시 십칠시 삼십분",
         "saturday": "휴무",
         "sunday": "휴무",
-        "lunch_time": "12:00-13:00"
+        "lunch_time": "십이시 다시 십삼시"
       },
       "services": [
         {
           "service_id": "SVC-009",
           "service_name": "보행 안전 상담",
-          "description": "위험 지역 신고, 보행 불편 민원, 음향신호기 및 점자블록 관련 상담을 제공합니다.",
-          "target_users": [
-            "시각장애인",
-            "보호자",
-            "활동지원사"
-          ],
-          "application_method": [
-            "전화",
-            "이메일",
-            "온라인 신고"
-          ],
-          "required_documents": []
+          "description": "위험 지역 신고, 보행 불편 민원을 상담합니다."
         },
         {
           "service_id": "SVC-010",
           "service_name": "권익 옹호 및 법률 연계",
-          "description": "차별, 시설 이용 거부, 안내견 출입 거부 등의 문제에 대해 상담하고 전문기관을 연계합니다.",
-          "target_users": [
-            "장애인 당사자",
-            "보호자"
-          ],
-          "application_method": [
-            "전화 상담",
-            "방문 상담"
-          ],
-          "required_documents": [
-            "관련 증빙자료"
-          ]
+          "description": "안내견 출입 거부, 장애인 차별 문제 상담과 전문기관 연계를 제공합니다."
         }
       ],
       "accessibility": {
@@ -358,14 +244,11 @@
       },
       "keywords": [
         "협회",
-        "보행안전",
-        "점자블록",
-        "음향신호기",
-        "안내견",
-        "권익보호",
-        "법률상담"
+        "보행 안전",
+        "권익",
+        "법률"
       ],
-      "rag_text": "한국 시각장애인 생활안전협회는 보행 불편 지역 신고, 점자블록과 음향신호기 관련 민원 상담, 안내견 출입 거부 및 장애인 차별 관련 권익 상담을 제공한다."
+      "rag_text": "한국 시각장애인 생활안전협회는 보행 안전 상담과 권익, 법률 연계를 지원한다."
     },
     {
       "organization_id": "ORG-005",
@@ -373,27 +256,27 @@
       "organization_type_ko": "병원",
       "name": "새봄 안과재활병원",
       "short_name": "새봄 안과병원",
-      "description": "안과 진료, 저시력 검사, 시각재활 상담 및 보조기기 처방을 제공하는 병원입니다.",
+      "description": "안과 진료, 저시력 검사, 시각재활 상담, 보조기기 처방을 제공합니다.",
       "address": {
         "sido": "서울특별시",
         "sigungu": "서대문구",
-        "road_address": "서울특별시 서대문구 건강로 205",
-        "postal_code": "03701",
+        "road_address": "서울특별시 서대문구 건강로 이공오",
+        "postal_code": "공삼칠공일",
         "latitude": 37.5774,
         "longitude": 126.9368
       },
       "contact": {
-        "representative_phone": "02-0000-5001",
-        "appointment_phone": "02-0000-5002",
-        "emergency_phone": "02-0000-5099",
+        "representative_phone": "공이-이공칠이-삼육일공",
+        "appointment_phone": "공이-이공칠이-삼육일공",
+        "emergency_phone": "공이-이공칠이-삼육구구",
         "email": "saebom-eye@example.org",
         "website": "https://example.org/hospital/005"
       },
       "business_hours": {
-        "weekday": "08:30-17:30",
-        "saturday": "08:30-12:30",
+        "weekday": "팔시 삼십분 다시 십칠시 삼십분",
+        "saturday": "팔시 삼십분 다시 십이시 삼십분",
         "sunday": "응급실만 운영",
-        "lunch_time": "12:30-13:30"
+        "lunch_time": "낮 열두 시 삼십 분부터 오후 한 시 삼십 분"
       },
       "medical_departments": [
         "안과",
@@ -405,35 +288,12 @@
         {
           "service_id": "SVC-011",
           "service_name": "저시력 정밀검사",
-          "description": "잔존 시력, 시야, 대비감도 및 생활환경에 따른 시각 기능을 평가합니다.",
-          "target_users": [
-            "저시력 환자",
-            "시각장애인"
-          ],
-          "application_method": [
-            "전화 예약",
-            "온라인 예약"
-          ],
-          "required_documents": [
-            "신분증",
-            "진료의뢰서",
-            "복용 중인 약 목록"
-          ]
+          "description": "잔존 시력과 시야, 대비감도 중심의 정밀검사를 제공합니다."
         },
         {
           "service_id": "SVC-012",
           "service_name": "시각 보조기기 처방",
-          "description": "확대경, 전자독서확대기, 필터 안경, 음성 보조기기 등을 상담하고 처방합니다.",
-          "target_users": [
-            "저시력 환자",
-            "시각장애인"
-          ],
-          "application_method": [
-            "진료 후 상담"
-          ],
-          "required_documents": [
-            "검사 결과지"
-          ]
+          "description": "확대경, 전자독서확대기, 음성 보조기기 처방 상담을 제공합니다."
         }
       ],
       "accessibility": {
@@ -448,12 +308,10 @@
         "병원",
         "안과",
         "저시력",
-        "시각재활",
-        "확대경",
         "보조기기",
-        "응급실"
+        "응급상담"
       ],
-      "rag_text": "새봄 안과재활병원은 안과 진료, 저시력 정밀검사, 시각재활 상담과 확대경, 전자독서확대기 등 시각 보조기기 처방을 제공한다. 평일 오전 8시 30분부터 오후 5시 30분까지 진료하며 응급상황은 별도 응급전화로 문의할 수 있다."
+      "rag_text": "새봄 안과재활병원은 저시력 검사와 시각재활, 보조기기 처방을 제공한다."
     },
     {
       "organization_id": "ORG-006",
@@ -461,59 +319,38 @@
       "organization_type_ko": "보조기기센터",
       "name": "스마트 보조기기 지원센터",
       "short_name": "보조기기센터",
-      "description": "시각장애인용 음성기기, 점자정보단말기, 전자확대기 및 스마트폰 접근성 기기의 체험과 대여를 지원합니다.",
+      "description": "시각장애인용 보조기기 체험과 단기대여를 지원합니다.",
       "address": {
         "sido": "서울특별시",
         "sigungu": "성동구",
-        "road_address": "서울특별시 성동구 기술로 55",
-        "postal_code": "04701",
+        "road_address": "서울특별시 성동구 기술로 오오",
+        "postal_code": "공사칠공일",
         "latitude": 37.5444,
         "longitude": 127.0562
       },
       "contact": {
-        "representative_phone": "02-0000-6001",
-        "counseling_phone": "02-0000-6002",
+        "representative_phone": "공이-육삼구공-팔팔오공",
+        "counseling_phone": "공이-육삼구공-팔팔오공",
         "emergency_phone": null,
         "email": "assistive-tech@example.org",
         "website": "https://example.org/device/006"
       },
       "business_hours": {
-        "weekday": "09:00-18:00",
+        "weekday": "구시 다시 십팔시",
         "saturday": "예약 운영",
         "sunday": "휴무",
-        "lunch_time": "12:00-13:00"
+        "lunch_time": "십이시 다시 십삼시"
       },
       "services": [
         {
           "service_id": "SVC-013",
           "service_name": "보조기기 체험",
-          "description": "점자정보단말기, 전자확대기, 음성시계, 음성체중계 등을 직접 체험할 수 있습니다.",
-          "target_users": [
-            "시각장애인",
-            "보호자",
-            "복지기관 종사자"
-          ],
-          "application_method": [
-            "전화 예약",
-            "온라인 예약"
-          ],
-          "required_documents": []
+          "description": "점자정보단말기, 전자확대기, 음성기기를 체험할 수 있습니다."
         },
         {
           "service_id": "SVC-014",
           "service_name": "보조기기 단기대여",
-          "description": "교육, 재활 또는 일상생활을 위해 보조기기를 일정 기간 대여합니다.",
-          "target_users": [
-            "등록 시각장애인"
-          ],
-          "application_method": [
-            "방문 신청"
-          ],
-          "required_documents": [
-            "신분증",
-            "복지카드",
-            "대여 신청서"
-          ]
+          "description": "등록 시각장애인을 대상으로 보조기기 단기대여를 지원합니다."
         }
       ],
       "accessibility": {
@@ -527,12 +364,10 @@
       "keywords": [
         "보조기기",
         "점자정보단말기",
-        "전자확대기",
-        "음성기기",
-        "기기대여",
-        "접근성"
+        "체험",
+        "대여"
       ],
-      "rag_text": "스마트 보조기기 지원센터는 시각장애인용 점자정보단말기, 전자확대기, 음성시계와 같은 보조기기를 체험하고 대여할 수 있는 기관이다. 등록 시각장애인은 신분증과 복지카드를 준비하여 대여를 신청할 수 있다."
+      "rag_text": "스마트 보조기기 지원센터는 보조기기 체험과 단기대여를 제공한다."
     }
   ],
   "people": [
@@ -540,26 +375,11 @@
       "person_id": "PER-001",
       "person_type": "user",
       "person_type_ko": "시각장애인 이용자",
-      "name": "김도윤",
-      "birth_year": 1994,
-      "gender": "남성",
-      "disability_profile": {
-        "disability_type": "시각장애",
-        "disability_level": "중증",
-        "vision_status": "전맹",
-        "uses_white_cane": true,
-        "uses_guide_dog": false,
-        "uses_screen_reader": true
-      },
+      "name": "윤대근",
       "contact": {
-        "phone": "010-0000-1001",
-        "email": "doyun@example.com",
+        "phone": "공일공-구오구공-삼이일공",
+        "email": "daegeun@example.com",
         "preferred_contact_method": "전화"
-      },
-      "address": {
-        "sido": "서울특별시",
-        "sigungu": "영등포구",
-        "detail_address": "행복아파트 101동"
       },
       "communication_preferences": {
         "preferred_language": "한국어",
@@ -570,215 +390,7 @@
         "speech_speed": "보통",
         "avoid_complex_directions": true
       },
-      "medical_notes": [
-        "당뇨 관련 정기 안과 검진 필요"
-      ],
-      "emergency_contact_ids": [
-        "PER-002",
-        "PER-003"
-      ],
-      "assigned_manager_id": "PER-005",
-      "frequent_organization_ids": [
-        "ORG-002",
-        "ORG-003",
-        "ORG-005"
-      ],
-      "rag_text": "김도윤은 중증 시각장애가 있는 이용자로 흰지팡이와 스크린리더를 사용한다. 복잡한 설명보다 음성과 짧은 문장으로 안내받는 것을 선호한다. 긴급 연락처는 어머니 이정희와 보호자 박서준이며 담당 관리사는 최민아이다."
-    },
-    {
-      "person_id": "PER-002",
-      "person_type": "parent",
-      "person_type_ko": "부모",
-      "name": "이정희",
-      "relationship_to_user": "어머니",
-      "related_user_id": "PER-001",
-      "contact": {
-        "phone": "010-0000-2001",
-        "email": "junghui@example.com",
-        "preferred_contact_method": "전화"
-      },
-      "availability": {
-        "weekday": "18:00 이후",
-        "weekend": "대부분 가능"
-      },
-      "emergency_priority": 1,
-      "authorized_actions": [
-        "병원 진료 일정 확인",
-        "복지기관 상담 동행",
-        "긴급상황 연락",
-        "보조기기 수령"
-      ],
-      "rag_text": "이정희는 김도윤 이용자의 어머니이며 첫 번째 긴급 연락 대상이다. 평일 오후 6시 이후 연락이 가능하고 병원 진료 일정 확인과 복지기관 상담 동행이 가능하다."
-    },
-    {
-      "person_id": "PER-003",
-      "person_type": "guardian",
-      "person_type_ko": "보호자",
-      "name": "박서준",
-      "relationship_to_user": "형",
-      "related_user_id": "PER-001",
-      "contact": {
-        "phone": "010-0000-3001",
-        "email": "seojun@example.com",
-        "preferred_contact_method": "문자"
-      },
-      "availability": {
-        "weekday": "09:00-21:00",
-        "weekend": "09:00-21:00"
-      },
-      "emergency_priority": 2,
-      "authorized_actions": [
-        "긴급상황 연락",
-        "병원 이동 지원",
-        "귀가 지원"
-      ],
-      "rag_text": "박서준은 김도윤 이용자의 형이자 두 번째 긴급 보호자이다. 오전 9시부터 오후 9시까지 연락 가능하며 병원 이동과 귀가 지원을 담당한다."
-    },
-    {
-      "person_id": "PER-004",
-      "person_type": "activity_support_worker",
-      "person_type_ko": "활동지원사",
-      "name": "정하늘",
-      "related_user_id": "PER-001",
-      "organization_id": "ORG-003",
-      "contact": {
-        "phone": "010-0000-4001",
-        "email": "haneul@example.org",
-        "preferred_contact_method": "전화"
-      },
-      "working_schedule": {
-        "monday": "09:00-13:00",
-        "tuesday": "09:00-13:00",
-        "wednesday": "휴무",
-        "thursday": "09:00-13:00",
-        "friday": "09:00-13:00"
-      },
-      "responsibilities": [
-        "병원 및 복지관 이동 지원",
-        "장보기 지원",
-        "서류 작성 보조",
-        "보조기기 사용 지원"
-      ],
-      "rag_text": "정하늘은 김도윤 이용자의 활동지원사이다. 월요일, 화요일, 목요일, 금요일 오전 9시부터 오후 1시까지 근무하며 병원 이동, 장보기, 서류 작성과 보조기기 사용을 지원한다."
-    },
-    {
-      "person_id": "PER-005",
-      "person_type": "association_manager",
-      "person_type_ko": "협회 관리사",
-      "name": "최민아",
-      "organization_id": "ORG-004",
-      "contact": {
-        "phone": "02-0000-4010",
-        "mobile_phone": "010-0000-5001",
-        "email": "mina.manager@example.org",
-        "preferred_contact_method": "전화"
-      },
-      "position": "생활안전 사례관리사",
-      "specialties": [
-        "시각장애인 보행안전",
-        "복지기관 연계",
-        "권익 상담",
-        "보호자 상담"
-      ],
-      "assigned_user_ids": [
-        "PER-001",
-        "PER-006"
-      ],
-      "working_hours": "평일 09:30-17:30",
-      "rag_text": "최민아는 한국 시각장애인 생활안전협회의 생활안전 사례관리사이다. 김도윤과 윤서연 이용자를 담당하며 보행안전, 복지기관 연계, 권익 보호와 보호자 상담을 지원한다."
-    },
-    {
-      "person_id": "PER-006",
-      "person_type": "user",
-      "person_type_ko": "시각장애인 이용자",
-      "name": "윤서연",
-      "birth_year": 1967,
-      "gender": "여성",
-      "disability_profile": {
-        "disability_type": "시각장애",
-        "disability_level": "경증",
-        "vision_status": "저시력",
-        "uses_white_cane": true,
-        "uses_guide_dog": false,
-        "uses_screen_reader": false
-      },
-      "contact": {
-        "phone": "010-0000-6001",
-        "email": null,
-        "preferred_contact_method": "전화"
-      },
-      "address": {
-        "sido": "서울특별시",
-        "sigungu": "강서구",
-        "detail_address": "새희망빌라 202호"
-      },
-      "communication_preferences": {
-        "preferred_language": "한국어",
-        "response_format": [
-          "큰 글씨",
-          "음성"
-        ],
-        "speech_speed": "느리게",
-        "avoid_complex_directions": true
-      },
-      "medical_notes": [
-        "녹내장 정기검진 필요",
-        "고혈압 약 복용 중"
-      ],
-      "emergency_contact_ids": [
-        "PER-007"
-      ],
-      "assigned_manager_id": "PER-005",
-      "frequent_organization_ids": [
-        "ORG-003",
-        "ORG-005",
-        "ORG-006"
-      ],
-      "rag_text": "윤서연은 저시력이 있는 시각장애인 이용자이다. 큰 글씨와 느린 음성 안내를 선호한다. 녹내장 정기검진과 고혈압 약 복용 관리가 필요하며 보호자는 딸 윤지수이다."
-    },
-    {
-      "person_id": "PER-007",
-      "person_type": "guardian",
-      "person_type_ko": "보호자",
-      "name": "윤지수",
-      "relationship_to_user": "딸",
-      "related_user_id": "PER-006",
-      "contact": {
-        "phone": "010-0000-7001",
-        "email": "jisoo@example.com",
-        "preferred_contact_method": "전화"
-      },
-      "availability": {
-        "weekday": "12:00-13:00 또는 18:00 이후",
-        "weekend": "가능"
-      },
-      "emergency_priority": 1,
-      "authorized_actions": [
-        "진료 예약",
-        "약 복용 확인",
-        "긴급상황 연락",
-        "보조기기 신청"
-      ],
-      "rag_text": "윤지수는 윤서연 이용자의 딸이자 첫 번째 긴급 보호자이다. 평일 점심시간 또는 오후 6시 이후 연락할 수 있으며 진료 예약, 약 복용 확인과 보조기기 신청을 돕는다."
-    },
-    {
-      "person_id": "PER-008",
-      "person_type": "doctor",
-      "person_type_ko": "의사",
-      "name": "한지훈",
-      "organization_id": "ORG-005",
-      "contact": {
-        "office_phone": "02-0000-5011",
-        "email": "doctor.han@example.org"
-      },
-      "position": "저시력 클리닉 전문의",
-      "specialties": [
-        "저시력 진료",
-        "녹내장",
-        "시각재활",
-        "보조기기 처방"
-      ],
-      "rag_text": "한지훈은 새봄 안과재활병원의 저시력 클리닉 전문의이다. 저시력 검사, 녹내장 진료, 시각재활과 시각 보조기기 처방을 담당한다."
+      "rag_text": "윤대근은 음성과 짧은 문장 중심 안내를 선호하는 시각장애인 이용자이다."
     }
   ],
   "emergency_contacts": [
@@ -787,76 +399,61 @@
       "category": "medical_emergency",
       "category_ko": "의료 응급상황",
       "name": "새봄 안과재활병원 응급상담",
-      "phone": "02-0000-5099",
-      "available_hours": "24시간",
-      "description": "눈 통증, 갑작스러운 시력 저하, 외상 등 안과 응급상황 상담용 더미 연락처입니다.",
-      "priority": 1,
+      "phone": "공이-이공칠이-삼육구구",
+      "available_hours": "스물네 시간",
+      "description": "갑작스러운 시력 저하, 심한 눈 통증, 안구 외상 대응용 더미 연락처입니다.",
+      "priority": "첫째",
       "organization_id": "ORG-005",
       "keywords": [
         "시력 저하",
         "눈 통증",
         "안구 외상",
         "병원",
-        "응급실"
+        "응급"
       ],
-      "rag_text": "갑작스러운 시력 저하, 심한 눈 통증 또는 눈 외상이 발생한 경우 새봄 안과재활병원 응급상담 번호로 연락한다."
+      "rag_text": "급성 안과 증상이 생기면 새봄 안과재활병원 응급상담 번호로 연락한다."
     },
     {
       "emergency_id": "EMG-002",
       "category": "lost_person",
       "category_ko": "길을 잃은 경우",
       "name": "시각장애인 이동지원 긴급연락망",
-      "phone": "02-0000-1099",
-      "available_hours": "06:00-24:00",
-      "description": "시각장애인이 길을 잃었거나 보호자와 연락이 되지 않을 때 이용하는 가상 지원 연락처입니다.",
-      "priority": 2,
+      "phone": "공이-이이이이-삼육구구",
+      "available_hours": "육시 다시 이십사시",
+      "description": "길을 잃었거나 현재 위치 확인이 필요한 상황에 사용하는 더미 연락처입니다.",
+      "priority": "둘째",
       "organization_id": "ORG-001",
       "keywords": [
         "길 잃음",
         "위치 확인",
-        "귀가 지원",
-        "보호자 연락"
+        "귀가 지원"
       ],
-      "rag_text": "시각장애인이 길을 잃었거나 현재 위치를 알기 어려운 경우 이동지원 긴급연락망에 연락하여 위치 확인과 귀가 지원을 요청할 수 있다."
+      "rag_text": "길을 잃은 상황에서는 이동지원 긴급연락망에 연락해 위치 확인과 귀가 지원을 요청한다."
     },
     {
       "emergency_id": "EMG-003",
       "category": "guardian_contact",
       "category_ko": "보호자 긴급연락",
-      "name": "김도윤 보호자 연락망",
+      "name": "윤대근 보호자 연락망",
       "related_user_id": "PER-001",
       "contact_order": [
         {
-          "priority": 1,
-          "person_id": "PER-002",
-          "name": "이정희",
-          "relationship": "어머니",
-          "phone": "010-0000-2001"
-        },
-        {
-          "priority": 2,
-          "person_id": "PER-003",
-          "name": "박서준",
-          "relationship": "형",
-          "phone": "010-0000-3001"
-        },
-        {
-          "priority": 3,
-          "person_id": "PER-005",
-          "name": "최민아",
-          "relationship": "협회 관리사",
-          "phone": "010-0000-5001"
+          "priority": "첫째",
+          "person_id": "PER-001",
+          "name": "윤대근",
+          "relationship": "본인",
+          "phone": "공일공-구오구공-삼이일공"
         }
       ],
-      "rag_text": "김도윤 이용자에게 긴급상황이 발생하면 첫 번째로 어머니 이정희에게 연락하고, 연결되지 않으면 형 박서준, 그다음 협회 관리사 최민아에게 연락한다."
+      "rag_text": "윤대근 이용자 긴급 연락은 등록된 연락망 번호로 우선 연결한다."
     }
   ],
   "faq": [
     {
       "faq_id": "FAQ-001",
       "category": "기관 이용",
-      "question": "시각장애인 보행훈련은 어디에서 받을 수 있나요?",
-      "answer": "한빛 시각장애인 자립지원센터에서 흰지팡이 사용법, 도로 횡단, 대중교통 이용 등의 보행훈련을 받을 수 있습니다. 전화 예약 후 방문 상담이 필요합니다.",
+      "question": "보행훈련은 어디서 받을 수 있나요?",
+      "answer": "한빛 시각장애인 자립지원센터에서 보행훈련을 받을 수 있습니다.",
       "related_organization_ids": [
         "ORG-002"
       ],
@@ -865,73 +462,66 @@
         "흰지팡이",
         "시각장애인센터"
       ],
-      "rag_text": "시각장애인 보행훈련은 한빛 시각장애인 자립지원센터에서 받을 수 있다. 전화로 예약한 후 복지카드와 상담 신청서를 준비한다."
+      "rag_text": "보행훈련은 한빛 시각장애인 자립지원센터에서 받을 수 있다."
     },
     {
       "faq_id": "FAQ-002",
       "category": "병원",
-      "question": "저시력 검사를 받을 수 있는 병원은 어디인가요?",
-      "answer": "새봄 안과재활병원의 저시력 클리닉에서 잔존 시력, 시야, 대비감도 검사와 보조기기 상담을 받을 수 있습니다.",
+      "question": "저시력 검사는 어느 병원에서 받을 수 있나요?",
+      "answer": "새봄 안과재활병원에서 저시력 검사를 받을 수 있습니다.",
       "related_organization_ids": [
         "ORG-005"
       ],
       "keywords": [
         "저시력",
         "안과",
-        "검사",
-        "보조기기"
+        "검사"
       ],
-      "rag_text": "저시력 검사는 새봄 안과재활병원 저시력 클리닉에서 받을 수 있다. 전화 또는 온라인 예약 후 신분증과 진료의뢰서를 준비한다."
+      "rag_text": "저시력 검사는 새봄 안과재활병원에서 받을 수 있다."
     },
     {
       "faq_id": "FAQ-003",
       "category": "보조기기",
-      "question": "점자정보단말기를 체험하거나 빌릴 수 있나요?",
-      "answer": "스마트 보조기기 지원센터에서 점자정보단말기를 체험할 수 있으며 등록 시각장애인은 단기대여도 신청할 수 있습니다.",
+      "question": "점자정보단말기 체험이나 대여가 가능한가요?",
+      "answer": "스마트 보조기기 지원센터에서 체험과 단기대여를 신청할 수 있습니다.",
       "related_organization_ids": [
         "ORG-006"
       ],
       "keywords": [
         "점자정보단말기",
         "체험",
-        "대여",
-        "보조기기센터"
+        "대여"
       ],
-      "rag_text": "점자정보단말기는 스마트 보조기기 지원센터에서 체험하고 대여할 수 있다. 대여 신청 시 신분증, 복지카드와 대여 신청서가 필요하다."
+      "rag_text": "점자정보단말기는 스마트 보조기기 지원센터에서 체험과 대여가 가능하다."
     },
     {
       "faq_id": "FAQ-004",
       "category": "보호자",
-      "question": "김도윤 이용자의 첫 번째 긴급 연락 대상은 누구인가요?",
-      "answer": "김도윤 이용자의 첫 번째 긴급 연락 대상은 어머니 이정희입니다. 연결되지 않으면 형 박서준에게 연락합니다.",
+      "question": "윤대근 이용자의 첫 긴급 연락 대상은 누구인가요?",
+      "answer": "윤대근 이용자의 긴급 연락 대상은 등록된 윤대근 보호자 연락망입니다.",
       "related_person_ids": [
-        "PER-001",
-        "PER-002",
-        "PER-003"
+        "PER-001"
       ],
       "keywords": [
-        "김도윤",
-        "긴급 연락",
-        "어머니",
-        "보호자"
+        "윤대근",
+        "긴급 연락"
       ],
-      "rag_text": "김도윤 이용자의 긴급 연락 순서는 어머니 이정희, 형 박서준, 협회 관리사 최민아 순서이다."
+      "rag_text": "윤대근 이용자의 첫 긴급 연락은 윤대근 보호자 연락망으로 연결한다."
     },
     {
       "faq_id": "FAQ-005",
       "category": "권익 보호",
-      "question": "안내견 출입을 거부당했을 때 어디에 문의해야 하나요?",
-      "answer": "한국 시각장애인 생활안전협회에 연락하여 권익 상담과 전문기관 연계를 요청할 수 있습니다.",
+      "question": "안내견 출입 거부를 당하면 어디에 문의해야 하나요?",
+      "answer": "한국 시각장애인 생활안전협회에 문의하여 권익 상담과 법률 연계를 받을 수 있습니다.",
       "related_organization_ids": [
         "ORG-004"
       ],
       "keywords": [
         "안내견",
         "출입 거부",
-        "차별",
         "권익 상담"
       ],
-      "rag_text": "안내견 출입 거부나 장애인 차별을 경험한 경우 한국 시각장애인 생활안전협회에 권익 상담을 요청할 수 있다."
+      "rag_text": "안내견 출입 거부를 당하면 한국 시각장애인 생활안전협회에 문의한다."
     }
   ],
   "rag_documents": [
@@ -939,7 +529,7 @@
       "document_id": "DOC-001",
       "document_type": "organization_guide",
       "title": "시각장애인 보행훈련 기관 안내",
-      "content": "한빛 시각장애인 자립지원센터는 시각장애인을 대상으로 흰지팡이 보행훈련을 제공한다. 교육 내용에는 흰지팡이 사용법, 실내외 방향 찾기, 계단과 장애물 통과, 횡단보도 이용, 버스와 지하철 이용이 포함된다. 교육을 받으려면 전화로 예약한 후 방문 상담을 진행해야 한다.",
+      "content": "한빛 시각장애인 자립지원센터는 보행훈련을 제공한다. 흰지팡이 사용, 횡단보도 이동, 대중교통 이용 훈련을 받을 수 있다.",
       "source_ids": [
         "ORG-002",
         "SVC-003"
@@ -948,18 +538,17 @@
         "category": "보행훈련",
         "region": "서울특별시 영등포구",
         "target": [
-          "시각장애인",
-          "중도 실명자"
+          "시각장애인"
         ],
         "access_level": "public",
-        "updated_at": "2026-07-13"
+        "updated_at": "이천이십육 다시 공칠 다시 십육"
       }
     },
     {
       "document_id": "DOC-002",
       "document_type": "medical_guide",
       "title": "저시력 검사와 시각재활 안내",
-      "content": "새봄 안과재활병원 저시력 클리닉에서는 잔존 시력, 시야, 대비감도와 생활환경을 평가한다. 검사 결과에 따라 확대경, 전자독서확대기, 필터 안경 또는 음성 보조기기를 처방할 수 있다. 갑작스러운 시력 저하나 심한 눈 통증이 발생하면 즉시 응급상담 번호로 연락해야 한다.",
+      "content": "새봄 안과재활병원은 저시력 검사와 시각재활 상담, 보조기기 처방을 제공한다. 응급상황 시 응급상담 번호로 연락할 수 있다.",
       "source_ids": [
         "ORG-005",
         "SVC-011",
@@ -970,37 +559,33 @@
         "category": "의료",
         "region": "서울특별시 서대문구",
         "target": [
-          "저시력 환자",
           "시각장애인"
         ],
         "access_level": "public",
-        "updated_at": "2026-07-13"
+        "updated_at": "이천이십육 다시 공칠 다시 십육"
       }
     },
     {
       "document_id": "DOC-003",
       "document_type": "care_network",
-      "title": "김도윤 이용자 보호자 및 지원인력 안내",
-      "content": "김도윤 이용자는 중증 시각장애가 있으며 흰지팡이와 스크린리더를 사용한다. 긴급상황이 발생하면 어머니 이정희에게 먼저 연락하고, 연결되지 않을 경우 형 박서준에게 연락한다. 활동지원사 정하늘은 월요일, 화요일, 목요일, 금요일 오전에 이동과 일상생활을 지원한다. 사례관리는 최민아 관리사가 담당한다.",
+      "title": "윤대근 이용자 보호자 및 지원인력 안내",
+      "content": "윤대근 이용자의 기본 긴급 연락은 윤대근 보호자 연락망으로 관리한다. 운영 환경에서 보호자 또는 지원인력이 추가되면 연락 순서를 확장한다.",
       "source_ids": [
         "PER-001",
-        "PER-002",
-        "PER-003",
-        "PER-004",
-        "PER-005"
+        "EMG-003"
       ],
       "metadata": {
         "category": "개인 지원망",
         "related_user_id": "PER-001",
         "access_level": "restricted",
-        "updated_at": "2026-07-13"
+        "updated_at": "이천이십육 다시 공칠 다시 십육"
       }
     },
     {
       "document_id": "DOC-004",
       "document_type": "assistive_device_guide",
       "title": "시각장애인 보조기기 체험 및 대여 안내",
-      "content": "스마트 보조기기 지원센터에서는 점자정보단말기, 전자확대기, 음성시계, 음성체중계와 스마트폰 접근성 기기를 체험할 수 있다. 등록 시각장애인은 신분증과 복지카드를 지참하여 단기대여를 신청할 수 있다. 토요일에는 예약한 이용자만 방문할 수 있다.",
+      "content": "스마트 보조기기 지원센터에서는 점자정보단말기와 전자확대기 등을 체험할 수 있고, 등록 이용자는 단기대여를 신청할 수 있다.",
       "source_ids": [
         "ORG-006",
         "SVC-013",
@@ -1014,7 +599,7 @@
           "보호자"
         ],
         "access_level": "public",
-        "updated_at": "2026-07-13"
+        "updated_at": "이천이십육 다시 공칠 다시 십육"
       }
     }
   ]

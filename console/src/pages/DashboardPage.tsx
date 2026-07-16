@@ -211,6 +211,14 @@ export function DashboardPage({
             Math.min(Math.max(0, Math.ceil(logsTotalCount / LOG_PAGE_SIZE) - 1), p + 1),
           )
         }
+        onSetPage={(nextPage) =>
+          setLogPage(
+            Math.min(
+              Math.max(0, Math.ceil(logsTotalCount / LOG_PAGE_SIZE) - 1),
+              Math.max(0, nextPage),
+            ),
+          )
+        }
       />
       <RiskEventLog events={state.risks} />
     </>
