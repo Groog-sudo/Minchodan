@@ -2357,10 +2357,13 @@
 
 ---
 
-### 2026-07-16 | 1단계 | cursor_agent_consistency
+### 2026-07-16 | 문서 | Cursor 정합성 재검토 - `.claude/skills/` Git 추적 예외
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `e8184cf`
 - **변경 내용**:
-  - .claude/skills Git 추적 예외 및 Cursor 에이전트 정합성 문서 보강
-- **관련 파일**: `cursor/rules/00-core-guidelines.mdc`, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `.claude/`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+  - 제안 개선사항 1~4(junction 문구 정정, 스킬 동기화, `docs/AGENTS.md` 리다이렉트, `.cursor/rules/*.mdc`)는 `kb`/`origin/dev`에 이미 반영됨을 재확인.
+  - 잔여 구조 결함: `.gitignore`가 `.claude/` 전체를 ignore해 "양쪽 수동 동기화" 안내가 clone 환경에서 무효였음. `.claude/*` ignore + `!.claude/skills/**` 예외로 스킬 사본만 Git 추적.
+  - `.agents/skills/` 정본을 `.claude/skills/`에 전수 동기화(`diff -rq` 0건). `settings.local.json` 등 로컬 아티팩트는 계속 ignore.
+  - `AGENTS.md`/`CLAUDE.md`/`.cursor/rules/00-core-guidelines.mdc`에 정본·사본·gitignore 정책을 명시. `CLAUDE.md` 스킬 표에 누락된 `auto-publish-work`·`react-doctor` 추가.
+- **관련 파일**: `.gitignore`, `.claude/skills/**`, `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/00-core-guidelines.mdc`, `docs/changelogs/kb.md`
+- **검증 결과**: `diff -rq .agents/skills .claude/skills` 0건. `git check-ignore`로 `settings.local.json` ignore·`skills/**` 추적 확인. 이중 경로·금지 파일·react-doctor 검사 통과 후 `origin/kb` 푸시.
