@@ -1339,9 +1339,11 @@ td {
 
 .member-form {
   display: grid;
-  row-gap: 10px;
-  column-gap: 0;
-  grid-template-columns: 1fr;
+  row-gap: 12px;
+  column-gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 30%));
+  justify-content: start;
+  padding-left: 45px;
 }
 
 .member-form label {
@@ -1358,7 +1360,7 @@ td {
 
 .member-form-label-text {
   display: block;
-  width: 35%;
+  width: auto;
   margin: 0;
   text-align: left;
 }
@@ -1371,8 +1373,12 @@ td {
   font-size: 13px;
   padding: 8px 10px;
   font-family: inherit;
-  width: 40%;
+  width: 100%;
   margin: 0;
+}
+
+.member-form .member-form-field-full {
+  grid-column: 1 / span 2;
 }
 
 .member-form input:focus {
@@ -1382,9 +1388,25 @@ td {
 }
 
 .member-form .refresh-btn {
-  width: 40%;
+  grid-column: 1 / span 2;
+  width: 100%;
   margin: 30px 0 0;
   padding: 10px 10px;
+}
+
+@media (max-width: 1100px) {
+  .member-form {
+    grid-template-columns: 1fr;
+    padding-left: 0;
+  }
+
+  .member-form .member-form-field-full {
+    grid-column: auto;
+  }
+
+  .member-form .refresh-btn {
+    grid-column: auto;
+  }
 }
 
 .member-form-message-ok {
