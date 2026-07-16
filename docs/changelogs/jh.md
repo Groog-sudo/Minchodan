@@ -518,6 +518,21 @@
   - `.claude/` 하위 스킬·설정 파일의 Git 추적을 제거해 `.gitignore`의 `.claude/` 정책과 정합화 (로컬 스킬은 `.agents/skills/` 기준 유지)
   - `server/models/piper/piper-kss-korean.onnx` Git 추적 제거 (`*.onnx` gitignore 정책 정합, 로컬 폴백 가중치는 필요 시 별도 배치)
   - `scratch/create_default_admin.py` 제거 (`scratch/` gitignore 정책 정합)
+
+---
+
+### 2026-07-16 | 콘솔 UI | 회원 목록 및 Detection Guidance Log 페이지네이션 UX 통일
+
+- **커밋**: `feat(console): 회원 목록 및 detection guidance log 페이지네이션 UX 통일`
+- **변경 내용**:
+  - `MembersPage`의 등록 회원 목록 페이지네이션을 이전/다음 화살표, 10개 번호창, `...` 점프 검색, 마지막 페이지 버튼 형태로 정리함
+  - `...` 점프 버튼 클릭 시 페이지 번호를 직접 입력하는 검색 팝오버를 추가해 버튼이 보이지 않는 구간으로도 바로 이동할 수 있게 함
+  - `totalCount <= 11`일 때는 페이지네이션 컨트롤을 비활성화해 소량 데이터에서 불필요한 조작을 막도록 정리함
+  - `DetectionGuidanceLogTable`에도 동일한 페이지네이션 UX를 적용하고, `DashboardPage`에서 직접 페이지 점프 콜백을 전달하도록 연결함
+  - 콘솔 스타일에 맞춰 점프 버튼 폭과 팝오버 스타일을 정리하고, 전체 건수 표시처럼 불필요한 문구는 제거함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`
+- **검증 결과**: `console` 빌드(`npm run build`) 성공 확인
+- **비고**: 회원 관리와 감지 이력의 페이지 이동 패턴을 동일하게 맞춰 운영자 콘솔의 조작 일관성을 높인 작업임
   - `docs/ops/reports/` 임시 역활 보고서(TTS 반사경로·Navigation 가이드 기준 연동 적용 완료 보고서) 삭제
 - **관련 파일**: `console/src/components/McpValidationMonitor.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `.claude/**`, `server/models/piper/piper-kss-korean.onnx`, `scratch/create_default_admin.py`, `docs/ops/reports/`, `docs/changelogs/jh.md`
 - **검증 결과**:

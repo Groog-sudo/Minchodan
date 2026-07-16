@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMembers } from "../api/useMembers";
 import type { AppUserRow } from "../types/monitor";
 
 const PAGE_SIZE = 10;
+const PAGE_BUTTON_WINDOW = 10;
 
 /** 회원이 익명 자동등록 상태인지, 정식 등록됐는지 보여주는 배지. */
 function MemberStatusPill({ isAnonymous }: { isAnonymous: boolean }) {
@@ -31,8 +32,47 @@ export function MembersPage({ token }: { token: string }) {
   const [address, setAddress] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formMessage, setFormMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isPageSearchOpen, setIsPageSearchOpen] = useState(false);
+  const [pageSearchInput, setPageSearchInput] = useState("");
+  const pageSearchRef = useRef<HTMLDivElement | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const disablePaginationControls = totalCount <= 11;
+  const pageWindowStart = Math.floor(page / PAGE_BUTTON_WINDOW) * PAGE_BUTTON_WINDOW;
+  const pageWindowEnd = Math.min(totalPages, pageWindowStart + PAGE_BUTTON_WINDOW);
+  const visiblePages = Array.from(
+    { length: pageWindowEnd - pageWindowStart },
+    (_, index) => pageWindowStart + index,
+  );
+
+  useEffect(() => {
+    if (!isPageSearchOpen) {
+      return;
+    }
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!pageSearchRef.current) {
+        return;
+      }
+      if (!pageSearchRef.current.contains(event.target as Node)) {
+        setIsPageSearchOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isPageSearchOpen]);
+
+  const jumpToPage = () => {
+    const parsed = Number.parseInt(pageSearchInput.trim(), 10);
+    if (Number.isNaN(parsed)) {
+      return;
+    }
+    const clampedPage = Math.min(totalPages, Math.max(1, parsed));
+    setPage(clampedPage - 1);
+    setPageSearchInput("");
+    setIsPageSearchOpen(false);
+  };
 
   // 익명 자동등록 행의 "회원 정보 입력" 버튼 클릭 시 폼에 device_uuid를 채워두고
   // 관리자가 이름/전화번호/장애정도만 입력하면 바로 전환되게 한다.
@@ -264,29 +304,91 @@ export function MembersPage({ token }: { token: string }) {
                   </div>
                 )}
 
-                {totalPages > 1 && (
-                  <nav className="log-pagination" aria-label="회원 목록 페이지 이동">
+                <nav className="log-pagination" aria-label="회원 목록 페이지 이동">
+                  <button
+                    type="button"
+                    className="page-btn"
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={disablePaginationControls || page === 0}
+                    aria-label="이전 페이지"
+                  >
+                    ←
+                  </button>
+
+                  <div className="page-number-strip" aria-label="페이지 번호 목록">
+                    {visiblePages.map((pageIndex) => (
+                      <button
+                        key={pageIndex}
+                        type="button"
+                        className={`page-btn ${page === pageIndex ? "page-btn-active" : ""}`}
+                        onClick={() => setPage(pageIndex)}
+                        disabled={disablePaginationControls}
+                      >
+                        {pageIndex + 1}
+                      </button>
+                    ))}
+
+                    <div className="page-search-anchor" ref={pageSearchRef}>
+                      <button
+                        type="button"
+                        className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
+                        onClick={() => setIsPageSearchOpen((open) => !open)}
+                        disabled={disablePaginationControls}
+                        aria-label="페이지 번호 검색"
+                      >
+                        ...
+                      </button>
+
+                      {isPageSearchOpen && (
+                        <div className="page-search-popover">
+                          <label className="page-search-label" htmlFor="member-page-search-input">
+                            페이지 번호
+                          </label>
+                          <div className="page-search-row">
+                            <input
+                              id="member-page-search-input"
+                              type="number"
+                              className="page-search-input"
+                              min={1}
+                              max={totalPages}
+                              placeholder={`1-${totalPages}`}
+                              value={pageSearchInput}
+                              onChange={(event) => setPageSearchInput(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  jumpToPage();
+                                }
+                              }}
+                            />
+                            <button type="button" className="page-btn" onClick={jumpToPage}>
+                              이동
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <button
                       type="button"
-                      className="page-btn"
-                      onClick={() => setPage((p) => Math.max(0, p - 1))}
-                      disabled={page === 0}
+                      className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
+                      onClick={() => setPage(totalPages - 1)}
+                      disabled={disablePaginationControls}
                     >
-                      이전
+                      {totalPages}
                     </button>
-                    <span className="page-indicator">
-                      {page + 1} / {totalPages} 페이지 · 전체 {totalCount}명
-                    </span>
-                    <button
-                      type="button"
-                      className="page-btn"
-                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                      disabled={page >= totalPages - 1}
-                    >
-                      다음
-                    </button>
-                  </nav>
-                )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="page-btn"
+                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                    disabled={disablePaginationControls || page >= totalPages - 1}
+                    aria-label="다음 페이지"
+                  >
+                    →
+                  </button>
+                </nav>
               </>
             )}
           </div>
