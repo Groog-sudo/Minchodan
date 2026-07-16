@@ -506,6 +506,19 @@
 
 ---
 
+### 2026-07-16 | RAG 데이터 | 편의 데이터 전화번호·시간·날짜·주소 하이픈 제거
+
+- **커밋**: `data(rag): convenience_guidelines 전화번호·시간·날짜·주소 하이픈 제거`
+- **변경 내용**:
+  - `data/convenience_guidelines.json`에서 전화번호 문자열에 남아 있던 하이픈을 제거해 STT/TTS 음독 시 끊김이 없도록 정리함
+  - 시간, 날짜, 주소 관련 숫자 표기와 함께 남아 있던 하이픈을 제거해 한글 음독 일관성을 높임
+  - 긴급 연락망의 내부 연락 순서 항목까지 포함해 대상 필드의 하이픈 제거를 일괄 반영함
+- **관련 파일**: `data/convenience_guidelines.json`, `docs/changelogs/jh.md`
+- **검증 결과**: 대상 필드 하이픈 점검 스크립트 실행 결과 0건 확인
+- **비고**: 숫자 한글화 정규화 이후 후속 정리로, 실제 음독 품질과 검색 데이터 일관성을 함께 맞추는 보정 작업임
+
+---
+
 ### 2026-07-16 | 콘솔 UI | 회원 목록 및 Detection Guidance Log 페이지네이션 UX 통일
 
 - **커밋**: `feat(console): 회원 목록 및 detection guidance log 페이지네이션 UX 통일`
