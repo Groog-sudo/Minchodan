@@ -825,3 +825,27 @@
   - 고정 `skewX` ROI 선을 실제 카메라 픽셀 끝점 기반 원근 투영으로 교체하고, 소실점에서 촘촘해지는 깊이 눈금을 추가했다.
 - **관련 파일**: `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/tfliteDetector.ts`, `client/src/components/CameraView.tsx`, 모바일 모델 산출물, `scripts/export_mobile.py`, `scripts/export_tflite.py`, `scripts/convert_yolo_to_coreml.py`
 - **검증 결과**: `npx tsc --noEmit`, iOS Release `xcodebuild` 성공. iPhone 16 Pro Max 실기기에 `com.minchodan.app.th` 설치 및 실행 확인.
+
+---
+
+### 2026-07-16 | 수정 | 서울역 GPS 폴백 제거 및 Gemini LLM 폴백 정합
+
+- **커밋**: (본 엔트리와 동일 커밋)
+- **변경 내용**:
+  1. **`server/navigation/index.html`**
+     - 지도 초기 중심을 서울역(37.5560, 126.9722)에서 한반도 overview로 변경. 초기 시 가짜 사용자 마커를 찍지 않음.
+     - `embed=true`(콘솔 iframe)에서는 브라우저 geolocation·8초 서울역 타임아웃 폴백을 비활성화하고, 앱 `realtime_gps` → `postMessage(inject_gps)`만 사용.
+     - 단독 네비 페이지에서도 GPS 실패 시 서울역 좌표를 넣지 않고 "좌표 없음"으로 표시.
+  2. **`console/src/components/LiveCameraFeed.tsx`**
+     - `lastGpsRef` + `injectGpsToMap`로 HUD 미니맵에 GPS 주입.
+     - iframe `onLoad`에서도 재주입해, 좌표가 iframe 로드 전에 도착해도 유실되지 않게 함.
+  3. **`server/stt/stt_to_llm_bridge.py`**
+     - 목적지 설정·근처 POI 검색 시 GPS 미수신이면 서울역 출발점 폴백 금지.
+     - "현재 위치를 아직 받지 못했습니다..." 음성 안내 후 재입력을 유도 (`navigation-setup-no-gps`).
+  4. **`server/orchestration/llm_client_factory.py`**
+     - `LLM_PROVIDER=gemini`일 때 OpenAI 키 부재로 `get_client(openai)`가 조용히 Ollama로 내려가던 경로를 차단(예외 재발생).
+  5. **`server/orchestration/nodes/l2_generator.py`**
+     - 1차 호출 로그에 실제 provider명 출력. 주석을 Ollama 기본 가정에서 Gemini 시연 기본으로 정정.
+- **관련 파일**: 위 5개 + `docs/changelogs/th.md`
+- **비고**: `CONTRIBUTING.md`는 커밋 대상에서 제외.
+

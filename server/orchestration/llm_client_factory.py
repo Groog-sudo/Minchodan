@@ -321,6 +321,10 @@ class LLMClientFactory:
             try:
                 return cls.get_openai()
             except ValueError as e:
+                # 시연 기본이 gemini일 때는 OpenAI 키 부재를 Ollama 성공으로 위장하지 않는다.
+                default_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+                if default_provider == "gemini":
+                    raise
                 sys.stderr.write(
                     f"[WARN] OpenAI Client init failed: {e!s}. Falling back to Ollama.\n"
                 )

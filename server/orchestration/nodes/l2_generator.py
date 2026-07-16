@@ -139,9 +139,12 @@ async def l2_generator_node(state: dict) -> dict:
     response_content = ""
 
     try:
-        # 1차 시도: 기본 설정된 클라이언트 호출 (Ollama)
+        # 1차 시도: LLM_PROVIDER 기본 클라이언트 (시연/운영: gemini)
         client = LLMClientFactory.get_client()
-        logger.info(f"Invoking primary LLM client for user prompt: {user_prompt[:50]}...")
+        logger.info(
+            f"Invoking primary LLM ({LLMClientFactory.get_current_provider()}) "
+            f"for user prompt: {user_prompt[:50]}..."
+        )
         response = await client.ainvoke(messages)
         response_content = response.content.strip()
     except Exception as e:
@@ -149,7 +152,7 @@ async def l2_generator_node(state: dict) -> dict:
             f"Primary LLM client invocation failed: {e!s}. Attempting OpenAI Fallback..."
         )
         try:
-            # 2차 시도: OpenAI gpt-4o-mini로 자동 핫스왑
+            # 2차 시도: OpenAI gpt-4o-mini (키 없으면 예외 → L3 정적 Fallback)
             fallback_client = LLMClientFactory.get_client(provider="openai")
             response = await fallback_client.ainvoke(messages)
             response_content = response.content.strip()
