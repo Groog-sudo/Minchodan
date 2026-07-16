@@ -6,12 +6,10 @@ import json
 import mimetypes
 import time
 from pathlib import Path
-from urllib.parse import quote_plus
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-
 from config import SETTINGS, WEB_EXCLUDE_TERMS
 from utils.format_converter import HashIndex, safe_image_open
 
@@ -98,7 +96,11 @@ class WebScraper:
                 candidate.write_bytes(response.content)
 
                 with safe_image_open(candidate) as image:
-                    if image is None or self._reject_image_shape(candidate) or self.hash_index.is_duplicate(image):
+                    if (
+                        image is None
+                        or self._reject_image_shape(candidate)
+                        or self.hash_index.is_duplicate(image)
+                    ):
                         candidate.unlink(missing_ok=True)
                         continue
                     self.hash_index.add(image, str(candidate))
@@ -150,7 +152,11 @@ class WebScraper:
                 continue
             url = metadata.get("murl")
             title = str(metadata.get("t", ""))
-            if isinstance(url, str) and url.startswith("http") and not self._looks_non_photo(url, title):
+            if (
+                isinstance(url, str)
+                and url.startswith("http")
+                and not self._looks_non_photo(url, title)
+            ):
                 urls.append(url)
 
         target_dir = self.output_root / self._slug(keyword)

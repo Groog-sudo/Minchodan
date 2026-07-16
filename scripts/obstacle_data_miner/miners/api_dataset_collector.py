@@ -12,7 +12,6 @@ from pathlib import Path
 
 from miners.fiftyone_miner import SOURCE_CLASS_MAPS, FiftyOneMiner
 
-
 WEAK_TARGET_CLASSES: tuple[str, ...] = (
     "scooter",
     "carrier",
@@ -71,7 +70,9 @@ class APIDatasetCollector:
         """
 
         exported_dirs: list[Path] = []
-        for job in self._build_fiftyone_jobs(max_per_class=max_per_class, split=split, datasets=datasets):
+        for job in self._build_fiftyone_jobs(
+            max_per_class=max_per_class, split=split, datasets=datasets
+        ):
             print(
                 f"[FIFTYONE] {job.dataset_name} split={job.split} "
                 f"class={job.target_class} max={job.max_samples}"

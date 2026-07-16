@@ -204,7 +204,12 @@ CLASS_SPECS: dict[str, ClassSpec] = {
         "power_controller",
         "Electrical utility cabinets, distribution boxes, power control boxes.",
         "Traffic signal controller cabinets and kiosks.",
-        ("utility cabinet sidewalk", "electrical control cabinet street", "분전함 보도", "전기 제어함 보행로"),
+        (
+            "utility cabinet sidewalk",
+            "electrical control cabinet street",
+            "분전함 보도",
+            "전기 제어함 보행로",
+        ),
         ("traffic_light_controller", "kiosk", "parking_meter"),
     ),
     "stop": ClassSpec(
@@ -236,7 +241,12 @@ CLASS_SPECS: dict[str, ClassSpec] = {
         "traffic_light_controller",
         "Traffic signal controller cabinets/control boxes near intersections.",
         "Traffic light lamp heads, generic power cabinets, kiosks.",
-        ("traffic signal controller cabinet", "traffic light control box sidewalk", "신호등 제어기", "교통신호 제어함"),
+        (
+            "traffic signal controller cabinet",
+            "traffic light control box sidewalk",
+            "신호등 제어기",
+            "교통신호 제어함",
+        ),
         ("traffic_light", "power_controller", "kiosk"),
     ),
     "traffic_sign": ClassSpec(

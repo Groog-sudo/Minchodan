@@ -19,7 +19,7 @@
 
 ### C. Metro 번들러 실행 즉시 종료 (`Stopped server`) 조치
 - **원인**: 개발 빌드와 Expo Go 모드 간에 URI Scheme 불일치 및 미지정으로 인해 Expo CLI 내부 딥링크 오류가 발생하여 서버가 스스로 죽음.
-- **조치**: 
+- **조치**:
   - `client/app.json`에 `scheme: "minchodan"` 지정
   - `client/package.json`에 `npm run start:android` (`expo start --scheme minchodan`) 명시적 실행 구성 추가
 

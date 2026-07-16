@@ -6,7 +6,6 @@ from pathlib import Path
 
 from config import SETTINGS
 
-
 SEG_TARGET_CLASSES: dict[int, str] = {
     0: "sidewalk_normal",
     1: "caution",

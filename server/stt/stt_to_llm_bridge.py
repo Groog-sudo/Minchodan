@@ -165,7 +165,7 @@ def _looks_like_question(text: str) -> bool:
     """목적지 POI가 아니라 일반 질문으로 보이는지 휴리스틱 판별."""
     if not text:
         return False
-    if "?" in text or "？" in text:
+    if "?" in text or "？" in text:  # noqa: RUF001
         return True
     return any(w in text for w in QUESTION_HINT_WORDS)
 
@@ -546,8 +546,7 @@ class SttToLlmBridge:
                                 break
                         return {
                             "guidance_text": (
-                                f"{destination}까지 보행 경로 안내를 시작합니다."
-                                f"{first_direction}"
+                                f"{destination}까지 보행 경로 안내를 시작합니다.{first_direction}"
                             ),
                             "used_fallback_llm": True,
                             "source": "navigation-setup-success",

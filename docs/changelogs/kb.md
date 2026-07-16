@@ -2300,3 +2300,70 @@
   - 과거 changelog(`dg`/`th`/구 kb 엔트리)의 당시 파일명 기록은 이력으로 유지.
 - **관련 파일**: 위 문서·스킬 + `docs/changelogs/kb.md`
 - **검증 결과**: 활성 문서에서 `frameCapture.ts`를 현행 경로로 인용하는 항목 제거 확인(삭제 고지·이력 문구만 잔존).
+
+---
+
+### 2026-07-15 | 2단계/3단계 | *260714.pt 기준 온디바이스 CoreML/TFLite 재export
+
+- **커밋**: `5b56b14`
+- **변경 내용**:
+  - 서버와 동일 기준선 `object_detection260714.pt` / `segmentation260714.pt`에서 모바일 자산 재생성.
+  - CoreML: det=`nms=True`(confidence/coordinates), seg=channels-first `[1,40,8400]` + proto mask.
+  - TFLite: det=`[1,300,6]`(nms), seg=`[1,40,8400]`.
+  - `CoreMLInferenceBridge.swift` / `tfliteDetector.ts`에 seg channels-first 파서 추가.
+  - export 스크립트 기본 소스를 `*260714.pt`로 고정 (`convert_yolo_to_coreml.py`, `export_mobile.py`, `export_tflite.py`).
+  - Xcode 참조 `client/ios/segmentation.mlpackage`를 assets 산출물과 동기화.
+- **관련 파일**: `client/assets/models/yolo26n/**`, `client/ios/segmentation.mlpackage/**`, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/tfliteDetector.ts`, `scripts/convert_yolo_to_coreml.py`, `scripts/export_mobile.py`, `scripts/export_tflite.py`
+- **검증 결과**: TFLite Interpreter shape 확인(det `[1,300,6]`, seg `[1,40,8400]`). `npx tsc --noEmit`(client) 통과. **iOS 실기기 재빌드·재설치 후** CoreML 번들 반영 필요.
+- **비고**: 구 `mlmodelc`(7/11)는 Xcode가 `.mlpackage`를 다시 컴파일하면 교체됨. Android는 Metro가 `assets/.../*.tflite`를 번들.
+
+---
+
+### 2026-07-15 | 2단계/운영 | *콘솔 event_frames MISS(266건) 원인 조사 문서
+
+- **커밋**: `5b56b14`
+- **변경 내용**:
+  - Detection Guidance Log 썸네일 `-` vs 404(MISS) 증상을 DB·디스크·API·다중 writer 관점에서 분류.
+  - 공유 MariaDB + 호스트별 로컬 `data/event_frames` 불일치가 MISS 266건 주원인임을 실측 근거로 정리.
+  - 단말 WS는 `100.121.247.4:8000` 고정, PROCESSLIST 상 타 Tailscale IP writer 3대 확인.
+  - 해결 방향: writer 단일화 / event_frames 공유 스토리지 / device_id 분리 (`whois`는 추적용).
+- **관련 파일**: `docs/ops/event_frame_image_loss_investigation.md`
+- **검증 결과**: 이 Mac `minchodan-fastapi` 구간 MISS 0/267. DB `frame_path` 527건 vs 로컬 JPEG 261건(2026-07-15).
+
+---
+
+### 2026-07-15 | 품질 | *Ruff 자동 포맷·린트 일괄 정리 (354→12)
+
+- **커밋**: `50adfb1`
+- **변경 내용**:
+  - `ruff format .` + `ruff check --fix .`로 50파일 스타일 정리(탭→스페이스, 공백/import/UTF-8 헤더 등).
+  - Ruff 전체 에러 354건 → **0건** (`ruff check .`, 로컬 ruff 0.15). `auto_publish_work.py` Ruff 게이트 통과.
+  - `50adfb1`은 **49파일** 커밋. `test_frame_decode.py`·`test_risk_ssot.py`는 pre-commit ruff **0.6.9** 기준 이미 통과(로컬 0.15 `format --check`와 assert 줄바꿈 규칙만 상이).
+  - RUF046(`tts_service.py`)는 `0e8be01`에서 수정.
+- **관련 파일**: `scripts/**`(28), `server/**`(15), `tests/**`(8, 50adfb1) + `server/tts/tts_service.py`(0e8be01)
+- **검증 결과**: `ruff check .` 0건. pre-commit `ruff-format`/`ruff` staged 파일 통과. `test_frame_decode`/`test_risk_ssot` pre-commit(0.6.9) Passed.
+
+---
+
+### 2026-07-15 | 품질 | *pre-commit ruff 0.15.20 통일 및 전체 훅 정리
+
+- **커밋**: `24dbca8`
+- **변경 내용**:
+  - `.pre-commit-config.yaml` ruff `v0.6.9` → `v0.15.20` (`1dd29bb` MVP).
+  - `requirements-dev.txt` `ruff>=0.15.0,<0.16.0` 핀, `docs/ops/code_quality_guide.md` v0.3.1 갱신.
+  - `pre-commit run --all-files`로 trailing whitespace/EOF 등 저장소 전역 정리.
+- **관련 파일**: `.pre-commit-config.yaml`, `requirements-dev.txt`, `docs/ops/code_quality_guide.md`, `pre-commit --all-files` 대상 파일
+- **검증 결과**: `pre-commit run --all-files` 전 훅 Passed. `ruff check .`·`ruff format --check .` 0건.
+
+---
+
+### 2026-07-16 | 문서 | Cursor 정합성 재검토 - `.claude/skills/` Git 추적 예외
+
+- **커밋**: `e8184cf`
+- **변경 내용**:
+  - 제안 개선사항 1~4(junction 문구 정정, 스킬 동기화, `docs/AGENTS.md` 리다이렉트, `.cursor/rules/*.mdc`)는 `kb`/`origin/dev`에 이미 반영됨을 재확인.
+  - 잔여 구조 결함: `.gitignore`가 `.claude/` 전체를 ignore해 "양쪽 수동 동기화" 안내가 clone 환경에서 무효였음. `.claude/*` ignore + `!.claude/skills/**` 예외로 스킬 사본만 Git 추적.
+  - `.agents/skills/` 정본을 `.claude/skills/`에 전수 동기화(`diff -rq` 0건). `settings.local.json` 등 로컬 아티팩트는 계속 ignore.
+  - `AGENTS.md`/`CLAUDE.md`/`.cursor/rules/00-core-guidelines.mdc`에 정본·사본·gitignore 정책을 명시. `CLAUDE.md` 스킬 표에 누락된 `auto-publish-work`·`react-doctor` 추가.
+- **관련 파일**: `.gitignore`, `.claude/skills/**`, `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/00-core-guidelines.mdc`, `docs/changelogs/kb.md`
+- **검증 결과**: `diff -rq .agents/skills .claude/skills` 0건. `git check-ignore`로 `settings.local.json` ignore·`skills/**` 추적 확인. 이중 경로·금지 파일·react-doctor 검사 통과 후 `origin/kb` 푸시.

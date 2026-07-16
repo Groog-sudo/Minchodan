@@ -48,7 +48,9 @@ def analyze(results_root: Path) -> tuple[list[dict[str, object]], Counter[tuple[
     for class_dir in sorted(path for path in results_root.iterdir() if path.is_dir()):
         expected = expected_name_from_folder(class_dir.name)
         expected_id = NAME_TO_ID.get(expected)
-        image_count = sum(1 for path in class_dir.rglob("*") if path.suffix.lower() in {".jpg", ".jpeg", ".png"})
+        image_count = sum(
+            1 for path in class_dir.rglob("*") if path.suffix.lower() in {".jpg", ".jpeg", ".png"}
+        )
         label_paths = list(class_dir.rglob("*.txt"))
         pred_counts: Counter[int] = Counter()
         hit_images = 0
@@ -114,7 +116,10 @@ def format_markdown(rows: list[dict[str, object]], confusions: Counter[tuple[str
         )
 
     lines.extend(["", "## Priority Fix Classes", ""])
-    low_hit = sorted(rows, key=lambda item: int(item["hit_images"]) / max(int(item["images"]), int(item["labels"]), 1))
+    low_hit = sorted(
+        rows,
+        key=lambda item: int(item["hit_images"]) / max(int(item["images"]), int(item["labels"]), 1),
+    )
     for row in low_hit[:8]:
         images = max(int(row["images"]), int(row["labels"]), 1)
         hit = int(row["hit_images"])
@@ -128,7 +133,9 @@ def format_markdown(rows: list[dict[str, object]], confusions: Counter[tuple[str
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Analyze per-class YOLO prediction result folders.")
+    parser = argparse.ArgumentParser(
+        description="Analyze per-class YOLO prediction result folders."
+    )
     parser.add_argument("results_root", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()

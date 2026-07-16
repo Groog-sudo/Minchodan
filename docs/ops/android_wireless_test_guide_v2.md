@@ -340,10 +340,10 @@ docker restart minchodan-fastapi
 코드 수정 후 저장하거나 단말 연결이 끊겨 'No apps connected' 오류가 빈번하게 재발할 때의 영구 방지책과 발생 시의 행동 수칙입니다.
 
 #### 1. 원천 방지 및 우회 방안
-- **무선 디버깅(Wireless Debugging) 활성화**: 
+- **무선 디버깅(Wireless Debugging) 활성화**:
   - USB 연결 단자의 노후화나 접촉 불량으로 인한 adb reverse 연결 해제를 방지하기 위해 스마트폰 개발자 옵션에서 '무선 디버깅'을 켜고 PC와 무선으로 페어링해 두면 연결 해제 빈도를 대폭 줄일 수 있습니다.
 - **단말기에서 수동 리로드 수행**:
-  - PC 터미널에서 'r' 키를 눌러 명령을 전송하면 Metro 서버가 기기 세션을 먼저 검색하므로 에러가 날 확률이 높습니다. 
+  - PC 터미널에서 'r' 키를 눌러 명령을 전송하면 Metro 서버가 기기 세션을 먼저 검색하므로 에러가 날 확률이 높습니다.
   - 대신 스마트폰을 흔들어 Expo 개발자 메뉴를 연 뒤 **[Reload]**를 직접 터치해 주면 단말기가 Metro 서버를 찾아가므로 포트 꼬임이 덜 발생합니다.
 
 #### 2. 원클릭 복구 배치파일(reverse.bat) 활용
@@ -362,7 +362,7 @@ docker restart minchodan-fastapi
 ### 오류 L: Metro 번들러 실행 중 `index.ts (1 module)` 상태로 멈추며 로딩되지 않거나, `unauthorized/uninitialized` 기기로 감지되어 adb 연동이 차단되는 현상
 
 **1. `index.ts (1 module)` 멈춤 현상**
-- **원인**: 
+- **원인**:
   - `src/services/frameProvider.ts`와 `realFrameProvider.ts` 간의 고질적인 순환 참조(Require cycle) 경고 및 번들러 캐시의 심각한 오염으로 인해 모듈 컴파일이 1개에서 중단됨.
 - **해결**:
   - **순환 참조 제거**: `realFrameProvider.ts` 내에 `FRAME_SIZE` 상수를 내부 선언으로 수정하여 순환 의존성을 완전히 제거 완료했습니다.

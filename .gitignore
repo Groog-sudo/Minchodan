@@ -324,7 +324,11 @@ yolov8n.pt
 # AI Agent / IDE Local Artifacts
 # ==========================================
 .zcode/
-.claude/
+# .claude/ 로컬 아티팩트(settings, worktrees 등)는 ignore.
+# 단 skills/ 는 Claude Code·Cursor(Claude skills 임포트) 공유 정본이므로 Git 추적.
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 scripts/agent_tasks/
 scripts/launch_agents.sh
 

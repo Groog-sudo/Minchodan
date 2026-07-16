@@ -64,7 +64,9 @@ class AutoLabeler:
                 output_image = self.image_root / f"{safe_prefix}_{image_path.name}"
                 output_label = self.label_root / f"{output_image.stem}.txt"
                 if output_image.exists():
-                    output_image = self.image_root / f"{image_path.stem}_{labeled_count}{image_path.suffix}"
+                    output_image = (
+                        self.image_root / f"{image_path.stem}_{labeled_count}{image_path.suffix}"
+                    )
                     output_label = self.label_root / f"{output_image.stem}.txt"
 
                 shutil.copy2(image_path, output_image)
@@ -103,7 +105,11 @@ class AutoLabeler:
                     continue
                 if self.allowed_classes and target_name not in self.allowed_classes:
                     continue
-                x1, y1, x2, y2 = [float(value) for value in box.xyxy[0].tolist()]
-                x_center, y_center, box_width, box_height = xyxy_to_yolo(x1, y1, x2, y2, width, height)
-                lines.append(f"{target_id} {x_center:.6f} {y_center:.6f} {box_width:.6f} {box_height:.6f}")
+                x1, y1, x2, y2 = (float(value) for value in box.xyxy[0].tolist())
+                x_center, y_center, box_width, box_height = xyxy_to_yolo(
+                    x1, y1, x2, y2, width, height
+                )
+                lines.append(
+                    f"{target_id} {x_center:.6f} {y_center:.6f} {box_width:.6f} {box_height:.6f}"
+                )
         return lines

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 try:
@@ -119,14 +119,25 @@ class Settings:
     image_root: Path = dataset_root / "object_detection" / "images"
     label_root: Path = dataset_root / "object_detection" / "labels"
     hash_index_path: Path = dataset_root / "object_detection" / "hash_index.json"
-    kaggle_username: str | None = os.getenv("KAGGLE_USERNAME")
-    kaggle_key: str | None = os.getenv("KAGGLE_KEY")
-    request_timeout_seconds: int = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "15"))
-    min_confidence: float = float(os.getenv("MIN_CONFIDENCE", "0.35"))
-    default_model: str = os.getenv("DEFAULT_MODEL", "yolo26n.pt")
+    kaggle_username: str | None = field(default_factory=lambda: os.getenv("KAGGLE_USERNAME"))
+    kaggle_key: str | None = field(default_factory=lambda: os.getenv("KAGGLE_KEY"))
+    request_timeout_seconds: int = field(
+        default_factory=lambda: int(os.getenv("REQUEST_TIMEOUT_SECONDS", "15"))
+    )
+    min_confidence: float = field(
+        default_factory=lambda: float(os.getenv("MIN_CONFIDENCE", "0.35"))
+    )
+    default_model: str = field(default_factory=lambda: os.getenv("DEFAULT_MODEL", "yolo26n.pt"))
 
     def ensure_directories(self) -> None:
-        for path in (self.dataset_root, self.object_detection_root, self.segmentation_root, self.raw_root, self.image_root, self.label_root):
+        for path in (
+            self.dataset_root,
+            self.object_detection_root,
+            self.segmentation_root,
+            self.raw_root,
+            self.image_root,
+            self.label_root,
+        ):
             path.mkdir(parents=True, exist_ok=True)
 
 
