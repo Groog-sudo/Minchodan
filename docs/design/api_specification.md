@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.22 (2026-07-16 §6.1 STT 대기 안내·§8.3 risk_event 발행 위치·§8.5 pipeline_debug_json 확장 필드)
+> **버전**: v0.4.23 (2026-07-16 §6.3 convenience RAG 재빌드·§8.5/8.6 콘솔 페이지네이션 UX)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -448,6 +448,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > `dial_action`/`contact_save` WS 계약은 제거했다. 생활지원 질의응답 RAG는 jh
 > (`server/rag/convenience_rag.py`, `data/convenience_guidelines.json`)가 담당하며 유지한다.
 
+> **비고 (2026-07-16) - convenience 코퍼스 음독 정규화**: `data/convenience_guidelines.json`의 STT/TTS 대상 문자열(전화번호·시간·날짜·주소 건물번호 등)은 아라비아 숫자 대신 **한글 음절 숫자**(`공일이…`)로 정규화한다. 시스템 키(`organization_id`)·좌표(`latitude`/`longitude`)는 검색/연동 호환을 위해 유지한다. JSON만 갱신해도 Chroma 임베딩은 자동 반영되지 않으므로 배포 시 `python scripts/build_convenience_db.py`로 `data/chroma_db/convenience_guidelines` 컬렉션을 **재빌드**해야 한다(기본 임베딩: Ollama `nomic-embed-text`).
+
 > **비고 (2026-07-10)**: 목적지 설정 시 `NavigationManager` 세션 키를 `"default_device"`로
 > 하드코딩해뒀던 결함이 있었다 - GPS 갱신(`realtime_gps`)과 턴바이턴 안내 조회
 > (`get_combined_guidance`)는 실제 `device_id`의 세션을 보는데, 목적지만 별도의 가짜
@@ -674,6 +676,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 
 콘솔의 Detection Guidance Log 테이블은 SSE가 아니라 REST 폴링(기본 30초, `console/src/api/useDetectionLogs.ts`)으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 **이벤트 발생 시점 프레임 이미지**를 함께 제공합니다.
 
+**콘솔 페이지네이션 UX (2026-07-16)**: `DetectionGuidanceLogTable`·`MembersPage` 목록은 서버 `offset`/`limit` + `X-Total-Count` 기반 **서버 페이지네이션**을 사용한다. 기본 `pageSize`는 **10**. 하단 컨트롤은 이전/다음 화살표, 최대 10개 번호 버튼, `...` 페이지 점프 입력, 마지막 페이지 버튼으로 통일한다. `totalCount <= 11`이면 컨트롤을 비활성화한다. 스트림 필터(전체/반사/인지)는 **현재 페이지 rows**에만 클라이언트 필터를 적용하므로, 필터 적용 시 표시 행 수와 `totalCount`가 어긋날 수 있다.
+
 | 항목 | 값 |
 | :--- | :--- |
 | 로그 목록 | `GET /api/v1/admin/detection-logs?limit=50&offset=0` (limit 1~200) |
@@ -774,6 +778,7 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |
 | **v0.4.22** | **2026-07-16** | **§6.1 `source` 필드·STT 대기 안내(`stt-wait-notice`) 계약 추가. §8.3 `risk_event` 발행 위치(`DetectionConsumer._broadcast_risk_event`) 명시. §8.5 `pipeline_debug_json` 확장 필드 표 보강** |
 | **v0.4.21** | **2026-07-16** | **§8.5 `pipeline_debug_json`·`latency_json`·`false_positive` 로그 응답 필드 명세 보강(관리자 콘솔 STT/LLM/패스트레인 디버그)** |
 | **v0.4.20** | **2026-07-15** | **§8 SSE: 버퍼 방지 응답 헤더, 연결 직후 `system_metrics` 스냅샷, keep-alive 주석 라인. 콘솔은 SSE 401 프로브·빈 카드 안내 문구 추가** |

@@ -258,21 +258,6 @@
 
 - **커밋**: `feat(stt): 설정 상수 설명을 런타임 사용 기준으로 정합화`
 - **변경 내용**:
-
----
-
-### 2026-07-16 | RAG 데이터 | STT/TTS 음독 안정화를 위한 숫자 한글화 정규화
-
-- **커밋**: `data(rag): convenience_guidelines 숫자 한글화 및 시간/날짜/전화/주소 표기 정규화`
-- **변경 내용**:
-  - `data/convenience_guidelines.json`의 STT/TTS 음독 대상 문자열에서 숫자 표기를 한글 음절(`공일이삼사오육칠팔구`) 기준으로 정규화함
-  - 전화번호를 하이픈 단위 한글 숫자 표기로 통일함 (예: `공일공-...`)
-  - 시간 표기를 `다시` 구분 형식으로 정리함 (예: `십이시 다시 십삼시`)
-  - 날짜 표기를 `다시` 구분 형식으로 정리함 (예: `이천이십육 다시 공칠 다시 십육`)
-  - 주소의 건물번호/우편번호 숫자 표기를 한글 숫자로 변환함
-- **관련 파일**: `data/convenience_guidelines.json`, `docs/changelogs/jh.md`
-- **검증 결과**: JSON 파싱 검증 완료, 요청된 필드(시간/날짜/전화/주소) 숫자 한글화 반영 완료
-- **비고**: ID/타입 키 및 좌표(lat/lon)는 시스템 참조/연동 호환을 위해 유지함
   - `stt_config` 상수가 서비스/브리지 경로에서 실제 사용된다는 점을 설명에 반영함
   - 정책 확정 이유에 런타임 `validate` 통과 요구사항을 추가함
   - 실행 코드 변경 없이 설정 주석만 최신화함
@@ -797,3 +782,14 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `data/convenience_guidelines.json`, `docs/changelogs/jh.md`
 - **검증 결과**: JSON 파싱 검증 완료, 요청된 필드(시간/날짜/전화/주소) 숫자 한글화 반영 완료
 - **비고**: ID/타입 키 및 좌표(lat/lon)는 시스템 참조/연동 호환을 위해 유지함
+
+---
+
+### 2026-07-16 | Git·문서 | jh → dev 병합 및 convenience Chroma 재빌드
+
+- **커밋**: dev merge commit + docs sync
+- **변경 내용**:
+  - `origin/jh` 2커밋을 `dev`에 `--no-ff` 병합(충돌 없음, `DetectionGuidanceLogTable`/`DashboardPage`/`styles.css` 자동 병합).
+  - `python scripts/build_convenience_db.py`로 `data/chroma_db/convenience_guidelines` 재빌드(75문서, 한글화 JSON 반영).
+  - `api_specification.md` v0.4.23: convenience 재빌드 절차·콘솔 페이지네이션 UX 명시.
+- **배포 전 확인**: dev/스테이징에서도 `build_convenience_db.py` 재실행(Ollama `nomic-embed-text` 필요).
