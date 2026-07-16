@@ -2449,7 +2449,7 @@
 
 ### 2026-07-16 | 콘솔·서버 | 파이프라인 디버그 확장·RiskEventLog·STT 대기 안내
 
-- **커밋**: `(대기)`
+- **커밋**: `b813bd2`
 - **변경 내용**:
   - `pipeline_debug_builder` 확장: YOLO 탐지·노면 분할·L1/L2 초안·STT 에코 스킵·템플릿/RAG 결과를 `pipeline_debug_json`에 저장. 콘솔 패널 세로 스택·테이블 셀 줄바꿈으로 텍스트 겹침 해소.
   - `consumer._broadcast_risk_event`: 반사/인지 경보 시 SSE `risk_event` 발행 — `RiskEventLog` 실시간 표시 wiring.
