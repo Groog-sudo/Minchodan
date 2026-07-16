@@ -563,9 +563,11 @@
     - BBox와 노면 segmentation mask의 공간적 겹침비(30% 미만 차단) 교차검증 게이트 및 겹치지 않는 OOD 환각 탐지비 로깅 추가.
     - 서버(ByteTrack) 및 단말(Streak) 시간적 필터 강도를 4프레임으로 상향하고, 객체 탐지 Confidence 임계값을 0.35에서 0.50으로 격상.
   - **금일 최종 진단 및 미결/방향 요약**:
-    - **진단 결과**: 실외 데이터셋 기반 모델 특성 상 실내를 OOD(분포 외) 환경으로 오판하여 차량 환각이 빈발했으며, 모바일 디코더 채널 스크램블링(CHW) 버그를 NHWC 전처리로 교정 완료.
-    - **미해결 상태**: 정면 외곽(1~2시 방향) 구석의 책상/노트북이 여전히 CAR 고신뢰도로 오탐 오발화하며, 실내 세그멘테이션 부재 시 노면 교차검증 게이트의 fail-open 우회 우려가 있음.
-    - **내일 방향**: 정면 외곽 방향 오발화 판단 로직을 우선 수정한 후, 모바일 온디바이스 씬 분류 결과(is_outdoor)를 공유받아 실내/실외 프로파일(Profile) 게이트 임계값을 다원 분기 설계.
+    | 구분 | 주요 내용 | 기술적 요약 및 전문 용어 설명 |
+    | :--- | :--- | :--- |
+    | **진단 결과** | 실외 인도 데이터셋 기반 모델의 한계로 실내를 **OOD (Out-of-Distribution, 분포 외 데이터)** 환경으로 오판하여 차량 환각 오탐이 빈발했으며, 모바일 디코더의 채널 스크램블링(CHW) 버그를 **NHWC(가로-세로-색상 순서의 텐서 구조)** 전처리로 교정 완료했습니다. | 실내 복도의 특징점을 모델이 잘못 인지하던 문제를 채널 재정렬을 통해 해결함 |
+    | **미해결 상태** | 정면 외곽(1~2시 방향) 구석의 책상/노트북이 여전히 `CAR` 고신뢰도로 오탐 오발화하며, 실내 세그멘테이션 부재 시 노면 교차검증 게이트가 **fail-open(실패 시 강제 통과)**으로 우회 작동할 우려가 있습니다. | 정면 외의 오발화와 실내 노면 부재 시의 안전 조치 검증이 요구됨 |
+    | **내일 방향** | 정면 외곽 방향 오발화 판단 로직을 우선 수정한 후, 모바일 온디바이스의 **Scene Classification(장면 분류)**을 통해 씬 분류 결과(`is_outdoor`)를 공유받아 실내/실외 **Profile(프로파일, 설정 프로필)** 게이트 임계값을 다원 분기 설계할 예정입니다. | 환경별 독립 임계치 프로파일 분기를 통한 환각 오탐 원천 차단 계획 |
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/config.py`, `docs/handoff/2026-07-15_reflex_ood_handoff.md`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
 
