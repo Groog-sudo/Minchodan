@@ -71,27 +71,39 @@ def reflex_gate(
     # 💡 [설계 의도]
     # 클래스명으로 분기하지 않고 "진행 방향 정면 근접 구역에 물체가 존재하는가" 자체로
     # 반사 경보를 가동해 복잡성과 오탐 위험도를 줄였습니다.
+    # 💡 [면접 대비 주석 - 2단계 게이트 분리]
+    # 질문: 왜 긴급 게이트와 예방 게이트로 이중화했나요?
+    # 답변: 초접근하는 치명적인 정면 장애물은 지연이 전혀 없도록 필터를 극도로 낮춘 "긴급 게이트"로 우선 처리하고,
+    # 비교적 여유가 있는 중/원거리 장애물은 신뢰도를 높여 오탐을 예방하는 "예방 게이트"로 이원화해 안전성과 사용성을 모두 확보하기 위함입니다.
     # =========================================================================
     if frame_width <= 0 or frame_height <= 0:
         return None
 
-    # 3. confidence는 클래스 신뢰도가 아닌 "물체 존재 신뢰도"로만 사용 (기준 0.35)
-    if detection.confidence < 0.35:
-        return None
-
-    # 1. bbox 중심이 화면 중앙 존 (가로 40% 이내: 30% ~ 70%)에 있는가
+    # bbox 중심 계산
     center_x = detection.bbox.x + detection.bbox.w / 2
     center_x_norm = center_x / frame_width
-    is_centered = 0.30 <= center_x_norm <= 0.70
 
-    # 2. bbox 크기 (면적 비율)로 근접도 추정
+    # bbox 면적비 계산
     bbox_area = detection.bbox.w * detection.bbox.h
     frame_area = frame_width * frame_height
-    area_ratio = bbox_area / frame_area
-    is_very_close = area_ratio >= 0.08
+    area_ratio = bbox_area / frame_area if frame_area > 0 else 0
+
+    # 1) 긴급 게이트 조건: area_ratio >= 0.15, confidence >= 0.35, 0.20 <= center_x_norm <= 0.80
+    is_urgent = (
+        area_ratio >= 0.15 and
+        detection.confidence >= 0.35 and
+        0.20 <= center_x_norm <= 0.80
+    )
+
+    # 2) 예방 게이트 조건: area_ratio >= 0.08, confidence >= 0.50, 0.30 <= center_x_norm <= 0.70
+    is_preventive = (
+        area_ratio >= 0.08 and
+        detection.confidence >= 0.50 and
+        0.30 <= center_x_norm <= 0.70
+    )
 
     # 두 조건 중 하나라도 충족되지 않으면 즉각 반사(정지)에서 제외
-    if not (is_very_close and is_centered):
+    if not (is_urgent or is_preventive):
         return None
     # =========================================================================
 

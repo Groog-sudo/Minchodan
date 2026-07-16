@@ -910,7 +910,14 @@ export function CameraView() {
       } else {
         localReflexStreakRef.current = 0;
       }
-      const isReflexStable = localReflexStreakRef.current >= 4;
+      
+      const maxAreaRatio = reflexDetections.reduce((max, d) => {
+        const ratio = detectionAreaRatio(d.bbox);
+        return ratio > max ? ratio : max;
+      }, 0);
+
+      const requiredStreak = maxAreaRatio > 0.20 ? 1 : 4;
+      const isReflexStable = localReflexStreakRef.current >= requiredStreak;
       const stableReflexDetections = isReflexStable ? reflexDetections : [];
 
       // 3. WebSocket 연결 끊김/타임아웃(300ms 초과) 감지 (마지막 수신 타임스탬프 기준)

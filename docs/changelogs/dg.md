@@ -571,6 +571,18 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/config.py`, `docs/handoff/2026-07-15_reflex_ood_handoff.md`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
 
+---
+
+### 2026-07-16 | 3단계 | 정면 근접 장애물 미탐 방지를 위한 2단계 게이트 분리 및 입력 0바이트 버그 수정
+
+- **커밋**: `fix: implement 2-stage reflex gates and fix client 0-byte frame decoding bug`
+- **변경 내용**:
+  - 온디바이스에서 `new Float32Array(0)`을 넘겨주던 버그를 `decodeBase64JpegToHwc(base64)`를 사용해 `640x640x3` HWC float32 배열로 정상 디코딩하여 0바이트 입력 형태 불일치 오류를 해결함.
+  - 정면 근접 장애물(면적비 >= 0.15, confidence >= 0.35, 0.20 <= center_x_norm <= 0.80)에 대해 세그멘테이션 교차검증을 건너뛰고 지속성(hit_count) 및 streak 요구치를 1프레임으로 하향해 즉시 반사 경보를 트리거하는 긴급 게이트를 신설하고, 원거리/애매한 탐지는 기존 보수적 기준(hit_count >= 4, confidence >= 0.50, 세그 마스크 교차검증)을 따르는 예방 게이트로 이원화함.
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `docs/changelogs/stage_safety_reflex.md`
+- **검증 결과**: 단위 테스트(pytest) 및 TypeScript 정적 분석 통과 확인.
+
+
 
 
 

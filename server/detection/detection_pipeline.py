@@ -128,11 +128,13 @@ class DetectionPipeline:
             logger.error(f"[Pipeline] Detector 추론 실패: {e}")
             detections = []
 
+        segmentor_failed = False
         try:
             surfaces = await asyncio.to_thread(self.segmentor.predict, frame)
         except Exception as e:
             logger.error(f"[Pipeline] Segmentor 추론 실패: {e}")
             surfaces = []
+            segmentor_failed = True
 
         detections = await self.tracker.update(detections, self.redis_bus)
 
@@ -148,34 +150,51 @@ class DetectionPipeline:
             self._detections_total = 0
 
         for det in detections:
-            # 시간적 지속성 강화 (최소 4프레임 이상 유지된 경우만 승격, Mock/테스트 등은 예외)
-            if det.track_id is not None and det.hit_count < 4:
+            center_x = det.bbox.x + det.bbox.w / 2
+            center_x_norm = center_x / width if width > 0 else 0.5
+            area_ratio = (det.bbox.w * det.bbox.h) / (width * height) if (width * height) > 0 else 0
+
+            # 💡 [면접 대비 주석 - 긴급 경로 세그멘테이션 스킵]
+            # 질문: 왜 정면 근접 장애물은 세그멘테이션 교차검증을 건너뛰나요?
+            # 답변: 원거리 장애물은 오탐을 거르기 위해 세그멘테이션(노면) 영역 위에 위치하는지 교차검증을 해야 하지만,
+            # 코앞에 있는 정면 근접 장애물은 설령 허공이나 공중에 걸쳐 있는 오탐 신호처럼 보이더라도 안전을 위해 즉시 반응해야 충돌을 방지할 수 있기 때문입니다.
+            is_urgent = (
+                area_ratio >= 0.15 and
+                det.confidence >= 0.35 and
+                0.20 <= center_x_norm <= 0.80
+            )
+
+            # 시간적 지속성 검증 (긴급은 1프레임으로 완화해 즉시 경보, 그 외에는 기존 4프레임 유지)
+            required_hit = 1 if is_urgent else 4
+            if det.track_id is not None and det.hit_count < required_hit:
                 continue
 
-            overlap = 0.0
-            if surfaces:
-                # 3x3 격자 샘플링으로 bbox와 segmentation 폴리곤 간의 겹침 비율 계산
-                sample_points = []
-                for rx in [0.25, 0.5, 0.75]:
-                    for ry in [0.25, 0.5, 0.75]:
-                        px = det.bbox.x + det.bbox.w * rx
-                        py = det.bbox.y + det.bbox.h * ry
-                        sample_points.append((px, py))
+            # a) Detection-Segmentation 교차검증 게이트
+            # 긴급 장애물이거나 세그멘터 추론이 실패한 경우 세그멘테이션 교차검증을 우회하여 즉시 통과시킵니다.
+            if not is_urgent and not segmentor_failed:
+                overlap = 0.0
+                if surfaces:
+                    # 3x3 격자 샘플링으로 bbox와 segmentation 폴리곤 간의 겹침 비율 계산
+                    sample_points = []
+                    for rx in [0.25, 0.5, 0.75]:
+                        for ry in [0.25, 0.5, 0.75]:
+                            px = det.bbox.x + det.bbox.w * rx
+                            py = det.bbox.y + det.bbox.h * ry
+                            sample_points.append((px, py))
 
-                hits = 0
-                for point in sample_points:
-                    for surf in surfaces:
-                        if not surf.polygon:
-                            continue
-                        if point_in_polygon(point, surf.polygon):
-                            hits += 1
-                            break
-                overlap = hits / len(sample_points)
+                    hits = 0
+                    for point in sample_points:
+                        for surf in surfaces:
+                            if not surf.polygon:
+                                continue
+                            if point_in_polygon(point, surf.polygon):
+                                hits += 1
+                                break
+                    overlap = hits / len(sample_points)
 
-            # a) Detection-Segmentation 교차검증 게이트 (겹침 비율 30% 미만 무시)
-            if overlap < 0.30:
-                hallucination_count += 1
-                continue
+                if overlap < 0.30:
+                    hallucination_count += 1
+                    continue
 
             filtered_detections.append(det)
 
