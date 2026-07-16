@@ -80,15 +80,18 @@ export interface PipelineDebug {
   path?: "reflex" | "cognitive" | "stt";
   stt_transcript?: string;
   bridge_source?: string;
+  generation_mode?: string;
   rag_query?: string;
   rag_context?: string;
   rag_results?: unknown[];
   llm_text?: string | null;
+  template_text?: string;
   response_text?: string;
+  response_skipped?: boolean;
+  skip_reason?: string;
   llm_provider?: string;
   used_fast_lane?: boolean;
   fast_lane_cache_key?: string;
-  generation_mode?: string;
   l3_verified?: boolean;
   validation_errors?: string[];
   used_static_fallback?: boolean;
@@ -97,11 +100,25 @@ export interface PipelineDebug {
   clock_direction?: string;
   distance_class?: string;
   object_ko?: string;
+  l1_risk_level?: string;
+  pipeline_risk_hint?: string;
+  detected_classes_ko?: string[];
+  detections_summary?: Array<Record<string, unknown>>;
+  surfaces_summary?: Array<Record<string, unknown>>;
+  navigation_guidance?: string;
+  is_departing?: boolean;
+  is_departing_confirmed?: boolean;
+  braille_direction?: string;
+  l2_drafts?: string[];
+  inference_ms?: number;
   alert_id?: string;
   clip?: string;
   direction?: string;
   class_name?: string;
   distance?: string;
+  risk_level?: string;
+  hit_count?: number;
+  track_id?: string;
 }
 
 // latency_json 파싱 결과 - 콘솔에서만 쓰는 화면 표시용 타입.

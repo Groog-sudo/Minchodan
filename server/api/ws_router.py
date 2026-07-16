@@ -152,6 +152,36 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
         await _process_stt_audio(ws, device_id, data, audio_b64)
 
 
+async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
+    """경로 검색·RAG·LLM 등 장시간 STT 후속 처리 전 즉시 대기 안내를 재생한다.
+
+    에코 감지 메모리(_record_guidance)에는 넣지 않는다 - 본 응답의 일부가 아니므로.
+    """
+    from server.stt.stt_config import STT_WAIT_GUIDANCE_TEXT
+
+    wait_text = STT_WAIT_GUIDANCE_TEXT
+    audio_b64_out, duration_ms = await realtime_tts.synthesize(text=wait_text)
+    audio_bytes_out = base64.b64decode(audio_b64_out) if audio_b64_out else b""
+
+    with contextlib.suppress(Exception):
+        await ws.send_json(
+            {
+                "type": "guide",
+                "event_id": f"stt-wait-{device_id}-{now_ts()}",
+                "risk_level": "low",
+                "guidance_text": wait_text,
+                "audio_codec": "wav",
+                "duration_ms": duration_ms,
+                "transport": "binary" if audio_bytes_out else "none",
+                "source": "stt-wait-notice",
+                "ts": now_ts(),
+            }
+        )
+        if audio_bytes_out:
+            await ws.send_bytes(audio_bytes_out)
+    logger.info(f"[WS] STT 대기 안내 전송: device_id={device_id}, text={wait_text!r}")
+
+
 async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> None:
     """GPS 갱신 시점에 평가된 길안내 멘트를 TTS 합성해 guide 메시지로 전송한다.
 
@@ -288,6 +318,11 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             temp_wav.write(audio_bytes)
             saved_path = Path(temp_wav.name)
 
+        wait_notice_sent = False
+        if _stt_bridge.should_play_stt_wait_notice(device_id):
+            await _send_stt_wait_notice(ws, device_id)
+            wait_notice_sent = True
+
         stt_result = await asyncio.to_thread(
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
@@ -301,6 +336,12 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         if any(k in _t for k in ("저장", "전화")):
             logger.info(f"[WS][DEBUG-STT-TEXT] device_id={device_id}, text={_t[:120]}")
 
+        if not wait_notice_sent and _stt_bridge.should_play_stt_wait_notice(
+            device_id, stt_result.text
+        ):
+            await _send_stt_wait_notice(ws, device_id)
+            wait_notice_sent = True
+
         llm_start = time.perf_counter()
         bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
         latency_stages["llm_ms"] = round((time.perf_counter() - llm_start) * 1000, 1)
@@ -309,8 +350,41 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
         # 2026-07-11: 자기-에코 감지(안내문이 마이크로 재녹음된 경우)면 클라이언트에
         # 응답을 보내지 않고 조용히 종료한다 (메아리 루프 방지).
+        # 관리자 콘솔 디버그용으로는 전사문과 스킵 사유를 DB에 남긴다.
         if bridge_source == "stt-echo-detected":
             logger.info(f"[WS] STT 에코 감지 - 응답 스킵: device_id={device_id}")
+            stt_event_id = f"stt-echo-{device_id}-{now_ts()}"
+            latency_stages["total_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
+            try:
+                reg_user_id, reg_device_id = get_cached_device_ids(device_id)
+                saved_log = await persist_detection_guidance_log(
+                    event_id=stt_event_id,
+                    stream_type="cognitive",
+                    detections=[
+                        {
+                            "source": "stt",
+                            "text_length": len(stt_result.text or ""),
+                            "stt_transcript": (stt_result.text or "").strip(),
+                            "skipped": True,
+                            "skip_reason": "stt_echo_detected",
+                        }
+                    ],
+                    tts_text="[에코 스킵] 응답 미전송",
+                    latency_stages=latency_stages,
+                    user_id=reg_user_id,
+                    device_id=reg_device_id,
+                    pipeline_debug=build_stt_pipeline_debug(
+                        stt_transcript=stt_result.text or "",
+                        bridge_result=bridge_result,
+                        response_skipped=True,
+                    ),
+                )
+                with contextlib.suppress(Exception):
+                    await manager.broadcast_json_to_consoles(
+                        {"type": "guidance_log_event", "row": saved_log.model_dump(mode="json")}
+                    )
+            except Exception as e:
+                logger.error(f"[WS] stt_echo DB 로그 저장 실패: device_id={device_id}, {e}")
             return
 
         logger.info(

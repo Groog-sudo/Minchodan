@@ -49,3 +49,5 @@ class OrchState(TypedDict, total=False):
     used_fallback_llm: bool
     used_static_fallback: bool
     total_latency_ms: float
+    # L3 재시도 전 거절된 L2 초안 문장 누적(관리자 콘솔 pipeline_debug용).
+    l2_drafts: list[str]

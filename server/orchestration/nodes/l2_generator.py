@@ -87,6 +87,10 @@ async def l2_generator_node(state: dict) -> dict:
     navigation_guidance = state.get("navigation_guidance", "")
     retry_count = state.get("retry_count", 0)
     errors = state.get("validation_errors", [])
+    l2_drafts = list(state.get("l2_drafts") or [])
+    prev_text = (state.get("guidance_text") or "").strip()
+    if prev_text and retry_count > 0 and (not l2_drafts or l2_drafts[-1] != prev_text):
+        l2_drafts.append(prev_text)
     is_departing_confirmed = state.get("is_departing_confirmed", False)
     braille_direction = state.get("braille_direction", "")
     clock_direction = state.get("clock_direction", "")
@@ -167,4 +171,5 @@ async def l2_generator_node(state: dict) -> dict:
         "guidance_text": response_content,
         "direction": direction,
         "used_fallback_llm": used_fallback,
+        "l2_drafts": l2_drafts,
     }

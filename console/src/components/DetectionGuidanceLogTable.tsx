@@ -127,10 +127,15 @@ function summarizePipelineDebug(
   detectedObjectsJson: string,
 ): string {
   const debug = parsePipelineDebug(debugJson);
+  if (debug?.response_skipped && debug.stt_transcript) {
+    return `[에코 스킵] ${debug.stt_transcript}`;
+  }
   if (debug?.stt_transcript) {
     const parts = [debug.stt_transcript];
     if (debug.llm_text && debug.llm_text !== debug.stt_transcript) {
       parts.push(`-> ${debug.llm_text}`);
+    } else if (debug.template_text && debug.template_text !== debug.stt_transcript) {
+      parts.push(`-> ${debug.template_text}`);
     } else if (debug.response_text && debug.response_text !== debug.stt_transcript) {
       parts.push(`-> ${debug.response_text}`);
     }
@@ -138,6 +143,12 @@ function summarizePipelineDebug(
   }
   if (debug?.llm_text) return debug.llm_text;
   if (debug?.response_text) return debug.response_text;
+  if (debug?.detections_summary?.length) {
+    const det = debug.detections_summary[0];
+    const cls = String(det.class_name ?? "");
+    const conf = det.confidence != null ? ` ${det.confidence}` : "";
+    return `${cls}${conf}`;
+  }
   if (debug?.rag_context) return debug.rag_context.slice(0, 80);
 
   // pipeline_debug_json 이전 STT 로그 폴백: detected_objects_json.stt_transcript
@@ -158,6 +169,48 @@ const PATH_LABEL: Record<string, string> = {
   cognitive: "인지(비전)",
   stt: "STT 음성",
 };
+
+function formatJsonPreview(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 0);
+  } catch {
+    return String(value);
+  }
+}
+
+function pushDetectionRows(
+  rows: Array<{ label: string; value: string; mono?: boolean }>,
+  detections: Array<Record<string, unknown>> | undefined,
+) {
+  if (!detections?.length) return;
+  detections.forEach((det, idx) => {
+    const cls = String(det.class_name ?? "-");
+    const conf = det.confidence != null ? ` conf=${det.confidence}` : "";
+    const hit = det.hit_count != null ? ` hit=${det.hit_count}` : "";
+    const dir = det.direction ? ` dir=${det.direction}` : "";
+    rows.push({
+      label: `YOLO 탐지 #${idx + 1}`,
+      value: `${cls}${conf}${hit}${dir}`,
+      mono: true,
+    });
+  });
+}
+
+function pushSurfaceRows(
+  rows: Array<{ label: string; value: string; mono?: boolean }>,
+  surfaces: Array<Record<string, unknown>> | undefined,
+) {
+  if (!surfaces?.length) return;
+  surfaces.forEach((surf, idx) => {
+    const cls = String(surf.class_name ?? "-");
+    const centroid = Array.isArray(surf.centroid) ? ` @${surf.centroid.join(",")}` : "";
+    rows.push({
+      label: `노면 분할 #${idx + 1}`,
+      value: `${cls}${centroid}`,
+      mono: true,
+    });
+  });
+}
 
 /** 경로별 파이프라인 중간 텍스트를 관리자 디버그 패널로 표시한다. */
 function PipelineDebugPanel({
@@ -190,23 +243,54 @@ function PipelineDebugPanel({
   rows.push({ label: "경로", value: pathLabel });
 
   if (debug.path === "stt") {
+    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
+    if (debug.response_skipped) rows.push({ label: "응답 스킵", value: debug.skip_reason ?? "true", mono: true });
     if (debug.stt_transcript) rows.push({ label: "STT 전사 (Whisper)", value: debug.stt_transcript, mono: true });
     if (debug.bridge_source) rows.push({ label: "브릿지 분기", value: debug.bridge_source, mono: true });
     if (debug.rag_query) rows.push({ label: "RAG 쿼리", value: debug.rag_query, mono: true });
     if (debug.rag_context) rows.push({ label: "RAG 수칙", value: debug.rag_context, mono: true });
+    if (debug.rag_results?.length) {
+      rows.push({ label: "RAG 검색 결과", value: formatJsonPreview(debug.rag_results), mono: true });
+    }
+    if (debug.template_text) rows.push({ label: "템플릿 안내문", value: debug.template_text, mono: true });
     if (debug.llm_text) rows.push({ label: "LLM 응답", value: debug.llm_text, mono: true });
-    if (debug.response_text) rows.push({ label: "최종 안내문", value: debug.response_text, mono: true });
+    if (debug.response_text && !debug.response_skipped) {
+      rows.push({ label: "최종 안내문", value: debug.response_text, mono: true });
+    }
+    if (typeof debug.used_fallback_llm === "boolean") {
+      rows.push({ label: "LLM 폴백", value: debug.used_fallback_llm ? "예" : "아니오" });
+    }
   } else if (debug.path === "cognitive") {
+    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
+    if (debug.pipeline_risk_hint) rows.push({ label: "파이프라인 위험도", value: debug.pipeline_risk_hint });
+    if (debug.l1_risk_level) rows.push({ label: "L1 분류 위험도", value: debug.l1_risk_level });
+    if (debug.detected_classes_ko?.length) {
+      rows.push({ label: "탐지 클래스(한글)", value: debug.detected_classes_ko.join(", ") });
+    }
+    pushDetectionRows(rows, debug.detections_summary);
+    pushSurfaceRows(rows, debug.surfaces_summary);
+    if (typeof debug.is_departing === "boolean") {
+      rows.push({ label: "보도 이탈(프레임)", value: debug.is_departing ? "예" : "아니오" });
+    }
+    if (typeof debug.is_departing_confirmed === "boolean") {
+      rows.push({ label: "보도 이탈(확정)", value: debug.is_departing_confirmed ? "예" : "아니오" });
+    }
+    if (debug.braille_direction) rows.push({ label: "점자블록 방향", value: debug.braille_direction });
     if (debug.object_ko) rows.push({ label: "객체(한글)", value: debug.object_ko });
     if (debug.clock_direction) rows.push({ label: "시계 방향", value: debug.clock_direction });
     if (debug.distance_class) rows.push({ label: "거리 밴드", value: debug.distance_class });
+    if (debug.navigation_guidance) rows.push({ label: "내비 융합 멘트", value: debug.navigation_guidance, mono: true });
     if (debug.rag_query) rows.push({ label: "RAG 쿼리", value: debug.rag_query, mono: true });
     if (debug.rag_context) rows.push({ label: "RAG 수칙", value: debug.rag_context, mono: true });
-    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
     if (debug.used_fast_lane && debug.fast_lane_cache_key) {
       rows.push({ label: "패스트 레인 키", value: debug.fast_lane_cache_key, mono: true });
     }
     if (debug.llm_provider) rows.push({ label: "LLM 제공자", value: debug.llm_provider, mono: true });
+    if (debug.l2_drafts?.length) {
+      debug.l2_drafts.forEach((draft, idx) => {
+        rows.push({ label: `L2 초안 #${idx + 1}`, value: draft, mono: true });
+      });
+    }
     if (debug.llm_text) rows.push({ label: "LLM 응답", value: debug.llm_text, mono: true });
     if (debug.response_text) rows.push({ label: "최종 안내문", value: debug.response_text, mono: true });
     if (typeof debug.l3_verified === "boolean") {
@@ -218,18 +302,29 @@ function PipelineDebugPanel({
     if (typeof debug.retry_count === "number" && debug.retry_count > 0) {
       rows.push({ label: "LLM 재시도", value: String(debug.retry_count) });
     }
+    if (typeof debug.inference_ms === "number") {
+      rows.push({ label: "YOLO 추론(ms)", value: String(debug.inference_ms) });
+    }
   } else if (debug.path === "reflex") {
+    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
     if (debug.alert_id) rows.push({ label: "alert_id", value: debug.alert_id, mono: true });
     if (debug.clip) rows.push({ label: "반사 클립", value: debug.clip, mono: true });
     if (debug.class_name) rows.push({ label: "클래스", value: debug.class_name, mono: true });
+    if (debug.risk_level) rows.push({ label: "위험도", value: debug.risk_level });
+    if (typeof debug.hit_count === "number") rows.push({ label: "hit_count", value: String(debug.hit_count) });
+    if (debug.track_id) rows.push({ label: "track_id", value: debug.track_id, mono: true });
     if (debug.direction) rows.push({ label: "방향", value: debug.direction });
     if (debug.distance) rows.push({ label: "거리", value: debug.distance });
+    if (typeof debug.inference_ms === "number") {
+      rows.push({ label: "YOLO 추론(ms)", value: String(debug.inference_ms) });
+    }
+    pushDetectionRows(rows, debug.detections_summary);
   }
 
   return (
     <div className="pipeline-debug-panel">
-      {rows.map((row) => (
-        <div key={row.label} className="pipeline-debug-row">
+      {rows.map((row, index) => (
+        <div key={`${row.label}-${index}`} className="pipeline-debug-row">
           <span className="pipeline-debug-label">{row.label}</span>
           <span className={row.mono ? "pipeline-debug-value mono" : "pipeline-debug-value"}>
             {row.value}
@@ -696,7 +791,7 @@ export function DetectionGuidanceLogTable({
                     <td className="pipeline-preview-cell">
                       {summarizePipelineDebug(row.pipeline_debug_json, row.detected_objects_json) || "-"}
                     </td>
-                    <td>{row.tts_text}</td>
+                    <td className="tts-text-cell">{row.tts_text}</td>
                     <td className="latency-total-cell">
                       {typeof totalMs === "number" ? totalMs.toFixed(0) : "-"}
                     </td>

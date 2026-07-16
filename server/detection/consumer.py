@@ -378,6 +378,7 @@ class DetectionConsumer:
                 frame=frame,
                 decode_ms=processed.processing_time_ms,
                 pipeline_start=pipeline_start,
+                detections=detections,
             )
             # [2026-07-14] 반사 경보(정지) 발동 800ms 후 인지(설명/우회방향) 가이드를 후속 트리거
             delayed_guide_task = asyncio.create_task(
@@ -480,6 +481,49 @@ class DetectionConsumer:
         except Exception as e:
             logger.debug(f"[DetectionConsumer] detection_event 브로드캐스트 실패: {e}")
 
+    @staticmethod
+    def _normalize_risk_level(raw: str | None) -> str:
+        if raw in ("high", "mid", "low"):
+            return raw
+        return "low"
+
+    async def _broadcast_risk_event(
+        self,
+        *,
+        event_id: str,
+        risk_level: str,
+        class_name: str,
+        confidence: float | None = None,
+        direction: str | None = None,
+        guidance_text: str | None = None,
+        device_id: str | None = None,
+    ) -> None:
+        """콘솔 RiskEventLog 패널용 risk_event SSE 브로드캐스트.
+
+        detection_event와 동일하게 mcp_manager 경유. 서버 어디에서도 발행되지 않아
+        RiskEventLog가 항상 비어 있던 문제(2026-07-16)를 해소한다.
+        """
+        payload: dict[str, object] = {
+            "event_id": event_id,
+            "risk_level": self._normalize_risk_level(risk_level),
+            "class_name": class_name or "unknown",
+        }
+        if confidence is not None:
+            payload["confidence"] = round(float(confidence), 4)
+        if direction:
+            payload["direction"] = direction
+        if guidance_text:
+            payload["guidance_text"] = guidance_text
+        if device_id:
+            payload["device_id"] = device_id
+
+        try:
+            from server.mcp.manager import mcp_manager
+
+            await mcp_manager.broadcast_event("risk_event", payload)
+        except Exception as e:
+            logger.debug(f"[DetectionConsumer] risk_event 브로드캐스트 실패: {e}")
+
     async def _send_server_detection(
         self,
         device_id: str,
@@ -544,6 +588,7 @@ class DetectionConsumer:
         frame: np.ndarray | None = None,
         decode_ms: float = 0.0,
         pipeline_start: float | None = None,
+        detections: list | None = None,
     ) -> None:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
 
@@ -599,6 +644,20 @@ class DetectionConsumer:
                 )
             await self._broadcast_latency_event(alert.event_id, "reflex", latency_stages)
             await self._broadcast_ai_pipeline_status(reflex_bypass=True)
+            reflex_confidence: float | None = None
+            if detections:
+                matched = [d for d in detections if d.class_name == alert.class_name]
+                primary = matched[0] if matched else max(detections, key=lambda d: d.confidence)
+                reflex_confidence = float(primary.confidence)
+            await self._broadcast_risk_event(
+                event_id=alert.event_id,
+                risk_level=alert.risk_level,
+                class_name=alert.class_name or "unknown",
+                confidence=reflex_confidence,
+                direction=alert.direction,
+                guidance_text=f"[반사 클립] {alert.clip}",
+                device_id=device_id,
+            )
             reg_user_id, reg_device_id = get_cached_device_ids(device_id)
             self._schedule_log_persist(
                 event_id=alert.event_id,
@@ -625,6 +684,11 @@ class DetectionConsumer:
                     direction=alert.direction,
                     class_name=alert.class_name,
                     distance=str(alert.distance) if alert.distance is not None else None,
+                    risk_level=alert.risk_level,
+                    hit_count=alert.hit_count,
+                    track_id=alert.track_id,
+                    inference_ms=alert.inference_ms,
+                    detections=detections,
                 ),
             )
         except Exception as e:
@@ -880,6 +944,35 @@ class DetectionConsumer:
                     (time.perf_counter() - pipeline_start) * 1000 + decode_ms, 1
                 )
             await self._broadcast_latency_event(result.event_id, "cognitive", latency_stages)
+            cognitive_risk = orch_result.get("risk_level") or result.risk_hint
+            cognitive_class = (
+                max(result.detections, key=lambda d: d.confidence).class_name
+                if result.detections
+                else (object_ko or "surface")
+            )
+            cognitive_confidence = (
+                float(max(result.detections, key=lambda d: d.confidence).confidence)
+                if result.detections
+                else None
+            )
+            cognitive_direction = (
+                orch_result.get("clock_direction")
+                or clock_direction
+                or (
+                    max(result.detections, key=lambda d: d.confidence).direction
+                    if result.detections
+                    else None
+                )
+            )
+            await self._broadcast_risk_event(
+                event_id=result.event_id,
+                risk_level=str(cognitive_risk),
+                class_name=str(cognitive_class),
+                confidence=cognitive_confidence,
+                direction=str(cognitive_direction) if cognitive_direction else None,
+                guidance_text=guidance_text,
+                device_id=device_id,
+            )
             reg_user_id, reg_device_id = get_cached_device_ids(device_id)
             cognitive_debug = build_cognitive_pipeline_debug(
                 guidance_text=guidance_text,
@@ -890,6 +983,15 @@ class DetectionConsumer:
                 distance_class=distance_class,
                 object_ko=object_ko,
                 llm_provider=LLMClientFactory.get_current_provider(),
+                detections=result.detections,
+                surfaces=result.surface,
+                risk_hint=result.risk_hint,
+                inference_ms=result.inference_ms,
+                is_departing=result.is_departing,
+                departure_confirmed=departure_confirmed,
+                braille_direction=result.braille_direction or "",
+                navigation_guidance=navigation_guidance,
+                detected_classes_ko=korean_classes,
             )
             self._schedule_log_persist(
                 event_id=result.event_id,

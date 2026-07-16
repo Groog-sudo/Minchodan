@@ -2444,3 +2444,16 @@
 - **관련 파일**: `server/db/migrations/20260716_001_add_pipeline_debug_json_to_detection_guidance_logs.sql`, `server/services/pipeline_debug_builder.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/types/monitor.ts`, `tests/test_pipeline_debug.py`
 - **검증 결과**: Docker `pytest tests/test_pipeline_debug.py` **5 passed**. `console` `tsc --noEmit` 통과.
 - **비고**: MariaDB 마이그레이션 적용 완료(호스트 Tailscale 경유). Mac Docker는 `docker/scripts/db_tailscale_proxy.sh` + `COMPOSE_DB_HOST=host.docker.internal`/`COMPOSE_DB_PORT=13306`로 DB 연결(`macos_docker_start.sh` 자동 기동).
+
+---
+
+### 2026-07-16 | 콘솔·서버 | 파이프라인 디버그 확장·RiskEventLog·STT 대기 안내
+
+- **커밋**: `(대기)`
+- **변경 내용**:
+  - `pipeline_debug_builder` 확장: YOLO 탐지·노면 분할·L1/L2 초안·STT 에코 스킵·템플릿/RAG 결과를 `pipeline_debug_json`에 저장. 콘솔 패널 세로 스택·테이블 셀 줄바꿈으로 텍스트 겹침 해소.
+  - `consumer._broadcast_risk_event`: 반사/인지 경보 시 SSE `risk_event` 발행 — `RiskEventLog` 실시간 표시 wiring.
+  - STT `should_play_stt_wait_notice` + `_send_stt_wait_notice`: 경로 검색·RAG·LLM 등 장시간 분기 전 **잠시만 기다려주세요!** 안내.
+  - `tests/test_risk_event_broadcast.py`, `tests/test_stt_wait_notice.py`, `test_ws_router_stt` 대기 안내 케이스 추가.
+- **관련 파일**: `server/services/pipeline_debug_builder.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `server/stt/stt_config.py`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/styles.css`, `tests/test_pipeline_debug.py`, `tests/test_risk_event_broadcast.py`, `tests/test_stt_wait_notice.py`, `tests/test_ws_router_stt.py`
+- **검증 결과**: Docker `pytest` 관련 **18 passed**. client/console react-doctor 통과.
