@@ -315,6 +315,8 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_segmentor_exception_returns_detections_only(self, frame, mock_redis_bus):
+        # 2026-07-17 MID_RISK Option A: bicycle는 인지 mid가 아닌 low로 분류된다
+        # (MID_RISK_CLASSES 공집합 전환). segmentor 예외 시에도 분류 규칙은 동일.
         detector = StubDetector(
             detections=[
                 Detection(
@@ -335,7 +337,7 @@ class TestPipelineRobustness:
         assert isinstance(result, DetectionResult)
         assert len(result.detections) == 1
         assert result.surface == []
-        assert result.risk_hint == "mid"
+        assert result.risk_hint == "low"
 
     @pytest.mark.asyncio
     async def test_reflex_gate_triggers(self, frame, mock_redis_bus):
@@ -447,7 +449,8 @@ class TestPipelineRobustness:
         self, frame, mock_redis_bus
     ):
         """2026-07-14 정책: 실내(is_outdoor=False)면 mid/low라도 risk.events(인지 TTS)를
-        발행하지 않는다. 실외 전용 모델의 실내 오탐이 음성 안내로 새는 것을 막기 위함."""
+        발행하지 않는다. 실외 전용 모델의 실내 오탐이 음성 안내로 새는 것을 막기 위함.
+        2026-07-17 MID_RISK Option A: bicycle는 low로 분류되나, 발행 억제 정책은 동일."""
         detector = StubDetector(
             detections=[
                 Detection(
@@ -467,7 +470,7 @@ class TestPipelineRobustness:
         result, _, _ = await pipeline.run(
             frame, "test", "evt-mid-indoor", "dev-1", is_outdoor=False
         )
-        assert result.risk_hint == "mid"
+        assert result.risk_hint == "low"
         mock_redis_bus.publish_event.assert_not_called()
 
     @pytest.mark.asyncio
@@ -485,18 +488,15 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_mid_risk_publishes_to_redis(self, frame, mock_redis_bus):
-        detector = StubDetector(
-            detections=[
-                Detection(
-                    class_name="bicycle",
-                    confidence=0.8,
-                    bbox=BBox(x=10.0, y=10.0, w=20.0, h=20.0),
-                )
-            ]
+        # 2026-07-17 MID_RISK Option A: 객체 클래스(bicycle)는 더 이상 mid가 아니므로,
+        # mid risk 발행 검증은 노면 roadway 클래스로 유발한다(MID_RISK_SURFACE_CLASSES).
+        # 테스트 의도("mid → Redis 발행")는 유지하되 분류 SSOT 변경을 반영.
+        segmentor = StubSegmentor(
+            surfaces=[SurfaceResult(class_name="roadway", centroid=[320.0, 120.0])]
         )
         pipeline = DetectionPipeline(
-            detector=detector,
-            segmentor=StubSegmentor(surfaces=[]),
+            detector=StubDetector(detections=[]),
+            segmentor=segmentor,
             tracker=ByteTrackTracker(),
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
@@ -524,6 +524,11 @@ class TestPipelineRobustness:
 
     @pytest.mark.asyncio
     async def test_tracker_exception_still_returns_result(self, frame, mock_redis_bus):
+        # 테스트 의도: tracker 예외 시에도 DetectionResult를 반환(파이프라인 영속성).
+        # 2026-07-17 MID_RISK Option A: bollard의 track_id="T-0001"이나 hit_count 기본값이
+        # 최소 유지 프레임(4) 미만이라 시간적 지속성 필터(detection_pipeline.py:150)에서
+        # 제외되고, tracker 예외(redis down)로 hit_count가 증가하지 않아 detections가
+        # 빈 리스트가 된다. 결과적으로 _classify_risk([], []) == "none"이 올바른 기대값.
         mock_redis_bus.get_track_context = AsyncMock(side_effect=RuntimeError("redis down"))
         detector = StubDetector(
             detections=[
@@ -544,7 +549,7 @@ class TestPipelineRobustness:
         )
         result, _, _ = await pipeline.run(frame, "test", "evt-track-fail", "dev-1")
         assert isinstance(result, DetectionResult)
-        assert result.risk_hint == "mid"
+        assert result.risk_hint == "none"
 
 
 class TestYoloDetectorLoad:

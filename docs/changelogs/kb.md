@@ -2543,3 +2543,17 @@
   - iOS 실기기+Docker+DB 통합 테스트 랩 스크립트 (dev_ios_lab.sh)
 - **관련 파일**: `scripts/dev_ios_lab.sh`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 테스트 | kb→dev 병합 전 정합성 회귀 수정 (MID_RISK Option A)
+
+- **변경 내용**:
+  - kb→dev 병합 정합성 검토 중 회귀 3건 발견: 커밋 `6e273a3`("MID_RISK Option A 파이프라인-L1 SSOT")이 `MID_RISK_CLASSES`를 공집합으로 전환했으나 `tests/test_detection.py`의 파이프라인 테스트 4개 갱신 누락(dev 1개 실패 → kb 4개 실패).
+  - `test_segmentor_exception_returns_detections_only`: bicycle 기대값 `mid`→`low` (MID_RISK_CLASSES 공집합).
+  - `test_cognitive_publish_suppressed_when_client_reports_indoor`: bicycle 기대값 `mid`→`low` (발행 억제 정책은 유지, `assert_not_called` 그대로 통과).
+  - `test_mid_risk_publishes_to_redis`: 입력 bicycle(이제 low) → 노면 `roadway`로 변경하여 mid 유발. 테스트 본래 의도("mid → Redis 발행") 보존.
+  - `test_tracker_exception_still_returns_result`: bollard 기대값 `mid`→`none`. track_id="T-0001"이나 hit_count 기본값이 최소 유지 프레임(4) 미만이라 시간적 지속성 필터(`detection_pipeline.py:150`)에서 제외되고 tracker 예외로 hit_count 미증가 → 빈 detections → `none`이 올바른 분류.
+- **관련 파일**: `tests/test_detection.py`
+- **검증 결과**: Ruff 통과, `test_detection.py` 34 passed, 회귀 영향 범위(detection+langgraph+departure) 55 passed, 전체 스위트(test_ws_echo 환경 실패 제외) 256 passed.
+- **비고**: `test_ws_echo.py` 6개 실패는 Redis 미실행·FastAPI 서버 미기동(포트 8000) 환경 문제로 dev에서도 동일 실패(회귀 아님). 병합 후 CI에서는 인프라 기동 상태로 통과 예상.
