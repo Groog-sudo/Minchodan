@@ -7,6 +7,7 @@ interface LiveCameraFeedProps {
   latestDetections: any[];
   connected: boolean;
   lastGps?: { lat: number; lon: number; heading: number } | null;
+  platform?: string | null;
 }
 
 const NAV_MAP_URL = resolveServiceUrl(
@@ -14,40 +15,53 @@ const NAV_MAP_URL = resolveServiceUrl(
   "/navigation/?embed=true",
   import.meta.env.VITE_API_BASE_URL,
 );
-// 2026-07-16: iOS ReflexFrameProcessor .down(180) 재설치 후 전송 JPEG은 정자세.
-// 콘솔 CSS 회전은 0. (90을 두면 정자세 프레임이 다시 옆으로 눕는다 — 방금 스크린샷 원인)
-const LIVE_FEED_ROTATE_DEG: number = 0;
 
 function getDisplayBBox(
   bbox: { x: number; y: number; w: number; h: number },
   natural: { w: number; h: number },
+  rotateDeg: number,
 ): { leftPct: number; topPct: number; widthPct: number; heightPct: number } {
   const { x, y, w, h } = bbox;
   const srcW = natural.w;
   const srcH = natural.h;
 
-  if (LIVE_FEED_ROTATE_DEG === 0) {
-    return {
-      leftPct: (x / srcW) * 100,
-      topPct: (y / srcH) * 100,
-      widthPct: (w / srcW) * 100,
-      heightPct: (h / srcH) * 100,
-    };
+  let rx = x;
+  let ry = y;
+  let rw = w;
+  let rh = h;
+  let dstW = srcW;
+  let dstH = srcH;
+
+  const angle = ((rotateDeg % 360) + 360) % 360;
+
+  if (angle === 90) {
+    rx = srcH - y - h;
+    ry = x;
+    rw = h;
+    rh = w;
+    dstW = srcH;
+    dstH = srcW;
+  } else if (angle === 180) {
+    rx = srcW - x - w;
+    ry = srcH - y - h;
+    rw = w;
+    rh = h;
+    dstW = srcW;
+    dstH = srcH;
+  } else if (angle === 270) {
+    rx = y;
+    ry = srcW - x - w;
+    rw = h;
+    rh = w;
+    dstW = srcH;
+    dstH = srcW;
   }
 
-  // 왼쪽으로 90도 꺾여 들어오는 프레임(Android 등)을 모바일 시점(CW 90도)으로 보정.
-  const rotatedX = srcH - (y + h);
-  const rotatedY = x;
-  const rotatedW = h;
-  const rotatedH = w;
-  const dstW = srcH;
-  const dstH = srcW;
-
   return {
-    leftPct: (rotatedX / dstW) * 100,
-    topPct: (rotatedY / dstH) * 100,
-    widthPct: (rotatedW / dstW) * 100,
-    heightPct: (rotatedH / dstH) * 100,
+    leftPct: (rx / dstW) * 100,
+    topPct: (ry / dstH) * 100,
+    widthPct: (rw / dstW) * 100,
+    heightPct: (rh / dstH) * 100,
   };
 }
 
@@ -91,6 +105,7 @@ export function LiveCameraFeed({
   latestDetections,
   connected,
   lastGps,
+  platform,
 }: LiveCameraFeedProps) {
   const [naturalSize, setNaturalSize] = useState<{
     w: number;
@@ -98,6 +113,15 @@ export function LiveCameraFeed({
   } | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // platform에 따른 동적 회전 각도 결정 (Android는 기본 90도, iOS 및 기타는 0도)
+  const defaultRotate = platform === "android" ? 90 : 0;
+  const [rotateDeg, setRotateDeg] = useState<number>(defaultRotate);
+
+  // platform prop이 변경되면 (예: 다른 세션 연결) 기본값으로 재설정
+  useEffect(() => {
+    setRotateDeg(platform === "android" ? 90 : 0);
+  }, [platform]);
 
   // 앱 실기기 GPS 좌표가 갱신될 때마다 HUD 미니맵 iframe으로 주입한다.
   // navigation/index.html의 window.message 리스너가 { type: 'inject_gps', lat, lon, heading }을 수신해
@@ -134,6 +158,41 @@ export function LiveCameraFeed({
           ) : (
             <span className="live-badge disconnected">OFFLINE</span>
           )}
+
+          <div className="feed-rotation-controls">
+            <button
+              type="button"
+              className={`rotate-btn ${rotateDeg === 0 ? "active" : ""}`}
+              onClick={() => setRotateDeg(0)}
+              title="회전 각도 0도"
+            >
+              0°
+            </button>
+            <button
+              type="button"
+              className={`rotate-btn ${rotateDeg === 90 ? "active" : ""}`}
+              onClick={() => setRotateDeg(90)}
+              title="회전 각도 90도"
+            >
+              90°
+            </button>
+            <button
+              type="button"
+              className={`rotate-btn ${rotateDeg === 180 ? "active" : ""}`}
+              onClick={() => setRotateDeg(180)}
+              title="회전 각도 180도"
+            >
+              180°
+            </button>
+            <button
+              type="button"
+              className={`rotate-btn ${rotateDeg === 270 ? "active" : ""}`}
+              onClick={() => setRotateDeg(270)}
+              title="회전 각도 270도"
+            >
+              270°
+            </button>
+          </div>
         </div>
         <span className="panel-kicker">
           실기기 카메라 화면 (실시간 BBox 및 GPS HUD 오버레이)
@@ -147,7 +206,7 @@ export function LiveCameraFeed({
               src={imageUrl}
               alt="실기기 실시간 화면"
               className="feed-image frame-overlay-image live-feed-rotated"
-              style={{ transform: `rotate(${LIVE_FEED_ROTATE_DEG}deg)` }}
+              style={{ transform: `rotate(${rotateDeg}deg)` }}
               onLoad={(event) => {
                 const img = event.currentTarget;
                 setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
@@ -157,7 +216,7 @@ export function LiveCameraFeed({
               latestDetections.map((det: any, index: number) => {
                 if (!det.bbox) return null;
                 const { x, y, w, h } = det.bbox;
-                const displayBBox = getDisplayBBox({ x, y, w, h }, naturalSize);
+                const displayBBox = getDisplayBBox({ x, y, w, h }, naturalSize, rotateDeg);
                 const color = getColorForClass(det.className);
                 const isSeg = det.model === "segmentation";
                 const detKey =
@@ -244,7 +303,7 @@ export function LiveCameraFeed({
             <div className="placeholder-icon">VIDEO</div>
             <p className="placeholder-text">
               {connected
-                ? "실기기 영상 프레임을 수신 대기 중입니다..."
+                ? "콘솔 연결됨. 앱이 서버에 연결되어 있고 '탐지 시작'이 켜져 있어야 영상이 옵니다."
                 : "실시간 비디오 서버 연결을 시도하는 중..."}
             </p>
           </div>
