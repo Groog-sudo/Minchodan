@@ -27,7 +27,7 @@ export const USB_HOST = process.env.EXPO_PUBLIC_USB_HOST ?? "127.0.0.1";
 
 export const TAILSCALE_HOST =
   process.env.EXPO_PUBLIC_TAILSCALE_HOST ??
-  "100.82.167.31";
+  "100.85.229.93";
 
 export const NGROK_DOMAIN =
   process.env.EXPO_PUBLIC_NGROK_DOMAIN ?? "partake-primer-surround.ngrok-free.dev";

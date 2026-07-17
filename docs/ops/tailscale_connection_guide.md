@@ -21,7 +21,7 @@ Minchodan 보행보조 플랫폼은 즉각적인 장애물 반응(반사 경로)
 ```mermaid
 graph TD
     subgraph "Tailnet (100.64.0.0/10)"
-        PC["개발 PC (desktop-hujuvss)<br/>IP: 100.92.150.34"]
+        PC["개발 PC (desktop-hujuvss)<br/>IP: 100.85.229.93"]
         App["스마트폰 단말 (s25-ultra)<br/>IP: 100.112.79.15"]
     end
 
@@ -30,8 +30,8 @@ graph TD
         FastAPI["FastAPI WebSocket Server (Port 8000)"]
     end
 
-    App -- "1. exp://100.92.150.34:8081<br/>자체 빌드 로드" --> Metro
-    App -- "2. ws://100.92.150.34:8000/ws/detect<br/>실시간 프레임 전송" --> FastAPI
+    App -- "1. exp://100.85.229.93:8081<br/>자체 빌드 로드" --> Metro
+    App -- "2. ws://100.85.229.93:8000/ws/detect<br/>실시간 프레임 전송" --> FastAPI
 
     linkStyle 0,1 stroke:#2ecd71,stroke-width:2px;
 ```
@@ -60,13 +60,13 @@ graph TD
 // client/src/config/index.ts
 const NETWORK_MODE = "lan"; // ngrok에서 lan으로 전환
 
-const LAN_IP = "100.92.150.34"; // 본인 PC의 Tailscale IP 기입
+const LAN_IP = "100.85.229.93"; // 본인 PC의 Tailscale IP 기입
 ```
 
 또는 개발 환경 변수 파일(`.env`)을 통해 주입할 수도 있습니다.
 ```env
 EXPO_PUBLIC_NETWORK_MODE=lan
-EXPO_PUBLIC_LAN_IP=100.92.150.34
+EXPO_PUBLIC_LAN_IP=100.85.229.93
 ```
 
 ### 4.2 Metro Bundler 실행 방식 변경
@@ -89,7 +89,7 @@ npx expo start -c --scheme minchodan
 1. 스마트폰의 Tailscale 앱에서 커넥션 상태를 활성화(Active)합니다.
 2. 기기에 미리 빌드된 `minchodan` 개발용 독립 앱을 실행합니다.
 3. 연결 주소창이 나타나면 PC의 가상 IP와 포트를 조합한 주소를 기입하고 엔터를 누릅니다.
-   - 예: `100.92.150.34:8081`
+   - 예: `100.85.229.93:8081`
 
 ### 5.2 기기에 개발 빌드가 설치되어 있지 않은 경우 (최초 1회 필수)
 1. 스마트폰을 PC에 USB 케이블로 연결하고 Android 개발자 모드(USB 디버깅)를 켭니다.
@@ -97,7 +97,7 @@ npx expo start -c --scheme minchodan
    ```bash
    npm run android
    ```
-3. 설치된 앱 아이콘을 터치하여 실행한 후 메트로 서버 주소(`100.92.150.34:8081`)로 연동을 완료합니다.
+3. 설치된 앱 아이콘을 터치하여 실행한 후 메트로 서버 주소(`100.85.229.93:8081`)로 연동을 완료합니다.
 
 ---
 
