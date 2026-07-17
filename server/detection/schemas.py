@@ -64,6 +64,30 @@ class RiskEvent(BaseModel):
     braille_direction: str | None = None
 
 
+class DistanceProbeSample(BaseModel):
+    """LiDAR 실거리 검증 캡처 1건(=탐지 bbox 1개)의 클라이언트 보고값.
+
+    거리측정(depthMode) 프로토타입에서 얻은 LiDAR 실측(lidar_meters)만 클라이언트가
+    전송하고, 이 값과 비교할 휴리스틱 라벨(near/medium/far)은 서버가
+    server/detection/direction.py:estimate_distance()로 동일 bbox를 재계산해 채운다
+    (휴리스틱 계산의 단일 소스를 서버로 유지).
+    """
+
+    class_name: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    bbox: BBox
+    lidar_meters: float | None = None
+    lidar_sample_count: int = 0
+    lidar_accuracy: str | None = None  # "absolute" | "relative"
+    lidar_quality: str | None = None  # "high" | "low"
+    lidar_calibrated: bool = False
+
+
+class DistanceProbeReport(BaseModel):
+    event_id: str
+    samples: list[DistanceProbeSample] = Field(default_factory=list)
+
+
 class ReflexAlert(BaseModel):
     event_id: str
     alert_id: str

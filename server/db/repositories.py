@@ -24,6 +24,7 @@ from server.db.models import (
     AdminLoginAudit,
     AppUser,
     DetectionGuidanceLog,
+    LidarDistanceValidationSample,
     StreamType,
     UserDevice,
 )
@@ -304,3 +305,34 @@ class DetectionGuidanceLogRepository:
             .limit(limit)
         )
         return [row[0] for row in result.all()]
+
+
+class LidarDistanceValidationRepository:
+    """lidar_distance_validation_samples 테이블 전담 Repository.
+
+    LiDAR 검증 캡처(거리측정 모드) 1건당 여러 bbox 행을 저장/조회한다. 검증 전용
+    데이터로 반사/인지 경로 로그(DetectionGuidanceLogRepository)와는 별개다.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create_many(
+        self, samples: list[LidarDistanceValidationSample]
+    ) -> list[LidarDistanceValidationSample]:
+        self.session.add_all(samples)
+        await self.session.commit()
+        for sample in samples:
+            await self.session.refresh(sample)
+        return samples
+
+    async def list_recent(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[LidarDistanceValidationSample]:
+        result = await self.session.execute(
+            select(LidarDistanceValidationSample)
+            .order_by(LidarDistanceValidationSample.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())

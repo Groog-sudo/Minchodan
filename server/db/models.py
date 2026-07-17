@@ -20,6 +20,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -443,6 +444,53 @@ class DetectionGuidanceLog(Base):
     device: Mapped[UserDevice | None] = relationship(back_populates="detection_guidance_logs")
 
 
+class LidarDistanceValidationSample(Base):
+    """iOS LiDAR 실거리 검증 캡처 로그 (검증 전용, 2026-07-17).
+
+    거리측정(depthMode) 프로토타입에서 얻은 LiDAR 실측값과, 서버가
+    server/detection/direction.py:estimate_distance()로 동일 bbox에 재계산한 휴리스틱
+    라벨을 나란히 저장한다. 반사/인지 경로의 실시간 판단에는 관여하지 않으며,
+    담당자가 사후 SQL/스크립트로 휴리스틱 정확도를 검증하기 위한 별도 테이블이다.
+    운영 로그 테이블(detection_guidance_logs)과 카디널리티(1 캡처 = N bbox 행)가
+    달라 컬럼 추가 대신 별도 테이블로 분리했다.
+    """
+
+    __tablename__ = "lidar_distance_validation_samples"
+    __table_args__ = (
+        Index("idx_lidar_validation_event_id", "event_id"),
+        Index("idx_lidar_validation_created_at", "created_at"),
+        {"sqlite_autoincrement": True},
+    )
+
+    sample_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    device_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK,
+        ForeignKey("user_devices.device_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    class_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    # bbox_json: MySQL JSON 타입으로 저장합니다. SQLite 환경에서는 Text로 폴백됩니다.
+    bbox_json: Mapped[str] = mapped_column(
+        Text().with_variant(MySQLJSON, "mysql"),
+        nullable=False,
+    )
+    lidar_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lidar_sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lidar_accuracy: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lidar_quality: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lidar_calibrated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    heuristic_distance_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    heuristic_area_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+
+
 __all__ = [
     "AdminAccount",
     "AdminAccountStatus",
@@ -452,6 +500,7 @@ __all__ = [
     "Base",
     "DetectionGuidanceLog",
     "DevicePlatform",
+    "LidarDistanceValidationSample",
     "StreamType",
     "UserDevice",
     "UserStatus",

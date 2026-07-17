@@ -34,6 +34,7 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import {
   isDepthProbeSupported,
   probeDepth,
+  probeDepthBoxes,
   startDepthProbe,
   stopDepthProbe,
   type DepthProbeResult,
@@ -719,6 +720,12 @@ export function CameraView() {
   const [depthMode, setDepthMode] = useState(false);
   const [depthResult, setDepthResult] = useState<DepthProbeResult | null>(null);
   const [depthError, setDepthError] = useState<string | null>(null);
+  // 2026-07-17 LiDAR 검증 캡처(Mitos 로드맵 §2 검증 전용 스코프): 거리측정 모드의
+  // 정지 프레임을 기존 "detection" 경로로 서버에 보내 실제 YOLO bbox를 받은 뒤,
+  // 같은 bbox의 LiDAR 실측을 distance_probe_sample로 서버에 보고해 DB에 남긴다.
+  // 반사/인지 경로의 실시간 판단에는 관여하지 않는 수동 트리거 전용 흐름이다.
+  const pendingProbeEventIdRef = useRef<string | null>(null);
+  const [depthProbeStatus, setDepthProbeStatus] = useState<string | null>(null);
 
   // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
   // WS 재연결 후에도 현재 토글 값을 다시 보낸다. 계측용 거리측정 모드에서는 탐지를 일시 정지한다.
@@ -772,8 +779,34 @@ export function CameraView() {
       void stopDepthProbe();
       setDepthResult(null);
       setDepthError(null);
+      setDepthProbeStatus(null);
+      pendingProbeEventIdRef.current = null;
     };
   }, [depthMode]);
+
+  // LiDAR 검증 캡처 트리거: depthResult.previewUri(depthMode 폴링이 주기적으로 갱신)를
+  // 기존 "detection" base64 경로로 전송하고, 상관관계 매칭용 event_id를 기록해 둔다.
+  // 실제 LiDAR 매칭·전송은 아래 server_detection 핸들러가 응답을 받은 뒤 수행한다.
+  const handleDistanceProbeCapture = useCallback(() => {
+    if (!depthResult?.ready || !depthResult.previewUri) {
+      setDepthProbeStatus("검증 캡처: LiDAR 프리뷰 준비 전");
+      return;
+    }
+    const probeEventId = `probe-${DEVICE_ID}-${Date.now()}`;
+    pendingProbeEventIdRef.current = probeEventId;
+    setDepthProbeStatus("검증 캡처 전송 중...");
+    send({
+      type: "detection",
+      payload: {
+        event_id: probeEventId,
+        device_id: DEVICE_ID,
+        frame_id: Date.now(),
+        thumbnail_jpeg_b64: depthResult.previewUri,
+        stream: "cognitive",
+        probe_source: "lidar_validation",
+      },
+    });
+  }, [depthResult, send]);
 
   // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트
   useEffect(() => {
@@ -797,8 +830,44 @@ export function CameraView() {
       // 서버가 mock 탐지기이거나 해당 프레임에서 무탐지인 경우 빈 배열을
       // 수신하더라도, 온디바이스 결과를 지워 BBox가 사라지지 않게 한다.
       if (serverDets.length > 0) setDetections(serverDets);
+
+      // LiDAR 검증 캡처가 보낸 event_id와 일치하면, 받은 bbox로 같은 depth 세션의
+      // LiDAR 실측을 샘플링해 distance_probe_sample로 보고한다(검증 전용, 1회성).
+      if (lastMessage.event_id && lastMessage.event_id === pendingProbeEventIdRef.current) {
+        const probeEventId = lastMessage.event_id;
+        pendingProbeEventIdRef.current = null;
+        if (serverDets.length === 0) {
+          setDepthProbeStatus("검증 캡처: 탐지된 객체 없음");
+        } else {
+          void (async () => {
+            const boxResult = await probeDepthBoxes(serverDets.map((d) => d.bbox));
+            if (!boxResult || !boxResult.ready) {
+              setDepthProbeStatus("검증 캡처: LiDAR 심도 미준비");
+              return;
+            }
+            const samples = serverDets.map((det, index) => {
+              const dist = boxResult.distances.find((d) => d.index === index);
+              return {
+                class_name: det.className,
+                confidence: det.confidence,
+                bbox: det.bbox,
+                lidar_meters: dist?.meters ?? null,
+                lidar_sample_count: dist?.sampleCount ?? 0,
+                lidar_accuracy: boxResult.accuracy ?? null,
+                lidar_quality: boxResult.quality ?? null,
+                lidar_calibrated: boxResult.calibrated === true,
+              };
+            });
+            send({
+              type: "distance_probe_sample",
+              payload: { event_id: probeEventId, samples },
+            });
+            setDepthProbeStatus(`검증 캡처: ${samples.length}건 전송 완료`);
+          })();
+        }
+      }
     }
-  }, [lastMessage]);
+  }, [lastMessage, send]);
 
   // Stale Closure 방지용 useRef 미러: setInterval 콜백은 등록 시점의 값을 캡처하므로
   // 최신 상태는 반드시 ref 를 통해 읽어야 한다.
@@ -1345,6 +1414,9 @@ export function CameraView() {
                   );
                 })
               )}
+              {depthProbeStatus ? (
+                <Text style={styles.depthRow}>{depthProbeStatus}</Text>
+              ) : null}
             </View>
           )}
         </ScrollView>
@@ -1452,6 +1524,17 @@ export function CameraView() {
               accessibilityLabel={depthMode ? "거리 측정 끄기" : "거리 측정 켜기"}
             >
               <Text style={styles.mapToggleText}>{depthMode ? "거리측정 끄기" : "거리측정"}</Text>
+            </Pressable>
+          ) : null}
+
+          {depthMode ? (
+            <Pressable
+              style={styles.mapToggleButton}
+              onPress={handleDistanceProbeCapture}
+              accessibilityRole="button"
+              accessibilityLabel="LiDAR 거리 검증 캡처"
+            >
+              <Text style={styles.mapToggleText}>검증 캡처</Text>
             </Pressable>
           ) : null}
         </View>

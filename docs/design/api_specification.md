@@ -1,9 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.26 (2026-07-17 jy 병합: §8.5 Log 응답에 STT 원본 음성 저장 메타데이터 추가, 이벤트 프레임/사용자 음성 파일 중앙 저장 API 연동 계약 반영 + 이전 v0.4.25: §6.7 dial_action 자동 연결 PhoneDialBridge)
+> **버전**: v0.4.27 (2026-07-17 §6.8 distance_probe_sample 신설: LiDAR 실거리 검증 캡처, 검증 전용 스코프로 반사/인지 경로 판단에는 미관여 + 이전 v0.4.26: §8.5 Log 응답에 STT 원본 음성 저장 메타데이터 추가, 이벤트 프레임/사용자 음성 파일 중앙 저장 API 연동 계약 반영 + 이전 v0.4.25: §6.7 dial_action 자동 연결 PhoneDialBridge)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
-> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
+> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
 
 ---
@@ -42,7 +42,7 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
+| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, distance_probe_sample, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
 | `event_id` | 이벤트 추적 식별자. 단말 detection 프레임은 `event-{device_id}-{stream}-{epoch_ms}` 형식(**2026-07-11 구조화** - 기존 `event-{epoch_ms}`는 반사/인지 타이머가 같은 ms에 발화하면 충돌해 DB UNIQUE 중복 방지 로직이 두 번째 로그를 유실), 서버 발신은 `stt-`/`nav-` 접두 또는 UUID |
 | `device_id` | 단말 식별자 |
 | `ts` | 타임스탬프 (epoch ms) |
@@ -654,6 +654,50 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 
 ---
 
+### 6.8 distance_probe_sample (단말 → 서버, LiDAR 실거리 검증 전용, 2026-07-17 신설)
+
+**검증 전용 스코프**: 거리측정(depthMode) 프로토타입(`client/ios/DepthProbeBridge.swift`)에서 얻은 LiDAR 실측값을, 서버가 동일 bbox에 재계산한 휴리스틱 거리(near/medium/far)와 나란히 DB(`lidar_distance_validation_samples`)에 남겨 정확도를 사후 검증하기 위한 메시지다. 반사/인지 경로의 실시간 판단에는 관여하지 않는다.
+
+LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰기 때문에 실시간 탐지와 동시 실행이 불가능하다(카메라 세션 점유 충돌). 따라서 다음 순서로 동작한다.
+
+1. 클라이언트가 depthMode의 `depthResult.previewUri`(depth와 동기화된 정지 프레임)를 기존 §3.2 `detection`(base64) 메시지로 전송하고, `payload.probe_source: "lidar_validation"`로 표시한다.
+2. 서버가 정상적으로 YOLO 추론 후 §6.4 `server_detection`으로 bbox 목록을 응답한다(기존 로직 그대로, 신규 필드 없음).
+3. 클라이언트는 받은 event_id가 자신이 보낸 검증 캡처와 일치하면, 같은 depth 세션에서 해당 bbox들의 LiDAR 실측을 네이티브 `probeBoxes()`로 샘플링해 아래 메시지로 보고한다.
+
+```json
+{
+  "type": "distance_probe_sample",
+  "payload": {
+    "event_id": "probe-dev-001-1721200000000",
+    "samples": [
+      {
+        "class_name": "bollard",
+        "confidence": 0.91,
+        "bbox": { "x": 120.0, "y": 300.0, "w": 40.0, "h": 80.0 },
+        "lidar_meters": 1.42,
+        "lidar_sample_count": 31,
+        "lidar_accuracy": "absolute",
+        "lidar_quality": "high",
+        "lidar_calibrated": true
+      }
+    ]
+  }
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `event_id` | §3.2에서 보낸 검증 캡처와 동일한 event_id (상관관계 매칭 키) |
+| `samples[].bbox` | `server_detection`으로 받은 bbox를 그대로 되돌려 보낸다 (640x640 모델 좌표계) |
+| `samples[].lidar_meters` | LiDAR 실측 거리(m). 유효 depth 샘플이 없으면 `null` |
+| `samples[].lidar_accuracy` | `absolute`(LiDAR 실측) 또는 `relative`(시차 기반) |
+
+서버(`server/api/ws_router.py`의 `_handle_distance_probe_sample`)는 `estimate_distance()`(`server/detection/direction.py`)로 동일 bbox의 휴리스틱 라벨을 재계산해 LiDAR 실측과 함께 저장한다(휴리스틱 계산의 단일 소스는 서버 유지). 응답 메시지는 없다(fire-and-forget). 담당자는 `scripts/analyze_lidar_validation.py`로 집계를 확인한다.
+
+> **비범위**: vision-camera 세션과 LiDAR 세션의 동시 실행(실시간 라이브 융합)은 포함하지 않는다. 별도의 네이티브 세션 재설계가 필요한 후속 과제로 남긴다.
+
+---
+
 ## 7. 탐지 결과 상세 (3단계, 내부/콘솔용)
 
 탐지 결과는 서버 내부 `DetectionResult` 스키마이며 운영자 콘솔에 SSE/WS로 전달될 수 있습니다.
@@ -843,6 +887,7 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.27** | **2026-07-17** | **§6.8 `distance_probe_sample` 신설 - LiDAR 실거리 검증 캡처(검증 전용, 반사/인지 경로 판단 미관여), `lidar_distance_validation_samples` DB 테이블 연동** |
 | **v0.4.24** | **2026-07-16** | **§6.7 `dial_action` STT 전화 연결 복원(convenience RAG·보호자 DB·긴급번호), §6.3 발화 표 추가** |
 | **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |
 | **v0.4.22** | **2026-07-16** | **§6.1 `source` 필드·STT 대기 안내(`stt-wait-notice`) 계약 추가. §8.3 `risk_event` 발행 위치(`DetectionConsumer._broadcast_risk_event`) 명시. §8.5 `pipeline_debug_json` 확장 필드 표 보강** |

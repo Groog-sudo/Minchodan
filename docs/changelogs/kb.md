@@ -2865,3 +2865,25 @@
 - **관련 파일**: `docs/ops/test_specification.md`, `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/design/reflex_audio_specification.md`
 - **검증 결과**: 문서 교차 검증 완료. 코드-문서 정합성 확보 (ReflexAlert distance_band, latency_event latency_alert, 재무장 정책 키/TTL/밴드 일치).
 - **비고**: environment_variables.md는 M1-M7 각 커밋에서 이미 갱신 완료. changelog도 각 M별로 이미 추가됨. 본 커밋은 남은 3개 설계 문서 동기화.
+
+---
+
+### 2026-07-17 | 기능 | LiDAR 실거리 검증 로깅 연결 (검증 전용 스코프)
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - DB 로그로 LiDAR 기반 거리 탐지 정확도를 분석할 수 없던 문제(LiDAR 실측값이 서버 전송·DB 저장 없이 클라이언트 로컬에만 존재) 해소. LiDAR 심도 카메라가 vision-camera와 별도 `AVCaptureSession`을 써서 실시간 탐지와 동시 실행이 불가능한 구조적 제약(`DepthProbeBridge.swift`)이 있어, 실시간 라이브 융합이 아닌 **검증 전용 스코프**로 범위를 확정하고 구현.
+  - 데이터 흐름: 거리측정(depthMode) 모드의 "검증 캡처" 버튼 -> `depthResult.previewUri`(depth 동기화 정지 프레임)를 기존 `detection`(base64) 경로로 전송 -> 서버 YOLO 추론 후 기존 `server_detection` 응답(bbox)을 클라이언트가 event_id로 상관관계 매칭 -> 같은 depth 세션에서 `probeDepthBoxes()`로 LiDAR 실측 샘플링 -> 신규 `distance_probe_sample` 메시지로 서버 전송 -> 서버가 `estimate_distance()`로 동일 bbox의 휴리스틱 라벨을 재계산해 LiDAR 실측과 함께 신규 테이블에 저장.
+  - `server/detection/schemas.py`: `DistanceProbeSample`/`DistanceProbeReport` pydantic 모델 신규.
+  - `server/db/models.py`: `LidarDistanceValidationSample` ORM 클래스 신규(`lidar_distance_validation_samples` 테이블). 기존 `detection_guidance_logs`에 컬럼을 추가하지 않고 별도 테이블로 분리(카디널리티가 다름 - 1 캡처당 N bbox 행).
+  - `server/db/migrations/20260717_001_add_lidar_distance_validation_samples.sql` 신규.
+  - `server/db/repositories.py`: `LidarDistanceValidationRepository`(create_many/list_recent) 신규.
+  - `server/services/lidar_validation_service.py` 신규: `persist_distance_probe_samples()` - `async_sessionmaker_factory` 패턴으로 WS 컨슈머 컨텍스트에서 세션 직접 관리, `bbox_area_ratio()`/`estimate_distance()`(`server/detection/direction.py`) 재사용해 휴리스틱 계산.
+  - `server/api/ws_router.py`: `distance_probe_sample` 메시지 분기 + `_handle_distance_probe_sample()` 핸들러 추가(background task, RUF006 대응 세트 패턴).
+  - `client/src/services/depthProbe.ts`: 기존 미사용(private) `probeDepthBoxes()`를 export로 전환.
+  - `client/src/components/CameraView.tsx`: "검증 캡처" 버튼 신설(depthMode 전용, 수동 트리거). `server_detection` 핸들러를 확장해 event_id 매칭 시 LiDAR 매칭·전송 수행.
+  - `scripts/analyze_lidar_validation.py` 신규: 클래스별/휴리스틱 라벨별 LiDAR 실측 분포 집계 스크립트. 판정 임계값은 자동화하지 않고 담당자가 직접 해석하도록 집계·출력만 수행(AGENTS.md §8 학습형 협업 패턴).
+  - 문서 동기화: `docs/design/api_specification.md`(§6.8 신설, v0.4.27), `docs/design/architecture.md`(§6.7 데이터 계약 표 추가, v0.4.10), `docs/research/mitos_improvement_roadmap.md`(§2 거리 추정 행 갱신, v0.4.0).
+- **관련 파일**: `server/detection/schemas.py`, `server/db/models.py`, `server/db/migrations/20260717_001_add_lidar_distance_validation_samples.sql`, `server/db/repositories.py`, `server/services/lidar_validation_service.py`, `server/api/ws_router.py`, `client/src/services/depthProbe.ts`, `client/src/components/CameraView.tsx`, `scripts/analyze_lidar_validation.py`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/research/mitos_improvement_roadmap.md`
+- **검증 결과**: `ruff check`/`ruff format` 전체 통과, `bandit` 신규 파일 무결과(이슈 없음), `mypy` 신규/수정 서버 파일 무결과. `npx tsc --noEmit` 신규 오류 없음(기존 3건은 이번 변경과 무관한 pre-existing 오류로 확인 - `CameraView.tsx` StyleSheet.absoluteFillObject, `useSttRecorder.ts` 상태 비교 2건). 신규 모듈 import 스모크 테스트 통과(`server.db.models`, `server.db.repositories`, `server.detection.schemas`, `server.services.lidar_validation_service`, `server.api.ws_router`).
+- **비고**: 반사/인지 경로의 실시간 거리 판단 로직은 변경하지 않았다(휴리스틱이 여전히 운영 판단의 단일 소스). vision-camera 세션과 LiDAR 세션의 동시 실행(실시간 라이브 융합)은 별도 후속 과제로 명시적으로 범위 밖에 둠. 실기기(LiDAR 탑재 iPhone Pro) 검증 캡처 E2E 테스트와 `scripts/analyze_lidar_validation.py` 실행에 의한 실데이터 집계 확인은 아직 미실시(로컬 DB에 데이터 없음).

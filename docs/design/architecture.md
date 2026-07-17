@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.9 (2026-07-17 jy 병합: §13.3.1 이벤트 프레임 중앙 저장 API 연동 및 STT 사용자 원본 음성 파일 Log 메타데이터 보존 구조 반영 + 이전 v0.4.8: §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
+> **버전**: v0.4.10 (2026-07-17 §6.7 `distance_probe_sample` 데이터 계약 추가 - LiDAR 실거리 검증 캡처, 검증 전용 스코프로 반사/인지 경로 판단에는 미관여 + 이전 v0.4.9: §13.3.1 이벤트 프레임 중앙 저장 API 연동 및 STT 사용자 원본 음성 파일 Log 메타데이터 보존 구조 반영 + 이전 v0.4.8: §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -352,8 +352,9 @@ graph TD
 | In   | `{type:"realtime_gps", lat, lon, heading}`                                            |
 | Out  | `{type:"server_detection", event_id, detections:[{model, className, confidence, bbox}], ts}` |
 | Out  | `{type:"nav_route", waypoints:[{lat, lon}], app_key, ts}` (경로 수립/해제/재접속 복원 시, 지도 패널용. 2026-07-11 신설) |
+| In   | `{type:"distance_probe_sample", payload:{event_id, samples:[{class_name, confidence, bbox, lidar_meters, ...}]}}` (LiDAR 실거리 검증 전용, 반사/인지 경로 미관여. 2026-07-17 신설) |
 
-상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6을 참조합니다.
+상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6, §6.8을 참조합니다.
 
 > **2026-07-11 길안내 발화 경로 분리**: 턴바이턴 멘트 조회가 `DetectionConsumer` 내부에만
 > 있어 카메라 탐지가 없으면 NAVIGATING 상태여도 무음이던 결함을 수정했다. `realtime_gps`
