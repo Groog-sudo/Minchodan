@@ -2783,3 +2783,22 @@
 - **관련 파일**: `server/detection/schemas.py`, `server/detection/bytetrack_tracker.py`, `server/detection/gates/reflex_gate.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
 - **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 85개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
 - **비고**: Approach-Lot는 track_id가 유지되는 케이스를 전제(문서 §4.2 (b) "동일 track_id"). 완전히 새 track_id 부여 시 spatial matching이 필요하나 post-MVP 과제. SMALL_OBJECT_MIN_AREA_RATIO(0.04)는 중앙 먼 곳 작은 bbox 오탐 차단을 위한 하한.
+
+---
+
+### 2026-07-17 | 6단계 | M4_P1-2_발화가치_게이트
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M4/P1-2 구현: 인지 가이드 발화 가치(Utterance Value) 게이트 추가. 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S(30s) 동안 TTS 합성 생략해 CPU 점유와 중복 안내를 동시 감소 (S5/S6 해소).
+  - `server/detection/consumer.py`:
+    - `COGNITIVE_UTTERANCE_COOLDOWN_S` 환경변수 상수(30.0) 추가.
+    - `_last_guide_signature: dict[str, str]` 인스턴스 변수 추가 (device_id별 상황 서명).
+    - `_compute_cognitive_signature(result, departure_confirmed)` 정적 메서드: 객체 클래스 정렬 + 표면 클래스 정렬 + 이탈 여부로 서명 산출 + [면접 대비 주석].
+    - `_has_utterance_value(device_id, result, departure_confirmed)` 메서드: 발화 가치 OR 판정 (보도 이탈/서명 변화/쿨다운 경과).
+    - `_send_cognitive_guide` 진입부에 P1-2 게이트 추가 (기존 오디오 겹침 쿨다운 앞). 전송 성공 시 `_last_guide_signature` 갱신.
+  - `docs/ops/environment_variables.md` + `.env.example`: `COGNITIVE_UTTERANCE_COOLDOWN_S` 변수 추가.
+  - `tests/test_detection.py`: `TestUtteranceValueGate` 클래스 신규 8개 케이스 (서명 객체/표면/이탈 반영, 이탈 항상 가치, 새 객체 가치, 동일 서명 쿨다운 내 생략, 동일 서명 쿨다운 경과 발화, 최초 안내 가치).
+- **관련 파일**: `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 93개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: 기존 오디오 겹침 쿨다운(_required_guide_gap_sec, 8s+오디오길이)은 유지 - P1-2 게이트는 "동일 상황 반복" 차단, 기존 쿨다운은 "오디오 재생 중 겹침" 차단으로 역할 분리. fallback_node/realtime_tts는 consumer 게이트로 사전 차단되어 호출 자체가 생략되므로 TTS 합성 미호출 보장.

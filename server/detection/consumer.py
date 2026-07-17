@@ -56,6 +56,11 @@ DEPARTURE_CONFIRM_STREAK = 3
 REFLEX_MAX_AGE_S = float(os.getenv("REFLEX_MAX_AGE_S", "0.4"))
 COGNITIVE_MAX_AGE_S = float(os.getenv("COGNITIVE_MAX_AGE_S", "2.0"))
 
+# P1-2 (2026-07-17): 인지 가이드 발화 가치(Utterance Value) 게이트.
+# 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S 동안 TTS 합성 생략.
+# 새 객체/표면 변화/보도 이탈/쿨다운 경과 중 하나라도 true면 발화.
+COGNITIVE_UTTERANCE_COOLDOWN_S = float(os.getenv("COGNITIVE_UTTERANCE_COOLDOWN_S", "30.0"))
+
 
 class DetectionConsumer:
     """이중 큐(반사/인지)에서 프레임을 소비하고 DetectionPipeline을 실행.
@@ -87,6 +92,9 @@ class DetectionConsumer:
         # 실측 길이 기반으로 동적 산정한다(비협상 아님, 튜닝값).
         self._last_guide_ts: dict[str, float] = {}
         self._last_guide_duration_sec: dict[str, float] = {}
+        # P1-2 (2026-07-17): device_id별 직전 인지 안내의 상황 서명(객체+표면).
+        # 동일 서명 + 쿨다운 이내 재발화를 TTS 합성 생략으로 차단.
+        self._last_guide_signature: dict[str, str] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
         # 2026-07-13 추가: device_id별 보도 이탈(is_departing) 연속 프레임 카운터.
@@ -117,6 +125,44 @@ class DetectionConsumer:
         prev_duration_sec = self._last_guide_duration_sec.get(device_id, 0.0)
         return max(
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
+        )
+
+    @staticmethod
+    def _compute_cognitive_signature(result: DetectionResult, departure_confirmed: bool) -> str:
+        """P1-2: 인지 가이드 상황 서명(객체+표면+이탈) 산출.
+
+        # [면접 대비 주석]
+        # 발화 가치 게이트의 핵심: "같은 상황의 반복 안내는 억제, 상황이 바뀌면 즉시 안내".
+        # 서명 = 정렬된 객체 클래스 목록 + 정렬된 표면 클래스 목록 + 이탈 여부.
+        # 동일 서명이면 같은 상황으로 간주해 쿨다운 내 TTS 합성을 생략해 CPU/중복 안내를 줄인다.
+        # 객체/표면이 하나라도 바뀌면 서명이 달라져 즉시 발화한다.
+        """
+        objects_key = ",".join(sorted({d.class_name for d in result.detections}))
+        surface_key = ",".join(sorted({s.class_name for s in result.surface}))
+        departure_key = "departure" if departure_confirmed else ""
+        return f"obj:{objects_key}|surf:{surface_key}|dep:{departure_key}"
+
+    def _has_utterance_value(
+        self, device_id: str, result: DetectionResult, departure_confirmed: bool
+    ) -> bool:
+        """P1-2: 인지 가이드 발화 가치 판정.
+
+        발화 조건(OR):
+            1. 보도 이탈 확정 (departure_confirmed) - 안전상 항상 가치.
+            2. 상황 서명 변화 (새 객체/표면 변화) - 직전과 다른 상황.
+            3. 직전 안내로부터 COGNITIVE_UTTERANCE_COOLDOWN_S 경과 - 동일 상황도 주기적 갱신.
+        위 모두 거짓이면 동일 상황 반복이므로 TTS 합성 생략.
+        """
+        if departure_confirmed:
+            return True
+        current_sig = self._compute_cognitive_signature(result, departure_confirmed)
+        prev_sig = self._last_guide_signature.get(device_id)
+        if prev_sig != current_sig:
+            return True
+        # 동일 서명이면 쿨다운 경과 여부가 발화 가치를 결정
+        return (
+            time.monotonic() - self._last_guide_ts.get(device_id, 0.0)
+            >= COGNITIVE_UTTERANCE_COOLDOWN_S
         )
 
     def get_runtime_status(self) -> dict[str, str | float | int | None]:
@@ -797,6 +843,18 @@ class DetectionConsumer:
         if not result.detections and not departure_confirmed and not has_significant_surface:
             return
 
+        # P1-2 (2026-07-17): 발화 가치(Utterance Value) 게이트.
+        # 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S 동안
+        # TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시에만 발화.
+        # [면접 대비 주석] 인지 가이드는 LangGraph+RAG+TTS로 수 초 소요되므로, 동일 상황 반복을
+        # 사전 차단해 CPU 점유와 중복 안내를 동시에 줄인다(S5/S6).
+        if not self._has_utterance_value(device_id, result, departure_confirmed):
+            logger.debug(
+                f"[DetectionConsumer] 인지 가이드 발화 가치 없음(동일 상황 반복) - "
+                f"TTS 합성 생략: device_id={device_id}"
+            )
+            return
+
         # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이
         # 오케스트레이션/TTS(수 초 소요)를 새로 돌리지 않고 조기 반환한다. 실제 간격
         # 보장은 아래 전송 직전 재검사에서 확정하므로 여기서는 슬롯을 갱신하지 않는다.
@@ -930,6 +988,10 @@ class DetectionConsumer:
                 return
             self._last_guide_ts[device_id] = send_now
             self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
+            # P1-2: 발화 가치 게이트용 상황 서명 갱신 (다음 동일 상황 판정 기준).
+            self._last_guide_signature[device_id] = self._compute_cognitive_signature(
+                result, departure_confirmed
+            )
 
             # [2026-07-09 도입] guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는
             # 대신, 메타데이터(JSON) 전송 직후 원본 바이트를 바이너리 프레임으로 이어

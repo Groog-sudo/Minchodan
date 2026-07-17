@@ -769,3 +769,111 @@ class TestReflexAlertSuppression:
 
         send_mock.assert_awaited_once()
         mark_reflex_mock.assert_not_awaited()
+
+
+class TestUtteranceValueGate:
+    """P1-2 (2026-07-17): 인지 가이드 발화 가치 게이트 단위 테스트."""
+
+    def _make_result(self, objects=None, surfaces=None, event_id="evt"):
+        return DetectionResult(
+            event_id=event_id,
+            detections=[
+                Detection(class_name=c, confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))
+                for c in (objects or [])
+            ],
+            surface=[
+                SurfaceResult(class_name=s, centroid=[320.0, 400.0]) for s in (surfaces or [])
+            ],
+            risk_hint="mid",
+            inference_ms=10.0,
+        )
+
+    def test_signature_changes_with_objects(self):
+        """객체 클래스가 바뀌면 서명이 달라진다."""
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r1 = self._make_result(objects=["car"])
+        r2 = self._make_result(objects=["person"])
+        sig1 = consumer._compute_cognitive_signature(r1, False)
+        sig2 = consumer._compute_cognitive_signature(r2, False)
+        assert sig1 != sig2
+
+    def test_signature_changes_with_surfaces(self):
+        """표면 클래스가 바뀌면 서명이 달라진다."""
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r1 = self._make_result(objects=["car"], surfaces=["caution"])
+        r2 = self._make_result(objects=["car"], surfaces=["roadway"])
+        sig1 = consumer._compute_cognitive_signature(r1, False)
+        sig2 = consumer._compute_cognitive_signature(r2, False)
+        assert sig1 != sig2
+
+    def test_signature_includes_departure(self):
+        """보도 이탈 확정 여부가 서명에 반영된다."""
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r = self._make_result(objects=["car"])
+        sig_no = consumer._compute_cognitive_signature(r, False)
+        sig_yes = consumer._compute_cognitive_signature(r, True)
+        assert sig_no != sig_yes
+
+    def test_departure_always_has_value(self):
+        """보도 이탈 확정은 항상 발화 가치 True."""
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        # 직전과 동일 서명이어도 departure_confirmed=True면 발화
+        r = self._make_result(objects=["car"])
+        consumer._last_guide_signature["dev1"] = consumer._compute_cognitive_signature(r, False)
+        assert consumer._has_utterance_value("dev1", r, departure_confirmed=True) is True
+
+    def test_new_object_has_value(self):
+        """새 객체(서명 변화)는 발화 가치 True."""
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r_prev = self._make_result(objects=["car"])
+        consumer._last_guide_signature["dev1"] = consumer._compute_cognitive_signature(
+            r_prev, False
+        )
+        r_new = self._make_result(objects=["person"])
+        assert consumer._has_utterance_value("dev1", r_new, False) is True
+
+    def test_same_signature_within_cooldown_no_value(self):
+        """동일 서명 + 쿨다운 이내는 발화 가치 False (TTS 합성 생략)."""
+        import time as _time
+
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r = self._make_result(objects=["car"], surfaces=["caution"])
+        sig = consumer._compute_cognitive_signature(r, False)
+        consumer._last_guide_signature["dev1"] = sig
+        consumer._last_guide_ts["dev1"] = _time.monotonic()  # 방금 전송
+        assert consumer._has_utterance_value("dev1", r, False) is False
+
+    def test_same_signature_after_cooldown_has_value(self):
+        """동일 서명이어도 쿨다운 경과 시 발화 가치 True (주기적 갱신)."""
+        import time as _time
+
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r = self._make_result(objects=["car"], surfaces=["caution"])
+        sig = consumer._compute_cognitive_signature(r, False)
+        consumer._last_guide_signature["dev1"] = sig
+        # 쿨다운(30s)을 초과해 과거 시각으로 설정
+        consumer._last_guide_ts["dev1"] = _time.monotonic() - 31.0
+        assert consumer._has_utterance_value("dev1", r, False) is True
+
+    def test_first_guide_has_value(self):
+        """최초 안내(직전 서명 없음)는 발화 가치 True."""
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r = self._make_result(objects=["car"])
+        # _last_guide_signature가 비어있음
+        assert consumer._has_utterance_value("dev1", r, False) is True
