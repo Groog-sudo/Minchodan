@@ -581,3 +581,68 @@
   - 정면 근접 장애물(면적비 >= 0.15, confidence >= 0.35, 0.20 <= center_x_norm <= 0.80)에 대해 세그멘테이션 교차검증을 건너뛰고 지속성(hit_count) 및 streak 요구치를 1프레임으로 하향해 즉시 반사 경보를 트리거하는 긴급 게이트를 신설하고, 원거리/애매한 탐지는 기존 보수적 기준(hit_count >= 4, confidence >= 0.50, 세그 마스크 교차검증)을 따르는 예방 게이트로 이원화함.
 - **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `docs/changelogs/stage_safety_reflex.md`
 - **검증 결과**: 단위 테스트(pytest) 및 TypeScript 정적 분석 통과 확인.
+
+---
+
+### 2026-07-16 | 2단계 | camera_rendering_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 카메라 렌더링 문제를 해결하기 위해 supportsStream 프록시 감지 우회 및 ArrayBuffer 바이너리 폴백 대응 추가
+- **관련 파일**: 없음
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 공통 | tailscale_server_ip_update
+
+- **커밋**: `config: update tailscale server ip to 100.85.229.93`
+- **변경 내용**:
+  - Tailscale 서버 IP 변경에 따라 클라이언트 및 관련 설정 파일의 IP 주소를 100.85.229.93으로 최신화
+- **관련 파일**: `client/.env`, `client/src/config/index.ts`, `client/ios/Minchodan/AppDelegate.swift`, `docs/ops/tailscale_connection_guide.md`
+- **검증 결과**: 파일 변경 내용이 정확하게 반영됨.
+
+---
+
+### 2026-07-17 | 관제 콘솔 | dynamic_camera_rotation
+
+- **커밋**: `feat: support dynamic camera rotation based on device platform`
+- **변경 내용**:
+  - 관제 콘솔의 실시간 카메라 피드(LiveCameraFeed) 회전 기능을 하드코딩(0도)에서 연결된 모바일 기기의 플랫폼 종류(iOS, Android)에 따라 동적으로 설정되도록 구조 개선
+  - Android 기기 연결 시 90도 회전을 적용하고 그에 따른 BBox 바운딩 박스 정렬 보정 함수(getDisplayBBox)도 rotateDeg에 연동되도록 수정
+- **관련 파일**: `console/src/components/LiveCameraFeed.tsx`, `console/src/pages/DashboardPage.tsx`
+- **검증 결과**: `tsc --noEmit && vite build`를 실행하여 컴파일 및 타입 검사 정상 통과 완료
+
+---
+
+### 2026-07-17 | 공통 | field_test_improvement_plan
+
+- **커밋**: `(커밋 예정)`
+- **변경 내용**:
+  - 실사용 필드 테스트 피드백 8건(신규 객체 햅틱 누락, 지연 드리프트, 소형 객체 근접 사각지대, 행동 안내 부재, 저가치 발화, 계단 인식 불가 등)의 근본 원인을 코드 수준으로 분석하고 P0/P1/P2 우선순위별 개선 구현 계획서 작성
+  - 반사 억제 재무장 정책, 반사 큐 최신성 보장, 접근-소실 경보, 반사 후속 행동 안내, 발화 가치 게이트, 계단 세그멘테이션 재학습 등 7개 과제의 상세 설계·검증 계획·마일스톤 포함
+- **관련 파일**: `docs/research/field_test_improvement_plan.md`
+- **검증 결과**: 문서 작성 작업으로 코드 변경 없음. 문서 표준(메타데이터 인용 블록, 표 우선, mermaid 큰따옴표, 이모지 미사용) 준수 확인.
+
+---
+
+### 2026-07-17 | 공통 | docker_port_and_env_integration
+
+- **커밋**: `docker: 로컬 MariaDB 호스트 포트 노출 주석 처리하여 3306 포트 충돌 방지`
+- **변경 내용**:
+  - 호스트 PC의 로컬 3306 포트 충돌을 방지하기 위해 `docker-compose.yml` 내 `mariadb` 서비스의 `ports` 설정을 주석 처리하고 원격 Tailscale 데이터베이스(`100.105.221.31:3306`) 연결 유지.
+  - 카카오톡 전달 `.env` 파일 내 이벤트 프레임 원격 저장소(`remote`) 연동 변수, TMAP 최신 키, 씬 분류 컬렉션 정보 등을 프로젝트의 활성 `.env` 파일과 유실 없이 통합 병합 처리함.
+- **관련 파일**: `docker/docker-compose.yml`, `.env`
+- **검증 결과**: 도커 컴포즈 성공 기동 및 `/health` API 체크에서 `{"status":"healthy","database":"connected","redis":"connected"}` 정상 연결 검증 완료.
+
+---
+
+### 2026-07-17 | 내비게이션 | mobile_gps_injection_override_fix
+
+- **커밋**: `fix(navigation): PC 브라우저 GPS 수신이 모바일 앱 주입 GPS를 덮어쓰는 버그 수정`
+- **변경 내용**:
+  - 관제 콘솔의 embedded 미니맵(`navigation/index.html`) 로딩 시 PC/노트북 자체 브라우저 Geolocation 센서 감지값에 의해 모바일 앱에서 전송된 실기기 GPS 좌표(`inject_gps`)가 반복적으로 강제 오버라이트 및 훼손되는 버그 해결.
+  - 모바일 실기기 좌표 주입 감지 플래그(`isGpsInjected`)를 신설하여 앱 연동 GPS 좌표가 수신된 즉시 PC 브라우저의 `watchPosition` 감시 기능을 강제 폐쇄(`clearWatch`)하고, 타이머 기반의 서울역 임시 좌표 폴백 동작을 원천 차단함.
+- **관련 파일**: `server/navigation/index.html`
+- **검증 결과**: 메트로 및 프론트엔드 연동 상태에서 PC 브라우저 GPS 혼선 없이 모바일 기기 주입 좌표만을 지도에 실시간 동기화하여 고정 표시 성공 검증 완료.
+
