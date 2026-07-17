@@ -103,9 +103,12 @@ MINCHODAN_EXPOSE_OLLAMA=1 OLLAMA_HOST=0.0.0.0:11434 ollama serve
 # 모델 pull
 ollama pull gemma4:e4b
 ollama pull nomic-embed-text
+ollama pull bge-m3
 ```
 
 > 모델 다운로드는 최초 1회만 수행하며, 호스트의 Ollama 모델 저장소에 영속화됩니다. 현재 RAG 캡셔닝은 Gemini API 경로가 기준이므로 `llava`는 기본 Docker 실행 절차에서 제외합니다.
+>
+> `bge-m3`는 생활지원 RAG(`convenience_guidelines` 컬렉션) 임베딩 전용 모델입니다. 보행 안전 수칙 RAG는 `nomic-embed-text`를 사용하므로 두 모델 모두 필요합니다.
 
 ---
 
@@ -129,6 +132,7 @@ docker\windows_docker_start.bat
 
 # 5. RAG 지식베이스 빌드 (최초 1회, 4단계)
 python scripts/build_safety_db.py
+python scripts/build_convenience_db.py
 ```
 
 ### 4.2 macOS / Linux (bash 또는 zsh)
@@ -149,9 +153,11 @@ bash docker/macos_docker_start.sh    # macOS
 # 4. Ollama 모델 다운로드 (최초 1회, 호스트에서 실행)
 ollama pull gemma4:e4b
 ollama pull nomic-embed-text
+ollama pull bge-m3
 
 # 5. RAG 지식베이스 빌드 (최초 1회, 4단계)
 python scripts/build_safety_db.py
+python scripts/build_convenience_db.py
 ```
 
 ### 4.3 수동 배포 (Docker Compose 직접 호출)

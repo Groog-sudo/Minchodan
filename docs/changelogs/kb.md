@@ -2691,3 +2691,16 @@
 - **관련 파일**: `.env.example`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`, `scripts/build_convenience_db.py`, `server/rag/convenience_rag.py`
 - **검증 결과**: 병합 시뮬레이션에서 `.env.example` 자동 병합 성공(양쪽 변경 위치 상이), 충돌 0건, 환경변수 문서(`docs/ops/environment_variables.md`)에 `CONVENIENCE_EMBEDDING_*` 이미 기록됨 확인.
 - **비고**: kb(버퍼링 수정·ws/camera)와 jh(RAG·콘솔)는 독립 영역으로 기능적 간섭 없음. 이중 경로 분리 원칙 유지.
+
+---
+
+### 2026-07-17 | 문서 | convenience_rag_setup_doc
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - jh 병합으로 들어온 생활지원 RAG(BGE-M3) 셋업 절차가 `deployment_guide.md`와 `README.md`에 누락된 갭을 보완. 팀원이 `git pull` 후 동일 환경을 구성할 수 있도록 명세화.
+  - `deployment_guide.md`: Ollama pull 섹션(3.사전 준비 + 4.1 Windows + 4.2 macOS/Linux)에 `ollama pull bge-m3` 추가, RAG 빌드 섹션에 `python scripts/build_convenience_db.py` 추가, `bge-m3`/`nomic-embed-text` 용도 분리 주석.
+  - `README.md`: `build_convenience_db.py`를 "선택"에서 필수 빌드 단계로 격상, `ollama pull bge-m3` 사전 요건 안내(Windows/macOS-Linux 양쪽), 기술 스택 모델 목록에 `bge-m3` 명시.
+- **관련 파일**: `docs/ops/deployment_guide.md`, `README.md`
+- **검증 결과**: 문서 교차 검증 — `.env.example`(L42-43)과 `docs/ops/environment_variables.md`(L199-201)에 이미 변수 명세 존재 확인, 본 변경은 실행 절차 보완만 수행.
+- **비고**: `.env` 자체는 gitignore로 팀원 공유 불가하므로 `.env.example` 기반 복제 절차가 단일 진실 원천. 로컬에서 수행한 `ollama pull bge-m3` + `build_convenience_db.py`(문서 34건 적재)는 검증 완료.
