@@ -2533,3 +2533,13 @@
   - M4/M1/M2 정합성 보완 구현 커밋 (conftest·YOLO_DET_CONF·README·data gitkeep)
 - **관련 파일**: `tests/conftest.py`, `tests/test_mcp_integration.py`, `.env.example`, `README.md`, `docs/Directory_Structure.md`, `docs/design/architecture.md`, `docs/ops/android_device_integration_guide.md`, `docs/ops/android_ondevice_tflite_run_guide.md`, `docs/ops/android_wireless_test_guide_v2.md`, `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`, `docs/stage-guides/stage3_detection_code_review.md`, `docs/stage-guides/stage3_detection_design.md`, `data/raw/.gitkeep`, `data/frames/.gitkeep`, `data/deduped/.gitkeep`, `data/captions/.gitkeep`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 1단계 | dev_ios_lab_script
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS 실기기+Docker+DB 통합 테스트 랩 스크립트 (dev_ios_lab.sh)
+- **관련 파일**: `scripts/dev_ios_lab.sh`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
