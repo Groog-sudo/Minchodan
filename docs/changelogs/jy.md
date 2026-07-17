@@ -5,6 +5,42 @@
 
 ---
 
+### 2026-07-17 | 문서 보안 | DB·미디어 API 가이드 외부 공개용·내부용 분리
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 통합 가이드에는 실제 Tailscale 주소, DB 식별자, 서버 상태와 내부 경로가 포함되어 팀 내부 운영에는 유용하지만 외부 공개본으로는 과도한 인프라 정보였습니다.
+- **변경 내용**:
+  - 추적되는 `docs/db_tailscale_guide/README.md`를 외부 공개용 v0.3.0으로 전환하고 실제 호스트·DB·포트·경로·API 식별자를 플레이스홀더로 치환했습니다.
+  - 실접속 정보가 포함된 기존 문서는 같은 폴더의 `README.internal.md`로 보존했습니다.
+  - 내부 문서는 `.gitignore`에 등록해 공개 저장소나 커밋에 실수로 포함되지 않도록 했습니다.
+  - `docs/README.md`에 공개용 문서와 Git 제외 내부 문서의 역할을 구분했습니다.
+- **관련 파일**: `.gitignore`, `docs/db_tailscale_guide/README.md`, `docs/db_tailscale_guide/README.internal.md`(Git 제외), `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 기준**:
+  - 공개본에는 실제 Tailscale IP, DB명·계정명, 서비스 버전, 내부 파일 경로와 실제 비밀번호·토큰이 없어야 합니다.
+  - 내부본은 로컬에 존재하되 `git check-ignore`와 `git status`에서 추적 대상이 아니어야 합니다.
+- **비고**:
+  - 내부 문서는 Git으로 팀에 배포하지 않으며 승인된 비밀관리 도구 또는 팀 내부 보안 채널로 별도 전달합니다.
+
+### 2026-07-17 | 문서·운영 | MariaDB·미디어 저장 API Tailscale 팀 연결 가이드 통합
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 기존 `docs/db_tailscale_guide/README.md`는 공동 MariaDB 접속만 설명해, Raspberry Pi 중앙 미디어 저장 API와 STT 원본 음성 저장 설정을 팀원이 별도 문서에서 찾아야 했습니다.
+  - `.vscode/log_Miss_Issue`의 MISS 조사·중앙 저장 진행 문서와 개발 감사 보고서를 팀 표준 문서로 정리하되, AI 에이전트가 비밀값을 노출하거나 운영 DB를 파괴적으로 변경하지 않도록 실행 경계를 명확히 할 필요가 있었습니다.
+- **변경 내용**:
+  - 기존 DB Tailscale 가이드를 공동 MariaDB와 중앙 미디어 저장 API를 함께 다루는 v0.2.0 통합 가이드로 개정했습니다.
+  - 실제 Tailscale 호스트와 서비스 포트, 루트 `.env` 설정, DBeaver·FastAPI·Docker Compose 연결, DB와 미디어 API의 읽기 전용 smoke test를 추가했습니다.
+  - 이벤트 프레임 object key와 사용자 STT 원본 음성 경로·전사문·저장 상태 컬럼의 역할, 미디어 API 라우트, 기존 데이터 보존형 마이그레이션 원칙을 문서화했습니다.
+  - AI 에이전트 시작 순서, 첫 확인 파일, 비밀값 보호, 금지 명령, 장애 분리표와 팀 전달용 프롬프트 예시를 추가했습니다.
+  - `docs/README.md` 인덱스를 갱신하고 실제 파일이 없는 오래된 보고서 링크 1건을 제거했으며, `docs/ops/deployment_guide.md`의 Docker DB 대상 설명을 실제 Compose의 원격 DB 보존 동작과 맞췄습니다.
+- **관련 파일**: `docs/db_tailscale_guide/README.md`, `docs/README.md`, `docs/ops/deployment_guide.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - Raspberry Pi에서 Tailscale·MariaDB·미디어 API 서비스 `active`/`enabled`, 포트 `3306`·`8081`, 미디어 `/health` HTTP 200을 읽기 전용 확인했습니다.
+  - 공동 MariaDB의 STT·writer 컬럼 존재와 개발 PC 루트 `.env` 기준 `SELECT 1`, 미디어 API Bearer 인증을 확인했습니다.
+- **비고**:
+  - 실제 DB 비밀번호, 미디어 API 토큰, 개인 SSH 키는 문서와 changelog에 기록하지 않았습니다.
+
 ### 2026-07-17 | 환경변수 | Raspberry Pi 중앙 저장소·Ollama 기준 `.env.example` 재작성
 
 - **커밋**: (이번 커밋)
@@ -45,7 +81,7 @@
   - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`를 새 저장 구조에 맞춰 갱신했습니다.
 - **관련 파일**:
   - `server/services/remote_storage_client.py`, `server/services/event_frame_store.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `server/api/detection_log_router.py`
-  - `server/db/models.py`, `server/db/schemas.py`, `server/db/schema.sql`, `server/db/migrations/20260716_001_add_stt_audio_columns_to_detection_guidance_logs.sql`
+  - `server/db/models.py`, `server/db/schemas.py`, `server/db/schema.sql`, `server/db/migrations/20260716_002_add_stt_audio_columns_to_detection_guidance_logs.sql`
   - `console/src/types/monitor.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LatencySummaryPanel.tsx`, `console/src/pages/DashboardPage.tsx`
   - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`
 - **검증 결과**:
