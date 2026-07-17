@@ -244,7 +244,7 @@ export function LiveCameraFeed({
             <div className="placeholder-icon">VIDEO</div>
             <p className="placeholder-text">
               {connected
-                ? "실기기 영상 프레임을 수신 대기 중입니다..."
+                ? "콘솔 연결됨. 앱이 서버에 연결되어 있고 '탐지 시작'이 켜져 있어야 영상이 옵니다."
                 : "실시간 비디오 서버 연결을 시도하는 중..."}
             </p>
           </div>

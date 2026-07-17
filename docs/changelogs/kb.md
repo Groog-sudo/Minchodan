@@ -2587,3 +2587,17 @@
   - iOS takePhoto 강제 폴백 해제 - Frame Processor 복구로 AVFoundation Cannot Record(-11803) 해소
 - **관련 파일**: `lient/src/hooks/useCamera.ts`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+### 2026-07-17 | 1단계 | console_live_feed_smoothness
+
+- **커밋**: `(커밋 시 해시 기록)`
+- **변경 내용**:
+  - Vite `/navigation` WebSocket 프록시(`ws: true`) 추가 - 지도 iframe `navigation/ws` 연결 실패 해소.
+  - 콘솔 `useLiveFeed` Strict Mode 안전 재연결, Vite `/ws` 프록시 경로, rAF 최신 프레임만 렌더, 매 프레임 console.log 제거.
+  - 서버 `/ws/detect`: Live Feed 중계·ack는 즉시, YOLO `route_frame`은 백그라운드(동시 1개, busy 시 탐지 드롭)로 분리해 콘솔 영상이 탐지 지연에 묶이지 않도록 개선.
+  - 앱 캡처 최저 FPS 1→5fps, 스트림 프레임 로그 제거(JS 스레드 부하 완화).
+  - Live Feed 플레이스홀더 문구: 앱 연결·탐지 시작 필요 안내.
+  - (로컬만) `.env`에 `IMAGE_SERVER_*` / `EVENT_FRAME_STORAGE_BACKEND=remote` 설정 - 시크릿이라 커밋 제외.
+- **관련 파일**: `console/vite.config.ts`, `console/src/api/useLiveFeed.ts`, `console/src/components/LiveCameraFeed.tsx`, `server/api/ws_router.py`, `client/src/hooks/useCamera.ts`
+- **검증 결과**: 미디어 서버 업로드/조회 스모크 성공, FastAPI `/health` 200, navigation WS 프록시 연결 확인.
+- **비고**: FastAPI 재기동 후 앱 `/ws/detect` 재연결 및 탐지 시작 필요.

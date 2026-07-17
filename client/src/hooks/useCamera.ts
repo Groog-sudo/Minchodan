@@ -40,7 +40,6 @@ import {
 } from "../services/frameCaptureProvider";
 
 export type { FrameData };
-import { audioEngine } from "../services/audioEngine";
 
 // 동적 FPS 조절 파라미터 (온디바이스 추론 지연 기준)
 // - 지연이 현재 간격의 90%를 넘으면(따라잡지 못함) 간격을 늘려 fps를 낮춘다.
@@ -49,7 +48,9 @@ const OVERLOAD_LATENCY_RATIO = 0.9;
 const RECOVERY_LATENCY_RATIO = 0.5;
 const INTERVAL_INCREASE_STEP_MS = 50;
 const INTERVAL_DECREASE_STEP_MS = 20;
-const MAX_REFLEX_INTERVAL_MS = 1000; // 최저 1fps 보장 (반사 경로 완전 정지 방지)
+// 최저 5fps: 1fps까지 떨어지면 콘솔 Live Feed가 끊겨 보인다.
+// 온디바이스 추론 과부하는 detectingRef 게이트로 계속 완화한다.
+const MAX_REFLEX_INTERVAL_MS = 200;
 
 export interface UseCameraReturn {
   cameraRef: React.RefObject<Camera | null>;
@@ -184,12 +185,6 @@ export function useCamera(
       base64,
       jpegBytes,
     };
-
-    if (!audioEngine.isGuidePlaying) {
-      console.log(
-        `[Camera/Stream] reflex 프레임 수신: JPEG bytes=${jpegBytes.length} base64len=${base64.length} float32len=${frame.float32.length}`,
-      );
-    }
 
     onFrameRef.current(frame);
 
