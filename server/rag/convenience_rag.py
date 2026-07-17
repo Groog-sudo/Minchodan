@@ -374,7 +374,7 @@ def build_convenience_database(
     if embeddings is None:
         embeddings = EmbeddingEngineFactory.get_embeddings(
             provider=os.getenv("CONVENIENCE_EMBEDDING_PROVIDER", "ollama"),
-            model_name=os.getenv("CONVENIENCE_EMBEDDING_MODEL", "nomic-embed-text"),
+            model_name=os.getenv("CONVENIENCE_EMBEDDING_MODEL", "bge-m3"),
         )
 
     os.makedirs(persist_dir, exist_ok=True)
@@ -496,7 +496,7 @@ def get_default_convenience_service() -> ConvenienceKnowledgeBase | None:
     try:
         embeddings = EmbeddingEngineFactory.get_embeddings(
             provider=os.getenv("CONVENIENCE_EMBEDDING_PROVIDER", "ollama"),
-            model_name=os.getenv("CONVENIENCE_EMBEDDING_MODEL", "nomic-embed-text"),
+            model_name=os.getenv("CONVENIENCE_EMBEDDING_MODEL", "bge-m3"),
         )
         vector_db = VectorDBFactory.get_vector_db(
             "chroma",

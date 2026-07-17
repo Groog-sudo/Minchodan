@@ -854,3 +854,18 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: 사용자 요청에 따라 기존 TSX 연결에 필요한 import/함수/변수는 임의 삭제하지 않고, 위젯 기능 복구와 레이아웃 보정만 최소 범위로 반영함
+
+---
+
+### 2026-07-17 | 생활지원 RAG | BGE-M3 전환 및 재현 가능한 클린 빌드 적용
+
+- **커밋**: `feat(rag): 생활지원 임베딩을 BGE-M3로 전환`
+- **변경 내용**:
+  - 생활지원 RAG 전용 기본 임베딩 모델을 `nomic-embed-text`에서 Ollama `bge-m3`로 전환함
+  - `build_convenience_db.py`가 기본 실행 시 기존 전용 ChromaDB를 삭제하고 다시 생성하도록 변경해 반복 빌드의 중복 적재를 방지함
+  - 기존 DB에 의도적으로 추가 적재해야 하는 경우에만 `--keep-existing` 옵션을 사용하도록 분리함
+  - `.env.example`, `README.md`, 환경 변수 명세에 BGE-M3 설치와 생활지원 DB 재빌드 절차를 추가함
+- **관련 파일**: `.env.example`, `README.md`, `scripts/build_convenience_db.py`, `server/rag/convenience_rag.py`, `docs/ops/environment_variables.md`, `docs/changelogs/jh.md`
+- **검증 결과**: 34문서, 고유 source ID 34건, 중복 0건, BGE-M3 벡터 1024차원 확인. 대표 한국어 질의 3건의 기대 문서 Top-1 검색 확인
+- **팀원 적용 절차**: `ollama pull bge-m3` 실행 후 `.env.example`의 생활지원 전용 설정을 `.env`에 반영하고 `python scripts/build_convenience_db.py` 실행
+- **비고**: ChromaDB 산출물과 Ollama 모델은 Git 추적 대상이 아니며, 원본 JSON과 추적 가능한 설정·빌드 절차로 각 환경에서 동일하게 재생성함
