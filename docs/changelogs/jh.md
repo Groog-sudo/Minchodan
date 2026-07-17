@@ -823,3 +823,17 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/api/useDetectionLogs.ts`, `server/api/detection_log_router.py`, `server/services/detection_guidance_log_service.py`, `server/db/repositories.py`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: 사용자 요청 3건(회원 등록 fallback 처리, 회원 목록 페이지네이션 색상, 스트림 선택 시 정렬/페이지 정합성)을 하나의 정합성 개선 커밋으로 묶어 반영함
+
+---
+
+### 2026-07-17 | 콘솔 UI | 파이프라인 지연 요약 카드 1줄 정렬 및 폭 균등화
+
+- **커밋**: `style(console): 파이프라인 지연 요약 카드 1줄 정렬과 폭 균등화`
+- **변경 내용**:
+  - `LatencySummaryPanel`의 `latency-stat-grid`를 9열 기준으로 재배치해 지연 지표 카드가 아래로 떨어지지 않고 한 줄에 정렬되도록 보정함
+  - 카드 간 gap과 내부 padding을 축소하고, 카드 최소 폭 제약을 제거해 우측 여백을 최소화함
+  - 각 카드의 라벨/평균/보조 텍스트 글자 크기와 줄높이를 조금 낮춰 한 줄 배치 시 내용이 깨지지 않도록 조정함
+  - 결과적으로 `파이프라인 지연 요약` 카드들이 동일한 가로 폭으로 나란히 보이도록 정렬 품질을 개선함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 기능 변경 없이 대시보드의 지연 요약 패널 시각 배치만 정리한 스타일 보정 작업임

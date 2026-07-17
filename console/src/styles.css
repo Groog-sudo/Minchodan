@@ -1364,8 +1364,8 @@ td.tts-text-cell {
 
 .latency-stat-grid {
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   overflow: hidden;
 }
 
@@ -1375,27 +1375,33 @@ td.tts-text-cell {
   border-radius: 2px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px;
+  gap: 1px;
+  min-width: 0;
+  padding: 8px;
 }
 
 .latency-stat-label {
   color: #6b7590;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .latency-stat-avg {
-  font-size: 20px;
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
+  line-height: 1.1;
 }
 
 .latency-stat-sub {
   color: #6b7590;
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .latency-stat-target-line {
