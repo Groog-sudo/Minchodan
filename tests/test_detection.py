@@ -900,3 +900,46 @@ class TestSurfaceCautionHysteresis:
             ts=0.0,
         )
         assert _hint_id_for_alert(alert) == "STAIR_DOWN"
+
+
+class TestLatencyAlertAndStairDown:
+    """P2-1(c)/P2-2 (2026-07-17): 지연 관측 + STAIR_DOWN 활성화 단위 테스트."""
+
+    def test_latency_thresholds_loaded(self):
+        """REFLEX/COGNITIVE_LATENCY_ALERT_MS 환경변수가 consumer에 로드되는지 확인."""
+        from server.detection.consumer import (
+            COGNITIVE_LATENCY_ALERT_MS,
+            REFLEX_LATENCY_ALERT_MS,
+        )
+
+        assert REFLEX_LATENCY_ALERT_MS == 300
+        assert COGNITIVE_LATENCY_ALERT_MS == 3000
+        # 반사가 인지보다 짧은 임계 (즉시성 우선)
+        assert REFLEX_LATENCY_ALERT_MS < COGNITIVE_LATENCY_ALERT_MS
+
+    def test_surface_gate_stair_down_5class(self):
+        """P2-1(c): 5클래스 모델 stair_down 클래스가 surface_gate 즉시 경보 대상."""
+        surf = SurfaceResult(class_name="stair_down", centroid=[320.0, 400.0])
+        alert = surface_gate(surf, 480.0)
+        assert alert is not None
+        assert alert.alert_id == "surface_stair_down"
+
+    def test_surface_gate_manhole_5class(self):
+        """P2-1(c): 5클래스 모델 manhole 클래스가 surface_gate 즉시 경보 대상."""
+        surf = SurfaceResult(class_name="manhole", centroid=[320.0, 400.0])
+        alert = surface_gate(surf, 480.0)
+        assert alert is not None
+        assert alert.alert_id == "surface_manhole"
+
+    def test_stair_down_alert_maps_to_stair_down_hint(self):
+        """surface_stair_down ReflexAlert가 STAIR_DOWN 힌트로 매핑."""
+        from server.detection.risk_rules import _hint_id_for_alert
+
+        alert = ReflexAlert(
+            event_id="e1",
+            alert_id="surface_stair_down",
+            direction="front",
+            clip="reflex_clips/surface_stair_down.wav",
+            ts=0.0,
+        )
+        assert _hint_id_for_alert(alert) == "STAIR_DOWN"

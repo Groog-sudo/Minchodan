@@ -2834,3 +2834,19 @@
 - **관련 파일**: `scripts/eval_segmentation_stairs.py`, `server/detection/consumer.py`, `server/detection/risk_rules.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
 - **검증 결과**: 평가 스크립트 더미 실행 정상 (Precision=0.8, Recall=0.7273, F1=0.7619). `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 118개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
 - **비고**: (c) 세그 5클래스 재학습 + STAIR_DOWN 활성화는 M7에서 분리. 히스테리시스는 caution이 인지 경로에서도 설명되므로 미달 시 반사 스킵해도 안전 마진 유지.
+
+---
+
+### 2026-07-17 | 3단계 | M7_P2-1c_세그5클래스_파이프라인_P2-2_지연관측
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M7/P2-1(c) + P2-2 구현: 세그멘테이션 5클래스(계단/맨홀 분리) 재학습 파이프라인 골격 + STAIR_DOWN 활성화 사전 등록 + 파이프라인 지연 관측(콘솔 latency_alert).
+  - `scripts/train_segmentation_5class.py` 신규 (c): 5클래스 세그멘테이션 재학습 파이프라인. 데이터 검증 -> 학습 -> 검증 단계 골격. SEG_5CLASS_NAMES(5클래스 제안), --dry-run/--validate-only 옵션. 환경변수 SEG_5CLASS_MODEL_BASE, SEG_5CLASS_OUTPUT_DIR.
+  - `server/detection/gates/surface_gate.py` (c): P0_SURFACE_CLASSES에 5클래스 모델용 `stair_down`, `manhole` 사전 등록 + [면접 대비 주석]. 4클래스(caution 통합)/5클래스(분리) 모델 모두 지원해 모델 교체 시 게이트 코드 변경 없이 STAIR_DOWN 활성화.
+  - `server/detection/consumer.py` (P2-2): `_broadcast_latency_event`에 latency_alert 필드 추가. total_ms가 REFLEX_LATENCY_ALERT_MS(300)/COGNITIVE_LATENCY_ALERT_MS(3000) 초과 시 latency_alert=True, latency_threshold_ms 포함해 콘솔에 실시간 지연 드리프트 알림.
+  - `docs/ops/environment_variables.md` + `.env.example`: `REFLEX_LATENCY_ALERT_MS`, `COGNITIVE_LATENCY_ALERT_MS` 2개 변수 추가.
+  - `tests/test_detection.py`: `TestLatencyAlertAndStairDown` 클래스 신규 4개 케이스 (지연 임계 로드, stair_down 5클래스 surface_gate, manhole 5클래스, stair_down alert STAIR_DOWN 힌트 매핑).
+- **관련 파일**: `scripts/train_segmentation_5class.py`, `server/detection/gates/surface_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 122개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK. 학습 스크립트 dry-run 정상 동작.
+- **비고**: 5클래스 재학습은 라벨링된 데이터셋 준비 후 오프라인 실행. STAIR_DOWN은 5클래스 모델 배포 시 surface_gate 사전 등록으로 자동 활성화. 지연 관측은 콘솔 운영자용 모니터링 강화.

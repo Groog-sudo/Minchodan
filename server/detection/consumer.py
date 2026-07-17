@@ -65,6 +65,12 @@ COGNITIVE_UTTERANCE_COOLDOWN_S = float(os.getenv("COGNITIVE_UTTERANCE_COOLDOWN_S
 # 세그멘테이션 경계 노이즈로 단일 프레임 caution이 흔들릴 수 있어, 연속 N 프레임 확인 후 반사 발동.
 SURFACE_CAUTION_CONFIRM_STREAK = int(os.getenv("SURFACE_CAUTION_CONFIRM_STREAK", "2"))
 
+# P2-2 (2026-07-17): 파이프라인 지연 관측 임계. total_ms가 임계 초과 시 콘솔 latency_event에
+# latency_alert=True 필드를 추가해 운영자가 지연 드리프트를 실시간 인지한다.
+# 반사 <300ms(비협상 목표), 인지 <3000ms(가이드 허용 범위) 기준.
+REFLEX_LATENCY_ALERT_MS = float(os.getenv("REFLEX_LATENCY_ALERT_MS", "300"))
+COGNITIVE_LATENCY_ALERT_MS = float(os.getenv("COGNITIVE_LATENCY_ALERT_MS", "3000"))
+
 
 class DetectionConsumer:
     """이중 큐(반사/인지)에서 프레임을 소비하고 DetectionPipeline을 실행.
@@ -187,12 +193,20 @@ class DetectionConsumer:
         detection_guidance_logs 조회 시에는 포함된다.
         """
         try:
+            # P2-2 (2026-07-17): 지연 임계 초과 시 latency_alert 필드 추가 (콘솔 실시간 인지).
+            total_ms = latency_stages.get("total_ms", 0.0)
+            threshold = (
+                REFLEX_LATENCY_ALERT_MS if stream_type == "reflex" else COGNITIVE_LATENCY_ALERT_MS
+            )
+            latency_alert = bool(total_ms and total_ms > threshold)
             await manager.broadcast_json_to_consoles(
                 {
                     "type": "latency_event",
                     "event_id": event_id,
                     "stream_type": stream_type,
                     "latency": latency_stages,
+                    "latency_alert": latency_alert,
+                    "latency_threshold_ms": threshold,
                     "ts": time.time(),
                 }
             )
