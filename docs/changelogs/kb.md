@@ -2818,3 +2818,19 @@
 - **관련 파일**: `server/orchestration/avoidance.py`, `server/detection/consumer.py`, `tests/test_langgraph.py`
 - **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 116개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
 - **비고**: avoidance fast lane은 반사 후속(800ms 후) 인지 경로 진입점에서 동작하므로 반사 경로 임포트 금지 규칙 미위반. 다중 객체/방향 불확정 시 기존 LangGraph로 폴백해 안전성 확보. preset 텍스트는 실시간 TTS 합성(사전합성 클립 아님) - 인지 경로 허용.
+
+---
+
+### 2026-07-17 | 3단계 | M6_P2-1_계단_실측_단기보정
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M6/P2-1(a)(b) 구현: 계단(caution 통합 클래스) 오탐 실측 평가 스크립트 + surface_caution 반사 발동 히스테리시스로 단일 프레임 오탐 완화.
+  - `scripts/eval_segmentation_stairs.py` 신규 (a): 세그멘테이션 모델 caution 클래스 정밀도/재현율/F1 실측 평가 스크립트. EVAL_SEG_DATASET_DIR 환경변수로 데이터셋 경로 받아 TP/FP/FN 산출. 미설정 시 더미 평가로 스크립트 동작 검증. caution 클래스 인덱스=1 (4클래스 중).
+  - `server/detection/consumer.py` (b): surface_caution 반사 발동 히스테리시스 추가. `SURFACE_CAUTION_CONFIRM_STREAK`(2) 연속 프레임 확인 후 반사 발동, 미달 시 스킵. `_surface_caution_streak` 인스턴스 변수. 비-surface 반사(high_obstacle)는 기존대로 즉시 발동 + [면접 대비 주석].
+  - `server/detection/risk_rules.py` (b): `_hint_id_for_alert`에 "caution" in alert_id → STAIR_DOWN 매핑 추가 + [면접 대비 주석]. surface_caution ReflexAlert가 낙상 위험 힌트로 전달.
+  - `docs/ops/environment_variables.md` + `.env.example`: `SURFACE_CAUTION_CONFIRM_STREAK` 변수 추가.
+  - `tests/test_detection.py`: `TestSurfaceCautionHysteresis` 클래스 신규 2개 케이스 (상수 로드, caution alert STAIR_DOWN 매핑).
+- **관련 파일**: `scripts/eval_segmentation_stairs.py`, `server/detection/consumer.py`, `server/detection/risk_rules.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: 평가 스크립트 더미 실행 정상 (Precision=0.8, Recall=0.7273, F1=0.7619). `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 118개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: (c) 세그 5클래스 재학습 + STAIR_DOWN 활성화는 M7에서 분리. 히스테리시스는 caution이 인지 경로에서도 설명되므로 미달 시 반사 스킵해도 안전 마진 유지.

@@ -78,6 +78,7 @@
 | **`APPROACH_LOST_WINDOW_S`** | float | 선택 | `1.0` | **2026-07-17 신규 (P0-3).** Approach-Lost 윈도우(초). 동일 track_id가 이 시간 이내 재탐지되고 직전 hit_count가 MIN 이상이면 reacquired=True로 즉시 재발화 | `server/detection/bytetrack_tracker.py` |
 | **`APPROACH_LOST_MIN_PREV_HIT`** | int | 선택 | `3` | **2026-07-17 신규 (P0-3).** Approach-Lot 판정에 필요한 직전 hit_count 하한 (reflex_gate MIN_HIT_COUNT와 SSOT) | `server/detection/bytetrack_tracker.py` |
 | **`COGNITIVE_UTTERANCE_COOLDOWN_S`** | float | 선택 | `30.0` | **2026-07-17 신규 (P1-2).** 인지 가이드 발화 가치 게이트의 동일 상황 쿨다운(초). 동일 객체+표면 서명이면 이 시간 동안 TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시 발화 | `server/detection/consumer.py` |
+| **`SURFACE_CAUTION_CONFIRM_STREAK`** | int | 선택 | `2` | **2026-07-17 신규 (P2-1b).** surface_caution(계단/맨홀 통합) 반사 발동 히스테리시스. 연속 N 프레임 확인 후 반사 발동해 단일 프레임 오탐 완화 | `server/detection/consumer.py` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 

@@ -61,6 +61,10 @@ COGNITIVE_MAX_AGE_S = float(os.getenv("COGNITIVE_MAX_AGE_S", "2.0"))
 # 새 객체/표면 변화/보도 이탈/쿨다운 경과 중 하나라도 true면 발화.
 COGNITIVE_UTTERANCE_COOLDOWN_S = float(os.getenv("COGNITIVE_UTTERANCE_COOLDOWN_S", "30.0"))
 
+# P2-1(b) (2026-07-17): surface_caution(계단/맨홀 통합 클래스) 단일 프레임 오탐 완화 히스테리시스.
+# 세그멘테이션 경계 노이즈로 단일 프레임 caution이 흔들릴 수 있어, 연속 N 프레임 확인 후 반사 발동.
+SURFACE_CAUTION_CONFIRM_STREAK = int(os.getenv("SURFACE_CAUTION_CONFIRM_STREAK", "2"))
+
 
 class DetectionConsumer:
     """이중 큐(반사/인지)에서 프레임을 소비하고 DetectionPipeline을 실행.
@@ -95,6 +99,8 @@ class DetectionConsumer:
         # P1-2 (2026-07-17): device_id별 직전 인지 안내의 상황 서명(객체+표면).
         # 동일 서명 + 쿨다운 이내 재발화를 TTS 합성 생략으로 차단.
         self._last_guide_signature: dict[str, str] = {}
+        # P2-1(b) (2026-07-17): device_id별 surface_caution 연속 프레임 카운터 (히스테리시스).
+        self._surface_caution_streak: dict[str, int] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
         # 2026-07-13 추가: device_id별 보도 이탈(is_departing) 연속 프레임 카운터.
@@ -444,6 +450,24 @@ class DetectionConsumer:
                     "error": None,
                 }
             )
+            # P2-1(b) (2026-07-17): surface_caution 단일 프레임 오탐 완화 히스테리시스.
+            # [면접 대비 주석] 세그멘테이션 경계 노이즈로 단일 프레임 caution이 흔들려 과경보가 되므로,
+            # 연속 SURFACE_CAUTION_CONFIRM_STREAK 프레임 확인 후에만 반사 발동. 미달 시 반사 스킵
+            # (caution은 인지 경로에서도 설명되므로 안전 마진 유지). high_obstacle 등 비-surface 반사는
+            # 히스테리시스 없이 즉시 발동(이미 reflex_gate MIN_HIT_COUNT로 오탐 완화됨).
+            if result.alert_id == "surface_caution":
+                streak = self._surface_caution_streak.get(processed.device_id, 0) + 1
+                self._surface_caution_streak[processed.device_id] = streak
+                if streak < SURFACE_CAUTION_CONFIRM_STREAK:
+                    logger.debug(
+                        f"[DetectionConsumer] surface_caution 히스테리시스 대기: "
+                        f"streak={streak}/{SURFACE_CAUTION_CONFIRM_STREAK}, "
+                        f"device_id={processed.device_id}"
+                    )
+                    return
+            else:
+                # 비-surface 반사일 때 surface_caution streak 리셋 (독립 상태 유지)
+                self._surface_caution_streak[processed.device_id] = 0
             await self._send_reflex_alert(
                 processed.device_id,
                 result,

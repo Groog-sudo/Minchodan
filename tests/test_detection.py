@@ -877,3 +877,26 @@ class TestUtteranceValueGate:
         r = self._make_result(objects=["car"])
         # _last_guide_signature가 비어있음
         assert consumer._has_utterance_value("dev1", r, False) is True
+
+
+class TestSurfaceCautionHysteresis:
+    """P2-1(b) (2026-07-17): surface_caution 히스테리시스 단위 테스트."""
+
+    def test_streak_constant_loaded(self):
+        """SURFACE_CAUTION_CONFIRM_STREAK 환경변수가 consumer에 로드되는지 확인."""
+        from server.detection.consumer import SURFACE_CAUTION_CONFIRM_STREAK
+
+        assert SURFACE_CAUTION_CONFIRM_STREAK == 2
+
+    def test_hint_id_for_caution_alert(self):
+        """surface_caution ReflexAlert가 STAIR_DOWN 힌트로 매핑되는지 확인."""
+        from server.detection.risk_rules import _hint_id_for_alert
+
+        alert = ReflexAlert(
+            event_id="e1",
+            alert_id="surface_caution",
+            direction="front",
+            clip="reflex_clips/surface_caution.wav",
+            ts=0.0,
+        )
+        assert _hint_id_for_alert(alert) == "STAIR_DOWN"
