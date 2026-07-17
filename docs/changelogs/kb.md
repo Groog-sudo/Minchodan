@@ -2604,7 +2604,7 @@
 
 ### 2026-07-17 | 통합 | kb_shared_to_dev_exclude_ios_lab
 
-- **커밋**: `(커밋 후 기록)`
+- **커밋**: `7c6fe81`
 - **변경 내용**:
   - `kb` 공유 수정(Live Feed/WS/Frame Processor)을 `dev`에 FF 병합.
   - 개인 랩 설정(`com.minchodan.app.kb.dev`, Metro `172.16.101.220`)은 `dev`에 넣지 않고 기존 `com.minchodan.app.kwanbum` / Tailscale Metro 기본값으로 되돌림.
