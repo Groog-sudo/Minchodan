@@ -2717,3 +2717,17 @@
 - **관련 파일**: `docs/ops/test_specification.md`, `docs/ops/integration_scenario_test.md`
 - **검증 결과**: 문서 교차 검증 — 단위 테스트는 기존 `tests/test_convenience_dial_resolver.py` 등이 커버하므로 본 변경은 통합 smoke + E2E 시나리오 명세만 보완(단일 진실 원칙 유지). §5.4 RAG 섹션은 safety_guidelines 전용이라 convenience를 넣지 않아 정합성 훼손 방지.
 - **비고**: TC-SMOKE-006과 SC-E2E-005는 동일 검증의 매트릭스/시나리오 쌍. 2026-07-17 실측 기반으로 상태를 `완료`/`PASS`로 마킹.
+
+---
+
+### 2026-07-17 | 문서 | field_test_improvement_plan_편입
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 실기기 실외 보행 테스트 피드백(S1~S8) 기반 개선 구현 계획서를 `Downloads/`에서 프로젝트 `docs/research/` 트리로 편입. 정합성 이슈 3건 정정 동시 적용.
+  - `docs/research/field_test_improvement_plan.md` 신규 편입 (v1.0 -> v1.1): §2.2 `consumer.py:124-135` 라인 근거를 `_consume_loop(L282)` + `detection_pipeline.py`로 정정(원 라인은 `_broadcast_latency_event` 함수 본문), §2.6 "Object Detection 29클래스"를 "공식 명세 29종, CLASS_TEXT 실제 31종"으로 정정, §2.6 STAIR_DOWN "죽은 코드" 근거를 "CLASS_TO_HINT_ID 매핑 없음"에서 "alert_id 생성 경로에 'stair' 계열이 없어 `_hint_id_for_alert` L212 분기 도달 불가"로 정정.
+  - 상대경로 링크를 Downloads 기준(`../research/X`)에서 `docs/research/` 기준(`./X`)으로 수정, `../design/`·`../ops/`는 동일 디렉토리 구조상 유지.
+  - `docs/README.md` research 섹션에 새 문서 등재 (outdoor_guidance_refinement_roadmap.md 다음).
+- **관련 파일**: `docs/research/field_test_improvement_plan.md`, `docs/README.md`
+- **검증 결과**: 코드-문서 교차 검증 16개 항목 중 13개 정합, 3개 정정 완료. AGENTS.md 규칙(이모지 금지·한국어·mermaid 큰따옴표/br·하드-바이브 분할·이중 경로 원칙) 모두 준수. 선행 문서 8개 존재 확인, 환경변수 6개 기존 충돌 없음.
+- **비고**: 본 계획은 outdoor_guidance_refinement_roadmap.md의 후속 Phase로 상호 참조. 구현 시 과제별로 별도 changelog 엔트리 추가 예정.
