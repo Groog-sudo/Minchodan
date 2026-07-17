@@ -657,4 +657,17 @@
 - **관련 파일**: `docs/research/field_test_improvement_plan.md` 외 `origin/kb` 병합 파일들
 - **검증 결과**: 전체 pytest 백엔드 단위 테스트 49건 실행 결과 `48 passed, 1 skipped`로 통과하며 코드 동작 정합성 완벽 검증.
 
+---
+
+### 2026-07-17 | 공통 | field_test_round2_improvement_plan
+
+- **커밋**: `(커밋 예정)`
+- **변경 내용**:
+  - 실사용 필드 테스트 2차 피드백 3건(근접 신규 객체 안내·햅틱 누락, 측면 안전 경로 과다 발화, STT 음성-객체 탐지 TTS 우선순위 충돌)의 근본 원인을 **현행 코드**로 재검증하고 개선 구현 계획서 작성.
+  - 1차 계획(S1~S8)이 이미 구현·병합된 상태(M1~M7)를 반영. 구현된 P1-2가 "회랑/방향 필터"가 아닌 "동일 상황 중복 억제(서명 기반 dedup)"로 구현되어 T2(측면 과다 발화)가 실제 미해소임을 코드 근거로 규명.
+  - T3(신규): "반사 P3 > STT 응답 P2 > 인지 안내 P1" 통합 오디오 우선순위 조정자(클라이언트) + STT 활성 중 서버 인지 발행 억제 게이트 설계. 반사 경로는 우선순위 정책에서도 절대 미뮤트(비협상) 명시.
+  - T2-G(신규): 구현된 dedup 게이트 앞단에 회랑(12시)/접근 필터 추가. T1-a/b: 완전 신규 근접 객체 선필터 완화 + 쿨다운 예외.
+- **관련 파일**: `docs/research/field_test_round2_improvement_plan.md`
+- **검증 결과**: 문서 작성 작업으로 코드 변경 없음. 현행 코드(`suppressor.py`/`reflex_gate.py`/`detection_pipeline.py`/`consumer.py`/`avoidance.py`/`audioEngine.ts`/`useWebSocket.ts`/`ws_router.py`) 교차 검증으로 근거 정합성 확인. 문서 표준(메타데이터 인용 블록, 표 우선, mermaid 큰따옴표, 이모지 미사용) 준수.
+
 
