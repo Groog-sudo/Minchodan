@@ -62,6 +62,8 @@ export interface UseCameraReturn {
   currentReflexFps: number;
   startCapture: (onFrame: (frame: FrameData) => void) => void;
   stopCapture: () => void;
+  /** STT 등에서 프레임 디코드/콜백만 일시 중지(카메라 세션은 유지). */
+  setCapturePaused: (paused: boolean) => void;
   requestCameraPermission: () => Promise<boolean>;
   /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
   reportInferenceLatency: (latencyMs: number) => void;
@@ -84,6 +86,8 @@ export function useCamera(
   const reflexTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
+  // STT press-and-hold 중 JPEG 디코드/온디바이스 콜백을 즉시 막아 JS 스레드를 비운다.
+  const capturePausedRef = useRef(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
 
@@ -175,6 +179,7 @@ export function useCamera(
   const streamFrameCounterRef = useRef(0);
 
   const handleStreamFrameBase64 = useCallback((base64: string) => {
+    if (capturePausedRef.current) return;
     if (!onFrameRef.current || !base64) return;
     streamFrameCounterRef.current++;
 
@@ -193,6 +198,10 @@ export function useCamera(
       onFrameRef.current({ ...frame, stream: "cognitive" });
     }
   }, [reflexFps, cognitiveFps]);
+
+  const setCapturePaused = useCallback((paused: boolean) => {
+    capturePausedRef.current = paused;
+  }, []);
 
   // 플랫폼별 캡처 구현 (iOS/Android 모두 frameProcessor 가능, 실패 시 takePhoto 폴백).
   // Metro가 frameCaptureProviderSelect.ios.ts 또는 .android.ts를 자동 바인딩한다.
@@ -315,6 +324,7 @@ export function useCamera(
     currentReflexFps,
     startCapture,
     stopCapture,
+    setCapturePaused,
     requestCameraPermission,
     reportInferenceLatency,
     useStreamCapture,
