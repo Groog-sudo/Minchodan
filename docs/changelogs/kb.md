@@ -2611,3 +2611,15 @@
 - **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `client/ios/Minchodan.xcodeproj/project.pbxproj`
 - **검증 결과**: FF 병합 후 개인 iOS 4파일만 `569cbb6` 기준으로 복원, 공유 서버/콘솔/useCamera 변경 유지.
 - **비고**: 실기기 랩은 `kb` 브랜치 또는 로컬 uncommitted/`METRO_BUNDLER_HOST`로 유지.
+
+### 2026-07-17 | 통합 | merge_dg2_shared_into_dev
+
+- **커밋**: `ebbdfcf`
+- **변경 내용**:
+  - `dg2` → `dev` 병합: Android float32/AEC 복구, Live Feed 회전 UI, Android 패리티 문서 반영.
+  - 충돌 해결: `useCamera`(Stream+Cannot Record 주석 유지, MAX_REFLEX=200), `useLiveFeed`(Vite `/ws` 프록시 경로 유지).
+  - 개인 랩 제외: Tailscale/Metro/Vite `100.85.229.93`, docker NVIDIA deploy ON·MariaDB 3306 바인딩 OFF, tailscale 가이드 IP 변경 원복.
+  - `vite.config.ts`: localhost 프록시 + `/navigation` `ws: true` 유지.
+- **관련 파일**: `client/src/services/*android*`, `audioSessionBridge.ts`, `console/src/components/LiveCameraFeed.*`, `docs/mobile/android_platform_patch_results.md`
+- **검증 결과**: 충돌 마커 제거, 개인 IP 검색 0건, MAX_REFLEX=200·vite localhost 확인.
+- **비고**: dg2 개인 GPU/호스트 설정은 `dg2` 브랜치에만 유지.
