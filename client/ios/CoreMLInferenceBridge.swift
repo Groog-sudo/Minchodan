@@ -41,7 +41,7 @@ class CoreMLInferenceBridge: NSObject {
     3: "braille_normal"
   ]
 
-  // 2026-07-07 실기기(고태현 iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
+  // 2026-07-07 실기기(TH iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
   // 뒤에도 .cpuAndGPU 설정 시 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료,
   // PID 재기동 반복)가 동일하게 재현됨을 확인함. GPU(Metal) 경로의 MLIR pass manager
   // failed 문제로 판단됨. 2026-07-11 모델을 FP16으로 재변환한 뒤, GPU를 배제하는
