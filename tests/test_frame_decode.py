@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import sys
 import time
@@ -459,7 +460,85 @@ class TestGetDefaultSplitter:
         assert splitter.cognitive_queue is not None
 
     def test_singleton_queue_maxsize(self):
-        """큐 maxsize가 100인지 확인 (백프레셔 정책)."""
-        from server.capture.stream_splitter import QUEUE_MAXSIZE
+        """큐 maxsize가 분리 상수(REFLEX=2, COGNITIVE=4) 기반인지 확인 (P0-2)."""
+        from server.capture.stream_splitter import (
+            COGNITIVE_QUEUE_MAXSIZE,
+            QUEUE_MAXSIZE,
+            REFLEX_QUEUE_MAXSIZE,
+        )
 
-        assert QUEUE_MAXSIZE == 100
+        assert REFLEX_QUEUE_MAXSIZE == 2
+        assert COGNITIVE_QUEUE_MAXSIZE == 4
+        # 하위 호환: QUEUE_MAXSIZE는 두 분리 상수의 최댓값
+        assert max(REFLEX_QUEUE_MAXSIZE, COGNITIVE_QUEUE_MAXSIZE) == QUEUE_MAXSIZE
+        splitter = get_default_splitter()
+        assert splitter.reflex_queue.maxsize == REFLEX_QUEUE_MAXSIZE
+        assert splitter.cognitive_queue.maxsize == COGNITIVE_QUEUE_MAXSIZE
+
+
+class TestP0QueueFreshness:
+    """P0-2 (2026-07-17): 반사 큐 최신성 보장(latest-frame-wins) + 신선도 검사 단위 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_reflex_queue_keeps_latest_on_full(self, mock_redis_bus: RedisBus):
+        """reflex 큐 maxsize=2에서 3개 프레임 넣으면 oldest drop, 최신 2개 유지."""
+        splitter = StreamSplitter(
+            reflex_queue=asyncio.Queue(maxsize=2),
+            cognitive_queue=asyncio.Queue(maxsize=4),
+            bus=mock_redis_bus,
+        )
+        for i in range(3):
+            processed = ProcessedFrame(
+                event_id=f"evt-{i}",
+                device_id="dev",
+                stream="reflex",
+                frame=np.zeros((640, 640, 3), dtype=np.uint8),
+                original_size=(640, 640),
+                size_kb=10.0,
+                processing_time_ms=1.0,
+                ts=int(time.time() * 1000) + i,
+            )
+            await splitter.route_frame(processed)
+
+        # 큐에는 최신 2개(evt-1, evt-2)만 남아야 함
+        assert splitter.reflex_queue.qsize() == 2
+        remaining = []
+        while not splitter.reflex_queue.empty():
+            remaining.append(splitter.reflex_queue.get_nowait())
+        assert [f.event_id for f in remaining] == ["evt-1", "evt-2"]
+
+    @pytest.mark.asyncio
+    async def test_cognitive_queue_keeps_latest_on_full(self, mock_redis_bus: RedisBus):
+        """cognitive 큐 maxsize=4에서 5개 프레임 넣으면 oldest drop, 최신 4개 유지."""
+        splitter = StreamSplitter(
+            reflex_queue=asyncio.Queue(maxsize=2),
+            cognitive_queue=asyncio.Queue(maxsize=4),
+            bus=mock_redis_bus,
+        )
+        for i in range(5):
+            processed = ProcessedFrame(
+                event_id=f"cog-{i}",
+                device_id="dev",
+                stream="cognitive",
+                frame=np.zeros((640, 640, 3), dtype=np.uint8),
+                original_size=(640, 640),
+                size_kb=10.0,
+                processing_time_ms=1.0,
+                ts=int(time.time() * 1000) + i,
+            )
+            await splitter.route_frame(processed)
+
+        assert splitter.cognitive_queue.qsize() == 4
+        remaining = []
+        while not splitter.cognitive_queue.empty():
+            remaining.append(splitter.cognitive_queue.get_nowait())
+        assert [f.event_id for f in remaining] == ["cog-1", "cog-2", "cog-3", "cog-4"]
+
+    def test_reflex_max_age_constant_loaded(self):
+        """REFLEX_MAX_AGE_S / COGNITIVE_MAX_AGE_S 환경변수가 consumer에 로드되는지 확인."""
+        from server.detection.consumer import COGNITIVE_MAX_AGE_S, REFLEX_MAX_AGE_S
+
+        assert REFLEX_MAX_AGE_S == 0.4
+        assert COGNITIVE_MAX_AGE_S == 2.0
+        # 반사가 인지보다 짧은 임계(즉시성 우선)
+        assert REFLEX_MAX_AGE_S < COGNITIVE_MAX_AGE_S

@@ -49,6 +49,13 @@ logger = logging.getLogger(__name__)
 # 판정을 히스테리시스로 감싸는 값 - 이 파일 상단 __init__ 주석 참조).
 DEPARTURE_CONFIRM_STREAK = 3
 
+# P0-2 (2026-07-17): 큐 대기로 인한 지연 드리프트 방지.
+# 소비 시각 기준 프레임 ts(밀리초 epoch)가 max_age_s를 초과하면 추론 없이 드롭.
+# 반사는 즉시성이 생명이므로 0.4초, 인지는 1~2fps 특성상 2.0초 여유.
+# ts=0(클라이언트 미전송)이면 신선도 검사를 건너뛴다 (방어적 코딩).
+REFLEX_MAX_AGE_S = float(os.getenv("REFLEX_MAX_AGE_S", "0.4"))
+COGNITIVE_MAX_AGE_S = float(os.getenv("COGNITIVE_MAX_AGE_S", "2.0"))
+
 
 class DetectionConsumer:
     """이중 큐(반사/인지)에서 프레임을 소비하고 DetectionPipeline을 실행.
@@ -87,6 +94,8 @@ class DetectionConsumer:
         # DEPARTURE_CONFIRM_STREAK회 연속으로 이탈이 나와야 실제 안내를 내보낸다
         # (약 1.5~3초 지속 확인 - 너무 짧으면 오탐, 너무 길면 안내가 늦어짐).
         self._departure_streak: dict[str, int] = {}
+        # P0-2 (2026-07-17): 스트림별 신선도 초과 드롭 카운터 (콘솔 지연 패널 노출용).
+        self._stale_drop_count: dict[str, int] = {"reflex": 0, "cognitive": 0}
         self._last_status: dict[str, str | float | int | None] = {
             "stream": None,
             "event_id": None,
@@ -318,6 +327,23 @@ class DetectionConsumer:
             return
 
         frame: np.ndarray = processed.frame
+        # P0-2 (2026-07-17): 큐 대기 시간 계측 + 신선도 검사.
+        # processed.ts는 클라이언트 전송 시각(밀리초 epoch). ts=0이면 클라이언트가
+        # 전송하지 않은 것으로 간주해 신선도 검사를 건너뛴다 (방어적 코딩).
+        queue_wait_ms = 0.0
+        if processed.ts > 0:
+            now_ms = time.time() * 1000.0
+            queue_wait_ms = round(now_ms - processed.ts, 1)
+            max_age_s = REFLEX_MAX_AGE_S if stream == "reflex" else COGNITIVE_MAX_AGE_S
+            age_s = queue_wait_ms / 1000.0
+            if age_s > max_age_s:
+                self._stale_drop_count[stream] = self._stale_drop_count.get(stream, 0) + 1
+                logger.debug(
+                    f"[DetectionConsumer] stale 프레임 드롭: stream={stream}, "
+                    f"age={age_s:.2f}s > {max_age_s}s, event_id={processed.event_id}, "
+                    f"drop_count={self._stale_drop_count[stream]}"
+                )
+                return
         # 레이턴시 계측 기준점: 프레임 디코딩 완료(processed.processing_time_ms) 이후부터
         # 반사/인지 전송 완료까지를 측정한다. decode_ms + 이 구간이 WS 수신~단말 전송 총 지연이다.
         pipeline_start = time.perf_counter()
@@ -379,6 +405,7 @@ class DetectionConsumer:
                 decode_ms=processed.processing_time_ms,
                 pipeline_start=pipeline_start,
                 detections=detections,
+                queue_wait_ms=queue_wait_ms,
             )
             # [2026-07-14] 반사 경보(정지) 발동 800ms 후 인지(설명/우회방향) 가이드를 후속 트리거
             delayed_guide_task = asyncio.create_task(
@@ -417,6 +444,7 @@ class DetectionConsumer:
                     decode_ms=processed.processing_time_ms,
                     pipeline_start=pipeline_start,
                     departure_confirmed=departure_confirmed,
+                    queue_wait_ms=queue_wait_ms,
                 )
             logger.debug(
                 f"[DetectionConsumer] 인지 결과: event_id={result.event_id}, "
@@ -589,6 +617,7 @@ class DetectionConsumer:
         decode_ms: float = 0.0,
         pipeline_start: float | None = None,
         detections: list | None = None,
+        queue_wait_ms: float = 0.0,
     ) -> None:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
 
@@ -637,6 +666,7 @@ class DetectionConsumer:
             latency_stages: dict[str, float] = {
                 "decode_ms": round(decode_ms, 1),
                 "inference_ms": round(alert.inference_ms, 1),
+                "queue_wait_ms": round(queue_wait_ms, 1),
             }
             if pipeline_start is not None:
                 latency_stages["total_ms"] = round(
@@ -736,6 +766,7 @@ class DetectionConsumer:
         decode_ms: float = 0.0,
         pipeline_start: float | None = None,
         departure_confirmed: bool = False,
+        queue_wait_ms: float = 0.0,
     ) -> None:
         """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
 
@@ -938,6 +969,7 @@ class DetectionConsumer:
                 "rag_ms": round(rag_ms, 1),
                 "llm_ms": round(orch_result.get("total_latency_ms", 0.0), 1),
                 "tts_ms": round(tts_ms, 1),
+                "queue_wait_ms": round(queue_wait_ms, 1),
             }
             if pipeline_start is not None:
                 latency_stages["total_ms"] = round(

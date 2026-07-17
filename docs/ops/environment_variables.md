@@ -68,6 +68,10 @@
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
+| **`REFLEX_QUEUE_MAXSIZE`** | int | 선택 | `2` | **2026-07-17 신규 (P0-2).** 반사 asyncio.Queue 최대 깊이. latest-frame-wins로 얕게 잡아 큐 적체로 인한 지연 드리프트 방지. 큐 가득 시 oldest drop | `server/capture/stream_splitter.py` |
+| **`COGNITIVE_QUEUE_MAXSIZE`** | int | 선택 | `4` | **2026-07-17 신규 (P0-2).** 인지 asyncio.Queue 최대 깊이. 1~2fps 특성상 소량 버퍼면 충분 | `server/capture/stream_splitter.py` |
+| **`REFLEX_MAX_AGE_S`** | float | 선택 | `0.4` | **2026-07-17 신규 (P0-2).** 반사 프레임 신선도 임계(초). 소비 시각 기준 프레임 ts가 이 값을 초과하면 추론 없이 드롭. ts=0(클라이언트 미전송)이면 검사 건너뜀 | `server/detection/consumer.py` |
+| **`COGNITIVE_MAX_AGE_S`** | float | 선택 | `2.0` | **2026-07-17 신규 (P0-2).** 인지 프레임 신선도 임계(초). 인지는 1~2fps 특성상 반사보다 여유 | `server/detection/consumer.py` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 

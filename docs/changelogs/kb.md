@@ -2731,3 +2731,18 @@
 - **관련 파일**: `docs/research/field_test_improvement_plan.md`, `docs/README.md`
 - **검증 결과**: 코드-문서 교차 검증 16개 항목 중 13개 정합, 3개 정정 완료. AGENTS.md 규칙(이모지 금지·한국어·mermaid 큰따옴표/br·하드-바이브 분할·이중 경로 원칙) 모두 준수. 선행 문서 8개 존재 확인, 환경변수 6개 기존 충돌 없음.
 - **비고**: 본 계획은 outdoor_guidance_refinement_roadmap.md의 후속 Phase로 상호 참조. 구현 시 과제별로 별도 changelog 엔트리 추가 예정.
+
+---
+
+### 2026-07-17 | 3단계 | M1_P0-2_큐_최신성
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M1/P0-2 구현: 반사 큐 최신성 보장(latest-frame-wins) + 프레임 신선도 검사 + 큐 대기 계측으로 지연 드리프트(S3) 해소.
+  - `server/capture/stream_splitter.py`: `QUEUE_MAXSIZE=100` 단일 상수를 `REFLEX_QUEUE_MAXSIZE=2`/`COGNITIVE_QUEUE_MAXSIZE=4`로 분리 (환경변수 오버라이드). `get_default_splitter`에 적용. `QUEUE_MAXSIZE`는 하위 호환용으로 두 분리 상수의 최댓값.
+  - `server/detection/consumer.py`: `_process_frame` 진입부에 신선도 검사 추가 (`now - processed.ts > REFLEX_MAX_AGE_S/COGNITIVE_MAX_AGE_S` 초과 시 추론 없이 드롭 + `_stale_drop_count` 증가). `queue_wait_ms` 계산 후 reflex/cognitive 양쪽 `latency_stages`에 `queue_wait_ms` 키 추가 (콘솔 지연 패널 노출). ts=0(클라이언트 미전송)이면 검사 건너뜀(방어적 코딩).
+  - `docs/ops/environment_variables.md` + `.env.example`: `REFLEX_QUEUE_MAXSIZE`, `COGNITIVE_QUEUE_MAXSIZE`, `REFLEX_MAX_AGE_S`, `COGNITIVE_MAX_AGE_S` 4개 변수 추가.
+  - `tests/test_frame_decode.py`: `TestP0QueueFreshness` 클래스 신규 (reflex/cognitive 큐 latest 유지, 신선도 상수 로드 검증). 기존 `test_singleton_queue_maxsize`를 새 분리 상수 기반으로 업데이트. asyncio import 추가.
+- **관련 파일**: `server/capture/stream_splitter.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_frame_decode.py`
+- **검증 결과**: `pytest tests/test_frame_decode.py` 33개 전체 통과. consumer/stream_splitter import 정상, FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: M2(P0-1 억제 재무장)·M3(P0-3 소형 객체)의 선행. 큐 축소로 hit_count 증가 지연 가능성은 리스크(§10)로 명시, 드롭률 30% 초과 시 MIN_HIT_COUNT 하향 검토 예정.
