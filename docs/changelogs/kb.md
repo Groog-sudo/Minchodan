@@ -2601,3 +2601,13 @@
 - **관련 파일**: `console/vite.config.ts`, `console/src/api/useLiveFeed.ts`, `console/src/components/LiveCameraFeed.tsx`, `server/api/ws_router.py`, `client/src/hooks/useCamera.ts`
 - **검증 결과**: 미디어 서버 업로드/조회 스모크 성공, FastAPI `/health` 200, navigation WS 프록시 연결 확인.
 - **비고**: FastAPI 재기동 후 앱 `/ws/detect` 재연결 및 탐지 시작 필요.
+
+### 2026-07-17 | 통합 | kb_shared_to_dev_exclude_ios_lab
+
+- **커밋**: `(커밋 후 기록)`
+- **변경 내용**:
+  - `kb` 공유 수정(Live Feed/WS/Frame Processor)을 `dev`에 FF 병합.
+  - 개인 랩 설정(`com.minchodan.app.kb.dev`, Metro `172.16.101.220`)은 `dev`에 넣지 않고 기존 `com.minchodan.app.kwanbum` / Tailscale Metro 기본값으로 되돌림.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `client/ios/Minchodan.xcodeproj/project.pbxproj`
+- **검증 결과**: FF 병합 후 개인 iOS 4파일만 `569cbb6` 기준으로 복원, 공유 서버/콘솔/useCamera 변경 유지.
+- **비고**: 실기기 랩은 `kb` 브랜치 또는 로컬 uncommitted/`METRO_BUNDLER_HOST`로 유지.

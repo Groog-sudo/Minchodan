@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.minchodan.app.kb.dev",
+      "bundleIdentifier": "com.minchodan.app.kwanbum",
       "infoPlist": {
         "NSCameraUsageDescription": "보행 보조를 위해 카메라 접근이 필요합니다.",
         "NSMicrophoneUsageDescription": "음성 안내를 위해 마이크 접근이 필요합니다.",
