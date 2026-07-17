@@ -180,16 +180,17 @@ function getEffectiveConfThreshold(className: string, baseThreshold: number): nu
 // 반사 경보 판정에서 제외한다. 부동소수점 회귀 노이즈 감안 2% 여유만 허용.
 const CANVAS_OVERFLOW_MARGIN = 1.02;
 
-// 주행 통로 ROI 사다리꼴 상수 - server/detection/path_risk.py와 동일 값으로 유지해 좌표 정합.
-// NEAR: 화면 하단(가장 가까운 지점) 좌우 경계, FAR: 화면 상단(먼 지점) 좌우 경계.
-// FAR_Y_RATIO: ROI 상단이 화면 높이의 35% 지점에서 시작.
-const PATH_ROI_NEAR_BAND = [0.20, 0.80] as const; // 정규화 x 좌표 (0~1)
-const PATH_ROI_FAR_BAND  = [0.38, 0.62] as const;
-const PATH_ROI_FAR_Y_RATIO = 0.35;
+// 주행 통로 ROI (소실점 사다리꼴): 640x640 정사각 프레임, 가로 50:50 중선(y=0.5) 아래만.
+// 소실점=(0.5, 0.5)에 수렴하는 원근 통로. 상단 절반(y<0.5)은 침범하지 않는다.
+const PATH_ROI_MID_Y = 0.5;
+const PATH_ROI_VANISH_X = 0.5;
+const PATH_ROI_VANISH_Y = 0.5;
+const PATH_ROI_NEAR_BAND = [0.20, 0.80] as const; // 하단(가까운) 좌우
+const PATH_ROI_FAR_BAND = [0.38, 0.62] as const;  // 상단(먼) 좌우 - 소실점 근처
+const PATH_ROI_FAR_Y_RATIO = PATH_ROI_MID_Y;      // 통로 상단 = 50% 선
 
 /**
- * ROI 사다리꼴 꼭짓점 4개를 정규화 좌표(0~1)로 반환.
- * 순서: 좌상 -> 우상 -> 우하 -> 좌하 (시계 방향)
+ * 소실점 사다리꼴 꼭짓점 4개 (정규화 0~1). 좌상 -> 우상 -> 우하 -> 좌하.
  */
 function roiPolygon(): [number, number][] {
   const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
@@ -197,18 +198,15 @@ function roiPolygon(): [number, number][] {
   const yTop = PATH_ROI_FAR_Y_RATIO;
   const yBottom = 1.0;
   return [
-    [farLo,  yTop],    // 좌상
-    [farHi,  yTop],    // 우상
-    [nearHi, yBottom], // 우하
-    [nearLo, yBottom], // 좌하
+    [farLo, yTop],
+    [farHi, yTop],
+    [nearHi, yBottom],
+    [nearLo, yBottom],
   ];
 }
 
-/**
- * 점(px, py)이 볼록 다각형 polygon(정규화 좌표 배열) 내부에 있는지 판정.
- * ray-casting 알고리즘 사용.
- */
 function pointInPolygon(px: number, py: number, polygon: [number, number][]): boolean {
+  if (py < PATH_ROI_MID_Y) return false;
   let inside = false;
   const n = polygon.length;
   for (let i = 0, j = n - 1; i < n; j = i++) {
@@ -630,11 +628,7 @@ export function CameraView() {
     send({ type: "detection_control", enabled: detectionEnabled, ts: Date.now() });
   }, [status, detectionEnabled, send]);
 
-  useEffect(() => {
-    if (!navRoute) {
-      setMapVisible(false);
-    }
-  }, [navRoute]);
+  // 지도 토글은 경로 유무와 무관하게 유지(하단 도구 패널에서 항상 접근).
 
   // 2026-07-11 LiDAR 실거리 프로브 모드(프로토타입, iOS Pro 계열 전용, Mitos 로드맵 §2):
   // 켜면 vision-camera를 내리고(isActive=false, 두 세션이 후면 카메라를 공유할 수 없는
@@ -895,7 +889,7 @@ export function CameraView() {
         if (d.confidence <= getEffectiveConfThreshold(d.className, confThresholdRef.current)) {
           return false;
         }
-        // ROI 판정: bbox 중심점이 주행 통로 사다리꼴 내부에 없으면 반사 경로 제외.
+        // ROI 판정: 소실점 사다리꼴(50% 선 아래) 밖이면 반사 경로 제외.
         // outdoor 게이트(hasOutdoorSurface/isOutdoorByScene)는 여기서 걸지 않는다 - 근접 긴급
         // (urgentDetections)은 실내 판정이어도 충돌 회피가 우선이라 outdoor 게이트를 우회해야 한다.
         const cxNorm = (d.bbox.x + d.bbox.w / 2) / FRAME_SIZE;
@@ -1174,7 +1168,7 @@ export function CameraView() {
           </View>
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
-        {/* 실제 화면 픽셀에 투영한 원근 주행 통로 (탐지 활성 시에만 표시) */}
+        {/* 소실점 사다리꼴 보행 통로 (50% 선 아래, 탐지 활성 시) */}
         {detectionEnabled && !depthMode && <ROIOverlay />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
@@ -1292,27 +1286,6 @@ export function CameraView() {
           </View>
         )}
 
-        {navRoute && (
-          <Pressable
-            style={styles.mapToggleButton}
-            onPress={() => setMapVisible((v) => !v)}
-            accessibilityRole="button"
-            accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
-          >
-            <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
-          </Pressable>
-        )}
-
-        {mapVisible && navRoute && (
-          <View style={styles.navMapPanel}>
-            <NavMapPanel
-              appKey={navRoute.appKey}
-              waypoints={navRoute.waypoints}
-              current={mapPos}
-            />
-          </View>
-        )}
-
         <View style={styles.controlRow}>
           <Pressable
             style={[
@@ -1335,6 +1308,18 @@ export function CameraView() {
             <Text style={styles.mapToggleText}>
               {detectionEnabled ? "탐지 중지" : "탐지 시작"}
             </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.mapToggleButton,
+              mapVisible && styles.navToggleActive,
+            ]}
+            onPress={() => setMapVisible((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+          >
+            <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도"}</Text>
           </Pressable>
 
           <Pressable
@@ -1373,6 +1358,17 @@ export function CameraView() {
             </Pressable>
           ) : null}
         </View>
+
+        {/* 지도는 카메라(640) 위가 아니라 하단 도구 패널에만 표시 */}
+        {mapVisible && (
+          <View style={styles.navMapPanel}>
+            <NavMapPanel
+              appKey={navRoute?.appKey ?? ""}
+              waypoints={navRoute?.waypoints ?? []}
+              current={mapPos}
+            />
+          </View>
+        )}
 
         {__DEV__ && <DebugTriggerPanel />}
       </ScrollView>
@@ -1496,99 +1492,136 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 }
 
 /**
- * 보행 통로 ROI를 실제 카메라 픽셀 좌표로 투영한다.
- * 같은 거리 간격이 소실점에서 촘촘해 보이도록 y=t² 원근 눈금을 함께 표시한다.
+ * 소실점 기준 사다리꼴 보행 통로 ROI.
+ * - 640x640(1:1) 정사각, 가로 50:50 중선(y=0.5)을 넘지 않음
+ * - 하단 넓게 / 상단(중선) 좁게 수렴, 소실점=(0.5, 0.5)
+ * - 원근 깊이 눈금(y=t^2)으로 거리감 표시
  */
 function ROIOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
   const [farLo, farHi] = PATH_ROI_FAR_BAND;
-  const yTopPct  = PATH_ROI_FAR_Y_RATIO;
-  const yBotPct  = 1.0;
-  
+  const yTopPct = PATH_ROI_FAR_Y_RATIO;
+  const yBotPct = 1.0;
+  const midY = PATH_ROI_MID_Y;
+
   const LINE_W = 2;
-  const COLOR  = "rgba(249, 183, 0, 0.75)"; // COLOR_GILDANG_YELLOW 반투명
+  const COLOR = "rgba(249, 183, 0, 0.75)";
   const GRID_COLOR = "rgba(249, 183, 0, 0.38)";
   const DEPTH_STEPS = [0.22, 0.45, 0.7];
 
+  const side = Math.min(size.width, size.height);
+
   return (
-    <View 
-      style={StyleSheet.absoluteFill} 
+    <View
+      style={StyleSheet.absoluteFill}
       pointerEvents="none"
       onLayout={(e) => setSize(e.nativeEvent.layout)}
     >
-      {size.width > 0 && (
+      {side > 0 && (
         <>
-          {/* 상변 */}
-          <View style={{
-            position: 'absolute',
-            left: farLo * size.width,
-            top: yTopPct * size.height,
-            width: (farHi - farLo) * size.width,
-            height: LINE_W,
-            backgroundColor: COLOR,
-          }} />
+          {/* 50:50 기준선 (상단 절반 침범 금지 경계) */}
+          <View
+            style={{
+              position: "absolute",
+              left: 0,
+              top: midY * side - LINE_W / 2,
+              width: side,
+              height: LINE_W,
+              backgroundColor: "rgba(0, 210, 255, 0.7)",
+            }}
+          />
+          {/* 소실점 마커 */}
+          <View
+            style={{
+              position: "absolute",
+              left: PATH_ROI_VANISH_X * side - 3,
+              top: PATH_ROI_VANISH_Y * side - 3,
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: COLOR,
+            }}
+          />
+          {/* 사다리꼴 상변 (중선) */}
+          <View
+            style={{
+              position: "absolute",
+              left: farLo * side,
+              top: yTopPct * side,
+              width: (farHi - farLo) * side,
+              height: LINE_W,
+              backgroundColor: COLOR,
+            }}
+          />
           {/* 하변 */}
-          <View style={{
-            position: 'absolute',
-            left: nearLo * size.width,
-            top: yBotPct * size.height - LINE_W,
-            width: (nearHi - nearLo) * size.width,
-            height: LINE_W,
-            backgroundColor: COLOR,
-          }} />
-          {/* 좌변 */}
+          <View
+            style={{
+              position: "absolute",
+              left: nearLo * side,
+              top: yBotPct * side - LINE_W,
+              width: (nearHi - nearLo) * side,
+              height: LINE_W,
+              backgroundColor: COLOR,
+            }}
+          />
+          {/* 좌변 (소실점으로 수렴) */}
           {(() => {
-            const x1 = farLo * size.width;
-            const y1 = yTopPct * size.height;
-            const x2 = nearLo * size.width;
-            const y2 = yBotPct * size.height;
+            const x1 = farLo * side;
+            const y1 = yTopPct * side;
+            const x2 = nearLo * side;
+            const y2 = yBotPct * side;
             const cx = (x1 + x2) / 2;
             const cy = (y1 + y2) / 2;
-            const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-            const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+            const length = Math.hypot(x2 - x1, y2 - y1);
+            const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
             return (
-              <View style={{
-                position: 'absolute',
-                left: cx - length / 2,
-                top: cy - LINE_W / 2,
-                width: length,
-                height: LINE_W,
-                backgroundColor: COLOR,
-                transform: [{ rotate: `${angle}deg` }]
-              }} />
+              <View
+                style={{
+                  position: "absolute",
+                  left: cx - length / 2,
+                  top: cy - LINE_W / 2,
+                  width: length,
+                  height: LINE_W,
+                  backgroundColor: COLOR,
+                  transform: [{ rotate: `${angle}deg` }],
+                }}
+              />
             );
           })()}
           {/* 우변 */}
           {(() => {
-            const x1 = farHi * size.width;
-            const y1 = yTopPct * size.height;
-            const x2 = nearHi * size.width;
-            const y2 = yBotPct * size.height;
+            const x1 = farHi * side;
+            const y1 = yTopPct * side;
+            const x2 = nearHi * side;
+            const y2 = yBotPct * side;
             const cx = (x1 + x2) / 2;
             const cy = (y1 + y2) / 2;
-            const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
-            const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+            const length = Math.hypot(x2 - x1, y2 - y1);
+            const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
             return (
-              <View style={{
-                position: 'absolute',
-                left: cx - length / 2,
-                top: cy - LINE_W / 2,
-                width: length,
-                height: LINE_W,
-                backgroundColor: COLOR,
-                transform: [{ rotate: `${angle}deg` }]
-              }} />
+              <View
+                style={{
+                  position: "absolute",
+                  left: cx - length / 2,
+                  top: cy - LINE_W / 2,
+                  width: length,
+                  height: LINE_W,
+                  backgroundColor: COLOR,
+                  transform: [{ rotate: `${angle}deg` }],
+                }}
+              />
             );
           })()}
-          {/* 소실점 쪽은 촘촘하고 발밑 쪽은 넓어지는 원근 깊이 눈금 */}
+          {/* 소실점 쪽 촘촘한 원근 깊이 눈금 */}
           {DEPTH_STEPS.map((depth) => {
             const perspective = depth * depth;
-            const topY = yTopPct * size.height;
-            const bottomY = yBotPct * size.height - LINE_W;
-            const left = (farLo + (nearLo - farLo) * perspective) * size.width;
-            const right = (farHi + (nearHi - farHi) * perspective) * size.width;
+            const topY = yTopPct * side;
+            const bottomY = yBotPct * side - LINE_W;
+            const left = (farLo + (nearLo - farLo) * perspective) * side;
+            const right = (farHi + (nearHi - farHi) * perspective) * side;
             const top = topY + (bottomY - topY) * perspective;
+            if (top < midY * side - 1) return null;
             return (
               <View
                 key={depth}
@@ -1750,6 +1783,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(57, 255, 20, 0.18)",
     borderWidth: 1,
     borderColor: COLOR_OP_GREEN,
+  },
+  navToggleActive: {
+    backgroundColor: "rgba(249, 183, 0, 0.2)",
+    borderWidth: 1,
+    borderColor: COLOR_GILDANG_YELLOW,
   },
   transportToggleUsb: {
     backgroundColor: "rgba(0, 210, 255, 0.18)",
