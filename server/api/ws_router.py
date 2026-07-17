@@ -48,8 +48,30 @@ router = APIRouter()
 MIN_STT_AUDIO_BYTES = 4096
 
 
-async def _finish_detection(
+async def _send_detection_ack(
     ws: WebSocket,
+    event_id: str,
+    frame_id: int,
+    decode_ms: float,
+) -> None:
+    """탐지 ack를 즉시 보낸다.
+
+    HeartbeatManager가 다른 태스크에서 동시에 타임아웃 close를 걸 수 있어(레이스),
+    ack 전송 실패가 세션 전체를 죽이지 않도록 여기서 흡수한다. 소켓이 실제로
+    끊겼다면 메인 루프의 다음 ws.receive()가 WebSocketDisconnect로 정상 정리한다.
+    """
+    with contextlib.suppress(Exception):
+        await ws.send_json(
+            {
+                "type": "ack",
+                "event_id": event_id,
+                "frame_id": frame_id,
+                "decode_ms": round(decode_ms, 2),
+            }
+        )
+
+
+async def _route_detection_frame(
     splitter,
     processed,
     event_id: str,
@@ -57,11 +79,7 @@ async def _finish_detection(
     decode_ms: float,
     b64_len_for_log: int = 0,
 ) -> None:
-    """디코딩 결과를 스트림 스플리터로 라우팅하고 ack를 응답한다.
-
-    base64 경로(단일 JSON 메시지)와 바이너리 경로(메타 + 바이너리 프레임) 양쪽이
-    공유하는 후처리 로직 - route_frame + ack 응답 (guide 17.1 계층 분리 준수).
-    """
+    """디코딩 결과를 스트림 스플리터로 라우팅한다 (YOLO/게이트 - 상대적으로 느림)."""
     logger.info(
         f"[WS] detection 수신 - event_id: {event_id}, frame_id: {frame_id}, decode_ms: {decode_ms:.2f}ms"
     )
@@ -79,18 +97,28 @@ async def _finish_detection(
             flush=True,
         )
 
-    # HeartbeatManager가 다른 태스크에서 동시에 타임아웃 close를 걸 수 있어(레이스),
-    # ack 전송 실패가 세션 전체를 죽이지 않도록 여기서 흡수한다. 소켓이 실제로
-    # 끊겼다면 메인 루프의 다음 ws.receive()가 WebSocketDisconnect로 정상 정리한다.
-    with contextlib.suppress(Exception):
-        await ws.send_json(
-            {
-                "type": "ack",
-                "event_id": event_id,
-                "frame_id": frame_id,
-                "decode_ms": round(decode_ms, 2),
-            }
-        )
+
+async def _finish_detection(
+    ws: WebSocket,
+    splitter,
+    processed,
+    event_id: str,
+    frame_id: int,
+    decode_ms: float,
+    b64_len_for_log: int = 0,
+) -> None:
+    """디코딩 결과를 스트림 스플리터로 라우팅하고 ack를 응답한다.
+
+    base64 경로(단일 JSON 메시지)와 바이너리 경로(메타 + 바이너리 프레임) 양쪽이
+    공유하는 후처리 로직 - route_frame + ack 응답 (guide 17.1 계층 분리 준수).
+
+    실시간 Live Feed가 YOLO 지연에 묶이지 않도록, 호출부는 ack를 먼저 보내고
+    route는 백그라운드 태스크로 분리하는 것을 권장한다.
+    """
+    await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+    await _route_detection_frame(
+        splitter, processed, event_id, frame_id, decode_ms, b64_len_for_log
+    )
 
 
 async def _broadcast_session_status(
@@ -738,6 +766,37 @@ async def ws_detect(
         # 바로 뒤이어 오는 바이너리 프레임과 짝지어 처리한다.
         pending_binary_meta: dict | None = None
 
+        # YOLO/게이트(route_frame)는 Mac CPU에서 수백 ms~수 초가 걸릴 수 있다.
+        # 메인 수신 루프에서 await하면 다음 프레임 receive가 막혀 콘솔 Live Feed가
+        # 탐지 FPS(~1fps)로 끊긴다. ack+콘솔 중계는 즉시 하고, route만 백그라운드로
+        # 넘긴다. 동시 추론은 1개로 제한하고 바쁠 때는 해당 프레임 탐지만 드롭한다
+        # (최신성 우선, Live Feed 중계는 이미 끝난 상태).
+        route_sem = asyncio.Semaphore(1)
+
+        async def _route_detection_bg(
+            processed_frame,
+            route_event_id: str,
+            route_frame_id: int,
+            route_decode_ms: float,
+            route_b64_len: int = 0,
+        ) -> None:
+            if route_sem.locked():
+                logger.debug(
+                    "[WS] detection route busy - drop event_id=%s frame_id=%s",
+                    route_event_id,
+                    route_frame_id,
+                )
+                return
+            async with route_sem:
+                await _route_detection_frame(
+                    splitter,
+                    processed_frame,
+                    route_event_id,
+                    route_frame_id,
+                    route_decode_ms,
+                    route_b64_len,
+                )
+
         # stt_audio 처리(STT+LLM+TTS)는 수 초~수십 초가 걸릴 수 있어(2026-07-09 실측:
         # 로컬 tiny 모델+gemma4:e4b만으로도 약 10초), 메인 수신 루프에서 inline await로
         # 처리하면 그동안 ws.receive()가 멈춰 클라이언트의 heartbeat_ack를 못 받아
@@ -767,10 +826,13 @@ async def ws_detect(
                 decode_ms = (time.perf_counter() - decode_start) * 1000
 
                 await manager.broadcast_to_consoles(raw_bytes)
+                await _send_detection_ack(ws, event_id, frame_id, decode_ms)
 
-                await _finish_detection(
-                    ws, splitter, processed, event_id, frame_id, decode_ms, len(raw_bytes)
+                task = asyncio.create_task(
+                    _route_detection_bg(processed, event_id, frame_id, decode_ms, len(raw_bytes))
                 )
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
                 continue
 
             raw = message.get("text")
@@ -863,9 +925,12 @@ async def ws_detect(
                                 b64_for_decode = parts[1]
                         raw_bytes = base64.b64decode(b64_for_decode)
                         await manager.broadcast_to_consoles(raw_bytes)
-                await _finish_detection(
-                    ws, splitter, processed, event_id, frame_id, decode_ms, b64_len
+                await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+                task = asyncio.create_task(
+                    _route_detection_bg(processed, event_id, frame_id, decode_ms, b64_len)
                 )
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
 
             elif msg_type == "stt_audio":
                 logger.info(

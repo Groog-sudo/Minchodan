@@ -20,6 +20,7 @@
 
 import { useCallback, useRef } from "react";
 import { Image } from "react-native";
+import { decodeBase64JpegToHwc } from "./realFrameProvider";
 import {
   type Camera,
   type PhotoFile,
@@ -47,6 +48,7 @@ const reflexFrameProcessorPlugin: FrameProcessorPlugin | undefined =
 const CAPTURE_TIMEOUT_MS = 3000;
 let didLogPluginStatus = false;
 let didLogTakePhotoFallback = false;
+let didLogStreamFrame = false;
 
 /** 순수 JS 기반 Base64 -> Uint8Array 디코더 (Hermes 환경 최적화). */
 function base64ToUint8Array(base64: string): Uint8Array {
@@ -142,7 +144,7 @@ async function captureViaTakePhotoAndroid(
         );
 
         const base64 = manipResult.base64 ?? "";
-        const float32 = new Float32Array(0);
+        const float32 = decodeBase64JpegToHwc(base64);
 
         // Android 실기기에서 new File(uri).bytes()가 rejected 에러로 실패하는 사례가
         // 있어 FileSystem.readAsStringAsync + 수동 디코딩으로 우회한다.

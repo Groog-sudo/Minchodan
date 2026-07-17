@@ -2567,3 +2567,59 @@
   - merge teammates branches (jh, dg2, jy) into dev and fix conflict/test bugs
 - **관련 파일**: 없음
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 2단계 | ios_dev_bundle_metro_host
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS 실기기 개발 서명용 번들 ID(com.minchodan.app.kb.dev) 및 Metro 기본 호스트(LAN) 정합
+- **관련 파일**: `lient/app.json`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 2단계 | restore_ios_frame_processor
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS takePhoto 강제 폴백 해제 - Frame Processor 복구로 AVFoundation Cannot Record(-11803) 해소
+- **관련 파일**: `lient/src/hooks/useCamera.ts`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+### 2026-07-17 | 1단계 | console_live_feed_smoothness
+
+- **커밋**: `4912835`
+- **변경 내용**:
+  - Vite `/navigation` WebSocket 프록시(`ws: true`) 추가 - 지도 iframe `navigation/ws` 연결 실패 해소.
+  - 콘솔 `useLiveFeed` Strict Mode 안전 재연결, Vite `/ws` 프록시 경로, rAF 최신 프레임만 렌더, 매 프레임 console.log 제거.
+  - 서버 `/ws/detect`: Live Feed 중계·ack는 즉시, YOLO `route_frame`은 백그라운드(동시 1개, busy 시 탐지 드롭)로 분리해 콘솔 영상이 탐지 지연에 묶이지 않도록 개선.
+  - 앱 캡처 최저 FPS 1→5fps, 스트림 프레임 로그 제거(JS 스레드 부하 완화).
+  - Live Feed 플레이스홀더 문구: 앱 연결·탐지 시작 필요 안내.
+  - (로컬만) `.env`에 `IMAGE_SERVER_*` / `EVENT_FRAME_STORAGE_BACKEND=remote` 설정 - 시크릿이라 커밋 제외.
+- **관련 파일**: `console/vite.config.ts`, `console/src/api/useLiveFeed.ts`, `console/src/components/LiveCameraFeed.tsx`, `server/api/ws_router.py`, `client/src/hooks/useCamera.ts`
+- **검증 결과**: 미디어 서버 업로드/조회 스모크 성공, FastAPI `/health` 200, navigation WS 프록시 연결 확인.
+- **비고**: FastAPI 재기동 후 앱 `/ws/detect` 재연결 및 탐지 시작 필요.
+
+### 2026-07-17 | 통합 | kb_shared_to_dev_exclude_ios_lab
+
+- **커밋**: `7c6fe81`
+- **변경 내용**:
+  - `kb` 공유 수정(Live Feed/WS/Frame Processor)을 `dev`에 FF 병합.
+  - 개인 랩 설정(`com.minchodan.app.kb.dev`, Metro `172.16.101.220`)은 `dev`에 넣지 않고 기존 `com.minchodan.app.kwanbum` / Tailscale Metro 기본값으로 되돌림.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `client/ios/Minchodan.xcodeproj/project.pbxproj`
+- **검증 결과**: FF 병합 후 개인 iOS 4파일만 `569cbb6` 기준으로 복원, 공유 서버/콘솔/useCamera 변경 유지.
+- **비고**: 실기기 랩은 `kb` 브랜치 또는 로컬 uncommitted/`METRO_BUNDLER_HOST`로 유지.
+
+### 2026-07-17 | 통합 | merge_dg2_shared_into_dev
+
+- **커밋**: `2a4d17e`
+- **변경 내용**:
+  - `dg2` → `dev` 병합: Android float32/AEC 복구, Live Feed 회전 UI, Android 패리티 문서 반영.
+  - 충돌 해결: `useCamera`(Stream+Cannot Record 주석 유지, MAX_REFLEX=200), `useLiveFeed`(Vite `/ws` 프록시 경로 유지).
+  - 개인 랩 제외: Tailscale/Metro/Vite `100.85.229.93`, docker NVIDIA deploy ON·MariaDB 3306 바인딩 OFF, tailscale 가이드 IP 변경 원복.
+  - `vite.config.ts`: localhost 프록시 + `/navigation` `ws: true` 유지.
+- **관련 파일**: `client/src/services/*android*`, `audioSessionBridge.ts`, `console/src/components/LiveCameraFeed.*`, `docs/mobile/android_platform_patch_results.md`
+- **검증 결과**: 충돌 마커 제거, 개인 IP 검색 0건, MAX_REFLEX=200·vite localhost 확인.
+- **비고**: dg2 개인 GPU/호스트 설정은 `dg2` 브랜치에만 유지.
