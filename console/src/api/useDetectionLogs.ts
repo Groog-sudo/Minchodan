@@ -31,6 +31,7 @@ export function useDetectionLogs(
   token: string | null,
   page: number,
   pageSize: number,
+  streamFilter: "all" | "reflex" | "cognitive" = "all",
   pollMs = DEFAULT_POLL_MS,
 ) {
   const [rows, setRows] = useState<DetectionGuidanceLogRow[]>([]);
@@ -43,8 +44,15 @@ export function useDetectionLogs(
     setLoading(true);
     try {
       const offset = page * pageSize;
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (streamFilter !== "all") {
+        params.set("stream_type", streamFilter);
+      }
       const response = await fetch(
-        `${LOGS_ENDPOINT}?limit=${pageSize}&offset=${offset}`,
+        `${LOGS_ENDPOINT}?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) {
@@ -60,7 +68,7 @@ export function useDetectionLogs(
     } finally {
       setLoading(false);
     }
-  }, [token, page, pageSize]);
+  }, [token, page, pageSize, streamFilter]);
 
   const updateLogFalsePositive = useCallback(
     async (logId: number, falsePositive: boolean | null) => {

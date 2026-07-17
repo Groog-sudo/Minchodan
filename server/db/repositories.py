@@ -191,18 +191,29 @@ class DetectionGuidanceLogRepository:
     # - detected_at 내림차순 정렬에 IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT
     #   인덱스가 사용됩니다.
     # ==========================================
-    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[DetectionGuidanceLog]:
+    async def list_recent(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        stream_type: str = "all",
+    ) -> list[DetectionGuidanceLog]:
+        query = select(DetectionGuidanceLog)
+        if stream_type in ("reflex", "cognitive"):
+            query = query.where(DetectionGuidanceLog.stream_type == StreamType(stream_type))
         result = await self.session.execute(
-            select(DetectionGuidanceLog)
+            query
             .order_by(DetectionGuidanceLog.detected_at.desc())
             .offset(offset)
             .limit(limit)
         )
         return list(result.scalars().all())
 
-    async def count_all(self) -> int:
+    async def count_all(self, stream_type: str = "all") -> int:
         """콘솔 페이지네이션이 전체 페이지 수를 계산하기 위한 전체 로그 건수."""
-        result = await self.session.execute(select(func.count()).select_from(DetectionGuidanceLog))
+        query = select(func.count()).select_from(DetectionGuidanceLog)
+        if stream_type in ("reflex", "cognitive"):
+            query = query.where(DetectionGuidanceLog.stream_type == StreamType(stream_type))
+        result = await self.session.execute(query)
         return int(result.scalar_one())
 
     # ==========================================

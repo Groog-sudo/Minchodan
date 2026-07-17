@@ -31,8 +31,8 @@
         "longitude": 126.9971
       },
       "contact": {
-        "representative_phone": "공이-이이이이-삼육구공",
-        "counseling_phone": "공이-이이이이-삼육구공",
+        "representative_phone": "공이이이이이이삼육구공",
+        "counseling_phone": "공이이이이이이삼육구공",
         "emergency_phone": null,
         "email": "help001@example.org",
         "website": "https://example.org/public/001"
@@ -86,8 +86,8 @@
         "longitude": 126.9104
       },
       "contact": {
-        "representative_phone": "공이-육구공공-일이이공",
-        "counseling_phone": "공이-육구공공-일이이공",
+        "representative_phone": "공이육구공공일이이공",
+        "counseling_phone": "공이육구공공일이이공",
         "emergency_phone": null,
         "email": "hanbit@example.org",
         "website": "https://example.org/visual-center/002"
@@ -148,8 +148,8 @@
         "longitude": 126.8495
       },
       "contact": {
-        "representative_phone": "공이-삼이칠삼-팔일공공",
-        "counseling_phone": "공이-삼이칠삼-팔일공공",
+        "representative_phone": "공이삼이칠삼팔일공공",
+        "counseling_phone": "공이삼이칠삼팔일공공",
         "emergency_phone": null,
         "email": "green-tree@example.org",
         "website": "https://example.org/welfare/003"
@@ -210,8 +210,8 @@
         "longitude": 126.9238
       },
       "contact": {
-        "representative_phone": "공이-육구오이-사칠공공",
-        "counseling_phone": "공이-육구오이-사칠공공",
+        "representative_phone": "공이육구오이사칠공공",
+        "counseling_phone": "공이육구오이사칠공공",
         "emergency_phone": null,
         "email": "safety-association@example.org",
         "website": "https://example.org/association/004"
@@ -266,9 +266,9 @@
         "longitude": 126.9368
       },
       "contact": {
-        "representative_phone": "공이-이공칠이-삼육일공",
-        "appointment_phone": "공이-이공칠이-삼육일공",
-        "emergency_phone": "공이-이공칠이-삼육구구",
+        "representative_phone": "공이이공칠이삼육일공",
+        "appointment_phone": "공이이공칠이삼육일공",
+        "emergency_phone": "공이이공칠이삼육구구",
         "email": "saebom-eye@example.org",
         "website": "https://example.org/hospital/005"
       },
@@ -329,8 +329,8 @@
         "longitude": 127.0562
       },
       "contact": {
-        "representative_phone": "공이-육삼구공-팔팔오공",
-        "counseling_phone": "공이-육삼구공-팔팔오공",
+        "representative_phone": "공이육삼구공팔팔오공",
+        "counseling_phone": "공이육삼구공팔팔오공",
         "emergency_phone": null,
         "email": "assistive-tech@example.org",
         "website": "https://example.org/device/006"
@@ -377,7 +377,7 @@
       "person_type_ko": "시각장애인 이용자",
       "name": "윤대근",
       "contact": {
-        "phone": "공일공-구오구공-삼이일공",
+        "phone": "공일공구오구공삼이일공",
         "email": "daegeun@example.com",
         "preferred_contact_method": "전화"
       },
@@ -399,7 +399,7 @@
       "category": "medical_emergency",
       "category_ko": "의료 응급상황",
       "name": "새봄 안과재활병원 응급상담",
-      "phone": "공이-이공칠이-삼육구구",
+      "phone": "공이이공칠이삼육구구",
       "available_hours": "스물네 시간",
       "description": "갑작스러운 시력 저하, 심한 눈 통증, 안구 외상 대응용 더미 연락처입니다.",
       "priority": "첫째",
@@ -418,7 +418,7 @@
       "category": "lost_person",
       "category_ko": "길을 잃은 경우",
       "name": "시각장애인 이동지원 긴급연락망",
-      "phone": "공이-이이이이-삼육구구",
+      "phone": "공이이이이삼육구구",
       "available_hours": "육시 다시 이십사시",
       "description": "길을 잃었거나 현재 위치 확인이 필요한 상황에 사용하는 더미 연락처입니다.",
       "priority": "둘째",
@@ -442,7 +442,7 @@
           "person_id": "PER-001",
           "name": "윤대근",
           "relationship": "본인",
-          "phone": "공일공-구오구공-삼이일공"
+          "phone": "공일공구오구공삼이일공"
         }
       ],
       "rag_text": "윤대근 이용자 긴급 연락은 등록된 연락망 번호로 우선 연결한다."

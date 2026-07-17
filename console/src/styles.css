@@ -1217,9 +1217,10 @@ td.tts-text-cell {
 }
 
 .page-btn:disabled {
-  color: #4b5568;
+  color: #ffffff;
+  border-color: #ffffff;
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 1;
 }
 
 .page-btn-active,
@@ -1554,6 +1555,20 @@ td.tts-text-cell {
   border-color: var(--color-gildang-yellow);
   outline: none;
   box-shadow: 0 0 6px rgba(249, 183, 0, 0.2);
+}
+
+.member-form input.member-form-input-error {
+  border-color: var(--color-reflex-red);
+  box-shadow: 0 0 6px rgba(255, 51, 51, 0.2);
+}
+
+.member-form-inline-error {
+  color: var(--color-reflex-red);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin-top: -6px;
+  text-transform: none;
 }
 
 .member-form .refresh-btn {
