@@ -2704,3 +2704,16 @@
 - **관련 파일**: `docs/ops/deployment_guide.md`, `README.md`
 - **검증 결과**: 문서 교차 검증 — `.env.example`(L42-43)과 `docs/ops/environment_variables.md`(L199-201)에 이미 변수 명세 존재 확인, 본 변경은 실행 절차 보완만 수행.
 - **비고**: `.env` 자체는 gitignore로 팀원 공유 불가하므로 `.env.example` 기반 복제 절차가 단일 진실 원천. 로컬에서 수행한 `ollama pull bge-m3` + `build_convenience_db.py`(문서 34건 적재)는 검증 완료.
+
+---
+
+### 2026-07-17 | 문서 | convenience_rag_test_spec
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 생활지원 RAG 통합 검증 시나리오를 프로젝트 테스트 명세 체계의 정합성 위치에 등재. jh 병합으로 들어온 부가 경로(StT 음성 명령 → 생활지원 RAG)가 기존 4대 E2E 시나리오와 단계별 TC 매트릭스에 누락된 갭 보완.
+  - `docs/ops/test_specification.md`: §7 통합 smoke 검증에 TC-SMOKE-006 신설(`bge-m3` pull + `build_convenience_db.py` + 컨테이너 `answer_convenience_question()` 검색 응답 검증), 상세 절차 블록 및 3종 검증 쿼리 기록, 버전 v0.6.5 -> v0.6.6.
+  - `docs/ops/integration_scenario_test.md`: SC-E2E-005 STT 음성 명령 -> 생활지원 RAG 응답 부가 경로 시나리오 신설, §2 헤더 4대 -> 5대 E2E 갱신, §3 결과 대장에 SC-E2E-005 PASS 행 추가, 버전 v1.0.0 -> v1.1.0.
+- **관련 파일**: `docs/ops/test_specification.md`, `docs/ops/integration_scenario_test.md`
+- **검증 결과**: 문서 교차 검증 — 단위 테스트는 기존 `tests/test_convenience_dial_resolver.py` 등이 커버하므로 본 변경은 통합 smoke + E2E 시나리오 명세만 보완(단일 진실 원칙 유지). §5.4 RAG 섹션은 safety_guidelines 전용이라 convenience를 넣지 않아 정합성 훼손 방지.
+- **비고**: TC-SMOKE-006과 SC-E2E-005는 동일 검증의 매트릭스/시나리오 쌍. 2026-07-17 실측 기반으로 상태를 `완료`/`PASS`로 마킹.

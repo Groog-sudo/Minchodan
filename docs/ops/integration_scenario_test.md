@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-07
-> **버전**: v1.0.0
+> **버전**: v1.1.0 (2026-07-17 SC-E2E-005 STT 음성 명령 → 생활지원 RAG 응답 부가 경로 시나리오 신설, jh 병합 반영)
 
 # Minchodan 통합 시나리오 테스트 명세서
 
@@ -28,7 +28,7 @@ graph TD
 
 ---
 
-## 2. 4대 E2E 통합 테스트 시나리오
+## 2. 5대 E2E 통합 테스트 시나리오
 
 ### SC-E2E-001: 고위험 장애물 돌발 근접 (반사 경로)
 
@@ -90,6 +90,27 @@ graph TD
   - TTS 실패를 감지한 `RealtimeTTS`가 예외를 복구하여 `audio_mp3_b64: ""` 빈 값을 담아 송신해야 합니다.
   - 단말은 빈 오디오 데이터를 감지하고 즉시 단말 내장 TTS(TTS Engine)로 `guidance_text`를 읽어야 합니다.
 
+### SC-E2E-005: STT 음성 명령 → 생활지원 RAG 응답 (부가 경로)
+
+* **목적**: 보행 중 사용자의 음성 명령(예: "복지 전화번호 알려줘")이 STT(`faster-whisper`)로 인식된 후, `answer_convenience_question()`을 통해 `convenience_guidelines` 컬렉션에서 `bge-m3` 임베딩 기반 검색을 수행하고, 검색 결과를 LLM이 자연어 한국어 응답으로 합성해 단말에 안내하는 부가 경로가 정상 동작하는지 검증합니다.
+* **사전 조건**:
+  - 호스트 Ollama에 `bge-m3:latest` 적재 완료.
+  - `python scripts/build_convenience_db.py` 실행으로 `data/chroma_db/convenience_guidelines/` 컬렉션 빌드 완료 (문서 34건).
+  - `.env`에 `CONVENIENCE_EMBEDDING_PROVIDER=ollama`, `CONVENIENCE_EMBEDDING_MODEL=bge-m3` 설정.
+  - Docker FastAPI 컨테이너가 `data/chroma_db/` 볼륨을 마운트하고 호스트 Ollama(`host.docker.internal:11434`)에 접근 가능.
+* **테스트 절차**:
+  1. 단말이 `stt_audio` 바이너리 페이로드로 음성 명령("복지 전화번호 알려줘")을 전송합니다.
+  2. 서버 `faster-whisper`가 텍스트로 전사하는지 확인합니다.
+  3. `looks_like_convenience_query()`가 생활지원 질의로 분류하는지 확인합니다.
+  4. `ConvenienceKnowledgeBase.search(question, k=5)`가 `convenience_guidelines` 컬렉션에서 `bge-m3` 임베딩으로 상위 5건을 검색하는지 확인합니다.
+  5. `answer_convenience_question()`이 검색 결과를 LLM 컨텍스트로 피딩해 자연어 응답을 생성하는지 확인합니다.
+  6. 데이터 부재 질의("동사무소 몇 시까지 해?")에 대해 환각 없이 "정보 없음"으로 응답하는지 확인합니다.
+* **기대 결과 (Pass 조건)**:
+  - "복지 전화번호" 계열 질의 → 복지관/생활지원센터 연락처가 포함된 응답 반환.
+  - "시각장애인 혜택" 계열 질의 → 시각장애인 협회/센터 서비스가 포함된 응답 반환.
+  - 데이터 부재 질의 → "제공된 검색 문서에 ... 정보가 없습니다" 형태의 정직 응답 (환각 금지).
+  - 컨테이너가 호스트 Ollama를 경유해 `bge-m3` 임베딩을 정상 호출 (임베딩 타임아웃/오류 없음).
+
 ---
 
 ## 3. 시나리오 테스트 결과 관리 대장
@@ -102,3 +123,4 @@ graph TD
 | **SC-E2E-002** | **2026-07-07** | macOS + ChromaDB + gemma4 + Piper | **부분 완료** | Antigravity | Piper 바이너리 부재로 음성은 SC-E2E-004 가드레일로 우회 |
 | **SC-E2E-003** | **2026-07-07** | React Native Expo 오디오 엔진 모듈 | **PASS** | Antigravity | 단말 오디오 엔진 선점 검증 완료 (v0.3.0) |
 | **SC-E2E-004** | **2026-07-07** | macOS + Mock API + System Error | **PASS** | Antigravity | Piper 부재 시 audio_mp3_b64: "" 우회 가이드 전송 확인 |
+| **SC-E2E-005** | **2026-07-17** | macOS + Docker FastAPI + 호스트 Ollama(bge-m3) + ChromaDB 볼륨 마운트 | **PASS** | kb | `answer_convenience_question()` 3종 쿼리 검증 완료 (복지 전화번호·시각장애인 혜택 적중, 동사무소 데이터 부재 시 환각 없이 "정보 없음" 응답). TC-SMOKE-006과 쌍을 이룸 |
