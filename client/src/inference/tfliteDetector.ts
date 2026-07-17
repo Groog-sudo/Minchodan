@@ -67,6 +67,8 @@ export class TFLiteDetector implements LocalDetector {
   segLoaded = false;
   detLoaded = false;
   detShapeLog = "";
+  // TFLite는 항상 정규화 Float32Array 텐서를 입력으로 요구한다.
+  readonly requiresFloat32 = true;
 
   private static detRawLogged = false;
   private static segRawLogged = false;
