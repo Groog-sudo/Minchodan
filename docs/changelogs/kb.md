@@ -2590,7 +2590,7 @@
 
 ### 2026-07-17 | 1단계 | console_live_feed_smoothness
 
-- **커밋**: `(커밋 시 해시 기록)`
+- **커밋**: `4912835`
 - **변경 내용**:
   - Vite `/navigation` WebSocket 프록시(`ws: true`) 추가 - 지도 iframe `navigation/ws` 연결 실패 해소.
   - 콘솔 `useLiveFeed` Strict Mode 안전 재연결, Vite `/ws` 프록시 경로, rAF 최신 프레임만 렌더, 매 프레임 console.log 제거.
