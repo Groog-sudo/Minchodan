@@ -493,6 +493,7 @@ export function CameraView() {
     status,
     send,
     sendBinary,
+    sendDetectionFrame,
     lastMessage,
     navRoute,
     setSttInteractionActive,
@@ -514,14 +515,21 @@ export function CameraView() {
     startCapture,
     stopCapture,
     setCapturePaused,
+    setRequiresFloat32,
     requestCameraPermission,
     reportInferenceLatency,
     useStreamCapture,
     frameProcessor,
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
-  const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame } =
+  const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, requiresFloat32, detectFrame } =
     useOnDeviceDetection();
   const { requestLocationPermission, startWatching, stopWatching } = useLocation();
+
+  // 로컬 추론 엔진의 입력 계약을 캡처 계층에 전달 (2026-07-17, P0).
+  // CoreML 정상 모드(requiresFloat32=false)면 JS JPEG 디코딩 + Float32Array 할당을 건너뛴다.
+  useEffect(() => {
+    setRequiresFloat32(requiresFloat32);
+  }, [requiresFloat32, setRequiresFloat32]);
   // STT 음성 명령: 단말은 마이크 캡처만 담당, 인식은 서버(stt_audio 핸들러)가 수행.
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
   // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
@@ -810,6 +818,7 @@ export function CameraView() {
   const wsStatusRef = useRef(status);
   const sendRef = useRef(send);
   const sendBinaryRef = useRef(sendBinary);
+  const sendDetectionFrameRef = useRef(sendDetectionFrame);
   const setLastDetectRef = useRef(setLastDetect);
   const setPreviewSrcRef = useRef(setPreviewSrc);
   const setDetectionsRef = useRef(setDetections);
@@ -822,6 +831,7 @@ export function CameraView() {
   useEffect(() => { wsStatusRef.current = status; }, [status]);
   useEffect(() => { sendRef.current = send; }, [send]);
   useEffect(() => { sendBinaryRef.current = sendBinary; }, [sendBinary]);
+  useEffect(() => { sendDetectionFrameRef.current = sendDetectionFrame; }, [sendDetectionFrame]);
   useEffect(() => { confThresholdRef.current = confThreshold; }, [confThreshold]);
   useEffect(() => { reportInferenceLatencyRef.current = reportInferenceLatency; }, [reportInferenceLatency]);
 
@@ -882,20 +892,26 @@ export function CameraView() {
     // raw JPEG 바이트가 있으면(실기기) base64를 경유하지 않고 메타데이터(JSON) + 바이너리
     // 프레임 2개를 순차 전송한다. 단일 WS 연결에서 프레임 순서는 보장되므로 서버는
     // "transport: binary" 메타 수신 직후 오는 바이너리 프레임을 해당 이벤트로 매칭한다.
-    if (frame.jpegBytes && sendRef.current && sendBinaryRef.current) {
-      sendRef.current({
-        type: "detection",
-        payload: {
-          event_id: eventId,
-          device_id: DEVICE_ID,
-          frame_id: now,
-          stream: frameStream,
-          transport: "binary",
-          is_outdoor: isOutdoorBySceneRef.current,
-        }
-      });
-      sendBinaryRef.current(frame.jpegBytes);
-      lastFrameSentTsRef.current = now;
+    // 2026-07-17 (P0): sendDetectionFrame으로 ACK 기반 in-flight 제한을 적용한다 -
+    // 메타와 binary를 한 쌍으로 전송/드롭해 서버 pending_binary_meta 매칭 오류를 막는다.
+    if (frame.jpegBytes && sendDetectionFrameRef.current) {
+      const sent = sendDetectionFrameRef.current(
+        {
+          type: "detection",
+          payload: {
+            event_id: eventId,
+            device_id: DEVICE_ID,
+            frame_id: now,
+            stream: frameStream,
+            transport: "binary",
+            is_outdoor: isOutdoorBySceneRef.current,
+          },
+        },
+        frame.jpegBytes,
+      );
+      if (sent) {
+        lastFrameSentTsRef.current = now;
+      }
     } else if (frame.base64 && sendRef.current) {
       // 폴백(Mock 등 jpegBytes 미지원 경로): 기존 base64 방식 유지
       sendRef.current({

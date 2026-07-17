@@ -2669,3 +2669,13 @@
 - **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `docs/changelogs/kb.md`, `.env.example`
 - **검증 결과**: changelog 충돌 해소 후 merge 커밋.
 - **비고**: 팀원 실기기 IP가 다르면 Metro/`EXPO_PUBLIC_*`만 로컬에서 맞추면 된다.
+
+---
+
+### 2026-07-17 | 1단계 | event_frame_buffering_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 이벤트 프레임 미디어 API 버퍼링 분석 가이드 P0/A1-A5 + P1/B3 구현: (A1) iOS CoreML 정상 모드에서 JS JPEG->float32 변환 우회 via requiresFloat32 계약, (A2) 단말 ACK 기반 in-flight 프레임 제한(MAX_IN_FLIGHT_FRAMES, 메타+binary pair 드롭), (A3) 서버 ACK를 콘솔 중계보다 먼저 처리(binary/base64 양 경로), (A4) 콘솔 송신 latest-only 큐(maxsize=1) + per-connection worker 분리로 느린 콘솔 역압력 차단, (A5) 콘솔 relay 3-5fps 쓰로틀, (B3) 공유 httpx.AsyncClient 연결 풀(lifespan 생성/종료, 방어적 폴백). main.py contextlib.suppress -> suppress import 정정.
+- **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/inference/localDetector.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/inference/tfliteDetector.ts`, `server/api/session_manager.py`, `server/api/ws_router.py`, `server/main.py`, `server/services/remote_storage_client.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

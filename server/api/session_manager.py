@@ -3,9 +3,11 @@ WebSocket 세션 관리자.
 활성 WebSocket 연결을 추적하고 관리하는 싱글턴 클래스.
 """
 
+import asyncio
 import contextlib
 import logging
 import sys
+from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
@@ -17,12 +19,28 @@ if sys.stdout.encoding != "utf-8":
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class _ConsoleSession:
+    # 💡 [면접 대비 주석] 콘솔 연결별 송신 세션.
+    # 느린 콘솔 하나가 send 버퍼가 찰 때까지 await 블록되면, 기존 순차 루프 구조에서는
+    # 다음 단말 ACK 수신·다른 콘솔 중계까지 줄줄이 밀리는 글로벌 직렬화 지점이 된다.
+    # 이를 분리하기 위해 (1) 콘솔마다 전용 송신 worker 코루틴, (2) maxsize=1 latest-only 큐를 둔다.
+    # 큐가 꽉 찬 상태에서 새 프레임이 오면 대기 중인 이전 프레임을 버리고 최신으로 교체한다.
+    # 실시간 모니터링에서는 "모든 프레임 처리"보다 "최신 프레임 우선"이 안전 기준에 부합한다.
+    ws: WebSocket
+    queue: asyncio.Queue[tuple[str, bytes | dict]] = field(
+        default_factory=lambda: asyncio.Queue(maxsize=1)
+    )
+    worker: asyncio.Task | None = None
+
+
 class SessionManager:
     """활성 WebSocket 연결을 추적하고 관리하는 싱글턴 클래스."""
 
     def __init__(self) -> None:
         self.active_connections: dict[str, WebSocket] = {}
         self.console_connections: set[WebSocket] = set()
+        self._console_sessions: dict[WebSocket, _ConsoleSession] = {}
 
     async def connect(self, device_id: str, websocket: WebSocket) -> None:
         """새 연결 수락 및 등록.
@@ -45,48 +63,92 @@ class SessionManager:
         )
 
     async def connect_console(self, websocket: WebSocket) -> None:
-        """새 관제 콘솔 연결 수락 및 등록."""
+        """새 관제 콘솔 연결 수락 및 등록.
+
+        연결별 전용 송신 worker를 함께 띄운다(2026-07-17, 역압력 분리).
+        """
         await websocket.accept()
         self.console_connections.add(websocket)
+        session = _ConsoleSession(ws=websocket)
+        session.worker = asyncio.create_task(
+            self._console_sender_loop(session),
+            name=f"console-sender-{id(websocket)}",
+        )
+        self._console_sessions[websocket] = session
         logger.info(f"[Session] 콘솔 연결됨. 현재 콘솔 수: {len(self.console_connections)}")
 
     def disconnect_console(self, websocket: WebSocket) -> None:
-        """관제 콘솔 연결 해제 및 등록 삭제."""
+        """관제 콘솔 연결 해제 및 등록 삭제. 송신 worker도 함께 취소한다."""
         if websocket in self.console_connections:
             self.console_connections.remove(websocket)
-            logger.info(f"[Session] 콘솔 해제됨. 남은 콘솔 수: {len(self.console_connections)}")
+        session = self._console_sessions.pop(websocket, None)
+        if session is not None and session.worker is not None:
+            session.worker.cancel()
+        logger.info(f"[Session] 콘솔 해제됨. 남은 콘솔 수: {len(self.console_connections)}")
+
+    async def _console_sender_loop(self, session: _ConsoleSession) -> None:
+        """콘솔 전용 송신 worker. latest-only 큐에서 꺼내 전송.
+
+        이 코루틴이 콘솔별로 독립 실행되므로, 한 콘솔의 send 지연이
+        다른 콘솔이나 단말 수신 루프로 전파되지 않는다.
+        """
+        ws = session.ws
+        try:
+            while True:
+                kind, payload = await session.queue.get()
+                try:
+                    if ws.application_state != WebSocketState.CONNECTED:
+                        break
+                    if kind == "bytes":
+                        await ws.send_bytes(payload)
+                    else:
+                        await ws.send_json(payload)
+                except Exception as e:
+                    logger.error(f"[Session] 콘솔 송신 예외: {e}")
+                    self.disconnect_console(ws)
+                    break
+        except asyncio.CancelledError:
+            raise
+
+    def _enqueue_console(self, kind: str, data: bytes | dict) -> None:
+        """모든 콘솔 큐에 latest-only 인큐.
+
+        큐가 꽉 찬 경우 대기 중이던 이전 프레임을 버리고 최신으로 교체한다.
+        인큐 자체는 논블로킹이므로 호출부(단말 수신 루프 등)를 블록하지 않는다.
+        """
+        stale_consoles: list[WebSocket] = []
+        for ws in list(self.console_connections):
+            if ws.application_state != WebSocketState.CONNECTED:
+                stale_consoles.append(ws)
+                continue
+            session = self._console_sessions.get(ws)
+            if session is None:
+                continue
+            try:
+                session.queue.put_nowait((kind, data))
+            except asyncio.QueueFull:
+                # latest-only: 대기 중이던 이전 프레임 폐기 후 최신으로 교체
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    session.queue.get_nowait()
+                with contextlib.suppress(asyncio.QueueFull):
+                    session.queue.put_nowait((kind, data))
+        for ws in stale_consoles:
+            self.disconnect_console(ws)
 
     async def broadcast_to_consoles(self, data: bytes) -> None:
-        """모든 활성 관제 콘솔 웹소켓에 raw bytes (이미지 프레임) 전송."""
-        stale_consoles = []
-        for ws in list(self.console_connections):
-            if ws.application_state == WebSocketState.CONNECTED:
-                try:
-                    await ws.send_bytes(data)
-                except Exception as e:
-                    logger.error(f"[Session] 콘솔 바이너리 송신 예외: {e}")
-                    stale_consoles.append(ws)
-            else:
-                stale_consoles.append(ws)
+        """모든 활성 관제 콘솔 웹소켓에 raw bytes (이미지 프레임) 전송.
 
-        for ws in stale_consoles:
-            self.disconnect_console(ws)
+        2026-07-17: 직렬 await 대신 콘솔별 latest-only 큐에 인큐한다.
+        실시간성 복구(P0) - 느린 콘솔이 단말 ACK·다른 콘솔 중계를 지연시키지 않는다.
+        """
+        self._enqueue_console("bytes", data)
 
     async def broadcast_json_to_consoles(self, data: dict) -> None:
-        """모든 활성 관제 콘솔 웹소켓에 JSON 데이터(BBox 등) 전송."""
-        stale_consoles = []
-        for ws in list(self.console_connections):
-            if ws.application_state == WebSocketState.CONNECTED:
-                try:
-                    await ws.send_json(data)
-                except Exception as e:
-                    logger.error(f"[Session] 콘솔 JSON 송신 예외: {e}")
-                    stale_consoles.append(ws)
-            else:
-                stale_consoles.append(ws)
+        """모든 활성 관제 콘솔 웹소켓에 JSON 데이터(BBox 등) 전송.
 
-        for ws in stale_consoles:
-            self.disconnect_console(ws)
+        2026-07-17: 직렬 await 대신 콘솔별 latest-only 큐에 인큐한다.
+        """
+        self._enqueue_console("json", data)
 
     def disconnect(self, device_id: str, websocket: WebSocket | None = None) -> None:
         """연결 해제 및 등록 삭제."""
