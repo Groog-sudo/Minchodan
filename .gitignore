@@ -329,6 +329,9 @@ yolov8n.pt
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+# .antigravity/ 로컬 아티팩트는 ignore하되, rules.md(workspace rules, 팀 공유)는 추적.
+.antigravity/*
+!.antigravity/rules.md
 scripts/agent_tasks/
 scripts/launch_agents.sh
 

@@ -2477,3 +2477,39 @@
   - STT dial_action 전화 연결 복원(서버 번호 해석·WS·Android ACTION_CALL·iOS Siri Shortcuts MinchodanDial·단축어 설치 스크립트). api_spec v0.4.25. Docker pytest dial 8 passed.
 - **관련 파일**: `client/android/app/src/main/AndroidManifest.xml`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/ios/Minchodan/Info.plist`, `client/ios/Minchodan/PrivacyInfo.xcprivacy`, `client/ios/Podfile.lock`, `client/src/hooks/useWebSocket.ts`, `client/src/types/detection.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_ws_router_stt.py`, `client/android/app/src/main/java/com/minchodan/app/PhoneDialBridgeModule.kt`, `client/assets/shortcuts/`, `client/ios/MinchodanDialIntent.swift`, `client/ios/MinchodanSiriDialer.swift`, `client/ios/PhoneDialBridge.mm`, `client/ios/PhoneDialBridge.swift`, `client/src/services/phoneDialBridge.ts`, `scripts/create_minchodan_dial_shortcut.py`, `scripts/install_minchodan_dial_shortcut_ios.sh`, `server/rag/convenience_dial_resolver.py`, `server/stt/dial_resolver.py`, `server/stt/phone_utils.py`, `tests/test_convenience_dial_resolver.py`, `tests/test_dial_resolver.py`, `tests/test_phone_utils.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 3·6단계 | MID_RISK Option A 정합 (파이프라인-L1 SSOT)
+
+- **변경 내용**:
+  - 2026-07-14 부분 마이그레이션 마감: `detection_pipeline.py` 객체 `MID_RISK_CLASSES`를 L1과 동일한 공집합으로 정렬.
+  - `HEAD_LEVEL_ESCALATION_CLASSES`(18종) 신설 — `head_level_gate` 격상 전용, 인지 mid와 분리.
+  - `tests/test_langgraph.py`(TC-LG-003·TestRiskClassifierConsistency), `tests/test_departure_hysteresis.py` 갱신.
+  - `docs/stage-guides/stage6_orchestration_design.md` §7.1, `docs/design/behavior_and_risk_insight.md`, `.agents`/`.claude` `llm-guidance-orchestrator/SKILL.md` 동기화.
+- **관련 파일**: `server/detection/detection_pipeline.py`, `server/detection/gates/head_level_gate.py`, `tests/test_langgraph.py`, `tests/test_departure_hysteresis.py`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage6_orchestration_design.md`, `docs/design/behavior_and_risk_insight.md`, `.agents/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`
+
+---
+
+### 2026-07-17 | 테스트·문서 | M4/M1/M2 정합성 보완 (conftest·YOLO env·README)
+
+- **변경 내용**:
+  - **M4**: `tests/conftest.py` 신설 — fresh clone pytest 수집 시 DB env 기본값 주입. `test_mcp_integration.py` SSE 2번째 이벤트 `system_metrics` 계약 반영.
+  - **M1**: `YOLO_DET_CONF`(detector, 기본 0.50)와 `YOLO_CONF`(segmentor, 0.35) 분리 명세 — `.env.example`, README, `environment_variables.md`, `architecture.md`, stage3 문서.
+  - **M2**: README/Directory/deployment/android 가이드의 `build_chroma.sh`·stale yaml·`export_tensorrt.py` 정정. `data/{raw,frames,deduped,captions,chroma_db,guide_clips}/.gitkeep` 추가.
+- **관련 파일**: `tests/conftest.py`, `tests/test_mcp_integration.py`, `.env.example`, `README.md`, `docs/Directory_Structure.md`, `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/design/architecture.md`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage3_detection_code_review.md`, `docs/ops/test_specification.md`, `docs/ops/android_*.md`, `data/*/.gitkeep`
+
+---
+
+### 2026-07-17 | 인프라·문서 | multi_agent_rules_unification
+
+- **변경 내용**:
+  - **단일 진실 원천 아키텍처 도입**: 규칙은 `AGENTS.md`에서만 편집하고 각 에이전트 진입점은 얇은 포인터/symlink/요약본으로 통합. Codex·ZCode·opencode·Grok(정본 직접), Claude Code(`CLAUDE.md`→`@AGENTS.md` thin pointer), Cursor(`.cursor/rules/*.mdc` 간접 참조), Antigravity(`.antigravity/rules.md` 요약본 + `GEMINI.md` symlink) 모두 세션 시작 시 자동 로드.
+  - **AGENTS.md v0.3.6 승격**: CLAUDE.md(v0.3.5) 고유 스택 전환 근거 흡수(Supertonic 3 교체 사유, faster-whisper-small 전환 사유, Frame Processor 전환 사유, `AudioSessionBridge.swift` 경로, NavMapPanel 좌표 표시). §10 다중 에이전트 진입점 섹션 신설.
+  - **Antigravity 12,000자 캡 대응**: AGENTS.md 정본(14,864자)이 캡 초과 → `.antigravity/rules.md` 요약본(6,080자) 별도 생성. 핵심 섹션 7개(이중 경로, 반사 LLM 금지, 금지 행위, 이모지, main push, changelog, Router) 포함.
+  - **CLAUDE.md 단일 소스 통합**: 14KB 별개 파일(AGENTS.md와 드리프트) → `@AGENTS.md` import thin pointer로 교체.
+  - **pre-commit 정합성 검증 스크립트**: `scripts/validate_agent_rules.py` 신설 — CLAUDE.md 포인터, GEMINI.md symlink, `.antigravity/rules.md` 캡·핵심 섹션, `.cursor` 참조, 스킬 미러(`.agents/skills/`↔`.claude/skills/`), `@SKILLS.md` import 6종 검증. 6/6 통과.
+  - 팀 온보딩 가이드 `docs/dev-guides/multi_agent_setup.md` 신설.
+- **관련 파일**: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.antigravity/rules.md`, `.cursor/rules/00-core-guidelines.mdc`, `.gitignore`, `scripts/validate_agent_rules.py`, `docs/dev-guides/multi_agent_setup.md`
+- **검증 결과**: Ruff check 통과, 이중 경로 검증 통과(gates/ 내 금지 임포트 없음), `validate_agent_rules.py` 6/6 통과, 금지 파일(.env/.pt/.onnx) 미포함.
+- **비고**: `.gemini/`(Gemini CLI용) 제거 — 팀원 환경은 Antigravity IDE/CLI이므로 `.antigravity/` 사용. 커밋 범위는 본 작업 파일만 선별(이미 있던 server/tests/docs 변경은 별도 분리).
