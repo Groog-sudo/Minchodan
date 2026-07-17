@@ -646,3 +646,15 @@
 - **관련 파일**: `server/navigation/index.html`
 - **검증 결과**: 메트로 및 프론트엔드 연동 상태에서 PC 브라우저 GPS 혼선 없이 모바일 기기 주입 좌표만을 지도에 실시간 동기화하여 고정 표시 성공 검증 완료.
 
+---
+
+### 2026-07-17 | 공통 | kb_branch_merge
+
+- **커밋**: `Merge remote-tracking branch 'origin/kb' into dg2`
+- **변경 내용**:
+  - `origin/kb` 브랜치의 최신 기능 커밋들(BGE-M3 임베딩 전환 RAG, 씬 분류 세그멘테이션 파이프라인, 반사 억제 재무장 정책 및 큐 최신성 보장, 지연 관측 모델 등)을 `dg2` 브랜치에 병합.
+  - 병합 과정에서 중복 생성된 `docs/research/field_test_improvement_plan.md` 파일 충돌을 수동 정합 조정(`--theirs` 적용하여 공식 정합성 버전 수용)하여 해결.
+- **관련 파일**: `docs/research/field_test_improvement_plan.md` 외 `origin/kb` 병합 파일들
+- **검증 결과**: 전체 pytest 백엔드 단위 테스트 49건 실행 결과 `48 passed, 1 skipped`로 통과하며 코드 동작 정합성 완벽 검증.
+
+
