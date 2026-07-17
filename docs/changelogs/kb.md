@@ -2634,3 +2634,15 @@
 - **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, (공유분은 dev와 동일)
 - **검증 결과**: FF 후 개인 4파일 복원, rotateDeg/Android float32/MAX_REFLEX=200 확인.
 - **비고**: 공유 코드는 dev와 동기, 실기기 랩 설정만 kb에 잔류.
+
+
+### 2026-07-17 | 인프라 | lab_env_yolo_ollama_align
+
+- **커밋**: `(커밋 후 기록)`
+- **변경 내용**:
+  - 랩 런타임 `.env`(로컬 전용, 커밋 제외): `DETECTOR_TYPE=yolo`, `OLLAMA_BASE_URL`/`COMPOSE_OLLAMA_BASE_URL=http://host.docker.internal:11434`, `TTS_ENGINE=supertonic`.
+  - `.env.example` 탐지 기본값을 `yolo`로 정합(주석에 mock 폴백 안내).
+  - `env.zip`(시크릿 포함)은 커밋하지 않음.
+- **관련 파일**: `.env.example`, (로컬) `.env`
+- **검증 결과**: FastAPI health `detector_type=yolo`, 컨테이너→Ollama 200, `YoloDetector`/`SupertonicTTSService` 로드 확인.
+- **비고**: 앱은 FastAPI 재기동 후 WS 재연결 필요.
