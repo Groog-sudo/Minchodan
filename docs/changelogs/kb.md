@@ -2646,3 +2646,16 @@
 - **관련 파일**: `.env.example`, (로컬) `.env`
 - **검증 결과**: FastAPI health `detector_type=yolo`, 컨테이너→Ollama 200, `YoloDetector`/`SupertonicTTSService` 로드 확인.
 - **비고**: 앱은 FastAPI 재기동 후 WS 재연결 필요.
+
+
+### 2026-07-17 | 클라이언트 | stt_fullscreen_touch_restore
+
+- **커밋**: (푸시 후 해시 기록)
+- **변경 내용**:
+  - STT press-and-hold를 7/10 설계대로 **화면 전체** 투명 레이어로 복원(시각장애인: 아무 곳이나 길게 눌러 말하기).
+  - 7/15 `9cb3548` 운영자 패널 분리 이후 카메라 영역만 STT였던 회귀를 해소.
+  - 운영자 버튼(탐지 시작 등)은 STT **위** absolute `box-none` 오버레이로 분리해, STT 한 번 후 버튼 먹통 문제 방지.
+  - STT 중 `setCapturePaused`로 JPEG/CoreML 콜백 일시 중지, 녹음 시작 락·16kHz warm-prepare로 반응 지연/중첩 AEC 완화.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useSttRecorder.ts`
+- **검증 결과**: 실기기 재빌드 후 터치/버튼 계층 복원 적용. Metro Reload로 JS 반영.
+- **비고**: 개인 iOS 랩 설정(번들 ID/Metro IP)은 본 커밋에 포함하지 않음. 로컬 `HEARTBEAT_TIMEOUT` 상향은 `.env`만(미커밋).

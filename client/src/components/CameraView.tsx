@@ -513,6 +513,7 @@ export function CameraView() {
     currentReflexFps,
     startCapture,
     stopCapture,
+    setCapturePaused,
     requestCameraPermission,
     reportInferenceLatency,
     useStreamCapture,
@@ -525,7 +526,10 @@ export function CameraView() {
   // 2026-07-10: Release 빌드는 console 출력이 안 보여 실기기에서 원인 파악이 불가능했다
   // - 에러 상세를 화면에 직접 표시(sttErrorInfo)해 즉시 읽을 수 있게 한다.
   const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
+  // 누르는 즉시 UI를 활성(빨간)으로 바꿔, 녹음 prepare 지연 동안에도 "버튼이 안 된다"로 오인되지 않게 한다.
+  const [sttHeld, setSttHeld] = useState(false);
   const sttPressActiveRef = useRef(false);
+  const sttPressStartedAtRef = useRef(0);
   const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     status: sttStatus,
@@ -538,17 +542,81 @@ export function CameraView() {
         void hapticEngine.trigger("double");
         setSttErrorInfo(`STT 실패[ws_disconnected]: websocket 상태=${status}`);
         audioEngine.speakFallback("서버 연결이 불안정해 음성 명령을 전송할 수 없습니다.");
+        setCapturePaused(false);
         return;
       }
       void hapticEngine.trigger("short");
       setSttErrorInfo("");
       send({ type: "stt_audio", audio_b64: audioB64 });
+      // 전송 직후 캡처 재개(응답 재생은 setSttInteractionActive가 인지 경로만 뮤트).
+      setCapturePaused(false);
     },
     (reason, detail) => {
       void hapticEngine.trigger("double");
       setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
+      setCapturePaused(false);
     },
   );
+  // STT 누름/녹음 중에는 프레임 전송·온디바이스 추론을 멈춰 버튼 반응을 지킨다.
+  const sttBusy = sttHeld || sttStatus !== "idle";
+  const sttBusyRef = useRef(false);
+  useEffect(() => {
+    sttBusyRef.current = sttBusy;
+  }, [sttBusy]);
+
+  const onSttPressIn = useCallback(() => {
+    // ScrollView/JS 지연으로 pressOut이 유실되면 플래그가 남아 다음 입력이 무시된다.
+    // 800ms 이내 재발화만 디바운스하고, 그 이상은 stuck recovery.
+    if (sttPressActiveRef.current) {
+      const heldFor = Date.now() - sttPressStartedAtRef.current;
+      if (heldFor < 800) return;
+      console.warn(`[STT] stuck press recovery (${heldFor}ms)`);
+      sttPressActiveRef.current = false;
+    }
+    sttPressActiveRef.current = true;
+    sttPressStartedAtRef.current = Date.now();
+    // setState useEffect보다 먼저 동기 차단해 CoreML/JPEG 디코드를 즉시 멈춘다.
+    sttBusyRef.current = true;
+    setCapturePaused(true);
+    setSttHeld(true);
+    if (delayedSttStartTimerRef.current) {
+      clearTimeout(delayedSttStartTimerRef.current);
+      delayedSttStartTimerRef.current = null;
+    }
+    void hapticEngine.trigger("short");
+    setSttInteractionActive(true);
+    setSttErrorInfo("");
+    if (audioEngine.isGuidePlaying) {
+      audioEngine.stopGuideAudio();
+      delayedSttStartTimerRef.current = setTimeout(() => {
+        delayedSttStartTimerRef.current = null;
+        if (sttPressActiveRef.current) {
+          void startSttRecording();
+        }
+      }, 80);
+    } else {
+      void startSttRecording();
+    }
+  }, [setSttInteractionActive, startSttRecording, setCapturePaused]);
+
+  const onSttPressOut = useCallback(() => {
+    if (!sttPressActiveRef.current) return;
+    sttPressActiveRef.current = false;
+    setSttHeld(false);
+    if (delayedSttStartTimerRef.current) {
+      clearTimeout(delayedSttStartTimerRef.current);
+      delayedSttStartTimerRef.current = null;
+    }
+    // 인지 가이드 뮤트는 STT 응답 수신 시 useWebSocket이 연장. 여기서 즉시 false로
+    // 끄지 않는다(응답 전 인지 TTS가 끼어드는 문제 방지).
+    void (async () => {
+      try {
+        await stopSttRecording();
+      } finally {
+        setCapturePaused(false);
+      }
+    })();
+  }, [stopSttRecording, setCapturePaused]);
 
   // 화면을 누르는 press-and-hold 도중 마이크 권한 다이얼로그가 뜨면 터치가 취소되어
   // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
@@ -801,6 +869,11 @@ export function CameraView() {
     // 프레임 로그를 조용히 버렸다. device_id와 stream을 포함해 충돌을 제거한다.
     const frameStream = frame.stream ?? "reflex";
     const eventId = `event-${DEVICE_ID}-${frameStream}-${now}`;
+
+    // STT press-and-hold 구간: 프레임/추론을 건너뛰어 오디오 세션·하트비트를 우선한다.
+    if (sttBusyRef.current) {
+      return;
+    }
 
     // 카메라 렌더링 디버깅을 위한 코드
     // console.log(`[CameraView 디버그] handleFrame 호출됨! jpegBytes: ${!!frame.jpegBytes}, base64: ${!!frame.base64}, sendRef: ${!!sendRef.current}`);
@@ -1188,62 +1261,86 @@ export function CameraView() {
         {detectionEnabled && !depthMode && <ROIOverlay />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
-
-        {/* STT press-and-hold: 카메라 프리뷰(1:1) 위에서만 동작. 하단 운영자 패널 버튼과 터치 충돌 방지. */}
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPressIn={() => {
-            sttPressActiveRef.current = true;
-            if (delayedSttStartTimerRef.current) {
-              clearTimeout(delayedSttStartTimerRef.current);
-              delayedSttStartTimerRef.current = null;
-            }
-            void hapticEngine.trigger("short");
-            setSttInteractionActive(true);
-            if (audioEngine.isGuidePlaying) {
-              audioEngine.stopGuideAudio();
-              delayedSttStartTimerRef.current = setTimeout(() => {
-                delayedSttStartTimerRef.current = null;
-                if (sttPressActiveRef.current) {
-                  void startSttRecording();
-                }
-              }, 150);
-            } else {
-              void startSttRecording();
-            }
-          }}
-          onPressOut={() => {
-            sttPressActiveRef.current = false;
-            if (delayedSttStartTimerRef.current) {
-              clearTimeout(delayedSttStartTimerRef.current);
-              delayedSttStartTimerRef.current = null;
-              setSttInteractionActive(false);
-            }
-            void stopSttRecording();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}. 카메라 화면을 누르고 있는 동안 음성 명령을 말하세요.`}
-          accessibilityHint="손을 떼면 서버로 전송되어 음성 명령을 인식합니다."
-        />
       </View>
 
-      {/* 운영자/모니터링 UI: 카메라 시야(1:1) 아래 여백으로 분리 */}
-      <ScrollView
-        style={styles.operatorPanel}
-        contentContainerStyle={styles.operatorPanelContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <ConnectionStatus status={status} />
+      {/* 2026-07-10 설계: 화면 전체가 STT press-and-hold.
+          운영자 버튼은 이 레이어 *위*에 absolute + box-none으로 올린다.
+          (ScrollView box-none 안에 버튼을 두면 STT 제스처 후 버튼이 먹통이 됨 - 2026-07-17 실측) */}
+      <Pressable
+        style={[StyleSheet.absoluteFill, styles.sttFullScreenHitLayer]}
+        onPressIn={onSttPressIn}
+        onPressOut={onSttPressOut}
+        accessibilityRole="button"
+        accessibilityLabel={`연결: ${status}, 캡처: ${isCapturing ? "활성" : "비활성"}. 화면을 누르고 있는 동안 음성 명령을 말하세요.`}
+        accessibilityHint="손을 떼면 서버로 전송되어 음성 명령을 인식합니다."
+      />
 
-        <View style={styles.operatorCard} pointerEvents="none">
-          {debugInfo.map((line, i) => (
-            <Text key={i} style={styles.debugText}>{line}</Text>
-          ))}
-        </View>
+      {/* 표시 전용 패널: 터치 통과 → 아래 STT 레이어가 수신 */}
+      <View style={styles.operatorPanel} pointerEvents="none">
+        <ScrollView
+          style={StyleSheet.absoluteFill}
+          contentContainerStyle={styles.operatorPanelContent}
+          scrollEnabled={false}
+        >
+          <ConnectionStatus status={status} />
+          <View style={styles.operatorCard}>
+            {debugInfo.map((line, i) => (
+              <Text key={i} style={styles.debugText}>{line}</Text>
+            ))}
+          </View>
+          <View style={styles.detectionListCard}>
+            <Text style={styles.detectionListTitle}>[실시간 감지]</Text>
+            <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
+          </View>
+          <View style={[styles.sttButton, sttBusy && styles.sttButtonActive]}>
+            <Text style={[styles.sttButtonText, sttBusy && styles.sttButtonTextActive]}>
+              {sttStatus === "recording"
+                ? "듣는 중..."
+                : sttStatus === "sending"
+                  ? "전송 중..."
+                  : sttHeld
+                    ? "준비 중..."
+                    : "화면을 누르고 말하기"}
+            </Text>
+            {sttErrorInfo !== "" && (
+              <Text style={styles.sttErrorText}>{sttErrorInfo}</Text>
+            )}
+          </View>
+          {depthMode && (
+            <View style={styles.operatorCard}>
+              <Text style={styles.depthTitle}>
+                LiDAR 실거리 (동기화·보정: {depthResult?.calibrated ? "적용" : "대기"}, 정확도:{" "}
+                {depthResult?.accuracy ?? "-"}, 품질: {depthResult?.quality ?? "-"})
+              </Text>
+              {depthError ? (
+                <Text style={styles.depthError}>{depthError}</Text>
+              ) : (
+                DEPTH_PROBE_POINTS.map((point, i) => {
+                  const sample = depthResult?.samples?.[i];
+                  return (
+                    <Text key={point.label} style={styles.depthRow}>
+                      {point.label}:{" "}
+                      {sample && sample.meters != null
+                        ? `${sample.meters.toFixed(2)} m ` +
+                        `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
+                        `${sample.sampleCount ?? 0})`
+                        : "측정 불가"}
+                    </Text>
+                  );
+                })
+              )}
+            </View>
+          )}
+        </ScrollView>
+      </View>
 
-        <View style={styles.confThresholdRow}>
-          <Text style={styles.confThresholdLabel}>신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%</Text>
-          <View style={styles.confThresholdButtons}>
+      {/* 운영자 버튼 오버레이: STT보다 위(zIndex). 빈 영역은 box-none으로 STT에 통과. */}
+      <View style={styles.controlsOverlay} pointerEvents="box-none">
+        <View style={styles.confThresholdRow} pointerEvents="box-none">
+          <Text style={styles.confThresholdLabel} pointerEvents="none">
+            신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%
+          </Text>
+          <View style={styles.confThresholdButtons} pointerEvents="box-none">
             <Pressable
               style={styles.confThresholdButton}
               onPress={() => setConfThreshold(v => Math.max(0.05, Math.round((v - 0.05) * 100) / 100))}
@@ -1259,71 +1356,30 @@ export function CameraView() {
           </View>
         </View>
 
-        <View style={styles.detectionListCard} pointerEvents="none">
-          <Text style={styles.detectionListTitle}>[실시간 감지]</Text>
-          <Text style={styles.detectionListText}>{detectedClassesStr}</Text>
-        </View>
-
-        <View
-          style={[styles.sttButton, sttStatus !== "idle" && styles.sttButtonActive]}
-          pointerEvents="none"
-        >
-          <Text style={[styles.sttButtonText, sttStatus !== "idle" && styles.sttButtonTextActive]}>
-            {sttStatus === "recording" ? "듣는 중..." : sttStatus === "sending" ? "전송 중..." : "카메라 화면을 누르고 말하기"}
-          </Text>
-          {sttErrorInfo !== "" && (
-            <Text style={styles.sttErrorText}>{sttErrorInfo}</Text>
-          )}
-        </View>
-
-        {depthMode && (
-          <View style={styles.operatorCard} pointerEvents="none">
-            <Text style={styles.depthTitle}>
-              LiDAR 실거리 (동기화·보정: {depthResult?.calibrated ? "적용" : "대기"}, 정확도:{" "}
-              {depthResult?.accuracy ?? "-"}, 품질: {depthResult?.quality ?? "-"})
-            </Text>
-            {depthError ? (
-              <Text style={styles.depthError}>{depthError}</Text>
-            ) : (
-              DEPTH_PROBE_POINTS.map((point, i) => {
-                const sample = depthResult?.samples?.[i];
-                return (
-                  <Text key={point.label} style={styles.depthRow}>
-                    {point.label}:{" "}
-                    {sample && sample.meters != null
-                      ? `${sample.meters.toFixed(2)} m ` +
-                      `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
-                      `${sample.sampleCount ?? 0})`
-                      : "측정 불가"}
-                  </Text>
-                );
-              })
-            )}
+        {navRoute ? (
+          <View style={styles.mapToggleWrap} pointerEvents="box-none">
+            <Pressable
+              style={styles.mapToggleButton}
+              onPress={() => setMapVisible((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+            >
+              <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+            </Pressable>
           </View>
-        )}
+        ) : null}
 
-        {navRoute && (
-          <Pressable
-            style={styles.mapToggleButton}
-            onPress={() => setMapVisible((v) => !v)}
-            accessibilityRole="button"
-            accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
-          >
-            <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
-          </Pressable>
-        )}
-
-        {mapVisible && navRoute && (
-          <View style={styles.navMapPanel}>
+        {mapVisible && navRoute ? (
+          <View style={styles.navMapWrap}>
             <NavMapPanel
               appKey={navRoute.appKey}
               waypoints={navRoute.waypoints}
               current={mapPos}
             />
           </View>
-        )}
+        ) : null}
 
-        <View style={styles.controlRow}>
+        <View style={styles.controlRowDock} pointerEvents="box-none">
           <Pressable
             style={[
               styles.mapToggleButton,
@@ -1384,8 +1440,12 @@ export function CameraView() {
           ) : null}
         </View>
 
-        {__DEV__ && <DebugTriggerPanel />}
-      </ScrollView>
+        {__DEV__ ? (
+          <View style={styles.devPanelWrap} pointerEvents="box-none">
+            <DebugTriggerPanel />
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -1682,8 +1742,35 @@ const styles = StyleSheet.create({
   operatorPanelContent: {
     paddingHorizontal: 12,
     paddingTop: 10,
-    paddingBottom: 24,
+    paddingBottom: 120,
     gap: 8,
+  },
+  controlsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    justifyContent: "flex-end",
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  controlRowDock: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  mapToggleWrap: {
+    alignSelf: "flex-end",
+  },
+  navMapWrap: {
+    height: 180,
+    borderRadius: 8,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: COLOR_BORDER_TACTICAL,
+  },
+  devPanelWrap: {
+    alignSelf: "stretch",
   },
   operatorCard: {
     padding: 8,
@@ -1832,6 +1919,11 @@ const styles = StyleSheet.create({
     color: COLOR_TEXT_BASE,
     fontSize: 12,
     fontWeight: "600",
+  },
+  sttFullScreenHitLayer: {
+    // iOS에서 완전 투명 View는 네이티브 Camera에 터치가 흡수될 수 있어 최소 알파를 둔다.
+    backgroundColor: "rgba(0,0,0,0.01)",
+    zIndex: 1,
   },
   sttButton: {
     alignSelf: "stretch",
