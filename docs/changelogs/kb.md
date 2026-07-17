@@ -2567,3 +2567,13 @@
   - merge teammates branches (jh, dg2, jy) into dev and fix conflict/test bugs
 - **관련 파일**: 없음
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 2단계 | ios_dev_bundle_metro_host
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS 실기기 개발 서명용 번들 ID(com.minchodan.app.kb.dev) 및 Metro 기본 호스트(LAN) 정합
+- **관련 파일**: `lient/app.json`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
