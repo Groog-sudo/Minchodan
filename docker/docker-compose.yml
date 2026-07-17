@@ -62,8 +62,8 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-    ports:
-      - "${DB_HOST_PORT:-3306}:3306"
+    # ports:
+    #   - "${DB_HOST_PORT:-3306}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
       - ../server/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
