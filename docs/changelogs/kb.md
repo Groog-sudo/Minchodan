@@ -2627,7 +2627,7 @@
 
 ### 2026-07-17 | 통합 | sync_dev_into_kb_keep_lab
 
-- **커밋**: `(커밋 후 기록)`
+- **커밋**: `355c014`
 - **변경 내용**:
   - `origin/dev`(`44a56bc`)를 `kb`에 FF 반영 (dg2 Android 패리티·콘솔 회전·changelog 포함).
   - kb 개인 랩 설정 유지: 번들 ID `com.minchodan.app.kb.dev`, Metro `172.16.101.220:8081`.
