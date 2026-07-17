@@ -884,3 +884,16 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: Detection Guidance Log의 `파이프라인 텍스트`는 STT 입력 맥락 확인용, `TTS 안내문`은 최종 출력 멘트 확인용으로 역할을 명확히 분리함
+
+---
+
+### 2026-07-17 | 콘솔 UI | 회원 등록 장애등급 범위 검증(1~6급) 및 경고문 강화
+
+- **커밋**: `fix(console): 회원 등록 장애등급 범위 경고 추가`
+- **변경 내용**:
+  - 회원 등록 폼의 `장애 정도` 입력 검증에서 `장애등급 N급` 형식을 먼저 확인한 뒤, 숫자 등급을 파싱해 **1~6급 범위만 허용**하도록 강화함
+  - 형식은 맞지만 범위가 벗어난 입력(예: `장애등급 7급`)에 대해 `올바르지 않은 장애등급입니다. 최대 장애 등급은 6급입니다.` 경고문이 즉시 표시되도록 반영함
+  - 범위 내 입력(1~6급)만 정상 제출 가능하도록 폼 검증 흐름을 유지함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 기존 형식 오류 메시지(`잘못된 입력 정보입니다. 예: 장애등급 1급`)와 범위 오류 메시지를 분리해 운영자가 원인을 즉시 구분할 수 있도록 개선함
