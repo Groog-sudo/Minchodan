@@ -4,8 +4,7 @@ import { resolveApiBaseUrl } from "../config/network";
 
 const API_BASE_URL =
   resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
-// const WS_LIVE_FEED_URL = API_BASE_URL.replace(/^http/, "ws") + "/ws/console/live-feed";
-const WS_LIVE_FEED_URL = "ws://localhost:8000/ws/console/live-feed";
+const WS_LIVE_FEED_URL = API_BASE_URL.replace(/^http/, "ws") + "/ws/console/live-feed";
 const MAX_LIVE_LATENCY_EVENTS = 30;
 const MAX_LIVE_LOG_ROWS = 50;
 
