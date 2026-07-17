@@ -2638,7 +2638,7 @@
 
 ### 2026-07-17 | 인프라 | lab_env_yolo_ollama_align
 
-- **커밋**: `(커밋 후 기록)`
+- **커밋**: `5428e43`
 - **변경 내용**:
   - 랩 런타임 `.env`(로컬 전용, 커밋 제외): `DETECTOR_TYPE=yolo`, `OLLAMA_BASE_URL`/`COMPOSE_OLLAMA_BASE_URL=http://host.docker.internal:11434`, `TTS_ENGINE=supertonic`.
   - `.env.example` 탐지 기본값을 `yolo`로 정합(주석에 mock 폴백 안내).
