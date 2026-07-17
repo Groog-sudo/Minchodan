@@ -64,7 +64,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - **Segmentation** 신뢰도 임계값 (`YoloSegmentor`) | [`stage3_detection_design.md`](../stage-guides/stage3_detection_design.md) 5절 |
 | **`YOLO_DET_CONF`** | float | 선택 | `0.50` | Yolo 26N - **Object Detection** 신뢰도 임계값 (`YoloDetector`). `YOLO_CONF`와 별도 | `server/detection/config.py` |
-| **`DETECTOR_TYPE`** | string | 선택 | `mock` | **2026-07-09 정정**: `server/detection/config.py`가 실제로 읽는다. `mock`이면 노트북/데모 환경에서 `MockDetector`/`MockSegmentor`를 강제 사용하고, `yolo`이면 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 로드 시도를 수행한다. 미지원 값은 안전 폴백으로 `mock` 처리 | `server/detection/config.py` |
+| **`DETECTOR_TYPE`** | string | 선택 | `yolo` | **2026-07-17 정정**: 실측 랩 기본은 `yolo`(가중치 로드). `mock`이면 노트북/데모·CI에서 `MockDetector`/`MockSegmentor`를 강제 사용한다. 미지원 값은 안전 폴백으로 `mock` 처리. `.env.example`과 동일 | `server/detection/config.py` |
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
