@@ -2679,3 +2679,15 @@
   - 이벤트 프레임 미디어 API 버퍼링 분석 가이드 P0/A1-A5 + P1/B3 구현: (A1) iOS CoreML 정상 모드에서 JS JPEG->float32 변환 우회 via requiresFloat32 계약, (A2) 단말 ACK 기반 in-flight 프레임 제한(MAX_IN_FLIGHT_FRAMES, 메타+binary pair 드롭), (A3) 서버 ACK를 콘솔 중계보다 먼저 처리(binary/base64 양 경로), (A4) 콘솔 송신 latest-only 큐(maxsize=1) + per-connection worker 분리로 느린 콘솔 역압력 차단, (A5) 콘솔 relay 3-5fps 쓰로틀, (B3) 공유 httpx.AsyncClient 연결 풀(lifespan 생성/종료, 방어적 폴백). main.py contextlib.suppress -> suppress import 정정.
 - **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/inference/localDetector.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/inference/tfliteDetector.ts`, `server/api/session_manager.py`, `server/api/ws_router.py`, `server/main.py`, `server/services/remote_storage_client.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 통합 | merge_jh_into_kb
+
+- **커밋**: `2e5c289`
+- **변경 내용**:
+  - `jh` tip을 `kb`에 병합해 생활지원 RAG BGE-M3 전환과 콘솔 대시보드 위젯 MVP 복구를 kb 작업선에 반영한다.
+  - 포함: `CONVENIENCE_EMBEDDING_PROVIDER/MODEL`(bge-m3) 환경변수, `scripts/build_convenience_db.py` 임베딩 파라미터, `server/rag/convenience_rag.py`, `console/src/pages/DashboardPage.tsx` 위젯 추가/삭제·카드 헤더 정렬, `console/src/styles.css`.
+- **관련 파일**: `.env.example`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`, `scripts/build_convenience_db.py`, `server/rag/convenience_rag.py`
+- **검증 결과**: 병합 시뮬레이션에서 `.env.example` 자동 병합 성공(양쪽 변경 위치 상이), 충돌 0건, 환경변수 문서(`docs/ops/environment_variables.md`)에 `CONVENIENCE_EMBEDDING_*` 이미 기록됨 확인.
+- **비고**: kb(버퍼링 수정·ws/camera)와 jh(RAG·콘솔)는 독립 영역으로 기능적 간섭 없음. 이중 경로 분리 원칙 유지.
