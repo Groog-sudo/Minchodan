@@ -24,6 +24,7 @@ Commands:
   logs     latest 세션 로그 tail (fastapi 기본)
   ios      Expo Metro + iOS 실기기 빌드/설치 (LAN WS URL 주입)
   health   /health 및 Redis/MariaDB/Ollama 점검
+  progress Docker 빌드·기동 진행률 요약 (로그 파싱)
 
 환경 변수 (선택):
   MINCHODAN_LAB_NETWORK_MODE   lan | tailscale (기본: lan)
@@ -208,6 +209,92 @@ cmd_logs() {
   esac
 }
 
+cmd_progress() {
+  local dir log ws_port health_code
+  dir="$(session_dir 2>/dev/null || echo "$SESSION_ROOT")"
+  log="$dir/docker-startup.log"
+  ws_port="$(read_env_val WS_PORT)"
+  ws_port="${ws_port:-8000}"
+  health_code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${ws_port}/health" 2>/dev/null || echo "000")"
+
+  echo "=== Minchodan Docker Build Progress ==="
+  echo "time: $(date '+%Y-%m-%d %H:%M:%S')"
+  echo "session: $dir"
+  echo "health: HTTP $health_code (port $ws_port)"
+  echo
+
+  if pgrep -f "docker compose.*build fastapi" >/dev/null 2>&1; then
+    echo "process: docker compose build fastapi (RUNNING)"
+  elif pgrep -f "dev_ios_lab.sh start" >/dev/null 2>&1; then
+    echo "process: dev_ios_lab start (RUNNING)"
+  else
+    echo "process: build/start script (not detected)"
+  fi
+  echo
+
+  if [[ ! -f "$log" ]]; then
+    echo "log: $log (not found — run: bash scripts/dev_ios_lab.sh start)"
+    return 1
+  fi
+
+  echo "log: $log (updated: $(stat -f '%Sm' "$log" 2>/dev/null || date -r "$log" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown))"
+  echo
+
+  local pipeline_step="unknown"
+  if grep -q "\[4/4\]" "$log" 2>/dev/null; then
+    pipeline_step="[4/4] FastAPI health wait"
+  elif grep -q "\[3/4\]" "$log" 2>/dev/null; then
+    pipeline_step="[3/4] Starting containers"
+  elif grep -q "\[2/4\]" "$log" 2>/dev/null; then
+    pipeline_step="[2/4] Building Docker image"
+  elif grep -q "\[1/4\]" "$log" 2>/dev/null; then
+    pipeline_step="[1/4] Compose config check (or earlier)"
+  fi
+  echo "pipeline: $pipeline_step"
+
+  local dockerfile_step
+  dockerfile_step="$(grep -oE '#[0-9]+ \[[0-9]+/[0-9]+\] RUN' "$log" 2>/dev/null | tail -1 || true)"
+  if [[ -z "$dockerfile_step" ]]; then
+    dockerfile_step="$(grep -oE '#[0-9]+ \[[0-9]+/[0-9]+\]' "$log" 2>/dev/null | tail -1 || true)"
+  fi
+  if [[ -n "$dockerfile_step" ]]; then
+    echo "dockerfile: $dockerfile_step"
+  fi
+
+  local last_done last_dl
+  last_done="$(grep 'Downloading ' "$log" 2>/dev/null | grep -B1 '━━━━' | grep 'Downloading ' | tail -1 | sed 's/^#11 [0-9.]* //' || true)"
+  last_dl="$(grep 'Downloading ' "$log" 2>/dev/null | tail -1 | sed 's/^#11 [0-9.]* //' || true)"
+  if [[ -n "$last_done" ]]; then
+    echo "pip last completed: $last_done"
+  fi
+  if [[ -n "$last_dl" ]]; then
+    echo "pip current/last:   $last_dl"
+  fi
+
+  if grep -q "Successfully installed" "$log" 2>/dev/null; then
+    echo "pip: Successfully installed (done)"
+  elif grep -q "#11 DONE" "$log" 2>/dev/null; then
+    echo "pip: step #11 DONE"
+  fi
+
+  if grep -q "Pygoruut\|phonemize" "$log" 2>/dev/null && ! grep -q "#12 DONE" "$log" 2>/dev/null; then
+    echo "post-pip: pygoruut preload (may run next)"
+  fi
+  if grep -q "Supertonic" "$log" 2>/dev/null; then
+    echo "post-pip: supertonic preload seen in log"
+  fi
+  if grep -q "start complete\|Done!" "$log" 2>/dev/null; then
+    echo "status: START COMPLETE"
+  fi
+
+  echo
+  echo "--- roadmap ---"
+  echo "  [1/4] compose check  ->  [2/4] image build  ->  [3/4] up -d  ->  [4/4] /health"
+  echo "  image: apt -> pip(5/7) -> pygoruut(6/7) -> supertonic(7/7) -> export"
+  echo
+  echo "live tail: tail -f $log"
+}
+
 cmd_health() {
   local ws_port health_code
   ws_port="$(read_env_val WS_PORT)"
@@ -299,6 +386,7 @@ main() {
     logs) cmd_logs "${1:-fastapi}" ;;
     ios) cmd_ios ;;
     health) cmd_health ;;
+    progress) cmd_progress ;;
     ""|-h|--help|help) usage ;;
     *) echo "unknown command: $cmd"; usage; exit 1 ;;
   esac

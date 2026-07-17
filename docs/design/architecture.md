@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.8 (2026-07-16 §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
+> **버전**: v0.4.9 (2026-07-17 jy 병합: §13.3.1 이벤트 프레임 중앙 저장 API 연동 및 STT 사용자 원본 음성 파일 Log 메타데이터 보존 구조 반영 + 이전 v0.4.8: §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -524,17 +524,17 @@ sequenceDiagram
    - **cache_suppression**: `{"suppressed_keys": ["suppress:ref_alert_001"], "ttl_seconds": 45}`
    - **system_error**: `{"error_message": "Ollama connection timeout, hot-swapping to OpenAI", "severity": "warning"}`
 
-### 13.3.1 사후 이력 조회와 이벤트 프레임 보존 (2026-07-12 신설)
+### 13.3.1 사후 이력 조회와 이벤트 프레임·STT 음성 보존 (2026-07-16 갱신)
 
-실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다.
+실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다. STT 경로는 사용자의 원본 음성 파일 경로와 전사 문장을 같은 로그 행에 보존합니다.
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 (`server/services/event_frame_store.py`) |
-| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임만 (JPEG, `data/event_frames/YYYYMMDD/{event_id}.jpg`) |
-| **DB 연결** | `detection_guidance_logs.frame_path` 컬럼에 상대 경로만 기록 (BLOB 미사용) |
-| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO는 `asyncio.to_thread`로 로그 태스크 내부에서만 수행 (반사 <300ms 비협상 원칙 유지) |
-| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지, bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
+| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 및 `/ws/detect` STT 처리부 (`server/services/event_frame_store.py`, `server/services/remote_storage_client.py`) |
+| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임(JPEG)과 STT 경로에서 사용자가 말한 원본 음성 파일 |
+| **DB 연결** | 이미지: `detection_guidance_logs.frame_path`; 사용자 음성: `stt_audio_path`, `stt_transcript_text`, `stt_audio_storage_status` 등 메타데이터. 파일 BLOB은 DB에 저장하지 않음 |
+| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO/원격 업로드는 로그 태스크 내부에서 수행 (반사 <300ms 비협상 원칙 유지) |
+| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지. 로컬 파일이 없으면 중앙 저장 API에서 프록시 조회. bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
 | **보존 정책** | 기본 7일(`EVENT_FRAME_RETENTION_DAYS`), 서버 기동 시 만료 폴더 삭제 (개인정보 기간 한정 보존) |
 
 상세 계약은 [`api_specification.md`](api_specification.md) §8.5를 참조하십시오.

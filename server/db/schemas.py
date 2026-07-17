@@ -182,6 +182,18 @@ class DetectionGuidanceLogCreate(BaseModel):
     false_positive: bool | None = Field(default=None)
     latency_json: str | None = Field(default=None)
     pipeline_debug_json: str | None = Field(default=None)
+    event_source: str = Field(default="unknown", max_length=20)
+    stt_transcript_text: str | None = Field(default=None)
+    stt_audio_path: str | None = Field(default=None, max_length=255)
+    stt_audio_storage_status: str = Field(default="not_applicable", max_length=30)
+    stt_audio_format: str | None = Field(default=None, max_length=10)
+    stt_audio_size_bytes: int | None = Field(default=None, ge=0)
+    stt_audio_duration_ms: int | None = Field(default=None, ge=0)
+    stt_audio_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    stt_audio_error_code: str | None = Field(default=None, max_length=64)
+    stt_audio_consent_at: datetime | None = Field(default=None)
+    stt_audio_expires_at: datetime | None = Field(default=None)
+    writer_instance_id: str | None = Field(default=None, max_length=100)
 
 
 class DetectionGuidanceLogResponse(BaseModel):
@@ -202,10 +214,26 @@ class DetectionGuidanceLogResponse(BaseModel):
     latency_json: str | None
     pipeline_debug_json: str | None
     created_at: datetime
+    event_source: str
+    stt_transcript_text: str | None
+    stt_audio_path: str | None
+    stt_audio_storage_status: str
+    stt_audio_format: str | None
+    stt_audio_size_bytes: int | None
+    stt_audio_duration_ms: int | None
+    stt_audio_sha256: str | None
+    stt_audio_error_code: str | None
+    stt_audio_consent_at: datetime | None
+    stt_audio_expires_at: datetime | None
+    writer_instance_id: str | None
 
-    _normalize_dates = field_validator("detected_at", "created_at", mode="before")(
-        _assume_utc_if_naive
-    )
+    _normalize_dates = field_validator(
+        "detected_at",
+        "created_at",
+        "stt_audio_consent_at",
+        "stt_audio_expires_at",
+        mode="before",
+    )(_assume_utc_if_naive)
 
 
 class FalsePositiveUpdateRequest(BaseModel):

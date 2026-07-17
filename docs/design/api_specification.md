@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.25 (2026-07-16 §6.7 dial_action 자동 연결 PhoneDialBridge)
+> **버전**: v0.4.26 (2026-07-17 jy 병합: §8.5 Log 응답에 STT 원본 음성 저장 메타데이터 추가, 이벤트 프레임/사용자 음성 파일 중앙 저장 API 연동 계약 반영 + 이전 v0.4.25: §6.7 dial_action 자동 연결 PhoneDialBridge)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -728,7 +728,7 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 
 ### 8.5 사후 이력 조회 REST (2026-07-12 신설)
 
-콘솔의 Detection Guidance Log 테이블은 SSE가 아니라 REST 폴링(기본 30초, `console/src/api/useDetectionLogs.ts`)으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 **이벤트 발생 시점 프레임 이미지**를 함께 제공합니다.
+콘솔의 Detection Guidance Log 테이블은 SSE가 아니라 REST 폴링(기본 30초, `console/src/api/useDetectionLogs.ts`)으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 **이벤트 발생 시점 프레임 이미지**를 함께 제공합니다. STT 경로는 사용자 원본 음성 파일 경로와 전사 문장을 같은 로그 행에 보관합니다.
 
 **콘솔 페이지네이션 UX (2026-07-16)**: `DetectionGuidanceLogTable`·`MembersPage` 목록은 서버 `offset`/`limit` + `X-Total-Count` 기반 **서버 페이지네이션**을 사용한다. 기본 `pageSize`는 **10**. 하단 컨트롤은 이전/다음 화살표, 최대 10개 번호 버튼, `...` 페이지 점프 입력, 마지막 페이지 버튼으로 통일한다. `totalCount <= 11`이면 컨트롤을 비활성화한다. 스트림 필터(전체/반사/인지)는 **현재 페이지 rows**에만 클라이언트 필터를 적용하므로, 필터 적용 시 표시 행 수와 `totalCount`가 어긋날 수 있다.
 
@@ -739,7 +739,7 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 | 인증 | 관리자 JWT (`Depends(get_current_admin)`) — 목록은 `Authorization` 헤더, 이미지는 `<img>` 태그 제약상 `?token=` 쿼리 허용(SSE와 동일 우회) |
 | 라우터 | `server/api/detection_log_router.py` |
 
-**로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `false_positive`, `latency_json`, `pipeline_debug_json`, `created_at`
+**로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `false_positive`, `latency_json`, `pipeline_debug_json`, `created_at`, `event_source`, `stt_transcript_text`, `stt_audio_path`, `stt_audio_storage_status`, `stt_audio_format`, `stt_audio_size_bytes`, `stt_audio_duration_ms`, `stt_audio_sha256`, `stt_audio_error_code`, `stt_audio_consent_at`, `stt_audio_expires_at`, `writer_instance_id`
 
 **pipeline_debug_json** (2026-07-16, 관리자 콘솔 전용): `server/services/pipeline_debug_builder.py`가 경로별 중간 텍스트를 직렬화한 JSON 객체. `path`는 `reflex`/`cognitive`/`stt`. MariaDB JSON 컬럼 특성상 REST 응답에서는 객체로 직렬화될 수 있다(콘솔은 string/object 모두 파싱).
 
@@ -755,14 +755,23 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 | 항목 | 값 |
 | :--- | :--- |
 | 저장 트리거 | 반사 알림/인지 가이드가 **실제 전송 성사**되어 DB 로그가 적재되는 이벤트만 (전 프레임 아님) |
-| 저장 위치 | `data/event_frames/YYYYMMDD/{event_id}.jpg`, DB에는 상대 경로(`frame_path`)만 기록 |
-| 실시간 경로 영향 | 없음 — JPEG 인코딩·파일 쓰기는 백그라운드 로그 태스크 안에서 `asyncio.to_thread`로 수행 (반사 <300ms 목표 무영향) |
+| 저장 위치 | 기본은 `data/event_frames/YYYYMMDD/{event_id}.jpg`. `EVENT_FRAME_STORAGE_BACKEND=remote`이면 Raspberry Pi 중앙 저장 API에 업로드하고 DB에는 object key(`YYYYMMDD/{event_id}.jpg`)만 기록 |
+| 실시간 경로 영향 | 없음 — 로컬 JPEG 인코딩·파일 쓰기는 백그라운드 로그 태스크 안에서 `asyncio.to_thread`로 수행. 원격 저장도 로그 태스크 내부에서 수행되어 반사 <300ms 목표를 막지 않음 |
 | bbox 표시 | 이미지에 굽지 않음 — `detected_objects_json`의 bbox(좌상단 x,y + w,h, 프레임 픽셀 좌표)를 콘솔이 오버레이 렌더링. 원본 보존으로 임계값/모델 교체 재검증 가능 |
 | 보존 정책 | `EVENT_FRAME_RETENTION_DAYS`(기본 7일) 초과 날짜 폴더를 서버 기동 시 삭제. 보행 중 촬영 이미지는 행인 등 개인정보 포함 가능성으로 기간 한정 보존 |
 | 실패 처리 | 저장 실패 시 `frame_path=NULL`로 로그는 적재. STT 이벤트 등 프레임 없는 로그도 NULL |
 | 경로 방어 | event_id 화이트리스트(`[A-Za-z0-9._-]{1,64}`) + DB 등록 경로만 서빙 + 저장소 밖 경로 해석 차단 이중 검증 |
 
 > 인지 로그의 `detected_objects_json`에는 2026-07-12부터 bbox 좌표가 포함됩니다(콘솔 오버레이용). LLM 오케스트레이터 입력에는 기존대로 bbox를 넣지 않습니다(프롬프트 오염 방지).
+
+**STT 원본 음성 저장 계약** (`server/api/ws_router.py`, `server/services/remote_storage_client.py`):
+
+| 항목 | 값 |
+| :--- | :--- |
+| 저장 트리거 | `/ws/detect`의 `stt_audio` 처리에서 STT 전사·LLM 브리지·TTS 응답 생성이 완료된 이벤트 |
+| 저장 대상 | 사용자가 말한 원본 오디오 bytes. LLM이 출력한 TTS WAV가 아니라 STT 입력 음성 |
+| DB 연결 | `stt_audio_path`에 중앙 저장 API object key(`YYYYMMDD/{event_id}.{wav|m4a|ogg|mp3}`), `stt_transcript_text`에 STT 전사 문장, `stt_audio_storage_status`에 `available`/`upload_failed`/`not_saved` 등 상태 저장 |
+| 비밀값 경계 | `IMAGE_SERVER_TOKEN`은 서버 `.env` 전용이며 단말 앱/콘솔 공개 변수로 전달하지 않음 |
 
 ### 8.6 회원(시각장애인) 관리 REST (2026-07-12 신설)
 

@@ -570,7 +570,6 @@
     | **내일 방향** | 정면 외곽 방향 오발화 판단 로직을 우선 수정한 후, 모바일 온디바이스의 **Scene Classification(장면 분류)**을 통해 씬 분류 결과(`is_outdoor`)를 공유받아 실내/실외 **Profile(프로파일, 설정 프로필)** 게이트 임계값을 다원 분기 설계할 예정입니다. | 환경별 독립 임계치 프로파일 분기를 통한 환각 오탐 원천 차단 계획 |
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/inference/tfliteDetector.ts`, `client/src/services/realFrameProvider.ts`, `client/src/services/mockFrameProvider.ts`, `server/detection/direction.py`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/config.py`, `docs/handoff/2026-07-15_reflex_ood_handoff.md`
 - **검증 결과**: 빌드 무결성 확인 완료. 연결 끊김 및 300ms 이상 지연 상황에서 온디바이스 로컬 반사음 및 햅틱의 정상 작동 확인 예정.
-<<<<<<< HEAD
 
 ---
 
@@ -582,10 +581,3 @@
   - 정면 근접 장애물(면적비 >= 0.15, confidence >= 0.35, 0.20 <= center_x_norm <= 0.80)에 대해 세그멘테이션 교차검증을 건너뛰고 지속성(hit_count) 및 streak 요구치를 1프레임으로 하향해 즉시 반사 경보를 트리거하는 긴급 게이트를 신설하고, 원거리/애매한 탐지는 기존 보수적 기준(hit_count >= 4, confidence >= 0.50, 세그 마스크 교차검증)을 따르는 예방 게이트로 이원화함.
 - **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `server/detection/gates/reflex_gate.py`, `server/detection/detection_pipeline.py`, `docs/changelogs/stage_safety_reflex.md`
 - **검증 결과**: 단위 테스트(pytest) 및 TypeScript 정적 분석 통과 확인.
-
-
-
-
-
-=======
->>>>>>> dev

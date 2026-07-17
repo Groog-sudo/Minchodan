@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 from server.services import event_frame_store as store
+from server.services.remote_storage_client import RemoteStoreResult
 
 
 @pytest.fixture
@@ -90,3 +91,48 @@ def test_cleanup_disabled_when_retention_zero(frames_dir: Path):
     old_dir.mkdir(parents=True)
     assert store.cleanup_expired_frames(retention_days=0) == 0
     assert old_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_save_event_frame_async_uses_remote_storage(frames_dir: Path, monkeypatch):
+    async def _fake_upload_event_frame(event_id: str, jpeg_bytes: bytes) -> RemoteStoreResult:
+        assert event_id == "event-remote-1"
+        assert jpeg_bytes[:2] == b"\xff\xd8"
+        return RemoteStoreResult(
+            object_key="20260716/event-remote-1.jpg",
+            status="available",
+            format="jpg",
+            size_bytes=len(jpeg_bytes),
+            sha256="b" * 64,
+        )
+
+    monkeypatch.setattr(store, "is_remote_storage_enabled", lambda: True)
+    monkeypatch.setattr(store, "upload_event_frame", _fake_upload_event_frame)
+
+    rel_path = await store.save_event_frame_async("event-remote-1", _dummy_frame())
+
+    assert rel_path == "20260716/event-remote-1.jpg"
+    assert not any(frames_dir.rglob("*.jpg"))
+
+
+@pytest.mark.asyncio
+async def test_save_event_frame_async_remote_failure_does_not_write_local(
+    frames_dir: Path,
+    monkeypatch,
+):
+    async def _fake_upload_event_frame(event_id: str, jpeg_bytes: bytes) -> RemoteStoreResult:
+        return RemoteStoreResult(
+            object_key=None,
+            status="upload_failed",
+            error_code="remote_http_500",
+            format="jpg",
+            size_bytes=len(jpeg_bytes),
+        )
+
+    monkeypatch.setattr(store, "is_remote_storage_enabled", lambda: True)
+    monkeypatch.setattr(store, "upload_event_frame", _fake_upload_event_frame)
+
+    rel_path = await store.save_event_frame_async("event-remote-fail", _dummy_frame())
+
+    assert rel_path is None
+    assert not any(frames_dir.rglob("*.jpg"))

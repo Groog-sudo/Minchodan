@@ -73,6 +73,23 @@ export interface DetectionGuidanceLogRow {
   // REST 응답에서는 MariaDB JSON 컬럼 특성상 객체로 내려올 수 있어 string | object 허용.
   pipeline_debug_json: string | PipelineDebug | null;
   created_at: string;
+  event_source: "detection" | "stt" | "navigation" | "unknown";
+  stt_transcript_text: string | null;
+  stt_audio_path: string | null;
+  stt_audio_storage_status:
+    | "not_applicable"
+    | "not_saved"
+    | "available"
+    | "upload_failed"
+    | string;
+  stt_audio_format: string | null;
+  stt_audio_size_bytes: number | null;
+  stt_audio_duration_ms: number | null;
+  stt_audio_sha256: string | null;
+  stt_audio_error_code: string | null;
+  stt_audio_consent_at: string | null;
+  stt_audio_expires_at: string | null;
+  writer_instance_id: string | null;
 }
 
 // pipeline_debug_json 파싱 결과 - 경로별 디버그 텍스트 표시용.
@@ -129,6 +146,7 @@ export interface LatencyStages {
   llm_ms?: number;
   tts_ms?: number;
   stt_ms?: number;
+  stt_audio_upload_ms?: number;
   db_save_ms?: number;
   total_ms?: number;
 }

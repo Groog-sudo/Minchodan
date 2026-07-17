@@ -9,6 +9,7 @@ import pytest
 
 import server.api.ws_router as ws_router_module
 from server.api.ws_router import _handle_stt_audio
+from server.services.remote_storage_client import RemoteStoreResult
 from server.stt.stt_schema import SttTranscribeResult
 
 # ============================================================
@@ -148,6 +149,21 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
         _fake_synthesize.__get__(ws_router_module.realtime_tts),
     )
 
+    async def _fake_upload_stt_audio(event_id, audio_bytes, content_type, format_):
+        assert event_id.startswith("stt-dev-001-")
+        assert audio_bytes.startswith(b"RIFF")
+        assert content_type == "audio/wav"
+        assert format_ == "wav"
+        return RemoteStoreResult(
+            object_key=f"20260716/{event_id}.wav",
+            status="available",
+            format="wav",
+            size_bytes=len(audio_bytes),
+            sha256="a" * 64,
+        )
+
+    monkeypatch.setattr(ws_router_module, "upload_stt_audio", _fake_upload_stt_audio)
+
     persisted: list[dict] = []
 
     async def _fake_persist(**kwargs):
@@ -181,8 +197,16 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
     assert payload["duration_ms"] == 900.0
     assert payload["source"] == "navigation-setup-wakeup"
     assert ws.sent_bytes == [b"fake-audio"]
-    assert persisted[0]["detections"][0]["source"] == "stt"
-    assert persisted[0]["detections"][0]["text_length"] == len(fake_result.text)
+    assert persisted[0]["detections"] == [
+        {"source": "stt", "text_length": len(fake_result.text), "stt_transcript": fake_result.text}
+    ]
+    assert persisted[0]["event_source"] == "stt"
+    assert persisted[0]["stt_transcript_text"] == fake_result.text
+    assert persisted[0]["stt_audio_path"].endswith(".wav")
+    assert persisted[0]["stt_audio_storage_status"] == "available"
+    assert persisted[0]["stt_audio_format"] == "wav"
+    assert persisted[0]["stt_audio_duration_ms"] == 1200
+    assert persisted[0]["stt_audio_sha256"] == "a" * 64
 
 
 @pytest.mark.asyncio

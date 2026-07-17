@@ -201,10 +201,7 @@ class DetectionGuidanceLogRepository:
         if stream_type in ("reflex", "cognitive"):
             query = query.where(DetectionGuidanceLog.stream_type == StreamType(stream_type))
         result = await self.session.execute(
-            query
-            .order_by(DetectionGuidanceLog.detected_at.desc())
-            .offset(offset)
-            .limit(limit)
+            query.order_by(DetectionGuidanceLog.detected_at.desc()).offset(offset).limit(limit)
         )
         return list(result.scalars().all())
 

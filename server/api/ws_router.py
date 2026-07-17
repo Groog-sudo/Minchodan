@@ -33,6 +33,7 @@ from server.services.device_registry_service import (
     get_cached_device_ids,
 )
 from server.services.pipeline_debug_builder import build_stt_pipeline_debug
+from server.services.remote_storage_client import upload_stt_audio
 from server.stt.stt_service import SttService
 from server.stt.stt_to_llm_bridge import SttToLlmBridge
 from server.tts.realtime_tts import realtime_tts
@@ -244,7 +245,21 @@ def _detect_audio_suffix(audio_bytes: bytes) -> str:
     return ".wav"
 
 
+def _audio_content_type_for_suffix(audio_suffix: str) -> str:
+    """오디오 확장자에 맞는 Content-Type을 반환합니다."""
+    if audio_suffix == ".wav":
+        return "audio/wav"
+    if audio_suffix == ".m4a":
+        return "audio/mp4"
+    if audio_suffix == ".ogg":
+        return "audio/ogg"
+    if audio_suffix == ".mp3":
+        return "audio/mpeg"
+    return "application/octet-stream"
+
+
 async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> None:
+    stt_event_id = f"stt-{device_id}-{now_ts()}"
     model_name = data.get("model_name")
     # 레이턴시 계측: 실기기 -> STT -> LLM -> TTS -> DB저장 스테이지별 ms를 모아
     # persist_detection_guidance_log에 넘긴다(콘솔 레이턴시 패널에서 확인).
@@ -327,14 +342,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
         latency_stages["stt_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
-        logger.info(
-            f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
-            f"text={(stt_result.text or '')[:80]!r}"
-        )
-        # [DEBUG TEMP 2026-07-13] 연락처 저장 재검증용 - 확인 후 제거
-        _t = (stt_result.text or "").strip()
-        if any(k in _t for k in ("저장", "전화")):
-            logger.info(f"[WS][DEBUG-STT-TEXT] device_id={device_id}, text={_t[:120]}")
+        logger.info(f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}")
 
         if not wait_notice_sent and _stt_bridge.should_play_stt_wait_notice(
             device_id, stt_result.text
@@ -414,7 +422,6 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         tts_start = time.perf_counter()
         audio_wav_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
         latency_stages["tts_ms"] = round((time.perf_counter() - tts_start) * 1000, 1)
-        stt_event_id = f"stt-{device_id}-{now_ts()}"
 
         # 2026-07-09에 인지 경로(DetectionConsumer._send_cognitive_guide)가 오디오를
         # JSON base64 오디오에서 transport:"binary" + 별도 바이너리 프레임으로
@@ -490,6 +497,17 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         )
         if guidance_text:
             latency_stages["total_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
+            upload_start = time.perf_counter()
+            audio_upload_result = await upload_stt_audio(
+                stt_event_id,
+                audio_bytes,
+                _audio_content_type_for_suffix(audio_suffix),
+                audio_suffix.lstrip("."),
+            )
+            latency_stages["stt_audio_upload_ms"] = round(
+                (time.perf_counter() - upload_start) * 1000,
+                1,
+            )
             # 콘솔 "파이프라인 지연 요약" 패널 실시간 갱신 (consumer.py._broadcast_latency_event와
             # 동일 목적/채널 - STT 경로는 DetectionConsumer 밖이라 여기서 직접 브로드캐스트한다).
             with contextlib.suppress(Exception):
@@ -522,6 +540,17 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                         stt_transcript=stt_result.text or "",
                         bridge_result=bridge_result,
                     ),
+                    event_source="stt",
+                    stt_transcript_text=(stt_result.text or "").strip() or None,
+                    stt_audio_path=audio_upload_result.object_key,
+                    stt_audio_storage_status=audio_upload_result.status,
+                    stt_audio_format=audio_upload_result.format,
+                    stt_audio_size_bytes=audio_upload_result.size_bytes,
+                    stt_audio_duration_ms=(
+                        int(stt_result.duration * 1000) if stt_result.duration is not None else None
+                    ),
+                    stt_audio_sha256=audio_upload_result.sha256,
+                    stt_audio_error_code=audio_upload_result.error_code,
                 )
                 # 콘솔 Detection Guidance Log 테이블 실시간 갱신 (consumer.py._broadcast_guidance_log_event와
                 # 동일 목적/채널 - DB 저장 완료 후에만 보내 콘솔이 즉시 썸네일을 요청해도 안전하다).

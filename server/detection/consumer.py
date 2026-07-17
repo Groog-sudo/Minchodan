@@ -35,7 +35,7 @@ from server.orchestration.llm_client_factory import LLMClientFactory
 from server.rag.retriever import get_default_retriever
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.services.device_registry_service import get_cached_device_ids
-from server.services.event_frame_store import save_event_frame
+from server.services.event_frame_store import save_event_frame_async
 from server.services.pipeline_debug_builder import (
     build_cognitive_pipeline_debug,
     build_reflex_pipeline_debug,
@@ -246,7 +246,7 @@ class DetectionConsumer:
         # 저장 실패 시 frame_path=None으로 로그 적재는 계속한다(방어적 코딩).
         frame_path: str | None = None
         if frame is not None and event_id:
-            frame_path = await asyncio.to_thread(save_event_frame, event_id, frame)
+            frame_path = await save_event_frame_async(event_id, frame)
         try:
             saved = await persist_detection_guidance_log(
                 event_id=event_id,

@@ -10,7 +10,7 @@ def test_resolve_organization_dial() -> None:
     target = resolve_convenience_dial("서울시 장애인 생활지원센터에 전화 걸어줘")
     assert target is not None
     assert target.contact_name == "서울시 장애인 생활지원센터"
-    assert target.phone_number == "0222223690"
+    assert target.phone_number == "02222223690"
     assert target.source_type == "organization"
 
 
