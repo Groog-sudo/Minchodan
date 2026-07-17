@@ -2557,3 +2557,13 @@
 - **관련 파일**: `tests/test_detection.py`
 - **검증 결과**: Ruff 통과, `test_detection.py` 34 passed, 회귀 영향 범위(detection+langgraph+departure) 55 passed, 전체 스위트(test_ws_echo 환경 실패 제외) 256 passed.
 - **비고**: `test_ws_echo.py` 6개 실패는 Redis 미실행·FastAPI 서버 미기동(포트 8000) 환경 문제로 dev에서도 동일 실패(회귀 아님). 병합 후 CI에서는 인프라 기동 상태로 통과 예상.
+
+---
+
+### 2026-07-17 | 3단계 | merge_teammates_integration
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - merge teammates branches (jh, dg2, jy) into dev and fix conflict/test bugs
+- **관련 파일**: 없음
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
