@@ -2614,7 +2614,7 @@
 
 ### 2026-07-17 | 통합 | merge_dg2_shared_into_dev
 
-- **커밋**: `ebbdfcf`
+- **커밋**: `2a4d17e`
 - **변경 내용**:
   - `dg2` → `dev` 병합: Android float32/AEC 복구, Live Feed 회전 UI, Android 패리티 문서 반영.
   - 충돌 해결: `useCamera`(Stream+Cannot Record 주석 유지, MAX_REFLEX=200), `useLiveFeed`(Vite `/ws` 프록시 경로 유지).
