@@ -2623,3 +2623,14 @@
 - **관련 파일**: `client/src/services/*android*`, `audioSessionBridge.ts`, `console/src/components/LiveCameraFeed.*`, `docs/mobile/android_platform_patch_results.md`
 - **검증 결과**: 충돌 마커 제거, 개인 IP 검색 0건, MAX_REFLEX=200·vite localhost 확인.
 - **비고**: dg2 개인 GPU/호스트 설정은 `dg2` 브랜치에만 유지.
+
+
+### 2026-07-17 | 통합 | sync_dev_into_kb_keep_lab
+
+- **커밋**: `(커밋 후 기록)`
+- **변경 내용**:
+  - `origin/dev`(`44a56bc`)를 `kb`에 FF 반영 (dg2 Android 패리티·콘솔 회전·changelog 포함).
+  - kb 개인 랩 설정 유지: 번들 ID `com.minchodan.app.kb.dev`, Metro `172.16.101.220:8081`.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, (공유분은 dev와 동일)
+- **검증 결과**: FF 후 개인 4파일 복원, rotateDeg/Android float32/MAX_REFLEX=200 확인.
+- **비고**: 공유 코드는 dev와 동기, 실기기 랩 설정만 kb에 잔류.
