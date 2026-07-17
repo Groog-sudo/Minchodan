@@ -118,6 +118,19 @@ def reflex_gate(
     distance = 1.5 - (ratio * 1.1)
     distance = max(0.4, min(1.5, distance))
 
+    # P0-1 (2026-07-17): 억제 재무장 정책용 거리 밴드 산출.
+    # [면접 대비 주석] 밴드 경계는 보행 속도(1m/s) 기준:
+    #   near(<=0.6m): 즉각 회피 행동 필요 -> 햅틱 스로틀만(500ms), TTL 억제 제외
+    #   medium(<=1.5m): 주의 + 회피 준비 -> 동일 밴드 5s TTL
+    #   far(>1.5m): 사실상 reflex_gate 범위 밖(0.4~1.5m)이므로 발생하지 않으나
+    #               밴드 체계를 3단계로 유지해 should_rearm 판정이 단조롭게 동작.
+    if distance <= 0.6:
+        distance_band = "near"
+    elif distance <= 1.5:
+        distance_band = "medium"
+    else:
+        distance_band = "far"
+
     if distance <= 0.5:
         beep_interval_ms = 0
         haptic_pattern = "continuous"
@@ -146,4 +159,5 @@ def reflex_gate(
         track_id=detection.track_id,
         class_name="obstacle",
         hit_count=detection.hit_count,
+        distance_band=distance_band,
     )

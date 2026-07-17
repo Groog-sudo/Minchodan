@@ -621,13 +621,23 @@ class DetectionConsumer:
     ) -> None:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
 
-        동일 device_id+alert_id 조합이 60초 이내 재발행되면 억제한다(중복 스팸 방지).
+        P0-1 (2026-07-17): 재무장 정책 적용.
+        - 억제 키: high_obstacle:{track_id}:{distance_band}
+        - 동일 키 TTL(5s) + device 단위 최소 쿨다운(1.5s) + 밴드 악화 재발화
+        - near(<=0.6m) 햅틱+비프는 TTL 억제 제외, 500ms 스로틀만
         frame은 전송 성사 후 백그라운드 로그 태스크에서만 저장한다(반사 지연 무영향).
         """
-        if await Alert_suppressor.should_suppress(device_id, alert.alert_id):
+        is_near = alert.distance <= 0.6
+        if not await Alert_suppressor.should_emit_reflex(
+            device_id=device_id,
+            track_id=alert.track_id,
+            distance_band=alert.distance_band,
+            is_near=is_near,
+        ):
             logger.debug(
-                f"[DetectionConsumer] 반사 알림 중복 억제: "
-                f"device_id={device_id}, alert_id={alert.alert_id}"
+                f"[DetectionConsumer] 반사 알림 억제(재무장 정책): "
+                f"device_id={device_id}, track_id={alert.track_id}, "
+                f"band={alert.distance_band}, near={is_near}"
             )
             return
 
@@ -647,6 +657,7 @@ class DetectionConsumer:
             "track_id": alert.track_id,
             "class_name": alert.class_name,
             "hit_count": alert.hit_count,
+            "distance_band": alert.distance_band,
         }
         try:
             sent = await manager.send_json(device_id, payload)
@@ -656,10 +667,15 @@ class DetectionConsumer:
                     f"device_id={device_id}, alert_id={alert.alert_id}, websocket=disconnected"
                 )
                 return
-            await Alert_suppressor.mark_as_sent(device_id, alert.alert_id)
+            await Alert_suppressor.mark_reflex_sent(
+                device_id=device_id,
+                track_id=alert.track_id,
+                distance_band=alert.distance_band,
+            )
             logger.info(
                 f"[DetectionConsumer] 반사 알림 전송: "
-                f"device_id={device_id}, alert_id={alert.alert_id}"
+                f"device_id={device_id}, alert_id={alert.alert_id}, "
+                f"track_id={alert.track_id}, band={alert.distance_band}"
             )
             # 반사 경로 latency_json에는 decode/inference/total만 존재한다(LLM/RAG/TTS 미경유
             # 원칙이 그대로 데이터에 반영됨 - rag_ms/llm_ms/tts_ms 키 자체가 생기지 않는다).

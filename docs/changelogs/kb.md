@@ -2746,3 +2746,21 @@
 - **관련 파일**: `server/capture/stream_splitter.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_frame_decode.py`
 - **검증 결과**: `pytest tests/test_frame_decode.py` 33개 전체 통과. consumer/stream_splitter import 정상, FastAPI 컨테이너 재시작 후 헬스 200 OK.
 - **비고**: M2(P0-1 억제 재무장)·M3(P0-3 소형 객체)의 선행. 큐 축소로 hit_count 증가 지연 가능성은 리스크(§10)로 명시, 드롭률 30% 초과 시 MIN_HIT_COUNT 하향 검토 예정.
+
+---
+
+### 2026-07-17 | 3단계 | M2_P0-1_억제_재무장_정책
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M2/P0-1 구현: 반사 억제 60초 무조건 침묵 -> 재무장(Re-arm) 정책으로 전환. "같은 상황 반복은 억제, 상황 변화(새 객체/거리 악화) 시 즉시 재발화"로 S1(정지 후 60초 침묵)·S2(새 객체 무시) 해소.
+  - `server/tts/suppressor.py`: 재무장 정책 구현. 억제 키 `high_obstacle:{track_id}:{distance_band}`로 분리 (새 객체/거리 악화 시 키 달라져 억제 우회). `should_rearm(prev_band, current_band)` 정적 메서드로 밴드 악화(far->medium->near) 판정 + [면접 대비 주석]. `should_emit_reflex(device_id, track_id, distance_band, is_near)` 비동기 메서드: near(<=0.6m)는 TTL 억제 제외 500ms 스로틀만, non-near는 device 단위 1.5s 쿨다운 + 동일 트랙+밴드 5s TTL + 밴드 악화 재발화. `mark_reflex_sent` 신규. 기존 `should_suppress`/`mark_as_sent`는 레거시 하위 호환 유지. 환경변수 `REFLEX_SUPPRESS_TTL_S`(5), `REFLEX_MIN_GAP_S`(1.5), `REFLEX_NEAR_HAPTIC_THROTTLE_S`(0.5) 추가.
+  - `server/detection/schemas.py`: `ReflexAlert`에 `distance_band` 필드 추가 (기본 "medium").
+  - `server/detection/gates/reflex_gate.py`: distance 기반 밴드 산출 (near<=0.6m / medium<=1.5m / far) + [면접 대비 주석]. `ReflexAlert`에 `distance_band` 채움.
+  - `server/detection/consumer.py`: `_send_reflex_alert`가 `should_emit_reflex`/`mark_reflex_sent` 사용. payload에 `distance_band` 추가 (단말/콘솔 가시성).
+  - `docs/ops/environment_variables.md` + `.env.example`: 3개 신규 변수 문서화.
+  - `tests/test_suppressor_rearm.py` 신규: should_rearm 단위(신규/악화/동일/개선), near 스로틀, non-near TTL/쿨다운/밴드 악화 재발화 12개 케이스.
+  - `tests/test_detection.py`: `TestReflexAlertSuppression` 3개 테스트를 새 API(`should_emit_reflex`/`mark_reflex_sent`)로 업데이트.
+- **관련 파일**: `server/tts/suppressor.py`, `server/detection/schemas.py`, `server/detection/gates/reflex_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_suppressor_rearm.py`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 79개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: near 햅틱 스로틀(500ms)은 충돌 임박 촉각 신호의 반복 안전 이득을 손실보다 크게 평가한 설계 선택. 밴드 경계(0.6m/1.5m)는 보행 속도 1m/s 기준.

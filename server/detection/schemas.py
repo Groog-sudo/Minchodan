@@ -79,3 +79,6 @@ class ReflexAlert(BaseModel):
     track_id: str | None = None
     class_name: str = ""
     hit_count: int = 0
+    # P0-1 (2026-07-17): 억제 재무장 정책용 거리 밴드 ("near"|"medium"|"far").
+    # suppressor가 track_id+distance_band 조합 키로 억제하므로 거리 악화 시 재발화 가능.
+    distance_band: str = "medium"

@@ -72,6 +72,9 @@
 | **`COGNITIVE_QUEUE_MAXSIZE`** | int | 선택 | `4` | **2026-07-17 신규 (P0-2).** 인지 asyncio.Queue 최대 깊이. 1~2fps 특성상 소량 버퍼면 충분 | `server/capture/stream_splitter.py` |
 | **`REFLEX_MAX_AGE_S`** | float | 선택 | `0.4` | **2026-07-17 신규 (P0-2).** 반사 프레임 신선도 임계(초). 소비 시각 기준 프레임 ts가 이 값을 초과하면 추론 없이 드롭. ts=0(클라이언트 미전송)이면 검사 건너뜀 | `server/detection/consumer.py` |
 | **`COGNITIVE_MAX_AGE_S`** | float | 선택 | `2.0` | **2026-07-17 신규 (P0-2).** 인지 프레임 신선도 임계(초). 인지는 1~2fps 특성상 반사보다 여유 | `server/detection/consumer.py` |
+| **`REFLEX_SUPPRESS_TTL_S`** | int | 선택 | `5` | **2026-07-17 신규 (P0-1).** 동일 track_id+distance_band 조합의 반사 억제 TTL(초). 보행 속도(1m/s) 기준 5초면 동일 객체 반복 스팸 방지 충분 | `server/tts/suppressor.py` |
+| **`REFLEX_MIN_GAP_S`** | float | 선택 | `1.5` | **2026-07-17 신규 (P0-1).** 서로 다른 객체 경보의 최소 간격(초, device 단위). 알림 폭탄 방지 | `server/tts/suppressor.py` |
+| **`REFLEX_NEAR_HAPTIC_THROTTLE_S`** | float | 선택 | `0.5` | **2026-07-17 신규 (P0-1).** near(<=0.6m) 햅틱+비프 스로틀 간격(초). 충돌 임박 촉각 신호는 TTL 억제 제외, 스로틀만 적용 | `server/tts/suppressor.py` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 

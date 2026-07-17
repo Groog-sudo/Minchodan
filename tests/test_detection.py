@@ -563,6 +563,8 @@ class TestReflexAlertSuppression:
     """2026-07-08: 중복 억제(Alert_suppressor)가 실제 반사 전송 경로(_send_reflex_alert)에
     연결됐는지 검증. 이전에는 suppressor 구현은 있었으나 consumer.py가 호출하지 않아
     60초 이내 동일 alert_id가 억제 없이 계속 전송되는 결함이 있었다.
+
+    2026-07-17 P0-1: 재무장 정책으로 API가 should_emit_reflex/mark_reflex_sent로 변경.
     """
 
     @pytest.mark.asyncio
@@ -570,13 +572,13 @@ class TestReflexAlertSuppression:
         import server.detection.consumer as consumer_module
 
         send_mock = AsyncMock(return_value=True)
-        should_suppress_mock = AsyncMock(return_value=True)
-        mark_as_sent_mock = AsyncMock()
+        should_emit_mock = AsyncMock(return_value=False)
+        mark_reflex_mock = AsyncMock()
         monkeypatch.setattr(consumer_module.manager, "send_json", send_mock)
         monkeypatch.setattr(
-            consumer_module.Alert_suppressor, "should_suppress", should_suppress_mock
+            consumer_module.Alert_suppressor, "should_emit_reflex", should_emit_mock
         )
-        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_as_sent", mark_as_sent_mock)
+        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_reflex_sent", mark_reflex_mock)
 
         consumer = consumer_module.DetectionConsumer()
         alert = ReflexAlert(
@@ -585,25 +587,32 @@ class TestReflexAlertSuppression:
             direction="front",
             clip="reflex_clips/high_front.mp3",
             ts=0.0,
+            track_id="t1",
+            distance_band="medium",
         )
         await consumer._send_reflex_alert("device-1", alert)
 
-        should_suppress_mock.assert_awaited_once_with("device-1", "high_front")
+        should_emit_mock.assert_awaited_once()
+        # near 여부는 alert.distance<=0.6 기준. distance 기본 1.0 -> is_near=False
+        assert should_emit_mock.call_args.kwargs["device_id"] == "device-1"
+        assert should_emit_mock.call_args.kwargs["track_id"] == "t1"
+        assert should_emit_mock.call_args.kwargs["distance_band"] == "medium"
+        assert should_emit_mock.call_args.kwargs["is_near"] is False
         send_mock.assert_not_awaited()
-        mark_as_sent_mock.assert_not_awaited()
+        mark_reflex_mock.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_unsuppressed_alert_is_sent_and_marked(self, monkeypatch):
         import server.detection.consumer as consumer_module
 
         send_mock = AsyncMock()
-        should_suppress_mock = AsyncMock(return_value=False)
-        mark_as_sent_mock = AsyncMock()
+        should_emit_mock = AsyncMock(return_value=True)
+        mark_reflex_mock = AsyncMock()
         monkeypatch.setattr(consumer_module.manager, "send_json", send_mock)
         monkeypatch.setattr(
-            consumer_module.Alert_suppressor, "should_suppress", should_suppress_mock
+            consumer_module.Alert_suppressor, "should_emit_reflex", should_emit_mock
         )
-        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_as_sent", mark_as_sent_mock)
+        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_reflex_sent", mark_reflex_mock)
 
         consumer = consumer_module.DetectionConsumer()
         alert = ReflexAlert(
@@ -612,24 +621,29 @@ class TestReflexAlertSuppression:
             direction="front",
             clip="reflex_clips/high_front.mp3",
             ts=0.0,
+            track_id="t2",
+            distance_band="medium",
         )
         await consumer._send_reflex_alert("device-1", alert)
 
         send_mock.assert_awaited_once()
-        mark_as_sent_mock.assert_awaited_once_with("device-1", "high_front")
+        mark_reflex_mock.assert_awaited_once()
+        assert mark_reflex_mock.call_args.kwargs["device_id"] == "device-1"
+        assert mark_reflex_mock.call_args.kwargs["track_id"] == "t2"
+        assert mark_reflex_mock.call_args.kwargs["distance_band"] == "medium"
 
     @pytest.mark.asyncio
     async def test_disconnected_alert_is_not_marked_as_sent(self, monkeypatch):
         import server.detection.consumer as consumer_module
 
         send_mock = AsyncMock(return_value=False)
-        should_suppress_mock = AsyncMock(return_value=False)
-        mark_as_sent_mock = AsyncMock()
+        should_emit_mock = AsyncMock(return_value=True)
+        mark_reflex_mock = AsyncMock()
         monkeypatch.setattr(consumer_module.manager, "send_json", send_mock)
         monkeypatch.setattr(
-            consumer_module.Alert_suppressor, "should_suppress", should_suppress_mock
+            consumer_module.Alert_suppressor, "should_emit_reflex", should_emit_mock
         )
-        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_as_sent", mark_as_sent_mock)
+        monkeypatch.setattr(consumer_module.Alert_suppressor, "mark_reflex_sent", mark_reflex_mock)
 
         consumer = consumer_module.DetectionConsumer()
         alert = ReflexAlert(
@@ -638,8 +652,10 @@ class TestReflexAlertSuppression:
             direction="front",
             clip="reflex_clips/high_front.mp3",
             ts=0.0,
+            track_id="t3",
+            distance_band="medium",
         )
         await consumer._send_reflex_alert("device-1", alert)
 
         send_mock.assert_awaited_once()
-        mark_as_sent_mock.assert_not_awaited()
+        mark_reflex_mock.assert_not_awaited()
