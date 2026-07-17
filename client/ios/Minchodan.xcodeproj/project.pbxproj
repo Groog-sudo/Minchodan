@@ -18,16 +18,16 @@
 		94886D699F70B815631A72EC /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9D7E82D580A1B720BD9CE5 /* ExpoModulesProvider.swift */; };
 		AEC5B10D20260711000000B1 /* AudioSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */; };
 		AEC5B10D20260711000000B2 /* AudioSessionBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */; };
-		PHD5B10D20260716000000B1 /* PhoneDialBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = PHD5B10D20260716000000A1 /* PhoneDialBridge.swift */; };
-		PHD5B10D20260716000000B2 /* PhoneDialBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = PHD5B10D20260716000000A2 /* PhoneDialBridge.mm */; };
-		SIR5B10D20260716000000B1 /* MinchodanDialIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = SIR5B10D20260716000000A1 /* MinchodanDialIntent.swift */; };
-		SIR5B10D20260716000000B2 /* MinchodanSiriDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SIR5B10D20260716000000A2 /* MinchodanSiriDialer.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		C0BE7D038B0DF6441E766533 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9372D75AD1D505CFF3E7CF63 /* PrivacyInfo.xcprivacy */; };
 		DE9780B20260711000000B1 /* DepthProbeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9780B20260711000000A1 /* DepthProbeBridge.swift */; };
 		DE9780B20260711000000B2 /* DepthProbeBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = DE9780B20260711000000A2 /* DepthProbeBridge.mm */; };
 		DF90E9DC2398CACB6B13323F /* object_detection.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = D11F336DF4E1FAA4FA22DB4B /* object_detection.mlpackage */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		PHD5B10D20260716000000B1 /* PhoneDialBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = PHD5B10D20260716000000A1 /* PhoneDialBridge.swift */; };
+		PHD5B10D20260716000000B2 /* PhoneDialBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = PHD5B10D20260716000000A2 /* PhoneDialBridge.mm */; };
+		SIR5B10D20260716000000B1 /* MinchodanDialIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = SIR5B10D20260716000000A1 /* MinchodanDialIntent.swift */; };
+		SIR5B10D20260716000000B2 /* MinchodanSiriDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SIR5B10D20260716000000A2 /* MinchodanSiriDialer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,10 +45,6 @@
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Minchodan/SplashScreen.storyboard; sourceTree = "<group>"; };
 		AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionBridge.swift; sourceTree = "<group>"; };
 		AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioSessionBridge.mm; sourceTree = "<group>"; };
-		PHD5B10D20260716000000A1 /* PhoneDialBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneDialBridge.swift; sourceTree = "<group>"; };
-		PHD5B10D20260716000000A2 /* PhoneDialBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PhoneDialBridge.mm; sourceTree = "<group>"; };
-		SIR5B10D20260716000000A1 /* MinchodanDialIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinchodanDialIntent.swift; sourceTree = "<group>"; };
-		SIR5B10D20260716000000A2 /* MinchodanSiriDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinchodanSiriDialer.swift; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		C9E22D51B3661C9BF2C1D436 /* ReflexFrameProcessorPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ReflexFrameProcessorPlugin.m; sourceTree = "<group>"; };
 		CD9D7E82D580A1B720BD9CE5 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Minchodan/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
@@ -58,6 +54,10 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Minchodan/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Minchodan-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Minchodan-Bridging-Header.h"; path = "Minchodan/Minchodan-Bridging-Header.h"; sourceTree = "<group>"; };
+		PHD5B10D20260716000000A1 /* PhoneDialBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneDialBridge.swift; sourceTree = "<group>"; };
+		PHD5B10D20260716000000A2 /* PhoneDialBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PhoneDialBridge.mm; sourceTree = "<group>"; };
+		SIR5B10D20260716000000A1 /* MinchodanDialIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinchodanDialIntent.swift; sourceTree = "<group>"; };
+		SIR5B10D20260716000000A2 /* MinchodanSiriDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinchodanSiriDialer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -304,6 +304,8 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/TensorFlowLiteC/TensorFlowLiteC.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/TensorFlowLiteC/TensorFlowLiteCCoreML.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-menu/EXDevMenu.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
 			);
 			name = "[CP] Copy Pods Resources";
@@ -318,6 +320,8 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/TensorFlowLiteC.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/TensorFlowLiteCCoreML.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevMenu.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;

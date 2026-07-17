@@ -158,7 +158,8 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`COMPOSE_DB_USER`** | string | 선택 | `minchodan_team` | Docker Compose 로컬 MariaDB 컨테이너 전용 앱 계정명. FastAPI 컨테이너에도 같은 값으로 오버라이드됩니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 | **`COMPOSE_DB_PASSWORD`** | string | 선택 | `minchodan_password` | Docker Compose 로컬 MariaDB 컨테이너 전용 앱 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
 | **`COMPOSE_DB_ROOT_PASSWORD`** | string | 선택 | `minchodan_root_password` | Docker Compose 로컬 MariaDB 컨테이너의 root 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
-| **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI 컨테이너 내부 연결은 항상 `mariadb:3306`을 사용합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
+| **`COMPOSE_DB_HOST`** | string | 선택 | (`DB_HOST`, 미설정 시 `mariadb`) | FastAPI 컨테이너의 DB 호스트만 명시적으로 재정의합니다. 미설정 시 기존 원격 `DB_HOST`를 유지합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
+| **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI의 실제 DB 대상은 `COMPOSE_DB_HOST` 또는 `DB_HOST`가 결정합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 
 ### 2.13 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
 

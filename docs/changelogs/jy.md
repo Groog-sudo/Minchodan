@@ -545,3 +545,23 @@
   - 보정 후 값이 원본 z축 depth와 거의 같게 보이는 중앙 지점도 정상일 수 있습니다. 광선 스케일은 중심부에서 1에 가깝고, 차이는 보통 가장자리나 기기 각도 변화에서 더 잘 드러납니다.
 
 ---
+
+### 2026-07-17 | 배포 | Docker 외부 DB 보존 및 iOS Pod 정합화
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - DB와 중앙 이미지 저장 API는 기존 외부 서비스를 그대로 사용해야 하므로, Linux Compose가 `DB_HOST=mariadb`로 강제 전환하던 동작을 제거할 필요가 있었습니다.
+  - iOS 의존성 설치 결과와 Xcode 프로젝트의 Expo Dev Client 리소스 목록을 현재 `client/package.json` 기준으로 맞출 필요가 있었습니다.
+- **변경 내용**:
+  - `docker/docker-compose.yml`의 FastAPI `DB_HOST`가 `.env`의 기존 원격 DB 값을 우선 유지하고, 필요할 때만 `COMPOSE_DB_HOST`로 재정의되도록 변경했습니다.
+  - 중앙 이미지 저장 API 관련 환경 변수는 Compose에서 재정의하지 않고 기존 `.env` 값을 그대로 전달합니다.
+  - `pod install` 결과에 맞춰 `Podfile.lock`과 Xcode 프로젝트의 Expo Dev Client 리소스 참조를 동기화했습니다.
+  - `docs/ops/environment_variables.md`와 `docs/ops/deployment_guide.md`의 DB 대상 선택 규칙을 실제 Compose 동작과 동기화했습니다.
+- **검증 결과**:
+  - `docker compose --env-file .env -f docker/docker-compose.yml config --quiet` 통과
+  - `Podfile.lock` YAML 파싱 및 Xcode 프로젝트 plist 파싱 통과
+  - `git diff --check` 통과
+- **비고**:
+  - 실제 호스트/IP가 포함된 `client/ios/Minchodan/AppDelegate.swift`, `client/src/config/index.ts`와 로컬 `.env` 파일은 이번 커밋에서 제외했습니다.
+
+---

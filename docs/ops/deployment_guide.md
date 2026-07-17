@@ -322,7 +322,7 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 | :--- | :--- | :--- |
 | FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동, `127.0.0.1`로만 바인딩, 또는 `COMPOSE_OLLAMA_BASE_URL`이 현재 Docker 런타임과 맞지 않음 | Linux/WSL은 `bash docker/linux_docker_start.sh`로 자동 기동합니다. Docker 컨테이너 접근까지 필요하면 신뢰할 수 있는 로컬망에서만 `MINCHODAN_EXPOSE_OLLAMA=1`, `OLLAMA_HOST=0.0.0.0:11434`를 설정합니다. Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`로 설정 |
 | FastAPI 컨테이너가 Redis에 연결 불가 | `REDIS_URL`이 `localhost`로 설정됨 | `.env`에서 `REDIS_URL=redis://redis:6379`로 변경 |
-| FastAPI 컨테이너가 MariaDB에 연결 불가 | `DB_HOST`가 컨테이너 서비스 이름이 아니거나 MariaDB healthcheck 실패 | compose 환경에서는 `DB_HOST=mariadb`, `DB_PORT=3306` 오버라이드가 적용되는지 확인 |
+| FastAPI 컨테이너가 MariaDB에 연결 불가 | 기존 원격 `DB_HOST` 또는 선택적 `COMPOSE_DB_HOST`가 의도한 대상을 가리키지 않거나 MariaDB healthcheck 실패 | 원격 DB 유지 시 `.env`의 `DB_HOST`, 로컬 컨테이너 사용 시 `COMPOSE_DB_HOST=mariadb`, 공통으로 `DB_PORT=3306` 적용 여부를 확인 |
 | MariaDB 컨테이너가 시작되지 않음 | `COMPOSE_DB_PASSWORD` 또는 `COMPOSE_DB_ROOT_PASSWORD` 누락, 호스트 포트 충돌 | `.env` 값 확인 또는 `DB_HOST_PORT`를 빈 포트로 변경 |
 | GPU 인식 실패 | NVIDIA Container Toolkit 미설치 | `nvidia-container-toolkit` 설치 후 Docker 데몬 재시작 |
 | Ollama 모델 pull 실패 | 디스크 공간 부족 또는 네트워크 | 호스트에서 디스크 여유 공간 확인 (gemma4:e4b 약 9.6GB) |
