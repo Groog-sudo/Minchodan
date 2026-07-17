@@ -68,6 +68,19 @@
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
+| **`REFLEX_QUEUE_MAXSIZE`** | int | 선택 | `2` | **2026-07-17 신규 (P0-2).** 반사 asyncio.Queue 최대 깊이. latest-frame-wins로 얕게 잡아 큐 적체로 인한 지연 드리프트 방지. 큐 가득 시 oldest drop | `server/capture/stream_splitter.py` |
+| **`COGNITIVE_QUEUE_MAXSIZE`** | int | 선택 | `4` | **2026-07-17 신규 (P0-2).** 인지 asyncio.Queue 최대 깊이. 1~2fps 특성상 소량 버퍼면 충분 | `server/capture/stream_splitter.py` |
+| **`REFLEX_MAX_AGE_S`** | float | 선택 | `0.4` | **2026-07-17 신규 (P0-2).** 반사 프레임 신선도 임계(초). 소비 시각 기준 프레임 ts가 이 값을 초과하면 추론 없이 드롭. ts=0(클라이언트 미전송)이면 검사 건너뜀 | `server/detection/consumer.py` |
+| **`COGNITIVE_MAX_AGE_S`** | float | 선택 | `2.0` | **2026-07-17 신규 (P0-2).** 인지 프레임 신선도 임계(초). 인지는 1~2fps 특성상 반사보다 여유 | `server/detection/consumer.py` |
+| **`REFLEX_SUPPRESS_TTL_S`** | int | 선택 | `5` | **2026-07-17 신규 (P0-1).** 동일 track_id+distance_band 조합의 반사 억제 TTL(초). 보행 속도(1m/s) 기준 5초면 동일 객체 반복 스팸 방지 충분 | `server/tts/suppressor.py` |
+| **`REFLEX_MIN_GAP_S`** | float | 선택 | `1.5` | **2026-07-17 신규 (P0-1).** 서로 다른 객체 경보의 최소 간격(초, device 단위). 알림 폭탄 방지 | `server/tts/suppressor.py` |
+| **`REFLEX_NEAR_HAPTIC_THROTTLE_S`** | float | 선택 | `0.5` | **2026-07-17 신규 (P0-1).** near(<=0.6m) 햅틱+비프 스로틀 간격(초). 충돌 임박 촉각 신호는 TTL 억제 제외, 스로틀만 적용 | `server/tts/suppressor.py` |
+| **`APPROACH_LOST_WINDOW_S`** | float | 선택 | `1.0` | **2026-07-17 신규 (P0-3).** Approach-Lost 윈도우(초). 동일 track_id가 이 시간 이내 재탐지되고 직전 hit_count가 MIN 이상이면 reacquired=True로 즉시 재발화 | `server/detection/bytetrack_tracker.py` |
+| **`APPROACH_LOST_MIN_PREV_HIT`** | int | 선택 | `3` | **2026-07-17 신규 (P0-3).** Approach-Lot 판정에 필요한 직전 hit_count 하한 (reflex_gate MIN_HIT_COUNT와 SSOT) | `server/detection/bytetrack_tracker.py` |
+| **`COGNITIVE_UTTERANCE_COOLDOWN_S`** | float | 선택 | `30.0` | **2026-07-17 신규 (P1-2).** 인지 가이드 발화 가치 게이트의 동일 상황 쿨다운(초). 동일 객체+표면 서명이면 이 시간 동안 TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시 발화 | `server/detection/consumer.py` |
+| **`SURFACE_CAUTION_CONFIRM_STREAK`** | int | 선택 | `2` | **2026-07-17 신규 (P2-1b).** surface_caution(계단/맨홀 통합) 반사 발동 히스테리시스. 연속 N 프레임 확인 후 반사 발동해 단일 프레임 오탐 완화 | `server/detection/consumer.py` |
+| **`REFLEX_LATENCY_ALERT_MS`** | float | 선택 | `300` | **2026-07-17 신규 (P2-2).** 반사 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_event에 latency_alert=True (비협상 목표 <300ms) | `server/detection/consumer.py` |
+| **`COGNITIVE_LATENCY_ALERT_MS`** | float | 선택 | `3000` | **2026-07-17 신규 (P2-2).** 인지 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_alert=True (가이드 허용 범위 <3000ms) | `server/detection/consumer.py` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 

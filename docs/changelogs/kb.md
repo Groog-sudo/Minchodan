@@ -2679,3 +2679,189 @@
   - 이벤트 프레임 미디어 API 버퍼링 분석 가이드 P0/A1-A5 + P1/B3 구현: (A1) iOS CoreML 정상 모드에서 JS JPEG->float32 변환 우회 via requiresFloat32 계약, (A2) 단말 ACK 기반 in-flight 프레임 제한(MAX_IN_FLIGHT_FRAMES, 메타+binary pair 드롭), (A3) 서버 ACK를 콘솔 중계보다 먼저 처리(binary/base64 양 경로), (A4) 콘솔 송신 latest-only 큐(maxsize=1) + per-connection worker 분리로 느린 콘솔 역압력 차단, (A5) 콘솔 relay 3-5fps 쓰로틀, (B3) 공유 httpx.AsyncClient 연결 풀(lifespan 생성/종료, 방어적 폴백). main.py contextlib.suppress -> suppress import 정정.
 - **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/inference/localDetector.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/inference/tfliteDetector.ts`, `server/api/session_manager.py`, `server/api/ws_router.py`, `server/main.py`, `server/services/remote_storage_client.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 통합 | merge_jh_into_kb
+
+- **커밋**: `2e5c289`
+- **변경 내용**:
+  - `jh` tip을 `kb`에 병합해 생활지원 RAG BGE-M3 전환과 콘솔 대시보드 위젯 MVP 복구를 kb 작업선에 반영한다.
+  - 포함: `CONVENIENCE_EMBEDDING_PROVIDER/MODEL`(bge-m3) 환경변수, `scripts/build_convenience_db.py` 임베딩 파라미터, `server/rag/convenience_rag.py`, `console/src/pages/DashboardPage.tsx` 위젯 추가/삭제·카드 헤더 정렬, `console/src/styles.css`.
+- **관련 파일**: `.env.example`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`, `scripts/build_convenience_db.py`, `server/rag/convenience_rag.py`
+- **검증 결과**: 병합 시뮬레이션에서 `.env.example` 자동 병합 성공(양쪽 변경 위치 상이), 충돌 0건, 환경변수 문서(`docs/ops/environment_variables.md`)에 `CONVENIENCE_EMBEDDING_*` 이미 기록됨 확인.
+- **비고**: kb(버퍼링 수정·ws/camera)와 jh(RAG·콘솔)는 독립 영역으로 기능적 간섭 없음. 이중 경로 분리 원칙 유지.
+
+---
+
+### 2026-07-17 | 문서 | convenience_rag_setup_doc
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - jh 병합으로 들어온 생활지원 RAG(BGE-M3) 셋업 절차가 `deployment_guide.md`와 `README.md`에 누락된 갭을 보완. 팀원이 `git pull` 후 동일 환경을 구성할 수 있도록 명세화.
+  - `deployment_guide.md`: Ollama pull 섹션(3.사전 준비 + 4.1 Windows + 4.2 macOS/Linux)에 `ollama pull bge-m3` 추가, RAG 빌드 섹션에 `python scripts/build_convenience_db.py` 추가, `bge-m3`/`nomic-embed-text` 용도 분리 주석.
+  - `README.md`: `build_convenience_db.py`를 "선택"에서 필수 빌드 단계로 격상, `ollama pull bge-m3` 사전 요건 안내(Windows/macOS-Linux 양쪽), 기술 스택 모델 목록에 `bge-m3` 명시.
+- **관련 파일**: `docs/ops/deployment_guide.md`, `README.md`
+- **검증 결과**: 문서 교차 검증 — `.env.example`(L42-43)과 `docs/ops/environment_variables.md`(L199-201)에 이미 변수 명세 존재 확인, 본 변경은 실행 절차 보완만 수행.
+- **비고**: `.env` 자체는 gitignore로 팀원 공유 불가하므로 `.env.example` 기반 복제 절차가 단일 진실 원천. 로컬에서 수행한 `ollama pull bge-m3` + `build_convenience_db.py`(문서 34건 적재)는 검증 완료.
+
+---
+
+### 2026-07-17 | 문서 | convenience_rag_test_spec
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 생활지원 RAG 통합 검증 시나리오를 프로젝트 테스트 명세 체계의 정합성 위치에 등재. jh 병합으로 들어온 부가 경로(StT 음성 명령 → 생활지원 RAG)가 기존 4대 E2E 시나리오와 단계별 TC 매트릭스에 누락된 갭 보완.
+  - `docs/ops/test_specification.md`: §7 통합 smoke 검증에 TC-SMOKE-006 신설(`bge-m3` pull + `build_convenience_db.py` + 컨테이너 `answer_convenience_question()` 검색 응답 검증), 상세 절차 블록 및 3종 검증 쿼리 기록, 버전 v0.6.5 -> v0.6.6.
+  - `docs/ops/integration_scenario_test.md`: SC-E2E-005 STT 음성 명령 -> 생활지원 RAG 응답 부가 경로 시나리오 신설, §2 헤더 4대 -> 5대 E2E 갱신, §3 결과 대장에 SC-E2E-005 PASS 행 추가, 버전 v1.0.0 -> v1.1.0.
+- **관련 파일**: `docs/ops/test_specification.md`, `docs/ops/integration_scenario_test.md`
+- **검증 결과**: 문서 교차 검증 — 단위 테스트는 기존 `tests/test_convenience_dial_resolver.py` 등이 커버하므로 본 변경은 통합 smoke + E2E 시나리오 명세만 보완(단일 진실 원칙 유지). §5.4 RAG 섹션은 safety_guidelines 전용이라 convenience를 넣지 않아 정합성 훼손 방지.
+- **비고**: TC-SMOKE-006과 SC-E2E-005는 동일 검증의 매트릭스/시나리오 쌍. 2026-07-17 실측 기반으로 상태를 `완료`/`PASS`로 마킹.
+
+---
+
+### 2026-07-17 | 문서 | field_test_improvement_plan_편입
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 실기기 실외 보행 테스트 피드백(S1~S8) 기반 개선 구현 계획서를 `Downloads/`에서 프로젝트 `docs/research/` 트리로 편입. 정합성 이슈 3건 정정 동시 적용.
+  - `docs/research/field_test_improvement_plan.md` 신규 편입 (v1.0 -> v1.1): §2.2 `consumer.py:124-135` 라인 근거를 `_consume_loop(L282)` + `detection_pipeline.py`로 정정(원 라인은 `_broadcast_latency_event` 함수 본문), §2.6 "Object Detection 29클래스"를 "공식 명세 29종, CLASS_TEXT 실제 31종"으로 정정, §2.6 STAIR_DOWN "죽은 코드" 근거를 "CLASS_TO_HINT_ID 매핑 없음"에서 "alert_id 생성 경로에 'stair' 계열이 없어 `_hint_id_for_alert` L212 분기 도달 불가"로 정정.
+  - 상대경로 링크를 Downloads 기준(`../research/X`)에서 `docs/research/` 기준(`./X`)으로 수정, `../design/`·`../ops/`는 동일 디렉토리 구조상 유지.
+  - `docs/README.md` research 섹션에 새 문서 등재 (outdoor_guidance_refinement_roadmap.md 다음).
+- **관련 파일**: `docs/research/field_test_improvement_plan.md`, `docs/README.md`
+- **검증 결과**: 코드-문서 교차 검증 16개 항목 중 13개 정합, 3개 정정 완료. AGENTS.md 규칙(이모지 금지·한국어·mermaid 큰따옴표/br·하드-바이브 분할·이중 경로 원칙) 모두 준수. 선행 문서 8개 존재 확인, 환경변수 6개 기존 충돌 없음.
+- **비고**: 본 계획은 outdoor_guidance_refinement_roadmap.md의 후속 Phase로 상호 참조. 구현 시 과제별로 별도 changelog 엔트리 추가 예정.
+
+---
+
+### 2026-07-17 | 3단계 | M1_P0-2_큐_최신성
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M1/P0-2 구현: 반사 큐 최신성 보장(latest-frame-wins) + 프레임 신선도 검사 + 큐 대기 계측으로 지연 드리프트(S3) 해소.
+  - `server/capture/stream_splitter.py`: `QUEUE_MAXSIZE=100` 단일 상수를 `REFLEX_QUEUE_MAXSIZE=2`/`COGNITIVE_QUEUE_MAXSIZE=4`로 분리 (환경변수 오버라이드). `get_default_splitter`에 적용. `QUEUE_MAXSIZE`는 하위 호환용으로 두 분리 상수의 최댓값.
+  - `server/detection/consumer.py`: `_process_frame` 진입부에 신선도 검사 추가 (`now - processed.ts > REFLEX_MAX_AGE_S/COGNITIVE_MAX_AGE_S` 초과 시 추론 없이 드롭 + `_stale_drop_count` 증가). `queue_wait_ms` 계산 후 reflex/cognitive 양쪽 `latency_stages`에 `queue_wait_ms` 키 추가 (콘솔 지연 패널 노출). ts=0(클라이언트 미전송)이면 검사 건너뜀(방어적 코딩).
+  - `docs/ops/environment_variables.md` + `.env.example`: `REFLEX_QUEUE_MAXSIZE`, `COGNITIVE_QUEUE_MAXSIZE`, `REFLEX_MAX_AGE_S`, `COGNITIVE_MAX_AGE_S` 4개 변수 추가.
+  - `tests/test_frame_decode.py`: `TestP0QueueFreshness` 클래스 신규 (reflex/cognitive 큐 latest 유지, 신선도 상수 로드 검증). 기존 `test_singleton_queue_maxsize`를 새 분리 상수 기반으로 업데이트. asyncio import 추가.
+- **관련 파일**: `server/capture/stream_splitter.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_frame_decode.py`
+- **검증 결과**: `pytest tests/test_frame_decode.py` 33개 전체 통과. consumer/stream_splitter import 정상, FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: M2(P0-1 억제 재무장)·M3(P0-3 소형 객체)의 선행. 큐 축소로 hit_count 증가 지연 가능성은 리스크(§10)로 명시, 드롭률 30% 초과 시 MIN_HIT_COUNT 하향 검토 예정.
+
+---
+
+### 2026-07-17 | 3단계 | M2_P0-1_억제_재무장_정책
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M2/P0-1 구현: 반사 억제 60초 무조건 침묵 -> 재무장(Re-arm) 정책으로 전환. "같은 상황 반복은 억제, 상황 변화(새 객체/거리 악화) 시 즉시 재발화"로 S1(정지 후 60초 침묵)·S2(새 객체 무시) 해소.
+  - `server/tts/suppressor.py`: 재무장 정책 구현. 억제 키 `high_obstacle:{track_id}:{distance_band}`로 분리 (새 객체/거리 악화 시 키 달라져 억제 우회). `should_rearm(prev_band, current_band)` 정적 메서드로 밴드 악화(far->medium->near) 판정 + [면접 대비 주석]. `should_emit_reflex(device_id, track_id, distance_band, is_near)` 비동기 메서드: near(<=0.6m)는 TTL 억제 제외 500ms 스로틀만, non-near는 device 단위 1.5s 쿨다운 + 동일 트랙+밴드 5s TTL + 밴드 악화 재발화. `mark_reflex_sent` 신규. 기존 `should_suppress`/`mark_as_sent`는 레거시 하위 호환 유지. 환경변수 `REFLEX_SUPPRESS_TTL_S`(5), `REFLEX_MIN_GAP_S`(1.5), `REFLEX_NEAR_HAPTIC_THROTTLE_S`(0.5) 추가.
+  - `server/detection/schemas.py`: `ReflexAlert`에 `distance_band` 필드 추가 (기본 "medium").
+  - `server/detection/gates/reflex_gate.py`: distance 기반 밴드 산출 (near<=0.6m / medium<=1.5m / far) + [면접 대비 주석]. `ReflexAlert`에 `distance_band` 채움.
+  - `server/detection/consumer.py`: `_send_reflex_alert`가 `should_emit_reflex`/`mark_reflex_sent` 사용. payload에 `distance_band` 추가 (단말/콘솔 가시성).
+  - `docs/ops/environment_variables.md` + `.env.example`: 3개 신규 변수 문서화.
+  - `tests/test_suppressor_rearm.py` 신규: should_rearm 단위(신규/악화/동일/개선), near 스로틀, non-near TTL/쿨다운/밴드 악화 재발화 12개 케이스.
+  - `tests/test_detection.py`: `TestReflexAlertSuppression` 3개 테스트를 새 API(`should_emit_reflex`/`mark_reflex_sent`)로 업데이트.
+- **관련 파일**: `server/tts/suppressor.py`, `server/detection/schemas.py`, `server/detection/gates/reflex_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_suppressor_rearm.py`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 79개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: near 햅틱 스로틀(500ms)은 충돌 임박 촉각 신호의 반복 안전 이득을 손실보다 크게 평가한 설계 선택. 밴드 경계(0.6m/1.5m)는 보행 속도 1m/s 기준.
+
+---
+
+### 2026-07-17 | 3단계 | M3_P0-3_소형객체_하단근접_ApproachLost
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M3/P0-3 구현: 소형 객체 하단 근접 보정 + Approach-Lost 재획득 즉시 재발화로 S4(재등장 0.3s 지연)·소형 객체 누락 해소.
+  - `server/detection/schemas.py`: `Detection`에 `reacquired: bool = False` 필드 추가.
+  - `server/detection/bytetrack_tracker.py`: `_compute_hit_count_with_reacquire()` 신규. 직전 hit_count >= APPROACH_LOST_MIN_PREV_HIT(3)이고 updated_at이 APPROACH_LOST_WINDOW_S(1.0s) 이내 재탐지 시 reacquired=True + [면접 대비 주석]. hit_count는 정상 누적 유지(감소시키지 않음). 환경변수 `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT` 추가.
+  - `server/detection/gates/reflex_gate.py`:
+    - (a) 소형 객체 하단 근접 보정: bottom_y >= 0.8*frame_height AND SMALL_OBJECT_MIN_AREA_RATIO(0.04) <= area_ratio < MIN_AREA_RATIO(0.10)이면 is_very_close=True + [면접 대비 주석]. 발밑 작은 bbox(볼라드·모터사이클)가 원거리로 오인되어 반사 누락되는 문제 해소.
+    - (b) reacquired=True면 MIN_HIT_COUNT 검사 건너뛰어 즉시 발동 + [면접 대비 주석].
+    - `SMALL_OBJECT_MIN_AREA_RATIO=0.04` 상수 추가.
+  - `docs/ops/environment_variables.md` + `.env.example`: `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT` 2개 변수 추가.
+  - `tests/test_detection.py`: TestGates에 3개(소형 하단 근접 발동/하한 미만 미발동/reacquired MIN_HIT bypass), TestByteTrackTracker에 3개(윈도우 내 reacquired/윈도우 외 False/직전 hit 낮으면 False) 테스트 추가.
+- **관련 파일**: `server/detection/schemas.py`, `server/detection/bytetrack_tracker.py`, `server/detection/gates/reflex_gate.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 85개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: Approach-Lot는 track_id가 유지되는 케이스를 전제(문서 §4.2 (b) "동일 track_id"). 완전히 새 track_id 부여 시 spatial matching이 필요하나 post-MVP 과제. SMALL_OBJECT_MIN_AREA_RATIO(0.04)는 중앙 먼 곳 작은 bbox 오탐 차단을 위한 하한.
+
+---
+
+### 2026-07-17 | 6단계 | M4_P1-2_발화가치_게이트
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M4/P1-2 구현: 인지 가이드 발화 가치(Utterance Value) 게이트 추가. 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S(30s) 동안 TTS 합성 생략해 CPU 점유와 중복 안내를 동시 감소 (S5/S6 해소).
+  - `server/detection/consumer.py`:
+    - `COGNITIVE_UTTERANCE_COOLDOWN_S` 환경변수 상수(30.0) 추가.
+    - `_last_guide_signature: dict[str, str]` 인스턴스 변수 추가 (device_id별 상황 서명).
+    - `_compute_cognitive_signature(result, departure_confirmed)` 정적 메서드: 객체 클래스 정렬 + 표면 클래스 정렬 + 이탈 여부로 서명 산출 + [면접 대비 주석].
+    - `_has_utterance_value(device_id, result, departure_confirmed)` 메서드: 발화 가치 OR 판정 (보도 이탈/서명 변화/쿨다운 경과).
+    - `_send_cognitive_guide` 진입부에 P1-2 게이트 추가 (기존 오디오 겹침 쿨다운 앞). 전송 성공 시 `_last_guide_signature` 갱신.
+  - `docs/ops/environment_variables.md` + `.env.example`: `COGNITIVE_UTTERANCE_COOLDOWN_S` 변수 추가.
+  - `tests/test_detection.py`: `TestUtteranceValueGate` 클래스 신규 8개 케이스 (서명 객체/표면/이탈 반영, 이탈 항상 가치, 새 객체 가치, 동일 서명 쿨다운 내 생략, 동일 서명 쿨다운 경과 발화, 최초 안내 가치).
+- **관련 파일**: `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 93개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: 기존 오디오 겹침 쿨다운(_required_guide_gap_sec, 8s+오디오길이)은 유지 - P1-2 게이트는 "동일 상황 반복" 차단, 기존 쿨다운은 "오디오 재생 중 겹침" 차단으로 역할 분리. fallback_node/realtime_tts는 consumer 게이트로 사전 차단되어 호출 자체가 생략되므로 TTS 합성 미호출 보장.
+
+---
+
+### 2026-07-17 | 6단계 | M5_P1-1_반사_후속_행동_안내
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M5/P1-1 구현: 반사 경보(정지) 800ms 후 인지 가이드(LangGraph L2) 대신, 단일 객체 + 방향 확정 시 avoidance 템플릿으로 즉시 우회 방향 안내. LangGraph 전체(L1/L2/L3) 수 초 소요를 없애 반사 후속 안내 지연(S7) 해소.
+  - `server/orchestration/avoidance.py` 신규: `build_avoidance_guidance(alert)` 순수 함수. direction(front/front-left/front-right/stop) + panning 기반 우회 방향 템플릿 (20자 이내) + [면접 대비 주석]. `can_use_avoidance_fast_lane(alert, detections)` 판정 (단일 객체 + 유효 direction + 20자 이내). 비협상 원칙 준수: LLM/RAG/실시간 TTS 미경유, 순수 템플릿.
+  - `server/detection/consumer.py`:
+    - `_send_cognitive_guide`에 `preset_guidance_text: str | None` 파라미터 추가. 주어지면 `run_orchestrator`(LangGraph) 우회하고 preset 텍스트로 즉시 TTS 합성 후 전송.
+    - `_trigger_delayed_cognitive_guide`에서 avoidance fast lane 우선 시도. `can_use_avoidance_fast_lane` True면 `build_avoidance_guidance`를 preset으로 전달 (LangGraph 우회). 다중 객체/방향 불확정 시 기존 LangGraph 폴백.
+  - `tests/test_langgraph.py`: `TestAvoidanceFastLane` 클래스 신규 11개 케이스 (front-left→오른쪽, front-right→왼쪽, 정면 중앙→멈추세요, panning±→좌/우, stop→멈추세요, unknown→None, 단일 객체 fast lane 가능, 다중 객체 불가, unknown direction 불가).
+- **관련 파일**: `server/orchestration/avoidance.py`, `server/detection/consumer.py`, `tests/test_langgraph.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 116개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: avoidance fast lane은 반사 후속(800ms 후) 인지 경로 진입점에서 동작하므로 반사 경로 임포트 금지 규칙 미위반. 다중 객체/방향 불확정 시 기존 LangGraph로 폴백해 안전성 확보. preset 텍스트는 실시간 TTS 합성(사전합성 클립 아님) - 인지 경로 허용.
+
+---
+
+### 2026-07-17 | 3단계 | M6_P2-1_계단_실측_단기보정
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M6/P2-1(a)(b) 구현: 계단(caution 통합 클래스) 오탐 실측 평가 스크립트 + surface_caution 반사 발동 히스테리시스로 단일 프레임 오탐 완화.
+  - `scripts/eval_segmentation_stairs.py` 신규 (a): 세그멘테이션 모델 caution 클래스 정밀도/재현율/F1 실측 평가 스크립트. EVAL_SEG_DATASET_DIR 환경변수로 데이터셋 경로 받아 TP/FP/FN 산출. 미설정 시 더미 평가로 스크립트 동작 검증. caution 클래스 인덱스=1 (4클래스 중).
+  - `server/detection/consumer.py` (b): surface_caution 반사 발동 히스테리시스 추가. `SURFACE_CAUTION_CONFIRM_STREAK`(2) 연속 프레임 확인 후 반사 발동, 미달 시 스킵. `_surface_caution_streak` 인스턴스 변수. 비-surface 반사(high_obstacle)는 기존대로 즉시 발동 + [면접 대비 주석].
+  - `server/detection/risk_rules.py` (b): `_hint_id_for_alert`에 "caution" in alert_id → STAIR_DOWN 매핑 추가 + [면접 대비 주석]. surface_caution ReflexAlert가 낙상 위험 힌트로 전달.
+  - `docs/ops/environment_variables.md` + `.env.example`: `SURFACE_CAUTION_CONFIRM_STREAK` 변수 추가.
+  - `tests/test_detection.py`: `TestSurfaceCautionHysteresis` 클래스 신규 2개 케이스 (상수 로드, caution alert STAIR_DOWN 매핑).
+- **관련 파일**: `scripts/eval_segmentation_stairs.py`, `server/detection/consumer.py`, `server/detection/risk_rules.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: 평가 스크립트 더미 실행 정상 (Precision=0.8, Recall=0.7273, F1=0.7619). `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 118개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: (c) 세그 5클래스 재학습 + STAIR_DOWN 활성화는 M7에서 분리. 히스테리시스는 caution이 인지 경로에서도 설명되므로 미달 시 반사 스킵해도 안전 마진 유지.
+
+---
+
+### 2026-07-17 | 3단계 | M7_P2-1c_세그5클래스_파이프라인_P2-2_지연관측
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M7/P2-1(c) + P2-2 구현: 세그멘테이션 5클래스(계단/맨홀 분리) 재학습 파이프라인 골격 + STAIR_DOWN 활성화 사전 등록 + 파이프라인 지연 관측(콘솔 latency_alert).
+  - `scripts/train_segmentation_5class.py` 신규 (c): 5클래스 세그멘테이션 재학습 파이프라인. 데이터 검증 -> 학습 -> 검증 단계 골격. SEG_5CLASS_NAMES(5클래스 제안), --dry-run/--validate-only 옵션. 환경변수 SEG_5CLASS_MODEL_BASE, SEG_5CLASS_OUTPUT_DIR.
+  - `server/detection/gates/surface_gate.py` (c): P0_SURFACE_CLASSES에 5클래스 모델용 `stair_down`, `manhole` 사전 등록 + [면접 대비 주석]. 4클래스(caution 통합)/5클래스(분리) 모델 모두 지원해 모델 교체 시 게이트 코드 변경 없이 STAIR_DOWN 활성화.
+  - `server/detection/consumer.py` (P2-2): `_broadcast_latency_event`에 latency_alert 필드 추가. total_ms가 REFLEX_LATENCY_ALERT_MS(300)/COGNITIVE_LATENCY_ALERT_MS(3000) 초과 시 latency_alert=True, latency_threshold_ms 포함해 콘솔에 실시간 지연 드리프트 알림.
+  - `docs/ops/environment_variables.md` + `.env.example`: `REFLEX_LATENCY_ALERT_MS`, `COGNITIVE_LATENCY_ALERT_MS` 2개 변수 추가.
+  - `tests/test_detection.py`: `TestLatencyAlertAndStairDown` 클래스 신규 4개 케이스 (지연 임계 로드, stair_down 5클래스 surface_gate, manhole 5클래스, stair_down alert STAIR_DOWN 힌트 매핑).
+- **관련 파일**: `scripts/train_segmentation_5class.py`, `server/detection/gates/surface_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 122개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK. 학습 스크립트 dry-run 정상 동작.
+- **비고**: 5클래스 재학습은 라벨링된 데이터셋 준비 후 오프라인 실행. STAIR_DOWN은 5클래스 모델 배포 시 surface_gate 사전 등록으로 자동 활성화. 지연 관측은 콘솔 운영자용 모니터링 강화.
+
+---
+
+### 2026-07-17 | 문서 | 필드테스트개선_M1-M7_문서동기화
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 M1-M7 구현에 대한 문서 동기화 (교차 검증).
+  - `docs/ops/test_specification.md`: TC-DET-012~018(큐 최신성/재무장/소형객체/Approach-Lost/surface 히스테리시스/STAIR_DOWN 5클래스/지연관측), TC-LG-010~011(발화가치게이트/avoidance fast lane) 신규 등재. 버전 v0.6.6 -> v0.6.7.
+  - `docs/design/architecture.md`: §11 "필드 테스트 개선 (2026-07-17, M1-M7)" 섹션 신설. P0/P1/P2 마일스톤 요약, 신규 환경변수 목록, 오해 방지 조항(서버-온디바이스 폴백 유지 명시).
+  - `docs/design/api_specification.md`: §4.1 reflex_alert에 `distance_band` 필드 추가 + 억제 키 정정. §4.3 latency_event 섹션 신설(`latency_alert`, `latency_threshold_ms`, `queue_wait_ms` 필드).
+  - `docs/design/reflex_audio_specification.md`: §6 "억제 재무장(Re-arm) 정책" 섹션 신설. 정책 전환, 억제 키 분리, 거리 밴드, should_rearm 판정, 오해 방지 조항.
+- **관련 파일**: `docs/ops/test_specification.md`, `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/design/reflex_audio_specification.md`
+- **검증 결과**: 문서 교차 검증 완료. 코드-문서 정합성 확보 (ReflexAlert distance_band, latency_event latency_alert, 재무장 정책 키/TTL/밴드 일치).
+- **비고**: environment_variables.md는 M1-M7 각 커밋에서 이미 갱신 완료. changelog도 각 M별로 이미 추가됨. 본 커밋은 남은 3개 설계 문서 동기화.

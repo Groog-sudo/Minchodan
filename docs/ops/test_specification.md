@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.5 (2026-07-11 TC-DET-011 반사 위험도 SSOT 정합 테스트 신설(`tests/test_risk_ssot.py`) + 이전 v0.6.4 이력 유지: STT 회귀 테스트 실구현·플랫폼별 녹음·반사 경보 미전송 검증 반영)
+> **버전**: v0.6.7 (2026-07-17 필드 테스트 개선 M1-M7 신규 TC 등재: TC-DET-012~018 큐 최신성/재무장/소형객체/Approach-Lost/surface 히스테리시스/STAIR_DOWN 5클래스/지연관측, TC-LG-010~011 발화가치게이트/avoidance fast lane + 이전 v0.6.6 이력 유지: TC-SMOKE-006 생활지원 RAG 통합 smoke 검증 + 이전 v0.6.5 이력 유지: 2026-07-11 TC-DET-011 반사 위험도 SSOT 정합 테스트 신설(`tests/test_risk_ssot.py`), STT 회귀 테스트 실구현·플랫폼별 녹음·반사 경보 미전송 검증 반영)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -141,6 +141,13 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | **TC-DET-009** | 무탐지 빈 리스트 | 에러 없이 빈 리스트 반환 | 완료 |
 | **TC-DET-010** | 노면 클래스 분리 (C2) | `braille_damaged` 독립 클래스 검출 | 완료 |
 | **TC-DET-011** | 반사 위험도 SSOT 정합 | 서버 `HIGH_RISK_CLASSES`와 단말 `CLASS_MIN_CONFIDENCE`의 고위험 5종 값 일치 (`tests/test_risk_ssot.py`, 계약: `docs/design/risk_ssot_contract.md`) | 완료 (2026-07-11 신설) |
+| **TC-DET-012** | 반사 큐 최신성 보장 (P0-2) | `REFLEX_QUEUE_MAXSIZE=2`에서 3프레임 투입 시 oldest drop, 최신 2개 유지. 신선도 초과(`REFLEX_MAX_AGE_S`) 프레임 추론 없이 드롭 (`tests/test_frame_decode.py::TestP0QueueFreshness`) | 완료 (2026-07-17 신설) |
+| **TC-DET-013** | 억제 재무장 정책 (P0-1) | `should_rearm()` 밴드 악화(far->medium->near) 판정. near 500ms 스로틀, non-near device 1.5s 쿨다운 + 동일키 5s TTL + 밴드 악화 재발화 (`tests/test_suppressor_rearm.py`) | 완료 (2026-07-17 신설) |
+| **TC-DET-014** | 소형 객체 하단 근접 (P0-3) | 발밑(bottom_y>=0.8*H) 소형 객체(area 4~10%) 근접 발동. 하한(4%) 미만 미발동 (`tests/test_detection.py::TestGates`) | 완료 (2026-07-17 신설) |
+| **TC-DET-015** | Approach-Lost 재획득 (P0-3) | 직전 hit>=3 + 1s 이내 재탐지 시 `reacquired=True`, reflex_gate MIN_HIT_COUNT 검사 건너뛰어 즉시 발동 (`tests/test_detection.py::TestByteTrackTracker`) | 완료 (2026-07-17 신설) |
+| **TC-DET-016** | surface_caution 히스테리시스 (P2-1b) | `SURFACE_CAUTION_CONFIRM_STREAK=2` 연속 프레임 확인 후 반사 발동. 단일 프레임 오탐 스킵. caution alert STAIR_DOWN 힌트 매핑 (`tests/test_detection.py::TestSurfaceCautionHysteresis`) | 완료 (2026-07-17 신설) |
+| **TC-DET-017** | STAIR_DOWN 5클래스 활성화 (P2-1c) | 5클래스 모델 `stair_down`/`manhole` 클래스가 surface_gate 즉시 경보 대상. `surface_stair_down` alert STAIR_DOWN 힌트 매핑 (`tests/test_detection.py::TestLatencyAlertAndStairDown`) | 완료 (2026-07-17 신설) |
+| **TC-DET-018** | 파이프라인 지연 관측 (P2-2) | `REFLEX_LATENCY_ALERT_MS=300`/`COGNITIVE_LATENCY_ALERT_MS=3000` 초과 시 콘솔 `latency_event`에 `latency_alert=True` 필드 추가 (`tests/test_detection.py::TestLatencyAlertAndStairDown`) | 완료 (2026-07-17 신설) |
 
 ### 5.4 4단계 - RAG 지식베이스 구축
 
@@ -185,6 +192,8 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-LG-007 | 조건부 분기         | StateGraph 엣지 정상                      | 완료 |
 | TC-LG-008 | API 장애 디폴트     | Rate Limit 시 디폴트 수칙 반환            | 완료 |
 | TC-LG-009 | GPU Monitor 핫스왑  | GPU 리소스 임계치 돌파 시 OpenAI 핫스왑   | 완료 |
+| **TC-LG-010** | 발화 가치 게이트 (P1-2) | 동일 상황(객체+표면 서명) 반복 안내 `COGNITIVE_UTTERANCE_COOLDOWN_S=30s` 내 TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시 발화 (`tests/test_detection.py::TestUtteranceValueGate`) | 완료 (2026-07-17 신설) |
+| **TC-LG-011** | 반사 후속 avoidance fast lane (P1-1) | 단일 객체 + 방향 확정 시 `build_avoidance_guidance()` 템플릿으로 즉시 우회 방향 안내 (LangGraph 우회). 다중 객체/방향 불확정 시 LangGraph 폴백 (`tests/test_langgraph.py::TestAvoidanceFastLane`) | 완료 (2026-07-17 신설) |
 
 ### 5.7 공통 - MCP 및 실시간 관제 스트림
 
@@ -264,6 +273,22 @@ GPU, Ollama, Redis, 실제 카메라가 필요한 흐름은 통합 smoke로 분�
 | TC-SMOKE-003 | GPU 환경 검증  | `verify_gpu.py` sm_120 + CUDA 12.8 | 대기 |
 | TC-SMOKE-004 | Docker 구성    | Redis + MariaDB + FastAPI 컨테이너 + 호스트 Ollama 연결 | 대기 |
 | TC-SMOKE-005 | RAG DB 빌드    | `python scripts/build_safety_db.py` | 대기 |
+| TC-SMOKE-006 | 생활지원 RAG 통합 | `ollama pull bge-m3` + `python scripts/build_convenience_db.py` 후 컨테이너에서 `answer_convenience_question()` 검색 응답 검증 (2026-07-17 신설, jh 병합 반영) | 완료 |
+
+> **TC-SMOKE-006 상세 절차 (2026-07-17 검증 완료)**
+>
+> 사전 요건: `.env`에 `CONVENIENCE_EMBEDDING_PROVIDER=ollama`, `CONVENIENCE_EMBEDDING_MODEL=bge-m3` 설정, 호스트 Ollama에 `bge-m3:latest` 적재, Docker 컨테이너가 `data/chroma_db/` 볼륨 마운트.
+>
+> 1. 호스트에서 `python scripts/build_convenience_db.py` 실행 → `data/chroma_db/convenience_guidelines/` 컬렉션 생성 (문서 34건 적재 확인).
+> 2. `docker compose restart fastapi` 후 헬스체크 200 확인.
+> 3. 컨테이너 내부에서 `get_default_convenience_service()` 로드 후 `search(question, k=3)` 직접 호출.
+> 4. 검증 쿼리 3종:
+>    - "복지 전화번호 알려줘" → 복지관/센터 연락처 정상 반환 (적중)
+>    - "동사무소 몇 시까지 해?" → 데이터 부재 시 "정보 없음" 정직 응답 (환각 방지 가드레일 동작)
+>    - "시각장애인 혜택 뭐 있어?" → 시각장애인 협회/센터 정상 반환 (적중)
+> 5. `answer_convenience_question()` 비동기 호출 시 answer 본문이 검색 결과를 반영해 자연어 응답 생성 확인.
+>
+> Pass 조건: 컨테이너가 호스트 Ollama(`host.docker.internal:11434`)를 통해 `bge-m3` 임베딩을 정상 호출하고, ChromaDB 볼륨 마운트로 호스트 빌드 DB를 읽어 검색 결과를 반환할 것.
 
 ---
 

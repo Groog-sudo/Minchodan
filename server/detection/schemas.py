@@ -24,6 +24,10 @@ class Detection(BaseModel):
     # 2026-07-07 추가: 동일 track_id가 연속으로 몇 프레임 유지됐는지(ByteTrackTracker가 채움).
     # 실내 오탐 완화용 - reflex_gate가 이 값을 확인해 한 프레임짜리 순간 오탐을 걸러낸다.
     hit_count: int = 0
+    # P0-3 (2026-07-17): Approach-Lost 플래그. 동일 track_id가 1초 이내 소실 후 재탐지되어
+    # hit_count가 MIN_HIT_COUNT를 이미 충족했던 객체로 복원된 경우 True. reflex_gate는 이 때
+    # MIN_HIT_COUNT 재충족 대기 없이 즉시 발동해 접근 객체의 재등장 지연(S4)을 해소한다.
+    reacquired: bool = False
 
 
 class SurfaceResult(BaseModel):
@@ -79,3 +83,6 @@ class ReflexAlert(BaseModel):
     track_id: str | None = None
     class_name: str = ""
     hit_count: int = 0
+    # P0-1 (2026-07-17): 억제 재무장 정책용 거리 밴드 ("near"|"medium"|"far").
+    # suppressor가 track_id+distance_band 조합 키로 억제하므로 거리 악화 시 재발화 가능.
+    distance_band: str = "medium"

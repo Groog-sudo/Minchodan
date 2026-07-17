@@ -59,7 +59,7 @@
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + 컨텍스트 TTL)
 - LangGraph (L1/L2/L3 오케스트레이션, raw SimpleOllamaClient/SimpleOpenAIClient)
-- Ollama (gemma4:e4b 가이드 생성, nomic-embed-text 임베딩)
+- Ollama (gemma4:e4b 가이드 생성, nomic-embed-text 보행 안전 수칙 임베딩, bge-m3 생활지원 RAG 임베딩)
 - Gemini API (gemini-2.5-flash-lite, 오프라인 RAG 빌드 캡셔닝; 최초 계획 로컬 Llava에서 전환)
 - ChromaDB (로컬 벡터 저장소)
 - Supertonic 3 (로컬 TTS, ONNX, MIT, 99M 파라미터; 기본 엔진, 2026-07-09 Piper에서 교체). Piper(piper-kss-korean.onnx)는 핫스왑 폴백으로 보존
@@ -229,7 +229,9 @@ bash docker/linux_docker_start.sh
 ```powershell
 python scripts/build_safety_db.py
 # data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
-# 선택: python scripts/build_convenience_db.py
+python scripts/build_convenience_db.py
+# data/convenience_guidelines.json → data/chroma_db/convenience_guidelines (생활지원 RAG)
+# 사전 요건: ollama pull bge-m3 (생활지원 RAG 임베딩 전용)
 # 선택: python scripts/build_guide_clips.py
 ```
 
@@ -238,7 +240,9 @@ python scripts/build_safety_db.py
 ```bash
 python scripts/build_safety_db.py
 # data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
-# 선택: python scripts/build_convenience_db.py
+python scripts/build_convenience_db.py
+# data/convenience_guidelines.json → data/chroma_db/convenience_guidelines (생활지원 RAG)
+# 사전 요건: ollama pull bge-m3 (생활지원 RAG 임베딩 전용)
 # 선택: python scripts/build_guide_clips.py
 ```
 

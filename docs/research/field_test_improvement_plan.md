@@ -1,8 +1,8 @@
 # 실사용 필드 테스트 피드백 기반 개선 구현 계획서
 
 > **작성일**: 2026-07-17
-> **버전**: v1.0
-> **선행 문서**: [`docs/research/outdoor_guidance_refinement_roadmap.md`](../research/outdoor_guidance_refinement_roadmap.md) (Phase 1~3 완료 이후 후속 계획), [`docs/design/behavior_and_risk_insight.md`](../design/behavior_and_risk_insight.md), [`docs/design/architecture.md`](../design/architecture.md)
+> **버전**: v1.1 (2026-07-17 프로젝트 docs/ 트리 편입 및 정합성 이슈 3건 정정: §2.2 consumer.py 라인 근거, §2.6 클래스 수 표기, §2.6 STAIR_DOWN 근거 위치. 이전 v1.0 이력: Downloads 배포 원본)
+> **선행 문서**: [`outdoor_guidance_refinement_roadmap.md`](./outdoor_guidance_refinement_roadmap.md) (Phase 1~3 완료 이후 후속 계획), [`../design/behavior_and_risk_insight.md`](../design/behavior_and_risk_insight.md), [`../design/architecture.md`](../design/architecture.md)
 > **적용 원칙**: 이중 경로 물리 분리(반사 경로 LLM/RAG/실시간 TTS 미경유)는 본 계획의 모든 과제에서 비협상 원칙으로 유지합니다.
 
 ---
@@ -40,7 +40,7 @@
 | :--- | :--- | :--- |
 | **깊은 큐 + 만석 시에만 drop** | `server/capture/stream_splitter.py` `QUEUE_MAXSIZE = 100` | 소비 속도(추론)가 생산 속도(캡처 fps)보다 느리면 큐가 서서히 차오르며, drop-oldest는 **큐가 가득 찬 뒤에야** 발동합니다. 정상상태 지연 = 큐 깊이 / 처리 fps (예: 처리 5fps에 큐 100이면 최대 20초 지연). "시간이 지나면 밀린다"는 증상과 정확히 일치합니다. |
 | **ACK가 큐 적체와 무관** | `server/api/ws_router.py:845` (`_send_detection_ack`가 디코드 직후 호출) | 2026-07-17 도입된 단말 in-flight 제한(`client/src/hooks/useWebSocket.ts` `MAX_IN_FLIGHT_FRAMES = 2`)은 WS 송신 버퍼 적체는 막지만, ACK가 디코드 직후(큐 적재 전) 반환되므로 **서버 내부 reflex_queue 적체는 제어하지 못합니다.** |
-| **반사 프레임 처리 비용** | `server/detection/detection_pipeline.py:124-135` | 반사 8~10fps 프레임마다 Object Detection + Segmentation 추론 2회, 트랙별 Redis get/set, 교차검증(9점 폴리곤 검사), 콘솔 브로드캐스트가 모두 수행되어 소비 속도의 상한을 낮춥니다. |
+| **반사 프레임 처리 비용** | `server/detection/consumer.py:_consume_loop`(L282) + `server/detection/detection_pipeline.py` | `_consume_loop`가 reflex/cognitive 큐를 소비하며, `detection_pipeline.py`에서 Object Detection + Segmentation 추론 2회, 트랙별 Redis get/set, 교차검증(9점 폴리곤 검사), 콘솔 브로드캐스트가 수행되어 소비 속도의 상한을 낮춥니다. (정정: 원 v1.0의 `consumer.py:124-135`는 `_broadcast_latency_event` 함수 본문으로 근거 위치가 부정확했음) |
 
 ### 2.3 S4: 소형 객체 근접 사각지대
 
@@ -68,8 +68,8 @@
 
 | 원인 | 코드 근거 | 설명 |
 | :--- | :--- | :--- |
-| **탐지·분할 클래스에 계단 부재** | `server/detection/risk_rules.py` CLASS_TEXT 29종(stairs 없음), `server/detection/gates/surface_gate.py` 2026-07-07 정정 주석 | Object Detection 29클래스에 계단이 없고, Segmentation은 계단/맨홀/그레이팅을 `caution` 하나로 통합 학습했습니다. 따라서 계단을 계단이라고 특정하는 것이 현재 모델 구조상 불가능합니다. |
-| **STAIR_DOWN 힌트 영구 미발동** | `risk_rules.py` `CLASS_TO_HINT_ID` (STAIR_DOWN 매핑 클래스 없음) | 메시지 체계에는 STAIR_DOWN이 정의되어 있으나 이를 발동시키는 클래스 매핑이 없어 죽은 코드입니다. |
+| **탐지·분할 클래스에 계단 부재** | `server/detection/risk_rules.py` CLASS_TEXT(공식 명세 29종, 실제 31종 - stairs 없음), `server/detection/gates/surface_gate.py` 2026-07-07 정정 주석 | Object Detection(공식 명세 29종, CLASS_TEXT 실제 31종)에 계단이 없고, Segmentation은 계단/맨홀/그레이팅을 `caution` 하나로 통합 학습했습니다. 따라서 계단을 계단이라고 특정하는 것이 현재 모델 구조상 불가능합니다. |
+| **STAIR_DOWN 힌트 영구 미발동** | `server/detection/risk_rules.py` `_hint_id_for_alert`(L212 `if "stair" in alert.alert_id: return "STAIR_DOWN"`) + `reflex_gate.py` `SUPPRESS_ALERT_ID = "high_obstacle"` | 메시지 체계에는 STAIR_DOWN이 정의되어 있고 `_hint_id_for_alert`에도 분기가 존재하나, 현재 `alert_id`는 `high_obstacle`로 고정되어 "stair" 계열 alert_id를 생성하는 게이트가 없어 L212 분기가 도달 불가합니다. (정정: 원 v1.0의 "CLASS_TO_HINT_ID 매핑 없음" 근거는 부정확했음 - 실제로는 alert_id 생성 경로 부재가 진짜 원인) |
 | **caution 자체 미탐 가능성** | 실측 필요 | 필드에서 계단 접근 시 `surface_caution` 반사 경보도 나오지 않았다면 세그멘테이션 모델의 계단 재현율 자체가 낮을 가능성이 있어 실측 검증이 선행되어야 합니다. |
 
 ---
@@ -204,7 +204,7 @@ is_very_close = (area_ratio >= 0.10)                       # 기존: 대형 객�
 | (b) 단기 보정 | `caution` 발동 시 안내 문구를 "전방 바닥 단차 주의"로 조정(계단/맨홀 통합 클래스임을 문구에 반영). (a)에서 재현율이 낮으면 `YOLO_CONF` 하향 등 임계 튜닝 병행 | `surface_gate` 클립·`risk_rules` 문구 수정 |
 | (c) 중기 재학습 | Segmentation을 5클래스(`sidewalk_normal/caution/roadway/braille_normal/stair`)로 재학습. AI Hub 원본에서 계단 라벨 재분리 + 기존 외부 데이터 융합 파이프라인(`training/`의 merge 절차) 재사용. 완료 시 `CLASS_TO_HINT_ID`에 STAIR_DOWN 활성화, `surface_gate`에 stair 하향 경사 경보 추가 | 재학습 가중치, KPI: stair 클래스 IoU 0.5 이상·재현율 0.7 이상 |
 
-- 클라이언트 `depthProbe`(LiDAR) 기반 하강 단차 감지는 post-MVP 하이브리드 로드맵([`docs/research/post_mvp_hybrid_roadmap.md`](../research/post_mvp_hybrid_roadmap.md))과 연계해 별도 검토합니다(본 계획 범위 외).
+- 클라이언트 `depthProbe`(LiDAR) 기반 하강 단차 감지는 post-MVP 하이브리드 로드맵([`post_mvp_hybrid_roadmap.md`](./post_mvp_hybrid_roadmap.md))과 연계해 별도 검토합니다(본 계획 범위 외).
 
 ### 6.2 P2-2: 지연 드리프트 관측 보강
 
@@ -237,7 +237,7 @@ is_very_close = (area_ratio >= 0.10)                       # 기존: 대형 객�
 | [`docs/design/reflex_audio_specification.md`](../design/reflex_audio_specification.md) | near 햅틱 스로틀 정책, 소실 경보 클립 |
 | [`docs/ops/environment_variables.md`](../ops/environment_variables.md) | `REFLEX_SUPPRESS_TTL_S`, `REFLEX_MIN_GAP_S`, `REFLEX_MAX_AGE_S`, `COGNITIVE_MAX_AGE_S`, `POST_REFLEX_GUIDE_GAP_S`, `GUIDE_LOW_RISK_NARRATION` |
 | [`docs/ops/test_specification.md`](../ops/test_specification.md) | 7절 KPI·테스트 추가 |
-| [`docs/research/outdoor_guidance_refinement_roadmap.md`](../research/outdoor_guidance_refinement_roadmap.md) | 본 계획을 후속 Phase로 상호 참조 |
+| [`outdoor_guidance_refinement_roadmap.md`](./outdoor_guidance_refinement_roadmap.md) | 본 계획을 후속 Phase로 상호 참조 |
 | `docs/changelogs/[이니셜].md` | 과제 완료 시마다 엔트리 추가 |
 
 ---

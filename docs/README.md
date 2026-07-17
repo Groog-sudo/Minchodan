@@ -125,6 +125,7 @@ docs/
 | SenseVoice-Small STT 검토 | [sensevoice_stt_feasibility.md](research/sensevoice_stt_feasibility.md) | 음성 명령(STT) 경로용 SenseVoice-Small 도입 정당성(지연·로딩·한국어 정확도) |
 | **프로젝트 보완점: Mitos (정정본)** | [mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **안전성·음성 UX·신뢰성·검증 체계·제품화 보완 로드맵. v0.3.0에서 코드 대조 검증 기록(§10) 추가, 루트 `PROJECT_IMPROVEMENTS_MITOS.md`에서 이동** |
 | **실외 안내 고도화 로드맵** | [outdoor_guidance_refinement_roadmap.md](research/outdoor_guidance_refinement_roadmap.md) | **실외 테스트 기반 반사 과다·LLM 지연·안내 품질 3-Phase 로드맵 (v1.1: class-agnostic 게이트 정합)** |
+| **실사용 필드 테스트 개선 계획** | [field_test_improvement_plan.md](research/field_test_improvement_plan.md) | **실기기 실외 보행 테스트 피드백(S1~S8) 기반 P0/P1/P2 개선 구현 계획. 억제 재무장·큐 최신성·소형 객체 사각지대·후속 행동 안내·발화 가치 게이트·계단 인식 (v1.1: 정합성 이슈 3건 정정 편입)** |
 
 ---
 

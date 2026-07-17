@@ -251,13 +251,14 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
   "ts": 1719216000000,
   "track_id": 101,
   "class_name": "car",
-  "hit_count": 5
+  "hit_count": 5,
+  "distance_band": "medium"
 }
 ```
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `alert_id` | 알림 식별자(중복 억제 키). **2026-07-09 정정**: `reflex_gate.py`는 클래스명을 포함한 동적 값(`high_{class_name}_{direction}`, 예: `high_car_front`)을 생성한다 — 클립 선택에는 쓰이지 않고 60초 억제 키로만 쓰인다 |
+| `alert_id` | 알림 식별자(중복 억제 키). **2026-07-09 정정**: `reflex_gate.py`는 클래스명을 포함한 동적 값(`high_{class_name}_{direction}`, 예: `high_car_front`)을 생성한다 — 클립 선택에는 쓰이지 않고 60초 억제 키로만 쓰인다. **2026-07-17 P0-1 정정**: 억제 키는 `high_obstacle:{track_id}:{distance_band}` 조합으로 분리되어 새 객체/거리 악화 시 재발화 |
 | `direction` | 방향 (`front`, `front-left`, `front-right`) |
 | `risk_level` | `high` (반사 경로 전용) |
 | `clip` | 단말 번들 사전합성 클립 경로(`client/assets/sounds/reflex_clips/`, basename 매칭). **2026-07-09 정정**: 클래스와 무관하게 방향/유형 기준으로 고정되며, 확장자는 `.wav`(인코더 제약으로 mp3 대신 채택) |
@@ -269,8 +270,9 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `track_id` | ByteTrack 객체 트랙 식별자 (로깅 및 모니터링 추적용, null 가능) |
 | `class_name` | 탐지된 장애물의 클래스명 (null 가능) |
 | `hit_count` | 해당 트랙 객체의 연속 누적 프레임 탐지 횟수 (null 가능) |
+| `distance_band` | **2026-07-17 신규 (P0-1).** 억제 재무장 정책용 거리 밴드 (`near` \| `medium` \| `far`). near(<=0.6m)는 TTL 억제 제외 500ms 스로틀만, non-near는 동일키 5s TTL + device 1.5s 쿨다운 + 밴드 악화 재발화 |
 
-선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. 중복 억제는 서버 `setex(suppress:{alert_id}, 60)`로 처리합니다.
+선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. **2026-07-17 P0-1 정정**: 중복 억제는 `setex(suppress:{device_id}:high_obstacle:{track_id}:{distance_band}, REFLEX_SUPPRESS_TTL_S=5)`로 처리하며, 동일 키 TTL(5s) + device 단위 최소 쿨다운(1.5s) + 거리 밴드 악화 시 재발화를 적용합니다.
 
 ### 4.2 clip 사전 정의
 
@@ -846,3 +848,32 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 | **v0.4.22** | **2026-07-16** | **§6.1 `source` 필드·STT 대기 안내(`stt-wait-notice`) 계약 추가. §8.3 `risk_event` 발행 위치(`DetectionConsumer._broadcast_risk_event`) 명시. §8.5 `pipeline_debug_json` 확장 필드 표 보강** |
 | **v0.4.21** | **2026-07-16** | **§8.5 `pipeline_debug_json`·`latency_json`·`false_positive` 로그 응답 필드 명세 보강(관리자 콘솔 STT/LLM/패스트레인 디버그)** |
 | **v0.4.20** | **2026-07-15** | **§8 SSE: 버퍼 방지 응답 헤더, 연결 직후 `system_metrics` 스냅샷, keep-alive 주석 라인. 콘솔은 SSE 401 프로브·빈 카드 안내 문구 추가** |
+
+### 4.3 latency_event (서버 → 콘솔, 2026-07-17 P2-2 강화)
+
+파이프라인 스테이지별 지연(ms)을 콘솔에 실시간 푸시한다. `server_detection`과 동일 콘솔 WS 브로드캐스트 채널을 재사용한다.
+
+```json
+{
+  "type": "latency_event",
+  "event_id": "uuid",
+  "stream_type": "reflex",
+  "latency": {
+    "decode_ms": 2.1,
+    "inference_ms": 45.3,
+    "queue_wait_ms": 12.4,
+    "total_ms": 59.8
+  },
+  "latency_alert": false,
+  "latency_threshold_ms": 300,
+  "ts": 1719216000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `stream_type` | `reflex` \| `cognitive` |
+| `latency` | 스테이지별 지연 (ms). 반사: `decode_ms`/`inference_ms`/`queue_wait_ms`/`total_ms`. 인지: 추가로 `rag_ms`/`llm_ms`/`tts_ms` |
+| `latency_alert` | **2026-07-17 신규 (P2-2).** `total_ms`가 임계 초과 시 `true`. 반사 `REFLEX_LATENCY_ALERT_MS=300`, 인지 `COGNITIVE_LATENCY_ALERT_MS=3000` |
+| `latency_threshold_ms` | **2026-07-17 신규 (P2-2).** 적용된 지연 임계(ms). 콘솔이 alert 기준 표시용 |
+| `queue_wait_ms` | **2026-07-17 신규 (P0-2).** 큐 대기 시간(ms). `processed.ts` 기반 산출, ts=0이면 0 |

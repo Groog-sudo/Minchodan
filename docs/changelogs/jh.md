@@ -823,3 +823,49 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/api/useDetectionLogs.ts`, `server/api/detection_log_router.py`, `server/services/detection_guidance_log_service.py`, `server/db/repositories.py`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: 사용자 요청 3건(회원 등록 fallback 처리, 회원 목록 페이지네이션 색상, 스트림 선택 시 정렬/페이지 정합성)을 하나의 정합성 개선 커밋으로 묶어 반영함
+
+---
+
+### 2026-07-17 | 콘솔 UI | 파이프라인 지연 요약 카드 1줄 정렬 및 폭 균등화
+
+- **커밋**: `style(console): 파이프라인 지연 요약 카드 1줄 정렬과 폭 균등화`
+- **변경 내용**:
+  - `LatencySummaryPanel`의 `latency-stat-grid`를 9열 기준으로 재배치해 지연 지표 카드가 아래로 떨어지지 않고 한 줄에 정렬되도록 보정함
+  - 카드 간 gap과 내부 padding을 축소하고, 카드 최소 폭 제약을 제거해 우측 여백을 최소화함
+  - 각 카드의 라벨/평균/보조 텍스트 글자 크기와 줄높이를 조금 낮춰 한 줄 배치 시 내용이 깨지지 않도록 조정함
+  - 결과적으로 `파이프라인 지연 요약` 카드들이 동일한 가로 폭으로 나란히 보이도록 정렬 품질을 개선함
+- **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 기능 변경 없이 대시보드의 지연 요약 패널 시각 배치만 정리한 스타일 보정 작업임
+
+---
+
+### 2026-07-17 | 콘솔 UI | 관제 대시보드 위젯 기능 MVP 복구(추가/옵션/삭제) 및 카드 정렬 보정
+
+- **커밋**: `feat(console): 관제 대시보드 위젯 추가/삭제 MVP 복구와 카드 헤더 정렬 보정`
+- **변경 내용**:
+  - `DashboardPage.tsx`에 위젯 키(`latency/liveFeed/telemetry/timeline/guidanceLog/riskLog`) 기반 렌더 구조를 재도입하고, 기본 표시 순서를 상태로 관리하도록 복구함
+  - main-nav 하단에 `기능상자 추가` 버튼과 위젯 선택 목록을 추가해 선택한 기능상자만 표시되도록 구현함
+  - `SSE` 라인은 위젯 대상에서 제외하고 기존처럼 고정 표시를 유지함
+  - 각 위젯 카드 우상단에 `⋮` 옵션 트리거를 배치하고, 옵션 팝오버에는 `삭제` 버튼만 제공해 해당 위젯 제거가 가능하도록 구현함
+  - 위젯 wrapper 클래스(`widget-<key>`)를 부여해 카드별 레이아웃 제어 지점을 명확히 함
+  - `styles.css`에 위젯 툴바/선택 메뉴/옵션 메뉴/삭제 액션 스타일을 추가하고, 헤더 우측 여백(`panel-header` padding-right)을 부여해 옵션 버튼이 제목 텍스트를 가리지 않도록 보정함
+  - Live Feed와 Device Telemetry & Control 카드의 세로 높이가 대칭되도록 공통 최소 높이와 패널 stretch 규칙을 추가하고, 모바일 구간에서는 해당 고정 높이를 해제함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 사용자 요청에 따라 기존 TSX 연결에 필요한 import/함수/변수는 임의 삭제하지 않고, 위젯 기능 복구와 레이아웃 보정만 최소 범위로 반영함
+
+---
+
+### 2026-07-17 | 생활지원 RAG | BGE-M3 전환 및 재현 가능한 클린 빌드 적용
+
+- **커밋**: `feat(rag): 생활지원 임베딩을 BGE-M3로 전환`
+- **변경 내용**:
+  - 생활지원 RAG 전용 기본 임베딩 모델을 `nomic-embed-text`에서 Ollama `bge-m3`로 전환함
+  - `build_convenience_db.py`가 기본 실행 시 기존 전용 ChromaDB를 삭제하고 다시 생성하도록 변경해 반복 빌드의 중복 적재를 방지함
+  - 기존 DB에 의도적으로 추가 적재해야 하는 경우에만 `--keep-existing` 옵션을 사용하도록 분리함
+  - `.env.example`, `README.md`, 환경 변수 명세에 BGE-M3 설치와 생활지원 DB 재빌드 절차를 추가함
+- **관련 파일**: `.env.example`, `README.md`, `scripts/build_convenience_db.py`, `server/rag/convenience_rag.py`, `docs/ops/environment_variables.md`, `docs/changelogs/jh.md`
+- **검증 결과**: 34문서, 고유 source ID 34건, 중복 0건, BGE-M3 벡터 1024차원 확인. 대표 한국어 질의 3건의 기대 문서 Top-1 검색 확인
+- **팀원 적용 절차**: `ollama pull bge-m3` 실행 후 `.env.example`의 생활지원 전용 설정을 `.env`에 반영하고 `python scripts/build_convenience_db.py` 실행
+- **비고**: ChromaDB 산출물과 Ollama 모델은 Git 추적 대상이 아니며, 원본 JSON과 추적 가능한 설정·빌드 절차로 각 환경에서 동일하게 재생성함
