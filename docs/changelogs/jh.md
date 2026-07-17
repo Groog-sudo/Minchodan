@@ -837,3 +837,20 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공
 - **비고**: 기능 변경 없이 대시보드의 지연 요약 패널 시각 배치만 정리한 스타일 보정 작업임
+
+---
+
+### 2026-07-17 | 콘솔 UI | 관제 대시보드 위젯 기능 MVP 복구(추가/옵션/삭제) 및 카드 정렬 보정
+
+- **커밋**: `feat(console): 관제 대시보드 위젯 추가/삭제 MVP 복구와 카드 헤더 정렬 보정`
+- **변경 내용**:
+  - `DashboardPage.tsx`에 위젯 키(`latency/liveFeed/telemetry/timeline/guidanceLog/riskLog`) 기반 렌더 구조를 재도입하고, 기본 표시 순서를 상태로 관리하도록 복구함
+  - main-nav 하단에 `기능상자 추가` 버튼과 위젯 선택 목록을 추가해 선택한 기능상자만 표시되도록 구현함
+  - `SSE` 라인은 위젯 대상에서 제외하고 기존처럼 고정 표시를 유지함
+  - 각 위젯 카드 우상단에 `⋮` 옵션 트리거를 배치하고, 옵션 팝오버에는 `삭제` 버튼만 제공해 해당 위젯 제거가 가능하도록 구현함
+  - 위젯 wrapper 클래스(`widget-<key>`)를 부여해 카드별 레이아웃 제어 지점을 명확히 함
+  - `styles.css`에 위젯 툴바/선택 메뉴/옵션 메뉴/삭제 액션 스타일을 추가하고, 헤더 우측 여백(`panel-header` padding-right)을 부여해 옵션 버튼이 제목 텍스트를 가리지 않도록 보정함
+  - Live Feed와 Device Telemetry & Control 카드의 세로 높이가 대칭되도록 공통 최소 높이와 패널 stretch 규칙을 추가하고, 모바일 구간에서는 해당 고정 높이를 해제함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 사용자 요청에 따라 기존 TSX 연결에 필요한 import/함수/변수는 임의 삭제하지 않고, 위젯 기능 복구와 레이아웃 보정만 최소 범위로 반영함

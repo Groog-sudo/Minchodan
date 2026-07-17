@@ -126,6 +126,32 @@ const DEMO_GUIDANCE_LOGS: DetectionGuidanceLogRow[] = [
   },
 ];
 
+type DashboardWidgetKey =
+  | "latency"
+  | "liveFeed"
+  | "telemetry"
+  | "timeline"
+  | "guidanceLog"
+  | "riskLog";
+
+const DASHBOARD_WIDGETS: Array<{ key: DashboardWidgetKey; label: string; fullWidth?: boolean }> = [
+  { key: "latency", label: "파이프라인 지연 요약", fullWidth: true },
+  { key: "liveFeed", label: "Live Feed" },
+  { key: "telemetry", label: "Device Telemetry & Control" },
+  { key: "timeline", label: "발화 추적 타임라인", fullWidth: true },
+  { key: "guidanceLog", label: "Detection Guidance Log", fullWidth: true },
+  { key: "riskLog", label: "RiskEventLog", fullWidth: true },
+];
+
+const DEFAULT_DASHBOARD_WIDGET_ORDER: DashboardWidgetKey[] = [
+  "latency",
+  "liveFeed",
+  "telemetry",
+  "timeline",
+  "guidanceLog",
+  "riskLog",
+];
+
 export function DashboardPage({
   token,
   state,
@@ -139,6 +165,12 @@ export function DashboardPage({
   liveFeed: ReturnType<typeof useLiveFeed>;
   isDemoMode: boolean;
 }) {
+  const [widgetOrder, setWidgetOrder] = useState<DashboardWidgetKey[]>(
+    DEFAULT_DASHBOARD_WIDGET_ORDER,
+  );
+  const [isWidgetPickerOpen, setIsWidgetPickerOpen] = useState(false);
+  const [openWidgetOptionKey, setOpenWidgetOptionKey] = useState<DashboardWidgetKey | null>(null);
+
   const { imageUrl, latestDetections, connected: liveFeedConnected, latencyEvents, guidanceLogEvents, lastGps } =
     liveFeed;
 
@@ -193,9 +225,121 @@ export function DashboardPage({
   }, [fetchedLogs, guidanceLogEvents, isDemoMode, logPage, logStreamFilter, demoFilteredLogs]);
 
   const effectiveTotalCount = isDemoMode ? demoTotalCount : logsTotalCount;
+  const availableWidgets = DASHBOARD_WIDGETS.filter((widget) => !widgetOrder.includes(widget.key));
+
+  const removeWidget = (widgetKey: DashboardWidgetKey) => {
+    setWidgetOrder((prev) => prev.filter((key) => key !== widgetKey));
+    setOpenWidgetOptionKey(null);
+  };
+
+  const addWidget = (widgetKey: DashboardWidgetKey) => {
+    setWidgetOrder((prev) => (prev.includes(widgetKey) ? prev : [...prev, widgetKey]));
+    setIsWidgetPickerOpen(false);
+  };
+
+  const renderWidget = (widgetKey: DashboardWidgetKey) => {
+    if (widgetKey === "latency") {
+      return <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />;
+    }
+
+    if (widgetKey === "liveFeed") {
+      return (
+        <LiveCameraFeed
+          imageUrl={imageUrl}
+          latestDetections={latestDetections}
+          connected={liveFeedConnected}
+          lastGps={lastGps}
+        />
+      );
+    }
+
+    if (widgetKey === "telemetry") {
+      return (
+        <DeviceTelemetryPanel
+          latestDetections={latestDetections}
+          connected={liveFeedConnected}
+          session={state.sessions.find((s) => s.device_id === "dev-001") || state.sessions[0] || null}
+          ai={state.ai}
+        />
+      );
+    }
+
+    if (widgetKey === "timeline") {
+      return <GuidanceTraceTimeline rows={detectionGuidanceLogs} />;
+    }
+
+    if (widgetKey === "guidanceLog") {
+      return (
+        <DetectionGuidanceLogTable
+          rows={detectionGuidanceLogs}
+          token={token}
+          onUpdateFalsePositive={updateLogFalsePositive}
+          onRefresh={() => {
+            setLogPage(0);
+            refreshLogs();
+          }}
+          refreshing={logsLoading}
+          live={logPage === 0 && guidanceLogEvents.length > 0}
+          streamFilter={logStreamFilter}
+          onStreamFilterChange={(nextFilter) => {
+            setLogStreamFilter(nextFilter);
+            setLogPage(0);
+          }}
+          page={logPage}
+          pageSize={LOG_PAGE_SIZE}
+          totalCount={effectiveTotalCount}
+          onPrevPage={() => setLogPage((p) => Math.max(0, p - 1))}
+          onNextPage={() =>
+            setLogPage((p) =>
+              Math.min(Math.max(0, Math.ceil(effectiveTotalCount / LOG_PAGE_SIZE) - 1), p + 1),
+            )
+          }
+          onSetPage={(nextPage) =>
+            setLogPage(
+              Math.min(
+                Math.max(0, Math.ceil(effectiveTotalCount / LOG_PAGE_SIZE) - 1),
+                Math.max(0, nextPage),
+              ),
+            )
+          }
+        />
+      );
+    }
+
+    return <RiskEventLog events={state.risks} />;
+  };
 
   return (
     <>
+      <section className="widget-toolbar" aria-label="대시보드 위젯 관리">
+        <button
+          type="button"
+          className="widget-add-btn"
+          onClick={() => setIsWidgetPickerOpen((prev) => !prev)}
+          aria-expanded={isWidgetPickerOpen}
+        >
+          기능상자 추가
+        </button>
+        {isWidgetPickerOpen && (
+          <div className="widget-picker-menu" role="menu" aria-label="위젯 선택 목록">
+            {availableWidgets.length === 0 ? (
+              <span className="widget-picker-empty">추가 가능한 위젯이 없습니다.</span>
+            ) : (
+              availableWidgets.map((widget) => (
+                <button
+                  key={widget.key}
+                  type="button"
+                  className="widget-picker-item"
+                  onClick={() => addWidget(widget.key)}
+                >
+                  {widget.label}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </section>
+
       <section className="stream-line">
         <span>SSE</span>
         <strong>{streamUrl}</strong>
@@ -205,62 +349,42 @@ export function DashboardPage({
         </strong>
       </section>
 
-      <LatencySummaryPanel rows={detectionGuidanceLogs} liveEvents={latencyEvents} />
-
-      <section className="dashboard-grid">
-        <LiveCameraFeed
-          imageUrl={imageUrl}
-          latestDetections={latestDetections}
-          connected={liveFeedConnected}
-          lastGps={lastGps}
-        />
-        <DeviceTelemetryPanel
-          latestDetections={latestDetections}
-          connected={liveFeedConnected}
-          session={state.sessions.find((s) => s.device_id === "dev-001") || state.sessions[0] || null}
-          ai={state.ai}
-        />
+      <section className="dashboard-widget-grid">
+        {widgetOrder.map((widgetKey) => {
+          const widgetMeta = DASHBOARD_WIDGETS.find((widget) => widget.key === widgetKey);
+          return (
+            <div
+              key={widgetKey}
+              className={`dashboard-widget-item widget-${widgetKey} ${widgetMeta?.fullWidth ? "dashboard-widget-item-full" : ""}`}
+            >
+              <div className="widget-card-actions">
+                <button
+                  type="button"
+                  className="widget-option-trigger"
+                  aria-label="위젯 옵션"
+                  onClick={() =>
+                    setOpenWidgetOptionKey((prev) => (prev === widgetKey ? null : widgetKey))
+                  }
+                >
+                  ⋮
+                </button>
+                {openWidgetOptionKey === widgetKey && (
+                  <div className="widget-option-menu" role="menu" aria-label="위젯 옵션 메뉴">
+                    <button
+                      type="button"
+                      className="widget-option-delete"
+                      onClick={() => removeWidget(widgetKey)}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                )}
+              </div>
+              {renderWidget(widgetKey)}
+            </div>
+          );
+        })}
       </section>
-
-      {/* 발표/면접 포인트:
-          DetectionFeed는 실시간 스트림 모니터링,
-          DetectionGuidanceLogTable은 사후 이력 조회 영역입니다.
-          실시간 이벤트와 영속 로그를 분리해 운영자 해석 혼선을 줄입니다. */}
-      <GuidanceTraceTimeline rows={detectionGuidanceLogs} />
-      <DetectionGuidanceLogTable
-        rows={detectionGuidanceLogs}
-        token={token}
-        onUpdateFalsePositive={updateLogFalsePositive}
-        onRefresh={() => {
-          setLogPage(0);
-          refreshLogs();
-        }}
-        refreshing={logsLoading}
-        live={logPage === 0 && guidanceLogEvents.length > 0}
-        streamFilter={logStreamFilter}
-        onStreamFilterChange={(nextFilter) => {
-          setLogStreamFilter(nextFilter);
-          setLogPage(0);
-        }}
-        page={logPage}
-        pageSize={LOG_PAGE_SIZE}
-        totalCount={effectiveTotalCount}
-        onPrevPage={() => setLogPage((p) => Math.max(0, p - 1))}
-        onNextPage={() =>
-          setLogPage((p) =>
-            Math.min(Math.max(0, Math.ceil(effectiveTotalCount / LOG_PAGE_SIZE) - 1), p + 1),
-          )
-        }
-        onSetPage={(nextPage) =>
-          setLogPage(
-            Math.min(
-              Math.max(0, Math.ceil(effectiveTotalCount / LOG_PAGE_SIZE) - 1),
-              Math.max(0, nextPage),
-            ),
-          )
-        }
-      />
-      <RiskEventLog events={state.risks} />
     </>
   );
 }
