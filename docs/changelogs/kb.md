@@ -2623,3 +2623,59 @@
 - **관련 파일**: `client/src/services/*android*`, `audioSessionBridge.ts`, `console/src/components/LiveCameraFeed.*`, `docs/mobile/android_platform_patch_results.md`
 - **검증 결과**: 충돌 마커 제거, 개인 IP 검색 0건, MAX_REFLEX=200·vite localhost 확인.
 - **비고**: dg2 개인 GPU/호스트 설정은 `dg2` 브랜치에만 유지.
+
+
+### 2026-07-17 | 통합 | sync_dev_into_kb_keep_lab
+
+- **커밋**: `355c014`
+- **변경 내용**:
+  - `origin/dev`(`44a56bc`)를 `kb`에 FF 반영 (dg2 Android 패리티·콘솔 회전·changelog 포함).
+  - kb 개인 랩 설정 유지: 번들 ID `com.minchodan.app.kb.dev`, Metro `172.16.101.220:8081`.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, (공유분은 dev와 동일)
+- **검증 결과**: FF 후 개인 4파일 복원, rotateDeg/Android float32/MAX_REFLEX=200 확인.
+- **비고**: 공유 코드는 dev와 동기, 실기기 랩 설정만 kb에 잔류.
+
+
+### 2026-07-17 | 인프라 | lab_env_yolo_ollama_align
+
+- **커밋**: `5428e43`
+- **변경 내용**:
+  - 랩 런타임 `.env`(로컬 전용, 커밋 제외): `DETECTOR_TYPE=yolo`, `OLLAMA_BASE_URL`/`COMPOSE_OLLAMA_BASE_URL=http://host.docker.internal:11434`, `TTS_ENGINE=supertonic`.
+  - `.env.example` 탐지 기본값을 `yolo`로 정합(주석에 mock 폴백 안내).
+  - `env.zip`(시크릿 포함)은 커밋하지 않음.
+- **관련 파일**: `.env.example`, (로컬) `.env`
+- **검증 결과**: FastAPI health `detector_type=yolo`, 컨테이너→Ollama 200, `YoloDetector`/`SupertonicTTSService` 로드 확인.
+- **비고**: 앱은 FastAPI 재기동 후 WS 재연결 필요.
+
+
+### 2026-07-17 | 클라이언트 | stt_fullscreen_touch_restore
+
+- **커밋**: `f9aab75`
+- **변경 내용**:
+  - STT press-and-hold를 7/10 설계대로 **화면 전체** 투명 레이어로 복원(시각장애인: 아무 곳이나 길게 눌러 말하기).
+  - 7/15 `9cb3548` 운영자 패널 분리 이후 카메라 영역만 STT였던 회귀를 해소.
+  - 운영자 버튼(탐지 시작 등)은 STT **위** absolute `box-none` 오버레이로 분리해, STT 한 번 후 버튼 먹통 문제 방지.
+  - STT 중 `setCapturePaused`로 JPEG/CoreML 콜백 일시 중지, 녹음 시작 락·16kHz warm-prepare로 반응 지연/중첩 AEC 완화.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useSttRecorder.ts`
+- **검증 결과**: 실기기 재빌드 후 터치/버튼 계층 복원 적용. Metro Reload로 JS 반영.
+- **비고**: 개인 iOS 랩 설정(번들 ID/Metro IP)은 본 커밋에 포함하지 않음. 로컬 `HEARTBEAT_TIMEOUT` 상향은 `.env`만(미커밋).
+
+### 2026-07-17 | 통합 | merge_kb_lab_settings_into_dev
+
+- **커밋**:
+- **변경 내용**:
+  - `kb` tip을 `dev`에 병합해 STT 전체화면 터치 복원과 함께 iOS 랩 설정·changelog 히스토리를 팀 공유 기준으로 올린다.
+  - 포함: 번들 ID `com.minchodan.app.kb.dev`, Metro LAN 호스트, `.env.example` yolo 정합 문서.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `docs/changelogs/kb.md`, `.env.example`
+- **검증 결과**: changelog 충돌 해소 후 merge 커밋.
+- **비고**: 팀원 실기기 IP가 다르면 Metro/`EXPO_PUBLIC_*`만 로컬에서 맞추면 된다.
+
+---
+
+### 2026-07-17 | 1단계 | event_frame_buffering_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 이벤트 프레임 미디어 API 버퍼링 분석 가이드 P0/A1-A5 + P1/B3 구현: (A1) iOS CoreML 정상 모드에서 JS JPEG->float32 변환 우회 via requiresFloat32 계약, (A2) 단말 ACK 기반 in-flight 프레임 제한(MAX_IN_FLIGHT_FRAMES, 메타+binary pair 드롭), (A3) 서버 ACK를 콘솔 중계보다 먼저 처리(binary/base64 양 경로), (A4) 콘솔 송신 latest-only 큐(maxsize=1) + per-connection worker 분리로 느린 콘솔 역압력 차단, (A5) 콘솔 relay 3-5fps 쓰로틀, (B3) 공유 httpx.AsyncClient 연결 풀(lifespan 생성/종료, 방어적 폴백). main.py contextlib.suppress -> suppress import 정정.
+- **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/inference/localDetector.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/inference/tfliteDetector.ts`, `server/api/session_manager.py`, `server/api/ws_router.py`, `server/main.py`, `server/services/remote_storage_client.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

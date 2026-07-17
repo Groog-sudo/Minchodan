@@ -99,6 +99,45 @@ def _disabled_result(format_: str | None = None) -> RemoteStoreResult:
     )
 
 
+# 💡 [면접 대비 주석] 공유 httpx.AsyncClient 연결 풀 (2026-07-17, P1).
+# 기존에는 매 요청마다 async with httpx.AsyncClient(...)를 새로 생성해 TCP/TLS 핸드셰이크
+# 비용이 반복됐다. 모듈 수준에서 1개의 클라이언트를 생성해 keep-alive와 커넥션 풀을 재사용한다.
+# FastAPI lifespan(main.py)이 startup에서 create_shared_client(), shutdown에서
+# close_shared_client()를 호출한다. 클라이언트 미초기 시에는 요청마다 폴백 생성한다(방어적).
+_shared_client: httpx.AsyncClient | None = None
+
+
+async def create_shared_client() -> None:
+    """FastAPI lifespan startup에서 호출. 공유 httpx.AsyncClient를 생성한다."""
+    global _shared_client
+    if _shared_client is not None:
+        return
+    _shared_client = httpx.AsyncClient(
+        base_url=_base_url(),
+        timeout=_timeout_seconds(),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    )
+    logger.info("[RemoteStorage] 공유 httpx.AsyncClient 생성 완료")
+
+
+async def close_shared_client() -> None:
+    """FastAPI lifespan shutdown에서 호출. 공유 클라이언트를 종료한다."""
+    global _shared_client
+    if _shared_client is not None:
+        await _shared_client.aclose()
+        _shared_client = None
+        logger.info("[RemoteStorage] 공유 httpx.AsyncClient 종료 완료")
+
+
+async def _get_client() -> httpx.AsyncClient:
+    """공유 클라이언트를 반환. 미초기 시 임시 클라이언트를 생성한다(방어적 폴백)."""
+    global _shared_client
+    if _shared_client is not None:
+        return _shared_client
+    # lifespan이 아직 실행되지 않았거나 이미 종료된 경우의 방어적 폴백.
+    return httpx.AsyncClient(base_url=_base_url(), timeout=_timeout_seconds())
+
+
 async def _put_payload(
     path: str,
     payload: bytes,
@@ -112,8 +151,15 @@ async def _put_payload(
     attempts = _max_retries() + 1
     last_error: str | None = None
     for attempt in range(1, attempts + 1):
+        client = await _get_client()
+        owns_client = _shared_client is None
         try:
-            async with httpx.AsyncClient(base_url=base_url, timeout=_timeout_seconds()) as client:
+            if owns_client:
+                async with client:
+                    response = await client.put(
+                        path, content=payload, headers=_headers(content_type)
+                    )
+            else:
                 response = await client.put(path, content=payload, headers=_headers(content_type))
             if response.status_code >= 500 and attempt < attempts:
                 last_error = f"remote_http_{response.status_code}"
@@ -233,8 +279,16 @@ async def fetch_event_frame(object_key: str) -> bytes | None:
     if split is None:
         return None
     date, event_id = split
+    client = await _get_client()
+    owns_client = _shared_client is None
     try:
-        async with httpx.AsyncClient(base_url=_base_url(), timeout=_timeout_seconds()) as client:
+        if owns_client:
+            async with client:
+                response = await client.get(
+                    f"/internal/event-frames/{quote(date)}/{quote(event_id)}",
+                    headers={"Authorization": f"Bearer {_token()}"},
+                )
+        else:
             response = await client.get(
                 f"/internal/event-frames/{quote(date)}/{quote(event_id)}",
                 headers={"Authorization": f"Bearer {_token()}"},

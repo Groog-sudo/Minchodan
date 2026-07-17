@@ -132,6 +132,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Redis Cache Monitor MCP 시작 실패: {e}")
 
+    # 7. Raspberry Pi 중앙 저장 API 공유 httpx.AsyncClient 생성 (2026-07-17, P1).
+    # 매 요청 새 클라이언트를 생성하던 패턴에서 커넥션 풀 재사용(keep-alive)으로 전환.
+    # remote_storage_client가 비활성(local backend)이면 no-op에 가깝다.
+    from server.services.remote_storage_client import (
+        close_shared_client,
+        create_shared_client,
+    )
+
+    try:
+        await create_shared_client()
+        logger.info("중앙 저장소 공유 httpx.AsyncClient 생성 완료")
+    except Exception as e:
+        logger.error(f"중앙 저장소 공유 httpx.AsyncClient 생성 실패 (요청별 폴백): {e}")
+
     yield
 
     frame_cleanup_task.cancel()
@@ -142,6 +156,10 @@ async def lifespan(app: FastAPI):
 
     # Redis Cache Monitor MCP 중지
     cache_monitor.stop_monitoring()
+
+    # 중앙 저장소 공유 httpx.AsyncClient 종료
+    with suppress(Exception):
+        await close_shared_client()
 
     logger.info("Minchodan API Server 종료 중...")
     # 3. DetectionConsumer 중지
