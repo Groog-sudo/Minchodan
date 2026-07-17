@@ -27,7 +27,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.minchodan.app.kwanbum</string>
+				<string>com.minchodan.app.kb.dev</string>
 			</array>
 		</dict>
 	</array>
