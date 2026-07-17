@@ -184,6 +184,7 @@ h2 {
   align-items: center;
   position: relative;
   margin-top: 2px;
+  gap: 8px;
 }
 
 .widget-add-btn {
@@ -223,6 +224,26 @@ h2 {
 .widget-picker-item:hover {
   border-color: rgba(249, 183, 0, 0.35);
   color: #ffffff;
+}
+
+.widget-picker-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.widget-picker-item-danger {
+  color: #ff8a8a;
+}
+
+.widget-picker-item-danger:hover {
+  border-color: rgba(255, 95, 95, 0.45);
+  color: #ffd1d1;
+}
+
+.widget-picker-divider {
+  height: 1px;
+  background: rgba(148, 163, 184, 0.22);
+  margin: 4px 0;
 }
 
 .widget-picker-empty {
