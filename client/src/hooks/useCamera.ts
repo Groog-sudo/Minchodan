@@ -209,8 +209,10 @@ export function useCamera(
   });
 
   const captureFrame = isMockMode ? captureMockFrame : captureProvider.capturePhoto;
-  // const useStreamCapture = !isMockMode && captureProvider.supportsStream;
-  const useStreamCapture = false; // 💡 임시 테스트: Expo Go 환경 폴백 루프 강제 작동
+  // Frame Processor(연속 스트림) 우선. 플러그인 미등록 시에만 takePhoto 폴백.
+  // takePhoto 강제(useStreamCapture=false)는 AVCapturePhotoOutput 경로로
+  // AVFoundation -11803 "Cannot Record"/오디오 세션 충돌을 유발한다(2026-07-17 실측).
+  const useStreamCapture = !isMockMode && captureProvider.supportsStream;
 
   // ---- 캡처 루프 (capturePhoto 경로 전용, 스트림 경로는 <Camera frameProcessor>가 구동) ----
 

@@ -2577,3 +2577,13 @@
   - iOS 실기기 개발 서명용 번들 ID(com.minchodan.app.kb.dev) 및 Metro 기본 호스트(LAN) 정합
 - **관련 파일**: `lient/app.json`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 2단계 | restore_ios_frame_processor
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS takePhoto 강제 폴백 해제 - Frame Processor 복구로 AVFoundation Cannot Record(-11803) 해소
+- **관련 파일**: `lient/src/hooks/useCamera.ts`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
