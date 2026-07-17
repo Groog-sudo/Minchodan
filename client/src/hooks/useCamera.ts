@@ -64,6 +64,12 @@ export interface UseCameraReturn {
   stopCapture: () => void;
   /** STT 등에서 프레임 디코드/콜백만 일시 중지(카메라 세션은 유지). */
   setCapturePaused: (paused: boolean) => void;
+  /**
+   * 로컬 추론 엔진의 입력 계약 갱신 (2026-07-17, P0).
+   * false면 JS JPEG 디코딩 + Float32Array 할당을 건너뛴다(CoreML 모드).
+   * useOnDeviceDetection의 requiresFloat32 값을 전달한다.
+   */
+  setRequiresFloat32: (required: boolean) => void;
   requestCameraPermission: () => Promise<boolean>;
   /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
   reportInferenceLatency: (latencyMs: number) => void;
@@ -88,6 +94,11 @@ export function useCamera(
   const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
   // STT press-and-hold 중 JPEG 디코드/온디바이스 콜백을 즉시 막아 JS 스레드를 비운다.
   const capturePausedRef = useRef(false);
+  // 로컬 추론 엔진의 입력 계약 (2026-07-17, P0).
+  // false(CoreML 정상 모드)면 매 프레임 JS JPEG 디코딩 + 4.7MiB Float32Array 할당을
+  // 건너뛴다 - base64는 CoreML 네이티브 브릿지가 직접 소비하므로 float32는 TFLite 폴백
+  // 전용이며 CoreML 모드에서는 버려지던 비용을 제거한다. 단말 버튼 반응 지연의 직접 원인.
+  const requiresFloat32Ref = useRef<boolean>(true);
   const [isCapturing, setIsCapturing] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
 
@@ -184,8 +195,16 @@ export function useCamera(
     streamFrameCounterRef.current++;
 
     const jpegBytes = base64ToUint8(base64);
+    // 💡 [면접 대비 주석] CoreML 정상 모드(requiresFloat32=false)에서는 JS JPEG 디코딩과
+    // 640x640x3 Float32Array(~4.7MiB) 할당을 건너뛴다 (2026-07-17, P0).
+    // CoreML 네이티브 브릿지는 base64를 직접 소비하므로 float32는 TFLite 폴백 전용이다.
+    // 이전에는 폴백 전용 전처리를 CoreML 모드에서도 매 프레임 실행해 JS 스레드를 포화시켰다.
+    // takePhoto 폴백 경로(frameCaptureProvider.ts Float32Array(0))와 동일한 우회 전략.
+    const float32 = requiresFloat32Ref.current
+      ? decodeBase64JpegToHwc(base64)
+      : new Float32Array(0);
     const frame: FrameData = {
-      float32: decodeBase64JpegToHwc(base64),
+      float32,
       stream: "reflex",
       base64,
       jpegBytes,
@@ -201,6 +220,13 @@ export function useCamera(
 
   const setCapturePaused = useCallback((paused: boolean) => {
     capturePausedRef.current = paused;
+  }, []);
+
+  const setRequiresFloat32 = useCallback((required: boolean) => {
+    if (requiresFloat32Ref.current !== required) {
+      requiresFloat32Ref.current = required;
+      console.log(`[Camera] 로컬 추론 입력 계약 갱신: requiresFloat32=${required}`);
+    }
   }, []);
 
   // 플랫폼별 캡처 구현 (iOS/Android 모두 frameProcessor 가능, 실패 시 takePhoto 폴백).
@@ -325,6 +351,7 @@ export function useCamera(
     startCapture,
     stopCapture,
     setCapturePaused,
+    setRequiresFloat32,
     requestCameraPermission,
     reportInferenceLatency,
     useStreamCapture,

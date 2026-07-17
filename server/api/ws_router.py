@@ -112,8 +112,9 @@ async def _finish_detection(
     base64 경로(단일 JSON 메시지)와 바이너리 경로(메타 + 바이너리 프레임) 양쪽이
     공유하는 후처리 로직 - route_frame + ack 응답 (guide 17.1 계층 분리 준수).
 
-    실시간 Live Feed가 YOLO 지연에 묶이지 않도록, 호출부는 ack를 먼저 보내고
-    route는 백그라운드 태스크로 분리하는 것을 권장한다.
+    2026-07-17 정정: 메인 수신 루프는 현재 이 헬퍼를 호출하지 않고 인라인으로
+    처리한다. 인라인 패턴은 ack를 콘솔 중계보다 먼저 보내고(P0) route는
+    백그라운드 태스크로 분리한다(최신성 우선). 이 함수는 참조용 계약으로 남겨둔다.
     """
     await _send_detection_ack(ws, event_id, frame_id, decode_ms)
     await _route_detection_frame(
@@ -773,6 +774,17 @@ async def ws_detect(
         # (최신성 우선, Live Feed 중계는 이미 끝난 상태).
         route_sem = asyncio.Semaphore(1)
 
+        # 💡 [면접 대비 주석] 콘솔 Live Feed 전용 FPS 분리 (2026-07-17, P0).
+        # 단말은 반사 경로 품질을 위해 5~8fps로 송신하지만, 운영자 모니터링 화면은
+        # 3~5fps로 충분하다. 단말 송신률을 그대로 relay하면 대역폭·브라우저 디코드
+        # 부하가 가중되고, 여러 콘솔 탭이 열린 환경에서 버퍼링이 누적된다.
+        # ACK/YOLO 라우팅은 기존 단말 FPS를 그대로 유지하고, 콘솔 relay만 별도 쓰로틀.
+        console_relay_interval_s = max(
+            0.001,
+            float(os.getenv("CONSOLE_RELAY_MIN_INTERVAL_S", "0.2")),  # 0.2s = 5fps
+        )
+        last_console_relay_ts: float = 0.0
+
         async def _route_detection_bg(
             processed_frame,
             route_event_id: str,
@@ -825,8 +837,18 @@ async def ws_detect(
                 processed = await decode_frame_binary(raw_bytes, meta)
                 decode_ms = (time.perf_counter() - decode_start) * 1000
 
-                await manager.broadcast_to_consoles(raw_bytes)
+                # 💡 [면접 대비 주석] ACK를 콘솔 중계보다 먼저 보낸다 (2026-07-17, P0).
+                # 기존 순서(broadcast -> ack)에서는 느린 콘솔 send가 단말 ACK를 지연시켜
+                # 단말의 in-flight 프레임 제한(A2)이 동작하지 못하고 버퍼링이 누적됐다.
+                # ACK는 단말과의 계약이므로 콘솔 relay 상태와 독립되어야 한다.
+                # 콘솔 중계는 이제 session_manager의 latest-only 큐로 분리되어 논블로킹이다.
                 await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+
+                # 콘솔 relay FPS 분리(A5): 설정 주기 이내면 relay 건너뛰기(최신 프레임만 유지 목적).
+                relay_now = time.perf_counter()
+                if relay_now - last_console_relay_ts >= console_relay_interval_s:
+                    last_console_relay_ts = relay_now
+                    await manager.broadcast_to_consoles(raw_bytes)
 
                 task = asyncio.create_task(
                     _route_detection_bg(processed, event_id, frame_id, decode_ms, len(raw_bytes))
@@ -924,8 +946,10 @@ async def ws_detect(
                             if len(parts) == 2:
                                 b64_for_decode = parts[1]
                         raw_bytes = base64.b64decode(b64_for_decode)
-                        await manager.broadcast_to_consoles(raw_bytes)
+                # 2026-07-17: ACK를 콘솔 중계보다 먼저 (P0). 바이너리 경로와 동일한 순서.
                 await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+                if raw_bytes is not None:
+                    await manager.broadcast_to_consoles(raw_bytes)
                 task = asyncio.create_task(
                     _route_detection_bg(processed, event_id, frame_id, decode_ms, b64_len)
                 )
