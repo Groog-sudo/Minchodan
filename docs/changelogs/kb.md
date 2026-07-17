@@ -2662,7 +2662,7 @@
 
 ### 2026-07-17 | 통합 | merge_kb_lab_settings_into_dev
 
-- **커밋**: (push 후 기록)
+- **커밋**:
 - **변경 내용**:
   - `kb` tip을 `dev`에 병합해 STT 전체화면 터치 복원과 함께 iOS 랩 설정·changelog 히스토리를 팀 공유 기준으로 올린다.
   - 포함: 번들 ID `com.minchodan.app.kb.dev`, Metro LAN 호스트, `.env.example` yolo 정합 문서.
