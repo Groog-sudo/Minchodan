@@ -249,6 +249,7 @@ export function DashboardPage({
           latestDetections={latestDetections}
           connected={liveFeedConnected}
           lastGps={lastGps}
+          platform={state.sessions.find((s) => s.device_id === "dev-001")?.platform || state.sessions[0]?.platform || "unknown"}
         />
       );
     }
