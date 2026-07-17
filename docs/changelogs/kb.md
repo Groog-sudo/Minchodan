@@ -2802,3 +2802,19 @@
 - **관련 파일**: `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
 - **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 93개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
 - **비고**: 기존 오디오 겹침 쿨다운(_required_guide_gap_sec, 8s+오디오길이)은 유지 - P1-2 게이트는 "동일 상황 반복" 차단, 기존 쿨다운은 "오디오 재생 중 겹침" 차단으로 역할 분리. fallback_node/realtime_tts는 consumer 게이트로 사전 차단되어 호출 자체가 생략되므로 TTS 합성 미호출 보장.
+
+---
+
+### 2026-07-17 | 6단계 | M5_P1-1_반사_후속_행동_안내
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M5/P1-1 구현: 반사 경보(정지) 800ms 후 인지 가이드(LangGraph L2) 대신, 단일 객체 + 방향 확정 시 avoidance 템플릿으로 즉시 우회 방향 안내. LangGraph 전체(L1/L2/L3) 수 초 소요를 없애 반사 후속 안내 지연(S7) 해소.
+  - `server/orchestration/avoidance.py` 신규: `build_avoidance_guidance(alert)` 순수 함수. direction(front/front-left/front-right/stop) + panning 기반 우회 방향 템플릿 (20자 이내) + [면접 대비 주석]. `can_use_avoidance_fast_lane(alert, detections)` 판정 (단일 객체 + 유효 direction + 20자 이내). 비협상 원칙 준수: LLM/RAG/실시간 TTS 미경유, 순수 템플릿.
+  - `server/detection/consumer.py`:
+    - `_send_cognitive_guide`에 `preset_guidance_text: str | None` 파라미터 추가. 주어지면 `run_orchestrator`(LangGraph) 우회하고 preset 텍스트로 즉시 TTS 합성 후 전송.
+    - `_trigger_delayed_cognitive_guide`에서 avoidance fast lane 우선 시도. `can_use_avoidance_fast_lane` True면 `build_avoidance_guidance`를 preset으로 전달 (LangGraph 우회). 다중 객체/방향 불확정 시 기존 LangGraph 폴백.
+  - `tests/test_langgraph.py`: `TestAvoidanceFastLane` 클래스 신규 11개 케이스 (front-left→오른쪽, front-right→왼쪽, 정면 중앙→멈추세요, panning±→좌/우, stop→멈추세요, unknown→None, 단일 객체 fast lane 가능, 다중 객체 불가, unknown direction 불가).
+- **관련 파일**: `server/orchestration/avoidance.py`, `server/detection/consumer.py`, `tests/test_langgraph.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 116개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: avoidance fast lane은 반사 후속(800ms 후) 인지 경로 진입점에서 동작하므로 반사 경로 임포트 금지 규칙 미위반. 다중 객체/방향 불확정 시 기존 LangGraph로 폴백해 안전성 확보. preset 텍스트는 실시간 TTS 합성(사전합성 클립 아님) - 인지 경로 허용.

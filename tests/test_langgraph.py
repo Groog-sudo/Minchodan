@@ -282,3 +282,104 @@ class TestRiskClassifierConsistency:
     def test_high_risk_confidence_thresholds_in_valid_range(self):
         for class_name, min_conf in HIGH_RISK_CLASSES.items():
             assert 0.0 < min_conf <= 1.0, f"{class_name}의 min_confidence가 유효 범위를 벗어남"
+
+
+class TestAvoidanceFastLane:
+    """P1-1 (2026-07-17): 반사 후속 avoidance fast lane 단위 테스트."""
+
+    def _make_alert(self, direction="front", panning=0.0):
+        from server.detection.schemas import ReflexAlert
+
+        return ReflexAlert(
+            event_id="evt-1",
+            alert_id="high_obstacle",
+            direction=direction,
+            clip="reflex_clips/high_front.wav",
+            haptic=True,
+            panning=panning,
+            distance=0.8,
+            ts=0.0,
+            track_id="t1",
+            class_name="obstacle",
+            hit_count=3,
+            distance_band="medium",
+        )
+
+    def test_front_left_suggests_right(self):
+        """왼쪽 장애물 -> 오른쪽으로 우회 제안."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front-left")
+        assert build_avoidance_guidance(alert) == "오른쪽으로 비켜주세요"
+
+    def test_front_right_suggests_left(self):
+        """오른쪽 장애물 -> 왼쪽으로 우회 제안."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front-right")
+        assert build_avoidance_guidance(alert) == "왼쪽으로 비켜주세요"
+
+    def test_front_center_panning_suggests_stop(self):
+        """정면 중앙 장애물(panning 0) -> 멈추세요."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.0)
+        assert build_avoidance_guidance(alert) == "멈추세요"
+
+    def test_front_positive_panning_suggests_right(self):
+        """정면 장애물이 오른쪽으로 치우침(panning>0.2) -> 오른쪽으로 우회."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.5)
+        assert build_avoidance_guidance(alert) == "오른쪽으로 비켜주세요"
+
+    def test_front_negative_panning_suggests_left(self):
+        """정면 장애물이 왼쪽으로 치우침(panning<-0.2) -> 왼쪽으로 우회."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=-0.5)
+        assert build_avoidance_guidance(alert) == "왼쪽으로 비켜주세요"
+
+    def test_stop_direction_suggests_stop(self):
+        """direction=stop -> 멈추세요."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="stop")
+        assert build_avoidance_guidance(alert) == "멈추세요"
+
+    def test_unknown_direction_returns_none(self):
+        """알 수 없는 direction -> None (LangGraph 폴백)."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="unknown")
+        assert build_avoidance_guidance(alert) is None
+
+    def test_can_use_fast_lane_single_object(self):
+        """단일 객체 + 유효 direction -> fast lane 사용 가능."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front-left")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is True
+
+    def test_cannot_use_fast_lane_multi_object(self):
+        """다중 객체 -> fast lane 불가 (LangGraph 폴백)."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front-left")
+        detections = [
+            Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10)),
+            Detection(class_name="person", confidence=0.8, bbox=BBox(x=20, y=0, w=10, h=10)),
+        ]
+        assert can_use_avoidance_fast_lane(alert, detections) is False
+
+    def test_cannot_use_fast_lane_unknown_direction(self):
+        """알 수 없는 direction -> fast lane 불가."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="unknown")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is False

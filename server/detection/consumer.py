@@ -796,8 +796,27 @@ class DetectionConsumer:
         decode_ms: float,
         pipeline_start: float | None,
     ) -> None:
-        """반사 경보(비프/햅틱) 발동 800ms 후 인지 가이드(LLM TTS 우회)를 연계 트리거한다."""
+        """반사 경보(비프/햅틱) 발동 800ms 후 인지 가이드(LLM TTS 우회)를 연계 트리거한다.
+
+        P1-1 (2026-07-17): 단일 객체 + 방향 확정 시 avoidance 템플릿으로 즉시 우회 방향 안내.
+        LangGraph 전체(L1/L2/L3)를 돌리는 수 초 소요를 없애 반사 후속 안내 지연(S7)을 해소한다.
+        다중 객체/방향 불확정 시 기존 LangGraph 경로로 폴백한다(안전 측면).
+        """
         await asyncio.sleep(0.8)  # 반사 진동/비프음 인지용 딜레이
+
+        # P1-1: avoidance fast lane 우선 시도 (단일 객체 + 방향 확정)
+        from server.orchestration.avoidance import (
+            build_avoidance_guidance,
+            can_use_avoidance_fast_lane,
+        )
+
+        preset_guidance: str | None = None
+        if can_use_avoidance_fast_lane(alert, detections):
+            preset_guidance = build_avoidance_guidance(alert)
+            logger.info(
+                f"[DetectionConsumer] avoidance fast lane: device_id={device_id}, "
+                f"direction={alert.direction}, guidance='{preset_guidance}'"
+            )
 
         # 29종 객체 탐지 클래스들을 모아 DetectionResult 스키마로 인지 경로에 피딩
         cognitive_res = DetectionResult(
@@ -810,7 +829,7 @@ class DetectionConsumer:
             braille_direction="",
         )
 
-        # 인지 경로 전송
+        # 인지 경로 전송 (preset_guidance가 있으면 LangGraph 우회)
         await self._send_cognitive_guide(
             device_id=device_id,
             result=cognitive_res,
@@ -818,6 +837,7 @@ class DetectionConsumer:
             decode_ms=decode_ms,
             pipeline_start=pipeline_start,
             departure_confirmed=False,
+            preset_guidance_text=preset_guidance,
         )
 
     async def _send_cognitive_guide(
@@ -829,8 +849,13 @@ class DetectionConsumer:
         pipeline_start: float | None = None,
         departure_confirmed: bool = False,
         queue_wait_ms: float = 0.0,
+        preset_guidance_text: str | None = None,
     ) -> None:
-        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
+        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다.
+
+        P1-1 (2026-07-17): preset_guidance_text가 주어지면 LangGraph(run_orchestrator)를
+        우회하고 그 텍스트로 즉시 TTS 합성 후 전송한다 (반사 후속 avoidance fast lane).
+        """
 
         # 💡 [면접 대비 주석]
         # Q. 노면(surface) 정보가 감지되었을 때도 가이드를 생성하는 기준은 무엇인가요?
@@ -940,7 +965,19 @@ class DetectionConsumer:
         }
 
         try:
-            orch_result = await run_orchestrator(orch_input)
+            if preset_guidance_text is not None:
+                # P1-1 (2026-07-17): avoidance fast lane - LangGraph 우회, preset 텍스트로 즉시 합성.
+                orch_result = {
+                    "guidance_text": preset_guidance_text,
+                    "verified": True,
+                    "used_fast_lane": False,
+                    "retry_count": 0,
+                    "total_latency_ms": 0.0,
+                    "risk_level": "high",
+                    "direction": preset_guidance_text,
+                }
+            else:
+                orch_result = await run_orchestrator(orch_input)
             guidance_text = orch_result.get("guidance_text", "")
             if not guidance_text:
                 logger.warning(
