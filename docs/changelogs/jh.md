@@ -869,3 +869,18 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **검증 결과**: 34문서, 고유 source ID 34건, 중복 0건, BGE-M3 벡터 1024차원 확인. 대표 한국어 질의 3건의 기대 문서 Top-1 검색 확인
 - **팀원 적용 절차**: `ollama pull bge-m3` 실행 후 `.env.example`의 생활지원 전용 설정을 `.env`에 반영하고 `python scripts/build_convenience_db.py` 실행
 - **비고**: ChromaDB 산출물과 Ollama 모델은 Git 추적 대상이 아니며, 원본 JSON과 추적 가능한 설정·빌드 절차로 각 환경에서 동일하게 재생성함
+
+---
+
+### 2026-07-17 | 콘솔 UI | Detection Guidance Log 의미 분리 및 대시보드 위젯 옮기기/삭제 옵션 확장
+
+- **커밋**: `feat(console): 로그 텍스트 의미 분리와 위젯 이동 옵션 추가`
+- **변경 내용**:
+  - `DetectionGuidanceLogTable.tsx`에서 `파이프라인 텍스트`를 사용자 입력(STT 전사) 전용으로 축소해 `TTS 안내문`과 의미가 겹치지 않도록 분리함
+  - 기존 `파이프라인 텍스트` 영역에서 LLM 응답/최종 안내문을 제거하고, 상세 정보는 별도 `파이프라인 디버그` 섹션으로 분리해 운영자 디버깅 정보는 유지함
+  - 대시보드 위젯 카드 옵션에 `옮기기`를 추가하고, 선택 위젯만 드래그 가능하도록 이동 모드를 적용함
+  - 드롭 완료 또는 드래그 종료 시 이동 모드를 자동 해제하도록 처리해 조작 실수를 줄임
+  - `styles.css`에 이동 모드 시각 피드백(`widget-move-mode`, `widget-move-target`, `widget-drop-target`)과 `옮기기` 옵션 스타일을 추가함
+- **관련 파일**: `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: Detection Guidance Log의 `파이프라인 텍스트`는 STT 입력 맥락 확인용, `TTS 안내문`은 최종 출력 멘트 확인용으로 역할을 명확히 분리함

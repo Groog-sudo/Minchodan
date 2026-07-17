@@ -170,6 +170,8 @@ export function DashboardPage({
   );
   const [isWidgetPickerOpen, setIsWidgetPickerOpen] = useState(false);
   const [openWidgetOptionKey, setOpenWidgetOptionKey] = useState<DashboardWidgetKey | null>(null);
+  const [movingWidgetKey, setMovingWidgetKey] = useState<DashboardWidgetKey | null>(null);
+  const [dragOverWidgetKey, setDragOverWidgetKey] = useState<DashboardWidgetKey | null>(null);
 
   const { imageUrl, latestDetections, connected: liveFeedConnected, latencyEvents, guidanceLogEvents, lastGps } =
     liveFeed;
@@ -229,12 +231,38 @@ export function DashboardPage({
 
   const removeWidget = (widgetKey: DashboardWidgetKey) => {
     setWidgetOrder((prev) => prev.filter((key) => key !== widgetKey));
+    if (movingWidgetKey === widgetKey) {
+      setMovingWidgetKey(null);
+    }
     setOpenWidgetOptionKey(null);
   };
 
   const addWidget = (widgetKey: DashboardWidgetKey) => {
     setWidgetOrder((prev) => (prev.includes(widgetKey) ? prev : [...prev, widgetKey]));
     setIsWidgetPickerOpen(false);
+  };
+
+  const enableMoveMode = (widgetKey: DashboardWidgetKey) => {
+    setMovingWidgetKey(widgetKey);
+    setDragOverWidgetKey(null);
+    setOpenWidgetOptionKey(null);
+  };
+
+  const moveWidget = (fromKey: DashboardWidgetKey, toKey: DashboardWidgetKey) => {
+    if (fromKey === toKey) {
+      return;
+    }
+    setWidgetOrder((prev) => {
+      const fromIndex = prev.indexOf(fromKey);
+      const toIndex = prev.indexOf(toKey);
+      if (fromIndex < 0 || toIndex < 0) {
+        return prev;
+      }
+      const next = [...prev];
+      const [dragged] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, dragged);
+      return next;
+    });
   };
 
   const renderWidget = (widgetKey: DashboardWidgetKey) => {
@@ -353,10 +381,44 @@ export function DashboardPage({
       <section className="dashboard-widget-grid">
         {widgetOrder.map((widgetKey) => {
           const widgetMeta = DASHBOARD_WIDGETS.find((widget) => widget.key === widgetKey);
+          const moveModeActive = movingWidgetKey !== null;
+          const isMovableTarget = movingWidgetKey === widgetKey;
           return (
             <div
               key={widgetKey}
-              className={`dashboard-widget-item widget-${widgetKey} ${widgetMeta?.fullWidth ? "dashboard-widget-item-full" : ""}`}
+              className={`dashboard-widget-item widget-${widgetKey} ${widgetMeta?.fullWidth ? "dashboard-widget-item-full" : ""} ${moveModeActive ? "widget-move-mode" : ""} ${isMovableTarget ? "widget-move-target" : ""} ${dragOverWidgetKey === widgetKey ? "widget-drop-target" : ""}`}
+              draggable={isMovableTarget}
+              onDragStart={() => {
+                if (!isMovableTarget) {
+                  return;
+                }
+                setDragOverWidgetKey(null);
+              }}
+              onDragOver={(event) => {
+                if (!moveModeActive || !movingWidgetKey || movingWidgetKey === widgetKey) {
+                  return;
+                }
+                event.preventDefault();
+                setDragOverWidgetKey(widgetKey);
+              }}
+              onDragLeave={() => {
+                if (dragOverWidgetKey === widgetKey) {
+                  setDragOverWidgetKey(null);
+                }
+              }}
+              onDrop={(event) => {
+                if (!moveModeActive || !movingWidgetKey) {
+                  return;
+                }
+                event.preventDefault();
+                moveWidget(movingWidgetKey, widgetKey);
+                setDragOverWidgetKey(null);
+                setMovingWidgetKey(null);
+              }}
+              onDragEnd={() => {
+                setDragOverWidgetKey(null);
+                setMovingWidgetKey(null);
+              }}
             >
               <div className="widget-card-actions">
                 <button
@@ -371,6 +433,13 @@ export function DashboardPage({
                 </button>
                 {openWidgetOptionKey === widgetKey && (
                   <div className="widget-option-menu" role="menu" aria-label="위젯 옵션 메뉴">
+                    <button
+                      type="button"
+                      className="widget-option-move"
+                      onClick={() => enableMoveMode(widgetKey)}
+                    >
+                      옮기기
+                    </button>
                     <button
                       type="button"
                       className="widget-option-delete"

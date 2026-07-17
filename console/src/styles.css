@@ -244,6 +244,23 @@ h2 {
   flex-direction: column;
 }
 
+.dashboard-widget-item.widget-move-mode {
+  outline: 1px dashed rgba(249, 183, 0, 0.22);
+  outline-offset: 2px;
+}
+
+.dashboard-widget-item.widget-move-target {
+  cursor: grab;
+}
+
+.dashboard-widget-item.widget-move-target:active {
+  cursor: grabbing;
+}
+
+.dashboard-widget-item.widget-drop-target {
+  box-shadow: 0 0 0 2px rgba(249, 183, 0, 0.35);
+}
+
 .dashboard-widget-item > .panel,
 .dashboard-widget-item > section.panel {
   flex: 1;
@@ -296,6 +313,22 @@ h2 {
   border: 1px solid transparent;
   padding: 7px 8px;
   font-size: 12px;
+}
+
+.widget-option-move {
+  width: 100%;
+  text-align: left;
+  color: #ffffff;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 7px 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.widget-option-move:hover {
+  border-color: rgba(249, 183, 0, 0.35);
+  color: var(--color-gildang-yellow);
 }
 
 .widget-option-delete:hover {
