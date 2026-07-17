@@ -79,11 +79,11 @@ async def test_l1_classifier_stays_low_when_departure_not_confirmed():
 
 
 @pytest.mark.asyncio
-async def test_l1_classifier_does_not_downgrade_existing_mid_risk_object():
-    # 탐지 객체가 이미 mid를 유발하는 경우, 이탈 신호와 무관하게 mid 그대로 유지.
+async def test_l1_classifier_object_stays_low_without_departure():
+    # 2026-07-14: 객체 클래스만으로는 mid가 아니다. 이탈 확정 없으면 low 유지.
     state = {"detected_classes": ["bollard"], "is_departing_confirmed": False}
     result = await l1_classifier_node(state)
-    assert result["risk_level"] == "mid"
+    assert result["risk_level"] == "low"
 
 
 @pytest.mark.asyncio

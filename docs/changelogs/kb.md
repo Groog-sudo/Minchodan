@@ -2513,3 +2513,13 @@
 - **관련 파일**: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.antigravity/rules.md`, `.cursor/rules/00-core-guidelines.mdc`, `.gitignore`, `scripts/validate_agent_rules.py`, `docs/dev-guides/multi_agent_setup.md`
 - **검증 결과**: Ruff check 통과, 이중 경로 검증 통과(gates/ 내 금지 임포트 없음), `validate_agent_rules.py` 6/6 통과, 금지 파일(.env/.pt/.onnx) 미포함.
 - **비고**: `.gemini/`(Gemini CLI용) 제거 — 팀원 환경은 Antigravity IDE/CLI이므로 `.antigravity/` 사용. 커밋 범위는 본 작업 파일만 선별(이미 있던 server/tests/docs 변경은 별도 분리).
+
+---
+
+### 2026-07-17 | 6단계 | mid_risk_option_a_implementation
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - MID_RISK Option A 구현 커밋 (changelog 선기입분 코드·문서·테스트 동기화)
+- **관련 파일**: `server/detection/detection_pipeline.py`, `server/detection/gates/head_level_gate.py`, `tests/test_langgraph.py`, `tests/test_departure_hysteresis.py`, `docs/stage-guides/stage6_orchestration_design.md`, `docs/design/behavior_and_risk_insight.md`, `.agents/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

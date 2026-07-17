@@ -28,22 +28,20 @@ logger = logging.getLogger(__name__)
 RISK_LEVELS = {"high", "mid", "low"}
 
 # =========================================================================
-# 👨‍💻 HARD CODE 영역 시작: cognitive 경로로 넘길 mid risk 클래스 확정 👨‍💻
+# 👨‍💻 HARD CODE 영역 시작: 인지 경로 mid risk 객체·노면·머리높이 격상 분리 👨‍💻
 # 💡 [면접 대비 주석]
-# 질문: 왜 모든 탐지 객체를 reflex(즉시 경보)로 보내지 않았나요?
-# 답변: 시각장애인 보행 보조에서 가장 위험한 것은 "경보 과다"로 인한 피로 누적입니다.
-# 따라서 즉시 충돌 가능성이 큰 5종(car/truck/bus/motorcycle/scooter)만 reflex로 고정하고,
-# 나머지 정적 장애물/보행 방해물은 mid risk로 분류해 cognitive 경로에서 방향성과 회피
-# 문장을 포함한 상세 안내로 처리하도록 설계했습니다.
+# 질문: 2026-07-14 이후 객체 mid 목록은 왜 비었나요?
+# 답변: stage3 v0.3.1·class-agnostic reflex(Option A) 채택 후, 근접 객체는 reflex_gate/
+# head_level_gate가 반사 경로를 담당하고 consumer의 800ms 지연 인지·패스트 레인이 설명을 맡습니다.
+# LangGraph L1의 인지 mid는 노면 이탈(is_departing_confirmed) 전용이므로 객체 클래스는 mid로
+# 올리지 않습니다. server/orchestration/nodes/l1_classifier.py의 MID_RISK_CLASSES와
+# 동일하게 유지할 것(tests/test_langgraph.py::TestRiskClassifierConsistency 참조).
 #
-# 2026-07-07 정정: 이전 목록은 COCO 80클래스 잔재(skateboard/backpack/handbag/suitcase/
-# umbrella/"fire hydrant" 등)였고 실제 파인튜닝 완료 29클래스 모델과 대부분 일치하지 않았다.
-# 반사 게이트가 이미 처리하는 5종(car/truck/bus/motorcycle/scooter)과 정보성/비장애물
-# 클래스(person/cat/dog/traffic_light/traffic_sign/stop)를 제외한 정적 장애물 전부를 채택했다.
-# server/orchestration/nodes/l1_classifier.py의 MID_RISK_CLASSES와 동일하게 유지할 것
-# (두 분류기가 서로 다른 목록으로 어긋났던 것이 이번에 고친 버그였다. tests/test_langgraph.py의
-# 일관성 회귀 테스트 참조).
-MID_RISK_CLASSES = {
+# HEAD_LEVEL_ESCALATION_CLASSES는 인지 mid와 별도입니다. 상체 높이(화면 상단 40%) 돌출물은
+# LLM 지연 전에 head_level_gate가 반사 경로로 격상해야 하므로 18종 정적 장애물 목록을 유지합니다.
+MID_RISK_CLASSES: set[str] = set()
+
+HEAD_LEVEL_ESCALATION_CLASSES = {
     "barricade",
     "bench",
     "bicycle",
@@ -283,7 +281,7 @@ class DetectionPipeline:
         발밑 근접만 보는 reflex_gate와 달리, 흰지팡이로 감지 불가능한 상체 높이
         돌출 장애물(나뭇가지, 개방된 적재함 등)을 조기에 반사 경로로 격상한다.
         """
-        escalation_classes = frozenset(MID_RISK_CLASSES)
+        escalation_classes = frozenset(HEAD_LEVEL_ESCALATION_CLASSES)
         for det in detections:
             alert = head_level_gate(det, frame_height, frame_width, escalation_classes)
             if alert is not None:

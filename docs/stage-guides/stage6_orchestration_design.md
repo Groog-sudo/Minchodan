@@ -219,17 +219,21 @@ graph TD
 | **출력** | `risk_level: str`, `retry_count: int = 0` |
 | **핵심 규칙** | mid 클래스 집합 정의, high 수신 시 차단(방어) |
 
-**MID_RISK_CLASSES 집합** (3단계 `detection_pipeline.py`의 `_classify_risk`와 정합):
+**MID_RISK_CLASSES 집합** (2026-07-14 정책, `l1_classifier.py`·`detection_pipeline.py` SSOT):
 
-| 클래스 | 위험도 | 비고 |
-| ------ | ------ | ---- |
-| `kickboard` | mid | 3단계 `_classify_risk` mid 분류 |
-| `bollard` | mid | 3단계 `_classify_risk` mid 분류 |
-| `bicycle` | mid | L1 확장 |
-| `pothole` | mid | L1 확장 |
-| `manhole` | mid | L1 확장 |
-| `construction_cone` | mid | L1 확장 |
-| (기타) | low | 기본값 |
+| 구분 | 클래스/조건 | L1 `risk_level` | 비고 |
+| ------ | ------ | ------ | ---- |
+| 객체 탐지 | (없음 — 공집합) | `low` | 근접/상체 위험은 반사·800ms 지연 인지·패스트 레인 |
+| 노면 이탈 | `is_departing_confirmed=True` | `mid` | 3단계 히스테리시스 확정 후 L1 승격 |
+| 노면 분할 | `caution`/`roadway`(P0 미도달) | 파이프라인 `mid` | `_classify_risk`·Redis 발행용 |
+
+**HEAD_LEVEL_ESCALATION_CLASSES** (`detection_pipeline.py` 전용, L1 mid와 분리):
+
+| 클래스 | 동작 |
+| ------ | ---- |
+| `barricade`, `bench`, `bicycle`, `bollard`, `carrier`, `chair`, `fire_hydrant`, `kiosk`, `movable_signage`, `parking_meter`, `pole`, `potted_plant`, `power_controller`, `stroller`, `table`, `traffic_light_controller`, `tree_trunk`, `wheelchair` | 화면 상단 40% + confidence/hit_count 통과 시 `head_level_gate` → 반사 경로 |
+
+> **2026-07-17 정정**: 이전 §7.1의 `kickboard`/`pothole`/`manhole`/`construction_cone`는 29클래스 모델에 존재하지 않는 stale 명칭이었다. 2026-07-14 객체 mid 폐지 및 head-level 격상 분리를 반영했다.
 
 > **코딩 패턴**: L1은 LLM을 호출하지 않는 **순수 룰베이스** 노드입니다. `state.get("detected_classes", [])`로 None 가드레일을 적용합니다 (guide 17.2).
 

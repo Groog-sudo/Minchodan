@@ -18,7 +18,12 @@ if root_dir not in sys.path:
 
 import contextlib
 
-from server.detection.detection_pipeline import MID_RISK_CLASSES as PIPELINE_MID_RISK_CLASSES
+from server.detection.detection_pipeline import (
+    HEAD_LEVEL_ESCALATION_CLASSES,
+)
+from server.detection.detection_pipeline import (
+    MID_RISK_CLASSES as PIPELINE_MID_RISK_CLASSES,
+)
 from server.detection.gates.reflex_gate import HIGH_RISK_CLASSES
 from server.orchestration.graph import run_orchestrator
 from server.orchestration.nodes.l1_classifier import MID_RISK_CLASSES, classify_risk
@@ -68,13 +73,13 @@ if sys.stdout.encoding != "utf-8":
 def test_l1_risk_classification():
     """
     TC-LG-003: L1 위험도 분류 검증.
-    중위험 클래스 포함 시 'mid', 미포함 시 'low' 분류를 검증합니다.
+    2026-07-14 이후 객체 클래스는 mid가 아니며, 노면 이탈 확정 시에만 mid로 승격한다.
     """
-    # mid 위험 분류 확인 (실제 29클래스 탐지 모델 기준, 2026-07-07 정정)
-    assert classify_risk(["wheelchair"]) == "mid"
-    assert classify_risk(["bollard", "person"]) == "mid"
-    assert classify_risk(["bicycle"]) == "mid"
-    assert classify_risk(["tree_trunk"]) == "mid"
+    # 객체 단독 탐지는 low (인지 mid는 is_departing_confirmed 전용)
+    assert classify_risk(["wheelchair"]) == "low"
+    assert classify_risk(["bollard", "person"]) == "low"
+    assert classify_risk(["bicycle"]) == "low"
+    assert classify_risk(["tree_trunk"]) == "low"
 
     # low 위험 분류 확인 (기본값 - 정보성/비장애물 클래스)
     assert classify_risk(["traffic_light"]) == "low"
@@ -242,7 +247,8 @@ async def test_langgraph_api_error_fallback():
 
 class TestRiskClassifierConsistency:
     """2026-07-07 회귀 테스트: l1_classifier와 detection_pipeline의 위험도 분류기가
-    서로 다른(그리고 실제 모델과도 어긋난) 클래스명 집합을 쓰던 버그의 재발을 방지한다."""
+    서로 다른(그리고 실제 모델과도 어긋난) 클래스명 집합을 쓰던 버그의 재발을 방지한다.
+    2026-07-17 Option A: 인지 mid 객체 목록은 L1·파이프라인 공집합, head-level 격상은 별도."""
 
     def test_l1_and_pipeline_mid_risk_classes_match(self):
         assert MID_RISK_CLASSES == PIPELINE_MID_RISK_CLASSES
@@ -250,6 +256,14 @@ class TestRiskClassifierConsistency:
     def test_mid_risk_classes_are_real_detection_classes(self):
         unknown = MID_RISK_CLASSES - REAL_DETECTION_CLASSES
         assert not unknown, f"실제 29클래스에 없는 MID_RISK_CLASSES 항목: {unknown}"
+
+    def test_head_level_escalation_classes_are_real_detection_classes(self):
+        unknown = HEAD_LEVEL_ESCALATION_CLASSES - REAL_DETECTION_CLASSES
+        assert not unknown, f"실제 29클래스에 없는 HEAD_LEVEL_ESCALATION_CLASSES 항목: {unknown}"
+
+    def test_head_level_escalation_disjoint_from_mid_risk_objects(self):
+        overlap = HEAD_LEVEL_ESCALATION_CLASSES & MID_RISK_CLASSES
+        assert not overlap, f"인지 mid 객체와 head-level 격상 목록이 겹침: {overlap}"
 
     def test_high_risk_classes_are_real_detection_classes(self):
         # HIGH_RISK_CLASSES는 2026-07-07부로 {class_name: min_confidence} 딕셔너리로 변경됨
