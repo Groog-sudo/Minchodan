@@ -188,6 +188,44 @@ class TestGates:
         alert = surface_gate(surf, 480.0)
         assert alert is None
 
+    def test_reflex_gate_small_bottom_near_emits(self):
+        """P0-3: 발밑(화면 하단 80% 이하) 소형 객체(면적 4~10%)는 근접으로 발동."""
+        # frame 480x640. area 5% 목표: w*h = 0.05*307200 = 15360. 160*96=15360. bottom=430+96=526>=384.
+        det = Detection(
+            class_name="bollard",
+            confidence=0.9,
+            bbox=BBox(x=270.0, y=430.0, w=160.0, h=96.0),  # ~5%, bottom=526
+            hit_count=3,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is not None
+        assert alert.distance_band in ("near", "medium")
+
+    def test_reflex_gate_small_bottom_below_lower_bound_rejected(self):
+        """P0-3: 발밑이어도 면적이 SMALL_OBJECT_MIN_AREA_RATIO(4%) 미만이면 미발동."""
+        # area = 100*100/(480*640) = 0.0326 = 3.26% < 4%. bottom=380+100=480>=384.
+        det = Detection(
+            class_name="bollard",
+            confidence=0.9,
+            bbox=BBox(x=270.0, y=380.0, w=100.0, h=100.0),  # 3.26%, bottom=480
+            hit_count=3,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is None
+
+    def test_reflex_gate_reacquired_bypasses_min_hit_count(self):
+        """P0-3: reacquired=True면 hit_count<MIN_HIT_COUNT여도 즉시 발동."""
+        # 중앙 + 근접(면적 ~11.5%)이지만 hit_count=1. reacquired=True면 발동.
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),  # ~11.5%, centered
+            hit_count=1,
+            reacquired=True,
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is not None
+
 
 class TestByteTrackTracker:
     @pytest.mark.asyncio
@@ -264,6 +302,78 @@ class TestByteTrackTracker:
         )
         updated = await tracker.update([det], mock_redis_bus)
         assert updated[0].hit_count == 3
+
+    @pytest.mark.asyncio
+    async def test_reacquired_within_window(self, mock_redis_bus):
+        """P0-3: 직전 hit_count>=3이고 1초 이내 재탐지 시 reacquired=True."""
+        import time as _time
+
+        tracker = ByteTrackTracker()
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=0, y=100, w=10, h=10),
+            track_id="T-0001",
+        )
+        # 직전 hit_count=3, 0.5초 전 관측
+        recent_ts = _time.time() - 0.5
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={
+                "hit_count": "3",
+                "last_pos": '{"x":0,"y":100,"w":10,"h":10}',
+                "updated_at": str(recent_ts),
+            }
+        )
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].reacquired is True
+        assert updated[0].hit_count == 4  # 정상 누적 유지
+
+    @pytest.mark.asyncio
+    async def test_not_reacquired_after_window(self, mock_redis_bus):
+        """P0-3: 1초 초과 후 재탐지 시 reacquired=False (윈도우 밖)."""
+        import time as _time
+
+        tracker = ByteTrackTracker()
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=0, y=100, w=10, h=10),
+            track_id="T-0001",
+        )
+        # 직전 hit_count=3, 2초 전 관측 (윈도우 1초 초과)
+        old_ts = _time.time() - 2.0
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={
+                "hit_count": "3",
+                "last_pos": '{"x":0,"y":100,"w":10,"h":10}',
+                "updated_at": str(old_ts),
+            }
+        )
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].reacquired is False
+
+    @pytest.mark.asyncio
+    async def test_not_reacquired_with_low_prev_hit(self, mock_redis_bus):
+        """P0-3: 직전 hit_count<3이면 윈도우 내 재탐지여도 reacquired=False."""
+        import time as _time
+
+        tracker = ByteTrackTracker()
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=0, y=100, w=10, h=10),
+            track_id="T-0001",
+        )
+        recent_ts = _time.time() - 0.5
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={
+                "hit_count": "2",  # MIN(3) 미만
+                "last_pos": '{"x":0,"y":100,"w":10,"h":10}',
+                "updated_at": str(recent_ts),
+            }
+        )
+        updated = await tracker.update([det], mock_redis_bus)
+        assert updated[0].reacquired is False
 
 
 class TestPipeline:

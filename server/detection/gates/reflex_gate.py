@@ -62,6 +62,9 @@ CENTER_X_MIN = 0.30
 CENTER_X_MAX = 0.70
 # 2026-07-16 Option A: 0.08 → 0.10 (실외 원거리/상주 객체 알림 완화)
 MIN_AREA_RATIO = 0.10
+# P0-3 (2026-07-17): 소형 객체 하단 근접 보정용 하한. 발밑(화면 하단 80% 이하)에 위치한
+# 이 구간(0.04~0.10) 면적의 bbox는 근접으로 간주해 반사 발동.
+SMALL_OBJECT_MIN_AREA_RATIO = 0.04
 # 화면 하단(발밑) 접근 임계치 — 레거시/단말 참고용 (본문 미사용, 면적 비율로 근접 판정)
 PROXIMITY_THRESHOLD = 0.15
 # 동일 track_id가 최소 이만큼 연속 프레임 유지되어야 반사 경보를 발동한다.
@@ -85,7 +88,10 @@ def reflex_gate(
     if frame_width <= 0 or frame_height <= 0:
         return None
 
-    if detection.hit_count < MIN_HIT_COUNT:
+    # P0-3 (2026-07-17): Approach-Lot 재획득 객체는 MIN_HIT_COUNT 재충족 대기 없이 즉시 발동.
+    # [면접 대비 주석] 접근 중 가려짐 후 1초 내 재등장 시 0.3s(3프레임) 대기가 30cm 추가 접근을
+    # 허용해 안전 마진을 깎는 문제(S4)를 해소. 신뢰도/중앙/근접 조건은 여전히 유효해야 한다.
+    if not detection.reacquired and detection.hit_count < MIN_HIT_COUNT:
         return None
 
     if detection.confidence < AGNOSTIC_MIN_CONFIDENCE:
@@ -99,6 +105,20 @@ def reflex_gate(
     frame_area = frame_width * frame_height
     area_ratio = bbox_area / frame_area
     is_very_close = area_ratio >= MIN_AREA_RATIO
+
+    # P0-3 (2026-07-17): 소형 객체 하단 근접 보정.
+    # [면접 대비 주석] 발밑(화면 하단 80% 이하)에 위치한 작은 bbox(면적 0.04~0.10)는
+    # 면적 비율만으로는 원거리로 오인되나, 하단 위치가 실제 근접을 나타낸다(카메라는 전방을
+    # 약간 아래로 향함). 이 보정이 없으면 발밑의 작은 장애물(볼라드·모터사이클)이 원거리로
+    # 분류되어 반사 경보가 누락된다. SMALL_OBJECT_MIN_AREA_RATIO~MIN_AREA_RATIO 구간만 허용해
+    # 중앙 먼 곳의 작은 bbox 오탐은 여전히 차단.
+    bottom_y = detection.bbox.y + detection.bbox.h
+    is_bottom_near = (
+        bottom_y >= 0.8 * frame_height
+        and SMALL_OBJECT_MIN_AREA_RATIO <= area_ratio < MIN_AREA_RATIO
+    )
+    if is_bottom_near:
+        is_very_close = True
 
     if not (is_very_close and is_centered):
         return None

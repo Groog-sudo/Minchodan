@@ -2764,3 +2764,22 @@
 - **관련 파일**: `server/tts/suppressor.py`, `server/detection/schemas.py`, `server/detection/gates/reflex_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_suppressor_rearm.py`, `tests/test_detection.py`
 - **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 79개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
 - **비고**: near 햅틱 스로틀(500ms)은 충돌 임박 촉각 신호의 반복 안전 이득을 손실보다 크게 평가한 설계 선택. 밴드 경계(0.6m/1.5m)는 보행 속도 1m/s 기준.
+
+---
+
+### 2026-07-17 | 3단계 | M3_P0-3_소형객체_하단근접_ApproachLost
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M3/P0-3 구현: 소형 객체 하단 근접 보정 + Approach-Lost 재획득 즉시 재발화로 S4(재등장 0.3s 지연)·소형 객체 누락 해소.
+  - `server/detection/schemas.py`: `Detection`에 `reacquired: bool = False` 필드 추가.
+  - `server/detection/bytetrack_tracker.py`: `_compute_hit_count_with_reacquire()` 신규. 직전 hit_count >= APPROACH_LOST_MIN_PREV_HIT(3)이고 updated_at이 APPROACH_LOST_WINDOW_S(1.0s) 이내 재탐지 시 reacquired=True + [면접 대비 주석]. hit_count는 정상 누적 유지(감소시키지 않음). 환경변수 `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT` 추가.
+  - `server/detection/gates/reflex_gate.py`:
+    - (a) 소형 객체 하단 근접 보정: bottom_y >= 0.8*frame_height AND SMALL_OBJECT_MIN_AREA_RATIO(0.04) <= area_ratio < MIN_AREA_RATIO(0.10)이면 is_very_close=True + [면접 대비 주석]. 발밑 작은 bbox(볼라드·모터사이클)가 원거리로 오인되어 반사 누락되는 문제 해소.
+    - (b) reacquired=True면 MIN_HIT_COUNT 검사 건너뛰어 즉시 발동 + [면접 대비 주석].
+    - `SMALL_OBJECT_MIN_AREA_RATIO=0.04` 상수 추가.
+  - `docs/ops/environment_variables.md` + `.env.example`: `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT` 2개 변수 추가.
+  - `tests/test_detection.py`: TestGates에 3개(소형 하단 근접 발동/하한 미만 미발동/reacquired MIN_HIT bypass), TestByteTrackTracker에 3개(윈도우 내 reacquired/윈도우 외 False/직전 hit 낮으면 False) 테스트 추가.
+- **관련 파일**: `server/detection/schemas.py`, `server/detection/bytetrack_tracker.py`, `server/detection/gates/reflex_gate.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 85개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: Approach-Lot는 track_id가 유지되는 케이스를 전제(문서 §4.2 (b) "동일 track_id"). 완전히 새 track_id 부여 시 spatial matching이 필요하나 post-MVP 과제. SMALL_OBJECT_MIN_AREA_RATIO(0.04)는 중앙 먼 곳 작은 bbox 오탐 차단을 위한 하한.
