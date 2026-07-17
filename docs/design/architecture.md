@@ -653,3 +653,40 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | **포스트 D** | 단말-서버 알림 중복 조정 (dedupe/debounce/우선순위 머지) | 알림 중복 억제, 온라인 복귀 자동화 |
 
 > 상세 매커니즘, 시나리오 흐름도, 리스크 분석, 환경 변수 추가 예정, 검증 기준은 [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md)를 참조.
+
+---
+
+## 11. 필드 테스트 개선 (2026-07-17, M1-M7)
+
+실사용 필드 테스트 피드백 기반 7개 마일스톤 개선. 상세는 [`docs/research/field_test_improvement_plan.md`](../research/field_test_improvement_plan.md).
+
+### 11.1 반사 경로 강화 (P0)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M1/P0-2** | 반사 큐 최신성 보장 (latest-frame-wins + 신선도 검사) | `stream_splitter`, `consumer` |
+| **M2/P0-1** | 억제 재무장 정책 (60s 침묵 -> 상황 변화 시 즉시 재발화) | `suppressor`, `reflex_gate` |
+| **M3/P0-3** | 소형 객체 하단 근접 + Approach-Lost 즉시 재발화 | `reflex_gate`, `bytetrack_tracker` |
+
+### 11.2 인지 경로 강화 (P1)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M4/P1-2** | 발화 가치 게이트 (동일 상황 30s 쿨다운, TTS 합성 생략) | `consumer` |
+| **M5/P1-1** | 반사 후속 avoidance fast lane (LangGraph 우회, 우회 방향 즉시 안내) | `avoidance.py` 신규, `consumer` |
+
+### 11.3 노면/지연 보정 (P2)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M6/P2-1(a)(b)** | 계단 실측 평가 스크립트 + surface_caution 히스테리시스 | `scripts/eval_segmentation_stairs.py`, `consumer`, `risk_rules` |
+| **M7/P2-1(c)** | 세그 5클래스 재학습 파이프라인 + STAIR_DOWN 활성화 사전 등록 | `scripts/train_segmentation_5class.py`, `surface_gate` |
+| **M7/P2-2** | 파이프라인 지연 관측 (콘솔 latency_alert) | `consumer` |
+
+### 11.4 신규 환경변수
+
+`REFLEX_QUEUE_MAXSIZE`, `COGNITIVE_QUEUE_MAXSIZE`, `REFLEX_MAX_AGE_S`, `COGNITIVE_MAX_AGE_S`, `REFLEX_SUPPRESS_TTL_S`, `REFLEX_MIN_GAP_S`, `REFLEX_NEAR_HAPTIC_THROTTLE_S`, `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT`, `COGNITIVE_UTTERANCE_COOLDOWN_S`, `SURFACE_CAUTION_CONFIRM_STREAK`, `REFLEX_LATENCY_ALERT_MS`, `COGNITIVE_LATENCY_ALERT_MS` (상세는 `docs/ops/environment_variables.md`).
+
+### 11.5 오해 방지 조항
+
+"폴백 동작 제거"는 임시 함수 기본값 폴백(예: detector 미로드 시 mock 반환)을 의미하며, **서버-온디바이스 폴백(WS 끊김 시 단말 CoreML/TFLite 추론 전환)은 유지**됩니다. 단말 `useWebSocket.ts`의 서버-온디바이스 폴백 메커니즘은 본 개선에서 변경되지 않습니다.

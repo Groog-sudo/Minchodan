@@ -2850,3 +2850,18 @@
 - **관련 파일**: `scripts/train_segmentation_5class.py`, `server/detection/gates/surface_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
 - **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 122개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK. 학습 스크립트 dry-run 정상 동작.
 - **비고**: 5클래스 재학습은 라벨링된 데이터셋 준비 후 오프라인 실행. STAIR_DOWN은 5클래스 모델 배포 시 surface_gate 사전 등록으로 자동 활성화. 지연 관측은 콘솔 운영자용 모니터링 강화.
+
+---
+
+### 2026-07-17 | 문서 | 필드테스트개선_M1-M7_문서동기화
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 M1-M7 구현에 대한 문서 동기화 (교차 검증).
+  - `docs/ops/test_specification.md`: TC-DET-012~018(큐 최신성/재무장/소형객체/Approach-Lost/surface 히스테리시스/STAIR_DOWN 5클래스/지연관측), TC-LG-010~011(발화가치게이트/avoidance fast lane) 신규 등재. 버전 v0.6.6 -> v0.6.7.
+  - `docs/design/architecture.md`: §11 "필드 테스트 개선 (2026-07-17, M1-M7)" 섹션 신설. P0/P1/P2 마일스톤 요약, 신규 환경변수 목록, 오해 방지 조항(서버-온디바이스 폴백 유지 명시).
+  - `docs/design/api_specification.md`: §4.1 reflex_alert에 `distance_band` 필드 추가 + 억제 키 정정. §4.3 latency_event 섹션 신설(`latency_alert`, `latency_threshold_ms`, `queue_wait_ms` 필드).
+  - `docs/design/reflex_audio_specification.md`: §6 "억제 재무장(Re-arm) 정책" 섹션 신설. 정책 전환, 억제 키 분리, 거리 밴드, should_rearm 판정, 오해 방지 조항.
+- **관련 파일**: `docs/ops/test_specification.md`, `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/design/reflex_audio_specification.md`
+- **검증 결과**: 문서 교차 검증 완료. 코드-문서 정합성 확보 (ReflexAlert distance_band, latency_event latency_alert, 재무장 정책 키/TTL/밴드 일치).
+- **비고**: environment_variables.md는 M1-M7 각 커밋에서 이미 갱신 완료. changelog도 각 M별로 이미 추가됨. 본 커밋은 남은 3개 설계 문서 동기화.
