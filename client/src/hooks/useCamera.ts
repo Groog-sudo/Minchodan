@@ -209,8 +209,9 @@ export function useCamera(
   });
 
   const captureFrame = isMockMode ? captureMockFrame : captureProvider.capturePhoto;
-  // const useStreamCapture = !isMockMode && captureProvider.supportsStream;
-  const useStreamCapture = false; // 💡 임시 테스트: Expo Go 환경 폴백 루프 강제 작동
+  // Expo Go 환경(개발 빌드가 아닌 순수 가상 빌드)에서는 supportsStream이 false이므로 자동 폴백됩니다.
+  // 프로덕션/실기기 빌드에서는 supportsStream이 true가 되어 고성능 프레임 프로세서로 동작합니다.
+  const useStreamCapture = !isMockMode && captureProvider.supportsStream;
 
   // ---- 캡처 루프 (capturePhoto 경로 전용, 스트림 경로는 <Camera frameProcessor>가 구동) ----
 
