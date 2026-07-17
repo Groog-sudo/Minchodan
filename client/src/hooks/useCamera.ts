@@ -179,7 +179,7 @@ export function useCamera(
 
     const jpegBytes = base64ToUint8(base64);
     const frame: FrameData = {
-      float32: new Float32Array(0),
+      float32: decodeBase64JpegToHwc(base64),
       stream: "reflex",
       base64,
       jpegBytes,
@@ -187,7 +187,7 @@ export function useCamera(
 
     if (!audioEngine.isGuidePlaying) {
       console.log(
-        `[Camera/Stream] reflex 프레임 수신: JPEG bytes=${jpegBytes.length} base64len=${base64.length}`,
+        `[Camera/Stream] reflex 프레임 수신: JPEG bytes=${jpegBytes.length} base64len=${base64.length} float32len=${frame.float32.length}`,
       );
     }
 
@@ -209,7 +209,8 @@ export function useCamera(
   });
 
   const captureFrame = isMockMode ? captureMockFrame : captureProvider.capturePhoto;
-  const useStreamCapture = !isMockMode && captureProvider.supportsStream;
+  // const useStreamCapture = !isMockMode && captureProvider.supportsStream;
+  const useStreamCapture = false; // 💡 임시 테스트: Expo Go 환경 폴백 루프 강제 작동
 
   // ---- 캡처 루프 (capturePhoto 경로 전용, 스트림 경로는 <Camera frameProcessor>가 구동) ----
 

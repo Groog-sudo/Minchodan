@@ -184,7 +184,7 @@ const CANVAS_OVERFLOW_MARGIN = 1.02;
 // NEAR: 화면 하단(가장 가까운 지점) 좌우 경계, FAR: 화면 상단(먼 지점) 좌우 경계.
 // FAR_Y_RATIO: ROI 상단이 화면 높이의 35% 지점에서 시작.
 const PATH_ROI_NEAR_BAND = [0.20, 0.80] as const; // 정규화 x 좌표 (0~1)
-const PATH_ROI_FAR_BAND  = [0.38, 0.62] as const;
+const PATH_ROI_FAR_BAND = [0.38, 0.62] as const;
 const PATH_ROI_FAR_Y_RATIO = 0.35;
 
 /**
@@ -197,8 +197,8 @@ function roiPolygon(): [number, number][] {
   const yTop = PATH_ROI_FAR_Y_RATIO;
   const yBottom = 1.0;
   return [
-    [farLo,  yTop],    // 좌상
-    [farHi,  yTop],    // 우상
+    [farLo, yTop],    // 좌상
+    [farHi, yTop],    // 우상
     [nearHi, yBottom], // 우하
     [nearLo, yBottom], // 좌하
   ];
@@ -676,14 +676,14 @@ export function CameraView() {
           // 실측 기록용(Release 빌드에서는 미출력) - 시나리오 기록은 화면 판독으로 수행
           console.log(
             `[DepthProbe] acc=${result.accuracy} quality=${result.quality} ` +
-              `calibrated=${result.calibrated === true} ` +
-              result.samples
-                .map(
-                  (s, i) =>
-                    `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m` +
-                    `(z=${s.axialMeters?.toFixed(2) ?? "-"}m)`,
-                )
-                .join(", "),
+            `calibrated=${result.calibrated === true} ` +
+            result.samples
+              .map(
+                (s, i) =>
+                  `${DEPTH_PROBE_POINTS[i]?.label}=${s.meters?.toFixed(2) ?? "-"}m` +
+                  `(z=${s.axialMeters?.toFixed(2) ?? "-"}m)`,
+              )
+              .join(", "),
           );
         }
       }, DEPTH_PROBE_INTERVAL_MS);
@@ -802,6 +802,9 @@ export function CameraView() {
     const frameStream = frame.stream ?? "reflex";
     const eventId = `event-${DEVICE_ID}-${frameStream}-${now}`;
 
+    // 카메라 렌더링 디버깅을 위한 코드
+    // console.log(`[CameraView 디버그] handleFrame 호출됨! jpegBytes: ${!!frame.jpegBytes}, base64: ${!!frame.base64}, sendRef: ${!!sendRef.current}`);
+
     // 로컬 추론 엔진 적재 여부와 관계없이 서버로 프레임 전송 수행 (WebSocket)
     // raw JPEG 바이트가 있으면(실기기) base64를 경유하지 않고 메타데이터(JSON) + 바이너리
     // 프레임 2개를 순차 전송한다. 단일 WS 연결에서 프레임 순서는 보장되므로 서버는
@@ -883,7 +886,7 @@ export function CameraView() {
       if (__DEV__ && scene) {
         console.log(
           `[SceneHysteresis] rawOutdoor=${rawIsOutdoorByScene} stableOutdoor=${isOutdoorByScene} ` +
-            `indoorVotes=${sceneIndoorVotesRef.current.filter(Boolean).length}/${sceneIndoorVotesRef.current.length}`,
+          `indoorVotes=${sceneIndoorVotesRef.current.filter(Boolean).length}/${sceneIndoorVotesRef.current.length}`,
         );
       }
 
@@ -922,13 +925,20 @@ export function CameraView() {
       } else {
         localReflexStreakRef.current = 0;
       }
-      const isReflexStable = localReflexStreakRef.current >= 4;
+
+      const maxAreaRatio = reflexDetections.reduce((max, d) => {
+        const ratio = detectionAreaRatio(d.bbox);
+        return ratio > max ? ratio : max;
+      }, 0);
+
+      const requiredStreak = maxAreaRatio > 0.20 ? 1 : 4;
+      const isReflexStable = localReflexStreakRef.current >= requiredStreak;
       const stableReflexDetections = isReflexStable ? reflexDetections : [];
 
       // 3. WebSocket 연결 끊김/타임아웃(300ms 초과) 감지 (마지막 수신 타임스탬프 기준)
       const isServerTimeout = wsStatusRef.current !== "connected" ||
         (lastFrameSentTsRef.current > lastServerResponseTsRef.current &&
-         now - lastServerResponseTsRef.current > 300);
+          now - lastServerResponseTsRef.current > 300);
 
       let pathRaisedAlert = false;
       if (Platform.OS === "android") {
@@ -1046,7 +1056,7 @@ export function CameraView() {
     }
     if (!isMockMode && !hasPermission) return;
     if (!isMockMode && !device) return;
-    if (isCapturing) return;
+    // if (isCapturing) return;
 
     startCapture((frame: FrameData) => {
       void handleFrame(frame, frame.stream ?? "reflex");
@@ -1282,8 +1292,8 @@ export function CameraView() {
                     {point.label}:{" "}
                     {sample && sample.meters != null
                       ? `${sample.meters.toFixed(2)} m ` +
-                        `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
-                        `${sample.sampleCount ?? 0})`
+                      `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
+                      `${sample.sampleCount ?? 0})`
                       : "측정 불가"}
                   </Text>
                 );
@@ -1503,17 +1513,17 @@ function ROIOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
   const [farLo, farHi] = PATH_ROI_FAR_BAND;
-  const yTopPct  = PATH_ROI_FAR_Y_RATIO;
-  const yBotPct  = 1.0;
-  
+  const yTopPct = PATH_ROI_FAR_Y_RATIO;
+  const yBotPct = 1.0;
+
   const LINE_W = 2;
-  const COLOR  = "rgba(249, 183, 0, 0.75)"; // COLOR_GILDANG_YELLOW 반투명
+  const COLOR = "rgba(249, 183, 0, 0.75)"; // COLOR_GILDANG_YELLOW 반투명
   const GRID_COLOR = "rgba(249, 183, 0, 0.38)";
   const DEPTH_STEPS = [0.22, 0.45, 0.7];
 
   return (
-    <View 
-      style={StyleSheet.absoluteFill} 
+    <View
+      style={StyleSheet.absoluteFill}
       pointerEvents="none"
       onLayout={(e) => setSize(e.nativeEvent.layout)}
     >
