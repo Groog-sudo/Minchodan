@@ -263,7 +263,7 @@ GPU, Ollama, Redis, 실제 카메라가 필요한 흐름은 통합 smoke로 분�
 | TC-SMOKE-002 | 종단 인지 흐름 | 카메라탐지RAGLangGraphTTS 왕복     | 대기 |
 | TC-SMOKE-003 | GPU 환경 검증  | `verify_gpu.py` sm_120 + CUDA 12.8 | 대기 |
 | TC-SMOKE-004 | Docker 구성    | Redis + MariaDB + FastAPI 컨테이너 + 호스트 Ollama 연결 | 대기 |
-| TC-SMOKE-005 | RAG DB 빌드    | `build_chroma.sh` 오프라인 전체    | 대기 |
+| TC-SMOKE-005 | RAG DB 빌드    | `python scripts/build_safety_db.py` | 대기 |
 
 ---
 

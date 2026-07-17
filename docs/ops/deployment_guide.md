@@ -128,7 +128,7 @@ docker\windows_docker_start.bat
 # Linux 시작 스크립트는 누락 모델을 자동으로 pull합니다.
 
 # 5. RAG 지식베이스 빌드 (최초 1회, 4단계)
-bash scripts/build_chroma.sh
+python scripts/build_safety_db.py
 ```
 
 ### 4.2 macOS / Linux (bash 또는 zsh)
@@ -151,7 +151,7 @@ ollama pull gemma4:e4b
 ollama pull nomic-embed-text
 
 # 5. RAG 지식베이스 빌드 (최초 1회, 4단계)
-bash scripts/build_chroma.sh
+python scripts/build_safety_db.py
 ```
 
 ### 4.3 수동 배포 (Docker Compose 직접 호출)

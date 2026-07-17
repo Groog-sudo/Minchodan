@@ -123,12 +123,14 @@ Minchodan/
 │
 ├── training/                        # 모델 학습 (오프라인)
 │   ├── datasets/                    # detection, segmentation
-│   ├── configs/                     # yolo26n_detection.yaml, yolo26n_segmentation.yaml
+│   ├── configs/                     # aihub_merged_detection.yaml, aihub_yolo_segmentation.yaml
 │   ├── train_detection.py
-│   ├── train_segmentation.py
-│   └── export_tensorrt.py
+│   └── train_segmentation.py
 │
 ├── scripts/                         # 유틸리티 스크립트
+│   ├── build_safety_db.py           # 4단계 RAG (safety_guidelines.json → ChromaDB)
+│   ├── build_convenience_db.py      # 편의 RAG 빌드
+│   └── build_guide_clips.py         # 반사 안내 클립 합성
 ├── tests/                           # 7단계별 검증 테스트
 ├── docker/                          # Docker Build & Setting
 ├── docs/                            # 설계 문서 및 가이드
@@ -222,18 +224,22 @@ bash docker/linux_docker_start.sh
 
 ### 5. RAG 지식베이스 빌드 (오프라인)
 
-#### Windows (PowerShell, Git Bash 또는 WSL bash 필요)
+#### Windows (PowerShell)
 
 ```powershell
-bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
+python scripts/build_safety_db.py
+# data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
+# 선택: python scripts/build_convenience_db.py
+# 선택: python scripts/build_guide_clips.py
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
-bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
+python scripts/build_safety_db.py
+# data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
+# 선택: python scripts/build_convenience_db.py
+# 선택: python scripts/build_guide_clips.py
 ```
 
 ---
@@ -260,7 +266,8 @@ bash scripts/build_chroma.sh
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
 | `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키(내비게이션)  | (미설정)                 |
 | `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
-| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
+| `YOLO_CONF`         | Yolo 26N - Segmentation 신뢰도 임계값       | `0.35`                   |
+| `YOLO_DET_CONF`     | Yolo 26N - Object Detection 신뢰도 임계값   | `0.50`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |

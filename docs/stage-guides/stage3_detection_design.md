@@ -51,7 +51,7 @@
 | 파일 | 역할 | 핵심 내용 |
 | --- | --- | --- |
 | `server/detection/__init__.py` | 패키지 초기화 | 주요 모듈 export |
-| `server/detection/config.py` | 3단계 설정 | `load_dotenv()` + `YOLO_CONF`, `FRAME_SIZE`, 모델 경로 계산 (`__file__` 기반, guide 3.3) |
+| `server/detection/config.py` | 3단계 설정 | `load_dotenv()` + `YOLO_CONF`(seg), `YOLO_DET_CONF`(det), `FRAME_SIZE`, 모델 경로 계산 (`__file__` 기반, guide 3.3) |
 | `server/detection/schemas.py` | Pydantic 스키마 | `BBox`, `Detection`, `SurfaceResult`, `RiskEvent`, `DetectionResult`, `ReflexAlert` (api_specification.md §6 + SKILL.md 스키마 준수) |
 | `server/detection/detector_interface.py` | 추상 인터페이스 | `DetectorInterface` (ABC), `SegmentorInterface` (ABC) — Mock/Yolo 핫스왑 |
 | `server/detection/mock_detector.py` | Mock 구현 | `MockDetector`, `MockSegmentor` — 가중치 없을 때 가짜 탐지 결과 반환 (guide 17.2 Mock 폶백) |
@@ -569,7 +569,8 @@ redis_bus.expire(f"ctx:{track_id}", 30)
 
 | 변수 | 설명 | 기본값 |
 | --- | --- | --- |
-| `YOLO_CONF` | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35` |
+| `YOLO_CONF` | Yolo 26N - Segmentation 신뢰도 임계값 | `0.35` |
+| `YOLO_DET_CONF` | Yolo 26N - Object Detection 신뢰도 임계값 | `0.50` |
 | `FRAME_SIZE` | 프레임 리사이즈 크기 | `640` |
 | `REFLEX_FPS` | 반사 캡처 목표 fps | `10` |
 | `COGNITIVE_FPS` | 인지 캡처 목표 fps | `2` |
@@ -583,6 +584,7 @@ redis_bus.expire(f"ctx:{track_id}", 30)
 
 ### [v0.3.1] - 2026-07-14
 - **29종 객체-반사 경로 일원화**: 29종 위험 사물이 검출되었을 때 인지 경로(LLM)로 인텐트가 중복 우회하는 문제를 해결하기 위해, `l1_classifier.py`의 `MID_RISK_CLASSES`에서 객체 클래스들을 전원 배제함. 인지 경로(mid)는 오직 노면 이탈(`is_departing_confirmed`) 판정만 전담하도록 변경.
+- **2026-07-17 Option A 완료**: `detection_pipeline.py`의 객체 `MID_RISK_CLASSES`를 L1과 동일하게 공집합으로 정렬. 머리 높이 격상 18종은 `HEAD_LEVEL_ESCALATION_CLASSES`로 분리해 `head_level_gate` 유지. `tests/test_langgraph.py`·`test_departure_hysteresis.py` 및 stage6 §7.1·behavior doc·llm-guidance 스킬 동기화.
 - **정지 후 우회 안내 시퀀싱 구현**:
   - 반사(비프/햅틱)로 사용자가 멈추는 즉시 인지(음성 가이드)가 겹쳐서 모호한 안내가 나가지 않도록 구조를 이원화함.
   - `consumer.py`에서 `ReflexAlert` 발동 800ms 후 비동기 지연 태스크(`_trigger_delayed_cognitive_guide`)를 통해 후속 설명("OO 발견, N시 방향으로 우회하세요")을 생성하도록 설계.

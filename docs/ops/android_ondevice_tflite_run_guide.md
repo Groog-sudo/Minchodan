@@ -74,7 +74,7 @@ Viewed .env:1-68
 4. **RAG 의미 검색 데이터베이스(ChromaDB) 구축**:
    - 위에서 등록한 `GOOGLE_API_KEY`를 활용해 이미지를 캡셔닝하고 벡터 DB를 빌드합니다.
      ```bash
-     bash scripts/build_chroma.sh
+     python scripts/build_safety_db.py
      ```
 
 ---

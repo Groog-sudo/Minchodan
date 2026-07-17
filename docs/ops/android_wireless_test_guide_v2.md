@@ -179,18 +179,15 @@ docker ps  # STATUS가 "Up"인지 확인
 
 ---
 
-### 오류 C: `bash: scripts/build_chroma.sh: No such file or directory`
+### 오류 C: RAG 빌드 스크립트 경로 오류 (`build_chroma.sh` 등)
 
-**원인**: RAG 빌드 스크립트 파일명이 변경됨 (`.sh` 쉘 스크립트 -> `.py` 파이썬 스크립트)
+**원인**: 구버전 쉘 스크립트(`build_chroma.sh`) 참조. 현재는 Python 빌더 사용.
 
-**해결**: 올바른 명령어로 교체
+**해결**:
 
 ```bash
-# 잘못된 명령어
-bash scripts/build_chroma.sh
-
-# 올바른 명령어
 python scripts/build_safety_db.py
+# 선택: python scripts/build_convenience_db.py
 ```
 
 ---
