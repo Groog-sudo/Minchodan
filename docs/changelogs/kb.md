@@ -2625,6 +2625,29 @@
 - **비고**: dg2 개인 GPU/호스트 설정은 `dg2` 브랜치에만 유지.
 
 
+### 2026-07-17 | 통합 | sync_dev_into_kb_keep_lab
+
+- **커밋**: `355c014`
+- **변경 내용**:
+  - `origin/dev`(`44a56bc`)를 `kb`에 FF 반영 (dg2 Android 패리티·콘솔 회전·changelog 포함).
+  - kb 개인 랩 설정 유지: 번들 ID `com.minchodan.app.kb.dev`, Metro `172.16.101.220:8081`.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, (공유분은 dev와 동일)
+- **검증 결과**: FF 후 개인 4파일 복원, rotateDeg/Android float32/MAX_REFLEX=200 확인.
+- **비고**: 공유 코드는 dev와 동기, 실기기 랩 설정만 kb에 잔류.
+
+
+### 2026-07-17 | 인프라 | lab_env_yolo_ollama_align
+
+- **커밋**: `5428e43`
+- **변경 내용**:
+  - 랩 런타임 `.env`(로컬 전용, 커밋 제외): `DETECTOR_TYPE=yolo`, `OLLAMA_BASE_URL`/`COMPOSE_OLLAMA_BASE_URL=http://host.docker.internal:11434`, `TTS_ENGINE=supertonic`.
+  - `.env.example` 탐지 기본값을 `yolo`로 정합(주석에 mock 폴백 안내).
+  - `env.zip`(시크릿 포함)은 커밋하지 않음.
+- **관련 파일**: `.env.example`, (로컬) `.env`
+- **검증 결과**: FastAPI health `detector_type=yolo`, 컨테이너→Ollama 200, `YoloDetector`/`SupertonicTTSService` 로드 확인.
+- **비고**: 앱은 FastAPI 재기동 후 WS 재연결 필요.
+
+
 ### 2026-07-17 | 클라이언트 | stt_fullscreen_touch_restore
 
 - **커밋**: `f9aab75`
@@ -2636,3 +2659,13 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useSttRecorder.ts`
 - **검증 결과**: 실기기 재빌드 후 터치/버튼 계층 복원 적용. Metro Reload로 JS 반영.
 - **비고**: 개인 iOS 랩 설정(번들 ID/Metro IP)은 본 커밋에 포함하지 않음. 로컬 `HEARTBEAT_TIMEOUT` 상향은 `.env`만(미커밋).
+
+### 2026-07-17 | 통합 | merge_kb_lab_settings_into_dev
+
+- **커밋**: (push 후 기록)
+- **변경 내용**:
+  - `kb` tip을 `dev`에 병합해 STT 전체화면 터치 복원과 함께 iOS 랩 설정·changelog 히스토리를 팀 공유 기준으로 올린다.
+  - 포함: 번들 ID `com.minchodan.app.kb.dev`, Metro LAN 호스트, `.env.example` yolo 정합 문서.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `docs/changelogs/kb.md`, `.env.example`
+- **검증 결과**: changelog 충돌 해소 후 merge 커밋.
+- **비고**: 팀원 실기기 IP가 다르면 Metro/`EXPO_PUBLIC_*`만 로컬에서 맞추면 된다.
