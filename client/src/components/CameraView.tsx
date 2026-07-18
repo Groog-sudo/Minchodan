@@ -1515,8 +1515,13 @@ export function CameraView() {
           </View>
         )}
 
-        {__DEV__ && <DebugTriggerPanel />}
       </View>
+
+      {__DEV__ && (
+        <View style={styles.devPanelWrap} pointerEvents="box-none">
+          <DebugTriggerPanel />
+        </View>
+      )}
     </View>
   );
 }
@@ -1878,7 +1883,13 @@ const styles = StyleSheet.create({
     borderColor: COLOR_BORDER_TACTICAL,
   },
   devPanelWrap: {
-    alignSelf: "stretch",
+    // 2026-07-18: 버튼 dock(controlsOverlay, flex-end)과 같은 그룹에 있으면 패널 높이만큼
+    // dock 전체가 위로 밀려 STT 상태 박스와 겹친다(회귀 실측). 화면 상단에 독립 배치한다.
+    position: "absolute",
+    top: 60,
+    left: 0,
+    right: 0,
+    zIndex: 25,
   },
   operatorCard: {
     padding: 8,
