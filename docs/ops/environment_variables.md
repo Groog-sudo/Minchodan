@@ -214,7 +214,9 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`CONVENIENCE_CHROMA_COLLECTION`** | string | 선택 | `convenience_guide` | 생활지원 RAG 전용 ChromaDB 컬렉션명. 안전 수칙(`safety_guidelines`)과 분리된 생활 정보 검색용 | `server/rag/retriever.py`, `scripts/` |
 | **`CONVENIENCE_EMBEDDING_MODEL`** | string | 선택 | (`EMBEDDING_MODEL` 폴백) | 생활지원 RAG 전용 임베딩 모델 | `server/rag/embedding_engine_factory.py` |
 | **`CONVENIENCE_EMBEDDING_PROVIDER`** | string | 선택 | (`LLM_PROVIDER` 폴백) | 생활지원 RAG 임베딩 공급자(`ollama`/`openai`) | `server/rag/embedding_engine_factory.py` |
+| **`CONVENIENCE_LLM_PROVIDER`** | string | 선택 | `ollama` | 생활지원 RAG **답변** LLM. `ollama`(기본, 실패 시 Gemini 폴백) / `gemini`(API 우선) / `ollama_only` / `gemini_only` | `server/rag/convenience_rag.py` |
 | **`GEMINI_MODEL`** | string | 선택 | `gemini-2.5-flash-lite` | Gemini 캡셔닝/LLM 모델명. 4단계 RAG 빌드 및 L2 가이드 생성(gemini provider) 시 사용 | `server/rag/build/gemini_captioner.py`, `server/orchestration/llm_client_factory.py` |
+| **`GEMINI_MAX_OUTPUT_TOKENS`** | int | 선택 | `180` | Gemini `maxOutputTokens`(생성 길이 상한, 입력 컨텍스트 아님). 음성 안내가 중간에 끊기지 않도록 짧게 유지 | `server/orchestration/llm_client_factory.py` |
 | **`EDGE_TTS_SAMPLE_RATE`** | int | 선택 | `24000` | edge-tts 출력 샘플레이트(Hz) | `server/tts/tts_service.py` |
 | **`SUPERTONIC_SPEED_MIN`** / **`SUPERTONIC_SPEED_MAX`** | float | 선택 | (코드 기본값) | Supertonic 발화 속도 허용 범위 | `server/tts/tts_service.py` |
 | **`DATABASE_URL`** | string | 선택 | (미설정) | SQLAlchemy 통합 DB 연결 URL. 설정 시 개별 `DB_HOST`/`DB_PORT`/... 조합보다 우선 | `server/db/connection.py` |

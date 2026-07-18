@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import time
 
@@ -56,15 +57,15 @@ CONVENIENCE_QUERY_KEYWORDS = [
     "보조기기센터",
 ]
 
-CONVENIENCE_SYSTEM_PROMPT = """당신은 시각장애인 생활지원 통합 안내 AI입니다.
-반드시 검색된 문서에 근거해서만 답변하세요.
+CONVENIENCE_SYSTEM_PROMPT = """당신은 시각장애인 생활지원 음성 안내 AI입니다.
+반드시 검색된 문서에 근거해서만 답변하세요. 답변은 스피커로 읽히므로 짧고 말하듯 작성합니다.
 
 [답변 규칙]
-1. 한국어로 2~5문장만 답하세요.
-2. 기관명, 전화번호, 주소, 운영시간, 신청 방법은 질문에 맞게 정확히 적으세요.
-3. 문서에 없는 내용은 추측하지 말고, 확인되지 않았다고 말하세요.
-4. 사용자가 바로 행동할 수 있도록 가장 중요한 정보부터 먼저 말하세요.
-5. 보호자, 담당자, 병원, 긴급 연락망 질의는 번호와 관계를 명확히 구분해서 답하세요.
+1. 한국어로 최대 2문장만 답하세요. 핵심만 말하세요.
+2. 질문에 필요한 기관명과 전화번호(또는 주소)만 넣고, 설명·목록·부연은 넣지 마세요.
+3. 마크다운을 쓰지 마세요. 별표(*), 샵(#), 불릿(-), 번호 목록을 금지합니다.
+4. 문서에 없는 내용(예: 운영시간)은 추측하지 말고 "제공된 정보에 없습니다"라고만 말하세요.
+5. 가장 중요한 사실부터 한 호흡에 말하세요.
 """
 
 
@@ -77,6 +78,24 @@ def _text(value) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _sanitize_spoken_answer(text: str) -> str:
+    """TTS용으로 마크다운/목록 기호를 제거하고 공백을 정리한다."""
+    cleaned = _text(text)
+    if not cleaned:
+        return ""
+    # **굵게**, *기울임* 제거
+    cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"\*(.+?)\*", r"\1", cleaned)
+    cleaned = cleaned.replace("**", "").replace("__", "")
+    # 줄 머리 목록/헤딩 기호 제거
+    cleaned = re.sub(r"(?m)^\s*[-*#]+\s*", "", cleaned)
+    cleaned = re.sub(r"(?m)^\s*\d+\.\s+", "", cleaned)
+    # 줄바꿈을 문장 간격으로
+    cleaned = re.sub(r"\s*\n+\s*", " ", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
 
 
 def _join(values) -> str:
@@ -446,8 +465,9 @@ class ConvenienceKnowledgeBase:
         user_prompt = (
             f"[사용자 질문]\n{query}\n\n"
             f"[검색 문서]\n{chr(10).join(context_lines)}\n\n"
-            "위 검색 문서만 바탕으로 답변하세요. 질문에 맞는 기관명, 연락처, 주소, 운영시간, 신청 방법, 보호자 또는 담당자 정보를 정확히 알려주세요. "
-            "문서에 없는 내용은 추측하지 말고, 확인되지 않았다고 말하세요."
+            "위 검색 문서만 바탕으로, 음성으로 읽을 짧은 답(최대 2문장)을 만드세요. "
+            "기관명과 전화번호(또는 주소) 핵심만 말하고 마크다운·목록은 쓰지 마세요. "
+            "문서에 없는 내용은 '제공된 정보에 없습니다'라고만 하세요."
         )
 
         messages = [
@@ -455,18 +475,49 @@ class ConvenienceKnowledgeBase:
             {"role": "user", "content": user_prompt},
         ]
 
-        try:
-            client = LLMClientFactory.get_client(provider="gemini")
-            response = await client.ainvoke(messages)
-            answer = _text(response.content)
-        except Exception as exc:
+        # 기본: 로컬 Ollama, 실패 시 Gemini API 폴백.
+        # CONVENIENCE_LLM_PROVIDER=gemini 이면 API만(또는 gemini→ollama 역순 테스트용).
+        preferred = os.getenv("CONVENIENCE_LLM_PROVIDER", "ollama").strip().lower()
+        if preferred == "gemini":
+            providers = ("gemini", "ollama")
+        elif preferred == "gemini_only":
+            providers = ("gemini",)
+        elif preferred == "ollama_only":
+            providers = ("ollama",)
+        else:
+            # ollama / auto 등: Ollama 우선 + Gemini 폴백
+            providers = ("ollama", "gemini")
+
+        answer = ""
+        used_provider = ""
+        last_error: str | None = None
+        for provider in providers:
+            try:
+                client = LLMClientFactory.get_client(provider=provider)
+                response = await client.ainvoke(messages)
+                answer = _sanitize_spoken_answer(response.content)
+                if answer:
+                    used_provider = provider
+                    if provider == "gemini" and providers[0] == "ollama":
+                        print(
+                            "[ConvenienceRAG] Ollama 실패/미응답 → Gemini API 폴백 사용"
+                            + (f" ({last_error})" if last_error else "")
+                        )
+                    break
+                last_error = f"{provider}: empty_answer"
+            except Exception as exc:
+                last_error = f"{provider}: {exc}"
+                print(f"[ConvenienceRAG] {provider} 호출 실패, 다음 후보 시도: {exc}")
+                continue
+
+        if not answer:
             return {
                 "query": query,
                 "answer": "관련 정보를 찾았지만 답변 생성에 실패했습니다. 다시 말씀해 주세요.",
                 "results": results,
                 "latency_ms": round(latency_ms, 2),
                 "used_fallback_llm": True,
-                "error": str(exc),
+                "error": last_error or "empty_answer",
             }
 
         return {
@@ -474,7 +525,8 @@ class ConvenienceKnowledgeBase:
             "answer": answer,
             "results": results,
             "latency_ms": round(latency_ms, 2),
-            "used_fallback_llm": False,
+            "used_fallback_llm": used_provider != "ollama",
+            "llm_provider": used_provider,
         }
 
 

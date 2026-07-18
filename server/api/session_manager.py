@@ -203,6 +203,14 @@ class SessionManager:
         ws = self.active_connections.get(device_id)
         return ws is not None and ws.application_state == WebSocketState.CONNECTED
 
+    def list_connected_device_ids(self) -> list[str]:
+        """현재 CONNECTED 상태인 device_id 목록을 반환한다."""
+        return [
+            device_id
+            for device_id, ws in self.active_connections.items()
+            if ws.application_state == WebSocketState.CONNECTED
+        ]
+
     def set_stt_active(self, device_id: str, active: bool, ttl_seconds: float = 0.0) -> None:
         """디바이스별 STT 상호작용 활성 상태를 설정한다.
 

@@ -172,11 +172,20 @@ class SimpleGeminiClient:
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
 
+        # maxOutputTokens는 "입력 컨텍스트"가 아니라 생성 응답 길이 상한이다.
+        # 생활지원 RAG는 음성으로 읽히므로 기본 180(짧고 끊김 방지).
+        # .env GEMINI_MAX_OUTPUT_TOKENS 로 조정한다.
+        try:
+            max_output_tokens = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "180"))
+        except ValueError:
+            max_output_tokens = 180
+        max_output_tokens = max(32, min(max_output_tokens, 8192))
+
         payload = {
             "contents": contents,
             "generationConfig": {
                 "temperature": 0.3,
-                "maxOutputTokens": 100,
+                "maxOutputTokens": max_output_tokens,
             },
         }
 

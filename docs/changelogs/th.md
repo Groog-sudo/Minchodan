@@ -875,3 +875,44 @@
 - **비고**: 원격 MariaDB(`Tailscale`) 미연결 시 재로그인 자체는 DB 인증이 필요하므로 Tailscale 로그인 후 사용.
 - **검증 결과**: 콘솔 관련 파일 IDE 린트 오류 없음.
 
+---
+
+### 2026-07-18 | 7단계+부가(STT/RAG) | 문자 TTS 실험·생활지원 RAG 음성 안정화·Ollama/Gemini 폴백
+
+- **커밋**: (본 엔트리와 동일 커밋)
+- **배경 / 실기기 이슈**:
+  1. 문자·안내문을 PC에서만 WAV로 듣는 실험에서, **모바일 앱으로도 읽어줄 수 있는지** 요구.
+  2. STT 음성 RAG 테스트 시 `"음성 인식에 실패했습니다"` 반복 — 원인: 시스템 Python(3.14)으로 uvicorn을 띄워 `faster_whisper`/`WhisperModel` 초기화 실패. **venv**로 재기동 후 해소.
+  3. 생활지원 RAG가 벡터DB 근거 없이 일반 LLM 답(`주변에 지도 보세요` 등)만 반환 — 원인: Ollama에 `bge-m3` 미설치로 Convenience RAG 예외 → STT 브릿지가 자유 LLM으로 폴백. `ollama pull bge-m3` + `build_convenience_db.py`(41문서)로 해소.
+  4. Gemini `gemini-2.5-flash-lite` 404 및 `maxOutputTokens=100/512`로 답이 길거나 중간 절단·`**` 마크다운이 TTS에 그대로 읽힘.
+- **변경 내용**:
+  1. **개발용 디버그 TTS 푸시 API**
+     - `server/api/debug_router.py` 신규: `POST /api/v1/debug/speak-to-device`, `GET /api/v1/debug/connected-devices`.
+     - 서버 TTS로 합성한 WAV를 연결 단말에 `guide` JSON + binary로 전송. `APP_ENV=production`이면 404.
+     - `server/api/session_manager.py`에 `list_connected_device_ids()` 추가.
+     - `server/main.py`에 debug 라우터 마운트.
+  2. **실험 스크립트 / 앱 DEBUG**
+     - `scripts/tts_read_text_experiment.py`: `--to-device`로 위 API에 푸시, `--play`로 로컬 WAV 재생.
+     - `client/src/components/DebugTriggerPanel.tsx`: **문자 TTS 읽기** 버튼(`speakFallback` 샘플 문자).
+  3. **생활지원 Convenience RAG 음성 품질**
+     - `server/rag/convenience_rag.py`:
+       - 시스템/유저 프롬프트를 **최대 2문장·핵심만·마크다운 금지**로 강화.
+       - `_sanitize_spoken_answer()`로 `**`, 목록 기호 제거 후 TTS 전달.
+       - 답변 LLM 정책: **기본 Ollama → 실패 시 Gemini API 폴백** (`CONVENIENCE_LLM_PROVIDER`, 기본 `ollama`).
+       - `ollama_only` / `gemini_only` / `gemini`(API 우선) 모드 지원.
+  4. **Gemini 출력 길이 env화**
+     - `server/orchestration/llm_client_factory.py`: `GEMINI_MAX_OUTPUT_TOKENS`(기본 180). 입력 컨텍스트가 아니라 생성 상한임을 주석으로 명시.
+  5. **문서·템플릿**
+     - `docs/ops/environment_variables.md`, `.env.example`에 `CONVENIENCE_LLM_PROVIDER`, `GEMINI_MAX_OUTPUT_TOKENS`, convenience chroma 경로 등재.
+- **실기기 음성 RAG 검증(요약)**:
+  - Pass: 복지카드/한빛 보행훈련/안내견 출입거부/안과·보조기기·푸른나무 직업재활 → DB 기관명·가상 전화 적중.
+  - 환각 방지: `동사무소 몇 시까지` 계열 → 운영시간 지어내지 않음.
+  - STT 오인식(`한비센터`, `침착해`, `동산무소`)에도 키워드 매칭으로 대체로 적중.
+- **관련 파일**:
+  - `server/api/debug_router.py`, `server/api/session_manager.py`, `server/main.py`
+  - `server/rag/convenience_rag.py`, `server/orchestration/llm_client_factory.py`
+  - `scripts/tts_read_text_experiment.py`, `client/src/components/DebugTriggerPanel.tsx`
+  - `docs/ops/environment_variables.md`, `.env.example`, `docs/changelogs/th.md`
+- **비고**: `.env`·API 키·로컬 ChromaDB 바이너리는 커밋하지 않음. 백엔드는 `venv\\Scripts\\python.exe -m uvicorn ...`로 기동할 것.
+- **검증 결과**: Convenience RAG 스모크(`복지카드 어디서 신청해?` → Ollama 단문 + 기관/전화), debug 라우터 마운트 및 `/health` 정상.
+

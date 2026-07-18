@@ -32,6 +32,10 @@ const PAN_PRESETS = [
   { label: "R +1.0", v: 1 },
 ];
 
+/** 문자 알림 TTS 실험용 샘플 문구 (서버 debug speak-to-device 와 동일) */
+const SAMPLE_SMS_TEXT =
+  "새 문자가 도착했습니다. 엄마에게서. 오늘 저녁 몇 시에 오실 건가요?";
+
 export function DebugTriggerPanel() {
   const [panning, setPanning] = useState(0);
   const [lastFired, setLastFired] = useState<string>("-");
@@ -40,6 +44,11 @@ export function DebugTriggerPanel() {
     audioEngine.playBeep(panning, lvl.interval);
     hapticEngine.trigger(lvl.pattern);
     setLastFired(`${lvl.label} @ pan ${panning.toFixed(2)}`);
+  };
+
+  const speakSmsSample = () => {
+    audioEngine.speakFallback(SAMPLE_SMS_TEXT);
+    setLastFired("문자 TTS(단말)");
   };
 
   return (
@@ -75,10 +84,18 @@ export function DebugTriggerPanel() {
 
       <View style={styles.row} pointerEvents="box-none">
         <Pressable
+          style={[styles.btn, styles.smsBtn]}
+          onPress={speakSmsSample}
+          accessibilityLabel="문자 TTS 샘플 읽기"
+        >
+          <Text style={styles.btnText}>문자 TTS 읽기</Text>
+        </Pressable>
+        <Pressable
           style={[styles.btn, styles.stopBtn]}
           onPress={() => {
             audioEngine.stopBeep();
             hapticEngine.stopContinuous();
+            audioEngine.stopGuideAudio();
             setLastFired("정지");
           }}
         >
@@ -126,6 +143,10 @@ const styles = StyleSheet.create({
   },
   btnActive: {
     backgroundColor: "rgba(0, 210, 255, 0.2)",
+    borderColor: "#00D2FF",
+  },
+  smsBtn: {
+    backgroundColor: "rgba(0, 210, 255, 0.18)",
     borderColor: "#00D2FF",
   },
   stopBtn: {

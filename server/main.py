@@ -27,6 +27,7 @@ if current_dir not in sys.path:
 from server.api.admin_member_router import router as admin_member_router
 from server.api.admin_router import router as admin_router
 from server.api.config import settings
+from server.api.debug_router import router as debug_router
 from server.api.detection_log_router import router as detection_log_router
 from server.api.monitor import router as monitor_router
 from server.api.stt_router import router as stt_router
@@ -250,6 +251,8 @@ app.include_router(admin_router)
 app.include_router(admin_member_router)
 app.include_router(detection_log_router)
 app.include_router(stt_router)
+# 개발용: 문자/안내문 TTS를 연결된 모바일로 푸시 (APP_ENV=production 시 404)
+app.include_router(debug_router)
 
 # 네비게이션 서브앱 마운트
 app.mount("/navigation", navigation_app)
