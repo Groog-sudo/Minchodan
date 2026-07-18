@@ -2908,3 +2908,19 @@
 - **관련 파일**: `server/main.py`, `server/api/auth.py`, `README.md`, `server/navigation/pedestrian_navigation.py`, `docs/ops/deployment_guide.md`, `scripts/project_scan.py`, `scripts/project_scan_report.md`, `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`
 - **검증 결과**: `python3 -m ruff format .` 211개 파일 변경 없음, `python3 -m ruff check .` All checks passed.
 - **비고**: 외부 정합성 검토 보고서에서 식별된 6개 개선사항(1 Critical, 2 Medium, 3 Low)을 반영. `pedestrian_navigation.py` 삭제 후에도 문서 잔여 참조가 남아 있어 정합성 교차 검토로 추가 동기화함.
+
+---
+
+### 2026-07-18 | 병합 | 팀원 브랜치(jh/jy/th/dg2) dev 통합 및 정합성 정정
+
+- **작업 내용**: `dev` 대비 미병합 상태였던 팀원 개인 브랜치 4종(jh, jy, th, dg2)과 kb 자체 신규 커밋 2건을 검토 후 `dev`에 순차 병합.
+  - 병합 전 디스포저블 테스트 브랜치(`merge-test-20260718`)에서 5개 브랜치를 순서대로 시험 병합해 git 충돌 여부를 먼저 확인(전부 충돌 없음), 병합된 트리에서 `ruff check`/`bandit -r server/ scripts/`/console `tsc --noEmit` 전체 통과, `mypy server/`·client `tsc --noEmit`의 잔여 오류는 `origin/dev` 베이스라인에 이미 존재하던 것과 동일 개수(7건)임을 별도 워크트리로 대조 확인(신규 오류 없음). 반사 경로(`server/detection/gates/`) LLM/RAG/TTS 임포트 위반 스캔도 이상 없음.
+  - kb: `f5d2d5f`까지 fast-forward(정합성 검토 보고서 반영, `pedestrian_navigation.py` 삭제 후속 정리 - 위 항목 참조).
+  - jh: 콘솔 기능상자 메뉴에 "추가"/"전체 삭제" 통합, 위젯 드래그 이동(`movingWidgetKey`/`dragOverWidgetKey`), 회원 등록 장애등급 범위 경고, 로그 텍스트 위젯 분리.
+  - jy: `COMPOSE_DB_HOST`(원격 DB 기본 유지, 로컬 필요 시만 재정의) 도입, MariaDB·미디어 API 가이드 공개/내부 분리, iOS Podfile.lock 갱신.
+  - th: `260714.pt` 기준 온디바이스 모델 재export에 따른 `CoreMLInferenceBridge.swift` 주석 정정, `data/convenience_guidelines.json`(RAG 원본 데이터) 한글 숫자 표기를 아라비아 숫자로 정규화 및 서비스 설명 보강.
+  - dg2: PC 브라우저 Geolocation이 모바일 앱 주입 GPS(`inject_gps`)를 덮어쓰던 버그 수정(`server/navigation/index.html`, `isGpsInjected` 플래그로 `watchPosition` 강제 폐쇄), 공유 GPU 서버의 로컬 3306 포트 충돌 방지를 위해 `docker/docker-compose.yml`의 MariaDB `ports` 노출 주석 처리, 2차 필드 테스트 개선 계획 문서(`docs/research/field_test_round2_improvement_plan.md`) 추가. (해당 브랜치 커밋 작성자가 `TH`로 기록된 것은 dg 담당자가 전날 TH의 노트북으로 작업했기 때문으로 확인 - 실제 작업자 아님)
+  - **정합성 정정**: dg2의 MariaDB 호스트 포트 미노출 변경과 jy가 문서화한 `DB_HOST_PORT`(포트 노출 제어 변수) 설명이 병합 후 서로 어긋남을 발견. 코드(포트 미노출)는 공유 서버의 의도된 변경으로 유지하고, 문서 쪽을 `docker-compose.yml`에는 더 이상 적용되지 않고 `docker-compose.macos.yml` 전용임을 명시하는 방향으로 정정.
+- **관련 파일**: `docs/ops/deployment_guide.md`(§2.1 mariadb 포트 열, §9 트러블슈팅 표, v0.5.3), `docs/ops/environment_variables.md`(`DB_HOST_PORT` 행, v0.4.20)
+- **검증 결과**: 병합 후 `ruff check .` All checks passed. 문서 수정은 서술형이라 별도 린트 대상 아님.
+- **비고**: vision-camera 세션과 LiDAR 세션 동시 실행(실시간 라이브 융합), `scripts/analyze_lidar_validation.py`의 실데이터 집계, dg2의 index.html GPS 수정에 대한 실기기 회귀 검증은 이번 병합 작업 범위 밖(각 원 브랜치 커밋 시점에 개별 검증됨).

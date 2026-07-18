@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-16
-> **버전**: v0.4.19 (2026-07-16 §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영. 기존 v0.4.18 이력 유지: §2.8 `SLACK_WEBHOOK_URL` 코드 재검증 기반 재등재, §2.15 미등재 변수 13종 일괄 명세)
+> **버전**: v0.4.20 (2026-07-18 `DB_HOST_PORT` 적용 범위 정정 — dg2 브랜치 병합으로 `docker-compose.yml`의 MariaDB 호스트 포트 노출이 비활성화되어 `docker-compose.macos.yml` 전용으로 명시. 기존 v0.4.19 이력 유지: §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -172,7 +172,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`COMPOSE_DB_PASSWORD`** | string | 선택 | `minchodan_password` | Docker Compose 로컬 MariaDB 컨테이너 전용 앱 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
 | **`COMPOSE_DB_ROOT_PASSWORD`** | string | 선택 | `minchodan_root_password` | Docker Compose 로컬 MariaDB 컨테이너의 root 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
 | **`COMPOSE_DB_HOST`** | string | 선택 | (`DB_HOST`, 미설정 시 `mariadb`) | FastAPI 컨테이너의 DB 호스트만 명시적으로 재정의합니다. 미설정 시 기존 원격 `DB_HOST`를 유지합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
-| **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI의 실제 DB 대상은 `COMPOSE_DB_HOST` 또는 `DB_HOST`가 결정합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
+| **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI의 실제 DB 대상은 `COMPOSE_DB_HOST` 또는 `DB_HOST`가 결정합니다. **2026-07-18 정정**: 공유 GPU 서버의 로컬 3306 포트 충돌을 피하기 위해 `docker/docker-compose.yml`의 `mariadb` 서비스 `ports` 노출을 주석 처리함(원격 DB 기본 연결 유지) — 이 변수는 현재 `docker-compose.macos.yml`에만 적용됨. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml) |
 
 ### 2.13 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
 
