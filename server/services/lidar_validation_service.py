@@ -2,11 +2,11 @@ import json
 import sys
 
 from server.db.connection import async_sessionmaker_factory
-from server.db.models import LidarDistanceValidationSample
-from server.db.repositories import LidarDistanceValidationRepository
+from server.db.models import LidarDistanceValidationSample, LidarFixedPointSample
+from server.db.repositories import LidarDistanceValidationRepository, LidarFixedPointRepository
 from server.detection import distance_policy
 from server.detection.direction import bbox_area_ratio, estimate_distance
-from server.detection.schemas import DistanceProbeReport
+from server.detection.schemas import DistanceProbeReport, FixedPointProbeReport
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -63,4 +63,34 @@ async def persist_distance_probe_samples(
 
     async with async_sessionmaker_factory() as session:
         repo = LidarDistanceValidationRepository(session)
+        return await repo.create_many(rows)
+
+
+async def persist_fixed_point_samples(
+    report: FixedPointProbeReport, device_id: int | None
+) -> list[LidarFixedPointSample]:
+    """거리측정 모드 고정 3지점(중앙/전방 하단/발밑) 캡처 1건(지점 여러 개)을 저장한다.
+
+    persist_distance_probe_samples와 달리 YOLO 탐지 객체·휴리스틱 비교가 필요 없으므로
+    클라이언트가 이미 보유한 probeDepth() 결과를 그대로 저장한다.
+    """
+    rows = [
+        LidarFixedPointSample(
+            event_id=report.event_id,
+            device_id=device_id,
+            point_label=sample.point_label,
+            x=sample.x,
+            y=sample.y,
+            lidar_meters=sample.lidar_meters,
+            axial_meters=sample.axial_meters,
+            lidar_sample_count=sample.lidar_sample_count,
+            lidar_accuracy=sample.lidar_accuracy,
+            lidar_quality=sample.lidar_quality,
+            lidar_calibrated=sample.lidar_calibrated,
+        )
+        for sample in report.samples
+    ]
+
+    async with async_sessionmaker_factory() as session:
+        repo = LidarFixedPointRepository(session)
         return await repo.create_many(rows)

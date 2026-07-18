@@ -103,6 +103,30 @@ class DistanceProbeReport(BaseModel):
     samples: list[DistanceProbeSample] = Field(default_factory=list)
 
 
+class FixedPointProbeSample(BaseModel):
+    """거리측정(depthMode) 화면의 고정 3지점(중앙/전방 하단/발밑) LiDAR 실측 1건.
+
+    2026-07-19: 객체 탐지 결과와 무관하게, 화면에 이미 표시 중인 고정 지점 값을 그대로
+    캡처해 줄자 대조용으로 저장한다. YOLO 탐지·휴리스틱 비교가 필요 없으므로 서버 왕복
+    (detection 경로) 없이 클라이언트가 이미 보유한 probeDepth() 결과를 바로 보고한다.
+    """
+
+    point_label: str  # "중앙" | "전방 하단" | "발밑" 등 DEPTH_PROBE_POINTS의 label
+    x: float  # 정규화 좌표(0~1)
+    y: float
+    lidar_meters: float | None = None
+    axial_meters: float | None = None
+    lidar_sample_count: int = 0
+    lidar_accuracy: str | None = None  # "absolute" | "relative"
+    lidar_quality: str | None = None  # "high" | "low"
+    lidar_calibrated: bool = False
+
+
+class FixedPointProbeReport(BaseModel):
+    event_id: str
+    samples: list[FixedPointProbeSample] = Field(default_factory=list)
+
+
 class ReflexAlert(BaseModel):
     event_id: str
     alert_id: str

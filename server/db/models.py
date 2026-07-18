@@ -496,6 +496,46 @@ class LidarDistanceValidationSample(Base):
     )
 
 
+class LidarFixedPointSample(Base):
+    """거리측정(depthMode) 화면 고정 3지점(중앙/전방 하단/발밑) LiDAR 실측 로그 (검증 전용, 2026-07-19).
+
+    LidarDistanceValidationSample과 달리 YOLO 탐지 객체와 무관하게, 화면에 표시 중인
+    고정 지점(DEPTH_PROBE_POINTS)의 LiDAR 실측을 그대로 저장한다. 휴리스틱 비교 대상
+    (bbox·area_ratio)이 애초에 없으므로 별도 테이블로 분리했다 - 담당자가 줄자로 잰
+    실측 거리와 이 값을 직접 대조하는 캘리브레이션 전용 로그다.
+    """
+
+    __tablename__ = "lidar_fixed_point_samples"
+    __table_args__ = (
+        Index("idx_lidar_fixed_point_event_id", "event_id"),
+        Index("idx_lidar_fixed_point_created_at", "created_at"),
+        {"sqlite_autoincrement": True},
+    )
+
+    sample_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    device_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK,
+        ForeignKey("user_devices.device_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    point_label: Mapped[str] = mapped_column(String(32), nullable=False)
+    x: Mapped[float] = mapped_column(Float, nullable=False)
+    y: Mapped[float] = mapped_column(Float, nullable=False)
+    lidar_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
+    axial_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lidar_sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lidar_accuracy: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lidar_quality: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lidar_calibrated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+
+
 __all__ = [
     "AdminAccount",
     "AdminAccountStatus",
@@ -506,6 +546,7 @@ __all__ = [
     "DetectionGuidanceLog",
     "DevicePlatform",
     "LidarDistanceValidationSample",
+    "LidarFixedPointSample",
     "StreamType",
     "UserDevice",
     "UserStatus",

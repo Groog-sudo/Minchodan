@@ -25,6 +25,7 @@ from server.db.models import (
     AppUser,
     DetectionGuidanceLog,
     LidarDistanceValidationSample,
+    LidarFixedPointSample,
     StreamType,
     UserDevice,
 )
@@ -332,6 +333,35 @@ class LidarDistanceValidationRepository:
         result = await self.session.execute(
             select(LidarDistanceValidationSample)
             .order_by(LidarDistanceValidationSample.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+
+class LidarFixedPointRepository:
+    """lidar_fixed_point_samples 테이블 전담 Repository.
+
+    거리측정 모드 고정 3지점(중앙/전방 하단/발밑) 캡처를 저장/조회한다. YOLO 탐지 객체와
+    무관한 순수 LiDAR 실측 로그로, LidarDistanceValidationRepository와는 별개다.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create_many(
+        self, samples: list[LidarFixedPointSample]
+    ) -> list[LidarFixedPointSample]:
+        self.session.add_all(samples)
+        await self.session.commit()
+        for sample in samples:
+            await self.session.refresh(sample)
+        return samples
+
+    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[LidarFixedPointSample]:
+        result = await self.session.execute(
+            select(LidarFixedPointSample)
+            .order_by(LidarFixedPointSample.created_at.desc())
             .offset(offset)
             .limit(limit)
         )

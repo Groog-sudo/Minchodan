@@ -770,6 +770,10 @@ export function CameraView() {
   // LiDAR 검증 캡처 트리거: depthResult.previewUri(depthMode 폴링이 주기적으로 갱신)를
   // 기존 "detection" base64 경로로 전송하고, 상관관계 매칭용 event_id를 기록해 둔다.
   // 실제 LiDAR 매칭·전송은 아래 server_detection 핸들러가 응답을 받은 뒤 수행한다.
+  //
+  // 2026-07-19: 객체 탐지 왕복과 별개로, 화면에 이미 표시 중인 고정 3지점(중앙/전방
+  // 하단/발밑, DEPTH_PROBE_POINTS) 값도 같은 버튼으로 바로 저장한다. YOLO 탐지가 전혀
+  // 필요 없고 depthResult.samples를 그대로 보고하면 되므로 서버 왕복 없이 즉시 전송한다.
   const handleDistanceProbeCapture = useCallback(() => {
     if (!depthResult?.ready || !depthResult.previewUri) {
       setDepthProbeStatus("검증 캡처: LiDAR 프리뷰 준비 전");
@@ -789,6 +793,34 @@ export function CameraView() {
         probe_source: "lidar_validation",
       },
     });
+
+    const fixedPointSamples = depthResult.samples
+      .map((sample, index) => {
+        const point = DEPTH_PROBE_POINTS[index];
+        if (!point) return null;
+        return {
+          point_label: point.label,
+          x: sample.x,
+          y: sample.y,
+          lidar_meters: sample.meters,
+          axial_meters: sample.axialMeters ?? null,
+          lidar_sample_count: sample.sampleCount ?? 0,
+          lidar_accuracy: depthResult.accuracy ?? null,
+          lidar_quality: depthResult.quality ?? null,
+          lidar_calibrated: depthResult.calibrated === true,
+        };
+      })
+      .filter((sample): sample is NonNullable<typeof sample> => sample !== null);
+
+    if (fixedPointSamples.length > 0) {
+      send({
+        type: "fixed_point_probe_sample",
+        payload: {
+          event_id: `${probeEventId}-fixed`,
+          samples: fixedPointSamples,
+        },
+      });
+    }
   }, [depthResult, send]);
 
   // 서버 실시간 웹소켓 추론 결과 수신 시 화면 상태 업데이트

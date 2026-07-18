@@ -28,13 +28,16 @@ from server.api.session_manager import manager
 from server.bus.redis_client import redis_bus
 from server.capture.frame_decoder import decode_frame, decode_frame_binary
 from server.capture.stream_splitter import get_default_splitter
-from server.detection.schemas import DistanceProbeReport
+from server.detection.schemas import DistanceProbeReport, FixedPointProbeReport
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.services.device_registry_service import (
     ensure_device_registered,
     get_cached_device_ids,
 )
-from server.services.lidar_validation_service import persist_distance_probe_samples
+from server.services.lidar_validation_service import (
+    persist_distance_probe_samples,
+    persist_fixed_point_samples,
+)
 from server.services.pipeline_debug_builder import build_stt_pipeline_debug
 from server.services.remote_storage_client import upload_stt_audio
 from server.stt.stt_service import SttService
@@ -244,6 +247,33 @@ async def _handle_distance_probe_sample(device_id: str, data: dict) -> None:
         )
     except Exception as e:
         logger.error(f"[WS] distance_probe_sample 저장 실패: device_id={device_id}, {e}")
+
+
+async def _handle_fixed_point_probe_sample(device_id: str, data: dict) -> None:
+    """거리측정 화면 고정 3지점(fixed_point_probe_sample) 메시지를 저장한다.
+
+    distance_probe_sample과 달리 YOLO 탐지 왕복이 필요 없다 - 클라이언트가 이미
+    화면에 표시 중인 probeDepth() 결과를 그대로 보고한다.
+    """
+    payload = data.get("payload", {})
+    try:
+        report = FixedPointProbeReport.model_validate(payload)
+    except ValidationError as e:
+        logger.warning(
+            f"[WS] fixed_point_probe_sample payload 검증 실패: device_id={device_id}, {e}"
+        )
+        return
+    if not report.samples:
+        return
+    _, reg_device_id = get_cached_device_ids(device_id)
+    try:
+        saved = await persist_fixed_point_samples(report, reg_device_id)
+        logger.info(
+            f"[WS] fixed_point_probe_sample 저장 완료: device_id={device_id}, "
+            f"event_id={report.event_id}, samples={len(saved)}"
+        )
+    except Exception as e:
+        logger.error(f"[WS] fixed_point_probe_sample 저장 실패: device_id={device_id}, {e}")
 
 
 async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
@@ -1096,6 +1126,11 @@ async def ws_detect(
 
             elif msg_type == "distance_probe_sample":
                 task = asyncio.create_task(_handle_distance_probe_sample(device_id, data))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+
+            elif msg_type == "fixed_point_probe_sample":
+                task = asyncio.create_task(_handle_fixed_point_probe_sample(device_id, data))
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
 
