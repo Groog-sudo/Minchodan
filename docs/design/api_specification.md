@@ -606,7 +606,7 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 | `lon` | 경도 (필수) |
 | `heading` | 방위각(도, 0~360). 선택, 미제공 시 `None`으로 처리 |
 
-`lat`/`lon` 중 하나라도 누락되면 서버는 조용히 무시한다(에러 응답 없음). TMAP 보행자 경로 안내(`server/navigation/pedestrian_navigation.py`)와 결합되어 실시간 TTS로 안내 문장이 발화된다.
+`lat`/`lon` 중 하나라도 누락되면 서버는 조용히 무시한다(에러 응답 없음). TMAP 보행자 경로 안내(`server/navigation/server.py`)와 결합되어 실시간 TTS로 안내 문장이 발화된다.
 
 > **비고 (2026-07-11) - 길안내 무음 결함 수정**: 기존에는 턴바이턴 멘트 조회
 > (`get_combined_guidance`)가 `DetectionConsumer._send_cognitive_guide` 내부에만 있어

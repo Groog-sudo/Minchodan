@@ -99,7 +99,7 @@ graph TD
 
         subgraph Nav ["부가 기능. 실시간 내비게이션"]
             NavManager["NavigationManager<br/>(디바이스별 세션 상태기계)"]
-            Tmap["TMAP 보행자 경로 API<br/>(server/navigation/pedestrian_navigation.py)"]
+            Tmap["TMAP 보행자 경로 API<br/>(server/navigation/server.py)"]
         end
 
         subgraph Bus ["Redis Bus"]
@@ -220,7 +220,7 @@ graph TD
 | `client/src/hooks/useLocation.ts`             | `expo-location` `watchPositionAsync` GPS 실시간 전송(`realtime_gps`)       | -    |
 | `client/src/components/NavMapPanel.tsx`       | 하단 T맵 지도 패널(WebView + TMap JS API). `nav_route` 좌표 폴리라인 + 현재 위치 마커(2초 스로틀), 토글 꺼짐 시 미마운트. 운영자/데모용(2026-07-11 신규) | -    |
 | `server/navigation/manager.py`                | `NavigationManager`, 디바이스별 세션 상태기계(IDLE/대기/안내중)            | -    |
-| `server/navigation/pedestrian_navigation.py`  | TMAP POI 검색·보행자 경로 API 연동                                        | -    |
+| `server/navigation/server.py`                 | TMAP POI 검색·보행자 경로 API 연동 (NavigationManager와 연동하는 내비게이션 전용 FastAPI) | -    |
 | `server/navigation/navigation_filter.py`      | 경로 이탈·재탐색 필터링                                                    | -    |
 | `server/stt/stt_service.py`                   | faster-whisper 기반 음성 전사 (`transcribe_file`)                          | -    |
 | `server/stt/stt_to_llm_bridge.py`             | STT 전사 결과 → 네비게이션/LLM 브리지. 자기-에코 감지(`_check_self_echo`), 인텐트 분기, 자유 질의응답 | -    |

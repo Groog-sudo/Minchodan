@@ -2901,6 +2901,10 @@
   - `docs/ops/deployment_guide.md`: `docker/docker-compose.yml`이 로컬 개발·데모 전용임을 명시하고, Redis(`requirepass` 미설정, 6379 호스트 노출) 및 MariaDB(기본 비밀번호 폴백)의 프로덕션 강화 권장사항을 7.4절에 추가.
   - `scripts/project_scan.py`: `Path.write_text(..., newline="\n")`가 Python 3.9에서 지원되지 않아 스크립트 실행이 실패하던 버그를 `open(..., newline="\n")`으로 수정.
   - `scripts/project_scan_report.md`: 2026-07-18 기준으로 재생성. 이전 보고서(2026-07-06, 84016 파일)는 node_modules 등이 누적되어 stale했음.
-- **관련 파일**: `server/main.py`, `server/api/auth.py`, `README.md`, `server/navigation/pedestrian_navigation.py`, `docs/ops/deployment_guide.md`, `scripts/project_scan.py`, `scripts/project_scan_report.md`
+  - 정합성 교차 검토로 추가 발견된 문서 잔여 참조 정정:
+    - `docs/design/architecture.md`: Mermaid 다이어그램 및 구성 요소 테이블의 `server/navigation/pedestrian_navigation.py`를 `server/navigation/server.py`로 변경.
+    - `docs/ops/environment_variables.md`: `TMAP_APP_KEY` 참조에서 `server/navigation/pedestrian_navigation.py:269`를 제거하고 `server/navigation/server.py:38`로 정정.
+    - `docs/design/api_specification.md`: `realtime_gps` 메시지 설명의 `server/navigation/pedestrian_navigation.py`를 `server/navigation/server.py`로 변경.
+- **관련 파일**: `server/main.py`, `server/api/auth.py`, `README.md`, `server/navigation/pedestrian_navigation.py`, `docs/ops/deployment_guide.md`, `scripts/project_scan.py`, `scripts/project_scan_report.md`, `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`
 - **검증 결과**: `python3 -m ruff format .` 211개 파일 변경 없음, `python3 -m ruff check .` All checks passed.
-- **비고**: 외부 정합성 검토 보고서에서 식별된 6개 개선사항(1 Critical, 2 Medium, 3 Low)을 반영. 남은 Low 우선순위 항목은 이번 커밋에서 모두 처리됨.
+- **비고**: 외부 정합성 검토 보고서에서 식별된 6개 개선사항(1 Critical, 2 Medium, 3 Low)을 반영. `pedestrian_navigation.py` 삭제 후에도 문서 잔여 참조가 남아 있어 정합성 교차 검토로 추가 동기화함.
