@@ -2,6 +2,8 @@ import sys
 
 from pydantic import BaseModel, Field
 
+from server.detection.distance_policy import POLICY_VERSION
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -28,6 +30,19 @@ class Detection(BaseModel):
     # hit_count가 MIN_HIT_COUNT를 이미 충족했던 객체로 복원된 경우 True. reflex_gate는 이 때
     # MIN_HIT_COUNT 재충족 대기 없이 즉시 발동해 접근 객체의 재등장 지연(S4)을 해소한다.
     reacquired: bool = False
+    # 2026-07-18 거리 정책 SSOT(distance_policy.py) 도입: ByteTrackTracker.update()가
+    # track별 이전 구역(prev_zone)을 반영한 히스테리시스 평가 결과를 매 프레임 부착한다.
+    # reflex_gate/detection_pipeline은 이 필드들을 신뢰의 단일 소스로 사용하고 별도로
+    # 면적비·의사거리를 재계산하지 않는다.
+    area_ratio: float = 0.0
+    bottom_ratio: float = 0.0
+    raw_distance_zone: str = "far"  # "near" | "medium" | "far"
+    effective_distance_zone: str = "far"  # "near" | "medium" | "far" (override 반영 최종값)
+    heuristic_distance_m: float = 0.0
+    distance_source: str = "bbox_heuristic"
+    route: str = "cognitive"  # "reflex" | "cognitive"
+    route_reason: str = ""
+    policy_version: str = POLICY_VERSION
 
 
 class SurfaceResult(BaseModel):
@@ -110,3 +125,29 @@ class ReflexAlert(BaseModel):
     # P0-1 (2026-07-17): 억제 재무장 정책용 거리 밴드 ("near"|"medium"|"far").
     # suppressor가 track_id+distance_band 조합 키로 억제하므로 거리 악화 시 재발화 가능.
     distance_band: str = "medium"
+    # 2026-07-18 거리 정책 SSOT: 안전 예외(머리 높이·노면)와 일반 객체 반사가 억제 키를
+    # 교차 오염하지 않도록 출처를 명시한다("object" | "head_level" | "surface").
+    alert_source: str = "object"
+    # Near episode 상태("enter" | "update"). exit은 별도 ReflexClear 메시지로 전달한다.
+    event_state: str = "enter"
+    # distance_policy.evaluate_distance()가 계산한 파생 거리(m). 레거시 필드 distance와
+    # 동일한 값이지만 이름으로 "휴리스틱 파생값"임을 명확히 한다.
+    estimated_distance_m: float = 0.0
+    policy_version: str = POLICY_VERSION
+
+
+class ReflexClear(BaseModel):
+    """Near episode 종료(이탈 또는 track 소실) 시 전송하는 반사 해제 이벤트.
+
+    단말은 이 메시지를 받으면 해당 track_id의 반사 비프·햅틱 출력을 즉시 정지한다.
+    구버전 클라이언트는 이 메시지 타입을 모르므로 기존 짧은 비프 자동 종료가
+    안전 폴백으로 남는다(호환 기간 동안 하위 호환).
+    """
+
+    event_id: str = ""
+    alert_id: str
+    track_id: str | None = None
+    alert_source: str = "object"
+    reason: str = "zone_exit"  # "zone_exit" | "track_lost"
+    ts: float = 0.0
+    policy_version: str = POLICY_VERSION

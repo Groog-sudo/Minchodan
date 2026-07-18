@@ -1,6 +1,8 @@
 import sys
 from typing import Literal, Protocol
 
+from server.detection import distance_policy
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -54,23 +56,20 @@ def estimate_direction(bbox: BBoxLike, frame_width: float, distance_class: Dista
 def estimate_distance(
     bbox: BBoxLike, frame_width: float, frame_height: float, class_name: str
 ) -> Distance:
-    """bbox 면적 비율을 고려하여 거리를 계산한다. (class-agnostic)"""
-    area_ratio = bbox_area_ratio(bbox, frame_width, frame_height)
+    """bbox 면적 비율을 고려하여 거리를 계산한다. (class-agnostic)
 
-    # 클래스 구분 없이 일관된 면적 비율 기준으로 거리 판정
-    if area_ratio >= 0.08:
-        return "near"
-    if area_ratio >= 0.03:
-        return "medium"
-    return "far"
+    2026-07-18: server/detection/distance_policy.py(거리 정책 SSOT)의 순수 함수로
+    위임하는 얇은 wrapper로 전환했다. 이 함수는 트랙별 이전 구역(prev_zone) 정보가
+    없는 호출부(RAG 검색, L1 분류기 등)에서 쓰는 상태 비저장(stateless) 평가이므로
+    raw_zone_from_area_ratio()를 사용한다 - 히스테리시스가 필요한 반사 경로는
+    ByteTrackTracker가 부착하는 Detection.effective_distance_zone을 직접 사용해야 한다.
+    """
+    area_ratio = distance_policy.compute_area_ratio(bbox, frame_width, frame_height)
+    return distance_policy.raw_zone_from_area_ratio(area_ratio)
 
 
 def bbox_area_ratio(bbox: BBoxLike, frame_width: float, frame_height: float) -> float:
-    if frame_width <= 0 or frame_height <= 0:
-        return 0.0
-    width = max(0.0, bbox.w)
-    height = max(0.0, bbox.h)
-    return (width * height) / float(frame_width * frame_height)
+    return distance_policy.compute_area_ratio(bbox, frame_width, frame_height)
 
 
 # 인지 경로 전용 - 반사 경로(estimate_direction, front/front-left/front-right 3분대)와는

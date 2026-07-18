@@ -8,6 +8,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from server.bus.redis_client import RedisBus
+from server.detection import distance_policy
 from server.detection.schemas import BBox, Detection
 
 logger = logging.getLogger(__name__)
@@ -37,15 +38,30 @@ class ByteTrackTracker:
         self,
         detections: list[Detection],
         redis_bus: RedisBus,
+        frame_width: float = 0.0,
+        frame_height: float = 0.0,
     ) -> list[Detection]:
+        """탐지 목록에 track_id 연속성 정보와 거리 정책 SSOT 평가 결과를 부착한다.
+
+        2026-07-18: 거리 정책 SSOT(distance_policy.py) 도입 - track별 이전 구역
+        (effective_zone)을 Redis 트랙 컨텍스트에 함께 저장해 히스테리시스를 적용한다.
+        frame_width/frame_height가 0이면(호출부가 아직 넘기지 않는 레거시 경로) 거리
+        평가를 건너뛰고 Detection의 기본값(far/cognitive)을 그대로 둔다.
+        """
         updated: list[Detection] = []
         for det in detections:
             try:
                 if det.track_id is None:
                     # track_id가 없으면(Mock 등) 연속성을 확인할 수 없으므로 단발성(hit_count=1)으로 취급
+                    policy_update = self._evaluate_policy(det, frame_width, frame_height, None)
                     updated.append(
                         det.model_copy(
-                            update={"speed": 0.0, "direction": "unknown", "hit_count": 1}
+                            update={
+                                "speed": 0.0,
+                                "direction": "unknown",
+                                "hit_count": 1,
+                                **policy_update,
+                            }
                         )
                     )
                     continue
@@ -53,6 +69,8 @@ class ByteTrackTracker:
                 prev = await redis_bus.get_track_context(det.track_id)
                 speed, direction = self._compute_motion(prev, det.bbox)
                 hit_count, reacquired = self._compute_hit_count_with_reacquire(prev)
+                prev_zone = prev.get("effective_zone") if prev else None
+                policy_update = self._evaluate_policy(det, frame_width, frame_height, prev_zone)
 
                 await redis_bus.set_track_context(
                     det.track_id,
@@ -63,6 +81,7 @@ class ByteTrackTracker:
                         "class_name": det.class_name,
                         "updated_at": str(time.time()),
                         "hit_count": str(hit_count),
+                        "effective_zone": policy_update.get("effective_distance_zone", "far"),
                     },
                 )
                 updated.append(
@@ -72,6 +91,7 @@ class ByteTrackTracker:
                             "direction": direction,
                             "hit_count": hit_count,
                             "reacquired": reacquired,
+                            **policy_update,
                         }
                     )
                 )
@@ -81,6 +101,36 @@ class ByteTrackTracker:
                     det.model_copy(update={"speed": 0.0, "direction": "unknown", "hit_count": 1})
                 )
         return updated
+
+    @staticmethod
+    def _evaluate_policy(
+        det: Detection,
+        frame_width: float,
+        frame_height: float,
+        prev_zone: str | None,
+    ) -> dict:
+        """distance_policy.evaluate_distance()를 실행해 Detection 갱신용 dict를 만든다.
+
+        frame_width/height가 없으면(0 이하) 평가할 수 없으므로 빈 dict를 반환해
+        Detection의 기본값을 그대로 유지한다(방어적 코딩).
+        """
+        if frame_width <= 0 or frame_height <= 0:
+            return {}
+        valid_prev_zone = prev_zone if prev_zone in ("near", "medium", "far") else None
+        result = distance_policy.evaluate_distance(
+            det.bbox, frame_width, frame_height, prev_zone=valid_prev_zone
+        )
+        return {
+            "area_ratio": result.area_ratio,
+            "bottom_ratio": result.bottom_ratio,
+            "raw_distance_zone": result.raw_distance_zone,
+            "effective_distance_zone": result.effective_distance_zone,
+            "heuristic_distance_m": result.heuristic_distance_m,
+            "distance_source": result.distance_source,
+            "route": result.route,
+            "route_reason": result.route_reason,
+            "policy_version": result.policy_version,
+        }
 
     @staticmethod
     def _compute_hit_count(prev: dict) -> int:

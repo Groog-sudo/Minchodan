@@ -33,7 +33,7 @@ from server.detection.direction import (
     estimate_distance,
 )
 from server.detection.risk_rules import class_name_to_ko
-from server.detection.schemas import Detection, DetectionResult, ReflexAlert
+from server.detection.schemas import Detection, DetectionResult, ReflexAlert, ReflexClear
 from server.orchestration import run_orchestrator
 from server.orchestration.llm_client_factory import LLMClientFactory
 from server.rag.retriever import get_default_retriever
@@ -523,6 +523,13 @@ class DetectionConsumer:
             getattr(result, "inference_ms", 0.0),
         )
 
+        if stream == "reflex":
+            # 2026-07-18: Near episode 이탈/track 소실 감지. reflex_gate가 이번 프레임에
+            # 아무것도 발동하지 않았거나(DetectionResult) 다른 track이 발동했더라도,
+            # 직전에 열려 있던 Near episode의 track이 이번 프레임 detections에 더 이상
+            # near로 존재하지 않으면 reflex_clear를 보낸다.
+            await self._reconcile_near_episode(processed.device_id, detections)
+
         if isinstance(result, ReflexAlert):
             self._last_status.update(
                 {
@@ -553,7 +560,7 @@ class DetectionConsumer:
             else:
                 # 비-surface 반사일 때 surface_caution streak 리셋 (독립 상태 유지)
                 self._surface_caution_streak[processed.device_id] = 0
-            await self._send_reflex_alert(
+            sent_ok = await self._send_reflex_alert(
                 processed.device_id,
                 result,
                 frame=frame,
@@ -562,20 +569,24 @@ class DetectionConsumer:
                 detections=detections,
                 queue_wait_ms=queue_wait_ms,
             )
-            # [2026-07-14] 반사 경보(정지) 발동 800ms 후 인지(설명/우회방향) 가이드를 후속 트리거
-            delayed_guide_task = asyncio.create_task(
-                self._trigger_delayed_cognitive_guide(
-                    device_id=processed.device_id,
-                    alert=result,
-                    detections=detections,
-                    surfaces=surfaces,
-                    frame=frame,
-                    decode_ms=processed.processing_time_ms,
-                    pipeline_start=pipeline_start,
+            # 11.1 결함 수정 (2026-07-18): 반사가 억제되었거나 전송 실패(연결 끊김 등)면
+            # 후속 인지 태스크를 예약하지 않는다. 이전에는 성공 여부와 무관하게 항상
+            # 800ms 후 인지 가이드를 예약해, 억제된 반사에도 불필요한 RAG/LLM/TTS 부하가
+            # 발생했다(C-05).
+            if sent_ok:
+                delayed_guide_task = asyncio.create_task(
+                    self._trigger_delayed_cognitive_guide(
+                        device_id=processed.device_id,
+                        alert=result,
+                        detections=detections,
+                        surfaces=surfaces,
+                        frame=frame,
+                        decode_ms=processed.processing_time_ms,
+                        pipeline_start=pipeline_start,
+                    )
                 )
-            )
-            self._delayed_guide_tasks.add(delayed_guide_task)
-            delayed_guide_task.add_done_callback(self._delayed_guide_tasks.discard)
+                self._delayed_guide_tasks.add(delayed_guide_task)
+                delayed_guide_task.add_done_callback(self._delayed_guide_tasks.discard)
         elif isinstance(result, DetectionResult):
             self._last_status.update(
                 {
@@ -764,6 +775,56 @@ class DetectionConsumer:
                 f"[DetectionConsumer] server_detection 송신 실패: device_id={device_id}, {e}"
             )
 
+    async def _reconcile_near_episode(self, device_id: str, detections: list[Detection]) -> None:
+        """직전에 열려 있던 Near episode의 track이 이번 프레임에서 이탈/소실됐는지 확인한다.
+
+        2026-07-18 거리 정책 SSOT: Near episode는 enter 이후 명시적 reflex_clear로만
+        종료된다(프레임마다 반복되는 독립 이벤트가 아니다). 이 메서드는 reflex 스트림의
+        모든 프레임(반사가 발동하지 않은 프레임 포함)에서 호출되어, 활성 track이 더 이상
+        near 구역에 없으면 즉시 clear를 내보낸다.
+        """
+        active_track = Alert_suppressor.peek_active_near_track(device_id)
+        if active_track is None:
+            return
+        near_track_ids = {
+            (det.track_id or "unknown")
+            for det in detections
+            if det.effective_distance_zone == "near"
+        }
+        if active_track in near_track_ids:
+            return
+        Alert_suppressor.end_near_episode(device_id)
+        await self._send_reflex_clear(device_id, active_track, reason="zone_exit")
+
+    async def _send_reflex_clear(self, device_id: str, track_id: str, reason: str) -> None:
+        """Near episode 종료를 단말에 알린다. 단말은 해당 track의 반사 출력을 즉시 정지한다."""
+        clear = ReflexClear(
+            event_id="",
+            alert_id="high_obstacle",
+            track_id=None if track_id == "unknown" else track_id,
+            alert_source="object",
+            reason=reason,
+            ts=now_ts(),
+        )
+        payload = {
+            "type": "reflex_clear",
+            "event_id": clear.event_id,
+            "alert_id": clear.alert_id,
+            "track_id": clear.track_id,
+            "alert_source": clear.alert_source,
+            "reason": clear.reason,
+            "policy_version": clear.policy_version,
+            "ts": clear.ts,
+        }
+        try:
+            await manager.send_json(device_id, payload)
+            logger.info(
+                f"[DetectionConsumer] reflex_clear 전송: "
+                f"device_id={device_id}, track_id={track_id}, reason={reason}"
+            )
+        except Exception as e:
+            logger.error(f"[DetectionConsumer] reflex_clear 전송 실패: device_id={device_id}, {e}")
+
     async def _send_reflex_alert(
         self,
         device_id: str,
@@ -773,14 +834,17 @@ class DetectionConsumer:
         pipeline_start: float | None = None,
         detections: list | None = None,
         queue_wait_ms: float = 0.0,
-    ) -> None:
+    ) -> bool:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
 
         P0-1 (2026-07-17): 재무장 정책 적용.
-        - 억제 키: high_obstacle:{track_id}:{distance_band}
+        - 억제 키: {alert_source}:{track_id}:{distance_band}
         - 동일 키 TTL(5s) + device 단위 최소 쿨다운(1.5s) + 밴드 악화 재발화
         - near(<=0.6m) 햅틱+비프는 TTL 억제 제외, 500ms 스로틀만
         frame은 전송 성사 후 백그라운드 로그 태스크에서만 저장한다(반사 지연 무영향).
+
+        반환값: 실제로 전송(억제되지 않고 WebSocket send 성공)했으면 True. 호출부는
+        이 값이 True일 때만 800ms 후속 인지 태스크를 예약한다(11.1 결함 수정).
         """
         is_near = alert.distance <= 0.6
         if not await Alert_suppressor.should_emit_reflex(
@@ -788,13 +852,21 @@ class DetectionConsumer:
             track_id=alert.track_id,
             distance_band=alert.distance_band,
             is_near=is_near,
+            alert_source=alert.alert_source,
         ):
             logger.debug(
                 f"[DetectionConsumer] 반사 알림 억제(재무장 정책): "
                 f"device_id={device_id}, track_id={alert.track_id}, "
                 f"band={alert.distance_band}, near={is_near}"
             )
-            return
+            return False
+
+        # 2026-07-18: 일반 객체(Near) 반사만 episode enter/update 상태를 갖는다.
+        # head_level/surface는 순간 이벤트이므로 episode 상태를 갱신하지 않는다.
+        if alert.alert_source == "object":
+            alert.event_state = Alert_suppressor.begin_or_continue_near_episode(
+                device_id, alert.track_id
+            )
 
         payload = {
             "type": "reflex_alert",
@@ -813,6 +885,10 @@ class DetectionConsumer:
             "class_name": alert.class_name,
             "hit_count": alert.hit_count,
             "distance_band": alert.distance_band,
+            "alert_source": alert.alert_source,
+            "event_state": alert.event_state,
+            "estimated_distance_m": alert.estimated_distance_m,
+            "policy_version": alert.policy_version,
         }
         try:
             sent = await manager.send_json(device_id, payload)
@@ -821,11 +897,12 @@ class DetectionConsumer:
                     f"[DetectionConsumer] 반사 알림 미전송: "
                     f"device_id={device_id}, alert_id={alert.alert_id}, websocket=disconnected"
                 )
-                return
+                return False
             await Alert_suppressor.mark_reflex_sent(
                 device_id=device_id,
                 track_id=alert.track_id,
                 distance_band=alert.distance_band,
+                alert_source=alert.alert_source,
             )
             logger.info(
                 f"[DetectionConsumer] 반사 알림 전송: "
@@ -892,8 +969,10 @@ class DetectionConsumer:
                     detections=detections,
                 ),
             )
+            return True
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
+            return False
 
     async def _trigger_delayed_cognitive_guide(
         self,
@@ -926,6 +1005,16 @@ class DetectionConsumer:
                 f"[DetectionConsumer] avoidance fast lane: device_id={device_id}, "
                 f"direction={alert.direction}, guidance='{preset_guidance}'"
             )
+
+        # 7.4 목표 정책 (2026-07-18): 일반 Near 존재 안내("반사와 같은 사실을 TTS로 반복")는
+        # 금지한다. 회피 방향이 명확한 post_reflex 안내(avoidance fast lane)만 허용하고,
+        # 그마저 불가능하면(다중 객체·방향 불확정) 후속 인지 안내 자체를 생략한다.
+        if preset_guidance is None:
+            logger.debug(
+                f"[DetectionConsumer] avoidance 불가 - post_reflex 인지 안내 생략: "
+                f"device_id={device_id}, alert_id={alert.alert_id}"
+            )
+            return
 
         # 29종 객체 탐지 클래스들을 모아 DetectionResult 스키마로 인지 경로에 피딩
         cognitive_res = DetectionResult(

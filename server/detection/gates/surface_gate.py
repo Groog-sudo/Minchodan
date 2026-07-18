@@ -61,4 +61,7 @@ def surface_gate(
         track_id=None,
         class_name=surface_result.class_name,
         hit_count=0,
+        # 2026-07-18: 일반 객체 Near 억제 키와 네임스페이스를 분리해 서로 다른 위험이
+        # 교차 억제되지 않도록 한다(docs 설계 §7.2 안전 예외 원칙).
+        alert_source="surface",
     )

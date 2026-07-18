@@ -132,7 +132,9 @@ class DetectionPipeline:
             logger.error(f"[Pipeline] Segmentor 추론 실패: {e}")
             surfaces = []
 
-        detections = await self.tracker.update(detections, self.redis_bus)
+        detections = await self.tracker.update(
+            detections, self.redis_bus, frame_width=width, frame_height=height
+        )
 
         # 1. 진단 및 2. 완화 조치 (교차검증 게이트 + 시간적 지속성)
         filtered_detections = []
@@ -194,29 +196,46 @@ class DetectionPipeline:
 
         detections = filtered_detections
 
-        reflex_alert = self._evaluate_reflex(detections, height, width)
-        if reflex_alert is not None:
-            reflex_alert.event_id = event_id
-            reflex_alert.ts = time.time()
-            reflex_alert.inference_ms = (time.time() - start_ts) * 1000
-            logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
-            return reflex_alert, detections, surfaces
+        # 2026-07-18 거리 정책 SSOT: stream 불변식 강제.
+        # [면접 대비 주석] stream 인자를 받고도 실제 분기에 쓰지 않던 것이 기존 결함이었다
+        # (반사 프레임에서도 인지 후보가 만들어지고, 인지 프레임에서도 반사 경보가 나올 수
+        # 있었음). 반사(8~10fps)는 안전 게이트(Near 반사·머리높이·노면)만 평가하고,
+        # 인지(1~2fps)는 mid/low 분류와 보도 이탈만 평가해 서로의 출력 종류를 침범하지 않는다.
+        if stream == "reflex":
+            reflex_alert = self._evaluate_reflex(detections, height, width)
+            if reflex_alert is not None:
+                reflex_alert.event_id = event_id
+                reflex_alert.ts = time.time()
+                reflex_alert.inference_ms = (time.time() - start_ts) * 1000
+                logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
+                return reflex_alert, detections, surfaces
 
-        head_level_alert = self._evaluate_head_level(detections, height, width)
-        if head_level_alert is not None:
-            head_level_alert.event_id = event_id
-            head_level_alert.ts = time.time()
-            head_level_alert.inference_ms = (time.time() - start_ts) * 1000
-            logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
-            return head_level_alert, detections, surfaces
+            head_level_alert = self._evaluate_head_level(detections, height, width)
+            if head_level_alert is not None:
+                head_level_alert.event_id = event_id
+                head_level_alert.ts = time.time()
+                head_level_alert.inference_ms = (time.time() - start_ts) * 1000
+                logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
+                return head_level_alert, detections, surfaces
 
-        surface_alert = self._evaluate_surface(surfaces, height)
-        if surface_alert is not None:
-            surface_alert.event_id = event_id
-            surface_alert.ts = time.time()
-            surface_alert.inference_ms = (time.time() - start_ts) * 1000
-            logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
-            return surface_alert, detections, surfaces
+            surface_alert = self._evaluate_surface(surfaces, height)
+            if surface_alert is not None:
+                surface_alert.event_id = event_id
+                surface_alert.ts = time.time()
+                surface_alert.inference_ms = (time.time() - start_ts) * 1000
+                logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
+                return surface_alert, detections, surfaces
+
+            # 반사 스트림에서 안전 게이트가 하나도 발동하지 않으면 인지 후보를 만들지
+            # 않고(risk_hint="none") BBox 오버레이용 원시 탐지 정보만 반환한다.
+            res = DetectionResult(
+                event_id=event_id,
+                detections=detections,
+                surface=surfaces,
+                risk_hint="none",
+                inference_ms=(time.time() - start_ts) * 1000,
+            )
+            return res, detections, surfaces
 
         risk_hint = self._classify_risk(detections, surfaces)
         inference_ms = (time.time() - start_ts) * 1000

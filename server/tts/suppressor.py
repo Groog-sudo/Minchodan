@@ -45,19 +45,50 @@ class AlertSuppressor:
         self._last_near_alert_ts: dict[str, float] = {}
         # 직전 경보 상태 (track_id + distance_band) - 밴드 악화 재발화 판정용
         self._last_alert_state: dict[str, dict] = {}
+        # 2026-07-18 거리 정책 SSOT: device_id별 현재 열려 있는 Near episode의 track_id.
+        # alert_source == "object"인 반사에만 적용된다(head_level/surface는 episode 없이
+        # 매 발동이 독립 이벤트). Near 이탈/track 소실 감지 시 reflex_clear 판정에 사용한다.
+        self._active_near_track: dict[str, str] = {}
 
     def _make_key(self, device_id: str, alert_id: str) -> str:
         """suppress:{device_id}:{alert_id} - 레거시 (방향 제외 high_obstacle 고정)."""
         return f"suppress:{device_id}:{alert_id}"
 
-    def _make_reflex_key(self, device_id: str, track_id: str | None, distance_band: str) -> str:
-        """P0-1: suppress:{device_id}:high_obstacle:{track_id}:{distance_band}.
+    def _make_reflex_key(
+        self, device_id: str, alert_source: str, track_id: str | None, distance_band: str
+    ) -> str:
+        """P0-1: suppress:{device_id}:{alert_source}:{track_id}:{distance_band}.
 
-        track_id가 None(Mock 등)이면 'unknown'으로 폴백해 키 충돌을 방지한다.
+        track_id가 None(Mock/surface 등)이면 'unknown'으로 폴백해 키 충돌을 방지한다.
+        2026-07-18: alert_source(object/head_level/surface)를 키에 포함해 서로 다른
+        위험이 같은 track_id="unknown" 하나로 교차 억제되지 않도록 네임스페이스를
+        분리한다(설계서 §7.2 안전 예외 원칙 - C-05 대응).
         방향 버킷은 기존 결정(2026-07-16 Option A)대로 키에서 제외한다.
         """
         tid = track_id or "unknown"
-        return f"suppress:{device_id}:high_obstacle:{tid}:{distance_band}"
+        return f"suppress:{device_id}:{alert_source}:{tid}:{distance_band}"
+
+    def peek_active_near_track(self, device_id: str) -> str | None:
+        """device의 현재 열려 있는 Near episode track_id를 조회한다(부작용 없음)."""
+        return self._active_near_track.get(device_id)
+
+    def begin_or_continue_near_episode(self, device_id: str, track_id: str | None) -> str:
+        """Near 반사 전송 직전에 호출해 event_state("enter"|"update")를 판정한다.
+
+        # [면접 대비 주석]
+        # 직전에 열려 있던 episode의 track_id와 이번에 반사를 보내려는 track_id가 다르면
+        # (또는 처음이면) "enter"로 새 episode를 열고, 같은 track_id가 이어지면 "update"로
+        # 같은 episode가 계속되는 중임을 알린다. 클라이언트는 enter에서만 비프·햅틱을
+        # 새로 시작하고, update는 기존 출력을 유지한다.
+        """
+        tid = track_id or "unknown"
+        prev = self._active_near_track.get(device_id)
+        self._active_near_track[device_id] = tid
+        return "enter" if prev != tid else "update"
+
+    def end_near_episode(self, device_id: str) -> str | None:
+        """device의 Near episode를 종료하고, 종료 직전 track_id를 반환한다(없으면 None)."""
+        return self._active_near_track.pop(device_id, None)
 
     @staticmethod
     def should_rearm(prev_band: str | None, current_band: str | None) -> bool:
@@ -120,6 +151,7 @@ class AlertSuppressor:
         track_id: str | None,
         distance_band: str,
         is_near: bool,
+        alert_source: str = "object",
     ) -> bool:
         """P0-1: 반사 경보 발화 여부 판정 (재무장 정책).
 
@@ -147,7 +179,7 @@ class AlertSuppressor:
         if now - last_device < REFLEX_MIN_GAP_S:
             return False
         # 3. 동일 트랙+밴드 TTL 체크
-        key = self._make_reflex_key(device_id, track_id, distance_band)
+        key = self._make_reflex_key(device_id, alert_source, track_id, distance_band)
         if await self._key_exists(key):
             # 밴드 악화 시 재발화 (should_rearm)
             prev = self._last_alert_state.get(device_id, {})
@@ -174,9 +206,10 @@ class AlertSuppressor:
         device_id: str,
         track_id: str | None,
         distance_band: str,
+        alert_source: str = "object",
     ) -> None:
         """P0-1: 반사 경보 전송 완료 마킹 (track_id+band 키, REFLEX_SUPPRESS_TTL_S)."""
-        key = self._make_reflex_key(device_id, track_id, distance_band)
+        key = self._make_reflex_key(device_id, alert_source, track_id, distance_band)
         await self._setex(key, REFLEX_SUPPRESS_TTL_S)
 
     async def should_suppress(self, device_id: str, alert_id: str) -> bool:

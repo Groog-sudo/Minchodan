@@ -20,10 +20,32 @@ from server.detection import (
     ReflexAlert,
     SegmentorInterface,
     YoloDetector,
+    distance_policy,
 )
 from server.detection.consumer import DetectionConsumer
 from server.detection.gates import reflex_gate, surface_gate
 from server.detection.schemas import SurfaceResult
+
+
+def _policy_fields(bbox: BBox, frame_width: float = 640.0, frame_height: float = 480.0) -> dict:
+    """distance_policy.evaluate_distance()를 실행해 Detection에 부착할 필드 dict를 만든다.
+
+    reflex_gate()는 더 이상 자체 면적비를 계산하지 않고 ByteTrackTracker가 미리 부착한
+    route/effective_distance_zone/heuristic_distance_m을 신뢰하므로, 이 헬퍼로 실제
+    tracker와 동일한 계산 경로를 거쳐 게이트 단위 테스트의 Detection을 구성한다.
+    """
+    result = distance_policy.evaluate_distance(bbox, frame_width, frame_height)
+    return {
+        "area_ratio": result.area_ratio,
+        "bottom_ratio": result.bottom_ratio,
+        "raw_distance_zone": result.raw_distance_zone,
+        "effective_distance_zone": result.effective_distance_zone,
+        "heuristic_distance_m": result.heuristic_distance_m,
+        "distance_source": result.distance_source,
+        "route": result.route,
+        "route_reason": result.route_reason,
+        "policy_version": result.policy_version,
+    }
 
 
 class StubDetector(DetectorInterface):
@@ -95,11 +117,13 @@ class TestSchemas:
 class TestGates:
     def test_reflex_gate_high_risk_bottom(self):
         # class-agnostic: 중앙 + 면적>=10% + hit_count>=3
+        bbox = BBox(x=210.0, y=280.0, w=220.0, h=160.0)
         det = Detection(
             class_name="car",
             confidence=0.9,
-            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),
+            bbox=bbox,
             hit_count=3,
+            **_policy_fields(bbox),
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
@@ -130,11 +154,13 @@ class TestGates:
 
     def test_reflex_gate_any_class_near_center(self):
         """class-agnostic: bicycle 등도 지오메트리만 충족하면 obstacle 경보."""
+        bbox = BBox(x=210.0, y=280.0, w=220.0, h=160.0)
         det = Detection(
             class_name="bicycle",
             confidence=0.9,
-            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),
+            bbox=bbox,
             hit_count=3,
+            **_policy_fields(bbox),
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
@@ -192,16 +218,20 @@ class TestGates:
 
     def test_reflex_gate_small_bottom_near_emits(self):
         """P0-3: 발밑(화면 하단 80% 이하) 소형 객체(면적 4~10%)는 근접으로 발동."""
-        # frame 480x640. area 5% 목표: w*h = 0.05*307200 = 15360. 160*96=15360. bottom=430+96=526>=384.
+        # frame 640x480. area 4.95% 목표, bbox가 프레임 안에 완전히 들어오도록 구성
+        # (clip_bbox_to_frame이 프레임 밖으로 나간 부분을 잘라내므로 y+h<=480이어야 한다).
+        # 190*80=15200, 15200/307200=4.95%. bottom=360+80=440, bottom_ratio=440/480=0.917>=0.80.
+        bbox = BBox(x=225.0, y=360.0, w=190.0, h=80.0)
         det = Detection(
             class_name="bollard",
             confidence=0.9,
-            bbox=BBox(x=270.0, y=430.0, w=160.0, h=96.0),  # ~5%, bottom=526
+            bbox=bbox,
             hit_count=3,
+            **_policy_fields(bbox),
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
-        assert alert.distance_band in ("near", "medium")
+        assert alert.distance_band == "near"
 
     def test_reflex_gate_small_bottom_below_lower_bound_rejected(self):
         """P0-3: 발밑이어도 면적이 SMALL_OBJECT_MIN_AREA_RATIO(4%) 미만이면 미발동."""
@@ -218,12 +248,14 @@ class TestGates:
     def test_reflex_gate_reacquired_bypasses_min_hit_count(self):
         """P0-3: reacquired=True면 hit_count<MIN_HIT_COUNT여도 즉시 발동."""
         # 중앙 + 근접(면적 ~11.5%)이지만 hit_count=1. reacquired=True면 발동.
+        bbox = BBox(x=210.0, y=280.0, w=220.0, h=160.0)  # ~11.5%, centered
         det = Detection(
             class_name="car",
             confidence=0.9,
-            bbox=BBox(x=210.0, y=280.0, w=220.0, h=160.0),  # ~11.5%, centered
+            bbox=bbox,
             hit_count=1,
             reacquired=True,
+            **_policy_fields(bbox),
         )
         alert = reflex_gate(det, 480.0, 640.0)
         assert alert is not None
@@ -473,7 +505,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result, _, _ = await pipeline.run(frame, "test", "evt-reflex", "dev-1")
+        result, _, _ = await pipeline.run(frame, "reflex", "evt-reflex", "dev-1")
         assert isinstance(result, ReflexAlert)
         assert result.alert_id == "high_obstacle"
         assert result.direction == "front"
@@ -490,7 +522,7 @@ class TestPipelineRobustness:
             producer=RiskEventProducer(bus=mock_redis_bus),
             redis_bus=mock_redis_bus,
         )
-        result, _, _ = await pipeline.run(frame, "test", "evt-surface", "dev-1")
+        result, _, _ = await pipeline.run(frame, "reflex", "evt-surface", "dev-1")
         assert isinstance(result, ReflexAlert)
         assert result.alert_id == "surface_caution"
         assert result.direction == "front"
