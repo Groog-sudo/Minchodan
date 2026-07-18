@@ -3007,3 +3007,28 @@
 - **관련 파일**: `.agents/skills/integration-test-orchestrator/references/implementation_detail.md`(신규), `.claude/skills/integration-test-orchestrator/`(신규 미러), `SKILLS.md`, `AGENTS.md`, `.antigravity/rules.md`
 - **검증 결과**: `python3 scripts/validate_agent_rules.py` 6/6 통과(CLAUDE.md thin pointer, GEMINI.md symlink, `.antigravity/rules.md` 캡·핵심섹션, `.cursor` core rule, 스킬 미러, `AGENTS.md` `@SKILLS.md` import).
 - **비고**: Cursor는 `.cursor/rules/00-core-guidelines.mdc`를 통해 AGENTS.md를 간접 참조하므로 별도 등재 불필요(기존 아키텍처 그대로 적용됨). Claude Code는 스킬 파일 생성 시점부터 자동 인식(Skill 도구 목록에 즉시 노출 확인).
+
+---
+
+### 2026-07-18 | 거리 정책 | 거리 정책 SSOT 1단계 - Near 전용 반사 라우팅 + episode 상태기계
+
+- **배경**: `/Users/kwanbum/Downloads/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md`(gpt5.6 작성, 알림 피로 원인 감사)와 `/Users/kwanbum/Downloads/LiDAR_distanceMeters.md`(iOS LiDAR 실시간 융합 요청서)를 정합성 검토한 결과 두 문서가 정면으로 충돌함을 확인(전자는 "Near만 반사, Medium/Far는 인지"를 제안하는데, 후자는 LiDAR 실측을 0.5/1.0/1.5/3.0m 4단계로 매핑해 그 Medium/Far까지 다시 반사로 재도입하려 함). 사용자 지시에 따라 `docs/research/lidar_fusion_sequencing_plan.md`(1~4단계 실행 순서 계획서)를 먼저 작성했고, 그중 1단계(거리 정책 SSOT + Near 전용 반사 + episode 상태기계 + 클라이언트 4단계 로컬 비프 제거)를 이번 세션에서 실제로 구현했다. 담당자 학습형 협업 원칙(AGENTS.md §5, SKILLS.md)상 핵심 판단 로직은 통상 담당자가 직접 작성하나, 사용자가 이번 1단계 전체를 에이전트가 직접 구현하도록 명시적으로 예외 지시함.
+- **변경 내용 (서버, 커밋 2건)**:
+  - `server/detection/distance_policy.py`(신규) - bbox 클리핑, area_ratio/bottom_ratio 계산, Near(0.10 진입/0.08 이탈)·Medium(0.03 진입/0.025 이탈) 히스테리시스, 하단 소형 장애물 override(bottom_ratio>=0.80 및 area_ratio>=0.04), route(reflex/cognitive) 결정을 순수 함수로 분리. `POLICY_VERSION="distance-alert-v1"`.
+  - `server/detection/bytetrack_tracker.py` - `update()`가 frame_width/height를 받아 Redis에 저장된 track별 이전 구역(`effective_zone`)을 조회하고 `distance_policy.evaluate_distance()`로 히스테리시스 반영 신규 구역을 계산해 매 프레임 `Detection`에 부착.
+  - `server/detection/detection_pipeline.py` - `run()`이 `stream` 인자를 실제로 사용해 반사(8~10fps)는 안전 게이트(Near 반사·머리높이·노면)만, 인지(1~2fps)는 mid/low 분류·보도 이탈만 평가하도록 분리(이전에는 stream을 받고도 미사용 - 반사 프레임에서 인지 후보가, 인지 프레임에서 반사 경보가 만들어질 수 있던 결함).
+  - `server/detection/gates/reflex_gate.py` - 자체 면적비·의사거리 공식(`MIN_AREA_RATIO`, 하단 override)을 제거하고 tracker가 부착한 `route=="reflex"`(`effective_distance_zone=="near"`)만 소비. Medium/Far 일반 객체 반사가 구조적으로 발생하지 않음.
+  - `server/detection/direction.py` - `estimate_distance()`를 `distance_policy`(0.10/0.03 경계) 위임 얇은 wrapper로 전환(기존 0.08/0.03 경계 통일).
+  - `server/detection/schemas.py` - `Detection`에 area_ratio/bottom_ratio/raw_distance_zone/effective_distance_zone/heuristic_distance_m/distance_source/route/route_reason/policy_version 추가. `ReflexAlert`에 alert_source(object/head_level/surface)/event_state(enter/update)/estimated_distance_m/policy_version 추가. 신규 `ReflexClear` 스키마 추가.
+  - `server/detection/gates/head_level_gate.py`, `surface_gate.py` - ReflexAlert에 `alert_source="head_level"`/`"surface"` 부여.
+  - `server/tts/suppressor.py` - 억제 키에 `alert_source` 포함(서로 다른 위험 유형이 `track_id="unknown"` 하나로 교차 억제되던 결함 수정). device별 활성 Near episode(`_active_near_track`) 추적과 `begin_or_continue_near_episode()`(enter/update 판정)·`end_near_episode()` 추가.
+  - `server/detection/consumer.py` - `_reconcile_near_episode()` 신설: reflex 스트림의 모든 프레임에서 활성 Near track이 이번 프레임에 더 이상 near가 아니면 `reflex_clear`를 전송. `_send_reflex_alert()`가 성공 여부(`bool`)를 반환하도록 바꾸고, 억제/전송 실패 시 800ms 후속 인지 태스크를 예약하지 않도록 수정. `_trigger_delayed_cognitive_guide()`가 avoidance 방향이 없으면(다중 객체 등) 일반 Near 존재 안내(반사와 같은 사실의 TTS 반복)를 아예 생략하도록 수정.
+- **변경 내용 (클라이언트, 커밋 1건)**:
+  - `client/src/components/CameraView.tsx` - 서버 연결 끊김 시 켜지는 온디바이스 폴백(`applyLocalAreaReflex`)의 area_ratio 4단계(0.20/0.08/0.03)와 LiDAR 4단계(0.5/1.0/1.5/3.0m) 중 Medium/Far 단계를 제거해 Near 전용으로 축소. Near 경계를 서버 SSOT(`URGENT_AREA_RATIO=0.10`)와 LiDAR 환산값(0.7m)에 맞춤. 근접 후보가 없을 때 중·원거리 객체까지 로컬 반사로 승격하던 `outdoorScopedDetections` 분기와 미사용이 된 `hasOutdoorSurface`/`OUTDOOR_SURFACE_CLASSES` 삭제.
+  - `client/src/hooks/useWebSocket.ts` - `reflex_clear` 메시지 수신 시 즉시 비프·햅틱 정지 처리 추가.
+  - `client/src/types/detection.ts` - `MessageType`에 `reflex_clear` 추가, `WSMessage`에 alert_source/event_state/estimated_distance_m/policy_version/track_id/reason 필드 추가.
+- **문서 동기화**: `docs/design/risk_ssot_contract.md`를 v0.4.0으로 갱신 - §2-B에서 이관된 거리 계산을 §2-C(신설, distance_policy.py SSOT)로 분리, §3 거리 추정 산식 행과 §6 후속 로드맵(2단계 "부분 완료"로 갱신) 갱신.
+- **비범위 (이번 세션에서 다루지 않음)**: `lidar_fusion_sequencing_plan.md`의 2단계(LiDAR 실시간 융합 정책 재작성), 3단계(네이티브 세션 충돌 스파이크), 4단계(DepthFusionCaptureBridge 착수 여부), 그리고 원 계획서 §16의 5단계(Medium/Far Fast Lane TTS 예산 확장)는 포함하지 않음. `shared/risk_rules.json` + 코드 생성기 방식(§6 로드맵 2단계 전체)도 미착수 - 기존 §2 패턴과 동일하게 수동 값 동기화를 유지함.
+- **관련 파일**: `server/detection/distance_policy.py`(신규), `tests/test_distance_policy.py`(신규), `server/detection/{bytetrack_tracker,detection_pipeline,direction,schemas}.py`, `server/detection/gates/{reflex_gate,head_level_gate,surface_gate}.py`, `server/tts/suppressor.py`, `server/detection/consumer.py`, `tests/test_detection.py`, `client/src/components/CameraView.tsx`, `client/src/hooks/useWebSocket.ts`, `client/src/types/detection.ts`, `docs/design/risk_ssot_contract.md`
+- **검증 결과**: `ruff check .`/`ruff format --check` 전체 통과. `mypy` 신규 에러 없음(기존 베이스라인과 동일). `pytest tests/test_detection.py tests/test_distance_policy.py tests/test_risk_ssot.py tests/test_suppressor_rearm.py tests/test_cognitive_fields.py tests/test_fast_lane.py tests/test_langgraph.py` 138 passed. 전체 `pytest tests/` 336 passed(환경 의존 실패 9건은 로컬 Ollama/서버 미기동으로 인한 기존 실패와 동일 성격, 회귀 아님). `npx tsc --noEmit`(client) 클린.
+- **비고**: 실기기 검증(서버 연결 정상·끊김 전환 시 Near enter/update/reflex_clear 흐름, 오프라인 폴백 Near 전용 동작)은 이번 세션에서 수행하지 못함 - 다음 실기기 테스트 세션에서 확인 필요. `docs/research/lidar_fusion_sequencing_plan.md`는 사용자가 커밋 확정을 명시적으로 지시하지 않아 여전히 미추적(untracked) 상태로 남겨둠.
