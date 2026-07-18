@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.8 (2026-07-18 필드 테스트 2차 개선 T1/T2/T3 신규 TC 등재: TC-DET-019 접근 객체 선필터 완화, TC-LG-012~013 회랑/접근 필터·쿨다운 단축, TC-TTS-008~009 통합 오디오 우선순위/서버 STT 억제 + 이전 v0.6.7: M1-M7 TC 등재)
+> **버전**: v0.6.9 (2026-07-18 정합성 검토로 발견된 결함 2건 수정 반영: TC-DET-019 테스트 mock에 last_pos 누락으로 실패하던 것을 수정, TC-TTS-009 서버 STT 억제가 응답 전송 직후 즉시 풀리던 gap을 예상 재생시간+마진 TTL로 정정 + 이전 v0.6.8: T1/T2/T3 신규 TC 등재 + 이전 v0.6.7: M1-M7 TC 등재)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -225,7 +225,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-TTS-006 | TTS 실패 우회       | 기기 내장 TTS로 우회                 | 대기 |
 | TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인              | 완료 |
 | **TC-TTS-008** | 통합 오디오 우선순위 조정자 (T3-C) | STT 상호작용 중 인지 안내(priority=1) 드롭, STT 응답(priority=2)은 인지 안내를 선점. 반사(P3)는 항상 통과. 단말 `audioEngine` 우선순위 상태 및 콜백 해제 검증 (TSC + 단말 수동) | 신규 (2026-07-18) |
-| **TC-TTS-009** | 서버 STT 활성 중 인지 발행 억제 (T3-S) | `_handle_stt_audio`가 `_process_stt_audio` 진입 시 `manager.set_stt_active(true)`, 종료 시 `false`. `DetectionConsumer._send_cognitive_guide`는 STT 활성 device_id에서 조기 반환. 반사 경로는 억제되지 않음 (`tests/test_ws_router_stt.py`, `tests/test_detection.py`) | 신규 (2026-07-18) |
+| **TC-TTS-009** | 서버 STT 활성 중 인지 발행 억제 (T3-S) | `_handle_stt_audio`가 `_process_stt_audio` 진입 시 `manager.set_stt_active(true)`. 응답 전송 후에는 `_estimate_stt_hold_seconds()`가 계산한 예상 재생시간+마진만큼 `ttl_seconds`로 연장(2026-07-18 정정 - 최초 구현은 전송 직후 즉시 해제하는 gap이 있었음). `DetectionConsumer._send_cognitive_guide`는 STT 활성 device_id에서 조기 반환. 반사 경로는 억제되지 않음 (`tests/test_ws_router_stt.py::test_stt_audio_success_extends_stt_active_ttl`, `TestEstimateSttHoldSeconds`, `tests/test_detection.py`) | 신규 (2026-07-18, 2026-07-18 억제 창 정정) |
 
 > **7단계 비고 (2026-07-01)**: `docs/reflex_audio_specification.md`에 근거한 입체 비프음(`audioEngine.ts`) 및 햅틱 엔진(`hapticEngine.ts`) 구현 완료. 반사 경보 수신 시 인지 음성 선점 차단 및 동시 햅틱 피드백 검증 완료.
 > **7단계 비고 (2026-07-08)**: TC-TTS-005 — `AlertSuppressor`(60초 setex)는 구현돼 있었으나 실제 반사 전송 경로(`server/detection/consumer.py`의 `_send_reflex_alert`)에서 호출되지 않아 중복 억제가 실질적으로 동작하지 않던 결함을 발견해 연결. `tests/test_detection.py::TestReflexAlertSuppression` 2건(억제/비억제 각 케이스)으로 검증 완료.

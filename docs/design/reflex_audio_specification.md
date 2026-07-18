@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.0 (2026-07-13 긴급=핑퐁만 / 여유=음성 채널 분기, §3.1·§4.2·§5 정합)
+> **버전**: v1.3.1 (2026-07-18 §5.3 T3-S 서버 STT 억제 게이트 정정 - 응답 전송 직후 즉시 해제하던 것을 예상 재생시간+마진까지 TTL 연장하도록 수정. 기존 v1.3.0 이력 유지: 2026-07-13 긴급=핑퐁만 / 여유=음성 채널 분기, §3.1·§4.2·§5 정합)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -147,7 +147,9 @@ graph TD
 
 ### 5.3 서버 STT 억제 게이트 (T3-S, 2026-07-18)
 
-`server/api/session_manager.py`의 `_stt_activity` 레지스트리를 통해 STT 처리 중인 device_id를 추적한다. `server/api/ws_router.py`의 `_handle_stt_audio`가 `_process_stt_audio` 진입 시 `manager.set_stt_active(device_id, True)`를 호출하고, 처리 종료 시 `manager.set_stt_active(device_id, False)`를 호출한다. `server/detection/consumer.py`의 `_send_cognitive_guide` 진입부에서 `manager.is_stt_active(device_id)`가 true면 인지 가이드 발행을 조기 반환하여 연산 낭비와 경쟁 창을 제거한다. 반사 경로 `_send_reflex_alert`는 이 게이트를 적용하지 않는다.
+`server/api/session_manager.py`의 `_stt_activity` 레지스트리를 통해 STT 처리 중인 device_id를 추적한다. `server/api/ws_router.py`의 `_handle_stt_audio`가 `_process_stt_audio` 진입 시 `manager.set_stt_active(device_id, True)`를 호출한다. `server/detection/consumer.py`의 `_send_cognitive_guide` 진입부에서 `manager.is_stt_active(device_id)`가 true면 인지 가이드 발행을 조기 반환하여 연산 낭비와 경쟁 창을 제거한다. 반사 경로 `_send_reflex_alert`는 이 게이트를 적용하지 않는다.
+
+**2026-07-18 정정**: 최초 구현은 응답 전송 직후(`finally`) 즉시 `manager.set_stt_active(device_id, False)`를 호출해, 실제 오디오 재생 구간에는 서버 억제가 이미 풀려 있는 gap이 있었다. `_process_stt_audio`가 응답 전송 시점에 `_estimate_stt_hold_seconds()`(클라이언트 `useWebSocket.ts`의 텍스트 길이 추정 + 1200ms 마진 공식과 동일)로 예상 재생 시간(초)을 계산해 반환하고, `_handle_stt_audio`가 이를 `set_stt_active(device_id, False, ttl_seconds=hold_seconds)`로 전달해 예상 재생 종료 시점까지 억제를 연장하도록 정정했다.
 
 ---
 

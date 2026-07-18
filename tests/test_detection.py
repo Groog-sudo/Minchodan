@@ -1,3 +1,4 @@
+import json
 import sys
 from unittest.mock import AsyncMock
 
@@ -951,8 +952,17 @@ class TestApproachingHitCountRelax:
 
     @pytest.mark.asyncio
     async def test_approaching_hit_count_two_passes(self, frame, mock_redis_bus):
-        """direction=="approaching"이면 hit_count=2로 인지 경로에 통과한다."""
-        mock_redis_bus.get_track_context = AsyncMock(return_value={"hit_count": "1"})
+        """direction=="approaching"이면 hit_count=2로 인지 경로에 통과한다.
+
+        ByteTrackTracker.update()는 stub Detection의 direction/hit_count를 항상
+        재계산해 덮어쓰므로(_compute_motion), "approaching"을 실제로 발동시키려면
+        prev 컨텍스트에 last_pos(이전 프레임 bbox)까지 채워 현재 bbox보다 더 위(=화면
+        하단과의 거리가 먼)에 있었던 것처럼 만들어야 한다(하단 y가 커질수록 접근으로 판정).
+        """
+        prev_bbox_json = json.dumps({"x": 100.0, "y": 50.0, "w": 200.0, "h": 200.0})
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={"hit_count": "1", "last_pos": prev_bbox_json}
+        )
         det = Detection(
             class_name="bicycle",
             confidence=0.8,

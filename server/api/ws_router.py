@@ -165,6 +165,23 @@ def _get_stt_lock(device_id: str) -> asyncio.Lock:
     return _stt_locks[device_id]
 
 
+# T3-S (2026-07-18): STT 응답 재생 예상 시간(초) 추정. client/src/hooks/useWebSocket.ts의
+# textEstimateMs(글자당 180ms, 최소 2000ms) + estimatedMs(서버 duration_ms와 텍스트 추정치 중
+# 큰 값) + 1200ms 마진 계산과 동일한 공식을 서버측 STT 억제 TTL에도 적용해, 응답 전송 직후가
+# 아니라 실제 재생이 끝날 것으로 추정되는 시점까지 인지 가이드 발행 억제를 유지한다.
+_STT_HOLD_MS_PER_CHAR = 180.0
+_STT_HOLD_MIN_TEXT_MS = 2000.0
+_STT_HOLD_MARGIN_MS = 1200.0
+
+
+def _estimate_stt_hold_seconds(guidance_text: str, duration_ms: float = 0.0) -> float:
+    if not guidance_text:
+        return 0.0
+    text_estimate_ms = max(len(guidance_text) * _STT_HOLD_MS_PER_CHAR, _STT_HOLD_MIN_TEXT_MS)
+    estimated_ms = max(duration_ms or 0.0, text_estimate_ms)
+    return (estimated_ms + _STT_HOLD_MARGIN_MS) / 1000.0
+
+
 async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
     """STT 음성 명령 메시지를 처리한다: 오디오 저장 -> 전사 -> 네비게이션/LLM 브리지 -> TTS 합성.
 
@@ -179,6 +196,11 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
     T3-S (2026-07-18): STT 처리 구간 동안 해당 device_id의 인지 가이드 발행을 억제한다.
     클라이언트 audioEngine 우선순위 조정자가 1차 방어선이며, 서버 억제는 이중 방어/연산
     낭비 제거용이다. 반사 경로는 이 상태와 무관하게 항상 통과한다.
+
+    _process_stt_audio()는 응답 전송 완료 시점의 예상 재생 시간(초, 없으면 0.0)을
+    반환한다 - 억제를 응답 전송 즉시가 아니라 실제 재생이 끝날 것으로 추정되는 시점까지
+    유지하기 위함(2026-07-18 정정: 이전에는 전송 직후 즉시 해제해 재생 구간 동안
+    인지 경로가 계속 오케스트레이션을 시도하는 경쟁 창이 남아 있었다).
     """
     audio_b64 = data.get("audio_b64", "")
     if not audio_b64:
@@ -187,12 +209,14 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
 
     async with _get_stt_lock(device_id):
         manager.set_stt_active(device_id, True)
+        hold_seconds = 0.0
         try:
-            await _process_stt_audio(ws, device_id, data, audio_b64)
+            hold_seconds = await _process_stt_audio(ws, device_id, data, audio_b64)
         finally:
-            # STT 처리가 종료되면 인지 발행 억제 해제. 응답 오디오 재생 구간은
-            # 클라이언트 audioEngine 우선순위 게이트가 담당한다.
-            manager.set_stt_active(device_id, False)
+            # 응답 예상 재생시간 + 마진까지 억제를 연장(ttl_seconds=0이면 즉시 해제).
+            # 클라이언트 audioEngine이 실제 재생 종료 콜백으로 결정론적 해제를 담당하므로
+            # 이 TTL은 이중 방어(연산 낭비 제거)일 뿐 정확성의 1차 책임은 아니다.
+            manager.set_stt_active(device_id, False, ttl_seconds=hold_seconds)
 
 
 async def _handle_distance_probe_sample(device_id: str, data: dict) -> None:
@@ -327,7 +351,8 @@ def _audio_content_type_for_suffix(audio_suffix: str) -> str:
     return "application/octet-stream"
 
 
-async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> None:
+async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> float:
+    """STT 응답 처리 후, 예상 재생 시간(초)을 반환한다(호출부의 STT 억제 TTL 연장용)."""
     stt_event_id = f"stt-{device_id}-{now_ts()}"
     model_name = data.get("model_name")
     # 레이턴시 계측: 실기기 -> STT -> LLM -> TTS -> DB저장 스테이지별 ms를 모아
@@ -348,20 +373,21 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         audio_bytes = base64.b64decode(audio_b64)
     except (ValueError, TypeError) as e:
         logger.error(f"[WS] stt_audio base64 디코딩 실패: device_id={device_id}, {e}")
-        return
+        return 0.0
 
     if len(audio_bytes) < MIN_STT_AUDIO_BYTES:
         logger.warning(
             f"[WS] stt_audio 길이 부족 - 전사 생략: device_id={device_id}, "
             f"bytes={len(audio_bytes)}, min={MIN_STT_AUDIO_BYTES}"
         )
+        too_short_text = "음성이 너무 짧습니다. 버튼을 누른 채로 다시 말씀해 주세요."
         with contextlib.suppress(Exception):
             await ws.send_json(
                 {
                     "type": "guide",
                     "event_id": f"stt-short-{device_id}-{now_ts()}",
                     "risk_level": "low",
-                    "guidance_text": "음성이 너무 짧습니다. 버튼을 누른 채로 다시 말씀해 주세요.",
+                    "guidance_text": too_short_text,
                     "audio_codec": "wav",
                     "duration_ms": 0,
                     "transport": "none",
@@ -369,7 +395,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                     "ts": now_ts(),
                 }
             )
-        return
+        return _estimate_stt_hold_seconds(too_short_text)
 
     saved_path: Path | None = None
     try:
@@ -382,13 +408,14 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         # 0바이트 오디오 즉시 차단 - Whisper 예외 전에 안내 반환
         if len(audio_bytes) == 0:
             logger.warning(f"[WS] STT 오디오 0바이트: device_id={device_id}")
+            empty_audio_text = "음성이 녹음되지 않았습니다. 다시 시도해 주세요."
             with contextlib.suppress(Exception):
                 await ws.send_json(
                     {
                         "type": "guide",
                         "event_id": f"stt-empty-{device_id}-{now_ts()}",
                         "risk_level": "low",
-                        "guidance_text": "음성이 녹음되지 않았습니다. 다시 시도해 주세요.",
+                        "guidance_text": empty_audio_text,
                         "audio_codec": "wav",
                         "duration_ms": 0,
                         "transport": "none",
@@ -396,7 +423,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                         "ts": now_ts(),
                     }
                 )
-            return
+            return _estimate_stt_hold_seconds(empty_audio_text)
 
         with tempfile.NamedTemporaryFile(suffix=audio_suffix, delete=False) as temp_wav:
             temp_wav.write(audio_bytes)
@@ -462,7 +489,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                     )
             except Exception as e:
                 logger.error(f"[WS] stt_echo DB 로그 저장 실패: device_id={device_id}, {e}")
-            return
+            return 0.0
 
         logger.info(
             f"[WS] STT 안내 생성: device_id={device_id}, "
@@ -629,15 +656,17 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                     )
             except Exception as e:
                 logger.error(f"[WS] stt_audio DB 로그 저장 실패: device_id={device_id}, {e}")
+        return _estimate_stt_hold_seconds(guidance_text, duration_ms)
     except (KeyError, ValueError, RuntimeError) as e:
         logger.error(f"[WS] STT 전사 실패: device_id={device_id}, {e}")
+        error_text = "음성 인식에 실패했습니다. 다시 말씀해 주세요."
         with contextlib.suppress(Exception):
             await ws.send_json(
                 {
                     "type": "guide",
                     "event_id": f"stt-error-{device_id}-{now_ts()}",
                     "risk_level": "low",
-                    "guidance_text": "음성 인식에 실패했습니다. 다시 말씀해 주세요.",
+                    "guidance_text": error_text,
                     "audio_codec": "wav",
                     "duration_ms": 0,
                     "transport": "none",
@@ -645,6 +674,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                     "ts": now_ts(),
                 }
             )
+        return _estimate_stt_hold_seconds(error_text)
     finally:
         if saved_path is not None:
             saved_path.unlink(missing_ok=True)
