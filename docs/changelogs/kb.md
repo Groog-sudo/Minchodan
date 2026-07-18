@@ -2924,3 +2924,21 @@
 - **관련 파일**: `docs/ops/deployment_guide.md`(§2.1 mariadb 포트 열, §9 트러블슈팅 표, v0.5.3), `docs/ops/environment_variables.md`(`DB_HOST_PORT` 행, v0.4.20)
 - **검증 결과**: 병합 후 `ruff check .` All checks passed. 문서 수정은 서술형이라 별도 린트 대상 아님.
 - **비고**: vision-camera 세션과 LiDAR 세션 동시 실행(실시간 라이브 융합), `scripts/analyze_lidar_validation.py`의 실데이터 집계, dg2의 index.html GPS 수정에 대한 실기기 회귀 검증은 이번 병합 작업 범위 밖(각 원 브랜치 커밋 시점에 개별 검증됨).
+
+
+---
+
+### 2026-07-18 | 기능 | 필드 테스트 2차 개선 T1/T2/T3 구현 (문서-코드 정합성 동기화)
+
+- **커밋**: `feat: 필드 테스트 2차 개선 T1/T2/T3 구현 (T3-C 오디오 우선순위, T3-S STT 억제, T2-G 회랑/접근 필터, T1-a/b 접근 객체 완화/쿨다운 단축)`
+- **변경 내용**:
+  - **T3-C 클라이언트 통합 오디오 우선순위 조정자**: client/src/services/audioEngine.ts에 P3(반사)/P2(STT)/P1(인지) 우선순위 모델 도입, setSttActive/priority 인자 추가, 결정론적 콜백 해제. client/src/hooks/useWebSocket.ts에서 sttInteractionActiveRef 기반 뮤트를 제거하고 audioEngine 우선순위 게이트에 의존. client/src/components/CameraView.tsx에서 STT 녹음 시작 시 setSttActive(true) 호출.
+  - **T3-S 서버 STT 활성 중 인지 발행 억제 게이트**: server/api/session_manager.py에 _stt_activity 레지스트리 추가. server/api/ws_router.py에서 STT 처리 구간 동안 set_stt_active(true/false). server/detection/consumer.py에서 _send_cognitive_guide 진입부에 is_stt_active 체크, 반사 경로는 제외.
+  - **T2-G 인지 발화 회랑/접근 필터**: server/detection/consumer.py에 _is_speech_worthy 메서드 추가. 보도 이탈/고위험/중위험/접근 객체/유의미 노면은 통과, 측면/원거리/정적 저위험은 무발화. GUIDE_LOW_RISK_NARRATION 환경 변수로 저위험 내레이션 제어.
+  - **T1-a/b 접근 신규 객체 완화 및 쿨다운 단축**: server/detection/detection_pipeline.py에서 접근 객체(direction==approaching) hit_count 선필터를 4에서 2로 완화. server/detection/consumer.py에서 12시 회랑 접근 + near/medium이면 쿨다운을 3초로 단축.
+  - **문서 동기화**: docs/design/reflex_audio_specification.md, docs/design/architecture.md(v0.4.11), docs/ops/environment_variables.md(v0.4.21), docs/ops/test_specification.md(v0.6.8), .env.example에 T1/T2/T3 설계 반영.
+  - **테스트 추가**: tests/test_detection.py에 TestApproachingHitCountRelax, TestSpeechWorthyFilter, TestApproachingCooldownShortcut, TestSttActiveCognitiveSuppression 클래스 추가.
+  - **기존 린트 잔여 오류 정리**: client/src/components/CameraView.tsx absoluteFillObject -> absoluteFill, client/src/hooks/useSttRecorder.ts 상태 비교 조건 정정.
+- **관련 파일**: client/src/services/audioEngine.ts, client/src/hooks/useWebSocket.ts, client/src/components/CameraView.tsx, server/api/session_manager.py, server/api/ws_router.py, server/detection/consumer.py, server/detection/detection_pipeline.py, docs/design/reflex_audio_specification.md, docs/design/architecture.md, docs/ops/environment_variables.md, docs/ops/test_specification.md, .env.example, tests/test_detection.py, client/src/hooks/useSttRecorder.ts
+- **검증 결과**: python3 -m ruff format . && python3 -m ruff check . All checks passed. npx tsc --noEmit(client) 통과. pytest는 현재 Python 3.9/macOS 시스템 Python 환경에 redis 의존성 미설치로 실행 불가(개발/배포 환경 Python 3.13에서 재검증 필요). bandit/mypy는 해당 환경에 미설치.
+- **비고**: field_test_round2_improvement_plan.md 설계대로 구현. 서버 억제는 클라이언트 audioEngine 우선순위 조정자의 이중 방어/연산 낭비 제거용. 반사 경로는 T3-S 억제 게이트를 거치지 않는다(비협상 원칙).

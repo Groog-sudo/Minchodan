@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.7 (2026-07-17 필드 테스트 개선 M1-M7 신규 TC 등재: TC-DET-012~018 큐 최신성/재무장/소형객체/Approach-Lost/surface 히스테리시스/STAIR_DOWN 5클래스/지연관측, TC-LG-010~011 발화가치게이트/avoidance fast lane + 이전 v0.6.6 이력 유지: TC-SMOKE-006 생활지원 RAG 통합 smoke 검증 + 이전 v0.6.5 이력 유지: 2026-07-11 TC-DET-011 반사 위험도 SSOT 정합 테스트 신설(`tests/test_risk_ssot.py`), STT 회귀 테스트 실구현·플랫폼별 녹음·반사 경보 미전송 검증 반영)
+> **버전**: v0.6.8 (2026-07-18 필드 테스트 2차 개선 T1/T2/T3 신규 TC 등재: TC-DET-019 접근 객체 선필터 완화, TC-LG-012~013 회랑/접근 필터·쿨다운 단축, TC-TTS-008~009 통합 오디오 우선순위/서버 STT 억제 + 이전 v0.6.7: M1-M7 TC 등재)
 > **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
 
 ---
@@ -148,6 +148,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | **TC-DET-016** | surface_caution 히스테리시스 (P2-1b) | `SURFACE_CAUTION_CONFIRM_STREAK=2` 연속 프레임 확인 후 반사 발동. 단일 프레임 오탐 스킵. caution alert STAIR_DOWN 힌트 매핑 (`tests/test_detection.py::TestSurfaceCautionHysteresis`) | 완료 (2026-07-17 신설) |
 | **TC-DET-017** | STAIR_DOWN 5클래스 활성화 (P2-1c) | 5클래스 모델 `stair_down`/`manhole` 클래스가 surface_gate 즉시 경보 대상. `surface_stair_down` alert STAIR_DOWN 힌트 매핑 (`tests/test_detection.py::TestLatencyAlertAndStairDown`) | 완료 (2026-07-17 신설) |
 | **TC-DET-018** | 파이프라인 지연 관측 (P2-2) | `REFLEX_LATENCY_ALERT_MS=300`/`COGNITIVE_LATENCY_ALERT_MS=3000` 초과 시 콘솔 `latency_event`에 `latency_alert=True` 필드 추가 (`tests/test_detection.py::TestLatencyAlertAndStairDown`) | 완료 (2026-07-17 신설) |
+| **TC-DET-019** | 접근 객체 선필터 완화 (T1-a) | `direction=="approaching"` 객체는 hit_count 2로 즉시 통과, 정적 객체는 4프레임 요구. `tests/test_detection.py::TestApproachingHitCountRelax` | 신규 (2026-07-18) |
 
 ### 5.4 4단계 - RAG 지식베이스 구축
 
@@ -194,6 +195,8 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-LG-009 | GPU Monitor 핫스왑  | GPU 리소스 임계치 돌파 시 OpenAI 핫스왑   | 완료 |
 | **TC-LG-010** | 발화 가치 게이트 (P1-2) | 동일 상황(객체+표면 서명) 반복 안내 `COGNITIVE_UTTERANCE_COOLDOWN_S=30s` 내 TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시 발화 (`tests/test_detection.py::TestUtteranceValueGate`) | 완료 (2026-07-17 신설) |
 | **TC-LG-011** | 반사 후속 avoidance fast lane (P1-1) | 단일 객체 + 방향 확정 시 `build_avoidance_guidance()` 템플릿으로 즉시 우회 방향 안내 (LangGraph 우회). 다중 객체/방향 불확정 시 LangGraph 폴백 (`tests/test_langgraph.py::TestAvoidanceFastLane`) | 완료 (2026-07-17 신설) |
+| **TC-LG-012** | 인지 발화 회랑/접근 필터 (T2-G) | 12시 회랑 밖 정적 객체 또는 far 정적 객체는 `GUIDE_LOW_RISK_NARRATION=false`일 때 무발화. 보도 이탈·고위험·접근 객체·유의미 노면은 통과 (`tests/test_detection.py::TestSpeechWorthyFilter`) | 신규 (2026-07-18) |
+| **TC-LG-013** | 12시 회랑 접근 쿨다운 단축 (T1-b) | `direction=="approaching"` + `front` + `near/medium`이면 `_required_guide_gap_sec`가 3초로 단축 (`tests/test_detection.py::TestApproachingCooldownShortcut`) | 신규 (2026-07-18) |
 
 ### 5.7 공통 - MCP 및 실시간 관제 스트림
 
@@ -221,6 +224,8 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 | TC-TTS-005 | 중복 억제           | `setex(suppress:…, 60)` 60초         | 완료 |
 | TC-TTS-006 | TTS 실패 우회       | 기기 내장 TTS로 우회                 | 대기 |
 | TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인              | 완료 |
+| **TC-TTS-008** | 통합 오디오 우선순위 조정자 (T3-C) | STT 상호작용 중 인지 안내(priority=1) 드롭, STT 응답(priority=2)은 인지 안내를 선점. 반사(P3)는 항상 통과. 단말 `audioEngine` 우선순위 상태 및 콜백 해제 검증 (TSC + 단말 수동) | 신규 (2026-07-18) |
+| **TC-TTS-009** | 서버 STT 활성 중 인지 발행 억제 (T3-S) | `_handle_stt_audio`가 `_process_stt_audio` 진입 시 `manager.set_stt_active(true)`, 종료 시 `false`. `DetectionConsumer._send_cognitive_guide`는 STT 활성 device_id에서 조기 반환. 반사 경로는 억제되지 않음 (`tests/test_ws_router_stt.py`, `tests/test_detection.py`) | 신규 (2026-07-18) |
 
 > **7단계 비고 (2026-07-01)**: `docs/reflex_audio_specification.md`에 근거한 입체 비프음(`audioEngine.ts`) 및 햅틱 엔진(`hapticEngine.ts`) 구현 완료. 반사 경보 수신 시 인지 음성 선점 차단 및 동시 햅틱 피드백 검증 완료.
 > **7단계 비고 (2026-07-08)**: TC-TTS-005 — `AlertSuppressor`(60초 setex)는 구현돼 있었으나 실제 반사 전송 경로(`server/detection/consumer.py`의 `_send_reflex_alert`)에서 호출되지 않아 중복 억제가 실질적으로 동작하지 않던 결함을 발견해 연결. `tests/test_detection.py::TestReflexAlertSuppression` 2건(억제/비억제 각 케이스)으로 검증 완료.

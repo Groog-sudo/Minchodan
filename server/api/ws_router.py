@@ -175,6 +175,10 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
     라우터에서도 호출되지 않아 서버가 STT 요청을 받을 경로 자체가 없었다(main.py에는
     STT 라우팅이 전혀 없고, server/navigation/server.py는 별도 FastAPI 앱이라 클라이언트가
     실제로 붙는 /ws/detect와 무관했다). 이 핸들러가 그 배선을 연결한다.
+
+    T3-S (2026-07-18): STT 처리 구간 동안 해당 device_id의 인지 가이드 발행을 억제한다.
+    클라이언트 audioEngine 우선순위 조정자가 1차 방어선이며, 서버 억제는 이중 방어/연산
+    낭비 제거용이다. 반사 경로는 이 상태와 무관하게 항상 통과한다.
     """
     audio_b64 = data.get("audio_b64", "")
     if not audio_b64:
@@ -182,7 +186,13 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
         return
 
     async with _get_stt_lock(device_id):
-        await _process_stt_audio(ws, device_id, data, audio_b64)
+        manager.set_stt_active(device_id, True)
+        try:
+            await _process_stt_audio(ws, device_id, data, audio_b64)
+        finally:
+            # STT 처리가 종료되면 인지 발행 억제 해제. 응답 오디오 재생 구간은
+            # 클라이언트 audioEngine 우선순위 게이트가 담당한다.
+            manager.set_stt_active(device_id, False)
 
 
 async def _handle_distance_probe_sample(device_id: str, data: dict) -> None:

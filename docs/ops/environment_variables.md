@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-16
-> **버전**: v0.4.20 (2026-07-18 `DB_HOST_PORT` 적용 범위 정정 — dg2 브랜치 병합으로 `docker-compose.yml`의 MariaDB 호스트 포트 노출이 비활성화되어 `docker-compose.macos.yml` 전용으로 명시. 기존 v0.4.19 이력 유지: §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영)
+> **버전**: v0.4.21 (2026-07-18 T2-G `GUIDE_LOW_RISK_NARRATION` 환경 변수 추가 — 이전 v0.4.20: `DB_HOST_PORT` 적용 범위 정정 — dg2 브랜치 병합으로 `docker-compose.yml`의 MariaDB 호스트 포트 노출이 비활성화되어 `docker-compose.macos.yml` 전용으로 명시. 기존 v0.4.19 이력 유지: §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -81,6 +81,7 @@
 | **`SURFACE_CAUTION_CONFIRM_STREAK`** | int | 선택 | `2` | **2026-07-17 신규 (P2-1b).** surface_caution(계단/맨홀 통합) 반사 발동 히스테리시스. 연속 N 프레임 확인 후 반사 발동해 단일 프레임 오탐 완화 | `server/detection/consumer.py` |
 | **`REFLEX_LATENCY_ALERT_MS`** | float | 선택 | `300` | **2026-07-17 신규 (P2-2).** 반사 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_event에 latency_alert=True (비협상 목표 <300ms) | `server/detection/consumer.py` |
 | **`COGNITIVE_LATENCY_ALERT_MS`** | float | 선택 | `3000` | **2026-07-17 신규 (P2-2).** 인지 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_alert=True (가이드 허용 범위 <3000ms) | `server/detection/consumer.py` |
+| **`GUIDE_LOW_RISK_NARRATION`** | bool | 선택 | `false` | **2026-07-18 신규 (T2-G).** `true`이면 저위험(low) 순수 내레이션을 발화한다. `false`이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 안내를 억제해 청각 피로를 줄인다. 보도 이탈, 고위험, 접근 객체, 유의미 노면은 예외로 항상 발화 | `server/detection/consumer.py` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 

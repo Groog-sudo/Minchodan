@@ -57,6 +57,17 @@ class AudioEngine {
    * 탐지/햅틱/비프 로직 자체는 계속 동작하며 콘솔 출력만 억제한다.
    */
   public isGuidePlaying = false;
+  /**
+   * T3-C (2026-07-18): 인지/STT 음성 가이드 간 우선순위 조정자 상태.
+   * 0=idle, 1=인지 안내(cognitive), 2=STT 응답(stt). 반사 경로(비프/클립)는 별도
+   * 최상위 채널이므로 이 상태를 거치지 않는다(P3, 비협상 안전 원칙).
+   */
+  private activeGuidePriority: 0 | 1 | 2 = 0;
+  /**
+   * T3-C (2026-07-18): STT 상호작용(녹음~응답 종료) 활성 여부. 활성 중에는 인지
+   * 경로 가이드(priority=1)를 드롭하고 STT 응답(priority=2)만 허용한다.
+   */
+  private sttActive = false;
   /** [TEMP DEBUG 2026-07-09] speakFallback 중복 호출 진단용 순번 카운터. */
   private _speakCallSeq = 0;
   /**
@@ -326,6 +337,44 @@ class AudioEngine {
   }
 
   /**
+   * T3-C (2026-07-18): STT 상호작용 구간을 활성화/비활성화한다. 활성화된 동안에는
+   * 인지 경로(priority=1) 안내를 드롭하여 STT 응답과의 충돌을 방지한다.
+   * STT 응답 오디오의 실제 종료 콜백에서 비활성화하는 것을 원칙으로 하며, 이 메서드는
+   * STT 녹음 시작/취소 시점에 호출한다.
+   */
+  public setSttActive(active: boolean): void {
+    this.sttActive = active;
+    if (!active) {
+      this.activeGuidePriority = 0;
+    }
+    console.log(`[AudioEngine] STT 상호작용 ${active ? "활성화" : "비활성화"}`);
+  }
+
+  /**
+   * T3-C (2026-07-18): 가이드 음성 재생 우선순위 판정. STT 상호작용 중이거나
+   * 현재 재생 중인 가이드보다 우선순위가 낮으면 드롭한다.
+   */
+  private canStartGuide(priority: 1 | 2): boolean {
+    if (this.sttActive && priority <= 1) {
+      console.log(`[AudioEngine] STT 상호작용 중 - 인지 가이드 드롭(priority=${priority})`);
+      return false;
+    }
+    if (priority < this.activeGuidePriority) {
+      console.log(`[AudioEngine] 낮은 우선순위 가이드 드롭: incoming=${priority}, active=${this.activeGuidePriority}`);
+      return false;
+    }
+    return true;
+  }
+
+  private setGuidePriority(priority: 1 | 2): void {
+    this.activeGuidePriority = priority;
+  }
+
+  private clearGuidePriority(): void {
+    this.activeGuidePriority = 0;
+  }
+
+  /**
    * 인지 경로 서버 TTS 결과(WAV base64)를 1회 재생합니다.
    * 반사 경로의 상시 루프 플레이어(panPlayers)와는 별개의 일회성 플레이어를 사용한다.
    */
@@ -386,11 +435,25 @@ class AudioEngine {
    * 후보(base64 인코딩/디코딩 및 RN 구 브릿지의 대용량 문자열 처리)를 제거하기
    * 위함. 진단 결과에 따라 playGuideAudio()를 완전히 대체하거나 폐기될 수 있다.
    */
-  public async playGuideAudioBytes(wavBytes: Uint8Array): Promise<void> {
-    if (!wavBytes || wavBytes.length === 0) return;
+  public async playGuideAudioBytes(
+    wavBytes: Uint8Array,
+    priority: 1 | 2 = 1,
+    onComplete?: () => void,
+  ): Promise<void> {
+    if (!wavBytes || wavBytes.length === 0) {
+      onComplete?.();
+      return;
+    }
 
     const callTs = Date.now();
-    console.log(`[AudioEngine][DEBUG] playGuideAudioBytes 호출 ts=${callTs}, wasPlaying=${this.isGuidePlaying}, bytes=${wavBytes.length}`);
+    console.log(`[AudioEngine][DEBUG] playGuideAudioBytes 호출 ts=${callTs}, wasPlaying=${this.isGuidePlaying}, bytes=${wavBytes.length}, priority=${priority}`);
+
+    // T3-C (2026-07-18): 우선순위 조정자. STT 상호작용 중이거나 현재 재생 중인
+    // 가이드보다 우선순위가 낮으면 드롭한다.
+    if (!this.canStartGuide(priority)) {
+      onComplete?.();
+      return;
+    }
 
     // 선점(Preemption): speakFallback()(단말 TTS)이 재생 중이었다면 중단한다.
     // 웜 플레이어 자체는 stopGuideAudio()를 거치지 않고 아래 replace()가 직접
@@ -419,6 +482,7 @@ class AudioEngine {
       this.guidePlayer = guidePlayer;
       this.guideFileUri = file.uri;
       this.isGuidePlaying = true;
+      this.setGuidePriority(priority);
 
       guidePlayer.loop = false;
       guidePlayer.replace({ uri: file.uri });
@@ -429,6 +493,8 @@ class AudioEngine {
       guidePlayer.addListener("playbackStatusUpdate", (status) => {
         if (status.didJustFinish && this.guidePlayer === guidePlayer) {
           console.log(`[AudioEngine][DEBUG] (bytes) 자연 종료(didJustFinish) ts=${callTs}, currentTime=${status.currentTime}, duration=${status.duration}`);
+          this.clearGuidePriority();
+          onComplete?.();
           this.stopGuideAudio();
         }
       });
@@ -509,8 +575,19 @@ class AudioEngine {
    * 온보딩·SMS 읽어주기 등도 이 경로를 쓰므로, Android 기본 기계음 완화를 위해
    * Google Neural 계열 ko 음성을 우선 선택한다(미설치 시 OS 기본).
    */
-  public speakFallback(text: string, onComplete?: () => void): void {
+  public speakFallback(
+    text: string,
+    priority: 1 | 2 = 1,
+    onComplete?: () => void,
+  ): void {
     if (!text || !text.trim()) {
+      onComplete?.();
+      return;
+    }
+
+    // T3-C (2026-07-18): 우선순위 조정자. STT 상호작용 중이거나 현재 재생 중인
+    // 가이드보다 우선순위가 낮으면 드롭한다.
+    if (!this.canStartGuide(priority)) {
       onComplete?.();
       return;
     }
@@ -519,16 +596,19 @@ class AudioEngine {
     // 동일/중복 guide 메시지가 겹쳐 도착해 speakFallback이 중복 호출되는지 확인한다.
     const callId = ++this._speakCallSeq;
     const callTs = Date.now();
-    console.log(`[AudioEngine][DEBUG] speakFallback 호출 id=${callId} ts=${callTs} wasPlaying=${this.isGuidePlaying} text="${text}"`);
+    console.log(`[AudioEngine][DEBUG] speakFallback 호출 id=${callId} ts=${callTs} wasPlaying=${this.isGuidePlaying} text="${text}" priority=${priority}`);
 
     void (async () => {
       const voice = await this.ensurePreferredKoVoice();
       if (callId !== this._speakCallSeq) {
+        this.clearGuidePriority();
+        onComplete?.();
         return;
       }
 
       this.stopGuideAudio();
       this.isGuidePlaying = true;
+      this.setGuidePriority(priority);
       Speech.speak(text, {
         language: "ko-KR",
         voice,
@@ -545,16 +625,19 @@ class AudioEngine {
         },
         onDone: () => {
           console.log(`[AudioEngine][DEBUG] speakFallback onDone id=${callId} ts=${Date.now()}`);
+          this.clearGuidePriority();
           this.isGuidePlaying = false;
           onComplete?.();
         },
         onStopped: () => {
           console.log(`[AudioEngine][DEBUG] speakFallback onStopped id=${callId} ts=${Date.now()}`);
+          this.clearGuidePriority();
           this.isGuidePlaying = false;
           onComplete?.();
         },
         onError: (err) => {
           console.error(`[AudioEngine] 단말 TTS 폴백 실패 id=${callId}:`, err);
+          this.clearGuidePriority();
           this.isGuidePlaying = false;
           onComplete?.();
         },
@@ -579,6 +662,7 @@ class AudioEngine {
     this.guidePlayer = null;
     this.guideFileUri = null;
     this.isGuidePlaying = false;
+    this.clearGuidePriority();
 
     if (prevPlayer) {
       if (prevPlayer === this.guideWarmPlayer) {

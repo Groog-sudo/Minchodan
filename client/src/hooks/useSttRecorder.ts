@@ -147,7 +147,7 @@ export function useSttRecorder(
     pendingStartRef.current = run;
     await run;
     pendingStartRef.current = null;
-    if (statusRef.current !== "recording" && statusRef.current !== "sending") {
+    if (statusRef.current === "idle") {
       startInFlightRef.current = false;
     }
   }, [recorder, ensurePermission, onError]);

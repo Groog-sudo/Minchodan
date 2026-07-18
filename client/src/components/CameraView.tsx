@@ -497,7 +497,6 @@ export function CameraView() {
     sendDetectionFrame,
     lastMessage,
     navRoute,
-    setSttInteractionActive,
     networkRttMs,
     networkRttAvgMs,
   } = useWebSocket(
@@ -593,7 +592,10 @@ export function CameraView() {
       delayedSttStartTimerRef.current = null;
     }
     void hapticEngine.trigger("short");
-    setSttInteractionActive(true);
+    // T3-C (2026-07-18): STT 녹음 시작 시점부터 인지 경로 가이드를 드롭한다.
+    // STT 응답 수신 시 useWebSocket.ts가 다시 활성화하고, 종료 콜백/안전 상한
+    // 타이머에서 해제한다.
+    audioEngine.setSttActive(true);
     setSttErrorInfo("");
     if (audioEngine.isGuidePlaying) {
       audioEngine.stopGuideAudio();
@@ -606,7 +608,7 @@ export function CameraView() {
     } else {
       void startSttRecording();
     }
-  }, [setSttInteractionActive, startSttRecording, setCapturePaused]);
+  }, [startSttRecording, setCapturePaused]);
 
   const onSttPressOut = useCallback(() => {
     if (!sttPressActiveRef.current) return;
@@ -1845,7 +1847,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   controlsOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 20,
     justifyContent: "flex-end",
     paddingBottom: 12,
