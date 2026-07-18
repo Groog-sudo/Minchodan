@@ -723,6 +723,19 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 
 ---
 
+### 2026-07-18 | 콘솔 UI | MCP 검증 및 저지연 모니터 기능상자 누락 명칭 복구 및 타임라인 상단 배치
+
+- **커밋**: `fix(console): DashboardPage 위젯 누락(mcpMonitor) 복구 및 타임라인 위 배치`
+- **변경 내용**:
+  - `DashboardPage.tsx`의 기능상자 위젯 타입/목록/기본 순서에서 누락된 `mcpMonitor` 명칭을 복구함
+  - `McpValidationMonitor` import는 유지한 상태로, 렌더 분기에 `mcpMonitor` 케이스를 연결해 실제 기능상자에서 다시 표시되도록 복구함
+  - 기본 위젯 순서를 조정해 `MCP 검증 및 저지연 모니터`가 `발화 추적 타임라인` 바로 위에 배치되도록 정렬함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 요청사항인 `MCP 검증 및 저지연 모니터 기능상자 import 밑 DashboardPage.tsx 에서 누락된 명칭 살리기`를 기준으로 최소 범위만 반영함
+
+---
+
 ### 2026-07-15 | 운영콘솔 UI | Detection Guidance Log 스트림 필터 드롭다운 및 깨진 이미지 fallback 보정
 
 - **커밋**: eat(console): Detection Guidance Log 스트림 선택 UI와 깨진 이미지 fallback 개선

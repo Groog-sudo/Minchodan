@@ -130,6 +130,7 @@ type DashboardWidgetKey =
   | "latency"
   | "liveFeed"
   | "telemetry"
+  | "mcpMonitor"
   | "timeline"
   | "guidanceLog"
   | "riskLog";
@@ -138,6 +139,7 @@ const DASHBOARD_WIDGETS: Array<{ key: DashboardWidgetKey; label: string; fullWid
   { key: "latency", label: "파이프라인 지연 요약", fullWidth: true },
   { key: "liveFeed", label: "Live Feed" },
   { key: "telemetry", label: "Device Telemetry & Control" },
+  { key: "mcpMonitor", label: "MCP 검증 및 저지연 모니터", fullWidth: true },
   { key: "timeline", label: "발화 추적 타임라인", fullWidth: true },
   { key: "guidanceLog", label: "Detection Guidance Log", fullWidth: true },
   { key: "riskLog", label: "RiskEventLog", fullWidth: true },
@@ -147,6 +149,7 @@ const DEFAULT_DASHBOARD_WIDGET_ORDER: DashboardWidgetKey[] = [
   "latency",
   "liveFeed",
   "telemetry",
+  "mcpMonitor",
   "timeline",
   "guidanceLog",
   "riskLog",
@@ -343,6 +346,17 @@ export function DashboardPage({
               ),
             )
           }
+        />
+      );
+    }
+
+    if (widgetKey === "mcpMonitor") {
+      return (
+        <McpValidationMonitor
+          audio={state.audio_validation}
+          cache={state.cache_suppression}
+          accessibility={state.accessibility_validation}
+          trace={state.langsmith_trace}
         />
       );
     }
