@@ -1604,7 +1604,7 @@ function getClassColor(className: string): string {
 function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {detections.map((d) => {
+      {detections.map((d, i) => {
         const color = getClassColor(d.className);
         const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
         const topPct = (d.bbox.y / FRAME_SIZE) * 100;
@@ -1621,7 +1621,9 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
         // 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생함(실기기 재현 확인, 2026-07-07).
         // 반드시 두 View 모두 바깥 absoluteFill 컨테이너의 직계 자식으로 유지해야 한다.
         // track_id가 없는 온디바이스 결과이므로 모델·클래스·반올림 bbox로 안정 키를 만든다.
-        const bboxKey = `${d.model}-${d.className}-${Math.round(d.bbox.x)}-${Math.round(d.bbox.y)}-${Math.round(d.bbox.w)}-${Math.round(d.bbox.h)}`;
+        // 겹친/중복(NMS 이전) 박스는 반올림 좌표까지 같을 수 있어 배열 인덱스를
+        // tie-breaker로 덧붙여 유일성을 보장한다(React 중복 key 경고 실측 수정).
+        const bboxKey = `${d.model}-${d.className}-${Math.round(d.bbox.x)}-${Math.round(d.bbox.y)}-${Math.round(d.bbox.w)}-${Math.round(d.bbox.h)}-${i}`;
         return (
           <Fragment key={bboxKey}>
             <View
