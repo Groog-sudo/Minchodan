@@ -819,6 +819,13 @@
 
         // WebSocket Connection
         function connectWebSocket() {
+            // 2026-07-18: 가드 부재로 GPS 주입(postMessage)마다 새 WebSocket이 무조건
+            // 생성돼 연결이 무한정 쌓이는 버그를 실측 확인(초당 여러 건). 이미 열려 있거나
+            // 연결 중이면 재사용한다 - 호출부 주석("중복 연결은 내부 가드에 맡긴다")이
+            // 가리키던, 실제로는 존재하지 않았던 가드.
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
             // 마운트 경로(/navigation 등)를 동적으로 반영하여 WebSocket 엔드포인트 계산
