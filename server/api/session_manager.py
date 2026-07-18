@@ -204,7 +204,13 @@ class SessionManager:
         return ws is not None and ws.application_state == WebSocketState.CONNECTED
 
     def list_connected_device_ids(self) -> list[str]:
-        """현재 CONNECTED 상태인 device_id 목록을 반환한다."""
+        """현재 CONNECTED 상태인 device_id 목록을 반환한다.
+
+        # 💡 [면접 대비 주석]
+        Q. 왜 dict 키만 안 보고 application_state까지 보나?
+        A. 끊긴 소켓이 맵에 남을 수 있다. debug TTS 푸시 대상은 실제 CONNECTED만.
+        """
+        # [바이브 코딩 부분] CONNECTED 필터 목록 생성.
         return [
             device_id
             for device_id, ws in self.active_connections.items()

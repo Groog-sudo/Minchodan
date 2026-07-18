@@ -19,6 +19,10 @@ from server.rag.vector_db_factory import VectorDBFactory
 load_dotenv()
 
 
+# [하드 코딩 부분 - 핵심] 생활지원 RAG 라우팅 키워드.
+# STT 브릿지가 이 목록에 부분문자열 매칭되면 convenience 컬렉션으로 보내고,
+# 아니면 일반 LLM(장애물 오케스트레이터 우회 대화)으로 보낸다.
+# 기관 약칭(한빛/새봄/푸른나무)과 인물명은 더미 데이터셋 메타와 맞춰 둔다.
 CONVENIENCE_QUERY_KEYWORDS = [
     "기관",
     "센터",
@@ -57,6 +61,8 @@ CONVENIENCE_QUERY_KEYWORDS = [
     "보조기기센터",
 ]
 
+# [하드 코딩 부분 - 핵심] 음성 TTS용 시스템 프롬프트.
+# 실기기에서 긴 답 + 마크다운(**)이 그대로 읽히는 문제가 있어 2문장/마크다운 금지를 고정한다.
 CONVENIENCE_SYSTEM_PROMPT = """당신은 시각장애인 생활지원 음성 안내 AI입니다.
 반드시 검색된 문서에 근거해서만 답변하세요. 답변은 스피커로 읽히므로 짧고 말하듯 작성합니다.
 
@@ -81,18 +87,23 @@ def _text(value) -> str:
 
 
 def _sanitize_spoken_answer(text: str) -> str:
-    """TTS용으로 마크다운/목록 기호를 제거하고 공백을 정리한다."""
+    """TTS용으로 마크다운/목록 기호를 제거하고 공백을 정리한다.
+
+    # 💡 [면접 대비 주석]
+    Q. 왜 LLM 프롬프트만으로 부족하고 후처리 sanitize가 필요한가?
+    A. 모델이 규칙을 어기고 **굵게**/불릿을 넣는 경우가 실측됐다.
+       시각장애인 음성 UI에서는 별표가 "별별"로 읽혀 방해되므로,
+       프롬프트(정책) + sanitize(가드레일) 이중으로 막는다.
+    """
+    # [하드 코딩 부분 - 핵심] TTS 금칙 패턴(마크다운/목록) 제거 규칙.
     cleaned = _text(text)
     if not cleaned:
         return ""
-    # **굵게**, *기울임* 제거
     cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned)
     cleaned = re.sub(r"\*(.+?)\*", r"\1", cleaned)
     cleaned = cleaned.replace("**", "").replace("__", "")
-    # 줄 머리 목록/헤딩 기호 제거
     cleaned = re.sub(r"(?m)^\s*[-*#]+\s*", "", cleaned)
     cleaned = re.sub(r"(?m)^\s*\d+\.\s+", "", cleaned)
-    # 줄바꿈을 문장 간격으로
     cleaned = re.sub(r"\s*\n+\s*", " ", cleaned)
     cleaned = re.sub(r"\s{2,}", " ", cleaned)
     return cleaned.strip()
@@ -420,6 +431,14 @@ class ConvenienceKnowledgeBase:
         self.vector_db = vector_db
 
     def search(self, question: str, k: int = 5) -> list[dict]:
+        """Chroma similarity_search_with_score(k=5)로 생활지원 문서를 검색한다.
+
+        # 💡 [면접 대비 주석]
+        Q. 장애물 RAG(nomic)와 생활지원 RAG(bge-m3)를 왜 분리하나?
+        A. 컬렉션 목적·임베딩 모델·메타가 다르다. 섞으면 hit-rate가 떨어지고
+           STT 생활 질문이 보행 수칙 문서를 끌어올 수 있다(이중 지식베이스).
+        """
+        # [바이브 코딩 부분] 빈 질의 가드레일 후 VectorStore 검색·점수 포맷팅.
         query = _text(question)
         if not query:
             return []
@@ -437,6 +456,19 @@ class ConvenienceKnowledgeBase:
         return formatted_results
 
     async def answer(self, question: str, k: int = 5) -> dict:
+        """검색 문서를 컨텍스트로 LLM 단답을 생성한다.
+
+        # 💡 [면접 대비 주석 - Ollama 기본 + Gemini 폴백]
+        Q. 왜 기본을 로컬 Ollama로 두고 API(Gemini)는 폴백인가?
+        A. (1) 시연/개발 시 API 비용·쿼터·네트워크 장애를 피하고
+           (2) Ollama가 죽거나 빈 응답이면 Gemini로 가용성을 확보한다.
+           비용 절감이 1순위, API는 안전망. CONVENIENCE_LLM_PROVIDER로 역순/단독도 가능.
+        Q. 검색 hit가 있는데도 일반 LLM 답이 나오던 이유는?
+        A. 임베딩 모델(bge-m3) 미설치로 search/answer가 예외 → STT 브릿지가
+           자유 LLM으로 폴백했다. RAG 실패는 로그로 남기고, 정상 시 source=
+           question-convenience-rag 로 구분한다.
+        """
+        # [바이브 코딩 부분] 검색 → 컨텍스트 조립 → LLM 호출 → sanitize.
         query = _text(question)
         start_time = time.perf_counter()
         results = self.search(query, k=k)
@@ -451,6 +483,7 @@ class ConvenienceKnowledgeBase:
                 "used_fallback_llm": True,
             }
 
+        # [바이브 코딩 부분] Top-k 문서를 LLM 컨텍스트 블록으로 직렬화.
         context_lines = []
         for index, result in enumerate(results[:k], 1):
             metadata = result.get("metadata", {})
@@ -475,8 +508,8 @@ class ConvenienceKnowledgeBase:
             {"role": "user", "content": user_prompt},
         ]
 
-        # 기본: 로컬 Ollama, 실패 시 Gemini API 폴백.
-        # CONVENIENCE_LLM_PROVIDER=gemini 이면 API만(또는 gemini→ollama 역순 테스트용).
+        # [하드 코딩 부분 - 핵심] provider 우선순위 결정 테이블.
+        # 기본 ollama → gemini. gemini/ollama_only/gemini_only는 테스트·비용 실험용.
         preferred = os.getenv("CONVENIENCE_LLM_PROVIDER", "ollama").strip().lower()
         if preferred == "gemini":
             providers = ("gemini", "ollama")
@@ -485,9 +518,9 @@ class ConvenienceKnowledgeBase:
         elif preferred == "ollama_only":
             providers = ("ollama",)
         else:
-            # ollama / auto 등: Ollama 우선 + Gemini 폴백
             providers = ("ollama", "gemini")
 
+        # [바이브 코딩 부분] provider 순회 호출 + 실패 시 다음 후보 폴백.
         answer = ""
         used_provider = ""
         last_error: str | None = None
@@ -534,6 +567,14 @@ _default_service: ConvenienceKnowledgeBase | None = None
 
 
 def looks_like_convenience_query(question: str) -> bool:
+    """생활지원 RAG로 보낼지 판정한다.
+
+    # 💡 [면접 대비 주석]
+    Q. 의도 분류에 LLM을 안 쓰고 키워드 매칭을 쓰는 이유는?
+    A. STT 경로 지연·비용·가용성. 키워드 miss면 일반 LLM으로 안전하게 폴백되고,
+       hit면 벡터DB 근거 답으로 환각을 줄인다(실측: 복지/한빛/안내견 등).
+    """
+    # [하드 코딩 부분 - 핵심] 부분문자열 매칭(정규화 후 contains).
     text = _text(question)
     if not text:
         return False

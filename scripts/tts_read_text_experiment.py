@@ -10,6 +10,11 @@
 엔진은 루트 .env의 TTS_ENGINE을 따릅니다 (edge / supertonic / piper).
 --to-device 는 실행 중인 FastAPI의 /api/v1/debug/speak-to-device 로 푸시합니다.
 앱이 WebSocket 연결된 상태에서 사용하세요.
+
+면접 팁:
+  - 로컬 WAV(--play): 서버 TTS 엔진 품질만 검증.
+  - --to-device: 운영과 같은 guide+binary 계약을 타는지 E2E 검증.
+  - production(APP_ENV)에서는 debug API가 404라 푸시가 막힌다(의도된 가드레일).
 """
 
 from __future__ import annotations

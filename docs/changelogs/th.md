@@ -916,3 +916,17 @@
 - **비고**: `.env`·API 키·로컬 ChromaDB 바이너리는 커밋하지 않음. 백엔드는 `venv\\Scripts\\python.exe -m uvicorn ...`로 기동할 것.
 - **검증 결과**: Convenience RAG 스모크(`복지카드 어디서 신청해?` → Ollama 단문 + 기관/전화), debug 라우터 마운트 및 `/health` 정상.
 
+---
+
+### 2026-07-18 | 문서화 | 생활지원 RAG·디버그 TTS 면접 대비/하드코딩 주석
+
+- **커밋**: (본 엔트리와 동일 커밋)
+- **변경 내용**:
+  - `convenience_rag.py`: 키워드·프롬프트·sanitize·Ollama→Gemini 폴백·이중 KB에 `# 💡 [면접 대비 주석]` 및 `[하드 코딩]/[바이브 코딩]` 표기.
+  - `stt_to_llm_bridge.py`: STT→Convenience RAG miss/예외 시 일반 LLM 폴백 이유를 면접 Q&A로 기록, POI/RAG/자유LLM 단계 구분.
+  - `debug_router.py`: REST TTS 푸시가 기존 guide+binary 계약을 재사용하는 이유, production 404 가드레일.
+  - `llm_client_factory.py`: `maxOutputTokens`가 입력 컨텍스트가 아님을 명시.
+  - `session_manager.py`: CONNECTED 상태 필터 이유.
+  - `DebugTriggerPanel.tsx` / `tts_read_text_experiment.py`: 단말 speakFallback vs 서버 푸시 검증 포인트.
+- **관련 파일**: 위 7개 + `docs/changelogs/th.md`
+

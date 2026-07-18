@@ -32,7 +32,13 @@ const PAN_PRESETS = [
   { label: "R +1.0", v: 1 },
 ];
 
-/** 문자 알림 TTS 실험용 샘플 문구 (서버 debug speak-to-device 와 동일) */
+/**
+ * [하드 코딩 부분 - 핵심] 문자 TTS 실험 샘플.
+ * 서버 `debug_router._DEFAULT_SMS_TEXT` / speak-to-device 기본값과 동일 계약을 유지한다.
+ *
+ * 면접 팁: 서버 푸시(`/api/v1/debug/speak-to-device`)는 guide+WAV(인지 계약),
+ * 이 버튼은 단말 expo-speech `speakFallback`만 사용해 네트워크 없이도 UI 청취 검증이 가능하다.
+ */
 const SAMPLE_SMS_TEXT =
   "새 문자가 도착했습니다. 엄마에게서. 오늘 저녁 몇 시에 오실 건가요?";
 
@@ -46,6 +52,7 @@ export function DebugTriggerPanel() {
     setLastFired(`${lvl.label} @ pan ${panning.toFixed(2)}`);
   };
 
+  /** [바이브 코딩 부분] 단말 TTS로 샘플 문자 즉시 재생(서버 불필요). */
   const speakSmsSample = () => {
     audioEngine.speakFallback(SAMPLE_SMS_TEXT);
     setLastFired("문자 TTS(단말)");

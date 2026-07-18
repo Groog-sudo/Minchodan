@@ -3,6 +3,12 @@
 
 문자/안내문 TTS를 연결된 모바일 앱으로 밀어 넣는 실험 엔드포인트를 제공한다.
 APP_ENV=production 에서는 비활성화한다.
+
+# 💡 [면접 대비 주석 - 왜 REST로 TTS를 푸시하나]
+Q. 인지 경로 guide는 원래 탐지 파이프라인에서만 나오는데, 왜 별도 REST가 있나?
+A. 문자 알림·데모처럼 "탐지 없이" 음성만 검증할 때 WS 계약을 재사용하기 위함.
+   클라이언트는 기존 guide + binary WAV 재생 경로를 그대로 탄다(신규 프로토콜 없음).
+   운영에서는 APP_ENV=production 으로 404 처리해 공격면을 닫는다.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/debug", tags=["Debug"])
 
+# [하드 코딩 부분 - 핵심] 문자 TTS 실험 기본 문구(앱 DEBUG 패널과 동일 계약).
 _DEFAULT_SMS_TEXT = (
     "새 문자가 도착했습니다. 엄마에게서. 오늘 저녁 몇 시에 오실 건가요?"
 )
@@ -44,12 +51,19 @@ class SpeakToDeviceRequest(BaseModel):
 
 
 def _debug_enabled() -> bool:
+    # [하드 코딩 부분 - 핵심] 운영 환경에서는 디버그 TTS 푸시를 완전히 끈다.
     return os.getenv("APP_ENV", "development").strip().lower() != "production"
 
 
 @router.post("/speak-to-device")
 async def speak_to_device(body: SpeakToDeviceRequest) -> dict:
-    """서버 TTS로 합성한 WAV를 연결된 앱에 guide + binary로 전송한다."""
+    """서버 TTS로 합성한 WAV를 연결된 앱에 guide + binary로 전송한다.
+
+    # 💡 [면접 대비 주석]
+    Q. JSON에 audio를 base64로 안 싣고 binary를 따로 보내는 이유는?
+    A. 인지 경로 운영 계약(2026-07-09)과 동일: transport=binary 후 raw WAV.
+       base64는 용량·파싱 비용이 커서 실시간 음성에 불리하다.
+    """
     if not _debug_enabled():
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -57,6 +71,7 @@ async def speak_to_device(body: SpeakToDeviceRequest) -> dict:
     if not text:
         raise HTTPException(status_code=400, detail="text가 비어 있습니다.")
 
+    # [바이브 코딩 부분] 연결 단말 선택·가드레일.
     connected = manager.list_connected_device_ids()
     device_id = body.device_id or (connected[0] if connected else None)
     if not device_id:
@@ -70,11 +85,13 @@ async def speak_to_device(body: SpeakToDeviceRequest) -> dict:
             detail=f"device_id={device_id} 가 연결되어 있지 않습니다. connected={connected}",
         )
 
+    # [바이브 코딩 부분] RealtimeTTS 합성 → guide JSON + WAV bytes 송신.
     tts = RealtimeTTS()
     b64_audio, duration_ms = await tts.synthesize(
         text=text, voice=body.voice, speed=body.speed
     )
     audio_bytes = base64.b64decode(b64_audio) if b64_audio else b""
+    # [하드 코딩 부분 - 핵심] event_id 접두사 debug-sms- (stt- 가 아니라 인지 priority=1).
     event_id = f"debug-sms-{int(time.time() * 1000)}"
 
     sent_json = await manager.send_json(
