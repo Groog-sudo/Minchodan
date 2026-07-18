@@ -920,7 +920,7 @@
 
 ### 2026-07-18 | 문서화 | 생활지원 RAG·디버그 TTS 면접 대비/하드코딩 주석
 
-- **커밋**: (본 엔트리와 동일 커밋)
+- **커밋**: `502b420`
 - **변경 내용**:
   - `convenience_rag.py`: 키워드·프롬프트·sanitize·Ollama→Gemini 폴백·이중 KB에 `# 💡 [면접 대비 주석]` 및 `[하드 코딩]/[바이브 코딩]` 표기.
   - `stt_to_llm_bridge.py`: STT→Convenience RAG miss/예외 시 일반 LLM 폴백 이유를 면접 Q&A로 기록, POI/RAG/자유LLM 단계 구분.
