@@ -113,6 +113,9 @@ export function LiveCameraFeed({
   } | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // iframe onLoad 콜백(마운트 시 1회)이 항상 최신 lastGps를 읽도록 ref로 미러링한다.
+  const lastGpsRef = useRef(lastGps);
+  lastGpsRef.current = lastGps;
 
   // platform에 따른 동적 회전 각도 결정 (Android는 기본 90도, iOS 및 기타는 0도)
   const defaultRotate = platform === "android" ? 90 : 0;
@@ -123,20 +126,24 @@ export function LiveCameraFeed({
     setRotateDeg(platform === "android" ? 90 : 0);
   }, [platform]);
 
-  // 앱 실기기 GPS 좌표가 갱신될 때마다 HUD 미니맵 iframe으로 주입한다.
-  // navigation/index.html의 window.message 리스너가 { type: 'inject_gps', lat, lon, heading }을 수신해
-  // 지도 마커를 실기기 위치로 갱신한다. PC 브라우저 GPS 부정확 문제를 완전히 우회한다.
-  useEffect(() => {
-    if (!lastGps || !iframeRef.current?.contentWindow) return;
+  // 앱 실기기 GPS 좌표를 HUD 미니맵 iframe에 주입한다.
+  // iframe 로드 전에 lastGps가 도착하면 유실되므로 onLoad에서도 재주입한다.
+  const injectGpsToMap = () => {
+    const gps = lastGpsRef.current;
+    if (!gps || !iframeRef.current?.contentWindow) return;
     iframeRef.current.contentWindow.postMessage(
       {
         type: "inject_gps",
-        lat: lastGps.lat,
-        lon: lastGps.lon,
-        heading: lastGps.heading,
+        lat: gps.lat,
+        lon: gps.lon,
+        heading: gps.heading,
       },
       "*",
     );
+  };
+
+  useEffect(() => {
+    injectGpsToMap();
   }, [lastGps]);
 
   return (
@@ -282,6 +289,7 @@ export function LiveCameraFeed({
                   title="스마트 가이드독 HUD 미니맵"
                   className="hud-minimap-iframe"
                   allow="geolocation; accelerometer; gyroscope"
+                  onLoad={injectGpsToMap}
                 ></iframe>
               </div>
             )}

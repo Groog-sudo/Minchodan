@@ -2956,3 +2956,18 @@
 - **관련 파일**: `tests/test_detection.py`, `server/api/ws_router.py`, `tests/test_ws_router_stt.py`, `docs/design/reflex_audio_specification.md`(§5.3 정정, v1.3.1), `docs/ops/test_specification.md`(TC-TTS-009 정정, v0.6.9)
 - **검증 결과**: `ruff check .`/`ruff format --check` 전체 통과, `mypy server/api/ws_router.py` 신규 에러 없음(기존 베이스라인 7건과 동일). 관련 테스트 75건(`test_detection.py` 65건 + `test_ws_router_stt.py` 10건) 전체 통과. 전체 스위트(`pytest tests/`) 322 passed / 3 failed - 실패 3건(`test_convenience_dial_resolver.py` 2건, `test_embedding_engine_factory.py` 1건)은 로컬 Ollama 미연결로 인한 환경 의존 실패로, 이번 변경 전에도 동일하게 실패함을 별도 확인(회귀 아님).
 - **비고**: T1-a/T2-G 로직 자체, 반사 경로 비적용(dual-path discipline), 클라이언트 T3-C 오디오 우선순위 조정자는 모두 정상 구현으로 확인됨(별도 수정 없음).
+
+---
+
+### 2026-07-18 | 병합 | th 브랜치 정합성 검토 및 결함 4건 수정 후 dev 병합
+
+- **배경**: 사용자 요청으로 dev 대비 미병합 상태였던 `th` 브랜치(신규 커밋 6건: GPS 폴백 제거, Gemini LLM 폴백 정합, ROI 소실점 재설계 등)를 정합성 검토 후 병합.
+- **발견 및 수정 1 - `client/src/components/CameraView.tsx` 컴파일 불가**: `ROIOverlay()` 함수 내 `<View style={StyleSheet.absoluteFill}` 가 완결되지 않은 채 곧바로 또 다른 `<View style={StyleSheet.absoluteFill} pointerEvents="none" ...>`가 이어지는 중복/미완성 JSX 태그가 있어 `tsc`가 30개 가까운 연쇄 오류를 냄. 명백한 편집 잔재로 판단해 중복분 삭제.
+- **발견 및 수정 2 - 동일 파일, 두 번째 컴파일 결함**: `CameraView()`의 최상위 `<View style={styles.container}>`가 끝까지 닫히지 않아(`</View>` 1개 누락) babel/tsc 파싱이 실패. 누락된 `</View>` 추가로 해결. **두 결함 모두 실기기 Metro 세션에서 실시간으로 `SyntaxError`가 재현되는 것을 직접 확인함**(라이브 테스트 중이었기에 즉시 검증 가능했음).
+- **발견 및 수정 3 - `console/src/components/LiveCameraFeed.tsx` 런타임 참조 오류**: HUD 미니맵 GPS 주입 함수(`injectGpsToMap`)가 정의되지 않은 `lastGpsRef.current`를 참조해 `tsc`가 `Cannot find name 'lastGpsRef'`로 실패. `useRef(lastGps)` + 렌더마다 `.current` 갱신하는 최신값 미러링 패턴을 추가해 해결(iframe `onLoad` 콜백이 마운트 시점 stale closure가 아닌 최신 GPS를 읽도록).
+- **발견 및 수정 4 - 기존 테스트 2건 회귀**: `server/stt/stt_to_llm_bridge.py`의 서울역 GPS 폴백 제거(의도된 변경, 가짜 좌표로 길안내를 만들지 않도록 함)로 `tests/test_stt_to_llm_bridge_template.py`의 `test_navigation_destination_setup_success`/`test_navigation_destination_setup_fail_when_poi_not_found`가 `_FakeNavManager`의 `session.lat/lon=None` 기본값 때문에 새로 추가된 `navigation-setup-no-gps` 조기 반환 분기에 걸려 실패. 두 테스트에 실좌표를 채워 원래 검증하려던 POI 성공/실패 분기를 다시 테스트하도록 수정하고, GPS 미수신 조기 반환 자체를 검증하는 신규 테스트(`test_navigation_destination_setup_no_gps`)를 추가.
+- **제외 파일**: `CONTRIBUTING.md` - 완전히 무관한 타 프로젝트("Awesome Design MD") 템플릿 파일이 실수로 커밋에 포함됨. th 자신의 changelog에도 "커밋 대상에서 제외"라고 명시돼 있어 병합에서 제외.
+- **정상 확인**: `server/orchestration/llm_client_factory.py`(Gemini 기본 시 OpenAI 키 부재를 Ollama 성공으로 위장하지 않도록 예외 재발생), `server/orchestration/nodes/l2_generator.py`(로그에 실제 provider명 출력), `server/navigation/index.html`(embed 모드에서 브라우저 GPS/서울역 타임아웃 폴백 비활성화 - 콘솔이 이미 `?embed=true`로 임베드하고 있어 dg2가 앞서 고친 "PC 브라우저 GPS가 앱 GPS를 덮어쓰는 버그"를 override 방지 대신 원천 차단 방식으로 재해결함을 확인)는 모두 정상 구현으로 확인됨(별도 수정 없음).
+- **관련 파일**: `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `tests/test_stt_to_llm_bridge_template.py`, `server/stt/stt_to_llm_bridge.py`(ruff format만 재적용)
+- **검증 결과**: `ruff check .`/`ruff format --check` 전체 통과, `mypy` 신규 에러 없음(베이스라인 동일), client·console `npx tsc --noEmit` 둘 다 클린. 전체 pytest 스위트 321 passed(환경 의존 실패 3건 제외, 회귀 아님 재확인).
+- **비고**: dev는 kb(817558f)와 th(4d0d429)가 각각 독립적으로 dev에서 분기된 상태였어 순수 fast-forward가 아닌 실제 3-way 병합(두 부모)으로 처리함.

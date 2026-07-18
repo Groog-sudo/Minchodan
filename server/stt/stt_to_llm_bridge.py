@@ -571,11 +571,18 @@ class SttToLlmBridge:
             try:
                 session = nav_manager._get_or_create_session(device_id)
 
-                # [하드 코딩 부분 - 핵심]
-                # GPS 미수신 시 서울역 인근 좌표를 기본 시작점으로 사용한다.
-                # 작성법: 폴백 좌표는 운영 기준점 하나로 고정하고 문서화한다.
-                curr_lat = session.lat if session.lat is not None else 37.5560
-                curr_lon = session.lon if session.lon is not None else 126.9722
+                # GPS 미수신이면 서울역 등 가짜 출발점으로 경로를 만들지 않는다.
+                # (콘솔/앱에 엉뚱한 위치가 찍히는 사고 방지)
+                if session.lat is None or session.lon is None:
+                    return {
+                        "guidance_text": (
+                            "현재 위치를 아직 받지 못했습니다. 잠시 후 목적지를 다시 말씀해 주세요."
+                        ),
+                        "used_fallback_llm": True,
+                        "source": "navigation-setup-no-gps",
+                    }
+                curr_lat = session.lat
+                curr_lon = session.lon
 
                 start_poi = {"name": "내 실시간 위치", "x": str(curr_lon), "y": str(curr_lat)}
 
@@ -692,9 +699,10 @@ class SttToLlmBridge:
         from server.navigation.server import helper_search_nearest_poi
 
         session = nav_manager._get_or_create_session(device_id)
-        # GPS 미수신 시 서울역 인근 좌표를 기본값으로 사용(목적지 설정 분기와 동일 정책).
-        lat = session.lat if session.lat is not None else 37.5560
-        lon = session.lon if session.lon is not None else 126.9722
+        if session.lat is None or session.lon is None:
+            return "현재 위치를 아직 받지 못했습니다. 잠시 후 다시 말씀해 주세요."
+        lat = session.lat
+        lon = session.lon
 
         try:
             result = helper_search_nearest_poi(category, lat, lon)
