@@ -20,6 +20,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -338,6 +339,16 @@ class DetectionGuidanceLog(Base):
         Index("IDX_DETECTION_GUIDANCE_LOGS_DEVICE_ID", "device_id"),
         Index("IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT", "detected_at"),
         Index("IDX_DETECTION_GUIDANCE_LOGS_STREAM_TYPE", "stream_type"),
+        Index(
+            "idx_detection_guidance_logs_event_source_detected_at", "event_source", "detected_at"
+        ),
+        Index(
+            "idx_detection_guidance_logs_stt_audio_status",
+            "stt_audio_storage_status",
+            "detected_at",
+        ),
+        Index("idx_detection_guidance_logs_stt_audio_path", "stt_audio_path"),
+        Index("idx_detection_guidance_logs_writer_instance_id", "writer_instance_id"),
         {"sqlite_autoincrement": True},
     )
 
@@ -388,6 +399,11 @@ class DetectionGuidanceLog(Base):
         Text().with_variant(MySQLJSON, "mysql"),
         nullable=True,
     )
+    # pipeline_debug_json: 관리자 콘솔용 경로별 중간 텍스트(STT 전사, RAG, LLM/패스트레인 등).
+    pipeline_debug_json: Mapped[str | None] = mapped_column(
+        Text().with_variant(MySQLJSON, "mysql"),
+        nullable=True,
+    )
     # created_at: DB 레코드 적재 시각 (마이크로초 6자리)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -395,9 +411,84 @@ class DetectionGuidanceLog(Base):
         default=lambda: datetime.now(UTC),
         server_default=func.now(),
     )
+    event_source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="unknown",
+        server_default="unknown",
+    )
+    stt_transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stt_audio_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stt_audio_storage_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="not_applicable",
+        server_default="not_applicable",
+    )
+    stt_audio_format: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    stt_audio_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    stt_audio_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stt_audio_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stt_audio_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stt_audio_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    stt_audio_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    writer_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     user: Mapped[AppUser | None] = relationship(back_populates="detection_guidance_logs")
     device: Mapped[UserDevice | None] = relationship(back_populates="detection_guidance_logs")
+
+
+class LidarDistanceValidationSample(Base):
+    """iOS LiDAR 실거리 검증 캡처 로그 (검증 전용, 2026-07-17).
+
+    거리측정(depthMode) 프로토타입에서 얻은 LiDAR 실측값과, 서버가
+    server/detection/direction.py:estimate_distance()로 동일 bbox에 재계산한 휴리스틱
+    라벨을 나란히 저장한다. 반사/인지 경로의 실시간 판단에는 관여하지 않으며,
+    담당자가 사후 SQL/스크립트로 휴리스틱 정확도를 검증하기 위한 별도 테이블이다.
+    운영 로그 테이블(detection_guidance_logs)과 카디널리티(1 캡처 = N bbox 행)가
+    달라 컬럼 추가 대신 별도 테이블로 분리했다.
+    """
+
+    __tablename__ = "lidar_distance_validation_samples"
+    __table_args__ = (
+        Index("idx_lidar_validation_event_id", "event_id"),
+        Index("idx_lidar_validation_created_at", "created_at"),
+        {"sqlite_autoincrement": True},
+    )
+
+    sample_id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    device_id: Mapped[int | None] = mapped_column(
+        BIGINT_PK,
+        ForeignKey("user_devices.device_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    class_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    # bbox_json: MySQL JSON 타입으로 저장합니다. SQLite 환경에서는 Text로 폴백됩니다.
+    bbox_json: Mapped[str] = mapped_column(
+        Text().with_variant(MySQLJSON, "mysql"),
+        nullable=False,
+    )
+    lidar_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lidar_sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lidar_accuracy: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lidar_quality: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lidar_calibrated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    heuristic_distance_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    heuristic_area_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
 
 
 __all__ = [
@@ -409,6 +500,7 @@ __all__ = [
     "Base",
     "DetectionGuidanceLog",
     "DevicePlatform",
+    "LidarDistanceValidationSample",
     "StreamType",
     "UserDevice",
     "UserStatus",

@@ -37,12 +37,18 @@ export async function setVoiceProcessing(
   const mod = getModule();
   if (!mod) return null;
   if (Platform.OS === "android") {
-    return {
-      category: "playAndRecord",
-      mode: enabled ? "voiceChat" : "normal",
-      voiceProcessingActive: enabled,
-      outputRoute: "speaker",
-    };
+    try {
+      await mod.setVoiceProcessing(enabled);
+      return {
+        category: "playAndRecord",
+        mode: enabled ? "voiceChat" : "normal",
+        voiceProcessingActive: enabled,
+        outputRoute: "speaker",
+      };
+    } catch (err) {
+      console.warn(`[AudioSession] Android voiceChat 전환 실패:`, err);
+      return null;
+    }
   }
   try {
     return await mod.setVoiceProcessing(enabled);

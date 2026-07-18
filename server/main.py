@@ -132,6 +132,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Redis Cache Monitor MCP 시작 실패: {e}")
 
+    # 7. Raspberry Pi 중앙 저장 API 공유 httpx.AsyncClient 생성 (2026-07-17, P1).
+    # 매 요청 새 클라이언트를 생성하던 패턴에서 커넥션 풀 재사용(keep-alive)으로 전환.
+    # remote_storage_client가 비활성(local backend)이면 no-op에 가깝다.
+    from server.services.remote_storage_client import (
+        close_shared_client,
+        create_shared_client,
+    )
+
+    try:
+        await create_shared_client()
+        logger.info("중앙 저장소 공유 httpx.AsyncClient 생성 완료")
+    except Exception as e:
+        logger.error(f"중앙 저장소 공유 httpx.AsyncClient 생성 실패 (요청별 폴백): {e}")
+
     yield
 
     frame_cleanup_task.cancel()
@@ -142,6 +156,10 @@ async def lifespan(app: FastAPI):
 
     # Redis Cache Monitor MCP 중지
     cache_monitor.stop_monitoring()
+
+    # 중앙 저장소 공유 httpx.AsyncClient 종료
+    with suppress(Exception):
+        await close_shared_client()
 
     logger.info("Minchodan API Server 종료 중...")
     # 3. DetectionConsumer 중지
@@ -204,10 +222,13 @@ app = FastAPI(
 # (.env의 CORS_ORIGINS, 기본값은 로컬 개발 콘솔 포트)로 제어한다.
 # 2026-07-09 정정: 이전에는 allow_origins=["*"]로 고정돼 있어 배포 환경에서도 모든
 # 출처를 허용하는 상태였다(allow_credentials=True와 결합 시 보안상 특히 부적절).
+# 2026-07-18 정정: allow_origin_regex="https?://.*"를 제거한다. Starlette
+# CORSMiddleware는 allow_origins 또는 allow_origin_regex 중 하나만 매치돼도
+# 요청을 허용하므로, regex가 화이트리스트를 무력화했고 allow_credentials=True와
+# 결합 시 임의 출처 자격증명 요청이 허용되는 위험이 있었다.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex="https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

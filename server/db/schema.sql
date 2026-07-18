@@ -83,7 +83,20 @@ CREATE TABLE IF NOT EXISTS detection_guidance_logs (
     frame_path VARCHAR(255),
     false_positive INTEGER CHECK (false_positive IN (0, 1)),
     latency_json JSON,
+    pipeline_debug_json JSON,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    event_source VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    stt_transcript_text TEXT,
+    stt_audio_path VARCHAR(255),
+    stt_audio_storage_status VARCHAR(30) NOT NULL DEFAULT 'not_applicable',
+    stt_audio_format VARCHAR(10),
+    stt_audio_size_bytes BIGINT,
+    stt_audio_duration_ms INTEGER,
+    stt_audio_sha256 VARCHAR(64),
+    stt_audio_error_code VARCHAR(64),
+    stt_audio_consent_at DATETIME,
+    stt_audio_expires_at DATETIME,
+    writer_instance_id VARCHAR(100),
     CONSTRAINT UK_DETECTION_GUIDANCE_LOGS_EVENT_ID UNIQUE (event_id),
     CONSTRAINT FK_DETECTION_GUIDANCE_LOGS_APP_USERS
         FOREIGN KEY (user_id)
@@ -106,3 +119,15 @@ CREATE INDEX IF NOT EXISTS IDX_DETECTION_GUIDANCE_LOGS_DEVICE_ID
 
 CREATE INDEX IF NOT EXISTS IDX_DETECTION_GUIDANCE_LOGS_STREAM_TYPE
     ON detection_guidance_logs (stream_type);
+
+CREATE INDEX IF NOT EXISTS idx_detection_guidance_logs_event_source_detected_at
+    ON detection_guidance_logs (event_source, detected_at);
+
+CREATE INDEX IF NOT EXISTS idx_detection_guidance_logs_stt_audio_status
+    ON detection_guidance_logs (stt_audio_storage_status, detected_at);
+
+CREATE INDEX IF NOT EXISTS idx_detection_guidance_logs_stt_audio_path
+    ON detection_guidance_logs (stt_audio_path);
+
+CREATE INDEX IF NOT EXISTS idx_detection_guidance_logs_writer_instance_id
+    ON detection_guidance_logs (writer_instance_id);

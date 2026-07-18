@@ -27,14 +27,19 @@ from server.capture.stream_splitter import StreamSplitter, get_default_splitter
 from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
-from server.detection.direction import estimate_clock_direction
+from server.detection.direction import estimate_clock_direction, estimate_distance
+from server.detection.risk_rules import class_name_to_ko
 from server.detection.schemas import DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.orchestration.llm_client_factory import LLMClientFactory
 from server.rag.retriever import get_default_retriever
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.services.device_registry_service import get_cached_device_ids
-from server.services.event_frame_store import save_event_frame
+from server.services.event_frame_store import save_event_frame_async
+from server.services.pipeline_debug_builder import (
+    build_cognitive_pipeline_debug,
+    build_reflex_pipeline_debug,
+)
 from server.tts.realtime_tts import realtime_tts
 from server.tts.suppressor import Alert_suppressor
 
@@ -43,6 +48,28 @@ logger = logging.getLogger(__name__)
 # 보도 이탈 확정에 필요한 연속 인지 프레임 수 (surface_departure.py의 단일 프레임
 # 판정을 히스테리시스로 감싸는 값 - 이 파일 상단 __init__ 주석 참조).
 DEPARTURE_CONFIRM_STREAK = 3
+
+# P0-2 (2026-07-17): 큐 대기로 인한 지연 드리프트 방지.
+# 소비 시각 기준 프레임 ts(밀리초 epoch)가 max_age_s를 초과하면 추론 없이 드롭.
+# 반사는 즉시성이 생명이므로 0.4초, 인지는 1~2fps 특성상 2.0초 여유.
+# ts=0(클라이언트 미전송)이면 신선도 검사를 건너뛴다 (방어적 코딩).
+REFLEX_MAX_AGE_S = float(os.getenv("REFLEX_MAX_AGE_S", "0.4"))
+COGNITIVE_MAX_AGE_S = float(os.getenv("COGNITIVE_MAX_AGE_S", "2.0"))
+
+# P1-2 (2026-07-17): 인지 가이드 발화 가치(Utterance Value) 게이트.
+# 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S 동안 TTS 합성 생략.
+# 새 객체/표면 변화/보도 이탈/쿨다운 경과 중 하나라도 true면 발화.
+COGNITIVE_UTTERANCE_COOLDOWN_S = float(os.getenv("COGNITIVE_UTTERANCE_COOLDOWN_S", "30.0"))
+
+# P2-1(b) (2026-07-17): surface_caution(계단/맨홀 통합 클래스) 단일 프레임 오탐 완화 히스테리시스.
+# 세그멘테이션 경계 노이즈로 단일 프레임 caution이 흔들릴 수 있어, 연속 N 프레임 확인 후 반사 발동.
+SURFACE_CAUTION_CONFIRM_STREAK = int(os.getenv("SURFACE_CAUTION_CONFIRM_STREAK", "2"))
+
+# P2-2 (2026-07-17): 파이프라인 지연 관측 임계. total_ms가 임계 초과 시 콘솔 latency_event에
+# latency_alert=True 필드를 추가해 운영자가 지연 드리프트를 실시간 인지한다.
+# 반사 <300ms(비협상 목표), 인지 <3000ms(가이드 허용 범위) 기준.
+REFLEX_LATENCY_ALERT_MS = float(os.getenv("REFLEX_LATENCY_ALERT_MS", "300"))
+COGNITIVE_LATENCY_ALERT_MS = float(os.getenv("COGNITIVE_LATENCY_ALERT_MS", "3000"))
 
 
 class DetectionConsumer:
@@ -75,6 +102,11 @@ class DetectionConsumer:
         # 실측 길이 기반으로 동적 산정한다(비협상 아님, 튜닝값).
         self._last_guide_ts: dict[str, float] = {}
         self._last_guide_duration_sec: dict[str, float] = {}
+        # P1-2 (2026-07-17): device_id별 직전 인지 안내의 상황 서명(객체+표면).
+        # 동일 서명 + 쿨다운 이내 재발화를 TTS 합성 생략으로 차단.
+        self._last_guide_signature: dict[str, str] = {}
+        # P2-1(b) (2026-07-17): device_id별 surface_caution 연속 프레임 카운터 (히스테리시스).
+        self._surface_caution_streak: dict[str, int] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
         # 2026-07-13 추가: device_id별 보도 이탈(is_departing) 연속 프레임 카운터.
@@ -82,6 +114,8 @@ class DetectionConsumer:
         # DEPARTURE_CONFIRM_STREAK회 연속으로 이탈이 나와야 실제 안내를 내보낸다
         # (약 1.5~3초 지속 확인 - 너무 짧으면 오탐, 너무 길면 안내가 늦어짐).
         self._departure_streak: dict[str, int] = {}
+        # P0-2 (2026-07-17): 스트림별 신선도 초과 드롭 카운터 (콘솔 지연 패널 노출용).
+        self._stale_drop_count: dict[str, int] = {"reflex": 0, "cognitive": 0}
         self._last_status: dict[str, str | float | int | None] = {
             "stream": None,
             "event_id": None,
@@ -105,6 +139,44 @@ class DetectionConsumer:
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
 
+    @staticmethod
+    def _compute_cognitive_signature(result: DetectionResult, departure_confirmed: bool) -> str:
+        """P1-2: 인지 가이드 상황 서명(객체+표면+이탈) 산출.
+
+        # [면접 대비 주석]
+        # 발화 가치 게이트의 핵심: "같은 상황의 반복 안내는 억제, 상황이 바뀌면 즉시 안내".
+        # 서명 = 정렬된 객체 클래스 목록 + 정렬된 표면 클래스 목록 + 이탈 여부.
+        # 동일 서명이면 같은 상황으로 간주해 쿨다운 내 TTS 합성을 생략해 CPU/중복 안내를 줄인다.
+        # 객체/표면이 하나라도 바뀌면 서명이 달라져 즉시 발화한다.
+        """
+        objects_key = ",".join(sorted({d.class_name for d in result.detections}))
+        surface_key = ",".join(sorted({s.class_name for s in result.surface}))
+        departure_key = "departure" if departure_confirmed else ""
+        return f"obj:{objects_key}|surf:{surface_key}|dep:{departure_key}"
+
+    def _has_utterance_value(
+        self, device_id: str, result: DetectionResult, departure_confirmed: bool
+    ) -> bool:
+        """P1-2: 인지 가이드 발화 가치 판정.
+
+        발화 조건(OR):
+            1. 보도 이탈 확정 (departure_confirmed) - 안전상 항상 가치.
+            2. 상황 서명 변화 (새 객체/표면 변화) - 직전과 다른 상황.
+            3. 직전 안내로부터 COGNITIVE_UTTERANCE_COOLDOWN_S 경과 - 동일 상황도 주기적 갱신.
+        위 모두 거짓이면 동일 상황 반복이므로 TTS 합성 생략.
+        """
+        if departure_confirmed:
+            return True
+        current_sig = self._compute_cognitive_signature(result, departure_confirmed)
+        prev_sig = self._last_guide_signature.get(device_id)
+        if prev_sig != current_sig:
+            return True
+        # 동일 서명이면 쿨다운 경과 여부가 발화 가치를 결정
+        return (
+            time.monotonic() - self._last_guide_ts.get(device_id, 0.0)
+            >= COGNITIVE_UTTERANCE_COOLDOWN_S
+        )
+
     def get_runtime_status(self) -> dict[str, str | float | int | None]:
         """최근 DetectionConsumer 처리 상태를 반환한다."""
         return dict(self._last_status)
@@ -121,12 +193,20 @@ class DetectionConsumer:
         detection_guidance_logs 조회 시에는 포함된다.
         """
         try:
+            # P2-2 (2026-07-17): 지연 임계 초과 시 latency_alert 필드 추가 (콘솔 실시간 인지).
+            total_ms = latency_stages.get("total_ms", 0.0)
+            threshold = (
+                REFLEX_LATENCY_ALERT_MS if stream_type == "reflex" else COGNITIVE_LATENCY_ALERT_MS
+            )
+            latency_alert = bool(total_ms and total_ms > threshold)
             await manager.broadcast_json_to_consoles(
                 {
                     "type": "latency_event",
                     "event_id": event_id,
                     "stream_type": stream_type,
                     "latency": latency_stages,
+                    "latency_alert": latency_alert,
+                    "latency_threshold_ms": threshold,
                     "ts": time.time(),
                 }
             )
@@ -205,6 +285,7 @@ class DetectionConsumer:
         latency_stages: dict[str, float] | None = None,
         user_id: int | None = None,
         device_id: int | None = None,
+        pipeline_debug: dict | None = None,
     ) -> None:
         task = asyncio.create_task(
             self._persist_log_safe(
@@ -216,6 +297,7 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=user_id,
                 device_id=device_id,
+                pipeline_debug=pipeline_debug,
             )
         )
         self._log_tasks.add(task)
@@ -232,13 +314,14 @@ class DetectionConsumer:
         latency_stages: dict[str, float] | None = None,
         user_id: int | None = None,
         device_id: int | None = None,
+        pipeline_debug: dict | None = None,
     ) -> None:
         # 프레임 저장(JPEG 인코딩+디스크 쓰기)은 백그라운드 로그 태스크 안에서만
         # 수행한다. 반사/인지 실시간 전송이 끝난 뒤 실행되므로 경로 지연에 영향 없다.
         # 저장 실패 시 frame_path=None으로 로그 적재는 계속한다(방어적 코딩).
         frame_path: str | None = None
         if frame is not None and event_id:
-            frame_path = await asyncio.to_thread(save_event_frame, event_id, frame)
+            frame_path = await save_event_frame_async(event_id, frame)
         try:
             saved = await persist_detection_guidance_log(
                 event_id=event_id,
@@ -249,6 +332,7 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=user_id,
                 device_id=device_id,
+                pipeline_debug=pipeline_debug,
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] DB 로그 저장 실패: event_id={event_id}, {e}")
@@ -309,6 +393,23 @@ class DetectionConsumer:
             return
 
         frame: np.ndarray = processed.frame
+        # P0-2 (2026-07-17): 큐 대기 시간 계측 + 신선도 검사.
+        # processed.ts는 클라이언트 전송 시각(밀리초 epoch). ts=0이면 클라이언트가
+        # 전송하지 않은 것으로 간주해 신선도 검사를 건너뛴다 (방어적 코딩).
+        queue_wait_ms = 0.0
+        if processed.ts > 0:
+            now_ms = time.time() * 1000.0
+            queue_wait_ms = round(now_ms - processed.ts, 1)
+            max_age_s = REFLEX_MAX_AGE_S if stream == "reflex" else COGNITIVE_MAX_AGE_S
+            age_s = queue_wait_ms / 1000.0
+            if age_s > max_age_s:
+                self._stale_drop_count[stream] = self._stale_drop_count.get(stream, 0) + 1
+                logger.debug(
+                    f"[DetectionConsumer] stale 프레임 드롭: stream={stream}, "
+                    f"age={age_s:.2f}s > {max_age_s}s, event_id={processed.event_id}, "
+                    f"drop_count={self._stale_drop_count[stream]}"
+                )
+                return
         # 레이턴시 계측 기준점: 프레임 디코딩 완료(processed.processing_time_ms) 이후부터
         # 반사/인지 전송 완료까지를 측정한다. decode_ms + 이 구간이 WS 수신~단말 전송 총 지연이다.
         pipeline_start = time.perf_counter()
@@ -363,12 +464,32 @@ class DetectionConsumer:
                     "error": None,
                 }
             )
+            # P2-1(b) (2026-07-17): surface_caution 단일 프레임 오탐 완화 히스테리시스.
+            # [면접 대비 주석] 세그멘테이션 경계 노이즈로 단일 프레임 caution이 흔들려 과경보가 되므로,
+            # 연속 SURFACE_CAUTION_CONFIRM_STREAK 프레임 확인 후에만 반사 발동. 미달 시 반사 스킵
+            # (caution은 인지 경로에서도 설명되므로 안전 마진 유지). high_obstacle 등 비-surface 반사는
+            # 히스테리시스 없이 즉시 발동(이미 reflex_gate MIN_HIT_COUNT로 오탐 완화됨).
+            if result.alert_id == "surface_caution":
+                streak = self._surface_caution_streak.get(processed.device_id, 0) + 1
+                self._surface_caution_streak[processed.device_id] = streak
+                if streak < SURFACE_CAUTION_CONFIRM_STREAK:
+                    logger.debug(
+                        f"[DetectionConsumer] surface_caution 히스테리시스 대기: "
+                        f"streak={streak}/{SURFACE_CAUTION_CONFIRM_STREAK}, "
+                        f"device_id={processed.device_id}"
+                    )
+                    return
+            else:
+                # 비-surface 반사일 때 surface_caution streak 리셋 (독립 상태 유지)
+                self._surface_caution_streak[processed.device_id] = 0
             await self._send_reflex_alert(
                 processed.device_id,
                 result,
                 frame=frame,
                 decode_ms=processed.processing_time_ms,
                 pipeline_start=pipeline_start,
+                detections=detections,
+                queue_wait_ms=queue_wait_ms,
             )
             # [2026-07-14] 반사 경보(정지) 발동 800ms 후 인지(설명/우회방향) 가이드를 후속 트리거
             delayed_guide_task = asyncio.create_task(
@@ -407,6 +528,7 @@ class DetectionConsumer:
                     decode_ms=processed.processing_time_ms,
                     pipeline_start=pipeline_start,
                     departure_confirmed=departure_confirmed,
+                    queue_wait_ms=queue_wait_ms,
                 )
             logger.debug(
                 f"[DetectionConsumer] 인지 결과: event_id={result.event_id}, "
@@ -470,6 +592,49 @@ class DetectionConsumer:
             )
         except Exception as e:
             logger.debug(f"[DetectionConsumer] detection_event 브로드캐스트 실패: {e}")
+
+    @staticmethod
+    def _normalize_risk_level(raw: str | None) -> str:
+        if raw in ("high", "mid", "low"):
+            return raw
+        return "low"
+
+    async def _broadcast_risk_event(
+        self,
+        *,
+        event_id: str,
+        risk_level: str,
+        class_name: str,
+        confidence: float | None = None,
+        direction: str | None = None,
+        guidance_text: str | None = None,
+        device_id: str | None = None,
+    ) -> None:
+        """콘솔 RiskEventLog 패널용 risk_event SSE 브로드캐스트.
+
+        detection_event와 동일하게 mcp_manager 경유. 서버 어디에서도 발행되지 않아
+        RiskEventLog가 항상 비어 있던 문제(2026-07-16)를 해소한다.
+        """
+        payload: dict[str, object] = {
+            "event_id": event_id,
+            "risk_level": self._normalize_risk_level(risk_level),
+            "class_name": class_name or "unknown",
+        }
+        if confidence is not None:
+            payload["confidence"] = round(float(confidence), 4)
+        if direction:
+            payload["direction"] = direction
+        if guidance_text:
+            payload["guidance_text"] = guidance_text
+        if device_id:
+            payload["device_id"] = device_id
+
+        try:
+            from server.mcp.manager import mcp_manager
+
+            await mcp_manager.broadcast_event("risk_event", payload)
+        except Exception as e:
+            logger.debug(f"[DetectionConsumer] risk_event 브로드캐스트 실패: {e}")
 
     async def _send_server_detection(
         self,
@@ -535,16 +700,28 @@ class DetectionConsumer:
         frame: np.ndarray | None = None,
         decode_ms: float = 0.0,
         pipeline_start: float | None = None,
+        detections: list | None = None,
+        queue_wait_ms: float = 0.0,
     ) -> None:
         """반사 알림을 WebSocket 고우선 채널로 즉시 전송 (LLM/RAG 미경유).
 
-        동일 device_id+alert_id 조합이 60초 이내 재발행되면 억제한다(중복 스팸 방지).
+        P0-1 (2026-07-17): 재무장 정책 적용.
+        - 억제 키: high_obstacle:{track_id}:{distance_band}
+        - 동일 키 TTL(5s) + device 단위 최소 쿨다운(1.5s) + 밴드 악화 재발화
+        - near(<=0.6m) 햅틱+비프는 TTL 억제 제외, 500ms 스로틀만
         frame은 전송 성사 후 백그라운드 로그 태스크에서만 저장한다(반사 지연 무영향).
         """
-        if await Alert_suppressor.should_suppress(device_id, alert.alert_id):
+        is_near = alert.distance <= 0.6
+        if not await Alert_suppressor.should_emit_reflex(
+            device_id=device_id,
+            track_id=alert.track_id,
+            distance_band=alert.distance_band,
+            is_near=is_near,
+        ):
             logger.debug(
-                f"[DetectionConsumer] 반사 알림 중복 억제: "
-                f"device_id={device_id}, alert_id={alert.alert_id}"
+                f"[DetectionConsumer] 반사 알림 억제(재무장 정책): "
+                f"device_id={device_id}, track_id={alert.track_id}, "
+                f"band={alert.distance_band}, near={is_near}"
             )
             return
 
@@ -564,6 +741,7 @@ class DetectionConsumer:
             "track_id": alert.track_id,
             "class_name": alert.class_name,
             "hit_count": alert.hit_count,
+            "distance_band": alert.distance_band,
         }
         try:
             sent = await manager.send_json(device_id, payload)
@@ -573,16 +751,22 @@ class DetectionConsumer:
                     f"device_id={device_id}, alert_id={alert.alert_id}, websocket=disconnected"
                 )
                 return
-            await Alert_suppressor.mark_as_sent(device_id, alert.alert_id)
+            await Alert_suppressor.mark_reflex_sent(
+                device_id=device_id,
+                track_id=alert.track_id,
+                distance_band=alert.distance_band,
+            )
             logger.info(
                 f"[DetectionConsumer] 반사 알림 전송: "
-                f"device_id={device_id}, alert_id={alert.alert_id}"
+                f"device_id={device_id}, alert_id={alert.alert_id}, "
+                f"track_id={alert.track_id}, band={alert.distance_band}"
             )
             # 반사 경로 latency_json에는 decode/inference/total만 존재한다(LLM/RAG/TTS 미경유
             # 원칙이 그대로 데이터에 반영됨 - rag_ms/llm_ms/tts_ms 키 자체가 생기지 않는다).
             latency_stages: dict[str, float] = {
                 "decode_ms": round(decode_ms, 1),
                 "inference_ms": round(alert.inference_ms, 1),
+                "queue_wait_ms": round(queue_wait_ms, 1),
             }
             if pipeline_start is not None:
                 latency_stages["total_ms"] = round(
@@ -590,6 +774,20 @@ class DetectionConsumer:
                 )
             await self._broadcast_latency_event(alert.event_id, "reflex", latency_stages)
             await self._broadcast_ai_pipeline_status(reflex_bypass=True)
+            reflex_confidence: float | None = None
+            if detections:
+                matched = [d for d in detections if d.class_name == alert.class_name]
+                primary = matched[0] if matched else max(detections, key=lambda d: d.confidence)
+                reflex_confidence = float(primary.confidence)
+            await self._broadcast_risk_event(
+                event_id=alert.event_id,
+                risk_level=alert.risk_level,
+                class_name=alert.class_name or "unknown",
+                confidence=reflex_confidence,
+                direction=alert.direction,
+                guidance_text=f"[반사 클립] {alert.clip}",
+                device_id=device_id,
+            )
             reg_user_id, reg_device_id = get_cached_device_ids(device_id)
             self._schedule_log_persist(
                 event_id=alert.event_id,
@@ -610,6 +808,18 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=reg_user_id,
                 device_id=reg_device_id,
+                pipeline_debug=build_reflex_pipeline_debug(
+                    alert_id=alert.alert_id,
+                    clip=alert.clip,
+                    direction=alert.direction,
+                    class_name=alert.class_name,
+                    distance=str(alert.distance) if alert.distance is not None else None,
+                    risk_level=alert.risk_level,
+                    hit_count=alert.hit_count,
+                    track_id=alert.track_id,
+                    inference_ms=alert.inference_ms,
+                    detections=detections,
+                ),
             )
         except Exception as e:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
@@ -624,8 +834,27 @@ class DetectionConsumer:
         decode_ms: float,
         pipeline_start: float | None,
     ) -> None:
-        """반사 경보(비프/햅틱) 발동 800ms 후 인지 가이드(LLM TTS 우회)를 연계 트리거한다."""
+        """반사 경보(비프/햅틱) 발동 800ms 후 인지 가이드(LLM TTS 우회)를 연계 트리거한다.
+
+        P1-1 (2026-07-17): 단일 객체 + 방향 확정 시 avoidance 템플릿으로 즉시 우회 방향 안내.
+        LangGraph 전체(L1/L2/L3)를 돌리는 수 초 소요를 없애 반사 후속 안내 지연(S7)을 해소한다.
+        다중 객체/방향 불확정 시 기존 LangGraph 경로로 폴백한다(안전 측면).
+        """
         await asyncio.sleep(0.8)  # 반사 진동/비프음 인지용 딜레이
+
+        # P1-1: avoidance fast lane 우선 시도 (단일 객체 + 방향 확정)
+        from server.orchestration.avoidance import (
+            build_avoidance_guidance,
+            can_use_avoidance_fast_lane,
+        )
+
+        preset_guidance: str | None = None
+        if can_use_avoidance_fast_lane(alert, detections):
+            preset_guidance = build_avoidance_guidance(alert)
+            logger.info(
+                f"[DetectionConsumer] avoidance fast lane: device_id={device_id}, "
+                f"direction={alert.direction}, guidance='{preset_guidance}'"
+            )
 
         # 29종 객체 탐지 클래스들을 모아 DetectionResult 스키마로 인지 경로에 피딩
         cognitive_res = DetectionResult(
@@ -638,7 +867,7 @@ class DetectionConsumer:
             braille_direction="",
         )
 
-        # 인지 경로 전송
+        # 인지 경로 전송 (preset_guidance가 있으면 LangGraph 우회)
         await self._send_cognitive_guide(
             device_id=device_id,
             result=cognitive_res,
@@ -646,6 +875,7 @@ class DetectionConsumer:
             decode_ms=decode_ms,
             pipeline_start=pipeline_start,
             departure_confirmed=False,
+            preset_guidance_text=preset_guidance,
         )
 
     async def _send_cognitive_guide(
@@ -656,8 +886,14 @@ class DetectionConsumer:
         decode_ms: float = 0.0,
         pipeline_start: float | None = None,
         departure_confirmed: bool = False,
+        queue_wait_ms: float = 0.0,
+        preset_guidance_text: str | None = None,
     ) -> None:
-        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다."""
+        """인지 결과를 오케스트레이션/TTS와 연결해 guide 메시지로 전송한다.
+
+        P1-1 (2026-07-17): preset_guidance_text가 주어지면 LangGraph(run_orchestrator)를
+        우회하고 그 텍스트로 즉시 TTS 합성 후 전송한다 (반사 후속 avoidance fast lane).
+        """
 
         # 💡 [면접 대비 주석]
         # Q. 노면(surface) 정보가 감지되었을 때도 가이드를 생성하는 기준은 무엇인가요?
@@ -668,6 +904,18 @@ class DetectionConsumer:
             surf.class_name in ("caution", "roadway", "braille_normal") for surf in result.surface
         )
         if not result.detections and not departure_confirmed and not has_significant_surface:
+            return
+
+        # P1-2 (2026-07-17): 발화 가치(Utterance Value) 게이트.
+        # 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S 동안
+        # TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시에만 발화.
+        # [면접 대비 주석] 인지 가이드는 LangGraph+RAG+TTS로 수 초 소요되므로, 동일 상황 반복을
+        # 사전 차단해 CPU 점유와 중복 안내를 동시에 줄인다(S5/S6).
+        if not self._has_utterance_value(device_id, result, departure_confirmed):
+            logger.debug(
+                f"[DetectionConsumer] 인지 가이드 발화 가치 없음(동일 상황 반복) - "
+                f"TTS 합성 생략: device_id={device_id}"
+            )
             return
 
         # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이
@@ -696,6 +944,8 @@ class DetectionConsumer:
         # detections가 비어 있는(순수 보도 이탈) 이벤트는 조회할 사물이 없으므로 건너뛴다.
         rag_context = ""
         clock_direction = ""
+        distance_class = ""
+        object_ko = ""
         rag_start = time.perf_counter()
         try:
             retriever = get_default_retriever()
@@ -709,14 +959,20 @@ class DetectionConsumer:
                             "confidence": primary_det.confidence,
                         },
                     )
-                # 2026-07-13: "좌측/우측" 같은 모호한 안내 대신 실제 탐지 위치 기반의
-                # 정확한 시계 방향("2시 방향" 등)을 L2 프롬프트에 실어준다. frame이 있어야
-                # 프레임 폭을 알 수 있으므로(항상 640x640 리사이즈), 없으면 계산을 건너뛴다.
                 if frame is not None:
                     clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
+                    distance_class = estimate_distance(
+                        primary_det.bbox,
+                        frame.shape[1],
+                        frame.shape[0],
+                        primary_det.class_name,
+                    )
+                object_ko = class_name_to_ko(primary_det.class_name)
         except Exception as e:
             logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
         rag_ms = (time.perf_counter() - rag_start) * 1000
+
+        korean_classes = [class_name_to_ko(det.class_name) for det in result.detections]
 
         orch_input = {
             "event": {
@@ -731,9 +987,11 @@ class DetectionConsumer:
                     for det in result.detections
                 ],
             },
-            "detected_classes": [det.class_name for det in result.detections],
+            "detected_classes": korean_classes,
             "positions": [det.direction or "" for det in result.detections],
             "clock_direction": clock_direction,
+            "distance": distance_class,
+            "object_ko": object_ko,
             "risk_level": result.risk_hint,
             "navigation_guidance": navigation_guidance,
             "rag_context": rag_context or "관련 수칙 없음",
@@ -745,7 +1003,19 @@ class DetectionConsumer:
         }
 
         try:
-            orch_result = await run_orchestrator(orch_input)
+            if preset_guidance_text is not None:
+                # P1-1 (2026-07-17): avoidance fast lane - LangGraph 우회, preset 텍스트로 즉시 합성.
+                orch_result = {
+                    "guidance_text": preset_guidance_text,
+                    "verified": True,
+                    "used_fast_lane": False,
+                    "retry_count": 0,
+                    "total_latency_ms": 0.0,
+                    "risk_level": "high",
+                    "direction": preset_guidance_text,
+                }
+            else:
+                orch_result = await run_orchestrator(orch_input)
             guidance_text = orch_result.get("guidance_text", "")
             if not guidance_text:
                 logger.warning(
@@ -771,7 +1041,10 @@ class DetectionConsumer:
             )
 
             tts_start = time.perf_counter()
-            audio_b64, duration_ms = await realtime_tts.synthesize_from_llm(orch_result)
+            if orch_result.get("used_fast_lane"):
+                audio_b64, duration_ms = await realtime_tts.synthesize_fast_lane(orch_result)
+            else:
+                audio_b64, duration_ms = await realtime_tts.synthesize_from_llm(orch_result)
             tts_ms = (time.perf_counter() - tts_start) * 1000
 
             # 전송 직전 재검사: 오케스트레이션/TTS 처리 시간이 요청마다 달라(2~10s+),
@@ -790,6 +1063,10 @@ class DetectionConsumer:
                 return
             self._last_guide_ts[device_id] = send_now
             self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
+            # P1-2: 발화 가치 게이트용 상황 서명 갱신 (다음 동일 상황 판정 기준).
+            self._last_guide_signature[device_id] = self._compute_cognitive_signature(
+                result, departure_confirmed
+            )
 
             # [2026-07-09 도입] guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는
             # 대신, 메타데이터(JSON) 전송 직후 원본 바이트를 바이너리 프레임으로 이어
@@ -803,6 +1080,9 @@ class DetectionConsumer:
                 "event_id": result.event_id,
                 "risk_level": result.risk_hint,
                 "guidance_text": guidance_text,
+                "clock_direction": orch_result.get("clock_direction") or clock_direction,
+                "distance_class": orch_result.get("distance") or distance_class,
+                "object_ko": orch_result.get("object_ko") or object_ko,
                 "audio_codec": "wav",
                 "duration_ms": duration_ms,
                 "transport": "binary" if audio_bytes else "none",
@@ -842,13 +1122,62 @@ class DetectionConsumer:
                 "rag_ms": round(rag_ms, 1),
                 "llm_ms": round(orch_result.get("total_latency_ms", 0.0), 1),
                 "tts_ms": round(tts_ms, 1),
+                "queue_wait_ms": round(queue_wait_ms, 1),
             }
             if pipeline_start is not None:
                 latency_stages["total_ms"] = round(
                     (time.perf_counter() - pipeline_start) * 1000 + decode_ms, 1
                 )
             await self._broadcast_latency_event(result.event_id, "cognitive", latency_stages)
+            cognitive_risk = orch_result.get("risk_level") or result.risk_hint
+            cognitive_class = (
+                max(result.detections, key=lambda d: d.confidence).class_name
+                if result.detections
+                else (object_ko or "surface")
+            )
+            cognitive_confidence = (
+                float(max(result.detections, key=lambda d: d.confidence).confidence)
+                if result.detections
+                else None
+            )
+            cognitive_direction = (
+                orch_result.get("clock_direction")
+                or clock_direction
+                or (
+                    max(result.detections, key=lambda d: d.confidence).direction
+                    if result.detections
+                    else None
+                )
+            )
+            await self._broadcast_risk_event(
+                event_id=result.event_id,
+                risk_level=str(cognitive_risk),
+                class_name=str(cognitive_class),
+                confidence=cognitive_confidence,
+                direction=str(cognitive_direction) if cognitive_direction else None,
+                guidance_text=guidance_text,
+                device_id=device_id,
+            )
             reg_user_id, reg_device_id = get_cached_device_ids(device_id)
+            cognitive_debug = build_cognitive_pipeline_debug(
+                guidance_text=guidance_text,
+                rag_query=rag_query,
+                rag_context=rag_context or "관련 수칙 없음",
+                orch_result=orch_result,
+                clock_direction=clock_direction,
+                distance_class=distance_class,
+                object_ko=object_ko,
+                llm_provider=LLMClientFactory.get_current_provider(),
+                detections=result.detections,
+                surfaces=result.surface,
+                risk_hint=result.risk_hint,
+                inference_ms=result.inference_ms,
+                is_departing=result.is_departing,
+                departure_confirmed=departure_confirmed,
+                braille_direction=result.braille_direction or "",
+                navigation_guidance=navigation_guidance,
+                detected_classes_ko=korean_classes,
+            )
             self._schedule_log_persist(
                 event_id=result.event_id,
                 stream_type="cognitive",
@@ -858,6 +1187,7 @@ class DetectionConsumer:
                 latency_stages=latency_stages,
                 user_id=reg_user_id,
                 device_id=reg_device_id,
+                pipeline_debug=cognitive_debug,
             )
         except Exception as e:
             logger.error(

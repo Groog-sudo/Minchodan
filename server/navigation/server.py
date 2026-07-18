@@ -222,27 +222,21 @@ def helper_fetch_route(start_poi, end_poi):
             "features": [
                 {
                     "type": "Feature",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [start_poi["x"], start_poi["y"]]
-                    },
+                    "geometry": {"type": "Point", "coordinates": [start_poi["x"], start_poi["y"]]},
                     "properties": {
                         "description": "출발지를 떠나 직진하세요.",
-                        "facilityType": "11"
-                    }
+                        "facilityType": "11",
+                    },
                 },
                 {
                     "type": "Feature",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [end_poi["x"], end_poi["y"]]
-                    },
+                    "geometry": {"type": "Point", "coordinates": [end_poi["x"], end_poi["y"]]},
                     "properties": {
                         "description": f"{end_poi['name']} 목적지에 도착했습니다.",
-                        "facilityType": "11"
-                    }
-                }
-            ]
+                        "facilityType": "11",
+                    },
+                },
+            ],
         }
 
     url = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json"

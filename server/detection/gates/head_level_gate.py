@@ -42,13 +42,12 @@ def head_level_gate(
     """중위험(mid) 클래스 객체가 화면 상단 40% 영역(머리 높이)에 위치하면 고위험으로 격상한다.
 
     escalation_classes: 격상 대상 클래스 집합. 호출측(detection_pipeline)이
-    MID_RISK_CLASSES를 그대로 전달해 두 목록이 따로 어긋나지 않도록 한다.
+    HEAD_LEVEL_ESCALATION_CLASSES를 전달한다(인지 mid MID_RISK_CLASSES와 분리).
     """
     # 💡 [면접 대비 주석]
     # 격상 대상 클래스를 이 파일에 또 따로 하드코딩하지 않고 detection_pipeline에서 주입받는 이유:
-    # mid risk 기준과 head-level 격상 기준이 서로 다른 파일에서 따로 놀면,
-    # 어떤 클래스는 cognitive로 분류되는데 head-level에서는 격상되지 않는 식의 불일치가 생긴다.
-    # 그래서 "mid로 보는 클래스 집합"을 그대로 넘겨 단일 기준을 유지했다.
+    # head-level 격상 대상은 detection_pipeline.HEAD_LEVEL_ESCALATION_CLASSES로
+    # 단일 SSOT를 유지한다(2026-07-17: 인지 mid 객체 목록과 분리).
     if detection.class_name not in escalation_classes:
         return None
 

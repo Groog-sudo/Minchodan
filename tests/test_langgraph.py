@@ -18,7 +18,12 @@ if root_dir not in sys.path:
 
 import contextlib
 
-from server.detection.detection_pipeline import MID_RISK_CLASSES as PIPELINE_MID_RISK_CLASSES
+from server.detection.detection_pipeline import (
+    HEAD_LEVEL_ESCALATION_CLASSES,
+)
+from server.detection.detection_pipeline import (
+    MID_RISK_CLASSES as PIPELINE_MID_RISK_CLASSES,
+)
 from server.detection.gates.reflex_gate import HIGH_RISK_CLASSES
 from server.orchestration.graph import run_orchestrator
 from server.orchestration.nodes.l1_classifier import MID_RISK_CLASSES, classify_risk
@@ -68,13 +73,13 @@ if sys.stdout.encoding != "utf-8":
 def test_l1_risk_classification():
     """
     TC-LG-003: L1 위험도 분류 검증.
-    중위험 클래스 포함 시 'mid', 미포함 시 'low' 분류를 검증합니다.
+    2026-07-14 이후 객체 클래스는 mid가 아니며, 노면 이탈 확정 시에만 mid로 승격한다.
     """
-    # mid 위험 분류 확인 (실제 29클래스 탐지 모델 기준, 2026-07-07 정정)
-    assert classify_risk(["wheelchair"]) == "mid"
-    assert classify_risk(["bollard", "person"]) == "mid"
-    assert classify_risk(["bicycle"]) == "mid"
-    assert classify_risk(["tree_trunk"]) == "mid"
+    # 객체 단독 탐지는 low (인지 mid는 is_departing_confirmed 전용)
+    assert classify_risk(["wheelchair"]) == "low"
+    assert classify_risk(["bollard", "person"]) == "low"
+    assert classify_risk(["bicycle"]) == "low"
+    assert classify_risk(["tree_trunk"]) == "low"
 
     # low 위험 분류 확인 (기본값 - 정보성/비장애물 클래스)
     assert classify_risk(["traffic_light"]) == "low"
@@ -220,7 +225,7 @@ async def test_langgraph_api_error_fallback():
     """
     TC-LG-008: LLM API 호출 장애 발생 시 정적 Fallback으로 즉시 우회하여 파이프라인 영속성이 확보되는지 검증.
     """
-    initial_state = {"detected_classes": ["scooter"]}
+    initial_state = {"detected_classes": []}
 
     # ainvoke 호출 시 강제로 Exception을 발생시킴
     with patch(
@@ -242,7 +247,8 @@ async def test_langgraph_api_error_fallback():
 
 class TestRiskClassifierConsistency:
     """2026-07-07 회귀 테스트: l1_classifier와 detection_pipeline의 위험도 분류기가
-    서로 다른(그리고 실제 모델과도 어긋난) 클래스명 집합을 쓰던 버그의 재발을 방지한다."""
+    서로 다른(그리고 실제 모델과도 어긋난) 클래스명 집합을 쓰던 버그의 재발을 방지한다.
+    2026-07-17 Option A: 인지 mid 객체 목록은 L1·파이프라인 공집합, head-level 격상은 별도."""
 
     def test_l1_and_pipeline_mid_risk_classes_match(self):
         assert MID_RISK_CLASSES == PIPELINE_MID_RISK_CLASSES
@@ -250,6 +256,14 @@ class TestRiskClassifierConsistency:
     def test_mid_risk_classes_are_real_detection_classes(self):
         unknown = MID_RISK_CLASSES - REAL_DETECTION_CLASSES
         assert not unknown, f"실제 29클래스에 없는 MID_RISK_CLASSES 항목: {unknown}"
+
+    def test_head_level_escalation_classes_are_real_detection_classes(self):
+        unknown = HEAD_LEVEL_ESCALATION_CLASSES - REAL_DETECTION_CLASSES
+        assert not unknown, f"실제 29클래스에 없는 HEAD_LEVEL_ESCALATION_CLASSES 항목: {unknown}"
+
+    def test_head_level_escalation_disjoint_from_mid_risk_objects(self):
+        overlap = HEAD_LEVEL_ESCALATION_CLASSES & MID_RISK_CLASSES
+        assert not overlap, f"인지 mid 객체와 head-level 격상 목록이 겹침: {overlap}"
 
     def test_high_risk_classes_are_real_detection_classes(self):
         # HIGH_RISK_CLASSES는 2026-07-07부로 {class_name: min_confidence} 딕셔너리로 변경됨
@@ -268,3 +282,104 @@ class TestRiskClassifierConsistency:
     def test_high_risk_confidence_thresholds_in_valid_range(self):
         for class_name, min_conf in HIGH_RISK_CLASSES.items():
             assert 0.0 < min_conf <= 1.0, f"{class_name}의 min_confidence가 유효 범위를 벗어남"
+
+
+class TestAvoidanceFastLane:
+    """P1-1 (2026-07-17): 반사 후속 avoidance fast lane 단위 테스트."""
+
+    def _make_alert(self, direction="front", panning=0.0):
+        from server.detection.schemas import ReflexAlert
+
+        return ReflexAlert(
+            event_id="evt-1",
+            alert_id="high_obstacle",
+            direction=direction,
+            clip="reflex_clips/high_front.wav",
+            haptic=True,
+            panning=panning,
+            distance=0.8,
+            ts=0.0,
+            track_id="t1",
+            class_name="obstacle",
+            hit_count=3,
+            distance_band="medium",
+        )
+
+    def test_front_left_suggests_right(self):
+        """왼쪽 장애물 -> 오른쪽으로 우회 제안."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front-left")
+        assert build_avoidance_guidance(alert) == "오른쪽으로 비켜주세요"
+
+    def test_front_right_suggests_left(self):
+        """오른쪽 장애물 -> 왼쪽으로 우회 제안."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front-right")
+        assert build_avoidance_guidance(alert) == "왼쪽으로 비켜주세요"
+
+    def test_front_center_panning_suggests_stop(self):
+        """정면 중앙 장애물(panning 0) -> 멈추세요."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.0)
+        assert build_avoidance_guidance(alert) == "멈추세요"
+
+    def test_front_positive_panning_suggests_right(self):
+        """정면 장애물이 오른쪽으로 치우침(panning>0.2) -> 오른쪽으로 우회."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.5)
+        assert build_avoidance_guidance(alert) == "오른쪽으로 비켜주세요"
+
+    def test_front_negative_panning_suggests_left(self):
+        """정면 장애물이 왼쪽으로 치우침(panning<-0.2) -> 왼쪽으로 우회."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=-0.5)
+        assert build_avoidance_guidance(alert) == "왼쪽으로 비켜주세요"
+
+    def test_stop_direction_suggests_stop(self):
+        """direction=stop -> 멈추세요."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="stop")
+        assert build_avoidance_guidance(alert) == "멈추세요"
+
+    def test_unknown_direction_returns_none(self):
+        """알 수 없는 direction -> None (LangGraph 폴백)."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="unknown")
+        assert build_avoidance_guidance(alert) is None
+
+    def test_can_use_fast_lane_single_object(self):
+        """단일 객체 + 유효 direction -> fast lane 사용 가능."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front-left")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is True
+
+    def test_cannot_use_fast_lane_multi_object(self):
+        """다중 객체 -> fast lane 불가 (LangGraph 폴백)."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front-left")
+        detections = [
+            Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10)),
+            Detection(class_name="person", confidence=0.8, bbox=BBox(x=20, y=0, w=10, h=10)),
+        ]
+        assert can_use_avoidance_fast_lane(alert, detections) is False
+
+    def test_cannot_use_fast_lane_unknown_direction(self):
+        """알 수 없는 direction -> fast lane 불가."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="unknown")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is False

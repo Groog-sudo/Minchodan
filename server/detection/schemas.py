@@ -24,6 +24,10 @@ class Detection(BaseModel):
     # 2026-07-07 추가: 동일 track_id가 연속으로 몇 프레임 유지됐는지(ByteTrackTracker가 채움).
     # 실내 오탐 완화용 - reflex_gate가 이 값을 확인해 한 프레임짜리 순간 오탐을 걸러낸다.
     hit_count: int = 0
+    # P0-3 (2026-07-17): Approach-Lost 플래그. 동일 track_id가 1초 이내 소실 후 재탐지되어
+    # hit_count가 MIN_HIT_COUNT를 이미 충족했던 객체로 복원된 경우 True. reflex_gate는 이 때
+    # MIN_HIT_COUNT 재충족 대기 없이 즉시 발동해 접근 객체의 재등장 지연(S4)을 해소한다.
+    reacquired: bool = False
 
 
 class SurfaceResult(BaseModel):
@@ -60,6 +64,30 @@ class RiskEvent(BaseModel):
     braille_direction: str | None = None
 
 
+class DistanceProbeSample(BaseModel):
+    """LiDAR 실거리 검증 캡처 1건(=탐지 bbox 1개)의 클라이언트 보고값.
+
+    거리측정(depthMode) 프로토타입에서 얻은 LiDAR 실측(lidar_meters)만 클라이언트가
+    전송하고, 이 값과 비교할 휴리스틱 라벨(near/medium/far)은 서버가
+    server/detection/direction.py:estimate_distance()로 동일 bbox를 재계산해 채운다
+    (휴리스틱 계산의 단일 소스를 서버로 유지).
+    """
+
+    class_name: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    bbox: BBox
+    lidar_meters: float | None = None
+    lidar_sample_count: int = 0
+    lidar_accuracy: str | None = None  # "absolute" | "relative"
+    lidar_quality: str | None = None  # "high" | "low"
+    lidar_calibrated: bool = False
+
+
+class DistanceProbeReport(BaseModel):
+    event_id: str
+    samples: list[DistanceProbeSample] = Field(default_factory=list)
+
+
 class ReflexAlert(BaseModel):
     event_id: str
     alert_id: str
@@ -79,3 +107,6 @@ class ReflexAlert(BaseModel):
     track_id: str | None = None
     class_name: str = ""
     hit_count: int = 0
+    # P0-1 (2026-07-17): 억제 재무장 정책용 거리 밴드 ("near"|"medium"|"far").
+    # suppressor가 track_id+distance_band 조합 키로 억제하므로 거리 악화 시 재발화 가능.
+    distance_band: str = "medium"

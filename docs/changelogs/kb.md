@@ -2379,3 +2379,548 @@
   - `.xcodebuildmcp/config.yaml` 개인 절대경로/UDID는 커밋 제외(템플릿 유지).
 - **관련 파일**: `client/ios/ReflexFrameProcessorPlugin.swift`, `console/src/components/LiveCameraFeed.tsx`, `console/src/components/DetectionGuidanceLogTable.tsx`, `docs/changelogs/kb.md`
 - **검증 결과**: 이중 경로 검사 통과. react-doctor client는 기존 `useWebSocket.ts` ref-during-render(본 변경 무관)로 실패 — 이번 스코프 제외. 실기기 재설치 및 콘솔 Live Feed 정자세 확인.
+
+---
+
+### 2026-07-16 | 문서 | outdoor_guidance_refinement_roadmap v1.1
+
+- **커밋**: `556d338`
+- **변경 내용**:
+  - `docs/research/outdoor_guidance_refinement_roadmap.md`를 v1.1.0으로 개정. dg2 class-agnostic `reflex_gate`·단말 `isServerTimeout` 억제·`high_obstacle_{direction}` 억제키를 반영.
+  - Phase 1을 Option A(class-agnostic 고도화, 권장) / Option B(T1/T2/T3 재도입, 대안)로 분리. Phase 2 병렬 가능·경로(`services/audioEngine.ts`)·부록 정정표 추가.
+  - `docs/README.md` research 인덱스에 해당 로드맵 등재.
+- **관련 파일**: `docs/research/outdoor_guidance_refinement_roadmap.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 현 `reflex_gate.py` / `CameraView.tsx` 본문과 교차 검증 후 문서만 갱신.
+
+---
+
+### 2026-07-16 | 3단계 | outdoor Option A 반사 억제 1차 구현
+
+- **커밋**: `556d338`
+- **변경 내용**:
+  - Option A 채택: `reflex_gate`에 `MIN_HIT_COUNT` 본문 적용, `MIN_AREA_RATIO` 0.08→0.10, `alert_id`를 `high_obstacle`로 단순화(방향 버킷 TTL 우회 방지).
+  - `hapticEngine` continuous 패턴 5초 자동 캡. `risk_ssot_contract` §2-B·로드맵 v1.1.1·yolo 스킬 정합.
+  - `tests/test_detection.py` 게이트 기대를 class-agnostic에 맞게 갱신.
+- **관련 파일**: `server/detection/gates/reflex_gate.py`, `server/tts/suppressor.py`, `client/src/services/hapticEngine.ts`, `tests/test_detection.py`, `docs/design/risk_ssot_contract.md`, `docs/research/outdoor_guidance_refinement_roadmap.md`, `.agents/skills/yolo-obstacle-detection/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`
+- **검증 결과**: Option A 단위 17/17, 통합 스모크 5/5, Docker 게이트 14/14, `/health` 200·consumer 재기동 확인. 확장 48/50(실패 2건은 `MID_RISK_CLASSES=set()`·파이프라인 hit_count<4 기존 이슈, Option A 무관).
+
+---
+
+### 2026-07-16 | 6단계 | Phase 2 인지 guide 구조화 필드 1차 구현
+
+- **커밋**: `556d338`
+- **변경 내용**:
+  - `consumer._send_cognitive_guide`: `estimate_distance`·`class_name_to_ko`(`CLASS_TEXT` SSoT) 주입, `orch_input`에 `distance`/`object_ko`/한국어 `detected_classes` 연결.
+  - `OrchState`에 `distance`·`object_ko` 필드 추가. L2 프롬프트 `[탐지 거리]` 줄 추가. `fallback_node` 중복 `korean_names` 제거.
+  - guide WS 페이로드에 `clock_direction`·`distance_class`·`object_ko` 구조화 필드 추가(반사 `distance` 미터와 분리).
+  - 클라이언트 `WSMessage`/`GuidePayload` 타입·로그 갱신. `tests/test_cognitive_fields.py` 신설. `api_specification` §6.1 갱신.
+- **관련 파일**: `server/detection/consumer.py`, `server/detection/risk_rules.py`, `server/orchestration/state.py`, `server/orchestration/nodes/l2_generator.py`, `server/orchestration/nodes/fallback_node.py`, `client/src/types/detection.ts`, `client/src/hooks/useWebSocket.ts`, `tests/test_cognitive_fields.py`, `docs/design/api_specification.md`, `docs/research/outdoor_guidance_refinement_roadmap.md`
+- **검증 결과**: `pytest` Phase2+OptionA **31 passed** (로컬). Docker `test_cognitive_fields`+`TestGates` 통과. `useWebSocket.ts` `connectRef` 렌더 순수성 수정 후 client react-doctor 통과.
+
+---
+
+### 2026-07-16 | 6단계 | Phase 3 패스트 레인 1차 구현
+
+- **커밋**: `556d338`
+- **변경 내용**:
+  - `server/orchestration/nodes/fast_lane.py` 신설: 단일 객체+`clock_direction`+`distance`+`object_ko` 확정 시 템플릿 안내문 생성(LLM 생략).
+  - `graph.py` L1 직후 조건부 분기: 패스트 레인 → END, 복합/이탈/내비/필드 누락 → L2.
+  - `OrchState`에 `used_fast_lane`·`fast_lane_cache_key` 추가. `consumer` TTS 경로 `synthesize_fast_lane` 연동.
+  - `realtime_tts.py`: `data/guide_clips/{cache_key}.wav` 사전합성 클립 우선 로드, 미스 시 실시간 합성 폴백.
+  - `scripts/build_guide_clips.py` 오프라인 합성 스크립트, `data/guide_clips/` 디렉터리 추가.
+  - `tests/test_fast_lane.py` 11건 신설. 로드맵 v1.1.2 반영.
+- **관련 파일**: `server/orchestration/nodes/fast_lane.py`, `server/orchestration/graph.py`, `server/orchestration/state.py`, `server/detection/consumer.py`, `server/tts/realtime_tts.py`, `scripts/build_guide_clips.py`, `data/guide_clips/`, `tests/test_fast_lane.py`, `docs/research/outdoor_guidance_refinement_roadmap.md`
+- **검증 결과**: `pytest tests/test_fast_lane.py` **11/11 passed**. `build_guide_clips.py --dry-run` 조합 생성 확인.
+
+---
+
+### 2026-07-16 | 콘솔 | Detection Guidance Log 파이프라인 텍스트 디버그
+
+- **커밋**: `556d338`
+- **변경 내용**:
+  - `detection_guidance_logs.pipeline_debug_json` 컬럼 추가(마이그레이션 `20260716_001`). 관리자 콘솔 전용 STT 전사·RAG·LLM/패스트레인·브릿지 분기 텍스트 영속화.
+  - `server/services/pipeline_debug_builder.py` 신설. `consumer.py`(반사/인지)·`ws_router.py`(STT)에서 `persist_detection_guidance_log`에 debug payload 전달.
+  - 콘솔 `DetectionGuidanceLogTable` 행 상세/라이트박스에 **파이프라인 텍스트** 패널 추가. STT 행(`frame_path` 없음)도 상세 열림, REST `pipeline_debug_json` 객체/문자열 파싱, 테이블 **파이프라인 텍스트** 컬럼 추가. `tests/test_pipeline_debug.py` 5건.
+- **관련 파일**: `server/db/migrations/20260716_001_add_pipeline_debug_json_to_detection_guidance_logs.sql`, `server/services/pipeline_debug_builder.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/types/monitor.ts`, `tests/test_pipeline_debug.py`
+- **검증 결과**: Docker `pytest tests/test_pipeline_debug.py` **5 passed**. `console` `tsc --noEmit` 통과.
+- **비고**: MariaDB 마이그레이션 적용 완료(호스트 Tailscale 경유). Mac Docker는 `docker/scripts/db_tailscale_proxy.sh` + `COMPOSE_DB_HOST=host.docker.internal`/`COMPOSE_DB_PORT=13306`로 DB 연결(`macos_docker_start.sh` 자동 기동).
+
+---
+
+### 2026-07-16 | 콘솔·서버 | 파이프라인 디버그 확장·RiskEventLog·STT 대기 안내
+
+- **커밋**: `b813bd2`
+- **변경 내용**:
+  - `pipeline_debug_builder` 확장: YOLO 탐지·노면 분할·L1/L2 초안·STT 에코 스킵·템플릿/RAG 결과를 `pipeline_debug_json`에 저장. 콘솔 패널 세로 스택·테이블 셀 줄바꿈으로 텍스트 겹침 해소.
+  - `consumer._broadcast_risk_event`: 반사/인지 경보 시 SSE `risk_event` 발행 — `RiskEventLog` 실시간 표시 wiring.
+  - STT `should_play_stt_wait_notice` + `_send_stt_wait_notice`: 경로 검색·RAG·LLM 등 장시간 분기 전 **잠시만 기다려주세요!** 안내.
+  - `tests/test_risk_event_broadcast.py`, `tests/test_stt_wait_notice.py`, `test_ws_router_stt` 대기 안내 케이스 추가.
+- **관련 파일**: `server/services/pipeline_debug_builder.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `server/stt/stt_config.py`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/styles.css`, `tests/test_pipeline_debug.py`, `tests/test_risk_event_broadcast.py`, `tests/test_stt_wait_notice.py`, `tests/test_ws_router_stt.py`
+- **검증 결과**: Docker `pytest` 관련 **18 passed**. client/console react-doctor 통과.
+
+### 2026-07-16 | Git·문서 | kb → dev 병합 및 설계 문서 교차 검증
+
+- **커밋**: dev merge commit + docs sync (`aeea3bd`)
+- **변경 내용**:
+  - `origin/kb` 4커밋을 `dev`에 `--no-ff` 병합(충돌 없음).
+  - `architecture.md` §13.3.2: `risk_event` SSE 발행·`RiskEventLog` 연동 반영(stale 「미발행」 문구 제거).
+  - `api_specification.md` v0.4.22: §6.1 STT 대기 안내·`source` 필드, §8.3 `risk_event` producer, §8.5 `pipeline_debug_json` 확장 필드 표.
+  - `Directory_Structure.md`: `RiskEventLog` 주석을 SSE `risk_event`로 정정.
+- **배포 전 확인**: `20260716_001_add_pipeline_debug_json_to_detection_guidance_logs.sql` DDL 적용 여부.
+
+---
+
+### 2026-07-16 | 1단계 | dial_action_siri_shortcuts
+
+- **커밋**: `feat(stt,client): STT dial_action 전화 연결(Siri Shortcuts·Android ACTION_CALL)` (`60e4b65`)
+- **변경 내용**:
+  - STT dial_action 전화 연결 복원(서버 번호 해석·WS·Android ACTION_CALL·iOS Siri Shortcuts MinchodanDial·단축어 설치 스크립트). api_spec v0.4.25. Docker pytest dial 8 passed.
+- **관련 파일**: `client/android/app/src/main/AndroidManifest.xml`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/ios/Minchodan/Info.plist`, `client/ios/Minchodan/PrivacyInfo.xcprivacy`, `client/ios/Podfile.lock`, `client/src/hooks/useWebSocket.ts`, `client/src/types/detection.ts`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_ws_router_stt.py`, `client/android/app/src/main/java/com/minchodan/app/PhoneDialBridgeModule.kt`, `client/assets/shortcuts/`, `client/ios/MinchodanDialIntent.swift`, `client/ios/MinchodanSiriDialer.swift`, `client/ios/PhoneDialBridge.mm`, `client/ios/PhoneDialBridge.swift`, `client/src/services/phoneDialBridge.ts`, `scripts/create_minchodan_dial_shortcut.py`, `scripts/install_minchodan_dial_shortcut_ios.sh`, `server/rag/convenience_dial_resolver.py`, `server/stt/dial_resolver.py`, `server/stt/phone_utils.py`, `tests/test_convenience_dial_resolver.py`, `tests/test_dial_resolver.py`, `tests/test_phone_utils.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 3·6단계 | MID_RISK Option A 정합 (파이프라인-L1 SSOT)
+
+- **변경 내용**:
+  - 2026-07-14 부분 마이그레이션 마감: `detection_pipeline.py` 객체 `MID_RISK_CLASSES`를 L1과 동일한 공집합으로 정렬.
+  - `HEAD_LEVEL_ESCALATION_CLASSES`(18종) 신설 — `head_level_gate` 격상 전용, 인지 mid와 분리.
+  - `tests/test_langgraph.py`(TC-LG-003·TestRiskClassifierConsistency), `tests/test_departure_hysteresis.py` 갱신.
+  - `docs/stage-guides/stage6_orchestration_design.md` §7.1, `docs/design/behavior_and_risk_insight.md`, `.agents`/`.claude` `llm-guidance-orchestrator/SKILL.md` 동기화.
+- **관련 파일**: `server/detection/detection_pipeline.py`, `server/detection/gates/head_level_gate.py`, `tests/test_langgraph.py`, `tests/test_departure_hysteresis.py`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage6_orchestration_design.md`, `docs/design/behavior_and_risk_insight.md`, `.agents/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`
+
+---
+
+### 2026-07-17 | 테스트·문서 | M4/M1/M2 정합성 보완 (conftest·YOLO env·README)
+
+- **변경 내용**:
+  - **M4**: `tests/conftest.py` 신설 — fresh clone pytest 수집 시 DB env 기본값 주입. `test_mcp_integration.py` SSE 2번째 이벤트 `system_metrics` 계약 반영.
+  - **M1**: `YOLO_DET_CONF`(detector, 기본 0.50)와 `YOLO_CONF`(segmentor, 0.35) 분리 명세 — `.env.example`, README, `environment_variables.md`, `architecture.md`, stage3 문서.
+  - **M2**: README/Directory/deployment/android 가이드의 `build_chroma.sh`·stale yaml·`export_tensorrt.py` 정정. `data/{raw,frames,deduped,captions,chroma_db,guide_clips}/.gitkeep` 추가.
+- **관련 파일**: `tests/conftest.py`, `tests/test_mcp_integration.py`, `.env.example`, `README.md`, `docs/Directory_Structure.md`, `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/design/architecture.md`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage3_detection_code_review.md`, `docs/ops/test_specification.md`, `docs/ops/android_*.md`, `data/*/.gitkeep`
+
+---
+
+### 2026-07-17 | 인프라·문서 | multi_agent_rules_unification
+
+- **변경 내용**:
+  - **단일 진실 원천 아키텍처 도입**: 규칙은 `AGENTS.md`에서만 편집하고 각 에이전트 진입점은 얇은 포인터/symlink/요약본으로 통합. Codex·ZCode·opencode·Grok(정본 직접), Claude Code(`CLAUDE.md`→`@AGENTS.md` thin pointer), Cursor(`.cursor/rules/*.mdc` 간접 참조), Antigravity(`.antigravity/rules.md` 요약본 + `GEMINI.md` symlink) 모두 세션 시작 시 자동 로드.
+  - **AGENTS.md v0.3.6 승격**: CLAUDE.md(v0.3.5) 고유 스택 전환 근거 흡수(Supertonic 3 교체 사유, faster-whisper-small 전환 사유, Frame Processor 전환 사유, `AudioSessionBridge.swift` 경로, NavMapPanel 좌표 표시). §10 다중 에이전트 진입점 섹션 신설.
+  - **Antigravity 12,000자 캡 대응**: AGENTS.md 정본(14,864자)이 캡 초과 → `.antigravity/rules.md` 요약본(6,080자) 별도 생성. 핵심 섹션 7개(이중 경로, 반사 LLM 금지, 금지 행위, 이모지, main push, changelog, Router) 포함.
+  - **CLAUDE.md 단일 소스 통합**: 14KB 별개 파일(AGENTS.md와 드리프트) → `@AGENTS.md` import thin pointer로 교체.
+  - **pre-commit 정합성 검증 스크립트**: `scripts/validate_agent_rules.py` 신설 — CLAUDE.md 포인터, GEMINI.md symlink, `.antigravity/rules.md` 캡·핵심 섹션, `.cursor` 참조, 스킬 미러(`.agents/skills/`↔`.claude/skills/`), `@SKILLS.md` import 6종 검증. 6/6 통과.
+  - 팀 온보딩 가이드 `docs/dev-guides/multi_agent_setup.md` 신설.
+- **관련 파일**: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.antigravity/rules.md`, `.cursor/rules/00-core-guidelines.mdc`, `.gitignore`, `scripts/validate_agent_rules.py`, `docs/dev-guides/multi_agent_setup.md`
+- **검증 결과**: Ruff check 통과, 이중 경로 검증 통과(gates/ 내 금지 임포트 없음), `validate_agent_rules.py` 6/6 통과, 금지 파일(.env/.pt/.onnx) 미포함.
+- **비고**: `.gemini/`(Gemini CLI용) 제거 — 팀원 환경은 Antigravity IDE/CLI이므로 `.antigravity/` 사용. 커밋 범위는 본 작업 파일만 선별(이미 있던 server/tests/docs 변경은 별도 분리).
+
+---
+
+### 2026-07-17 | 6단계 | mid_risk_option_a_implementation
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - MID_RISK Option A 구현 커밋 (changelog 선기입분 코드·문서·테스트 동기화)
+- **관련 파일**: `server/detection/detection_pipeline.py`, `server/detection/gates/head_level_gate.py`, `tests/test_langgraph.py`, `tests/test_departure_hysteresis.py`, `docs/stage-guides/stage6_orchestration_design.md`, `docs/design/behavior_and_risk_insight.md`, `.agents/skills/llm-guidance-orchestrator/SKILL.md`, `.claude/skills/llm-guidance-orchestrator/SKILL.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 5단계 | m4_m1_m2_implementation
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - M4/M1/M2 정합성 보완 구현 커밋 (conftest·YOLO_DET_CONF·README·data gitkeep)
+- **관련 파일**: `tests/conftest.py`, `tests/test_mcp_integration.py`, `.env.example`, `README.md`, `docs/Directory_Structure.md`, `docs/design/architecture.md`, `docs/ops/android_device_integration_guide.md`, `docs/ops/android_ondevice_tflite_run_guide.md`, `docs/ops/android_wireless_test_guide_v2.md`, `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`, `docs/stage-guides/stage3_detection_code_review.md`, `docs/stage-guides/stage3_detection_design.md`, `data/raw/.gitkeep`, `data/frames/.gitkeep`, `data/deduped/.gitkeep`, `data/captions/.gitkeep`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 1단계 | dev_ios_lab_script
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS 실기기+Docker+DB 통합 테스트 랩 스크립트 (dev_ios_lab.sh)
+- **관련 파일**: `scripts/dev_ios_lab.sh`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 테스트 | kb→dev 병합 전 정합성 회귀 수정 (MID_RISK Option A)
+
+- **변경 내용**:
+  - kb→dev 병합 정합성 검토 중 회귀 3건 발견: 커밋 `6e273a3`("MID_RISK Option A 파이프라인-L1 SSOT")이 `MID_RISK_CLASSES`를 공집합으로 전환했으나 `tests/test_detection.py`의 파이프라인 테스트 4개 갱신 누락(dev 1개 실패 → kb 4개 실패).
+  - `test_segmentor_exception_returns_detections_only`: bicycle 기대값 `mid`→`low` (MID_RISK_CLASSES 공집합).
+  - `test_cognitive_publish_suppressed_when_client_reports_indoor`: bicycle 기대값 `mid`→`low` (발행 억제 정책은 유지, `assert_not_called` 그대로 통과).
+  - `test_mid_risk_publishes_to_redis`: 입력 bicycle(이제 low) → 노면 `roadway`로 변경하여 mid 유발. 테스트 본래 의도("mid → Redis 발행") 보존.
+  - `test_tracker_exception_still_returns_result`: bollard 기대값 `mid`→`none`. track_id="T-0001"이나 hit_count 기본값이 최소 유지 프레임(4) 미만이라 시간적 지속성 필터(`detection_pipeline.py:150`)에서 제외되고 tracker 예외로 hit_count 미증가 → 빈 detections → `none`이 올바른 분류.
+- **관련 파일**: `tests/test_detection.py`
+- **검증 결과**: Ruff 통과, `test_detection.py` 34 passed, 회귀 영향 범위(detection+langgraph+departure) 55 passed, 전체 스위트(test_ws_echo 환경 실패 제외) 256 passed.
+- **비고**: `test_ws_echo.py` 6개 실패는 Redis 미실행·FastAPI 서버 미기동(포트 8000) 환경 문제로 dev에서도 동일 실패(회귀 아님). 병합 후 CI에서는 인프라 기동 상태로 통과 예상.
+
+---
+
+### 2026-07-17 | 3단계 | merge_teammates_integration
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - merge teammates branches (jh, dg2, jy) into dev and fix conflict/test bugs
+- **관련 파일**: 없음
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 2단계 | ios_dev_bundle_metro_host
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS 실기기 개발 서명용 번들 ID(com.minchodan.app.kb.dev) 및 Metro 기본 호스트(LAN) 정합
+- **관련 파일**: `lient/app.json`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 2단계 | restore_ios_frame_processor
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - iOS takePhoto 강제 폴백 해제 - Frame Processor 복구로 AVFoundation Cannot Record(-11803) 해소
+- **관련 파일**: `lient/src/hooks/useCamera.ts`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+### 2026-07-17 | 1단계 | console_live_feed_smoothness
+
+- **커밋**: `4912835`
+- **변경 내용**:
+  - Vite `/navigation` WebSocket 프록시(`ws: true`) 추가 - 지도 iframe `navigation/ws` 연결 실패 해소.
+  - 콘솔 `useLiveFeed` Strict Mode 안전 재연결, Vite `/ws` 프록시 경로, rAF 최신 프레임만 렌더, 매 프레임 console.log 제거.
+  - 서버 `/ws/detect`: Live Feed 중계·ack는 즉시, YOLO `route_frame`은 백그라운드(동시 1개, busy 시 탐지 드롭)로 분리해 콘솔 영상이 탐지 지연에 묶이지 않도록 개선.
+  - 앱 캡처 최저 FPS 1→5fps, 스트림 프레임 로그 제거(JS 스레드 부하 완화).
+  - Live Feed 플레이스홀더 문구: 앱 연결·탐지 시작 필요 안내.
+  - (로컬만) `.env`에 `IMAGE_SERVER_*` / `EVENT_FRAME_STORAGE_BACKEND=remote` 설정 - 시크릿이라 커밋 제외.
+- **관련 파일**: `console/vite.config.ts`, `console/src/api/useLiveFeed.ts`, `console/src/components/LiveCameraFeed.tsx`, `server/api/ws_router.py`, `client/src/hooks/useCamera.ts`
+- **검증 결과**: 미디어 서버 업로드/조회 스모크 성공, FastAPI `/health` 200, navigation WS 프록시 연결 확인.
+- **비고**: FastAPI 재기동 후 앱 `/ws/detect` 재연결 및 탐지 시작 필요.
+
+### 2026-07-17 | 통합 | kb_shared_to_dev_exclude_ios_lab
+
+- **커밋**: `7c6fe81`
+- **변경 내용**:
+  - `kb` 공유 수정(Live Feed/WS/Frame Processor)을 `dev`에 FF 병합.
+  - 개인 랩 설정(`com.minchodan.app.kb.dev`, Metro `172.16.101.220`)은 `dev`에 넣지 않고 기존 `com.minchodan.app.kwanbum` / Tailscale Metro 기본값으로 되돌림.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `client/ios/Minchodan.xcodeproj/project.pbxproj`
+- **검증 결과**: FF 병합 후 개인 iOS 4파일만 `569cbb6` 기준으로 복원, 공유 서버/콘솔/useCamera 변경 유지.
+- **비고**: 실기기 랩은 `kb` 브랜치 또는 로컬 uncommitted/`METRO_BUNDLER_HOST`로 유지.
+
+### 2026-07-17 | 통합 | merge_dg2_shared_into_dev
+
+- **커밋**: `2a4d17e`
+- **변경 내용**:
+  - `dg2` → `dev` 병합: Android float32/AEC 복구, Live Feed 회전 UI, Android 패리티 문서 반영.
+  - 충돌 해결: `useCamera`(Stream+Cannot Record 주석 유지, MAX_REFLEX=200), `useLiveFeed`(Vite `/ws` 프록시 경로 유지).
+  - 개인 랩 제외: Tailscale/Metro/Vite `100.85.229.93`, docker NVIDIA deploy ON·MariaDB 3306 바인딩 OFF, tailscale 가이드 IP 변경 원복.
+  - `vite.config.ts`: localhost 프록시 + `/navigation` `ws: true` 유지.
+- **관련 파일**: `client/src/services/*android*`, `audioSessionBridge.ts`, `console/src/components/LiveCameraFeed.*`, `docs/mobile/android_platform_patch_results.md`
+- **검증 결과**: 충돌 마커 제거, 개인 IP 검색 0건, MAX_REFLEX=200·vite localhost 확인.
+- **비고**: dg2 개인 GPU/호스트 설정은 `dg2` 브랜치에만 유지.
+
+
+### 2026-07-17 | 통합 | sync_dev_into_kb_keep_lab
+
+- **커밋**: `355c014`
+- **변경 내용**:
+  - `origin/dev`(`44a56bc`)를 `kb`에 FF 반영 (dg2 Android 패리티·콘솔 회전·changelog 포함).
+  - kb 개인 랩 설정 유지: 번들 ID `com.minchodan.app.kb.dev`, Metro `172.16.101.220:8081`.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, (공유분은 dev와 동일)
+- **검증 결과**: FF 후 개인 4파일 복원, rotateDeg/Android float32/MAX_REFLEX=200 확인.
+- **비고**: 공유 코드는 dev와 동기, 실기기 랩 설정만 kb에 잔류.
+
+
+### 2026-07-17 | 인프라 | lab_env_yolo_ollama_align
+
+- **커밋**: `5428e43`
+- **변경 내용**:
+  - 랩 런타임 `.env`(로컬 전용, 커밋 제외): `DETECTOR_TYPE=yolo`, `OLLAMA_BASE_URL`/`COMPOSE_OLLAMA_BASE_URL=http://host.docker.internal:11434`, `TTS_ENGINE=supertonic`.
+  - `.env.example` 탐지 기본값을 `yolo`로 정합(주석에 mock 폴백 안내).
+  - `env.zip`(시크릿 포함)은 커밋하지 않음.
+- **관련 파일**: `.env.example`, (로컬) `.env`
+- **검증 결과**: FastAPI health `detector_type=yolo`, 컨테이너→Ollama 200, `YoloDetector`/`SupertonicTTSService` 로드 확인.
+- **비고**: 앱은 FastAPI 재기동 후 WS 재연결 필요.
+
+
+### 2026-07-17 | 클라이언트 | stt_fullscreen_touch_restore
+
+- **커밋**: `f9aab75`
+- **변경 내용**:
+  - STT press-and-hold를 7/10 설계대로 **화면 전체** 투명 레이어로 복원(시각장애인: 아무 곳이나 길게 눌러 말하기).
+  - 7/15 `9cb3548` 운영자 패널 분리 이후 카메라 영역만 STT였던 회귀를 해소.
+  - 운영자 버튼(탐지 시작 등)은 STT **위** absolute `box-none` 오버레이로 분리해, STT 한 번 후 버튼 먹통 문제 방지.
+  - STT 중 `setCapturePaused`로 JPEG/CoreML 콜백 일시 중지, 녹음 시작 락·16kHz warm-prepare로 반응 지연/중첩 AEC 완화.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useSttRecorder.ts`
+- **검증 결과**: 실기기 재빌드 후 터치/버튼 계층 복원 적용. Metro Reload로 JS 반영.
+- **비고**: 개인 iOS 랩 설정(번들 ID/Metro IP)은 본 커밋에 포함하지 않음. 로컬 `HEARTBEAT_TIMEOUT` 상향은 `.env`만(미커밋).
+
+### 2026-07-17 | 통합 | merge_kb_lab_settings_into_dev
+
+- **커밋**:
+- **변경 내용**:
+  - `kb` tip을 `dev`에 병합해 STT 전체화면 터치 복원과 함께 iOS 랩 설정·changelog 히스토리를 팀 공유 기준으로 올린다.
+  - 포함: 번들 ID `com.minchodan.app.kb.dev`, Metro LAN 호스트, `.env.example` yolo 정합 문서.
+- **관련 파일**: `client/app.json`, `client/ios/Minchodan/*`, `docs/changelogs/kb.md`, `.env.example`
+- **검증 결과**: changelog 충돌 해소 후 merge 커밋.
+- **비고**: 팀원 실기기 IP가 다르면 Metro/`EXPO_PUBLIC_*`만 로컬에서 맞추면 된다.
+
+---
+
+### 2026-07-17 | 1단계 | event_frame_buffering_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 이벤트 프레임 미디어 API 버퍼링 분석 가이드 P0/A1-A5 + P1/B3 구현: (A1) iOS CoreML 정상 모드에서 JS JPEG->float32 변환 우회 via requiresFloat32 계약, (A2) 단말 ACK 기반 in-flight 프레임 제한(MAX_IN_FLIGHT_FRAMES, 메타+binary pair 드롭), (A3) 서버 ACK를 콘솔 중계보다 먼저 처리(binary/base64 양 경로), (A4) 콘솔 송신 latest-only 큐(maxsize=1) + per-connection worker 분리로 느린 콘솔 역압력 차단, (A5) 콘솔 relay 3-5fps 쓰로틀, (B3) 공유 httpx.AsyncClient 연결 풀(lifespan 생성/종료, 방어적 폴백). main.py contextlib.suppress -> suppress import 정정.
+- **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/inference/localDetector.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/inference/tfliteDetector.ts`, `server/api/session_manager.py`, `server/api/ws_router.py`, `server/main.py`, `server/services/remote_storage_client.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-17 | 통합 | merge_jh_into_kb
+
+- **커밋**: `2e5c289`
+- **변경 내용**:
+  - `jh` tip을 `kb`에 병합해 생활지원 RAG BGE-M3 전환과 콘솔 대시보드 위젯 MVP 복구를 kb 작업선에 반영한다.
+  - 포함: `CONVENIENCE_EMBEDDING_PROVIDER/MODEL`(bge-m3) 환경변수, `scripts/build_convenience_db.py` 임베딩 파라미터, `server/rag/convenience_rag.py`, `console/src/pages/DashboardPage.tsx` 위젯 추가/삭제·카드 헤더 정렬, `console/src/styles.css`.
+- **관련 파일**: `.env.example`, `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`, `scripts/build_convenience_db.py`, `server/rag/convenience_rag.py`
+- **검증 결과**: 병합 시뮬레이션에서 `.env.example` 자동 병합 성공(양쪽 변경 위치 상이), 충돌 0건, 환경변수 문서(`docs/ops/environment_variables.md`)에 `CONVENIENCE_EMBEDDING_*` 이미 기록됨 확인.
+- **비고**: kb(버퍼링 수정·ws/camera)와 jh(RAG·콘솔)는 독립 영역으로 기능적 간섭 없음. 이중 경로 분리 원칙 유지.
+
+---
+
+### 2026-07-17 | 문서 | convenience_rag_setup_doc
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - jh 병합으로 들어온 생활지원 RAG(BGE-M3) 셋업 절차가 `deployment_guide.md`와 `README.md`에 누락된 갭을 보완. 팀원이 `git pull` 후 동일 환경을 구성할 수 있도록 명세화.
+  - `deployment_guide.md`: Ollama pull 섹션(3.사전 준비 + 4.1 Windows + 4.2 macOS/Linux)에 `ollama pull bge-m3` 추가, RAG 빌드 섹션에 `python scripts/build_convenience_db.py` 추가, `bge-m3`/`nomic-embed-text` 용도 분리 주석.
+  - `README.md`: `build_convenience_db.py`를 "선택"에서 필수 빌드 단계로 격상, `ollama pull bge-m3` 사전 요건 안내(Windows/macOS-Linux 양쪽), 기술 스택 모델 목록에 `bge-m3` 명시.
+- **관련 파일**: `docs/ops/deployment_guide.md`, `README.md`
+- **검증 결과**: 문서 교차 검증 — `.env.example`(L42-43)과 `docs/ops/environment_variables.md`(L199-201)에 이미 변수 명세 존재 확인, 본 변경은 실행 절차 보완만 수행.
+- **비고**: `.env` 자체는 gitignore로 팀원 공유 불가하므로 `.env.example` 기반 복제 절차가 단일 진실 원천. 로컬에서 수행한 `ollama pull bge-m3` + `build_convenience_db.py`(문서 34건 적재)는 검증 완료.
+
+---
+
+### 2026-07-17 | 문서 | convenience_rag_test_spec
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 생활지원 RAG 통합 검증 시나리오를 프로젝트 테스트 명세 체계의 정합성 위치에 등재. jh 병합으로 들어온 부가 경로(StT 음성 명령 → 생활지원 RAG)가 기존 4대 E2E 시나리오와 단계별 TC 매트릭스에 누락된 갭 보완.
+  - `docs/ops/test_specification.md`: §7 통합 smoke 검증에 TC-SMOKE-006 신설(`bge-m3` pull + `build_convenience_db.py` + 컨테이너 `answer_convenience_question()` 검색 응답 검증), 상세 절차 블록 및 3종 검증 쿼리 기록, 버전 v0.6.5 -> v0.6.6.
+  - `docs/ops/integration_scenario_test.md`: SC-E2E-005 STT 음성 명령 -> 생활지원 RAG 응답 부가 경로 시나리오 신설, §2 헤더 4대 -> 5대 E2E 갱신, §3 결과 대장에 SC-E2E-005 PASS 행 추가, 버전 v1.0.0 -> v1.1.0.
+- **관련 파일**: `docs/ops/test_specification.md`, `docs/ops/integration_scenario_test.md`
+- **검증 결과**: 문서 교차 검증 — 단위 테스트는 기존 `tests/test_convenience_dial_resolver.py` 등이 커버하므로 본 변경은 통합 smoke + E2E 시나리오 명세만 보완(단일 진실 원칙 유지). §5.4 RAG 섹션은 safety_guidelines 전용이라 convenience를 넣지 않아 정합성 훼손 방지.
+- **비고**: TC-SMOKE-006과 SC-E2E-005는 동일 검증의 매트릭스/시나리오 쌍. 2026-07-17 실측 기반으로 상태를 `완료`/`PASS`로 마킹.
+
+---
+
+### 2026-07-17 | 문서 | field_test_improvement_plan_편입
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 실기기 실외 보행 테스트 피드백(S1~S8) 기반 개선 구현 계획서를 `Downloads/`에서 프로젝트 `docs/research/` 트리로 편입. 정합성 이슈 3건 정정 동시 적용.
+  - `docs/research/field_test_improvement_plan.md` 신규 편입 (v1.0 -> v1.1): §2.2 `consumer.py:124-135` 라인 근거를 `_consume_loop(L282)` + `detection_pipeline.py`로 정정(원 라인은 `_broadcast_latency_event` 함수 본문), §2.6 "Object Detection 29클래스"를 "공식 명세 29종, CLASS_TEXT 실제 31종"으로 정정, §2.6 STAIR_DOWN "죽은 코드" 근거를 "CLASS_TO_HINT_ID 매핑 없음"에서 "alert_id 생성 경로에 'stair' 계열이 없어 `_hint_id_for_alert` L212 분기 도달 불가"로 정정.
+  - 상대경로 링크를 Downloads 기준(`../research/X`)에서 `docs/research/` 기준(`./X`)으로 수정, `../design/`·`../ops/`는 동일 디렉토리 구조상 유지.
+  - `docs/README.md` research 섹션에 새 문서 등재 (outdoor_guidance_refinement_roadmap.md 다음).
+- **관련 파일**: `docs/research/field_test_improvement_plan.md`, `docs/README.md`
+- **검증 결과**: 코드-문서 교차 검증 16개 항목 중 13개 정합, 3개 정정 완료. AGENTS.md 규칙(이모지 금지·한국어·mermaid 큰따옴표/br·하드-바이브 분할·이중 경로 원칙) 모두 준수. 선행 문서 8개 존재 확인, 환경변수 6개 기존 충돌 없음.
+- **비고**: 본 계획은 outdoor_guidance_refinement_roadmap.md의 후속 Phase로 상호 참조. 구현 시 과제별로 별도 changelog 엔트리 추가 예정.
+
+---
+
+### 2026-07-17 | 3단계 | M1_P0-2_큐_최신성
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M1/P0-2 구현: 반사 큐 최신성 보장(latest-frame-wins) + 프레임 신선도 검사 + 큐 대기 계측으로 지연 드리프트(S3) 해소.
+  - `server/capture/stream_splitter.py`: `QUEUE_MAXSIZE=100` 단일 상수를 `REFLEX_QUEUE_MAXSIZE=2`/`COGNITIVE_QUEUE_MAXSIZE=4`로 분리 (환경변수 오버라이드). `get_default_splitter`에 적용. `QUEUE_MAXSIZE`는 하위 호환용으로 두 분리 상수의 최댓값.
+  - `server/detection/consumer.py`: `_process_frame` 진입부에 신선도 검사 추가 (`now - processed.ts > REFLEX_MAX_AGE_S/COGNITIVE_MAX_AGE_S` 초과 시 추론 없이 드롭 + `_stale_drop_count` 증가). `queue_wait_ms` 계산 후 reflex/cognitive 양쪽 `latency_stages`에 `queue_wait_ms` 키 추가 (콘솔 지연 패널 노출). ts=0(클라이언트 미전송)이면 검사 건너뜀(방어적 코딩).
+  - `docs/ops/environment_variables.md` + `.env.example`: `REFLEX_QUEUE_MAXSIZE`, `COGNITIVE_QUEUE_MAXSIZE`, `REFLEX_MAX_AGE_S`, `COGNITIVE_MAX_AGE_S` 4개 변수 추가.
+  - `tests/test_frame_decode.py`: `TestP0QueueFreshness` 클래스 신규 (reflex/cognitive 큐 latest 유지, 신선도 상수 로드 검증). 기존 `test_singleton_queue_maxsize`를 새 분리 상수 기반으로 업데이트. asyncio import 추가.
+- **관련 파일**: `server/capture/stream_splitter.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_frame_decode.py`
+- **검증 결과**: `pytest tests/test_frame_decode.py` 33개 전체 통과. consumer/stream_splitter import 정상, FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: M2(P0-1 억제 재무장)·M3(P0-3 소형 객체)의 선행. 큐 축소로 hit_count 증가 지연 가능성은 리스크(§10)로 명시, 드롭률 30% 초과 시 MIN_HIT_COUNT 하향 검토 예정.
+
+---
+
+### 2026-07-17 | 3단계 | M2_P0-1_억제_재무장_정책
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M2/P0-1 구현: 반사 억제 60초 무조건 침묵 -> 재무장(Re-arm) 정책으로 전환. "같은 상황 반복은 억제, 상황 변화(새 객체/거리 악화) 시 즉시 재발화"로 S1(정지 후 60초 침묵)·S2(새 객체 무시) 해소.
+  - `server/tts/suppressor.py`: 재무장 정책 구현. 억제 키 `high_obstacle:{track_id}:{distance_band}`로 분리 (새 객체/거리 악화 시 키 달라져 억제 우회). `should_rearm(prev_band, current_band)` 정적 메서드로 밴드 악화(far->medium->near) 판정 + [면접 대비 주석]. `should_emit_reflex(device_id, track_id, distance_band, is_near)` 비동기 메서드: near(<=0.6m)는 TTL 억제 제외 500ms 스로틀만, non-near는 device 단위 1.5s 쿨다운 + 동일 트랙+밴드 5s TTL + 밴드 악화 재발화. `mark_reflex_sent` 신규. 기존 `should_suppress`/`mark_as_sent`는 레거시 하위 호환 유지. 환경변수 `REFLEX_SUPPRESS_TTL_S`(5), `REFLEX_MIN_GAP_S`(1.5), `REFLEX_NEAR_HAPTIC_THROTTLE_S`(0.5) 추가.
+  - `server/detection/schemas.py`: `ReflexAlert`에 `distance_band` 필드 추가 (기본 "medium").
+  - `server/detection/gates/reflex_gate.py`: distance 기반 밴드 산출 (near<=0.6m / medium<=1.5m / far) + [면접 대비 주석]. `ReflexAlert`에 `distance_band` 채움.
+  - `server/detection/consumer.py`: `_send_reflex_alert`가 `should_emit_reflex`/`mark_reflex_sent` 사용. payload에 `distance_band` 추가 (단말/콘솔 가시성).
+  - `docs/ops/environment_variables.md` + `.env.example`: 3개 신규 변수 문서화.
+  - `tests/test_suppressor_rearm.py` 신규: should_rearm 단위(신규/악화/동일/개선), near 스로틀, non-near TTL/쿨다운/밴드 악화 재발화 12개 케이스.
+  - `tests/test_detection.py`: `TestReflexAlertSuppression` 3개 테스트를 새 API(`should_emit_reflex`/`mark_reflex_sent`)로 업데이트.
+- **관련 파일**: `server/tts/suppressor.py`, `server/detection/schemas.py`, `server/detection/gates/reflex_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_suppressor_rearm.py`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 79개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: near 햅틱 스로틀(500ms)은 충돌 임박 촉각 신호의 반복 안전 이득을 손실보다 크게 평가한 설계 선택. 밴드 경계(0.6m/1.5m)는 보행 속도 1m/s 기준.
+
+---
+
+### 2026-07-17 | 3단계 | M3_P0-3_소형객체_하단근접_ApproachLost
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M3/P0-3 구현: 소형 객체 하단 근접 보정 + Approach-Lost 재획득 즉시 재발화로 S4(재등장 0.3s 지연)·소형 객체 누락 해소.
+  - `server/detection/schemas.py`: `Detection`에 `reacquired: bool = False` 필드 추가.
+  - `server/detection/bytetrack_tracker.py`: `_compute_hit_count_with_reacquire()` 신규. 직전 hit_count >= APPROACH_LOST_MIN_PREV_HIT(3)이고 updated_at이 APPROACH_LOST_WINDOW_S(1.0s) 이내 재탐지 시 reacquired=True + [면접 대비 주석]. hit_count는 정상 누적 유지(감소시키지 않음). 환경변수 `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT` 추가.
+  - `server/detection/gates/reflex_gate.py`:
+    - (a) 소형 객체 하단 근접 보정: bottom_y >= 0.8*frame_height AND SMALL_OBJECT_MIN_AREA_RATIO(0.04) <= area_ratio < MIN_AREA_RATIO(0.10)이면 is_very_close=True + [면접 대비 주석]. 발밑 작은 bbox(볼라드·모터사이클)가 원거리로 오인되어 반사 누락되는 문제 해소.
+    - (b) reacquired=True면 MIN_HIT_COUNT 검사 건너뛰어 즉시 발동 + [면접 대비 주석].
+    - `SMALL_OBJECT_MIN_AREA_RATIO=0.04` 상수 추가.
+  - `docs/ops/environment_variables.md` + `.env.example`: `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT` 2개 변수 추가.
+  - `tests/test_detection.py`: TestGates에 3개(소형 하단 근접 발동/하한 미만 미발동/reacquired MIN_HIT bypass), TestByteTrackTracker에 3개(윈도우 내 reacquired/윈도우 외 False/직전 hit 낮으면 False) 테스트 추가.
+- **관련 파일**: `server/detection/schemas.py`, `server/detection/bytetrack_tracker.py`, `server/detection/gates/reflex_gate.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 85개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: Approach-Lot는 track_id가 유지되는 케이스를 전제(문서 §4.2 (b) "동일 track_id"). 완전히 새 track_id 부여 시 spatial matching이 필요하나 post-MVP 과제. SMALL_OBJECT_MIN_AREA_RATIO(0.04)는 중앙 먼 곳 작은 bbox 오탐 차단을 위한 하한.
+
+---
+
+### 2026-07-17 | 6단계 | M4_P1-2_발화가치_게이트
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M4/P1-2 구현: 인지 가이드 발화 가치(Utterance Value) 게이트 추가. 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S(30s) 동안 TTS 합성 생략해 CPU 점유와 중복 안내를 동시 감소 (S5/S6 해소).
+  - `server/detection/consumer.py`:
+    - `COGNITIVE_UTTERANCE_COOLDOWN_S` 환경변수 상수(30.0) 추가.
+    - `_last_guide_signature: dict[str, str]` 인스턴스 변수 추가 (device_id별 상황 서명).
+    - `_compute_cognitive_signature(result, departure_confirmed)` 정적 메서드: 객체 클래스 정렬 + 표면 클래스 정렬 + 이탈 여부로 서명 산출 + [면접 대비 주석].
+    - `_has_utterance_value(device_id, result, departure_confirmed)` 메서드: 발화 가치 OR 판정 (보도 이탈/서명 변화/쿨다운 경과).
+    - `_send_cognitive_guide` 진입부에 P1-2 게이트 추가 (기존 오디오 겹침 쿨다운 앞). 전송 성공 시 `_last_guide_signature` 갱신.
+  - `docs/ops/environment_variables.md` + `.env.example`: `COGNITIVE_UTTERANCE_COOLDOWN_S` 변수 추가.
+  - `tests/test_detection.py`: `TestUtteranceValueGate` 클래스 신규 8개 케이스 (서명 객체/표면/이탈 반영, 이탈 항상 가치, 새 객체 가치, 동일 서명 쿨다운 내 생략, 동일 서명 쿨다운 경과 발화, 최초 안내 가치).
+- **관련 파일**: `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py` 93개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: 기존 오디오 겹침 쿨다운(_required_guide_gap_sec, 8s+오디오길이)은 유지 - P1-2 게이트는 "동일 상황 반복" 차단, 기존 쿨다운은 "오디오 재생 중 겹침" 차단으로 역할 분리. fallback_node/realtime_tts는 consumer 게이트로 사전 차단되어 호출 자체가 생략되므로 TTS 합성 미호출 보장.
+
+---
+
+### 2026-07-17 | 6단계 | M5_P1-1_반사_후속_행동_안내
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M5/P1-1 구현: 반사 경보(정지) 800ms 후 인지 가이드(LangGraph L2) 대신, 단일 객체 + 방향 확정 시 avoidance 템플릿으로 즉시 우회 방향 안내. LangGraph 전체(L1/L2/L3) 수 초 소요를 없애 반사 후속 안내 지연(S7) 해소.
+  - `server/orchestration/avoidance.py` 신규: `build_avoidance_guidance(alert)` 순수 함수. direction(front/front-left/front-right/stop) + panning 기반 우회 방향 템플릿 (20자 이내) + [면접 대비 주석]. `can_use_avoidance_fast_lane(alert, detections)` 판정 (단일 객체 + 유효 direction + 20자 이내). 비협상 원칙 준수: LLM/RAG/실시간 TTS 미경유, 순수 템플릿.
+  - `server/detection/consumer.py`:
+    - `_send_cognitive_guide`에 `preset_guidance_text: str | None` 파라미터 추가. 주어지면 `run_orchestrator`(LangGraph) 우회하고 preset 텍스트로 즉시 TTS 합성 후 전송.
+    - `_trigger_delayed_cognitive_guide`에서 avoidance fast lane 우선 시도. `can_use_avoidance_fast_lane` True면 `build_avoidance_guidance`를 preset으로 전달 (LangGraph 우회). 다중 객체/방향 불확정 시 기존 LangGraph 폴백.
+  - `tests/test_langgraph.py`: `TestAvoidanceFastLane` 클래스 신규 11개 케이스 (front-left→오른쪽, front-right→왼쪽, 정면 중앙→멈추세요, panning±→좌/우, stop→멈추세요, unknown→None, 단일 객체 fast lane 가능, 다중 객체 불가, unknown direction 불가).
+- **관련 파일**: `server/orchestration/avoidance.py`, `server/detection/consumer.py`, `tests/test_langgraph.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 116개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: avoidance fast lane은 반사 후속(800ms 후) 인지 경로 진입점에서 동작하므로 반사 경로 임포트 금지 규칙 미위반. 다중 객체/방향 불확정 시 기존 LangGraph로 폴백해 안전성 확보. preset 텍스트는 실시간 TTS 합성(사전합성 클립 아님) - 인지 경로 허용.
+
+---
+
+### 2026-07-17 | 3단계 | M6_P2-1_계단_실측_단기보정
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M6/P2-1(a)(b) 구현: 계단(caution 통합 클래스) 오탐 실측 평가 스크립트 + surface_caution 반사 발동 히스테리시스로 단일 프레임 오탐 완화.
+  - `scripts/eval_segmentation_stairs.py` 신규 (a): 세그멘테이션 모델 caution 클래스 정밀도/재현율/F1 실측 평가 스크립트. EVAL_SEG_DATASET_DIR 환경변수로 데이터셋 경로 받아 TP/FP/FN 산출. 미설정 시 더미 평가로 스크립트 동작 검증. caution 클래스 인덱스=1 (4클래스 중).
+  - `server/detection/consumer.py` (b): surface_caution 반사 발동 히스테리시스 추가. `SURFACE_CAUTION_CONFIRM_STREAK`(2) 연속 프레임 확인 후 반사 발동, 미달 시 스킵. `_surface_caution_streak` 인스턴스 변수. 비-surface 반사(high_obstacle)는 기존대로 즉시 발동 + [면접 대비 주석].
+  - `server/detection/risk_rules.py` (b): `_hint_id_for_alert`에 "caution" in alert_id → STAIR_DOWN 매핑 추가 + [면접 대비 주석]. surface_caution ReflexAlert가 낙상 위험 힌트로 전달.
+  - `docs/ops/environment_variables.md` + `.env.example`: `SURFACE_CAUTION_CONFIRM_STREAK` 변수 추가.
+  - `tests/test_detection.py`: `TestSurfaceCautionHysteresis` 클래스 신규 2개 케이스 (상수 로드, caution alert STAIR_DOWN 매핑).
+- **관련 파일**: `scripts/eval_segmentation_stairs.py`, `server/detection/consumer.py`, `server/detection/risk_rules.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: 평가 스크립트 더미 실행 정상 (Precision=0.8, Recall=0.7273, F1=0.7619). `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 118개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK.
+- **비고**: (c) 세그 5클래스 재학습 + STAIR_DOWN 활성화는 M7에서 분리. 히스테리시스는 caution이 인지 경로에서도 설명되므로 미달 시 반사 스킵해도 안전 마진 유지.
+
+---
+
+### 2026-07-17 | 3단계 | M7_P2-1c_세그5클래스_파이프라인_P2-2_지연관측
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 계획서 M7/P2-1(c) + P2-2 구현: 세그멘테이션 5클래스(계단/맨홀 분리) 재학습 파이프라인 골격 + STAIR_DOWN 활성화 사전 등록 + 파이프라인 지연 관측(콘솔 latency_alert).
+  - `scripts/train_segmentation_5class.py` 신규 (c): 5클래스 세그멘테이션 재학습 파이프라인. 데이터 검증 -> 학습 -> 검증 단계 골격. SEG_5CLASS_NAMES(5클래스 제안), --dry-run/--validate-only 옵션. 환경변수 SEG_5CLASS_MODEL_BASE, SEG_5CLASS_OUTPUT_DIR.
+  - `server/detection/gates/surface_gate.py` (c): P0_SURFACE_CLASSES에 5클래스 모델용 `stair_down`, `manhole` 사전 등록 + [면접 대비 주석]. 4클래스(caution 통합)/5클래스(분리) 모델 모두 지원해 모델 교체 시 게이트 코드 변경 없이 STAIR_DOWN 활성화.
+  - `server/detection/consumer.py` (P2-2): `_broadcast_latency_event`에 latency_alert 필드 추가. total_ms가 REFLEX_LATENCY_ALERT_MS(300)/COGNITIVE_LATENCY_ALERT_MS(3000) 초과 시 latency_alert=True, latency_threshold_ms 포함해 콘솔에 실시간 지연 드리프트 알림.
+  - `docs/ops/environment_variables.md` + `.env.example`: `REFLEX_LATENCY_ALERT_MS`, `COGNITIVE_LATENCY_ALERT_MS` 2개 변수 추가.
+  - `tests/test_detection.py`: `TestLatencyAlertAndStairDown` 클래스 신규 4개 케이스 (지연 임계 로드, stair_down 5클래스 surface_gate, manhole 5클래스, stair_down alert STAIR_DOWN 힌트 매핑).
+- **관련 파일**: `scripts/train_segmentation_5class.py`, `server/detection/gates/surface_gate.py`, `server/detection/consumer.py`, `docs/ops/environment_variables.md`, `.env.example`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py tests/test_suppressor_rearm.py tests/test_frame_decode.py tests/test_langgraph.py` 122개 전체 통과. FastAPI 컨테이너 재시작 후 헬스 200 OK. 학습 스크립트 dry-run 정상 동작.
+- **비고**: 5클래스 재학습은 라벨링된 데이터셋 준비 후 오프라인 실행. STAIR_DOWN은 5클래스 모델 배포 시 surface_gate 사전 등록으로 자동 활성화. 지연 관측은 콘솔 운영자용 모니터링 강화.
+
+---
+
+### 2026-07-17 | 문서 | 필드테스트개선_M1-M7_문서동기화
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 필드 테스트 개선 M1-M7 구현에 대한 문서 동기화 (교차 검증).
+  - `docs/ops/test_specification.md`: TC-DET-012~018(큐 최신성/재무장/소형객체/Approach-Lost/surface 히스테리시스/STAIR_DOWN 5클래스/지연관측), TC-LG-010~011(발화가치게이트/avoidance fast lane) 신규 등재. 버전 v0.6.6 -> v0.6.7.
+  - `docs/design/architecture.md`: §11 "필드 테스트 개선 (2026-07-17, M1-M7)" 섹션 신설. P0/P1/P2 마일스톤 요약, 신규 환경변수 목록, 오해 방지 조항(서버-온디바이스 폴백 유지 명시).
+  - `docs/design/api_specification.md`: §4.1 reflex_alert에 `distance_band` 필드 추가 + 억제 키 정정. §4.3 latency_event 섹션 신설(`latency_alert`, `latency_threshold_ms`, `queue_wait_ms` 필드).
+  - `docs/design/reflex_audio_specification.md`: §6 "억제 재무장(Re-arm) 정책" 섹션 신설. 정책 전환, 억제 키 분리, 거리 밴드, should_rearm 판정, 오해 방지 조항.
+- **관련 파일**: `docs/ops/test_specification.md`, `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/design/reflex_audio_specification.md`
+- **검증 결과**: 문서 교차 검증 완료. 코드-문서 정합성 확보 (ReflexAlert distance_band, latency_event latency_alert, 재무장 정책 키/TTL/밴드 일치).
+- **비고**: environment_variables.md는 M1-M7 각 커밋에서 이미 갱신 완료. changelog도 각 M별로 이미 추가됨. 본 커밋은 남은 3개 설계 문서 동기화.
+
+---
+
+### 2026-07-17 | 기능 | LiDAR 실거리 검증 로깅 연결 (검증 전용 스코프)
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - DB 로그로 LiDAR 기반 거리 탐지 정확도를 분석할 수 없던 문제(LiDAR 실측값이 서버 전송·DB 저장 없이 클라이언트 로컬에만 존재) 해소. LiDAR 심도 카메라가 vision-camera와 별도 `AVCaptureSession`을 써서 실시간 탐지와 동시 실행이 불가능한 구조적 제약(`DepthProbeBridge.swift`)이 있어, 실시간 라이브 융합이 아닌 **검증 전용 스코프**로 범위를 확정하고 구현.
+  - 데이터 흐름: 거리측정(depthMode) 모드의 "검증 캡처" 버튼 -> `depthResult.previewUri`(depth 동기화 정지 프레임)를 기존 `detection`(base64) 경로로 전송 -> 서버 YOLO 추론 후 기존 `server_detection` 응답(bbox)을 클라이언트가 event_id로 상관관계 매칭 -> 같은 depth 세션에서 `probeDepthBoxes()`로 LiDAR 실측 샘플링 -> 신규 `distance_probe_sample` 메시지로 서버 전송 -> 서버가 `estimate_distance()`로 동일 bbox의 휴리스틱 라벨을 재계산해 LiDAR 실측과 함께 신규 테이블에 저장.
+  - `server/detection/schemas.py`: `DistanceProbeSample`/`DistanceProbeReport` pydantic 모델 신규.
+  - `server/db/models.py`: `LidarDistanceValidationSample` ORM 클래스 신규(`lidar_distance_validation_samples` 테이블). 기존 `detection_guidance_logs`에 컬럼을 추가하지 않고 별도 테이블로 분리(카디널리티가 다름 - 1 캡처당 N bbox 행).
+  - `server/db/migrations/20260717_001_add_lidar_distance_validation_samples.sql` 신규.
+  - `server/db/repositories.py`: `LidarDistanceValidationRepository`(create_many/list_recent) 신규.
+  - `server/services/lidar_validation_service.py` 신규: `persist_distance_probe_samples()` - `async_sessionmaker_factory` 패턴으로 WS 컨슈머 컨텍스트에서 세션 직접 관리, `bbox_area_ratio()`/`estimate_distance()`(`server/detection/direction.py`) 재사용해 휴리스틱 계산.
+  - `server/api/ws_router.py`: `distance_probe_sample` 메시지 분기 + `_handle_distance_probe_sample()` 핸들러 추가(background task, RUF006 대응 세트 패턴).
+  - `client/src/services/depthProbe.ts`: 기존 미사용(private) `probeDepthBoxes()`를 export로 전환.
+  - `client/src/components/CameraView.tsx`: "검증 캡처" 버튼 신설(depthMode 전용, 수동 트리거). `server_detection` 핸들러를 확장해 event_id 매칭 시 LiDAR 매칭·전송 수행.
+  - `scripts/analyze_lidar_validation.py` 신규: 클래스별/휴리스틱 라벨별 LiDAR 실측 분포 집계 스크립트. 판정 임계값은 자동화하지 않고 담당자가 직접 해석하도록 집계·출력만 수행(AGENTS.md §8 학습형 협업 패턴).
+  - 문서 동기화: `docs/design/api_specification.md`(§6.8 신설, v0.4.27), `docs/design/architecture.md`(§6.7 데이터 계약 표 추가, v0.4.10), `docs/research/mitos_improvement_roadmap.md`(§2 거리 추정 행 갱신, v0.4.0).
+- **관련 파일**: `server/detection/schemas.py`, `server/db/models.py`, `server/db/migrations/20260717_001_add_lidar_distance_validation_samples.sql`, `server/db/repositories.py`, `server/services/lidar_validation_service.py`, `server/api/ws_router.py`, `client/src/services/depthProbe.ts`, `client/src/components/CameraView.tsx`, `scripts/analyze_lidar_validation.py`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/research/mitos_improvement_roadmap.md`
+- **검증 결과**: `ruff check`/`ruff format` 전체 통과, `bandit` 신규 파일 무결과(이슈 없음), `mypy` 신규/수정 서버 파일 무결과. `npx tsc --noEmit` 신규 오류 없음(기존 3건은 이번 변경과 무관한 pre-existing 오류로 확인 - `CameraView.tsx` StyleSheet.absoluteFillObject, `useSttRecorder.ts` 상태 비교 2건). 신규 모듈 import 스모크 테스트 통과(`server.db.models`, `server.db.repositories`, `server.detection.schemas`, `server.services.lidar_validation_service`, `server.api.ws_router`).
+- **비고**: 반사/인지 경로의 실시간 거리 판단 로직은 변경하지 않았다(휴리스틱이 여전히 운영 판단의 단일 소스). vision-camera 세션과 LiDAR 세션의 동시 실행(실시간 라이브 융합)은 별도 후속 과제로 명시적으로 범위 밖에 둠. 실기기(LiDAR 탑재 iPhone Pro) 검증 캡처 E2E 테스트와 `scripts/analyze_lidar_validation.py` 실행에 의한 실데이터 집계 확인은 아직 미실시(로컬 DB에 데이터 없음).
+
+---
+
+### 2026-07-18 | 전체 | 정합성 검토 보고서 개선사항 반영
+
+- **커밋**: `fix: 정합성 검토 보고서 개선사항 반영 (CORS, 인증, 문서, 고아 파일, 스캔 보고서)`
+- **변경 내용**:
+  - `server/main.py`: CORS `allow_origin_regex="https?://.*"` 제거. Starlette `CORSMiddleware`는 `allow_origins` 또는 `allow_origin_regex` 중 하나만 매치돼도 요청을 허용하므로, regex가 `settings.CORS_ORIGINS` 화이트리스트를 무력화했고 `allow_credentials=True`와 결합 시 임의 출처 자격증명 요청이 허용되는 위험이 있었다. 주석에 2026-07-18 정정 이력 추가.
+  - `server/api/auth.py`: `_verify_static_token`을 상수시간 비교 `hmac.compare_digest`로 전환하여 타이밍 공격 여지를 제거. `import hmac` 추가.
+  - `README.md`: 디렉토리 구조에 `server/services/`, `server/stt/`, `server/navigation/`, `server/mcp/` 및 `console/` 추가. `docs/Directory_Structure.md`는 stale하다고 자체 정정한 상태이므로 README 트리를 코드 구조 기준으로 최신화.
+  - `server/navigation/pedestrian_navigation.py`: 프로덕션에 사용되지 않는 `input()` 기반 인터랙티브 CLI 프로토타입 삭제. 실제 길안내는 `NavigationSession`/`NavigationFilter`/`server.py`가 담당.
+  - `docs/ops/deployment_guide.md`: `docker/docker-compose.yml`이 로컬 개발·데모 전용임을 명시하고, Redis(`requirepass` 미설정, 6379 호스트 노출) 및 MariaDB(기본 비밀번호 폴백)의 프로덕션 강화 권장사항을 7.4절에 추가.
+  - `scripts/project_scan.py`: `Path.write_text(..., newline="\n")`가 Python 3.9에서 지원되지 않아 스크립트 실행이 실패하던 버그를 `open(..., newline="\n")`으로 수정.
+  - `scripts/project_scan_report.md`: 2026-07-18 기준으로 재생성. 이전 보고서(2026-07-06, 84016 파일)는 node_modules 등이 누적되어 stale했음.
+  - 정합성 교차 검토로 추가 발견된 문서 잔여 참조 정정:
+    - `docs/design/architecture.md`: Mermaid 다이어그램 및 구성 요소 테이블의 `server/navigation/pedestrian_navigation.py`를 `server/navigation/server.py`로 변경.
+    - `docs/ops/environment_variables.md`: `TMAP_APP_KEY` 참조에서 `server/navigation/pedestrian_navigation.py:269`를 제거하고 `server/navigation/server.py:38`로 정정.
+    - `docs/design/api_specification.md`: `realtime_gps` 메시지 설명의 `server/navigation/pedestrian_navigation.py`를 `server/navigation/server.py`로 변경.
+- **관련 파일**: `server/main.py`, `server/api/auth.py`, `README.md`, `server/navigation/pedestrian_navigation.py`, `docs/ops/deployment_guide.md`, `scripts/project_scan.py`, `scripts/project_scan_report.md`, `docs/design/architecture.md`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`
+- **검증 결과**: `python3 -m ruff format .` 211개 파일 변경 없음, `python3 -m ruff check .` All checks passed.
+- **비고**: 외부 정합성 검토 보고서에서 식별된 6개 개선사항(1 Critical, 2 Medium, 3 Low)을 반영. `pedestrian_navigation.py` 삭제 후에도 문서 잔여 참조가 남아 있어 정합성 교차 검토로 추가 동기화함.
+
+---
+
+### 2026-07-18 | 병합 | 팀원 브랜치(jh/jy/th/dg2) dev 통합 및 정합성 정정
+
+- **작업 내용**: `dev` 대비 미병합 상태였던 팀원 개인 브랜치 4종(jh, jy, th, dg2)과 kb 자체 신규 커밋 2건을 검토 후 `dev`에 순차 병합.
+  - 병합 전 디스포저블 테스트 브랜치(`merge-test-20260718`)에서 5개 브랜치를 순서대로 시험 병합해 git 충돌 여부를 먼저 확인(전부 충돌 없음), 병합된 트리에서 `ruff check`/`bandit -r server/ scripts/`/console `tsc --noEmit` 전체 통과, `mypy server/`·client `tsc --noEmit`의 잔여 오류는 `origin/dev` 베이스라인에 이미 존재하던 것과 동일 개수(7건)임을 별도 워크트리로 대조 확인(신규 오류 없음). 반사 경로(`server/detection/gates/`) LLM/RAG/TTS 임포트 위반 스캔도 이상 없음.
+  - kb: `f5d2d5f`까지 fast-forward(정합성 검토 보고서 반영, `pedestrian_navigation.py` 삭제 후속 정리 - 위 항목 참조).
+  - jh: 콘솔 기능상자 메뉴에 "추가"/"전체 삭제" 통합, 위젯 드래그 이동(`movingWidgetKey`/`dragOverWidgetKey`), 회원 등록 장애등급 범위 경고, 로그 텍스트 위젯 분리.
+  - jy: `COMPOSE_DB_HOST`(원격 DB 기본 유지, 로컬 필요 시만 재정의) 도입, MariaDB·미디어 API 가이드 공개/내부 분리, iOS Podfile.lock 갱신.
+  - th: `260714.pt` 기준 온디바이스 모델 재export에 따른 `CoreMLInferenceBridge.swift` 주석 정정, `data/convenience_guidelines.json`(RAG 원본 데이터) 한글 숫자 표기를 아라비아 숫자로 정규화 및 서비스 설명 보강.
+  - dg2: PC 브라우저 Geolocation이 모바일 앱 주입 GPS(`inject_gps`)를 덮어쓰던 버그 수정(`server/navigation/index.html`, `isGpsInjected` 플래그로 `watchPosition` 강제 폐쇄), 공유 GPU 서버의 로컬 3306 포트 충돌 방지를 위해 `docker/docker-compose.yml`의 MariaDB `ports` 노출 주석 처리, 2차 필드 테스트 개선 계획 문서(`docs/research/field_test_round2_improvement_plan.md`) 추가. (해당 브랜치 커밋 작성자가 `TH`로 기록된 것은 dg 담당자가 전날 TH의 노트북으로 작업했기 때문으로 확인 - 실제 작업자 아님)
+  - **정합성 정정**: dg2의 MariaDB 호스트 포트 미노출 변경과 jy가 문서화한 `DB_HOST_PORT`(포트 노출 제어 변수) 설명이 병합 후 서로 어긋남을 발견. 코드(포트 미노출)는 공유 서버의 의도된 변경으로 유지하고, 문서 쪽을 `docker-compose.yml`에는 더 이상 적용되지 않고 `docker-compose.macos.yml` 전용임을 명시하는 방향으로 정정.
+- **관련 파일**: `docs/ops/deployment_guide.md`(§2.1 mariadb 포트 열, §9 트러블슈팅 표, v0.5.3), `docs/ops/environment_variables.md`(`DB_HOST_PORT` 행, v0.4.20)
+- **검증 결과**: 병합 후 `ruff check .` All checks passed. 문서 수정은 서술형이라 별도 린트 대상 아님.
+- **비고**: vision-camera 세션과 LiDAR 세션 동시 실행(실시간 라이브 융합), `scripts/analyze_lidar_validation.py`의 실데이터 집계, dg2의 index.html GPS 수정에 대한 실기기 회귀 검증은 이번 병합 작업 범위 밖(각 원 브랜치 커밋 시점에 개별 검증됨).

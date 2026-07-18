@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-13
-> **버전**: v0.4.18 (2026-07-14 §2.8 `SLACK_WEBHOOK_URL` 코드 재검증 기반 재등재 — Webhook 우선/Bot Token 폴백 이중 인증 구조 정정, §2.15 미등재 변수 13종 일괄 명세, 기존 v0.4.17 이력 유지: §2.9 LangSmith API Key 실키 반영 및 CORS_ORIGINS 환경변수 동적 파싱 명세 추가)
+> **수정일**: 2026-07-16
+> **버전**: v0.4.20 (2026-07-18 `DB_HOST_PORT` 적용 범위 정정 — dg2 브랜치 병합으로 `docker-compose.yml`의 MariaDB 호스트 포트 노출이 비활성화되어 `docker-compose.macos.yml` 전용으로 명시. 기존 v0.4.19 이력 유지: §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -62,11 +62,25 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - Object Detection 신뢰도 임계값 | [`stage3_detection_design.md`](stage3_detection_design.md) 5절 |
-| **`DETECTOR_TYPE`** | string | 선택 | `mock` | **2026-07-09 정정**: `server/detection/config.py`가 실제로 읽는다. `mock`이면 노트북/데모 환경에서 `MockDetector`/`MockSegmentor`를 강제 사용하고, `yolo`이면 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 가중치 로드 시도를 수행한다. 미지원 값은 안전 폴백으로 `mock` 처리 | `server/detection/config.py` |
+| **`YOLO_CONF`** | float | 필수 | `0.35` | Yolo 26N - **Segmentation** 신뢰도 임계값 (`YoloSegmentor`) | [`stage3_detection_design.md`](../stage-guides/stage3_detection_design.md) 5절 |
+| **`YOLO_DET_CONF`** | float | 선택 | `0.50` | Yolo 26N - **Object Detection** 신뢰도 임계값 (`YoloDetector`). `YOLO_CONF`와 별도 | `server/detection/config.py` |
+| **`DETECTOR_TYPE`** | string | 선택 | `yolo` | **2026-07-17 정정**: 실측 랩 기본은 `yolo`(가중치 로드). `mock`이면 노트북/데모·CI에서 `MockDetector`/`MockSegmentor`를 강제 사용한다. 미지원 값은 안전 폴백으로 `mock` 처리. `.env.example`과 동일 | `server/detection/config.py` |
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
+| **`REFLEX_QUEUE_MAXSIZE`** | int | 선택 | `2` | **2026-07-17 신규 (P0-2).** 반사 asyncio.Queue 최대 깊이. latest-frame-wins로 얕게 잡아 큐 적체로 인한 지연 드리프트 방지. 큐 가득 시 oldest drop | `server/capture/stream_splitter.py` |
+| **`COGNITIVE_QUEUE_MAXSIZE`** | int | 선택 | `4` | **2026-07-17 신규 (P0-2).** 인지 asyncio.Queue 최대 깊이. 1~2fps 특성상 소량 버퍼면 충분 | `server/capture/stream_splitter.py` |
+| **`REFLEX_MAX_AGE_S`** | float | 선택 | `0.4` | **2026-07-17 신규 (P0-2).** 반사 프레임 신선도 임계(초). 소비 시각 기준 프레임 ts가 이 값을 초과하면 추론 없이 드롭. ts=0(클라이언트 미전송)이면 검사 건너뜀 | `server/detection/consumer.py` |
+| **`COGNITIVE_MAX_AGE_S`** | float | 선택 | `2.0` | **2026-07-17 신규 (P0-2).** 인지 프레임 신선도 임계(초). 인지는 1~2fps 특성상 반사보다 여유 | `server/detection/consumer.py` |
+| **`REFLEX_SUPPRESS_TTL_S`** | int | 선택 | `5` | **2026-07-17 신규 (P0-1).** 동일 track_id+distance_band 조합의 반사 억제 TTL(초). 보행 속도(1m/s) 기준 5초면 동일 객체 반복 스팸 방지 충분 | `server/tts/suppressor.py` |
+| **`REFLEX_MIN_GAP_S`** | float | 선택 | `1.5` | **2026-07-17 신규 (P0-1).** 서로 다른 객체 경보의 최소 간격(초, device 단위). 알림 폭탄 방지 | `server/tts/suppressor.py` |
+| **`REFLEX_NEAR_HAPTIC_THROTTLE_S`** | float | 선택 | `0.5` | **2026-07-17 신규 (P0-1).** near(<=0.6m) 햅틱+비프 스로틀 간격(초). 충돌 임박 촉각 신호는 TTL 억제 제외, 스로틀만 적용 | `server/tts/suppressor.py` |
+| **`APPROACH_LOST_WINDOW_S`** | float | 선택 | `1.0` | **2026-07-17 신규 (P0-3).** Approach-Lost 윈도우(초). 동일 track_id가 이 시간 이내 재탐지되고 직전 hit_count가 MIN 이상이면 reacquired=True로 즉시 재발화 | `server/detection/bytetrack_tracker.py` |
+| **`APPROACH_LOST_MIN_PREV_HIT`** | int | 선택 | `3` | **2026-07-17 신규 (P0-3).** Approach-Lot 판정에 필요한 직전 hit_count 하한 (reflex_gate MIN_HIT_COUNT와 SSOT) | `server/detection/bytetrack_tracker.py` |
+| **`COGNITIVE_UTTERANCE_COOLDOWN_S`** | float | 선택 | `30.0` | **2026-07-17 신규 (P1-2).** 인지 가이드 발화 가치 게이트의 동일 상황 쿨다운(초). 동일 객체+표면 서명이면 이 시간 동안 TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시 발화 | `server/detection/consumer.py` |
+| **`SURFACE_CAUTION_CONFIRM_STREAK`** | int | 선택 | `2` | **2026-07-17 신규 (P2-1b).** surface_caution(계단/맨홀 통합) 반사 발동 히스테리시스. 연속 N 프레임 확인 후 반사 발동해 단일 프레임 오탐 완화 | `server/detection/consumer.py` |
+| **`REFLEX_LATENCY_ALERT_MS`** | float | 선택 | `300` | **2026-07-17 신규 (P2-2).** 반사 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_event에 latency_alert=True (비협상 목표 <300ms) | `server/detection/consumer.py` |
+| **`COGNITIVE_LATENCY_ALERT_MS`** | float | 선택 | `3000` | **2026-07-17 신규 (P2-2).** 인지 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_alert=True (가이드 허용 범위 <3000ms) | `server/detection/consumer.py` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 
@@ -100,6 +114,12 @@
 | **`EVENT_FRAMES_DIR`** | path | 선택 | `data/event_frames` | 이벤트 프레임 이미지 저장소 루트(2026-07-12 신설). 탐지/안내 로그 적재 이벤트의 발생 시점 프레임 JPEG을 날짜 폴더로 보관 | `server/services/event_frame_store.py`, [`api_specification.md`](../design/api_specification.md) §8.5 |
 | **`EVENT_FRAME_RETENTION_DAYS`** | int | 선택 | `7` | 이벤트 프레임 보존 기간(일). 초과 날짜 폴더는 서버 기동 시 삭제. `0` 이하는 정리 비활성. 보행 중 촬영 이미지는 개인정보 포함 가능성으로 기간 한정 보존 | `server/services/event_frame_store.py` |
 | **`EVENT_FRAME_JPEG_QUALITY`** | int | 선택 | `80` | 이벤트 프레임 JPEG 품질(용량 통제 우선) | `server/services/event_frame_store.py` |
+| **`EVENT_FRAME_STORAGE_BACKEND`** | string | 선택 | `local` | 이벤트 프레임/STT 원본 음성 파일 저장 백엔드. `local`이면 기존 GPU 서버 로컬 디스크, `remote`이면 Raspberry Pi 중앙 저장 API에 업로드. 구 명칭 `EVENT_FRAME_BACKEND`도 코드에서 폴백 지원 | `server/services/event_frame_store.py`, `server/services/remote_storage_client.py` |
+| **`IMAGE_SERVER_BASE_URL`** | string | 선택(원격 저장 사용 시 필수) | (미설정) | Raspberry Pi 중앙 저장 API 기본 URL. 예: `http://100.x.x.x:8081`. 구 명칭 `EVENT_FRAME_REMOTE_URL`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`IMAGE_SERVER_TOKEN`** | string | 선택(원격 저장 사용 시 필수) | (미설정) | 중앙 저장 API Bearer 토큰. 서버 `.env`에만 저장하며 클라이언트/콘솔 공개 변수에 넣지 않습니다. 구 명칭 `EVENT_FRAME_REMOTE_TOKEN`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`IMAGE_UPLOAD_TIMEOUT_SECONDS`** | float | 선택 | `3` | 중앙 저장 API 업로드/조회 HTTP 타임아웃(초). 구 명칭 `EVENT_FRAME_UPLOAD_TIMEOUT_SEC`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`IMAGE_UPLOAD_MAX_RETRIES`** | int | 선택 | `1` | 중앙 저장 API 업로드 재시도 횟수. 5xx/네트워크/타임아웃 계열만 짧게 재시도합니다. 구 명칭 `EVENT_FRAME_UPLOAD_RETRIES`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`WRITER_INSTANCE_ID`** | string | 선택 | `HOSTNAME` 폴백 | 다중 FastAPI writer 식별자. `detection_guidance_logs.writer_instance_id`에 저장되어 어떤 서버가 로그를 썼는지 추적합니다 | `server/services/detection_guidance_log_service.py` |
 
 ### 2.8 Slack Integration (공통 경보)
 
@@ -151,13 +171,14 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`COMPOSE_DB_USER`** | string | 선택 | `minchodan_team` | Docker Compose 로컬 MariaDB 컨테이너 전용 앱 계정명. FastAPI 컨테이너에도 같은 값으로 오버라이드됩니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 | **`COMPOSE_DB_PASSWORD`** | string | 선택 | `minchodan_password` | Docker Compose 로컬 MariaDB 컨테이너 전용 앱 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
 | **`COMPOSE_DB_ROOT_PASSWORD`** | string | 선택 | `minchodan_root_password` | Docker Compose 로컬 MariaDB 컨테이너의 root 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
-| **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI 컨테이너 내부 연결은 항상 `mariadb:3306`을 사용합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
+| **`COMPOSE_DB_HOST`** | string | 선택 | (`DB_HOST`, 미설정 시 `mariadb`) | FastAPI 컨테이너의 DB 호스트만 명시적으로 재정의합니다. 미설정 시 기존 원격 `DB_HOST`를 유지합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
+| **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI의 실제 DB 대상은 `COMPOSE_DB_HOST` 또는 `DB_HOST`가 결정합니다. **2026-07-18 정정**: 공유 GPU 서버의 로컬 3306 포트 충돌을 피하기 위해 `docker/docker-compose.yml`의 `mariadb` 서비스 `ports` 노출을 주석 처리함(원격 DB 기본 연결 유지) — 이 변수는 현재 `docker-compose.macos.yml`에만 적용됨. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml) |
 
 ### 2.13 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0) | `server/navigation/pedestrian_navigation.py:269`, `server/navigation/server.py:38`, `server/api/ws_router.py` |
+| **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0). **2026-07-18 정정**: 프로토타입 `pedestrian_navigation.py`가 삭제되어 TMAP 연동은 `server/navigation/server.py`에서 담당 | `server/navigation/server.py:38`, `server/api/ws_router.py` |
 
 ### 2.14 클라이언트·콘솔 공개 변수 (빌드 시 인라인, 2026-07-11 신설)
 

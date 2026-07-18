@@ -40,7 +40,6 @@ import {
 } from "../services/frameCaptureProvider";
 
 export type { FrameData };
-import { audioEngine } from "../services/audioEngine";
 
 // 동적 FPS 조절 파라미터 (온디바이스 추론 지연 기준)
 // - 지연이 현재 간격의 90%를 넘으면(따라잡지 못함) 간격을 늘려 fps를 낮춘다.
@@ -49,7 +48,9 @@ const OVERLOAD_LATENCY_RATIO = 0.9;
 const RECOVERY_LATENCY_RATIO = 0.5;
 const INTERVAL_INCREASE_STEP_MS = 50;
 const INTERVAL_DECREASE_STEP_MS = 20;
-const MAX_REFLEX_INTERVAL_MS = 1000; // 최저 1fps 보장 (반사 경로 완전 정지 방지)
+// 최저 5fps: 1fps까지 떨어지면 콘솔 Live Feed가 끊겨 보인다.
+// 온디바이스 추론 과부하는 detectingRef 게이트로 계속 완화한다.
+const MAX_REFLEX_INTERVAL_MS = 200;
 
 export interface UseCameraReturn {
   cameraRef: React.RefObject<Camera | null>;
@@ -61,6 +62,14 @@ export interface UseCameraReturn {
   currentReflexFps: number;
   startCapture: (onFrame: (frame: FrameData) => void) => void;
   stopCapture: () => void;
+  /** STT 등에서 프레임 디코드/콜백만 일시 중지(카메라 세션은 유지). */
+  setCapturePaused: (paused: boolean) => void;
+  /**
+   * 로컬 추론 엔진의 입력 계약 갱신 (2026-07-17, P0).
+   * false면 JS JPEG 디코딩 + Float32Array 할당을 건너뛴다(CoreML 모드).
+   * useOnDeviceDetection의 requiresFloat32 값을 전달한다.
+   */
+  setRequiresFloat32: (required: boolean) => void;
   requestCameraPermission: () => Promise<boolean>;
   /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
   reportInferenceLatency: (latencyMs: number) => void;
@@ -83,6 +92,13 @@ export function useCamera(
   const reflexTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cognitiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
+  // STT press-and-hold 중 JPEG 디코드/온디바이스 콜백을 즉시 막아 JS 스레드를 비운다.
+  const capturePausedRef = useRef(false);
+  // 로컬 추론 엔진의 입력 계약 (2026-07-17, P0).
+  // false(CoreML 정상 모드)면 매 프레임 JS JPEG 디코딩 + 4.7MiB Float32Array 할당을
+  // 건너뛴다 - base64는 CoreML 네이티브 브릿지가 직접 소비하므로 float32는 TFLite 폴백
+  // 전용이며 CoreML 모드에서는 버려지던 비용을 제거한다. 단말 버튼 반응 지연의 직접 원인.
+  const requiresFloat32Ref = useRef<boolean>(true);
   const [isCapturing, setIsCapturing] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
 
@@ -174,22 +190,25 @@ export function useCamera(
   const streamFrameCounterRef = useRef(0);
 
   const handleStreamFrameBase64 = useCallback((base64: string) => {
+    if (capturePausedRef.current) return;
     if (!onFrameRef.current || !base64) return;
     streamFrameCounterRef.current++;
 
     const jpegBytes = base64ToUint8(base64);
+    // 💡 [면접 대비 주석] CoreML 정상 모드(requiresFloat32=false)에서는 JS JPEG 디코딩과
+    // 640x640x3 Float32Array(~4.7MiB) 할당을 건너뛴다 (2026-07-17, P0).
+    // CoreML 네이티브 브릿지는 base64를 직접 소비하므로 float32는 TFLite 폴백 전용이다.
+    // 이전에는 폴백 전용 전처리를 CoreML 모드에서도 매 프레임 실행해 JS 스레드를 포화시켰다.
+    // takePhoto 폴백 경로(frameCaptureProvider.ts Float32Array(0))와 동일한 우회 전략.
+    const float32 = requiresFloat32Ref.current
+      ? decodeBase64JpegToHwc(base64)
+      : new Float32Array(0);
     const frame: FrameData = {
-      float32: new Float32Array(0),
+      float32,
       stream: "reflex",
       base64,
       jpegBytes,
     };
-
-    if (!audioEngine.isGuidePlaying) {
-      console.log(
-        `[Camera/Stream] reflex 프레임 수신: JPEG bytes=${jpegBytes.length} base64len=${base64.length}`,
-      );
-    }
 
     onFrameRef.current(frame);
 
@@ -198,6 +217,17 @@ export function useCamera(
       onFrameRef.current({ ...frame, stream: "cognitive" });
     }
   }, [reflexFps, cognitiveFps]);
+
+  const setCapturePaused = useCallback((paused: boolean) => {
+    capturePausedRef.current = paused;
+  }, []);
+
+  const setRequiresFloat32 = useCallback((required: boolean) => {
+    if (requiresFloat32Ref.current !== required) {
+      requiresFloat32Ref.current = required;
+      console.log(`[Camera] 로컬 추론 입력 계약 갱신: requiresFloat32=${required}`);
+    }
+  }, []);
 
   // 플랫폼별 캡처 구현 (iOS/Android 모두 frameProcessor 가능, 실패 시 takePhoto 폴백).
   // Metro가 frameCaptureProviderSelect.ios.ts 또는 .android.ts를 자동 바인딩한다.
@@ -209,6 +239,10 @@ export function useCamera(
   });
 
   const captureFrame = isMockMode ? captureMockFrame : captureProvider.capturePhoto;
+  // Frame Processor(연속 스트림) 우선. 플러그인 미등록 시에만 takePhoto 폴백.
+  // takePhoto 강제(useStreamCapture=false)는 AVCapturePhotoOutput 경로로
+  // AVFoundation -11803 "Cannot Record"/오디오 세션 충돌을 유발한다(2026-07-17 실측).
+  // Expo Go 등 supportsStream=false 환경에서는 자동으로 takePhoto 폴백된다.
   const useStreamCapture = !isMockMode && captureProvider.supportsStream;
 
   // ---- 캡처 루프 (capturePhoto 경로 전용, 스트림 경로는 <Camera frameProcessor>가 구동) ----
@@ -316,6 +350,8 @@ export function useCamera(
     currentReflexFps,
     startCapture,
     stopCapture,
+    setCapturePaused,
+    setRequiresFloat32,
     requestCameraPermission,
     reportInferenceLatency,
     useStreamCapture,

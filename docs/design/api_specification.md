@@ -1,9 +1,9 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.20 (2026-07-15 §8 SSE 버퍼 방지 헤더·연결 직후 system_metrics 스냅샷·콘솔 401 안내)
+> **버전**: v0.4.27 (2026-07-17 §6.8 distance_probe_sample 신설: LiDAR 실거리 검증 캡처, 검증 전용 스코프로 반사/인지 경로 판단에는 미관여 + 이전 v0.4.26: §8.5 Log 응답에 STT 원본 음성 저장 메타데이터 추가, 이벤트 프레임/사용자 음성 파일 중앙 저장 API 연동 계약 반영 + 이전 v0.4.25: §6.7 dial_action 자동 연결 PhoneDialBridge)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
-> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, network_probe 정합 확인.
+> **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
 
 ---
@@ -42,7 +42,7 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
+| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, distance_probe_sample, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
 | `event_id` | 이벤트 추적 식별자. 단말 detection 프레임은 `event-{device_id}-{stream}-{epoch_ms}` 형식(**2026-07-11 구조화** - 기존 `event-{epoch_ms}`는 반사/인지 타이머가 같은 ms에 발화하면 충돌해 DB UNIQUE 중복 방지 로직이 두 번째 로그를 유실), 서버 발신은 `stt-`/`nav-` 접두 또는 UUID |
 | `device_id` | 단말 식별자 |
 | `ts` | 타임스탬프 (epoch ms) |
@@ -251,13 +251,14 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
   "ts": 1719216000000,
   "track_id": 101,
   "class_name": "car",
-  "hit_count": 5
+  "hit_count": 5,
+  "distance_band": "medium"
 }
 ```
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `alert_id` | 알림 식별자(중복 억제 키). **2026-07-09 정정**: `reflex_gate.py`는 클래스명을 포함한 동적 값(`high_{class_name}_{direction}`, 예: `high_car_front`)을 생성한다 — 클립 선택에는 쓰이지 않고 60초 억제 키로만 쓰인다 |
+| `alert_id` | 알림 식별자(중복 억제 키). **2026-07-09 정정**: `reflex_gate.py`는 클래스명을 포함한 동적 값(`high_{class_name}_{direction}`, 예: `high_car_front`)을 생성한다 — 클립 선택에는 쓰이지 않고 60초 억제 키로만 쓰인다. **2026-07-17 P0-1 정정**: 억제 키는 `high_obstacle:{track_id}:{distance_band}` 조합으로 분리되어 새 객체/거리 악화 시 재발화 |
 | `direction` | 방향 (`front`, `front-left`, `front-right`) |
 | `risk_level` | `high` (반사 경로 전용) |
 | `clip` | 단말 번들 사전합성 클립 경로(`client/assets/sounds/reflex_clips/`, basename 매칭). **2026-07-09 정정**: 클래스와 무관하게 방향/유형 기준으로 고정되며, 확장자는 `.wav`(인코더 제약으로 mp3 대신 채택) |
@@ -269,8 +270,9 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `track_id` | ByteTrack 객체 트랙 식별자 (로깅 및 모니터링 추적용, null 가능) |
 | `class_name` | 탐지된 장애물의 클래스명 (null 가능) |
 | `hit_count` | 해당 트랙 객체의 연속 누적 프레임 탐지 횟수 (null 가능) |
+| `distance_band` | **2026-07-17 신규 (P0-1).** 억제 재무장 정책용 거리 밴드 (`near` \| `medium` \| `far`). near(<=0.6m)는 TTL 억제 제외 500ms 스로틀만, non-near는 동일키 5s TTL + device 1.5s 쿨다운 + 밴드 악화 재발화 |
 
-선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. 중복 억제는 서버 `setex(suppress:{alert_id}, 60)`로 처리합니다.
+선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. **2026-07-17 P0-1 정정**: 중복 억제는 `setex(suppress:{device_id}:high_obstacle:{track_id}:{distance_band}, REFLEX_SUPPRESS_TTL_S=5)`로 처리하며, 동일 키 TTL(5s) + device 단위 최소 쿨다운(1.5s) + 거리 밴드 악화 시 재발화를 적용합니다.
 
 ### 4.2 clip 사전 정의
 
@@ -345,7 +347,10 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
   "type": "guide",
   "event_id": "uuid",
   "risk_level": "mid",
-  "guidance_text": "2시 방향 킥보드 주의하세요",
+  "guidance_text": "전동 킥보드 주의하세요",
+  "clock_direction": "10시",
+  "distance_class": "near",
+  "object_ko": "전동 킥보드",
   "audio_codec": "wav",
   "duration_ms": 4820.5,
   "transport": "binary",
@@ -361,11 +366,17 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `guidance_text` | L2/L3 생성 가이드 문장 (한국어 1문장, 20자 내, 방향 포함). **2026-07-13 변경**: 방향 표현을 "좌측/우측"에서 실측 bbox 위치 기반 "N시 방향"(9시~3시, 12시=전방)으로 교체 - `server/detection/direction.py`의 `estimate_clock_direction()`이 계산해 L2 프롬프트에 실어주고, `server/orchestration/nodes/l3_validator.py`가 시계 패턴도 방향 키워드로 인정 |
+| `guidance_text` | L2/L3 생성 **음성 합성용** 텍스트 (한국어 1문장, 20자 내, 객체+행동 중심). 방향·거리는 구조화 필드로 분리(2026-07-16 Phase 2) |
+| `clock_direction` | 구조화 시계 방향 (예: `"10시"`, `"12시"`). `estimate_clock_direction()` 산출값. 음성 텍스트와 분리 |
+| `distance_class` | 구조화 거리 등급 (`near` / `medium` / `far`). `estimate_distance()` 산출값. **반사 `reflex_alert`의 미터 단위 `distance`와 별개** |
+| `object_ko` | 구조화 한국어 주 탐지 객체명 (`CLASS_TEXT` SSoT). 패스트 레인 캐시 키에 사용 |
 | `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
 | `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
 | `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |
 | `sources` | RAG 근거 인용 (선택) |
+| `source` | 발화 출처 식별자 (선택). STT 대기 안내는 `"stt-wait-notice"`, 내비게이션은 `"nav-*"`, STT 브릿지는 `bridge_source` 값과 대응. 클라이언트는 `event_id`/`source`로 STT 상호작용 중 뮤트·에코 방어에 활용 |
+
+> **비고 (2026-07-16) - STT 대기 안내**: 경로 검색(TMAP POI)·convenience RAG·LLM 자유 대화 등 Whisper 전사 **이후** 후속 처리가 길어질 때, 서버(`ws_router._send_stt_wait_notice`)가 본 절 `guide` 형식으로 `guidance_text: "잠시만 기다려주세요!"`를 **최대 1회** 선행 전송한다. `event_id`는 `stt-wait-{device_id}-{ts}` 접두, `source`는 `"stt-wait-notice"`. 전사 전에도 `NavigationManager`가 목적지 대기(`WAITING_FOR_DESTINATION`) 또는 질문 답변 대기(`awaiting_free_question`) 상태이면 동일 안내를 보낸다(`stt_to_llm_bridge.should_play_stt_wait_notice`). 본 응답은 STT 에코 감지 메모리(`_record_guidance`)에 넣지 않는다.
 
 > **비고 (2026-07-09)**: 실기기에서 안내 음성이 문장 중간에 끊기던 근본 원인은 base64
 > 전송 방식이 아니라 (1) 서버 TTS 엔진(Piper) 자체의 발음 품질 한계와 (2) 반사 캡처가
@@ -435,9 +446,10 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `네비게이션 켜줘` / `질문할게` 등 | 위 2단계 웨이크워드 없이 바로 진입하는 기존 단일 트리거(하위 호환 유지) | "네비게이션"/"내비게이션" 표기는 매칭 전 정규화 |
 | 자유 질의(대기 상태에서) | "가까운/근처/주변" + 장소 유형(지하철역·편의점·화장실 등)이 감지되면 TMAP 실거리 검색(`helper_search_nearest_poi`, Haversine 거리순)으로 사실 기반 답변. 그 외는 LLM 자유 대화 / 생활지원 convenience RAG | 위치 사실을 LLM에 맡기지 않고 실제 API 조회 결과로만 답해 환각을 방지. 생활지원 질의는 jh `convenience_rag` 분기 |
 
-> **비고 (2026-07-14)**: th 음성 편의기능 3종(긴급전화/연락처 저장·전화걸기/SMS 읽어주기)과
-> `dial_action`/`contact_save` WS 계약은 제거했다. 생활지원 질의응답 RAG는 jh
-> (`server/rag/convenience_rag.py`, `data/convenience_guidelines.json`)가 담당하며 유지한다.
+> **비고 (2026-07-14)**: th 음성 편의기능 중 SMS 읽어주기와 `contact_save` WS 계약은 제거했다.
+> **2026-07-16 복원**: `dial_action` 전화 연결 계약을 STT+convenience RAG/보호자 DB/긴급번호 경로로 재도입했다(§6.7).
+
+> **비고 (2026-07-16) - convenience 코퍼스 음독 정규화**: `data/convenience_guidelines.json`의 STT/TTS 대상 문자열(전화번호·시간·날짜·주소 건물번호 등)은 아라비아 숫자 대신 **한글 음절 숫자**(`공일이…`)로 정규화한다. 시스템 키(`organization_id`)·좌표(`latitude`/`longitude`)는 검색/연동 호환을 위해 유지한다. JSON만 갱신해도 Chroma 임베딩은 자동 반영되지 않으므로 배포 시 `python scripts/build_convenience_db.py`로 `data/chroma_db/convenience_guidelines` 컬렉션을 **재빌드**해야 한다(기본 임베딩: Ollama `nomic-embed-text`).
 
 > **비고 (2026-07-10)**: 목적지 설정 시 `NavigationManager` 세션 키를 `"default_device"`로
 > 하드코딩해뒀던 결함이 있었다 - GPS 갱신(`realtime_gps`)과 턴바이턴 안내 조회
@@ -467,6 +479,61 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > 삭제하며 DB에는 `text_length` 같은 비식별 메타만 남깁니다. 클라이언트의 캡처 길이
 > 검사는 비압축 PCM인 iOS에만 적용하고, Android MPEG-4/AAC에는 PCM 바이트 공식을
 > 적용하지 않습니다.
+
+| 발화(예시) | 동작 | 비고 |
+| :--- | :--- | :--- |
+| `119 연결해줘` / `보호자에게 전화해줘` | `guide` 확인 멘트 + TTS 후 `dial_action`으로 전화 앱 연결 | §6.7 |
+| `서울시 장애인 생활지원센터에 전화 걸어줘` | convenience RAG 코퍼스에서 기관명 매칭 후 동일 | 한글 숫자 표기는 서버에서 `tel:`용 숫자로 정규화 |
+
+### 6.7 dial_action (서버 → 단말, 2026-07-16 복원)
+
+STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘트·TTS 직후 별도 메시지로 **전화를 자동 연결**한다. 인지/STT 경로 전용이며 반사 경로에는 사용하지 않는다.
+
+```json
+{
+  "type": "dial_action",
+  "event_id": "dial-dev-001-1719216000000",
+  "contact_name": "서울시 장애인 생활지원센터",
+  "phone_number": "0222223690",
+  "source": "stt-dial-convenience",
+  "delay_ms": 2000,
+  "ts": 1719216000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `contact_name` | 연결 대상 표시명(기관·보호자·긴급번호 라벨) |
+| `phone_number` | `tel:` URL용 숫자만(`0222223690`, `119` 등). convenience 코퍼스 한글 숫자는 서버가 정규화 |
+| `source` | `stt-dial-emergency` / `stt-dial-guardian-db` / `stt-dial-convenience` / `stt-dial-not-found`(미발행) |
+| `delay_ms` | 확인 TTS 재생 후 전화 앱을 여는 지연(ms). 클라이언트 기본 1500 |
+
+**해석 우선순위** (`server/stt/dial_resolver.py`):
+
+| 순서 | 조건 | 번호 출처 |
+| :--- | :--- | :--- |
+| 1 | 119/112/1339 긴급 연결 | 고정 단축번호 |
+| 2 | `보호자` + 전화 의도 | `app_users.guardian_phone`(device 등록 회원) |
+| 3 | 기관·인물·긴급연락망 이름 매칭 | `data/convenience_guidelines.json` |
+
+클라이언트(`phoneDialBridge.ts` + `useWebSocket.ts`)는 확인 TTS 후 `delay_ms`만큼 대기한 뒤 네이티브 `PhoneDialBridge`로 연결한다.
+
+| 플랫폼 | 동작 | 비고 |
+| :--- | :--- | :--- |
+| **Android** | `Intent.ACTION_CALL`로 **즉시 발신** | `CALL_PHONE` 런타임 권한 필요. 거부 시 `tel:` 폴백 |
+| **iOS** | Siri App Intent + Shortcuts(`MinchodanDial`) | `tel:` 전화 앱 열기 미사용. 단축어 1회 설정 필요(아래 참조) |
+
+연결 직전 VoiceOver 안내(`AccessibilityInfo.announceForAccessibility`)와 햅틱(`double`)을 재생한다.
+
+**iOS Siri/Shortcuts 1회 설정** (단축어 앱):
+
+| 단계 | 동작 |
+| :--- | :--- |
+| 1 | 단축어 이름 `MinchodanDial` 생성 |
+| 2 | 동작: **입력 받기**(단축어 입력) → **전화 걸기**(입력값) |
+| 3 | 전화 걸기 동작에서 **실행 시 보여주기** 끔 |
+
+앱 내 STT(`119 연결해줘`) 또는 Siri(`길댕아 119 연결해`) 모두 위 경로를 사용한다.
 
 ### 6.4 server_detection (서버 → 단말, 실시간 BBox 업데이트)
 
@@ -539,7 +606,7 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `lon` | 경도 (필수) |
 | `heading` | 방위각(도, 0~360). 선택, 미제공 시 `None`으로 처리 |
 
-`lat`/`lon` 중 하나라도 누락되면 서버는 조용히 무시한다(에러 응답 없음). TMAP 보행자 경로 안내(`server/navigation/pedestrian_navigation.py`)와 결합되어 실시간 TTS로 안내 문장이 발화된다.
+`lat`/`lon` 중 하나라도 누락되면 서버는 조용히 무시한다(에러 응답 없음). TMAP 보행자 경로 안내(`server/navigation/server.py`)와 결합되어 실시간 TTS로 안내 문장이 발화된다.
 
 > **비고 (2026-07-11) - 길안내 무음 결함 수정**: 기존에는 턴바이턴 멘트 조회
 > (`get_combined_guidance`)가 `DetectionConsumer._send_cognitive_guide` 내부에만 있어
@@ -584,6 +651,50 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | WS 재접속(인증 직후) | `ws_router.ws_detect` | 서버 세션이 NAVIGATING이고 웨이포인트가 살아 있으면 재전송. 앱 재시작으로 단말 메모리의 경로가 사라져도 지도를 복원한다(실기기 확인 결함 수정) |
 
 클라이언트는 `nav_route`를 `lastMessage` 경유가 아닌 **전용 상태(`navRoute`)** 로 보존한다(고빈도 ack/탐지 메시지의 React 배칭에 저빈도 이벤트가 덮여 유실되는 문제 - guide 오디오와 동일한 이유). 지도 패널은 토글 켜짐일 때만 WebView를 마운트하고, 현재 위치 마커 갱신은 2초 스로틀을 적용한다.
+
+---
+
+### 6.8 distance_probe_sample (단말 → 서버, LiDAR 실거리 검증 전용, 2026-07-17 신설)
+
+**검증 전용 스코프**: 거리측정(depthMode) 프로토타입(`client/ios/DepthProbeBridge.swift`)에서 얻은 LiDAR 실측값을, 서버가 동일 bbox에 재계산한 휴리스틱 거리(near/medium/far)와 나란히 DB(`lidar_distance_validation_samples`)에 남겨 정확도를 사후 검증하기 위한 메시지다. 반사/인지 경로의 실시간 판단에는 관여하지 않는다.
+
+LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰기 때문에 실시간 탐지와 동시 실행이 불가능하다(카메라 세션 점유 충돌). 따라서 다음 순서로 동작한다.
+
+1. 클라이언트가 depthMode의 `depthResult.previewUri`(depth와 동기화된 정지 프레임)를 기존 §3.2 `detection`(base64) 메시지로 전송하고, `payload.probe_source: "lidar_validation"`로 표시한다.
+2. 서버가 정상적으로 YOLO 추론 후 §6.4 `server_detection`으로 bbox 목록을 응답한다(기존 로직 그대로, 신규 필드 없음).
+3. 클라이언트는 받은 event_id가 자신이 보낸 검증 캡처와 일치하면, 같은 depth 세션에서 해당 bbox들의 LiDAR 실측을 네이티브 `probeBoxes()`로 샘플링해 아래 메시지로 보고한다.
+
+```json
+{
+  "type": "distance_probe_sample",
+  "payload": {
+    "event_id": "probe-dev-001-1721200000000",
+    "samples": [
+      {
+        "class_name": "bollard",
+        "confidence": 0.91,
+        "bbox": { "x": 120.0, "y": 300.0, "w": 40.0, "h": 80.0 },
+        "lidar_meters": 1.42,
+        "lidar_sample_count": 31,
+        "lidar_accuracy": "absolute",
+        "lidar_quality": "high",
+        "lidar_calibrated": true
+      }
+    ]
+  }
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `event_id` | §3.2에서 보낸 검증 캡처와 동일한 event_id (상관관계 매칭 키) |
+| `samples[].bbox` | `server_detection`으로 받은 bbox를 그대로 되돌려 보낸다 (640x640 모델 좌표계) |
+| `samples[].lidar_meters` | LiDAR 실측 거리(m). 유효 depth 샘플이 없으면 `null` |
+| `samples[].lidar_accuracy` | `absolute`(LiDAR 실측) 또는 `relative`(시차 기반) |
+
+서버(`server/api/ws_router.py`의 `_handle_distance_probe_sample`)는 `estimate_distance()`(`server/detection/direction.py`)로 동일 bbox의 휴리스틱 라벨을 재계산해 LiDAR 실측과 함께 저장한다(휴리스틱 계산의 단일 소스는 서버 유지). 응답 메시지는 없다(fire-and-forget). 담당자는 `scripts/analyze_lidar_validation.py`로 집계를 확인한다.
+
+> **비범위**: vision-camera 세션과 LiDAR 세션의 동시 실행(실시간 라이브 융합)은 포함하지 않는다. 별도의 네이티브 세션 재설계가 필요한 후속 과제로 남긴다.
 
 ---
 
@@ -655,13 +766,17 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | `accessibility_validation` | `alert_id:string`, `is_valid:bool`, `similarity_score:float`, `warnings:list`, `details:dict` | McpValidationMonitor 접근성 정합 스코어 업데이트 |
 | `langsmith_trace` | `alert_id:string`, `from_node:string`, `to_node:string`, `latency_ms:float`, `enabled:bool` | McpValidationMonitor LangSmith 트랙 RTT 업데이트 |
 
+> **발행 위치 보강 (2026-07-16)**: `risk_event`는 Redis `risk.events` 스트림이 아니라 `DetectionConsumer._broadcast_risk_event()`가 반사/인지 경보 전송 성사 직후 `MCPManager.broadcast_event("risk_event", …)`로 in-process 발행한다. `detection_event`·`llm_status` 등과 동일 경로이며, 콘솔 `RiskEventLog`가 SSE로 수신한다.
+
 ### 8.4 데모 데이터 분리
 
 콘솔의 데모 데이터는 SSE로 수신되는 것이 아니라, **개발 빌드에서만**(`import.meta.env.DEV && VITE_ENABLE_DEMO_DATA === "true"`) 콘솔 로컬에서 주입됩니다(`console/src/App.tsx`). 운영 빌드에서는 원천 차단되므로 §8.2~8.3의 실이벤트와 혼동하지 않습니다. 단, 사후 이력 로그(§8.5)는 실조회 결과가 있으면 데모 데이터 대신 실데이터를 우선 표시합니다.
 
 ### 8.5 사후 이력 조회 REST (2026-07-12 신설)
 
-콘솔의 Detection Guidance Log 테이블은 SSE가 아니라 REST 폴링(기본 30초, `console/src/api/useDetectionLogs.ts`)으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 **이벤트 발생 시점 프레임 이미지**를 함께 제공합니다.
+콘솔의 Detection Guidance Log 테이블은 SSE가 아니라 REST 폴링(기본 30초, `console/src/api/useDetectionLogs.ts`)으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 **이벤트 발생 시점 프레임 이미지**를 함께 제공합니다. STT 경로는 사용자 원본 음성 파일 경로와 전사 문장을 같은 로그 행에 보관합니다.
+
+**콘솔 페이지네이션 UX (2026-07-16)**: `DetectionGuidanceLogTable`·`MembersPage` 목록은 서버 `offset`/`limit` + `X-Total-Count` 기반 **서버 페이지네이션**을 사용한다. 기본 `pageSize`는 **10**. 하단 컨트롤은 이전/다음 화살표, 최대 10개 번호 버튼, `...` 페이지 점프 입력, 마지막 페이지 버튼으로 통일한다. `totalCount <= 11`이면 컨트롤을 비활성화한다. 스트림 필터(전체/반사/인지)는 **현재 페이지 rows**에만 클라이언트 필터를 적용하므로, 필터 적용 시 표시 행 수와 `totalCount`가 어긋날 수 있다.
 
 | 항목 | 값 |
 | :--- | :--- |
@@ -670,21 +785,39 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | 인증 | 관리자 JWT (`Depends(get_current_admin)`) — 목록은 `Authorization` 헤더, 이미지는 `<img>` 태그 제약상 `?token=` 쿼리 허용(SSE와 동일 우회) |
 | 라우터 | `server/api/detection_log_router.py` |
 
-**로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `created_at`
+**로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `false_positive`, `latency_json`, `pipeline_debug_json`, `created_at`, `event_source`, `stt_transcript_text`, `stt_audio_path`, `stt_audio_storage_status`, `stt_audio_format`, `stt_audio_size_bytes`, `stt_audio_duration_ms`, `stt_audio_sha256`, `stt_audio_error_code`, `stt_audio_consent_at`, `stt_audio_expires_at`, `writer_instance_id`
+
+**pipeline_debug_json** (2026-07-16, 관리자 콘솔 전용): `server/services/pipeline_debug_builder.py`가 경로별 중간 텍스트를 직렬화한 JSON 객체. `path`는 `reflex`/`cognitive`/`stt`. MariaDB JSON 컬럼 특성상 REST 응답에서는 객체로 직렬화될 수 있다(콘솔은 string/object 모두 파싱).
+
+| path | 주요 필드 | 설명 |
+| :--- | :--- | :--- |
+| 공통 | `generation_mode` | 응답 생성 경로 식별 (`reflex_prebaked_clip`, `fast_lane_template`, `langgraph_l2_l3`, `llm_answer`, `echo_skipped` 등) |
+| `reflex` | `alert_id`, `clip`, `direction`, `class_name`, `distance`, `risk_level`, `detections_summary` | 반사 사전합성 클립·탐지 요약(최대 8건 bbox/confidence/direction) |
+| `cognitive` | `rag_query`, `rag_context`, `clock_direction`, `distance_class`, `object_ko`, `used_fast_lane`, `fast_lane_cache_key`, `l1_risk_level`, `l3_verified`, `l2_drafts`, `detections_summary`, `surfaces_summary`, `llm_text`, `response_text` | 인지 LangGraph/패스트레인·RAG·L2 초안·노면 요약 |
+| `stt` | `stt_transcript`, `bridge_source`, `generation_mode`, `response_text`, `rag_query`, `rag_results`, `llm_text`, `template_text`, `response_skipped`, `skip_reason` | STT 전사·브릿지 분기·RAG 미리보기(최대 5건)·에코 스킵 |
 
 **프레임 이미지 저장 계약** (`server/services/event_frame_store.py`):
 
 | 항목 | 값 |
 | :--- | :--- |
 | 저장 트리거 | 반사 알림/인지 가이드가 **실제 전송 성사**되어 DB 로그가 적재되는 이벤트만 (전 프레임 아님) |
-| 저장 위치 | `data/event_frames/YYYYMMDD/{event_id}.jpg`, DB에는 상대 경로(`frame_path`)만 기록 |
-| 실시간 경로 영향 | 없음 — JPEG 인코딩·파일 쓰기는 백그라운드 로그 태스크 안에서 `asyncio.to_thread`로 수행 (반사 <300ms 목표 무영향) |
+| 저장 위치 | 기본은 `data/event_frames/YYYYMMDD/{event_id}.jpg`. `EVENT_FRAME_STORAGE_BACKEND=remote`이면 Raspberry Pi 중앙 저장 API에 업로드하고 DB에는 object key(`YYYYMMDD/{event_id}.jpg`)만 기록 |
+| 실시간 경로 영향 | 없음 — 로컬 JPEG 인코딩·파일 쓰기는 백그라운드 로그 태스크 안에서 `asyncio.to_thread`로 수행. 원격 저장도 로그 태스크 내부에서 수행되어 반사 <300ms 목표를 막지 않음 |
 | bbox 표시 | 이미지에 굽지 않음 — `detected_objects_json`의 bbox(좌상단 x,y + w,h, 프레임 픽셀 좌표)를 콘솔이 오버레이 렌더링. 원본 보존으로 임계값/모델 교체 재검증 가능 |
 | 보존 정책 | `EVENT_FRAME_RETENTION_DAYS`(기본 7일) 초과 날짜 폴더를 서버 기동 시 삭제. 보행 중 촬영 이미지는 행인 등 개인정보 포함 가능성으로 기간 한정 보존 |
 | 실패 처리 | 저장 실패 시 `frame_path=NULL`로 로그는 적재. STT 이벤트 등 프레임 없는 로그도 NULL |
 | 경로 방어 | event_id 화이트리스트(`[A-Za-z0-9._-]{1,64}`) + DB 등록 경로만 서빙 + 저장소 밖 경로 해석 차단 이중 검증 |
 
 > 인지 로그의 `detected_objects_json`에는 2026-07-12부터 bbox 좌표가 포함됩니다(콘솔 오버레이용). LLM 오케스트레이터 입력에는 기존대로 bbox를 넣지 않습니다(프롬프트 오염 방지).
+
+**STT 원본 음성 저장 계약** (`server/api/ws_router.py`, `server/services/remote_storage_client.py`):
+
+| 항목 | 값 |
+| :--- | :--- |
+| 저장 트리거 | `/ws/detect`의 `stt_audio` 처리에서 STT 전사·LLM 브리지·TTS 응답 생성이 완료된 이벤트 |
+| 저장 대상 | 사용자가 말한 원본 오디오 bytes. LLM이 출력한 TTS WAV가 아니라 STT 입력 음성 |
+| DB 연결 | `stt_audio_path`에 중앙 저장 API object key(`YYYYMMDD/{event_id}.{wav|m4a|ogg|mp3}`), `stt_transcript_text`에 STT 전사 문장, `stt_audio_storage_status`에 `available`/`upload_failed`/`not_saved` 등 상태 저장 |
+| 비밀값 경계 | `IMAGE_SERVER_TOKEN`은 서버 `.env` 전용이며 단말 앱/콘솔 공개 변수로 전달하지 않음 |
 
 ### 8.6 회원(시각장애인) 관리 REST (2026-07-12 신설)
 
@@ -754,4 +887,38 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.27** | **2026-07-17** | **§6.8 `distance_probe_sample` 신설 - LiDAR 실거리 검증 캡처(검증 전용, 반사/인지 경로 판단 미관여), `lidar_distance_validation_samples` DB 테이블 연동** |
+| **v0.4.24** | **2026-07-16** | **§6.7 `dial_action` STT 전화 연결 복원(convenience RAG·보호자 DB·긴급번호), §6.3 발화 표 추가** |
+| **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |
+| **v0.4.22** | **2026-07-16** | **§6.1 `source` 필드·STT 대기 안내(`stt-wait-notice`) 계약 추가. §8.3 `risk_event` 발행 위치(`DetectionConsumer._broadcast_risk_event`) 명시. §8.5 `pipeline_debug_json` 확장 필드 표 보강** |
+| **v0.4.21** | **2026-07-16** | **§8.5 `pipeline_debug_json`·`latency_json`·`false_positive` 로그 응답 필드 명세 보강(관리자 콘솔 STT/LLM/패스트레인 디버그)** |
 | **v0.4.20** | **2026-07-15** | **§8 SSE: 버퍼 방지 응답 헤더, 연결 직후 `system_metrics` 스냅샷, keep-alive 주석 라인. 콘솔은 SSE 401 프로브·빈 카드 안내 문구 추가** |
+
+### 4.3 latency_event (서버 → 콘솔, 2026-07-17 P2-2 강화)
+
+파이프라인 스테이지별 지연(ms)을 콘솔에 실시간 푸시한다. `server_detection`과 동일 콘솔 WS 브로드캐스트 채널을 재사용한다.
+
+```json
+{
+  "type": "latency_event",
+  "event_id": "uuid",
+  "stream_type": "reflex",
+  "latency": {
+    "decode_ms": 2.1,
+    "inference_ms": 45.3,
+    "queue_wait_ms": 12.4,
+    "total_ms": 59.8
+  },
+  "latency_alert": false,
+  "latency_threshold_ms": 300,
+  "ts": 1719216000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `stream_type` | `reflex` \| `cognitive` |
+| `latency` | 스테이지별 지연 (ms). 반사: `decode_ms`/`inference_ms`/`queue_wait_ms`/`total_ms`. 인지: 추가로 `rag_ms`/`llm_ms`/`tts_ms` |
+| `latency_alert` | **2026-07-17 신규 (P2-2).** `total_ms`가 임계 초과 시 `true`. 반사 `REFLEX_LATENCY_ALERT_MS=300`, 인지 `COGNITIVE_LATENCY_ALERT_MS=3000` |
+| `latency_threshold_ms` | **2026-07-17 신규 (P2-2).** 적용된 지연 임계(ms). 콘솔이 alert 기준 표시용 |
+| `queue_wait_ms` | **2026-07-17 신규 (P0-2).** 큐 대기 시간(ms). `processed.ts` 기반 산출, ts=0이면 0 |

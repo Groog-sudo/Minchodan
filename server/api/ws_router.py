@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 
 from server.api.auth import verify_device
 from server.api.config import settings
@@ -27,11 +28,15 @@ from server.api.session_manager import manager
 from server.bus.redis_client import redis_bus
 from server.capture.frame_decoder import decode_frame, decode_frame_binary
 from server.capture.stream_splitter import get_default_splitter
+from server.detection.schemas import DistanceProbeReport
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.services.device_registry_service import (
     ensure_device_registered,
     get_cached_device_ids,
 )
+from server.services.lidar_validation_service import persist_distance_probe_samples
+from server.services.pipeline_debug_builder import build_stt_pipeline_debug
+from server.services.remote_storage_client import upload_stt_audio
 from server.stt.stt_service import SttService
 from server.stt.stt_to_llm_bridge import SttToLlmBridge
 from server.tts.realtime_tts import realtime_tts
@@ -46,8 +51,30 @@ router = APIRouter()
 MIN_STT_AUDIO_BYTES = 4096
 
 
-async def _finish_detection(
+async def _send_detection_ack(
     ws: WebSocket,
+    event_id: str,
+    frame_id: int,
+    decode_ms: float,
+) -> None:
+    """탐지 ack를 즉시 보낸다.
+
+    HeartbeatManager가 다른 태스크에서 동시에 타임아웃 close를 걸 수 있어(레이스),
+    ack 전송 실패가 세션 전체를 죽이지 않도록 여기서 흡수한다. 소켓이 실제로
+    끊겼다면 메인 루프의 다음 ws.receive()가 WebSocketDisconnect로 정상 정리한다.
+    """
+    with contextlib.suppress(Exception):
+        await ws.send_json(
+            {
+                "type": "ack",
+                "event_id": event_id,
+                "frame_id": frame_id,
+                "decode_ms": round(decode_ms, 2),
+            }
+        )
+
+
+async def _route_detection_frame(
     splitter,
     processed,
     event_id: str,
@@ -55,11 +82,7 @@ async def _finish_detection(
     decode_ms: float,
     b64_len_for_log: int = 0,
 ) -> None:
-    """디코딩 결과를 스트림 스플리터로 라우팅하고 ack를 응답한다.
-
-    base64 경로(단일 JSON 메시지)와 바이너리 경로(메타 + 바이너리 프레임) 양쪽이
-    공유하는 후처리 로직 - route_frame + ack 응답 (guide 17.1 계층 분리 준수).
-    """
+    """디코딩 결과를 스트림 스플리터로 라우팅한다 (YOLO/게이트 - 상대적으로 느림)."""
     logger.info(
         f"[WS] detection 수신 - event_id: {event_id}, frame_id: {frame_id}, decode_ms: {decode_ms:.2f}ms"
     )
@@ -77,18 +100,29 @@ async def _finish_detection(
             flush=True,
         )
 
-    # HeartbeatManager가 다른 태스크에서 동시에 타임아웃 close를 걸 수 있어(레이스),
-    # ack 전송 실패가 세션 전체를 죽이지 않도록 여기서 흡수한다. 소켓이 실제로
-    # 끊겼다면 메인 루프의 다음 ws.receive()가 WebSocketDisconnect로 정상 정리한다.
-    with contextlib.suppress(Exception):
-        await ws.send_json(
-            {
-                "type": "ack",
-                "event_id": event_id,
-                "frame_id": frame_id,
-                "decode_ms": round(decode_ms, 2),
-            }
-        )
+
+async def _finish_detection(
+    ws: WebSocket,
+    splitter,
+    processed,
+    event_id: str,
+    frame_id: int,
+    decode_ms: float,
+    b64_len_for_log: int = 0,
+) -> None:
+    """디코딩 결과를 스트림 스플리터로 라우팅하고 ack를 응답한다.
+
+    base64 경로(단일 JSON 메시지)와 바이너리 경로(메타 + 바이너리 프레임) 양쪽이
+    공유하는 후처리 로직 - route_frame + ack 응답 (guide 17.1 계층 분리 준수).
+
+    2026-07-17 정정: 메인 수신 루프는 현재 이 헬퍼를 호출하지 않고 인라인으로
+    처리한다. 인라인 패턴은 ack를 콘솔 중계보다 먼저 보내고(P0) route는
+    백그라운드 태스크로 분리한다(최신성 우선). 이 함수는 참조용 계약으로 남겨둔다.
+    """
+    await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+    await _route_detection_frame(
+        splitter, processed, event_id, frame_id, decode_ms, b64_len_for_log
+    )
 
 
 async def _broadcast_session_status(
@@ -149,6 +183,63 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
 
     async with _get_stt_lock(device_id):
         await _process_stt_audio(ws, device_id, data, audio_b64)
+
+
+async def _handle_distance_probe_sample(device_id: str, data: dict) -> None:
+    """LiDAR 실거리 검증 캡처(distance_probe_sample) 메시지를 저장한다.
+
+    거리측정(depthMode) 프로토타입 전용 - 반사/인지 경로의 실시간 판단에는 관여하지
+    않는다. CameraView가 depthMode에서 캡처한 정지 프레임을 기존 "detection" 경로로
+    보내 server_detection 응답(bbox)을 받은 뒤, 같은 bbox의 LiDAR 실측을 이 메시지로
+    보고한다.
+    """
+    payload = data.get("payload", {})
+    try:
+        report = DistanceProbeReport.model_validate(payload)
+    except ValidationError as e:
+        logger.warning(f"[WS] distance_probe_sample payload 검증 실패: device_id={device_id}, {e}")
+        return
+    if not report.samples:
+        return
+    _, reg_device_id = get_cached_device_ids(device_id)
+    try:
+        saved = await persist_distance_probe_samples(report, reg_device_id)
+        logger.info(
+            f"[WS] distance_probe_sample 저장 완료: device_id={device_id}, "
+            f"event_id={report.event_id}, samples={len(saved)}"
+        )
+    except Exception as e:
+        logger.error(f"[WS] distance_probe_sample 저장 실패: device_id={device_id}, {e}")
+
+
+async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
+    """경로 검색·RAG·LLM 등 장시간 STT 후속 처리 전 즉시 대기 안내를 재생한다.
+
+    에코 감지 메모리(_record_guidance)에는 넣지 않는다 - 본 응답의 일부가 아니므로.
+    """
+    from server.stt.stt_config import STT_WAIT_GUIDANCE_TEXT
+
+    wait_text = STT_WAIT_GUIDANCE_TEXT
+    audio_b64_out, duration_ms = await realtime_tts.synthesize(text=wait_text)
+    audio_bytes_out = base64.b64decode(audio_b64_out) if audio_b64_out else b""
+
+    with contextlib.suppress(Exception):
+        await ws.send_json(
+            {
+                "type": "guide",
+                "event_id": f"stt-wait-{device_id}-{now_ts()}",
+                "risk_level": "low",
+                "guidance_text": wait_text,
+                "audio_codec": "wav",
+                "duration_ms": duration_ms,
+                "transport": "binary" if audio_bytes_out else "none",
+                "source": "stt-wait-notice",
+                "ts": now_ts(),
+            }
+        )
+        if audio_bytes_out:
+            await ws.send_bytes(audio_bytes_out)
+    logger.info(f"[WS] STT 대기 안내 전송: device_id={device_id}, text={wait_text!r}")
 
 
 async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> None:
@@ -213,7 +304,21 @@ def _detect_audio_suffix(audio_bytes: bytes) -> str:
     return ".wav"
 
 
+def _audio_content_type_for_suffix(audio_suffix: str) -> str:
+    """오디오 확장자에 맞는 Content-Type을 반환합니다."""
+    if audio_suffix == ".wav":
+        return "audio/wav"
+    if audio_suffix == ".m4a":
+        return "audio/mp4"
+    if audio_suffix == ".ogg":
+        return "audio/ogg"
+    if audio_suffix == ".mp3":
+        return "audio/mpeg"
+    return "application/octet-stream"
+
+
 async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b64: str) -> None:
+    stt_event_id = f"stt-{device_id}-{now_ts()}"
     model_name = data.get("model_name")
     # 레이턴시 계측: 실기기 -> STT -> LLM -> TTS -> DB저장 스테이지별 ms를 모아
     # persist_detection_guidance_log에 넘긴다(콘솔 레이턴시 패널에서 확인).
@@ -287,18 +392,22 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             temp_wav.write(audio_bytes)
             saved_path = Path(temp_wav.name)
 
+        wait_notice_sent = False
+        if _stt_bridge.should_play_stt_wait_notice(device_id):
+            await _send_stt_wait_notice(ws, device_id)
+            wait_notice_sent = True
+
         stt_result = await asyncio.to_thread(
             SttService.transcribe_file, saved_path=saved_path, model_name=model_name
         )
         latency_stages["stt_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
-        logger.info(
-            f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}, "
-            f"text={(stt_result.text or '')[:80]!r}"
-        )
-        # [DEBUG TEMP 2026-07-13] 연락처 저장 재검증용 - 확인 후 제거
-        _t = (stt_result.text or "").strip()
-        if any(k in _t for k in ("저장", "전화")):
-            logger.info(f"[WS][DEBUG-STT-TEXT] device_id={device_id}, text={_t[:120]}")
+        logger.info(f"[WS] STT 전사 완료: device_id={device_id}, text_len={len(stt_result.text)}")
+
+        if not wait_notice_sent and _stt_bridge.should_play_stt_wait_notice(
+            device_id, stt_result.text
+        ):
+            await _send_stt_wait_notice(ws, device_id)
+            wait_notice_sent = True
 
         llm_start = time.perf_counter()
         bridge_result = await _stt_bridge.invoke_existing_llm(stt_result, device_id)
@@ -308,8 +417,41 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
         # 2026-07-11: 자기-에코 감지(안내문이 마이크로 재녹음된 경우)면 클라이언트에
         # 응답을 보내지 않고 조용히 종료한다 (메아리 루프 방지).
+        # 관리자 콘솔 디버그용으로는 전사문과 스킵 사유를 DB에 남긴다.
         if bridge_source == "stt-echo-detected":
             logger.info(f"[WS] STT 에코 감지 - 응답 스킵: device_id={device_id}")
+            stt_event_id = f"stt-echo-{device_id}-{now_ts()}"
+            latency_stages["total_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
+            try:
+                reg_user_id, reg_device_id = get_cached_device_ids(device_id)
+                saved_log = await persist_detection_guidance_log(
+                    event_id=stt_event_id,
+                    stream_type="cognitive",
+                    detections=[
+                        {
+                            "source": "stt",
+                            "text_length": len(stt_result.text or ""),
+                            "stt_transcript": (stt_result.text or "").strip(),
+                            "skipped": True,
+                            "skip_reason": "stt_echo_detected",
+                        }
+                    ],
+                    tts_text="[에코 스킵] 응답 미전송",
+                    latency_stages=latency_stages,
+                    user_id=reg_user_id,
+                    device_id=reg_device_id,
+                    pipeline_debug=build_stt_pipeline_debug(
+                        stt_transcript=stt_result.text or "",
+                        bridge_result=bridge_result,
+                        response_skipped=True,
+                    ),
+                )
+                with contextlib.suppress(Exception):
+                    await manager.broadcast_json_to_consoles(
+                        {"type": "guidance_log_event", "row": saved_log.model_dump(mode="json")}
+                    )
+            except Exception as e:
+                logger.error(f"[WS] stt_echo DB 로그 저장 실패: device_id={device_id}, {e}")
             return
 
         logger.info(
@@ -339,7 +481,6 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         tts_start = time.perf_counter()
         audio_wav_b64, duration_ms = await realtime_tts.synthesize(text=guidance_text)
         latency_stages["tts_ms"] = round((time.perf_counter() - tts_start) * 1000, 1)
-        stt_event_id = f"stt-{device_id}-{now_ts()}"
 
         # 2026-07-09에 인지 경로(DetectionConsumer._send_cognitive_guide)가 오디오를
         # JSON base64 오디오에서 transport:"binary" + 별도 바이너리 프레임으로
@@ -368,6 +509,28 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             if audio_bytes_out:
                 await ws.send_bytes(audio_bytes_out)
 
+        dial_action = bridge_result.get("dial_action")
+        if isinstance(dial_action, dict):
+            phone_number = dial_action.get("phone_number")
+            if phone_number:
+                delay_ms = int(duration_ms or 0) + 800
+                with contextlib.suppress(Exception):
+                    await ws.send_json(
+                        {
+                            "type": "dial_action",
+                            "event_id": f"dial-{device_id}-{now_ts()}",
+                            "contact_name": dial_action.get("contact_name", ""),
+                            "phone_number": str(phone_number),
+                            "source": bridge_result.get("source", "stt-dial"),
+                            "delay_ms": delay_ms,
+                            "ts": now_ts(),
+                        }
+                    )
+                logger.info(
+                    f"[WS] dial_action 전송: device_id={device_id}, "
+                    f"contact={dial_action.get('contact_name')}, phone={phone_number}"
+                )
+
         # 2026-07-11 지도 패널용: 경로 설정/해제 시 좌표 목록을 nav_route 메시지로
         # 전달한다. TMap appKey는 클라이언트 하드코딩 대신 서버 환경변수를 재사용해
         # 저장소에 키가 남지 않게 한다(키 노출 범위는 동일하므로 TMap 콘솔에서
@@ -393,6 +556,17 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         )
         if guidance_text:
             latency_stages["total_ms"] = round((time.perf_counter() - stt_stage_start) * 1000, 1)
+            upload_start = time.perf_counter()
+            audio_upload_result = await upload_stt_audio(
+                stt_event_id,
+                audio_bytes,
+                _audio_content_type_for_suffix(audio_suffix),
+                audio_suffix.lstrip("."),
+            )
+            latency_stages["stt_audio_upload_ms"] = round(
+                (time.perf_counter() - upload_start) * 1000,
+                1,
+            )
             # 콘솔 "파이프라인 지연 요약" 패널 실시간 갱신 (consumer.py._broadcast_latency_event와
             # 동일 목적/채널 - STT 경로는 DetectionConsumer 밖이라 여기서 직접 브로드캐스트한다).
             with contextlib.suppress(Exception):
@@ -410,11 +584,32 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                 saved_log = await persist_detection_guidance_log(
                     event_id=stt_event_id,
                     stream_type="cognitive",
-                    detections=[{"source": "stt", "text_length": len(stt_result.text)}],
+                    detections=[
+                        {
+                            "source": "stt",
+                            "text_length": len(stt_result.text),
+                            "stt_transcript": (stt_result.text or "").strip(),
+                        }
+                    ],
                     tts_text=guidance_text,
                     latency_stages=latency_stages,
                     user_id=reg_user_id,
                     device_id=reg_device_id,
+                    pipeline_debug=build_stt_pipeline_debug(
+                        stt_transcript=stt_result.text or "",
+                        bridge_result=bridge_result,
+                    ),
+                    event_source="stt",
+                    stt_transcript_text=(stt_result.text or "").strip() or None,
+                    stt_audio_path=audio_upload_result.object_key,
+                    stt_audio_storage_status=audio_upload_result.status,
+                    stt_audio_format=audio_upload_result.format,
+                    stt_audio_size_bytes=audio_upload_result.size_bytes,
+                    stt_audio_duration_ms=(
+                        int(stt_result.duration * 1000) if stt_result.duration is not None else None
+                    ),
+                    stt_audio_sha256=audio_upload_result.sha256,
+                    stt_audio_error_code=audio_upload_result.error_code,
                 )
                 # 콘솔 Detection Guidance Log 테이블 실시간 갱신 (consumer.py._broadcast_guidance_log_event와
                 # 동일 목적/채널 - DB 저장 완료 후에만 보내 콘솔이 즉시 썸네일을 요청해도 안전하다).
@@ -602,6 +797,48 @@ async def ws_detect(
         # 바로 뒤이어 오는 바이너리 프레임과 짝지어 처리한다.
         pending_binary_meta: dict | None = None
 
+        # YOLO/게이트(route_frame)는 Mac CPU에서 수백 ms~수 초가 걸릴 수 있다.
+        # 메인 수신 루프에서 await하면 다음 프레임 receive가 막혀 콘솔 Live Feed가
+        # 탐지 FPS(~1fps)로 끊긴다. ack+콘솔 중계는 즉시 하고, route만 백그라운드로
+        # 넘긴다. 동시 추론은 1개로 제한하고 바쁠 때는 해당 프레임 탐지만 드롭한다
+        # (최신성 우선, Live Feed 중계는 이미 끝난 상태).
+        route_sem = asyncio.Semaphore(1)
+
+        # 💡 [면접 대비 주석] 콘솔 Live Feed 전용 FPS 분리 (2026-07-17, P0).
+        # 단말은 반사 경로 품질을 위해 5~8fps로 송신하지만, 운영자 모니터링 화면은
+        # 3~5fps로 충분하다. 단말 송신률을 그대로 relay하면 대역폭·브라우저 디코드
+        # 부하가 가중되고, 여러 콘솔 탭이 열린 환경에서 버퍼링이 누적된다.
+        # ACK/YOLO 라우팅은 기존 단말 FPS를 그대로 유지하고, 콘솔 relay만 별도 쓰로틀.
+        console_relay_interval_s = max(
+            0.001,
+            float(os.getenv("CONSOLE_RELAY_MIN_INTERVAL_S", "0.2")),  # 0.2s = 5fps
+        )
+        last_console_relay_ts: float = 0.0
+
+        async def _route_detection_bg(
+            processed_frame,
+            route_event_id: str,
+            route_frame_id: int,
+            route_decode_ms: float,
+            route_b64_len: int = 0,
+        ) -> None:
+            if route_sem.locked():
+                logger.debug(
+                    "[WS] detection route busy - drop event_id=%s frame_id=%s",
+                    route_event_id,
+                    route_frame_id,
+                )
+                return
+            async with route_sem:
+                await _route_detection_frame(
+                    splitter,
+                    processed_frame,
+                    route_event_id,
+                    route_frame_id,
+                    route_decode_ms,
+                    route_b64_len,
+                )
+
         # stt_audio 처리(STT+LLM+TTS)는 수 초~수십 초가 걸릴 수 있어(2026-07-09 실측:
         # 로컬 tiny 모델+gemma4:e4b만으로도 약 10초), 메인 수신 루프에서 inline await로
         # 처리하면 그동안 ws.receive()가 멈춰 클라이언트의 heartbeat_ack를 못 받아
@@ -630,11 +867,24 @@ async def ws_detect(
                 processed = await decode_frame_binary(raw_bytes, meta)
                 decode_ms = (time.perf_counter() - decode_start) * 1000
 
-                await manager.broadcast_to_consoles(raw_bytes)
+                # 💡 [면접 대비 주석] ACK를 콘솔 중계보다 먼저 보낸다 (2026-07-17, P0).
+                # 기존 순서(broadcast -> ack)에서는 느린 콘솔 send가 단말 ACK를 지연시켜
+                # 단말의 in-flight 프레임 제한(A2)이 동작하지 못하고 버퍼링이 누적됐다.
+                # ACK는 단말과의 계약이므로 콘솔 relay 상태와 독립되어야 한다.
+                # 콘솔 중계는 이제 session_manager의 latest-only 큐로 분리되어 논블로킹이다.
+                await _send_detection_ack(ws, event_id, frame_id, decode_ms)
 
-                await _finish_detection(
-                    ws, splitter, processed, event_id, frame_id, decode_ms, len(raw_bytes)
+                # 콘솔 relay FPS 분리(A5): 설정 주기 이내면 relay 건너뛰기(최신 프레임만 유지 목적).
+                relay_now = time.perf_counter()
+                if relay_now - last_console_relay_ts >= console_relay_interval_s:
+                    last_console_relay_ts = relay_now
+                    await manager.broadcast_to_consoles(raw_bytes)
+
+                task = asyncio.create_task(
+                    _route_detection_bg(processed, event_id, frame_id, decode_ms, len(raw_bytes))
                 )
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
                 continue
 
             raw = message.get("text")
@@ -726,10 +976,15 @@ async def ws_detect(
                             if len(parts) == 2:
                                 b64_for_decode = parts[1]
                         raw_bytes = base64.b64decode(b64_for_decode)
-                        await manager.broadcast_to_consoles(raw_bytes)
-                await _finish_detection(
-                    ws, splitter, processed, event_id, frame_id, decode_ms, b64_len
+                # 2026-07-17: ACK를 콘솔 중계보다 먼저 (P0). 바이너리 경로와 동일한 순서.
+                await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+                if raw_bytes is not None:
+                    await manager.broadcast_to_consoles(raw_bytes)
+                task = asyncio.create_task(
+                    _route_detection_bg(processed, event_id, frame_id, decode_ms, b64_len)
                 )
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
 
             elif msg_type == "stt_audio":
                 logger.info(
@@ -798,6 +1053,11 @@ async def ws_detect(
                             task = asyncio.create_task(_send_nav_guidance(ws, device_id, nav_event))
                             background_tasks.add(task)
                             task.add_done_callback(background_tasks.discard)
+
+            elif msg_type == "distance_probe_sample":
+                task = asyncio.create_task(_handle_distance_probe_sample(device_id, data))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
 
             else:
                 logger.warning(f"[WS] 알 수 없는 메시지 타입: {msg_type}")

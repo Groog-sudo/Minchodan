@@ -21,8 +21,8 @@ services:
     env_file:
       - ../.env
     environment:
-      # Docker Compose 환경에서는 컨테이너 서비스명 및 호스트 Ollama 주소로 재설정
-      - DB_HOST=mariadb
+      # 기존 원격 DB 설정을 유지하고, 로컬 DB가 필요할 때만 COMPOSE_DB_HOST로 재정의
+      - DB_HOST=${COMPOSE_DB_HOST:-${DB_HOST:-mariadb}}
       - REDIS_URL=redis://redis:6379
       # Ollama는 도커 외부 로컬에서 별도로 띄우므로 host.docker.internal 사용
       - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
@@ -31,8 +31,8 @@ services:
     depends_on:
       redis:
         condition: service_started
-      mariadb:
-        condition: service_healthy
+      # mariadb:
+      #   condition: service_healthy
     restart: unless-stopped
     networks:
       - minchodan-net
@@ -62,8 +62,8 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-    ports:
-      - "${DB_HOST_PORT:-3306}:3306"
+    # ports:
+    #   - "${DB_HOST_PORT:-3306}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
       - ../server/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro

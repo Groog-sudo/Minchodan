@@ -33,10 +33,11 @@ description: |
 
 [6단계: LLM 가이드 오케스트레이터]
    ├── L1: 룰 기반 위험도 분류 (high는 이미 반사 경로에서 처리됨, mid/low만 진입)
-   ├── L2: ChatOllama(gemma4:e4b) ainvoke — 20자/방향 포함
+   ├── Fast Lane (2026-07-16): 단일 객체+clock+distance → 템플릿 (<50ms, LLM 생략)
+   ├── L2: ChatOllama(gemma4:e4b) ainvoke — 20자/방향 포함 (복합/예외)
    └── L3: 가드레일 검증, RETRY(최대 1회)
 
-[7단계: 실시간 TTS]  guidance_text
+[7단계: 실시간 TTS]  guidance_text (패스트 레인: data/guide_clips/ 사전합성 우선)
 ```
 
 > **주의**: `high` 위험도는 3단계 Reflex/Surface Gate에서 이미 반사 경로(사전합성 클립)로 처리됩니다. L1은 **mid/low만 진입**시킵니다.
@@ -80,6 +81,7 @@ server/orchestration/
 ├── llm_client_factory.py      # BaseChatModel Ollama  gpt-4o-mini 핫스왑
 └── nodes/
     ├── l1_classifier.py       # L1: 룰 기반 위험도 분류 (mid/low만 진입)
+    ├── fast_lane.py           # 패스트 레인: 템플릿 안내 (단일 객체+구조화 필드)
     ├── l2_generator.py        # L2: ChatOllama(gemma4:e4b) ainvoke
     ├── l3_validator.py        # L3: 길이·방향 검증, RETRY(최대 1회)
     └── fallback_node.py       # 최종 실패  고정 문장
@@ -124,21 +126,24 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
-# 2026-07-07 정정: 실제 29클래스 모델 기준 목록. kickboard/pothole/manhole/construction_cone는
-# 존재하지 않는 클래스명이었다(전동킥보드는 scooter이며 반사 게이트 고위험 처리). 실제 코드는
-# barricade/bench/bicycle/bollard/carrier/chair/fire_hydrant/kiosk/movable_signage/parking_meter/
-# pole/potted_plant/power_controller/stroller/table/traffic_light_controller/tree_trunk/wheelchair.
-MID_RISK_CLASSES = {"bicycle", "bollard", "kiosk", "movable_signage", "pole", "wheelchair", "..."}
-# high 위험도는 3단계 게이트에서 이미 반사 경로로 처리됨
+# 2026-07-14 정책: 인지 경로 mid는 노면 이탈(is_departing_confirmed) 전용.
+# 객체 클래스는 mid로 분류하지 않는다. 근접/상체 위험은 3단계 반사·지연 인지·패스트 레인.
+MID_RISK_CLASSES: set[str] = set()
 
 def classify_risk(detected_classes: list) -> str:
+    if not detected_classes:
+        return "low"
     for cls in detected_classes:
-        if cls in MID_RISK_CLASSES: return "mid"
+        if cls in MID_RISK_CLASSES:
+            return "mid"
     return "low"
 
 async def l1_classifier_node(state: dict) -> dict:
     detected_classes = state.get("detected_classes", [])
+    is_departing_confirmed = state.get("is_departing_confirmed", False)
     risk_level = classify_risk(detected_classes)
+    if is_departing_confirmed and risk_level == "low":
+        risk_level = "mid"
     return {"risk_level": risk_level, "retry_count": 0}
 ```
 

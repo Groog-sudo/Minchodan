@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.7 (2026-07-13 §13.2 저지연 Redis Streams 완충 메트릭 발행 채널(`publish_metric`) 구현 추가 및 §13.3.2 SSE 신규 이벤트(audio_validation/accessibility_validation/cache_suppression/langsmith_trace) 실제 연동 정리)
+> **버전**: v0.4.10 (2026-07-17 §6.7 `distance_probe_sample` 데이터 계약 추가 - LiDAR 실거리 검증 캡처, 검증 전용 스코프로 반사/인지 경로 판단에는 미관여 + 이전 v0.4.9: §13.3.1 이벤트 프레임 중앙 저장 API 연동 및 STT 사용자 원본 음성 파일 Log 메타데이터 보존 구조 반영 + 이전 v0.4.8: §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -99,7 +99,7 @@ graph TD
 
         subgraph Nav ["부가 기능. 실시간 내비게이션"]
             NavManager["NavigationManager<br/>(디바이스별 세션 상태기계)"]
-            Tmap["TMAP 보행자 경로 API<br/>(server/navigation/pedestrian_navigation.py)"]
+            Tmap["TMAP 보행자 경로 API<br/>(server/navigation/server.py)"]
         end
 
         subgraph Bus ["Redis Bus"]
@@ -220,7 +220,7 @@ graph TD
 | `client/src/hooks/useLocation.ts`             | `expo-location` `watchPositionAsync` GPS 실시간 전송(`realtime_gps`)       | -    |
 | `client/src/components/NavMapPanel.tsx`       | 하단 T맵 지도 패널(WebView + TMap JS API). `nav_route` 좌표 폴리라인 + 현재 위치 마커(2초 스로틀), 토글 꺼짐 시 미마운트. 운영자/데모용(2026-07-11 신규) | -    |
 | `server/navigation/manager.py`                | `NavigationManager`, 디바이스별 세션 상태기계(IDLE/대기/안내중)            | -    |
-| `server/navigation/pedestrian_navigation.py`  | TMAP POI 검색·보행자 경로 API 연동                                        | -    |
+| `server/navigation/server.py`                 | TMAP POI 검색·보행자 경로 API 연동 (NavigationManager와 연동하는 내비게이션 전용 FastAPI) | -    |
 | `server/navigation/navigation_filter.py`      | 경로 이탈·재탐색 필터링                                                    | -    |
 | `server/stt/stt_service.py`                   | faster-whisper 기반 음성 전사 (`transcribe_file`)                          | -    |
 | `server/stt/stt_to_llm_bridge.py`             | STT 전사 결과 → 네비게이션/LLM 브리지. 자기-에코 감지(`_check_self_echo`), 인텐트 분기, 자유 질의응답 | -    |
@@ -352,8 +352,9 @@ graph TD
 | In   | `{type:"realtime_gps", lat, lon, heading}`                                            |
 | Out  | `{type:"server_detection", event_id, detections:[{model, className, confidence, bbox}], ts}` |
 | Out  | `{type:"nav_route", waypoints:[{lat, lon}], app_key, ts}` (경로 수립/해제/재접속 복원 시, 지도 패널용. 2026-07-11 신설) |
+| In   | `{type:"distance_probe_sample", payload:{event_id, samples:[{class_name, confidence, bbox, lidar_meters, ...}]}}` (LiDAR 실거리 검증 전용, 반사/인지 경로 미관여. 2026-07-17 신설) |
 
-상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6을 참조합니다.
+상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6, §6.8을 참조합니다.
 
 > **2026-07-11 길안내 발화 경로 분리**: 턴바이턴 멘트 조회가 `DetectionConsumer` 내부에만
 > 있어 카메라 탐지가 없으면 NAVIGATING 상태여도 무음이던 결함을 수정했다. `realtime_gps`
@@ -441,7 +442,8 @@ sequenceDiagram
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
 | `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키. `nav_route` 메시지 `app_key`로 단말 지도 패널에도 전달(2026-07-11) | (미설정)                 |
 | `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
-| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
+| `YOLO_CONF`         | Yolo 26N - Segmentation 신뢰도 임계값     | `0.35`                   |
+| `YOLO_DET_CONF`     | Yolo 26N - Object Detection 신뢰도 임계값 | `0.50`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
@@ -523,17 +525,17 @@ sequenceDiagram
    - **cache_suppression**: `{"suppressed_keys": ["suppress:ref_alert_001"], "ttl_seconds": 45}`
    - **system_error**: `{"error_message": "Ollama connection timeout, hot-swapping to OpenAI", "severity": "warning"}`
 
-### 13.3.1 사후 이력 조회와 이벤트 프레임 보존 (2026-07-12 신설)
+### 13.3.1 사후 이력 조회와 이벤트 프레임·STT 음성 보존 (2026-07-16 갱신)
 
-실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다.
+실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다. STT 경로는 사용자의 원본 음성 파일 경로와 전사 문장을 같은 로그 행에 보존합니다.
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 (`server/services/event_frame_store.py`) |
-| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임만 (JPEG, `data/event_frames/YYYYMMDD/{event_id}.jpg`) |
-| **DB 연결** | `detection_guidance_logs.frame_path` 컬럼에 상대 경로만 기록 (BLOB 미사용) |
-| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO는 `asyncio.to_thread`로 로그 태스크 내부에서만 수행 (반사 <300ms 비협상 원칙 유지) |
-| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지, bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
+| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 및 `/ws/detect` STT 처리부 (`server/services/event_frame_store.py`, `server/services/remote_storage_client.py`) |
+| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임(JPEG)과 STT 경로에서 사용자가 말한 원본 음성 파일 |
+| **DB 연결** | 이미지: `detection_guidance_logs.frame_path`; 사용자 음성: `stt_audio_path`, `stt_transcript_text`, `stt_audio_storage_status` 등 메타데이터. 파일 BLOB은 DB에 저장하지 않음 |
+| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO/원격 업로드는 로그 태스크 내부에서 수행 (반사 <300ms 비협상 원칙 유지) |
+| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지. 로컬 파일이 없으면 중앙 저장 API에서 프록시 조회. bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
 | **보존 정책** | 기본 7일(`EVENT_FRAME_RETENTION_DAYS`), 서버 기동 시 만료 폴더 삭제 (개인정보 기간 한정 보존) |
 
 상세 계약은 [`api_specification.md`](api_specification.md) §8.5를 참조하십시오.
@@ -544,7 +546,7 @@ sequenceDiagram
 
 **채널 A - SSE `/api/v1/monitor/stream`** (`server/mcp/manager.py` MCPManager, `server/api/monitor.py`)
 
-관제 상태성 지표 및 MCP 검증 메트릭을 실시간으로 브로드캐스트한다. 실제 발행되는 `event_type`은 8가지다.
+관제 상태성 지표 및 MCP 검증 메트릭을 실시간으로 브로드캐스트한다. in-process `MCPManager.broadcast_event()`로 직접 발행되는 `event_type`은 9가지다.
 
 | event_type | 발행 위치 | 콘솔 소비 패널 |
 | :--- | :--- | :--- |
@@ -552,12 +554,13 @@ sequenceDiagram
 | `session_status` | `server/api/ws_router.py` `_broadcast_session_status()` - 단말 연결/heartbeat_ack(RTT 갱신)/해제 3개 지점 | `SessionStatus` |
 | `llm_status` | `NavigationManager._broadcast_nav_change()`(내비게이션 상태) + `DetectionConsumer._broadcast_ai_pipeline_status()` | `AiPipelineMonitor` |
 | `detection_event` | `DetectionConsumer._broadcast_detection_event()` - 탐지/노면 분류가 있는 프레임마다 | `DetectionFeed` |
+| `risk_event` | `DetectionConsumer._broadcast_risk_event()` - 반사/인지 경보가 **실제 전송 성사**된 직후 | `RiskEventLog` |
 | `audio_validation` | `server/tts/realtime_tts.py` 및 `server/mcp/audio_validator.py` - TTS 음성 규격 및 TTFB 지연 시간 검증 시 | `McpValidationMonitor` (오디오 검증) |
 | `cache_suppression` | `server/mcp/cache_monitor.py` - Redis 억제 캐시 키 및 남은 TTL 상시 감시 시 | `McpValidationMonitor` (캐시 모니터) |
 | `accessibility_validation` | `server/tts/realtime_tts.py` 및 `server/mcp/accessibility_simulator.py` - 발화 방향성/의미 대조 검증 시 | `McpValidationMonitor` (접근성 검증) |
 | `langsmith_trace` | `server/orchestration/graph.py` 및 `server/mcp/langsmith_tracer.py` - LangGraph 노드 지연 및 전이 상태 검증 시 | `McpValidationMonitor` (LangSmith 추적) |
 
-`rag_score` 등 콘솔 타입에는 정의돼 있지만 서버가 채우지 않는 필드가 일부 남아 있다. `RiskEventLog`가 구독하는 `risk_event`는 **아직 서버 어디서도 발행되지 않아 항상 빈 상태**다(후속 과제).
+`rag_score` 등 콘솔 타입에는 정의돼 있지만 서버가 채우지 않는 필드가 일부 남아 있다. `risk_event`는 Redis `risk.events` 스트림이 아니라 위 표와 같이 `DetectionConsumer`가 SSE in-process 브로드캐스트한다(2026-07-16 wiring).
 
 **채널 B - WS `/ws/console/live-feed`** (`server/api/session_manager.py` `console_connections`, `console/src/api/useLiveFeed.ts`)
 
@@ -651,3 +654,40 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | **포스트 D** | 단말-서버 알림 중복 조정 (dedupe/debounce/우선순위 머지) | 알림 중복 억제, 온라인 복귀 자동화 |
 
 > 상세 매커니즘, 시나리오 흐름도, 리스크 분석, 환경 변수 추가 예정, 검증 기준은 [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md)를 참조.
+
+---
+
+## 11. 필드 테스트 개선 (2026-07-17, M1-M7)
+
+실사용 필드 테스트 피드백 기반 7개 마일스톤 개선. 상세는 [`docs/research/field_test_improvement_plan.md`](../research/field_test_improvement_plan.md).
+
+### 11.1 반사 경로 강화 (P0)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M1/P0-2** | 반사 큐 최신성 보장 (latest-frame-wins + 신선도 검사) | `stream_splitter`, `consumer` |
+| **M2/P0-1** | 억제 재무장 정책 (60s 침묵 -> 상황 변화 시 즉시 재발화) | `suppressor`, `reflex_gate` |
+| **M3/P0-3** | 소형 객체 하단 근접 + Approach-Lost 즉시 재발화 | `reflex_gate`, `bytetrack_tracker` |
+
+### 11.2 인지 경로 강화 (P1)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M4/P1-2** | 발화 가치 게이트 (동일 상황 30s 쿨다운, TTS 합성 생략) | `consumer` |
+| **M5/P1-1** | 반사 후속 avoidance fast lane (LangGraph 우회, 우회 방향 즉시 안내) | `avoidance.py` 신규, `consumer` |
+
+### 11.3 노면/지연 보정 (P2)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M6/P2-1(a)(b)** | 계단 실측 평가 스크립트 + surface_caution 히스테리시스 | `scripts/eval_segmentation_stairs.py`, `consumer`, `risk_rules` |
+| **M7/P2-1(c)** | 세그 5클래스 재학습 파이프라인 + STAIR_DOWN 활성화 사전 등록 | `scripts/train_segmentation_5class.py`, `surface_gate` |
+| **M7/P2-2** | 파이프라인 지연 관측 (콘솔 latency_alert) | `consumer` |
+
+### 11.4 신규 환경변수
+
+`REFLEX_QUEUE_MAXSIZE`, `COGNITIVE_QUEUE_MAXSIZE`, `REFLEX_MAX_AGE_S`, `COGNITIVE_MAX_AGE_S`, `REFLEX_SUPPRESS_TTL_S`, `REFLEX_MIN_GAP_S`, `REFLEX_NEAR_HAPTIC_THROTTLE_S`, `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT`, `COGNITIVE_UTTERANCE_COOLDOWN_S`, `SURFACE_CAUTION_CONFIRM_STREAK`, `REFLEX_LATENCY_ALERT_MS`, `COGNITIVE_LATENCY_ALERT_MS` (상세는 `docs/ops/environment_variables.md`).
+
+### 11.5 오해 방지 조항
+
+"폴백 동작 제거"는 임시 함수 기본값 폴백(예: detector 미로드 시 mock 반환)을 의미하며, **서버-온디바이스 폴백(WS 끊김 시 단말 CoreML/TFLite 추론 전환)은 유지**됩니다. 단말 `useWebSocket.ts`의 서버-온디바이스 폴백 메커니즘은 본 개선에서 변경되지 않습니다.

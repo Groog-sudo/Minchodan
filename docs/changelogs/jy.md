@@ -5,6 +5,97 @@
 
 ---
 
+### 2026-07-17 | 문서 보안 | DB·미디어 API 가이드 외부 공개용·내부용 분리
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 통합 가이드에는 실제 Tailscale 주소, DB 식별자, 서버 상태와 내부 경로가 포함되어 팀 내부 운영에는 유용하지만 외부 공개본으로는 과도한 인프라 정보였습니다.
+- **변경 내용**:
+  - 추적되는 `docs/db_tailscale_guide/README.md`를 외부 공개용 v0.3.0으로 전환하고 실제 호스트·DB·포트·경로·API 식별자를 플레이스홀더로 치환했습니다.
+  - 실접속 정보가 포함된 기존 문서는 같은 폴더의 `README.internal.md`로 보존했습니다.
+  - 내부 문서는 `.gitignore`에 등록해 공개 저장소나 커밋에 실수로 포함되지 않도록 했습니다.
+  - `docs/README.md`에 공개용 문서와 Git 제외 내부 문서의 역할을 구분했습니다.
+- **관련 파일**: `.gitignore`, `docs/db_tailscale_guide/README.md`, `docs/db_tailscale_guide/README.internal.md`(Git 제외), `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 기준**:
+  - 공개본에는 실제 Tailscale IP, DB명·계정명, 서비스 버전, 내부 파일 경로와 실제 비밀번호·토큰이 없어야 합니다.
+  - 내부본은 로컬에 존재하되 `git check-ignore`와 `git status`에서 추적 대상이 아니어야 합니다.
+- **비고**:
+  - 내부 문서는 Git으로 팀에 배포하지 않으며 승인된 비밀관리 도구 또는 팀 내부 보안 채널로 별도 전달합니다.
+
+### 2026-07-17 | 문서·운영 | MariaDB·미디어 저장 API Tailscale 팀 연결 가이드 통합
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 기존 `docs/db_tailscale_guide/README.md`는 공동 MariaDB 접속만 설명해, Raspberry Pi 중앙 미디어 저장 API와 STT 원본 음성 저장 설정을 팀원이 별도 문서에서 찾아야 했습니다.
+  - `.vscode/log_Miss_Issue`의 MISS 조사·중앙 저장 진행 문서와 개발 감사 보고서를 팀 표준 문서로 정리하되, AI 에이전트가 비밀값을 노출하거나 운영 DB를 파괴적으로 변경하지 않도록 실행 경계를 명확히 할 필요가 있었습니다.
+- **변경 내용**:
+  - 기존 DB Tailscale 가이드를 공동 MariaDB와 중앙 미디어 저장 API를 함께 다루는 v0.2.0 통합 가이드로 개정했습니다.
+  - 실제 Tailscale 호스트와 서비스 포트, 루트 `.env` 설정, DBeaver·FastAPI·Docker Compose 연결, DB와 미디어 API의 읽기 전용 smoke test를 추가했습니다.
+  - 이벤트 프레임 object key와 사용자 STT 원본 음성 경로·전사문·저장 상태 컬럼의 역할, 미디어 API 라우트, 기존 데이터 보존형 마이그레이션 원칙을 문서화했습니다.
+  - AI 에이전트 시작 순서, 첫 확인 파일, 비밀값 보호, 금지 명령, 장애 분리표와 팀 전달용 프롬프트 예시를 추가했습니다.
+  - `docs/README.md` 인덱스를 갱신하고 실제 파일이 없는 오래된 보고서 링크 1건을 제거했으며, `docs/ops/deployment_guide.md`의 Docker DB 대상 설명을 실제 Compose의 원격 DB 보존 동작과 맞췄습니다.
+- **관련 파일**: `docs/db_tailscale_guide/README.md`, `docs/README.md`, `docs/ops/deployment_guide.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - Raspberry Pi에서 Tailscale·MariaDB·미디어 API 서비스 `active`/`enabled`, 포트 `3306`·`8081`, 미디어 `/health` HTTP 200을 읽기 전용 확인했습니다.
+  - 공동 MariaDB의 STT·writer 컬럼 존재와 개발 PC 루트 `.env` 기준 `SELECT 1`, 미디어 API Bearer 인증을 확인했습니다.
+- **비고**:
+  - 실제 DB 비밀번호, 미디어 API 토큰, 개인 SSH 키는 문서와 changelog에 기록하지 않았습니다.
+
+### 2026-07-17 | 환경변수 | Raspberry Pi 중앙 저장소·Ollama 기준 `.env.example` 재작성
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - Raspberry Pi MariaDB, 중앙 저장 API, STT 원본 음성 저장, Ollama `gemma4:e4b` 사용 설정이 한 번에 늘어나면서 기존 `.env.example`의 어느 위치에 어떤 값을 넣어야 하는지 파악하기 어려웠습니다.
+  - 실제 `.env`에는 DB 비밀번호, 저장 API 토큰, TMAP 키, LLM API 키 등 민감값이 포함되므로, 사용자가 값만 채워 넣을 수 있는 별도 템플릿 정리가 필요했습니다.
+- **변경 내용**:
+  - 루트 `.env.example`을 새로 생성하여 `0. 실행 환경`부터 `16. 테스트 / 검증 보조`까지 번호가 있는 섹션으로 재구성했습니다.
+  - Raspberry Pi MariaDB 설정(`DB_HOST`, `DB_PASSWORD`)과 중앙 저장 API 설정(`EVENT_FRAME_STORAGE_BACKEND`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `WRITER_INSTANCE_ID`)을 별도 섹션으로 분리했습니다.
+  - 사용자가 실제 값을 채워야 하는 항목은 `[RASPBERRY_PI_TAILSCALE_IP]`, `[MARIADB_PASSWORD]`, `[IMAGE_SERVER_TOKEN]`, `[TMAP_APP_KEY]`처럼 대괄호 플레이스홀더로 통일했습니다.
+  - LLM 기본 사용 의도에 맞춰 Ollama 경로(`OLLAMA_BASE_URL`, `GEMMA_MODEL=gemma4:e4b`)와 RAG 임베딩 경로(`EMBEDDING_PROVIDER`, `EMBEDDING_MODEL=nomic-embed-text`)를 명확히 분리했습니다.
+  - 현재 코드 기준 미구현인 `kokoro/coqui`는 TTS 기본값에서 제외하고 `TTS_ENGINE=supertonic`을 기본 예시로 정리했습니다.
+  - 기존 임시 백업 템플릿 `01_.env.example`은 삭제하지 않고 보존했습니다.
+- **관련 파일**: `.env.example`, `01_.env.example`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `python-dotenv`로 `.env.example` 파싱 성공: 78개 key 인식
+  - 중앙 저장 핵심 key(`DB_HOST`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `EVENT_FRAME_STORAGE_BACKEND`) 누락 없음 확인
+  - `git diff --check .env.example` 통과
+- **비고**:
+  - 실제 `.env` 파일은 민감 정보 보호를 위해 열람하지 않았습니다.
+  - 운영 반영 시에는 `.env.example`을 복사한 뒤 대괄호 플레이스홀더만 실제 값으로 교체하면 됩니다.
+
+---
+
+### 2026-07-16 | DB/저장소/STT | Raspberry Pi 중앙 저장 API 연동 및 Log STT 원본 음성 메타데이터 기록
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 공유 MariaDB를 여러 FastAPI writer가 함께 쓰는 구조에서 이벤트 프레임 JPEG는 각 writer의 로컬 디스크에 흩어져 `frame_path`는 있으나 콘솔 이미지 조회가 404가 되는 MISS가 발생했습니다.
+  - STT 경로는 기존에 사용자가 말한 원본 음성 파일과 전사 문장을 `detection_guidance_logs`에 함께 남기지 않아, 사용자 발화 기반 이력 추적과 재검증이 어려웠습니다.
+- **변경 내용**:
+  - `server/services/remote_storage_client.py`를 추가해 Raspberry Pi 중앙 저장 API에 이벤트 프레임 JPEG와 STT 원본 음성 bytes를 업로드하도록 했습니다.
+  - `server/services/event_frame_store.py`와 `server/detection/consumer.py`를 수정해 원격 저장 사용 시 `frame_path`에 중앙 저장소 object key만 저장하도록 연결했습니다.
+  - `server/api/ws_router.py` STT 처리부에서 사용자가 말한 원본 오디오를 업로드하고, `stt_transcript_text`, `stt_audio_path`, `stt_audio_storage_status`, `stt_audio_size_bytes`, `stt_audio_duration_ms`, `stt_audio_sha256` 등을 Log에 저장하도록 했습니다.
+  - `server/api/detection_log_router.py`는 로컬 파일이 없으면 중앙 저장소에서 프레임을 조회해 콘솔에 프록시 응답하도록 보강했습니다.
+  - `detection_guidance_logs` ORM/DTO/SQLite DDL/마이그레이션에 STT 원본 음성 저장 메타데이터 컬럼과 조회 인덱스를 추가했습니다.
+  - 콘솔 타입과 지연 패널에 STT 음성 업로드 시간(`stt_audio_upload_ms`)을 반영했습니다.
+  - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`를 새 저장 구조에 맞춰 갱신했습니다.
+- **관련 파일**:
+  - `server/services/remote_storage_client.py`, `server/services/event_frame_store.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `server/api/detection_log_router.py`
+  - `server/db/models.py`, `server/db/schemas.py`, `server/db/schema.sql`, `server/db/migrations/20260716_002_add_stt_audio_columns_to_detection_guidance_logs.sql`
+  - `console/src/types/monitor.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LatencySummaryPanel.tsx`, `console/src/pages/DashboardPage.tsx`
+  - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`
+- **검증 결과**:
+  - `python -m py_compile` 대상 Python 파일 통과
+  - `pytest tests/test_event_frame_store.py tests/test_ws_router_stt.py tests/test_false_positive.py tests/test_tts_prewarm.py` 통과: 20 passed, 3 warnings
+  - `cd console && ./node_modules/.bin/tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - `ruff`는 현재 `.venv`와 PATH에 설치되어 있지 않아 실행하지 못했습니다.
+- **비고**:
+  - 이번 작업은 서버/DB/콘솔 저장 경로 연동 범위입니다. 작업 전부터 존재하던 iOS 네이티브/Podfile 변경은 이번 범위에서 수정하지 않았습니다.
+  - 실제 운영 반영 시 GPU FastAPI `.env`에 `EVENT_FRAME_STORAGE_BACKEND=remote`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `WRITER_INSTANCE_ID`를 설정하고 서버를 재시작해야 합니다.
+
+---
+
 ### 2026-07-15 | Docker/Ollama | WSL/Linux 로컬 Ollama 자동 기동 보강
 
 - **커밋**: `infra: WSL/Linux 로컬 Ollama 실행 환경 보강`
@@ -285,7 +376,7 @@
   - iOS 단말 빌드 반복 문서에는 환경 확인, 단말 연결 확인, Signing Team 설정, Metro 실행, CLI 빌드, `devicectl` 설치/실행, 앱 확인 체크리스트, 재빌드 판단 기준을 정리했습니다.
 - **관련 파일**: `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`, `docs/changelogs/jy.md`
 - **검증 결과**:
-  - `rg`로 `file:///`, `/Users/jjun`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
+  - `rg`로 `file:///`, `/Users/<LOCAL_USER>`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
   - `git diff --check -- docs/macOS_xcode_build docs/changelogs/jy.md` 통과
   - 기존 미추적 빌드 로그 `client/ios/build-device-debug.log`는 이번 문서 커밋 대상에서 제외했습니다.
 
@@ -488,5 +579,25 @@
 - **비고**:
   - 이번 변경은 `거리측정` 계측 버튼 경로의 신뢰 조건과 보정 산식을 강화한 작업입니다. 일반 객체 탐지 bbox에 들어오는 `distanceMeters` 계약은 유지되지만, 모든 탐지 객체가 보정된 LiDAR 실거리를 받는 정식 fusion 단계까지 완료된 것은 아닙니다.
   - 보정 후 값이 원본 z축 depth와 거의 같게 보이는 중앙 지점도 정상일 수 있습니다. 광선 스케일은 중심부에서 1에 가깝고, 차이는 보통 가장자리나 기기 각도 변화에서 더 잘 드러납니다.
+
+---
+
+### 2026-07-17 | 배포 | Docker 외부 DB 보존 및 iOS Pod 정합화
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - DB와 중앙 이미지 저장 API는 기존 외부 서비스를 그대로 사용해야 하므로, Linux Compose가 `DB_HOST=mariadb`로 강제 전환하던 동작을 제거할 필요가 있었습니다.
+  - iOS 의존성 설치 결과와 Xcode 프로젝트의 Expo Dev Client 리소스 목록을 현재 `client/package.json` 기준으로 맞출 필요가 있었습니다.
+- **변경 내용**:
+  - `docker/docker-compose.yml`의 FastAPI `DB_HOST`가 `.env`의 기존 원격 DB 값을 우선 유지하고, 필요할 때만 `COMPOSE_DB_HOST`로 재정의되도록 변경했습니다.
+  - 중앙 이미지 저장 API 관련 환경 변수는 Compose에서 재정의하지 않고 기존 `.env` 값을 그대로 전달합니다.
+  - `pod install` 결과에 맞춰 `Podfile.lock`과 Xcode 프로젝트의 Expo Dev Client 리소스 참조를 동기화했습니다.
+  - `docs/ops/environment_variables.md`와 `docs/ops/deployment_guide.md`의 DB 대상 선택 규칙을 실제 Compose 동작과 동기화했습니다.
+- **검증 결과**:
+  - `docker compose --env-file .env -f docker/docker-compose.yml config --quiet` 통과
+  - `Podfile.lock` YAML 파싱 및 Xcode 프로젝트 plist 파싱 통과
+  - `git diff --check` 통과
+- **비고**:
+  - 실제 호스트/IP가 포함된 `client/ios/Minchodan/AppDelegate.swift`, `client/src/config/index.ts`와 로컬 `.env` 파일은 이번 커밋에서 제외했습니다.
 
 ---

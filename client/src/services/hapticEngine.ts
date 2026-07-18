@@ -10,8 +10,12 @@ export type HapticMockHandler = (pattern: string) => void;
  *
  * MOCK_HAPTIC=true(시뮬레이터)에서는 진동 대신 콘솔 로그 + 등록된 시각 핸들러 호출.
  */
+/** continuous 패턴 최대 지속(ms). 이후 자동 stopContinuous (로드맵 Option A). */
+const CONTINUOUS_MAX_MS = 5000;
+
 class HapticEngine {
   private continuousTimer: ReturnType<typeof setInterval> | null = null;
+  private continuousCapTimer: ReturnType<typeof setTimeout> | null = null;
   private mockHandler: HapticMockHandler | null = null;
 
   /** Mock 모드 시각 피드백 핸들러 등록 (CameraView 오버레이). */
@@ -42,10 +46,14 @@ class HapticEngine {
           break;
         case "continuous":
           // 지속 햅틱은 300ms 간격으로 강한 진동을 연속해서 발생시킵니다.
+          // CONTINUOUS_MAX_MS 후 자동 종료해 피로·배터리 고갈을 막는다.
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           this.continuousTimer = setInterval(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
           }, 300);
+          this.continuousCapTimer = setTimeout(() => {
+            this.stopContinuous();
+          }, CONTINUOUS_MAX_MS);
           break;
         default:
           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -62,6 +70,10 @@ class HapticEngine {
     if (this.continuousTimer) {
       clearInterval(this.continuousTimer);
       this.continuousTimer = null;
+    }
+    if (this.continuousCapTimer) {
+      clearTimeout(this.continuousCapTimer);
+      this.continuousCapTimer = null;
     }
   }
 }

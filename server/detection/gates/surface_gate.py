@@ -20,8 +20,15 @@ from server.detection.schemas import ReflexAlert, SurfaceResult
 # 하나로 통합한 4클래스(sidewalk_normal/caution/roadway/braille_normal)로 확정됐다
 # (stage3_detection_design.md §5 참조). 예전 클래스명 그대로 두면 실제 모델 출력과 절대
 # 매칭되지 않아 이 게이트가 영구히 발동하지 않는 문제가 있어, 실제 클래스명으로 교체한다.
+#
+# P2-1(c) (2026-07-17): 5클래스 재학습 파이프라인(train_segmentation_5class.py)으로 caution을
+# stair_down/manhole로 분리한 모델이 배포되면 이 클래스들도 즉시 경보 대상이 되도록 사전 등록.
+# [면접 대비 주석] 두 모델(4클래스 caution 통합 / 5클래스 분리)을 모두 지원해 모델 교체 시
+# 게이트 코드 변경 없이 STAIR_DOWN이 활성화되도록 설계.
 P0_SURFACE_CLASSES = {
-    "caution",  # 계단/맨홀/그레이팅 통합 클래스 - 즉시 물리적 낙상/충돌 위험
+    "caution",  # 4클래스 모델: 계단/맨홀/그레이팅 통합 클래스 - 즉시 물리적 낙상/충돌 위험
+    "stair_down",  # 5클래스 모델: 계단(내려막) 분리 클래스
+    "manhole",  # 5클래스 모델: 맨홀 분리 클래스
 }
 
 

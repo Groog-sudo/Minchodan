@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DetectionGuidanceLogRow, LatencyStages } from "../types/monitor";
+import type { DetectionGuidanceLogRow, LatencyStages, PipelineDebug } from "../types/monitor";
 import { eventFrameUrl } from "../api/useDetectionLogs";
 
 // 발표/면접 포인트:
@@ -109,6 +109,217 @@ function parseLatency(json: string | null): LatencyStages {
   }
 }
 
+function parsePipelineDebug(raw: string | PipelineDebug | null | undefined): PipelineDebug | null {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw as PipelineDebug;
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null ? (parsed as PipelineDebug) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 테이블 한 줄 요약용: 사용자 발화(STT 전사)만 노출한다.
+ *  - "TTS 안내문" 컬럼과 겹치지 않도록 LLM 응답/최종 안내문은 이 컬럼에서 제외한다.
+ *  - 반사/인지 등 STT 입력이 없는 경로는 빈 문자열을 반환한다(테이블에서는 "-"로 표시). */
+function summarizePipelineDebug(
+  debugJson: string | PipelineDebug | null | undefined,
+  detectedObjectsJson: string,
+): string {
+  const debug = parsePipelineDebug(debugJson);
+  if (debug?.response_skipped && debug.stt_transcript) {
+    return `[에코 스킵] ${debug.stt_transcript}`;
+  }
+  if (debug?.stt_transcript) {
+    return debug.stt_transcript;
+  }
+
+  // pipeline_debug_json 이전 STT 로그 폴백: detected_objects_json.stt_transcript
+  try {
+    const objs = JSON.parse(detectedObjectsJson);
+    if (Array.isArray(objs)) {
+      const sttObj = objs.find((o) => o && typeof o === "object" && o.source === "stt");
+      if (sttObj?.stt_transcript) return String(sttObj.stt_transcript);
+    }
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
+const PATH_LABEL: Record<string, string> = {
+  reflex: "반사",
+  cognitive: "인지(비전)",
+  stt: "STT 음성",
+};
+
+function formatJsonPreview(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 0);
+  } catch {
+    return String(value);
+  }
+}
+
+function pushDetectionRows(
+  rows: Array<{ label: string; value: string; mono?: boolean }>,
+  detections: Array<Record<string, unknown>> | undefined,
+) {
+  if (!detections?.length) return;
+  detections.forEach((det, idx) => {
+    const cls = String(det.class_name ?? "-");
+    const conf = det.confidence != null ? ` conf=${det.confidence}` : "";
+    const hit = det.hit_count != null ? ` hit=${det.hit_count}` : "";
+    const dir = det.direction ? ` dir=${det.direction}` : "";
+    rows.push({
+      label: `YOLO 탐지 #${idx + 1}`,
+      value: `${cls}${conf}${hit}${dir}`,
+      mono: true,
+    });
+  });
+}
+
+function pushSurfaceRows(
+  rows: Array<{ label: string; value: string; mono?: boolean }>,
+  surfaces: Array<Record<string, unknown>> | undefined,
+) {
+  if (!surfaces?.length) return;
+  surfaces.forEach((surf, idx) => {
+    const cls = String(surf.class_name ?? "-");
+    const centroid = Array.isArray(surf.centroid) ? ` @${surf.centroid.join(",")}` : "";
+    rows.push({
+      label: `노면 분할 #${idx + 1}`,
+      value: `${cls}${centroid}`,
+      mono: true,
+    });
+  });
+}
+
+/** 경로별 파이프라인 중간 텍스트를 관리자 디버그 패널로 표시한다. */
+function PipelineDebugPanel({
+  debugJson,
+  detectedObjectsJson,
+}: {
+  debugJson: string | PipelineDebug | null | undefined;
+  detectedObjectsJson?: string;
+}) {
+  const debug = parsePipelineDebug(debugJson);
+  if (!debug?.path) {
+    const fallback = detectedObjectsJson
+      ? summarizePipelineDebug(null, detectedObjectsJson)
+      : "";
+    if (fallback) {
+      return (
+        <div className="pipeline-debug-panel">
+          <div className="pipeline-debug-row">
+            <span className="pipeline-debug-label">STT 전사 (메타)</span>
+            <span className="pipeline-debug-value mono">{fallback}</span>
+          </div>
+        </div>
+      );
+    }
+    return <span className="pipeline-debug-empty">파이프라인 디버그 없음 (배포 이전 이력)</span>;
+  }
+
+  const rows: Array<{ label: string; value: string; mono?: boolean }> = [];
+  const pathLabel = PATH_LABEL[debug.path] ?? debug.path;
+  rows.push({ label: "경로", value: pathLabel });
+
+  if (debug.path === "stt") {
+    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
+    if (debug.response_skipped) rows.push({ label: "응답 스킵", value: debug.skip_reason ?? "true", mono: true });
+    if (debug.stt_transcript) rows.push({ label: "STT 전사 (Whisper)", value: debug.stt_transcript, mono: true });
+    if (debug.bridge_source) rows.push({ label: "브릿지 분기", value: debug.bridge_source, mono: true });
+    if (debug.rag_query) rows.push({ label: "RAG 쿼리", value: debug.rag_query, mono: true });
+    if (debug.rag_context) rows.push({ label: "RAG 수칙", value: debug.rag_context, mono: true });
+    if (debug.rag_results?.length) {
+      rows.push({ label: "RAG 검색 결과", value: formatJsonPreview(debug.rag_results), mono: true });
+    }
+    if (debug.template_text) rows.push({ label: "템플릿 안내문", value: debug.template_text, mono: true });
+    if (debug.llm_text) rows.push({ label: "LLM 응답", value: debug.llm_text, mono: true });
+    if (debug.response_text && !debug.response_skipped) {
+      rows.push({ label: "최종 안내문", value: debug.response_text, mono: true });
+    }
+    if (typeof debug.used_fallback_llm === "boolean") {
+      rows.push({ label: "LLM 폴백", value: debug.used_fallback_llm ? "예" : "아니오" });
+    }
+  } else if (debug.path === "cognitive") {
+    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
+    if (debug.pipeline_risk_hint) rows.push({ label: "파이프라인 위험도", value: debug.pipeline_risk_hint });
+    if (debug.l1_risk_level) rows.push({ label: "L1 분류 위험도", value: debug.l1_risk_level });
+    if (debug.detected_classes_ko?.length) {
+      rows.push({ label: "탐지 클래스(한글)", value: debug.detected_classes_ko.join(", ") });
+    }
+    pushDetectionRows(rows, debug.detections_summary);
+    pushSurfaceRows(rows, debug.surfaces_summary);
+    if (typeof debug.is_departing === "boolean") {
+      rows.push({ label: "보도 이탈(프레임)", value: debug.is_departing ? "예" : "아니오" });
+    }
+    if (typeof debug.is_departing_confirmed === "boolean") {
+      rows.push({ label: "보도 이탈(확정)", value: debug.is_departing_confirmed ? "예" : "아니오" });
+    }
+    if (debug.braille_direction) rows.push({ label: "점자블록 방향", value: debug.braille_direction });
+    if (debug.object_ko) rows.push({ label: "객체(한글)", value: debug.object_ko });
+    if (debug.clock_direction) rows.push({ label: "시계 방향", value: debug.clock_direction });
+    if (debug.distance_class) rows.push({ label: "거리 밴드", value: debug.distance_class });
+    if (debug.navigation_guidance) rows.push({ label: "내비 융합 멘트", value: debug.navigation_guidance, mono: true });
+    if (debug.rag_query) rows.push({ label: "RAG 쿼리", value: debug.rag_query, mono: true });
+    if (debug.rag_context) rows.push({ label: "RAG 수칙", value: debug.rag_context, mono: true });
+    if (debug.used_fast_lane && debug.fast_lane_cache_key) {
+      rows.push({ label: "패스트 레인 키", value: debug.fast_lane_cache_key, mono: true });
+    }
+    if (debug.llm_provider) rows.push({ label: "LLM 제공자", value: debug.llm_provider, mono: true });
+    if (debug.l2_drafts?.length) {
+      debug.l2_drafts.forEach((draft, idx) => {
+        rows.push({ label: `L2 초안 #${idx + 1}`, value: draft, mono: true });
+      });
+    }
+    if (debug.llm_text) rows.push({ label: "LLM 응답", value: debug.llm_text, mono: true });
+    if (debug.response_text) rows.push({ label: "최종 안내문", value: debug.response_text, mono: true });
+    if (typeof debug.l3_verified === "boolean") {
+      rows.push({ label: "L3 검증", value: debug.l3_verified ? "통과" : "미통과" });
+    }
+    if (debug.validation_errors && debug.validation_errors.length > 0) {
+      rows.push({ label: "검증 오류", value: debug.validation_errors.join(", "), mono: true });
+    }
+    if (typeof debug.retry_count === "number" && debug.retry_count > 0) {
+      rows.push({ label: "LLM 재시도", value: String(debug.retry_count) });
+    }
+    if (typeof debug.inference_ms === "number") {
+      rows.push({ label: "YOLO 추론(ms)", value: String(debug.inference_ms) });
+    }
+  } else if (debug.path === "reflex") {
+    if (debug.generation_mode) rows.push({ label: "생성 모드", value: debug.generation_mode, mono: true });
+    if (debug.alert_id) rows.push({ label: "alert_id", value: debug.alert_id, mono: true });
+    if (debug.clip) rows.push({ label: "반사 클립", value: debug.clip, mono: true });
+    if (debug.class_name) rows.push({ label: "클래스", value: debug.class_name, mono: true });
+    if (debug.risk_level) rows.push({ label: "위험도", value: debug.risk_level });
+    if (typeof debug.hit_count === "number") rows.push({ label: "hit_count", value: String(debug.hit_count) });
+    if (debug.track_id) rows.push({ label: "track_id", value: debug.track_id, mono: true });
+    if (debug.direction) rows.push({ label: "방향", value: debug.direction });
+    if (debug.distance) rows.push({ label: "거리", value: debug.distance });
+    if (typeof debug.inference_ms === "number") {
+      rows.push({ label: "YOLO 추론(ms)", value: String(debug.inference_ms) });
+    }
+    pushDetectionRows(rows, debug.detections_summary);
+  }
+
+  return (
+    <div className="pipeline-debug-panel">
+      {rows.map((row, index) => (
+        <div key={`${row.label}-${index}`} className="pipeline-debug-row">
+          <span className="pipeline-debug-label">{row.label}</span>
+          <span className={row.mono ? "pipeline-debug-value mono" : "pipeline-debug-value"}>
+            {row.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // 실기기 -> STT/추론 -> RAG -> LLM -> TTS -> DB저장 순서로 고정 표시한다.
 // 각 로그는 실제로 경유한 스테이지 키만 latency_json에 담겨 있으므로(반사 경로는
 // decode/inference/total뿐) 없는 키는 자동으로 생략된다.
@@ -119,6 +330,7 @@ const LATENCY_STAGE_ORDER: Array<[keyof LatencyStages, string]> = [
   ["rag_ms", "RAG"],
   ["llm_ms", "LLM"],
   ["tts_ms", "TTS"],
+  ["stt_audio_upload_ms", "음성업로드"],
   ["db_save_ms", "DB저장"],
   ["total_ms", "총합"],
 ];
@@ -155,6 +367,8 @@ const STREAM_FILTER_LABEL: Record<StreamFilter, string> = {
   cognitive: "인지",
   reflex: "반사",
 };
+
+const PAGE_BUTTON_WINDOW = 10;
 
 /** 반사/인지/미분류를 한눈에 구분하는 배지. */
 function StreamBadge({ streamType }: { streamType: string }) {
@@ -320,6 +534,21 @@ function FrameLightbox({
               <span className="frame-detail-label">TTS 안내문</span>
               <span className="frame-detail-value">{row.tts_text}</span>
             </div>
+            <div className="frame-detail-item frame-detail-item-full">
+              <span className="frame-detail-label">파이프라인 텍스트</span>
+              <span className="frame-detail-value">
+                {summarizePipelineDebug(row.pipeline_debug_json, row.detected_objects_json) || "-"}
+              </span>
+            </div>
+            <div className="frame-detail-item frame-detail-item-full">
+              <span className="frame-detail-label">파이프라인 디버그</span>
+              <div className="frame-detail-value">
+                <PipelineDebugPanel
+                  debugJson={row.pipeline_debug_json}
+                  detectedObjectsJson={row.detected_objects_json}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="frame-detail-actions">
@@ -367,11 +596,14 @@ export function DetectionGuidanceLogTable({
   onRefresh,
   refreshing,
   live,
+  streamFilter = "all",
+  onStreamFilterChange,
   page = 0,
   pageSize = 10,
   totalCount,
   onPrevPage,
   onNextPage,
+  onSetPage,
 }: {
   rows: DetectionGuidanceLogRow[];
   token?: string | null;
@@ -379,6 +611,8 @@ export function DetectionGuidanceLogTable({
   onRefresh?: () => void;
   refreshing?: boolean;
   live?: boolean;
+  streamFilter?: StreamFilter;
+  onStreamFilterChange?: (filter: StreamFilter) => void;
   // 2026-07-12: 서버 페이지네이션으로 전환 - rows는 이미 서버가 offset/limit으로 잘라
   // 보낸 "현재 페이지" 데이터라 여기서 다시 슬라이싱하지 않는다. 페이지 이동은
   // onPrevPage/onNextPage로 부모(App.tsx)에 위임해 실제 REST 재조회를 트리거한다.
@@ -387,36 +621,48 @@ export function DetectionGuidanceLogTable({
   totalCount?: number;
   onPrevPage?: () => void;
   onNextPage?: () => void;
+  onSetPage?: (page: number) => void;
 }) {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [lightboxLogId, setLightboxLogId] = useState<number | null>(null);
-  const [streamFilter, setStreamFilter] = useState<StreamFilter>("all");
   const [isStreamFilterOpen, setIsStreamFilterOpen] = useState(false);
+  const [isPageSearchOpen, setIsPageSearchOpen] = useState(false);
+  const [pageSearchInput, setPageSearchInput] = useState("");
   const streamFilterRef = useRef<HTMLDivElement | null>(null);
-  const filteredRows = useMemo(
+  const pageSearchRef = useRef<HTMLDivElement | null>(null);
+  const displayRows = useMemo(
     () =>
-      rows.filter(
-        (row) =>
-          streamFilter === "all" ||
-          (streamFilter === "reflex" && row.stream_type === "reflex") ||
-          (streamFilter === "cognitive" && row.stream_type === "cognitive"),
-      ),
+      [...rows]
+        .filter(
+          (row) =>
+            streamFilter === "all" ||
+            (streamFilter === "reflex" && row.stream_type === "reflex") ||
+            (streamFilter === "cognitive" && row.stream_type === "cognitive"),
+        )
+        .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime()),
     [rows, streamFilter],
   );
   const totalPages = Math.max(1, Math.ceil((totalCount ?? rows.length) / pageSize));
-  const selected = filteredRows.find((row) => row.log_id === selectedLogId) ?? null;
-  const lightboxRow = filteredRows.find((row) => row.log_id === lightboxLogId) ?? null;
+  const disablePaginationControls = (totalCount ?? rows.length) <= 11;
+  const pageWindowStart = Math.floor(page / PAGE_BUTTON_WINDOW) * PAGE_BUTTON_WINDOW;
+  const pageWindowEnd = Math.min(totalPages, pageWindowStart + PAGE_BUTTON_WINDOW);
+  const visiblePages = Array.from(
+    { length: pageWindowEnd - pageWindowStart },
+    (_, index) => pageWindowStart + index,
+  );
+  const selected = displayRows.find((row) => row.log_id === selectedLogId) ?? null;
+  const lightboxRow = displayRows.find((row) => row.log_id === lightboxLogId) ?? null;
   const canShowFrame = (row: DetectionGuidanceLogRow) =>
     Boolean(token && row.event_id && row.frame_path);
 
   useEffect(() => {
-    if (selectedLogId !== null && !filteredRows.some((row) => row.log_id === selectedLogId)) {
+    if (selectedLogId !== null && !displayRows.some((row) => row.log_id === selectedLogId)) {
       setSelectedLogId(null);
     }
-    if (lightboxLogId !== null && !filteredRows.some((row) => row.log_id === lightboxLogId)) {
+    if (lightboxLogId !== null && !displayRows.some((row) => row.log_id === lightboxLogId)) {
       setLightboxLogId(null);
     }
-  }, [filteredRows, selectedLogId, lightboxLogId]);
+  }, [displayRows, selectedLogId, lightboxLogId]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -428,6 +674,35 @@ export function DetectionGuidanceLogTable({
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
+
+  useEffect(() => {
+    if (!isPageSearchOpen) {
+      return;
+    }
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!pageSearchRef.current) {
+        return;
+      }
+      if (!pageSearchRef.current.contains(event.target as Node)) {
+        setIsPageSearchOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [isPageSearchOpen]);
+
+  const jumpToPage = () => {
+    const parsed = Number.parseInt(pageSearchInput.trim(), 10);
+    if (Number.isNaN(parsed)) {
+      return;
+    }
+    const clampedPage = Math.min(totalPages, Math.max(1, parsed));
+    onSetPage?.(clampedPage - 1);
+    setPageSearchInput("");
+    setIsPageSearchOpen(false);
+  };
 
   return (
     <section className="panel panel-table">
@@ -479,7 +754,8 @@ export function DetectionGuidanceLogTable({
                 aria-selected={streamFilter === option}
                 className={`stream-filter-option ${streamFilter === option ? "stream-filter-option-active" : ""}`}
                 onClick={() => {
-                  setStreamFilter(option);
+                  onStreamFilterChange?.(option);
+                  onSetPage?.(0);
                   setIsStreamFilterOpen(false);
                 }}
               >
@@ -490,7 +766,7 @@ export function DetectionGuidanceLogTable({
         )}
       </div>
 
-      {filteredRows.length === 0 ? (
+      {displayRows.length === 0 ? (
         <p className="empty-text">아직 저장된 탐지/안내 이력이 없습니다.</p>
       ) : (
         <div className="table-wrap">
@@ -501,6 +777,7 @@ export function DetectionGuidanceLogTable({
                 <th>감지 시각</th>
                 <th>스트림</th>
                 <th>이벤트 ID</th>
+                <th>파이프라인 텍스트</th>
                 <th>TTS 안내문</th>
                 <th>지연(ms)</th>
                 <th>오탐 판정</th>
@@ -509,7 +786,7 @@ export function DetectionGuidanceLogTable({
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((row) => {
+              {displayRows.map((row) => {
                 const totalMs = parseLatency(row.latency_json).total_ms;
                 return (
                   <tr
@@ -552,7 +829,10 @@ export function DetectionGuidanceLogTable({
                       <StreamBadge streamType={row.stream_type} />
                     </td>
                     <td>{row.event_id ?? "-"}</td>
-                    <td>{row.tts_text}</td>
+                    <td className="pipeline-preview-cell">
+                      {summarizePipelineDebug(row.pipeline_debug_json, row.detected_objects_json) || "-"}
+                    </td>
+                    <td className="tts-text-cell">{row.tts_text}</td>
                     <td className="latency-total-cell">
                       {typeof totalMs === "number" ? totalMs.toFixed(0) : "-"}
                     </td>
@@ -569,31 +849,97 @@ export function DetectionGuidanceLogTable({
         </div>
       )}
 
-      {totalPages > 1 && (
-        <nav className="log-pagination" aria-label="이력 페이지 이동">
-          <button
-            type="button"
-            className="page-btn"
-            onClick={() => onPrevPage?.()}
-            disabled={page === 0}
-          >
-            이전
-          </button>
-          <span className="page-indicator">
-            {page + 1} / {totalPages} 페이지 · 전체 {totalCount ?? rows.length}건
-          </span>
-          <button
-            type="button"
-            className="page-btn"
-            onClick={() => onNextPage?.()}
-            disabled={page >= totalPages - 1}
-          >
-            다음
-          </button>
-        </nav>
-      )}
+      <nav className="log-pagination" aria-label="이력 페이지 이동">
+        <button
+          type="button"
+          className="page-btn"
+          onClick={() => onPrevPage?.()}
+          disabled={disablePaginationControls || page === 0}
+          aria-label="이전 페이지"
+        >
+          ←
+        </button>
 
-      {selected && canShowFrame(selected) && (
+        <div className="page-number-strip" aria-label="페이지 번호 목록">
+          {visiblePages.map((pageIndex) => (
+            <button
+              key={pageIndex}
+              type="button"
+              className={`page-btn ${page === pageIndex ? "page-btn-active" : ""}`}
+              onClick={() => onSetPage?.(pageIndex)}
+              disabled={disablePaginationControls}
+            >
+              {pageIndex + 1}
+            </button>
+          ))}
+
+          {pageWindowEnd < totalPages && (
+            <>
+              <div className="page-search-anchor" ref={pageSearchRef}>
+                <button
+                  type="button"
+                  className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
+                  onClick={() => setIsPageSearchOpen((open) => !open)}
+                  disabled={disablePaginationControls}
+                  aria-label="페이지 번호 검색"
+                >
+                  ...
+                </button>
+
+                {isPageSearchOpen && (
+                  <div className="page-search-popover">
+                    <label className="page-search-label" htmlFor="log-page-search-input">
+                      페이지 번호
+                    </label>
+                    <div className="page-search-row">
+                      <input
+                        id="log-page-search-input"
+                        type="number"
+                        className="page-search-input"
+                        min={1}
+                        max={totalPages}
+                        placeholder={`1-${totalPages}`}
+                        value={pageSearchInput}
+                        onChange={(event) => setPageSearchInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            jumpToPage();
+                          }
+                        }}
+                      />
+                      <button type="button" className="page-btn" onClick={jumpToPage}>
+                        이동
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
+                onClick={() => onSetPage?.(totalPages - 1)}
+                disabled={disablePaginationControls}
+              >
+                {totalPages}
+              </button>
+            </>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="page-btn"
+          onClick={() => onNextPage?.()}
+          disabled={disablePaginationControls || page >= totalPages - 1}
+          aria-label="다음 페이지"
+        >
+          →
+        </button>
+      </nav>
+
+      {selected && (
         <div className="frame-detail">
           <div className="frame-detail-body">
             <div className="frame-detail-header">
@@ -617,6 +963,21 @@ export function DetectionGuidanceLogTable({
                 <div className="frame-detail-item frame-detail-item-full">
                   <span className="frame-detail-label">TTS 안내문</span>
                   <span className="frame-detail-value">{selected.tts_text}</span>
+                </div>
+                <div className="frame-detail-item frame-detail-item-full">
+                  <span className="frame-detail-label">파이프라인 텍스트</span>
+                  <span className="frame-detail-value">
+                    {summarizePipelineDebug(selected.pipeline_debug_json, selected.detected_objects_json) || "-"}
+                  </span>
+                </div>
+                <div className="frame-detail-item frame-detail-item-full">
+                  <span className="frame-detail-label">파이프라인 디버그</span>
+                  <div className="frame-detail-value">
+                    <PipelineDebugPanel
+                      debugJson={selected.pipeline_debug_json}
+                      detectedObjectsJson={selected.detected_objects_json}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -654,13 +1015,15 @@ export function DetectionGuidanceLogTable({
                   </button>
                 )}
               </div>
-              <div className="frame-detail-image">
-                <FrameWithOverlay
-                  src={eventFrameUrl(selected.event_id!, token!)}
-                  detections={parseDetections(selected.detected_objects_json)}
-                  onClick={() => setLightboxLogId(selected.log_id)}
-                />
-              </div>
+              {canShowFrame(selected) && token && (
+                <div className="frame-detail-image">
+                  <FrameWithOverlay
+                    src={eventFrameUrl(selected.event_id!, token)}
+                    detections={parseDetections(selected.detected_objects_json)}
+                    onClick={() => setLightboxLogId(selected.log_id)}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>

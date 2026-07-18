@@ -27,7 +27,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.minchodan.app.kwanbum</string>
+				<string>com.minchodan.app.kb.dev</string>
 			</array>
 		</dict>
 	</array>
@@ -37,6 +37,18 @@
 	<string>12.0</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>shortcuts</string>
+		<string>tel</string>
+		<string>telprompt</string>
+	</array>
+	<key>NSSiriUsageDescription</key>
+	<string>음성 명령으로 전화를 연결하기 위해 Siri 연동이 필요합니다.</string>
+	<key>IntentsSupported</key>
+	<array>
+		<string>INStartCallIntent</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

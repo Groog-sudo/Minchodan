@@ -69,7 +69,73 @@ export interface DetectionGuidanceLogRow {
   // 스테이지별 처리 지연(ms) JSON 문자열. 반사 경로는 decode/inference/total만,
   // 인지 경로는 rag/llm/tts까지, STT 경로는 stt/llm/tts까지 포함한다(경유한 스테이지만 존재).
   latency_json: string | null;
+  // 관리자 콘솔용 파이프라인 중간 텍스트(STT 전사, RAG, LLM/패스트레인 등).
+  // REST 응답에서는 MariaDB JSON 컬럼 특성상 객체로 내려올 수 있어 string | object 허용.
+  pipeline_debug_json: string | PipelineDebug | null;
   created_at: string;
+  event_source: "detection" | "stt" | "navigation" | "unknown";
+  stt_transcript_text: string | null;
+  stt_audio_path: string | null;
+  stt_audio_storage_status:
+    | "not_applicable"
+    | "not_saved"
+    | "available"
+    | "upload_failed"
+    | string;
+  stt_audio_format: string | null;
+  stt_audio_size_bytes: number | null;
+  stt_audio_duration_ms: number | null;
+  stt_audio_sha256: string | null;
+  stt_audio_error_code: string | null;
+  stt_audio_consent_at: string | null;
+  stt_audio_expires_at: string | null;
+  writer_instance_id: string | null;
+}
+
+// pipeline_debug_json 파싱 결과 - 경로별 디버그 텍스트 표시용.
+export interface PipelineDebug {
+  path?: "reflex" | "cognitive" | "stt";
+  stt_transcript?: string;
+  bridge_source?: string;
+  generation_mode?: string;
+  rag_query?: string;
+  rag_context?: string;
+  rag_results?: unknown[];
+  llm_text?: string | null;
+  template_text?: string;
+  response_text?: string;
+  response_skipped?: boolean;
+  skip_reason?: string;
+  llm_provider?: string;
+  used_fast_lane?: boolean;
+  fast_lane_cache_key?: string;
+  l3_verified?: boolean;
+  validation_errors?: string[];
+  used_static_fallback?: boolean;
+  retry_count?: number;
+  used_fallback_llm?: boolean;
+  clock_direction?: string;
+  distance_class?: string;
+  object_ko?: string;
+  l1_risk_level?: string;
+  pipeline_risk_hint?: string;
+  detected_classes_ko?: string[];
+  detections_summary?: Array<Record<string, unknown>>;
+  surfaces_summary?: Array<Record<string, unknown>>;
+  navigation_guidance?: string;
+  is_departing?: boolean;
+  is_departing_confirmed?: boolean;
+  braille_direction?: string;
+  l2_drafts?: string[];
+  inference_ms?: number;
+  alert_id?: string;
+  clip?: string;
+  direction?: string;
+  class_name?: string;
+  distance?: string;
+  risk_level?: string;
+  hit_count?: number;
+  track_id?: string;
 }
 
 // latency_json 파싱 결과 - 콘솔에서만 쓰는 화면 표시용 타입.
@@ -80,6 +146,7 @@ export interface LatencyStages {
   llm_ms?: number;
   tts_ms?: number;
   stt_ms?: number;
+  stt_audio_upload_ms?: number;
   db_save_ms?: number;
   total_ms?: number;
 }

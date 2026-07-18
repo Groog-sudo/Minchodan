@@ -59,7 +59,7 @@
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + 컨텍스트 TTL)
 - LangGraph (L1/L2/L3 오케스트레이션, raw SimpleOllamaClient/SimpleOpenAIClient)
-- Ollama (gemma4:e4b 가이드 생성, nomic-embed-text 임베딩)
+- Ollama (gemma4:e4b 가이드 생성, nomic-embed-text 보행 안전 수칙 임베딩, bge-m3 생활지원 RAG 임베딩)
 - Gemini API (gemini-2.5-flash-lite, 오프라인 RAG 빌드 캡셔닝; 최초 계획 로컬 Llava에서 전환)
 - ChromaDB (로컬 벡터 저장소)
 - Supertonic 3 (로컬 TTS, ONNX, MIT, 99M 파라미터; 기본 엔진, 2026-07-09 Piper에서 교체). Piper(piper-kss-korean.onnx)는 핫스왑 폴백으로 보존
@@ -93,7 +93,7 @@
 Minchodan/
 │
 ├── server/                          # GPU 서버 (FastAPI)
-│   ├── api/                         # WebSocket /ws/detect, 세션, 하트비트
+│   ├── api/                         # WebSocket /ws/detect, 세션, 하트비트, REST 라우터
 │   ├── capture/                     # 프레임 디코딩, 이중 스트림 분기
 │   ├── detection/                   # Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack, Gates
 │   │   └── gates/                   # Reflex Gate, Surface Gate
@@ -104,8 +104,14 @@ Minchodan/
 │   ├── tts/                         # 실시간 TTS, 반사 클립 전송, 억제
 │   ├── bus/                         # Redis Streams 인터페이스
 │   ├── db/                          # RDB ORM/DTO/DDL (사용자, 단말, 관리자, 감사 로그)
-│   └── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
-│       └── yolo26n/
+│   ├── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
+│   │   └── yolo26n/
+│   ├── services/                    # 비즈니스 로직 Service 계층 (Router-Service-Repository)
+│   ├── stt/                         # faster-whisper STT 서비스, 음성 명령-LLM 브릿지
+│   ├── navigation/                  # TMAP 보행자 경로 API, NavigationManager
+│   └── mcp/                         # MCP 연동 모듈 (GPU 모니터, Slack, LangSmith, 접근성 시뮬레이터 등)
+│
+├── console/                         # React 운영자 모니터링 콘솔
 │
 ├── client/                          # React Native 앱 (thin client)
 │   ├── assets/sounds/reflex_clips/  # 사전합성 반사 음성 클립 (WAV 5종, 단말 번들)
@@ -123,12 +129,14 @@ Minchodan/
 │
 ├── training/                        # 모델 학습 (오프라인)
 │   ├── datasets/                    # detection, segmentation
-│   ├── configs/                     # yolo26n_detection.yaml, yolo26n_segmentation.yaml
+│   ├── configs/                     # aihub_merged_detection.yaml, aihub_yolo_segmentation.yaml
 │   ├── train_detection.py
-│   ├── train_segmentation.py
-│   └── export_tensorrt.py
+│   └── train_segmentation.py
 │
 ├── scripts/                         # 유틸리티 스크립트
+│   ├── build_safety_db.py           # 4단계 RAG (safety_guidelines.json → ChromaDB)
+│   ├── build_convenience_db.py      # 편의 RAG 빌드
+│   └── build_guide_clips.py         # 반사 안내 클립 합성
 ├── tests/                           # 7단계별 검증 테스트
 ├── docker/                          # Docker Build & Setting
 ├── docs/                            # 설계 문서 및 가이드
@@ -222,18 +230,26 @@ bash docker/linux_docker_start.sh
 
 ### 5. RAG 지식베이스 빌드 (오프라인)
 
-#### Windows (PowerShell, Git Bash 또는 WSL bash 필요)
+#### Windows (PowerShell)
 
 ```powershell
-bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
+python scripts/build_safety_db.py
+# data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
+python scripts/build_convenience_db.py
+# data/convenience_guidelines.json → data/chroma_db/convenience_guidelines (생활지원 RAG)
+# 사전 요건: ollama pull bge-m3 (생활지원 RAG 임베딩 전용)
+# 선택: python scripts/build_guide_clips.py
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
-bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
+python scripts/build_safety_db.py
+# data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
+python scripts/build_convenience_db.py
+# data/convenience_guidelines.json → data/chroma_db/convenience_guidelines (생활지원 RAG)
+# 사전 요건: ollama pull bge-m3 (생활지원 RAG 임베딩 전용)
+# 선택: python scripts/build_guide_clips.py
 ```
 
 ---
@@ -260,7 +276,8 @@ bash scripts/build_chroma.sh
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
 | `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키(내비게이션)  | (미설정)                 |
 | `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
-| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
+| `YOLO_CONF`         | Yolo 26N - Segmentation 신뢰도 임계값       | `0.35`                   |
+| `YOLO_DET_CONF`     | Yolo 26N - Object Detection 신뢰도 임계값   | `0.50`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |

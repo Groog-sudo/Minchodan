@@ -18,6 +18,15 @@ class CoreMLDetector implements LocalDetector {
   private fullFallback: TFLiteDetector | null = null;
   private isFullFallbackMode = false;
 
+  /**
+   * 입력 계약: CoreML 정상 모드(det+seg 모두 CoreML)는 base64만 사용하므로 false.
+   * 단, seg 전용 TFLite 폴백 또는 완전 TFLite 폴백이 활성화되면 float32가 필요(true).
+   * load() 결과에 따라 동적으로 결정된다.
+   */
+  get requiresFloat32(): boolean {
+    return this.isFullFallbackMode || this.segFallback !== null;
+  }
+
   async load(): Promise<boolean> {
     if (!CoreMLInferenceBridge) {
       console.warn("[CoreMLDetector] CoreMLInferenceBridge Native Module 미발견, TFLite 폴백 모드로 기동");

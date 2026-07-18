@@ -24,6 +24,7 @@ from server.db.connection import get_db
 from server.db.schemas import DetectionGuidanceLogResponse, FalsePositiveUpdateRequest
 from server.services.detection_guidance_log_service import DetectionGuidanceLogService
 from server.services.event_frame_store import is_valid_event_id, resolve_frame_path
+from server.services.remote_storage_client import fetch_event_frame
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -60,6 +61,7 @@ async def list_detection_logs(
     response: Response,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    stream_type: str = Query("all", pattern="^(all|reflex|cognitive)$"),
     admin_id: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[DetectionGuidanceLogResponse]:
@@ -69,9 +71,9 @@ async def list_detection_logs(
     배열 형태를 유지 - 콘솔 페이지네이션이 전체 페이지 수를 계산하는 데 사용).
     """
     service = DetectionGuidanceLogService(db)
-    total = await service.count_logs()
+    total = await service.count_logs(stream_type=stream_type)
     response.headers["X-Total-Count"] = str(total)
-    return await service.list_logs(limit=limit, offset=offset)
+    return await service.list_logs(limit=limit, offset=offset, stream_type=stream_type)
 
 
 @router.get("/event-frames/{event_id}")
@@ -79,7 +81,7 @@ async def get_event_frame(
     event_id: str,
     admin_id: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
-) -> FileResponse:
+) -> Response:
     """이벤트 발생 시점 프레임 JPEG을 반환합니다.
 
     DB에 등록된 frame_path만 서빙하며(임의 파일 접근 차단),
@@ -98,10 +100,15 @@ async def get_event_frame(
             detail="해당 이벤트의 프레임 이미지가 없습니다.",
         )
     file_path = resolve_frame_path(log.frame_path)
-    if file_path is None:
-        # DB에는 경로가 있으나 파일이 보존 기간 만료 등으로 삭제된 경우
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="프레임 이미지 파일이 존재하지 않습니다 (보존 기간 만료 가능).",
-        )
-    return FileResponse(file_path, media_type="image/jpeg")
+    if file_path is not None:
+        return FileResponse(file_path, media_type="image/jpeg")
+
+    remote_frame = await fetch_event_frame(log.frame_path)
+    if remote_frame is not None:
+        return Response(content=remote_frame, media_type="image/jpeg")
+
+    # DB에는 경로가 있으나 파일이 보존 기간 만료 등으로 삭제된 경우
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="프레임 이미지 파일이 존재하지 않습니다 (보존 기간 만료 가능).",
+    )

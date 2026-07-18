@@ -102,7 +102,16 @@ CLASS_TEXT = {
     "wheelchair": "휠체어",
 }
 
-# =========================================================================
+# Phase 2 SSoT: 인지 경로(L2/fallback/guide) 한국어 객체명은 본 테이블만 사용한다.
+
+
+def class_name_to_ko(class_name: str) -> str:
+    """영어 class_name을 한국어 표시명으로 변환. 미등록 시 입력값 그대로 반환."""
+    if not class_name:
+        return "장애물"
+    return CLASS_TEXT.get(class_name, class_name)
+
+
 # 👨‍💻 HARD CODE 영역 끝
 # =========================================================================
 
@@ -199,7 +208,11 @@ def _hint_type_for_risk(class_name: str, risk_level: str) -> MessageHintType:
 def _hint_id_for_alert(alert: ReflexAlert) -> MessageHintId:
     if alert.alert_id == "high_stop" or alert.direction == "stop":
         return "STOP"
-    if "stair" in alert.alert_id:
+    # P2-1(b) (2026-07-17): surface_caution(계단/맨홀/그레이팅 통합 클래스)을 STAIR_DOWN 힌트로 매핑.
+    # [면접 대비 주석] caution은 계단뿐 아니라 맨홀/그레이팅도 포함하지만, 현재 MessageHintId에
+    # CAUTION 전용 힌트가 없어 가장 가까운 STAIR_DOWN(낙상 위험)으로 매핑. 인지 가이드에서
+    # 세부 클래스 설명을 담당하므로 반사 message_hint는 위험 카테고리만 전달.
+    if "stair" in alert.alert_id or "caution" in alert.alert_id:
         return "STAIR_DOWN"
     if "road" in alert.alert_id:
         return "ROAD"

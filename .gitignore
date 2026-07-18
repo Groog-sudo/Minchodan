@@ -48,6 +48,9 @@ ENV/
 .env.*
 !.env.example
 
+# 실제 내부 인프라 식별자가 포함된 로컬 팀 문서
+docs/db_tailscale_guide/README.internal.md
+
 # API Key 파일
 secrets.json
 config.secret.json
@@ -329,6 +332,9 @@ yolov8n.pt
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+# .antigravity/ 로컬 아티팩트는 ignore하되, rules.md(workspace rules, 팀 공유)는 추적.
+.antigravity/*
+!.antigravity/rules.md
 scripts/agent_tasks/
 scripts/launch_agents.sh
 

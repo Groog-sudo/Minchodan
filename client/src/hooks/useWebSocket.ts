@@ -24,6 +24,7 @@ import {
 } from "../config";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
+import { placePhoneCall } from "../services/phoneDialBridge";
 import type { WSMessage, WSStatus } from "../types/detection";
 
 /**
@@ -60,6 +61,17 @@ export interface UseWebSocketReturn {
   send: (data: object) => void;
   /** JPEG raw byte 프레임을 바이너리 WS 프레임으로 전송한다 (base64 미경유). */
   sendBinary: (data: Uint8Array) => void;
+  /**
+   * ACK 기반 in-flight 제한을 적용해 detection 메타(JSON) + binary JPEG를 한 쌍으로 전송한다
+   * (2026-07-17, P0). MAX_IN_FLIGHT_FRAMES 초과 시 메타·binary 모두 같이 드롭하고 false를
+   * 반환한다(서버 pending_binary_meta 매칭 오류 방지). ACK 수신 시 in-flight에서 해제된다.
+   */
+  sendDetectionFrame: (
+    meta: { type: string; payload: { event_id?: string; frame_id?: number; [k: string]: unknown } },
+    jpegBytes: Uint8Array,
+  ) => boolean;
+  /** 현재 ACK를 기다리는 in-flight 프레임 수. 디버그/지표용. */
+  inFlightFrameCount: number;
   lastMessage: WSMessage | null;
   /** 지도 패널용 경로. lastMessage는 초당 수십 건의 ack/탐지 메시지에 덮여
    * 저빈도 이벤트가 React 배칭으로 유실될 수 있어(guide 오디오와 동일한 이유)
@@ -79,6 +91,13 @@ export interface UseWebSocketReturn {
 // 남지 않도록 하는 안전 상한(서버 STT+LLM+TTS 실측 지연이 최대 15s대인 것을 감안).
 const STT_INTERACTION_TIMEOUT_MS = 20000;
 
+// 💡 [면접 대비 주석] ACK 기반 in-flight 프레임 제한 (2026-07-17, P0).
+// 서버가 ACK를 반환하기 전에 단말이 무제한 프레임을 밀어 넣으면, WS 송신 버퍼·서버
+// 수신 큐·콘솔 relay 경로에 과거 프레임이 누적돼 버퍼링이 발생한다. ACK를 받은 프레임만
+// 다음 프레임으로 교체하는 최소 역압력(backpressure). 2는 "현재 전송중 + 여유 1" 의미로,
+// 단일 RTT 지연 동안 다음 프레임을 멈추지 않기 위한 여유분이다.
+const MAX_IN_FLIGHT_FRAMES = 2;
+
 export function useWebSocket(
   deviceId: string = DEVICE_ID,
   token: string = TOKEN,
@@ -90,6 +109,10 @@ export function useWebSocket(
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const networkProbeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingNetworkProbes = useRef<Map<string, number>>(new Map());
+  // ACK 기반 in-flight 프레임 추적 (2026-07-17, P0).
+  // key: `${event_id}:${frame_id}`, value: 송신 시각(Date.now()).
+  // 서버 ACK가 frame_id를 반환하므로 이를 키로 사용한다.
+  const pendingFrames = useRef<Map<string, number>>(new Map());
   const networkRttSamples = useRef<number[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<WSStatus>("disconnected");
@@ -281,6 +304,12 @@ export function useWebSocket(
           );
         } else if (data.type === "network_probe_ack") {
           recordNetworkProbeAck(data.probe_id);
+        } else if (data.type === "ack") {
+          // 서버가 ACK를 반환하면 해당 프레임을 in-flight 추적에서 해제한다 (2026-07-17, P0).
+          // 이 해제로 다음 프레임 송신이 허용된다(canSendFrame 게이트 통과).
+          const ackKey = `${data.event_id ?? ""}:${data.frame_id ?? ""}`;
+          pendingFrames.current.delete(ackKey);
+          setInFlightFrameCount(pendingFrames.current.size);
         } else if (data.type === "reflex_alert") {
           setLastMessage(data);
           // 입체 비프음 및 햅틱 연동 실행 (docs/reflex_audio_specification.md 준수)
@@ -309,7 +338,11 @@ export function useWebSocket(
           // JSON에 싣지 않고, 이 메시지 직후 바이너리 프레임으로 원본 WAV 바이트를 보낸다
           // (transport:"binary"). 실제 재생은 위 ArrayBuffer 분기에서 이어서 처리한다.
           // transport가 "binary"가 아니면(서버 TTS 실패) 즉시 단말 TTS로 폴백한다.
-          console.log(`[Cognitive] guide 수신: text="${data.guidance_text}", transport=${data.transport}`);
+          console.log(
+            `[Cognitive] guide 수신: text="${data.guidance_text}", ` +
+              `dir=${data.clock_direction ?? "-"}, dist=${data.distance_class ?? "-"}, obj=${data.object_ko ?? "-"}, ` +
+              `transport=${data.transport}`,
+          );
 
           // event_id가 "stt-"로 시작하면 STT 질문/네비게이션 응답(항상 재생),
           // 그 외(카메라 event-*)는 인지 경로 - STT 상호작용 중이면 뮤트 대상이다.
@@ -351,6 +384,24 @@ export function useWebSocket(
               ? { appKey: data.app_key ?? "", waypoints: wps }
               : null,
           );
+        } else if (data.type === "dial_action") {
+          const phoneNumber = String(data.phone_number ?? "").replace(/\D/g, "");
+          const contactName = data.contact_name ?? "";
+          const delayMs =
+            typeof data.delay_ms === "number" && data.delay_ms > 0
+              ? data.delay_ms
+              : 1500;
+          console.log(
+            `[WS] dial_action 수신: contact=${contactName}, phone=${phoneNumber}, delayMs=${delayMs}`,
+          );
+          if (phoneNumber) {
+            setTimeout(() => {
+              void placePhoneCall(phoneNumber, contactName).catch((error: unknown) => {
+                console.warn(`[WS] dial_action 실패: ${String(error)}`);
+              });
+            }, delayMs);
+          }
+          setLastMessage(data);
         } else {
           setLastMessage(data);
         }
@@ -445,7 +496,61 @@ export function useWebSocket(
     }
   }, []);
 
-  connectRef.current = connect;
+  // 💡 [면접 대비 주석] ACK 기반 in-flight 프레임 제한 (2026-07-17, P0).
+  // 느린 서버/망에서 단말이 ACK 없이 프레임을 무한정 밀어 넣으면 송신 버퍼·서버 큐·
+  // 콘솔 relay에 과거 프레임이 누적된다. ACK를 받은 프레임만 in-flight 슬롯에서 해제해
+  // 다음 프레임을 허용한다(역압력). 초과 시 메타와 binary를 "한 쌍으로 같이" 드롭한다 -
+  // 서버 pending_binary_meta가 단일 슬롯이므로, 메타만 또는 binary만 드롭하면 짝이 어긋나
+  // 다음 프레임이 잘못 매칭되는 버그를 방지한다.
+  const [inFlightFrameCount, setInFlightFrameCount] = useState(0);
+
+  const sendDetectionFrame = useCallback(
+    (
+      meta: { type: string; payload: { event_id?: string; frame_id?: number; [k: string]: unknown } },
+      jpegBytes: Uint8Array,
+    ): boolean => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+      // 오래된 stale 슬롯 정리(ACK 유실/네트워크 끊김 후 잔류 방지). 2초 이상 된 항목은 제거.
+      const now = Date.now();
+      for (const [key, ts] of pendingFrames.current) {
+        if (now - ts > 2000) pendingFrames.current.delete(key);
+      }
+
+      if (pendingFrames.current.size >= MAX_IN_FLIGHT_FRAMES) {
+        // in-flight 상한 초과: 메타 + binary를 한 쌍으로 같이 드롭(서버 매칭 오류 방지).
+        return false;
+      }
+
+      const event_id = meta.payload.event_id ?? "";
+      const frame_id = meta.payload.frame_id ?? 0;
+      const key = `${event_id}:${frame_id}`;
+      pendingFrames.current.set(key, now);
+      setInFlightFrameCount(pendingFrames.current.size);
+
+      // 메타 JSON 먼저, 직후 binary JPEG (서버 pending_binary_meta 매칭 순서).
+      try {
+        ws.send(JSON.stringify(meta));
+      } catch (error) {
+        pendingFrames.current.delete(key);
+        setInFlightFrameCount(pendingFrames.current.size);
+        console.warn("[WS] detection 메타 전송 스킵(소켓 상태 변경):", error);
+        return false;
+      }
+      try {
+        ws.send(jpegBytes);
+      } catch (error) {
+        console.warn("[WS] detection binary 전송 스킵(소켓 상태 변경):", error);
+      }
+      return true;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     // 수송 모드(WiFi/USB) 또는 wsBaseUrl 변경 시에만 소켓을 교체한다.
@@ -523,6 +628,8 @@ export function useWebSocket(
     status,
     send,
     sendBinary,
+    sendDetectionFrame,
+    inFlightFrameCount,
     lastMessage,
     navRoute,
     setSttInteractionActive,

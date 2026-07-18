@@ -12,6 +12,7 @@ class MinchodanCustomPackage : ReactPackage {
         val modules = ArrayList<NativeModule>()
         modules.add(AudioSessionBridgeModule(reactContext))
         modules.add(SceneClassifyBridgeModule(reactContext))
+        modules.add(PhoneDialBridgeModule(reactContext))
         return modules
     }
 
