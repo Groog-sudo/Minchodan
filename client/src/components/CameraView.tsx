@@ -91,23 +91,12 @@ const GROUND_HAZARDS = ["caution", "roadway"];
 // 연속음+강한 진동이 울리는 오탐이 관측됨. 안전 노면 클래스는 반사 경보 판정에서
 // 완전히 제외한다(디스플레이용 activeDetections/BBoxOverlay에는 계속 노출됨).
 const SAFE_SURFACE_CLASSES = ["sidewalk_normal", "braille_normal"];
-
-// 2026-07-07 추가: 이 모델(det/seg 둘 다)은 AI Hub 한국 인도(실외) 데이터셋만으로
-// 학습되어 실내 개념 자체를 모른다. 특정 클래스(car)만 개별로 막아본 결과 bollard/
-// movable_signage/pole 등 다른 클래스도 똑같이 실내에서 고신뢰도 오탐이 발생함을 확인함.
-// 이 제품 자체가 "실외 보행로 보조"로 스코프가 한정되어 있으므로(README/설계 문서),
-// object_detection 클래스 전체에 대해 "같은 프레임에 실외 보행로 segmentation 신호가
-// 전혀 없으면 반사 경보 대상에서 제외"하는 포괄적 교차검증(co-occurrence)을 적용한다.
-// segmentation 4클래스 자체(sidewalk_normal/caution/roadway/braille_normal)는 그 존재
-// 자체가 "실외 보행로를 보고 있다"는 근거이므로 이 게이트에서 자기 자신을 통과시킨다.
-const OUTDOOR_SURFACE_CLASSES = ["sidewalk_normal", "caution", "roadway", "braille_normal"];
-// [P3 2026-07-14] 노면 세그 신뢰도 최소값 0.15→0.35 상향 (논문 기준 0.35~0.50).
-// 0.15는 너무 낮아 저신뢰 오탐이 실외 판정을 통과해 반사 경보 오발동을 허용했음.
-const OUTDOOR_SURFACE_MIN_CONFIDENCE = 0.35;
 // 하단 15% (서버 reflex_gate / PROXIMITY_Y와 동일) — 근접 긴급은 outdoor 게이트 우회
 const PROXIMITY_BOTTOM_Y = FRAME_SIZE * 0.85;
-// 주차센서 면적비: 1단계(초접근) / 2단계(근접) — 이 이상은 실내에서도 즉시 경보
-const URGENT_AREA_RATIO = 0.12;
+// 2026-07-18 거리 정책 SSOT: server/detection/distance_policy.py의 NEAR_ENTER_AREA_RATIO(0.10)와
+// 동일한 값. Near 전용 반사 원칙에 따라 이 값 미만은 로컬 반사 대상이 아니다(서버 인지
+// 경로 담당). HIGH_HAZARDS(이동체)는 접근 속도가 빨라 더 이른(보수적) 0.08에서 긴급 처리한다.
+const URGENT_AREA_RATIO = 0.10;
 const URGENT_HIGH_CLASS_AREA_RATIO = 0.08;
 
 // 2026-07-14: 씬 판정(isLikelyIndoor) 채터링 완화. 문/창가에서 프레임마다
@@ -272,8 +261,20 @@ function estimateDirection(
   return xMaxN < frontLo ? "front-left" : "front-right";
 }
 
+// 2026-07-18 거리 정책 SSOT(1단계): Near 전용 반사로 축소. 기존 4단계(초접근/근접/
+// 중거리/원거리) 로컬 비프·햅틱 중 Medium/Far 두 단계를 제거했다 - 서버가 이미 동일
+// 원칙(server/detection/gates/reflex_gate.py)으로 Near만 반사하므로, 서버 연결이
+// 끊겼을 때만 켜지는 이 로컬 폴백도 같은 Near 경계를 따라야 서버 복구 전후로 알림
+// 패턴이 갑자기 바뀌지 않는다. Medium/Far는 로컬에서 무출력(서버 인지 TTS 전담,
+// 재연결 전까지는 안내 없음 - HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN
+// §12.1 "A. 오프라인 Near만 출력" 채택).
+const LOCAL_NEAR_CRITICAL_AREA_RATIO = 0.20; // Near 구역 내 "초접근" 세부 강도(연속 진동)
+const LOCAL_NEAR_LIDAR_METERS = 0.7; // area_ratio 0.10 ≈ 0.22/sqrt(0.10) ≈ 0.70m
+const LOCAL_NEAR_CRITICAL_LIDAR_METERS = 0.5;
+
 /**
- * 온디바이스 주차센서식 비프/햅틱 (LLM 미경유).
+ * 온디바이스 주차센서식 비프/햅틱 (LLM 미경유). Near 전용(area_ratio>=0.10 또는
+ * LiDAR<=0.7m)만 반사를 발동하고, 그 미만은 기존 출력을 정지만 하고 무출력 반환한다.
  * @returns 경보를 올렸으면 true
  */
 function applyLocalAreaReflex(
@@ -334,64 +335,43 @@ function applyLocalAreaReflex(
   if (nearestLidarDetection !== null) {
     const lidarClass = nearestLidarDetection.className;
     const samples = nearestLidarDetection.depthSampleCount ?? 0;
-    if (nearestLidarMeters <= 0.5) {
+    if (nearestLidarMeters <= LOCAL_NEAR_CRITICAL_LIDAR_METERS) {
       void hapticEngine.trigger("continuous");
       void audioEngine.playBeep(0.0, 0);
-      log(`[LiDAR] 초접근 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
+      log(`[LiDAR] 근접(초) class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
       return true;
     }
-    if (nearestLidarMeters <= 1.0) {
+    if (nearestLidarMeters <= LOCAL_NEAR_LIDAR_METERS) {
       void hapticEngine.trigger("double");
       void audioEngine.playBeep(0.0, 200);
       playLocalReflexClip(200);
       log(`[LiDAR] 근접 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
       return true;
     }
-    if (nearestLidarMeters <= 1.5) {
-      void hapticEngine.trigger("short");
-      void audioEngine.playBeep(0.0, 600);
-      playLocalReflexClip(600);
-      log(`[LiDAR] 중거리 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
-      return true;
-    }
-    if (nearestLidarMeters <= 3.0) {
-      hapticEngine.stopContinuous();
-      void audioEngine.playBeep(0.0, 1200);
-      playLocalReflexClip(1200);
-      log(`[LiDAR] 원거리 class=${lidarClass} d=${nearestLidarMeters.toFixed(2)}m samples=${samples}`);
-      return true;
-    }
+    // Medium/Far(0.7m 초과): Near 전용 반사 원칙 - 로컬 비프·햅틱 0건, 서버 인지 경로 전담.
     hapticEngine.stopContinuous();
     void audioEngine.stopBeep();
     return false;
   }
 
   // 💡 [설계 의도] 클래스 종류와 독립적(class-agnostic)으로 BBox 크기(면적비)만으로 온디바이스 반사 피드백을 제어합니다.
-  if (maxAreaRatio > 0.20) {
+  if (maxAreaRatio > LOCAL_NEAR_CRITICAL_AREA_RATIO) {
     void hapticEngine.trigger("continuous");
     void audioEngine.playBeep(0.0, 0);
-    log(`초접근 ratio=${maxAreaRatio.toFixed(2)}`);
+    log(`근접(초) ratio=${maxAreaRatio.toFixed(2)}`);
     return true;
   }
-  if (maxAreaRatio > 0.08) {
+  if (maxAreaRatio >= URGENT_AREA_RATIO) {
     void hapticEngine.trigger("double");
     void audioEngine.playBeep(0.0, 200);
     playLocalReflexClip(200);
     log(`근접 ratio=${maxAreaRatio.toFixed(2)}`);
     return true;
   }
-  if (maxAreaRatio > 0.03) {
-    void hapticEngine.trigger("short");
-    void audioEngine.playBeep(0.0, 600);
-    playLocalReflexClip(600);
-    log(`중거리 ratio=${maxAreaRatio.toFixed(2)}`);
-    return true;
-  }
+  // Medium/Far(area_ratio < 0.10): Near 전용 반사 원칙 - 로컬 비프·햅틱 0건.
   hapticEngine.stopContinuous();
-  void audioEngine.playBeep(0.0, 1200);
-  playLocalReflexClip(1200);
-  log(`원거리 ratio=${maxAreaRatio.toFixed(2)}`);
-  return true;
+  void audioEngine.stopBeep();
+  return false;
 }
 
 type DistanceSource = "lidar" | "heuristic" | "none";
@@ -1028,12 +1008,7 @@ export function CameraView() {
       // 서버 server_detection 결과가 존재하면 위 수신 핸들러가 이를 덮어쓴다.
       setDetectionsRef.current(allDetections);
 
-      // 1. 공통 전처리: 기하/신뢰도 1차 → 근접 긴급은 outdoor 우회, 중·원거리만 실외 게이트
-      const hasOutdoorSurface = (seg as OnDeviceDetectionResult[]).some(
-        (d: OnDeviceDetectionResult) =>
-          OUTDOOR_SURFACE_CLASSES.includes(d.className) &&
-          d.confidence >= OUTDOOR_SURFACE_MIN_CONFIDENCE,
-      );
+      // 1. 공통 전처리: 기하/신뢰도 1차 필터(근접 긴급은 outdoor 게이트를 우회해야 하므로 아래에서 별도 처리)
       // scene 미존재(허용적 폴백)면 히스테리시스 없이 실외로 간주해 기존 co-occurrence만 사용.
       const rawIsOutdoorByScene = scene ? !scene.isLikelyIndoor : true;
       const isOutdoorByScene = scene
@@ -1056,8 +1031,9 @@ export function CameraView() {
           return false;
         }
         // ROI 판정: 소실점 사다리꼴(50% 선 아래) 밖이면 반사 경로 제외.
-        // outdoor 게이트(hasOutdoorSurface/isOutdoorByScene)는 여기서 걸지 않는다 - 근접 긴급
-        // (urgentDetections)은 실내 판정이어도 충돌 회피가 우선이라 outdoor 게이트를 우회해야 한다.
+        // 2026-07-18: Near 전용 반사 원칙 채택 후 로컬 반사 후보는 urgentDetections
+        // (isProximityUrgent 통과)뿐이므로 outdoor 게이트는 더 이상 필요 없다 - 근접
+        // 긴급은 실내 판정이어도 충돌 회피가 우선이라 원래도 outdoor 게이트를 거치지 않았다.
         const cxNorm = (d.bbox.x + d.bbox.w / 2) / FRAME_SIZE;
         const cyNorm = (d.bbox.y + d.bbox.h / 2) / FRAME_SIZE;
         if (!pointInPolygon(cxNorm, cyNorm, roiPoly)) return false;
@@ -1066,15 +1042,13 @@ export function CameraView() {
       const urgentDetections = baseCandidates.filter((d) =>
         isProximityUrgent(d.bbox, d.className),
       );
-      // 중·원거리 점진 비프: 실외 신호가 있을 때만 (실내 차량 오탐 억제)
-      const outdoorScopedDetections =
-        hasOutdoorSurface && isOutdoorByScene
-          ? baseCandidates.filter((d) => !isProximityUrgent(d.bbox, d.className))
-          : [];
-      const reflexDetections =
-        urgentDetections.length > 0
-          ? urgentDetections
-          : outdoorScopedDetections;
+      // 2026-07-18 거리 정책 SSOT: Near 전용 반사 원칙에 따라 로컬 반사 후보를
+      // urgentDetections(Near, isProximityUrgent 통과)로만 한정한다. 이전에는 근접
+      // 후보가 없으면 실외 신호가 있는 중·원거리 객체까지 로컬 반사 후보로 승격했으나
+      // (outdoorScopedDetections), 이는 서버 Near 전용 반사 정책과 정면 충돌해 제거했다.
+      // Medium/Far는 서버 인지 경로(guide TTS)가 전담하며, 서버 연결이 끊긴 동안에는
+      // 무출력이 정책상 올바른 동작이다(§12.1 "A. 오프라인 Near만 출력").
+      const reflexDetections = urgentDetections;
 
       // 2. 단일 프레임 오탐 방지를 위한 연속 4프레임 안정화 필터 적용
       if (reflexDetections.length > 0) {

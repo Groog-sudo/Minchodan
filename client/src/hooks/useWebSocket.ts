@@ -375,6 +375,16 @@ export function useWebSocket(
           if (data.clip && !isUrgentBeepOnly) {
             void audioEngine.playReflexClip(data.clip);
           }
+        } else if (data.type === "reflex_clear") {
+          // 2026-07-18 거리 정책 SSOT: Near episode 종료(이탈 또는 track 소실) 통지.
+          // 서버가 명시적으로 종료를 알려주므로, 단말은 지금 재생 중인 반사 비프·햅틱을
+          // 즉시 정지한다(다음 reflex_alert가 올 때까지 새 episode를 기다림).
+          setLastMessage(data);
+          console.log(
+            `[LocalReflex][WS] 서버 반사 해제: alert_id=${data.alert_id}, track_id=${data.track_id ?? "-"}, reason=${data.reason ?? "-"}`,
+          );
+          audioEngine.stopBeep();
+          hapticEngine.stopContinuous();
         } else if (data.type === "guide") {
           // 인지 경로 가이드 음성은 onmessage에서 직접 재생한다(React 상태를 경유하지 않음).
           // [2026-07-09 변경] 서버가 guide 오디오를 더 이상 audio_mp3_b64(base64 문자열)로
