@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DetectionGuidanceLogRow } from "../types/monitor";
+import { forceAdminRelogin } from "./adminAuth";
 import { resolveApiBaseUrl } from "../config/network";
 
 // 발표/면접 포인트:
@@ -55,6 +56,10 @@ export function useDetectionLogs(
         `${LOGS_ENDPOINT}?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
+      if (response.status === 401) {
+        forceAdminRelogin("detection_logs_401");
+        return;
+      }
       if (!response.ok) {
         throw new Error(`로그 조회 실패 (HTTP ${response.status})`);
       }
@@ -85,6 +90,10 @@ export function useDetectionLogs(
             body: JSON.stringify({ false_positive: falsePositive }),
           },
         );
+        if (response.status === 401) {
+          forceAdminRelogin("false_positive_401");
+          return;
+        }
         if (!response.ok) {
           throw new Error(`오탐 판정 업데이트 실패 (HTTP ${response.status})`);
         }

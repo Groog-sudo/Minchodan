@@ -849,3 +849,29 @@
 - **관련 파일**: 위 5개 + `docs/changelogs/th.md`
 - **비고**: `CONTRIBUTING.md`는 커밋 대상에서 제외.
 
+---
+
+### 2026-07-18 | 콘솔 | 만료 JWT 401 스팸 차단 및 자동 재로그인
+
+- **커밋**: (본 엔트리와 동일 커밋)
+- **배경**:
+  - 콘솔이 `localStorage`에 남은 만료/무효 JWT로 `/api/v1/admin/detection-logs` 등을 반복 호출해 서버에 `401 Unauthorized` 경고가 쌓였다.
+  - SSE 모니터도 동일 토큰으로 실패해도 로그인 화면으로 돌아가지 않아, 화면상 "로그인된 것처럼" 보이면서 API만 실패하는 상태가 지속됐다.
+- **변경 내용**:
+  1. **`console/src/api/adminAuth.ts` (신규)**
+     - `ADMIN_TOKEN_KEY`, `isAdminTokenExpired`, `readAdminToken`, `forceAdminRelogin`, `subscribeAdminAuthExpired` 제공.
+     - JWT payload의 `exp`만 클라이언트에서 읽어 만료를 선제 판정(서명 검증은 서버). 경계 레이스 완화를 위해 30초 여유.
+     - 만료/401 시 `localStorage` 토큰 제거 후 `minchodan:admin-auth-expired` 커스텀 이벤트로 App에 알림.
+  2. **`console/src/App.tsx`**
+     - 초기 시 `readAdminToken()`으로 만료 토큰을 즉시 폐기.
+     - `subscribeAdminAuthExpired`로 401 이벤트 수신 시 `setToken(null)` → 로그인 화면 복귀.
+  3. **`console/src/api/useDetectionLogs.ts`**
+     - 로그 목록 조회·오탐 업데이트 응답이 `401`이면 `forceAdminRelogin` 후 폴링 중단.
+  4. **`console/src/api/useMembers.ts`**
+     - 회원 목록 조회·등록 응답이 `401`이면 동일하게 재로그인 유도.
+  5. **`console/src/api/useMonitorStream.ts`**
+     - SSE `onerror` 프로브가 `401`일 때 상태 메시지만 남기던 동작을 `forceAdminRelogin`으로 교체.
+- **관련 파일**: `console/src/api/adminAuth.ts`, `console/src/App.tsx`, `console/src/api/useDetectionLogs.ts`, `console/src/api/useMembers.ts`, `console/src/api/useMonitorStream.ts`, `docs/changelogs/th.md`
+- **비고**: 원격 MariaDB(`Tailscale`) 미연결 시 재로그인 자체는 DB 인증이 필요하므로 Tailscale 로그인 후 사용.
+- **검증 결과**: 콘솔 관련 파일 IDE 린트 오류 없음.
+
