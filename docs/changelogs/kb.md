@@ -3051,3 +3051,16 @@
 - **관련 파일**: `server/detection/distance_policy.py`, `server/db/models.py`, `server/db/migrations/20260718_002_add_lidar_distance_zone_to_lidar_distance_validation_samples.sql`(신규), `server/services/lidar_validation_service.py`, `scripts/analyze_lidar_validation.py`, `tests/test_distance_policy.py`, `docs/research/lidar_realtime_fusion_design_v2.md`(신규), `docs/research/mitos_improvement_roadmap.md`, `docs/research/lidar_fusion_sequencing_plan.md`
 - **검증 결과**: `ruff check .` 전체 통과. `mypy` 신규 에러 없음. `pytest tests/test_distance_policy.py` 24 passed(신규 LiDAR 경계·자문 구역 테스트 4건 포함). 전체 `pytest tests/` 340 passed(환경 의존 실패 9건은 기존과 동일, 회귀 아님). 신규 스크립트 함수(`_print_zone_confusion_matrix`)는 in-memory fixture로 출력 형식 수동 확인.
 - **비고**: DB 마이그레이션은 스키마 변경만 반영했으며 실제 운영/로컬 MariaDB 적용은 다음 통합 테스트 세션에서 수행 필요. 계측용 "거리측정" 버튼의 줄자 실측 검증(0.3/0.5/1.0/2.0m)은 여전히 잔여 과제.
+
+---
+
+### 2026-07-19 | 클라이언트 | 거리측정 "검증 캡처" 결과의 LiDAR 거리를 화면에 실제 적용
+
+- **배경**: 사용자가 "지난주 LiDAR 뎁스값 측정·반영 결과가 병합 중 지워진 것 같다"고 문의해 git 전체 이력(dangling commit 포함)을 탐색. `6d8f421`(jjuns, 2026-07-15 "ios: LiDAR 거리측정 보정 적용")의 렌즈·광선 보정 공식(`calibratedDistance`)은 현재 `DepthProbeBridge.swift`에 그대로 남아 있어 유실이 아님을 확인·보고했다. 다만 조사 중 별개의 실제 결함을 발견: "검증 캡처" 버튼이 `probeDepthBoxes()`로 bbox별 LiDAR 실측 거리를 계산은 하지만, 그 값을 서버 DB(`distance_probe_sample`) 로깅에만 쓰고 화면의 `detections` 상태로는 전혀 되돌리지 않아 사용자가 "이 bbox가 실제로 몇 m로 측정됐는지" 화면에서 확인할 방법이 없었다. `activeDetections`도 `depthMode`일 때 무조건 빈 배열이라 `BBoxOverlay` 자체가 그려지지 않는 상태였다. 사용자가 "우선 뎁스값은 적용시켜라"고 지시해 이 부분을 구현.
+- **변경 내용**: `client/src/components/CameraView.tsx`
+  - 거리측정 모드 진입 시 `setDetections([])`로 vision-camera가 남긴 이전 bbox를 정리(이전 프레임이 depth 프리뷰 위에 겹쳐 보이는 것을 방지).
+  - "검증 캡처" 응답 처리에서 `probeDepthBoxes()` 결과(`distances[].meters`)를 `serverDets`에 `distanceMeters`/`distanceSource: "lidar"`/`depthSampleCount`/`depthAccuracy`로 병합해 `setDetections()`로 다시 반영(기존에는 `distance_probe_sample` 전송에만 쓰이고 버려졌음).
+  - `activeDetections`가 `depthMode`일 때 무조건 `[]`를 반환하던 분기를 제거해, 검증 캡처 후 `BBoxOverlay`가 LiDAR 거리 라벨("0.52m LiDAR")이 붙은 bbox를 실제로 렌더링하도록 함(`resolveDetectionDistance()`가 이미 지원하던 표시 경로를 그제야 실제로 태움).
+- **관련 파일**: `client/src/components/CameraView.tsx`
+- **검증 결과**: `npx tsc --noEmit`(client) 클린.
+- **비고**: 실기기에서 "검증 캡처" 후 bbox 위에 LiDAR 거리가 실제로 표시되는지는 사용자가 다음 실기기 세션(줄자 실측과 함께)에서 확인 필요.

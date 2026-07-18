@@ -715,6 +715,10 @@ export function CameraView() {
 
   useEffect(() => {
     if (!depthMode) return;
+    // 거리측정 모드 진입 시 vision-camera가 남긴 이전 bbox가 depth 프리뷰 위에
+    // 그대로 남아 있지 않도록 비운다. "검증 캡처"가 완료되면 LiDAR 거리가 채워진
+    // 새 bbox로 다시 채워진다(아래 server_detection 핸들러 참조).
+    setDetections([]);
     let cancelled = false;
     let timerId: ReturnType<typeof setInterval> | null = null;
     (async () => {
@@ -824,6 +828,26 @@ export function CameraView() {
               setDepthProbeStatus("검증 캡처: LiDAR 심도 미준비");
               return;
             }
+
+            // 2026-07-19: 계산한 LiDAR 거리를 서버 DB 로깅뿐 아니라 화면에도 실제로
+            // 적용한다. 지금까지는 probeDepthBoxes() 결과가 distance_probe_sample
+            // 전송에만 쓰이고 detections 상태로는 돌아오지 않아, 화면에서 "이 bbox가
+            // 실제로 몇 m로 측정됐는지" 확인할 방법이 없었다(줄자 대조 시 필요).
+            const enrichedDets = serverDets.map((det, index) => {
+              const dist = boxResult.distances.find((d) => d.index === index);
+              if (!dist || typeof dist.meters !== "number") {
+                return det;
+              }
+              return {
+                ...det,
+                distanceMeters: dist.meters,
+                distanceSource: "lidar" as const,
+                depthSampleCount: dist.sampleCount ?? 0,
+                depthAccuracy: boxResult.accuracy,
+              };
+            });
+            setDetections(enrichedDets);
+
             const samples = serverDets.map((det, index) => {
               const dist = boxResult.distances.find((d) => d.index === index);
               return {
@@ -1237,11 +1261,13 @@ export function CameraView() {
     );
   }
 
-  const activeDetections = depthMode
-    ? []
-    : detections.filter(
-      d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
-    );
+  // 2026-07-19: 거리측정 모드에서도 "검증 캡처" 결과(LiDAR 거리가 적용된 bbox)를
+  // BBoxOverlay·detectedClassesStr에 그대로 보여준다. 모드 진입 시 detections를
+  // 비워두므로(위 useEffect) depthMode 초기 진입 직후에는 여전히 빈 배열이고,
+  // 캡처가 끝난 뒤에만 LiDAR 거리 라벨이 붙은 bbox가 나타난다.
+  const activeDetections = detections.filter(
+    d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
+  );
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
       const distance = resolveDetectionDistance(d);
