@@ -7,6 +7,7 @@ import type {
   RiskEvent,
   SessionStatus,
 } from "../types/monitor";
+import { forceAdminRelogin } from "./adminAuth";
 import { resolveServiceUrl } from "../config/network";
 
 const DEFAULT_STREAM_URL = resolveServiceUrl(
@@ -184,14 +185,9 @@ export function useMonitorStream(token: string | null = null) {
             signal: AbortSignal.timeout(3000),
           });
           if (probe.status === 401) {
-            setState((current) => ({
-              ...current,
-              connection: "error",
-              system: {
-                ...current.system,
-                last_error: "SSE 인증 실패(401). 다시 로그인하세요.",
-              },
-            }));
+            // 만료/무효 토큰으로 SSE가 반복 실패하면 로그인 화면으로 되돌린다.
+            forceAdminRelogin("sse_401");
+            return;
           }
           // 프로브 응답 본문은 읽지 않고 즉시 중단(스트림 점유 방지)
           try {

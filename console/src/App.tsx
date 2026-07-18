@@ -1,6 +1,11 @@
 import { BrowserRouter, NavLink, Outlet, Route, Routes } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { StatusBadge } from "./components/StatusBadge";
+import {
+  ADMIN_TOKEN_KEY,
+  readAdminToken,
+  subscribeAdminAuthExpired,
+} from "./api/adminAuth";
 import { useMonitorStream } from "./api/useMonitorStream";
 import { useLiveFeed } from "./api/useLiveFeed";
 import { Login } from "./components/Login";
@@ -66,18 +71,24 @@ function Layout({
 
 export default function App() {
   // 새로고침 시 로그인 풀림 방지를 위해 localStorage에 토큰을 영속 보존합니다.
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem("admin_token");
-  });
+  // 만료된 JWT는 읽기 시점에 제거해 401 스팸을 막는다.
+  const [token, setToken] = useState<string | null>(() => readAdminToken());
 
   // 토큰 변경 시 localStorage 반영 사이드 이펙트를 useEffect로 격리
   useEffect(() => {
     if (token) {
-      localStorage.setItem("admin_token", token);
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
     } else {
-      localStorage.removeItem("admin_token");
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
     }
   }, [token]);
+
+  // API/SSE에서 401이 나면 forceAdminRelogin → 로그인 화면으로 복귀
+  useEffect(() => {
+    return subscribeAdminAuthExpired(() => {
+      setToken(null);
+    });
+  }, []);
 
   const { state, streamUrl, injectDemoEvents } = useMonitorStream(token);
   // 대시보드/회원관리 두 화면이 같은 실시간 연결(SSE+WS)을 공유하도록 App 최상단에서

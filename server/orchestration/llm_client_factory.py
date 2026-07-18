@@ -172,11 +172,22 @@ class SimpleGeminiClient:
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
 
+        # 💡 [면접 대비 주석 - maxOutputTokens vs 컨텍스트]
+        # Q. GEMINI_MAX_OUTPUT_TOKENS=180 이면 입력 RAG 문서가 잘리나?
+        # A. 아니다. maxOutputTokens는 "생성(출력)" 토큰 상한이다. 입력 컨텍스트 창과는 별개.
+        #    생활지원 답이 512로 길면 TTS가 중간에 끊기는 실측이 있어 기본 180으로 짧게 둔다.
+        # [하드 코딩 부분 - 핵심] 기본 180, env로 조정, 32~8192 클램프.
+        try:
+            max_output_tokens = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "180"))
+        except ValueError:
+            max_output_tokens = 180
+        max_output_tokens = max(32, min(max_output_tokens, 8192))
+
         payload = {
             "contents": contents,
             "generationConfig": {
                 "temperature": 0.3,
-                "maxOutputTokens": 100,
+                "maxOutputTokens": max_output_tokens,
             },
         }
 

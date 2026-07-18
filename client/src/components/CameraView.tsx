@@ -1438,15 +1438,18 @@ export function CameraView() {
                       {point.label}:{" "}
                       {sample && sample.meters != null
                         ? `${sample.meters.toFixed(2)} m ` +
-                        `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
-                        `${sample.sampleCount ?? 0})`
-                      : "측정 불가"}
-                  </Text>
-                );
-              })
-            )}
-          </View>
-        )}
+                          `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
+                          `${sample.sampleCount ?? 0})`
+                        : "측정 불가"}
+                    </Text>
+                  );
+                })
+              )}
+              {depthProbeStatus ? (
+                <Text style={styles.depthRow}>{depthProbeStatus}</Text>
+              ) : null}
+            </View>
+          )}
         </ScrollView>
       </View>
 
@@ -1455,7 +1458,40 @@ export function CameraView() {
           터치를 아예 받지 못한다(2026-07-18 th 병합 회귀 수정 - 탐지 시작 등 버튼
           무반응 버그의 원인). */}
       <View style={styles.controlsOverlay} pointerEvents="box-none">
-        <View style={styles.controlRowDock} pointerEvents="box-none">
+        <View style={styles.confThresholdRow} pointerEvents="box-none">
+          <Text style={styles.confThresholdLabel} pointerEvents="none">
+            신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%
+          </Text>
+          <View style={styles.confThresholdButtons} pointerEvents="box-none">
+            <Pressable
+              style={styles.confThresholdButton}
+              onPress={() => setConfThreshold(v => Math.max(0.05, Math.round((v - 0.05) * 100) / 100))}
+            >
+              <Text style={styles.confThresholdButtonText}>-</Text>
+            </Pressable>
+            <Pressable
+              style={styles.confThresholdButton}
+              onPress={() => setConfThreshold(v => Math.min(0.95, Math.round((v + 0.05) * 100) / 100))}
+            >
+              <Text style={styles.confThresholdButtonText}>+</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {navRoute ? (
+          <View style={styles.mapToggleWrap} pointerEvents="box-none">
+            <Pressable
+              style={styles.mapToggleButton}
+              onPress={() => setMapVisible((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+            >
+              <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.controlRow} pointerEvents="box-none">
           <Pressable
             style={[
               styles.mapToggleButton,

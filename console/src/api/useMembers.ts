@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppUserRow, MemberRegisterPayload } from "../types/monitor";
+import { forceAdminRelogin } from "./adminAuth";
 import { resolveApiBaseUrl } from "../config/network";
 
 // 발표/면접 포인트:
@@ -24,6 +25,10 @@ export function useMembers(token: string | null, page: number, pageSize: number)
         `${MEMBERS_ENDPOINT}?limit=${pageSize}&offset=${offset}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
+      if (response.status === 401) {
+        forceAdminRelogin("members_401");
+        return;
+      }
       if (!response.ok) {
         throw new Error(`회원 목록 조회 실패 (HTTP ${response.status})`);
       }
@@ -51,6 +56,10 @@ export function useMembers(token: string | null, page: number, pageSize: number)
           },
           body: JSON.stringify(payload),
         });
+        if (response.status === 401) {
+          forceAdminRelogin("members_register_401");
+          return { ok: false, message: "로그인이 만료되었습니다. 다시 로그인하세요." };
+        }
         if (!response.ok) {
           const detail = await response.json().catch(() => null);
           const message =

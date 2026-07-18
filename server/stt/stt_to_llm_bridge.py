@@ -725,8 +725,14 @@ class SttToLlmBridge:
         """자유 질의응답 모드에서 받은 발화에 답한다.
 
         순서: 1) 근접 POI 질의면 실거리 검색으로 사실 기반 답변(환각 방지)
-              2) 생활지원/기관 검색 질의면 RAG + Gemini로 답변
+              2) 생활지원/기관 검색 질의면 Convenience RAG(Ollama→Gemini 폴백)
               3) 아니면 장애물 회피 오케스트레이터를 우회해 순수 LLM 대화로 답변
+
+        # 💡 [면접 대비 주석 - STT → RAG 분기]
+        Q. 음성 질문이 왜 가끔 벡터DB 내용이 안 나오고 일반 안내만 나오나?
+        A. (1) looks_like_convenience_query miss → 3번 일반 LLM
+           (2) Convenience RAG 예외(예: bge-m3 미설치) → except 후 3번 폴백
+           콘솔 source가 question-convenience-rag 인지로 성공 여부를 판별한다.
         """
         if not question:
             return {
@@ -735,6 +741,7 @@ class SttToLlmBridge:
                 "source": "question-empty",
             }
 
+        # [하드 코딩 부분 - 핵심] 1) POI 실거리(환각 방지) 우선.
         poi_answer = self._try_answer_from_poi(device_id, question)
         if poi_answer:
             return {
@@ -743,8 +750,10 @@ class SttToLlmBridge:
                 "source": "question-poi",
             }
 
+        # [하드 코딩 부분 - 핵심] 2) 키워드 hit → 생활지원 RAG(인지 TTS와 동일 guide 경로).
         if looks_like_convenience_query(question):
             try:
+                # [바이브 코딩 부분] RAG 호출·결과 매핑. 실패 시 아래 일반 LLM으로 안전 폴백.
                 rag_result = await answer_convenience_question(question)
                 answer_text = (rag_result.get("answer") or "").strip()
                 if answer_text:
@@ -759,6 +768,7 @@ class SttToLlmBridge:
             except Exception as e:
                 print(f"[STT BRIDGE] Convenience RAG failed: {e}")
 
+        # [바이브 코딩 부분] 3) 일반 자유 대화 LLM (오케스트레이터 20자 가이드와 분리).
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
 

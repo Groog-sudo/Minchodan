@@ -849,3 +849,84 @@
 - **관련 파일**: 위 5개 + `docs/changelogs/th.md`
 - **비고**: `CONTRIBUTING.md`는 커밋 대상에서 제외.
 
+---
+
+### 2026-07-18 | 콘솔 | 만료 JWT 401 스팸 차단 및 자동 재로그인
+
+- **커밋**: `6f4c5da`
+- **배경**:
+  - 콘솔이 `localStorage`에 남은 만료/무효 JWT로 `/api/v1/admin/detection-logs` 등을 반복 호출해 서버에 `401 Unauthorized` 경고가 쌓였다.
+  - SSE 모니터도 동일 토큰으로 실패해도 로그인 화면으로 돌아가지 않아, 화면상 "로그인된 것처럼" 보이면서 API만 실패하는 상태가 지속됐다.
+- **변경 내용**:
+  1. **`console/src/api/adminAuth.ts` (신규)**
+     - `ADMIN_TOKEN_KEY`, `isAdminTokenExpired`, `readAdminToken`, `forceAdminRelogin`, `subscribeAdminAuthExpired` 제공.
+     - JWT payload의 `exp`만 클라이언트에서 읽어 만료를 선제 판정(서명 검증은 서버). 경계 레이스 완화를 위해 30초 여유.
+     - 만료/401 시 `localStorage` 토큰 제거 후 `minchodan:admin-auth-expired` 커스텀 이벤트로 App에 알림.
+  2. **`console/src/App.tsx`**
+     - 초기 시 `readAdminToken()`으로 만료 토큰을 즉시 폐기.
+     - `subscribeAdminAuthExpired`로 401 이벤트 수신 시 `setToken(null)` → 로그인 화면 복귀.
+  3. **`console/src/api/useDetectionLogs.ts`**
+     - 로그 목록 조회·오탐 업데이트 응답이 `401`이면 `forceAdminRelogin` 후 폴링 중단.
+  4. **`console/src/api/useMembers.ts`**
+     - 회원 목록 조회·등록 응답이 `401`이면 동일하게 재로그인 유도.
+  5. **`console/src/api/useMonitorStream.ts`**
+     - SSE `onerror` 프로브가 `401`일 때 상태 메시지만 남기던 동작을 `forceAdminRelogin`으로 교체.
+- **관련 파일**: `console/src/api/adminAuth.ts`, `console/src/App.tsx`, `console/src/api/useDetectionLogs.ts`, `console/src/api/useMembers.ts`, `console/src/api/useMonitorStream.ts`, `docs/changelogs/th.md`
+- **비고**: 원격 MariaDB(`Tailscale`) 미연결 시 재로그인 자체는 DB 인증이 필요하므로 Tailscale 로그인 후 사용.
+- **검증 결과**: 콘솔 관련 파일 IDE 린트 오류 없음.
+
+---
+
+### 2026-07-18 | 7단계+부가(STT/RAG) | 문자 TTS 실험·생활지원 RAG 음성 안정화·Ollama/Gemini 폴백
+
+- **커밋**: `5ece424`
+- **배경 / 실기기 이슈**:
+  1. 문자·안내문을 PC에서만 WAV로 듣는 실험에서, **모바일 앱으로도 읽어줄 수 있는지** 요구.
+  2. STT 음성 RAG 테스트 시 `"음성 인식에 실패했습니다"` 반복 — 원인: 시스템 Python(3.14)으로 uvicorn을 띄워 `faster_whisper`/`WhisperModel` 초기화 실패. **venv**로 재기동 후 해소.
+  3. 생활지원 RAG가 벡터DB 근거 없이 일반 LLM 답(`주변에 지도 보세요` 등)만 반환 — 원인: Ollama에 `bge-m3` 미설치로 Convenience RAG 예외 → STT 브릿지가 자유 LLM으로 폴백. `ollama pull bge-m3` + `build_convenience_db.py`(41문서)로 해소.
+  4. Gemini `gemini-2.5-flash-lite` 404 및 `maxOutputTokens=100/512`로 답이 길거나 중간 절단·`**` 마크다운이 TTS에 그대로 읽힘.
+- **변경 내용**:
+  1. **개발용 디버그 TTS 푸시 API**
+     - `server/api/debug_router.py` 신규: `POST /api/v1/debug/speak-to-device`, `GET /api/v1/debug/connected-devices`.
+     - 서버 TTS로 합성한 WAV를 연결 단말에 `guide` JSON + binary로 전송. `APP_ENV=production`이면 404.
+     - `server/api/session_manager.py`에 `list_connected_device_ids()` 추가.
+     - `server/main.py`에 debug 라우터 마운트.
+  2. **실험 스크립트 / 앱 DEBUG**
+     - `scripts/tts_read_text_experiment.py`: `--to-device`로 위 API에 푸시, `--play`로 로컬 WAV 재생.
+     - `client/src/components/DebugTriggerPanel.tsx`: **문자 TTS 읽기** 버튼(`speakFallback` 샘플 문자).
+  3. **생활지원 Convenience RAG 음성 품질**
+     - `server/rag/convenience_rag.py`:
+       - 시스템/유저 프롬프트를 **최대 2문장·핵심만·마크다운 금지**로 강화.
+       - `_sanitize_spoken_answer()`로 `**`, 목록 기호 제거 후 TTS 전달.
+       - 답변 LLM 정책: **기본 Ollama → 실패 시 Gemini API 폴백** (`CONVENIENCE_LLM_PROVIDER`, 기본 `ollama`).
+       - `ollama_only` / `gemini_only` / `gemini`(API 우선) 모드 지원.
+  4. **Gemini 출력 길이 env화**
+     - `server/orchestration/llm_client_factory.py`: `GEMINI_MAX_OUTPUT_TOKENS`(기본 180). 입력 컨텍스트가 아니라 생성 상한임을 주석으로 명시.
+  5. **문서·템플릿**
+     - `docs/ops/environment_variables.md`, `.env.example`에 `CONVENIENCE_LLM_PROVIDER`, `GEMINI_MAX_OUTPUT_TOKENS`, convenience chroma 경로 등재.
+- **실기기 음성 RAG 검증(요약)**:
+  - Pass: 복지카드/한빛 보행훈련/안내견 출입거부/안과·보조기기·푸른나무 직업재활 → DB 기관명·가상 전화 적중.
+  - 환각 방지: `동사무소 몇 시까지` 계열 → 운영시간 지어내지 않음.
+  - STT 오인식(`한비센터`, `침착해`, `동산무소`)에도 키워드 매칭으로 대체로 적중.
+- **관련 파일**:
+  - `server/api/debug_router.py`, `server/api/session_manager.py`, `server/main.py`
+  - `server/rag/convenience_rag.py`, `server/orchestration/llm_client_factory.py`
+  - `scripts/tts_read_text_experiment.py`, `client/src/components/DebugTriggerPanel.tsx`
+  - `docs/ops/environment_variables.md`, `.env.example`, `docs/changelogs/th.md`
+- **비고**: `.env`·API 키·로컬 ChromaDB 바이너리는 커밋하지 않음. 백엔드는 `venv\\Scripts\\python.exe -m uvicorn ...`로 기동할 것.
+- **검증 결과**: Convenience RAG 스모크(`복지카드 어디서 신청해?` → Ollama 단문 + 기관/전화), debug 라우터 마운트 및 `/health` 정상.
+
+---
+
+### 2026-07-18 | 문서화 | 생활지원 RAG·디버그 TTS 면접 대비/하드코딩 주석
+
+- **커밋**: `502b420`
+- **변경 내용**:
+  - `convenience_rag.py`: 키워드·프롬프트·sanitize·Ollama→Gemini 폴백·이중 KB에 `# 💡 [면접 대비 주석]` 및 `[하드 코딩]/[바이브 코딩]` 표기.
+  - `stt_to_llm_bridge.py`: STT→Convenience RAG miss/예외 시 일반 LLM 폴백 이유를 면접 Q&A로 기록, POI/RAG/자유LLM 단계 구분.
+  - `debug_router.py`: REST TTS 푸시가 기존 guide+binary 계약을 재사용하는 이유, production 404 가드레일.
+  - `llm_client_factory.py`: `maxOutputTokens`가 입력 컨텍스트가 아님을 명시.
+  - `session_manager.py`: CONNECTED 상태 필터 이유.
+  - `DebugTriggerPanel.tsx` / `tts_read_text_experiment.py`: 단말 speakFallback vs 서버 푸시 검증 포인트.
+- **관련 파일**: 위 7개 + `docs/changelogs/th.md`
+
