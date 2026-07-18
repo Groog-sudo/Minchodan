@@ -663,6 +663,9 @@ export function CameraView() {
   const [mapVisible, setMapVisible] = useState(false);
   const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
   const lastMapPosTsRef = useRef(0);
+  // 2026-07-18: DEBUG 트리거 패널은 화면을 크게 가려 실기기 테스트를 방해하므로
+  // 기본은 접힌 상태(작은 토글 버튼만 노출)로 시작하고 필요할 때만 펼친다.
+  const [debugPanelExpanded, setDebugPanelExpanded] = useState(false);
 
   // GPS 전송: 앱 부팅 직후부터 watch를 시작해 공기계의 첫 GPS fix 지연을 줄인다.
   // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
@@ -1515,13 +1518,22 @@ export function CameraView() {
           </View>
         )}
 
+        {__DEV__ && (
+          <View style={styles.devPanelWrap} pointerEvents="box-none">
+            <Pressable
+              style={styles.devPanelToggle}
+              onPress={() => setDebugPanelExpanded((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={debugPanelExpanded ? "DEBUG 패널 접기" : "DEBUG 패널 펼치기"}
+            >
+              <Text style={styles.devPanelToggleText}>
+                {debugPanelExpanded ? "DEBUG 패널 접기 ▲" : "DEBUG 패널 펼치기 ▼"}
+              </Text>
+            </Pressable>
+            {debugPanelExpanded && <DebugTriggerPanel />}
+          </View>
+        )}
       </View>
-
-      {__DEV__ && (
-        <View style={styles.devPanelWrap} pointerEvents="box-none">
-          <DebugTriggerPanel />
-        </View>
-      )}
     </View>
   );
 }
@@ -1883,13 +1895,24 @@ const styles = StyleSheet.create({
     borderColor: COLOR_BORDER_TACTICAL,
   },
   devPanelWrap: {
-    // 2026-07-18: 버튼 dock(controlsOverlay, flex-end)과 같은 그룹에 있으면 패널 높이만큼
-    // dock 전체가 위로 밀려 STT 상태 박스와 겹친다(회귀 실측). 화면 상단에 독립 배치한다.
-    position: "absolute",
-    top: 60,
-    left: 0,
-    right: 0,
-    zIndex: 25,
+    // 2026-07-18: 아코디언 방식. 접힌 기본 상태는 작은 토글 버튼 한 줄만 차지해
+    // controlRowDock 높이에 거의 영향을 주지 않는다. 펼쳤을 때만 패널만큼 dock 전체가
+    // 위로 확장되며(사용자가 의도적으로 연 상태이므로 허용), 접으면 즉시 원래 높이로 복귀.
+    alignSelf: "stretch",
+  },
+  devPanelToggle: {
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(10, 13, 16, 0.85)",
+    borderWidth: 1,
+    borderColor: "#222A30",
+  },
+  devPanelToggleText: {
+    color: "#39FF14",
+    fontSize: 11,
+    fontFamily: "monospace",
   },
   operatorCard: {
     padding: 8,
