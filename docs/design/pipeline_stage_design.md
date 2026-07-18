@@ -1,7 +1,7 @@
 # Minchodan 파이프라인 단계 설계
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.3 (2026-07-12 §4 단계별 지연 목표 표에 L6/L7 실측치 반영 - `detection_guidance_logs.latency_json` 계측 및 콘솔 표시 구현 완료, `docs/changelogs/kb.md` 참조 + 이전 v0.3.2 이력 유지: 2026-07-10 §5.2 카메라 캡처 계층 iOS/Android 물리 분리(FrameCaptureProvider) 반영)
+> **버전**: v0.3.4 (2026-07-18 §5.3 Near/Medium/Far 발화 정책·거리 SSOT 정합 반영 + 이전 v0.3.3: §4 L6/L7 실측치 + 이전 v0.3.2: §5.2 FrameCaptureProvider)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -101,6 +101,15 @@ graph LR
   - Reflex Gate: 고위험 + 근접 `alert_id`+방향 반사 경로
   - Surface Gate: P0 노면 하단 `alert_id` 반사 경로
 - mid/low `redis_bus.xadd("risk.events")` 인지 경로
+- **거리 정책 SSOT (2026-07-18)**: `distance_policy.py`가 Near/Medium/Far·`route`를 산출해
+  `Detection.effective_distance_zone`에 부착. `track()` 실패 시(`lap` 미설치·`'Conv'...'bn'` 등)
+  `predict()` 폴백(`yolo_detector.py`).
+- **발화 우선순위 (2026-07-18 정합)**:
+  | 구역 | 경로 | 사용자 출력 |
+  | :--- | :--- | :--- |
+  | **near** | 반사 (`route=reflex`) | 햅틱+사전합성 비프. 인지 TTS 차단 |
+  | **medium** | 인지 (`route=cognitive`) | LangGraph/패스트레인 TTS (회랑·접근 필터 적용) |
+  | **far** | 인지 라우팅이나 무발화 | 탐지·콘솔/단말 BBox만 |
 - 노면 클래스 분리(C2, 실제 학습 완료 모델 기준): `braille_normal`, `sidewalk_normal`, `caution`, `roadway` (4클래스 — `damaged`/`crosswalk` 세분화는 데이터 미확보로 미채택, `docs/ops/model_class_validation_report.md` 참조)
 
 ### 5.4 4단계 - RAG DB 구축 (오프라인 배치)

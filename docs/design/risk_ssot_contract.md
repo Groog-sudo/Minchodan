@@ -1,7 +1,7 @@
 # 반사 위험도 SSOT 계약
 
 > **작성일**: 2026-07-14
-> **버전**: v0.4.0 (2026-07-18 거리 정책 SSOT 1단계 완료: `server/detection/distance_policy.py` 도입 - bbox 클리핑·area_ratio·Near/Medium/Far 히스테리시스·하단 override·route 결정을 순수 함수로 분리하고 §2-C로 신설. §2-B의 `MIN_AREA_RATIO`/`SMALL_OBJECT_MIN_AREA_RATIO`는 §2-C로 이관되어 `reflex_gate.py`가 더 이상 자체 계산하지 않음. 근거 문서: `docs/research/lidar_fusion_sequencing_plan.md` §3 + 기존 v0.3.0 이력 유지: 2026-07-16 Option A - 서버 게이트는 class-agnostic 실행. `HIGH_RISK_CLASSES`는 단말 confidence SSOT 참조용으로 유지)
+> **버전**: v0.4.1 (2026-07-18 §2-C 인지 경로 불변식 보강: near는 `_is_speech_worthy`에서도 인지 TTS 차단, 거리 등급은 `effective_distance_zone` SSOT 우선 + 이전 v0.4.0: 거리 정책 SSOT 1단계 완료 - `distance_policy.py` 도입)
 > **근거**: [`docs/ops/dev_8b2f606_improvement_plan.md`](../ops/dev_8b2f606_improvement_plan.md) §2, [`docs/research/outdoor_guidance_refinement_roadmap.md`](../research/outdoor_guidance_refinement_roadmap.md) Option A, [`docs/research/lidar_fusion_sequencing_plan.md`](../research/lidar_fusion_sequencing_plan.md) §3(1단계)
 > **적용 대상**: 서버 반사 게이트(`server/detection/gates/reflex_gate.py`), 거리 정책 SSOT(`server/detection/distance_policy.py`), 단말 온디바이스 게이트(`client/src/components/CameraView.tsx`)
 
@@ -95,12 +95,22 @@ Near/Medium/Far 구역 판정(히스테리시스 포함), 하단 소형 장애�
 `None`을 반환하므로 Medium/Far 일반 객체 반사가 발생하지 않습니다(안전 예외 `head_level`/
 `surface`는 §2-B와 별도로 자체 조건으로 발동하며 이 route 불변식의 대상이 아닙니다).
 
+**인지 경로 발화 불변식 (2026-07-18)**: route가 `cognitive`여도 음성 TTS는 Medium 중심입니다.
+`DetectionConsumer._is_speech_worthy()`는 `effective_distance_zone`(없으면 `estimate_distance`
+폴백)을 읽어 **near → False**(반사 햅틱·비프 전담, 인지 TTS/DB cognitive 안내 로그 미발행),
+**far → False**(탐지·BBox만), **medium →** 12시 회랑·접근 등 기존 T2-G 조건으로 발화합니다.
+보도 이탈·`risk_hint` high/medium·`GUIDE_LOW_RISK_NARRATION` 예외는 유지합니다.
+T1-b 쿨다운 단축(3초)도 **medium만** 적용합니다. 인지 쪽 거리 필드는
+`_resolve_distance_class()`가 SSOT zone을 우선해 `estimate_distance()` 단독 호출과의 불일치를
+막습니다.
+
 **단말 대응값**: `client/src/components/CameraView.tsx`의 `URGENT_AREA_RATIO`(0.10)와
 `LOCAL_NEAR_LIDAR_METERS`(0.7m)가 위 `NEAR_ENTER_AREA_RATIO`와 동일 경계를 수동으로 동기화해
 사용합니다(코드 생성기 없이 §4 변경 절차로 동기화 - §6 로드맵 2단계 참조).
 
 변경 시 `distance_policy.py`, `tests/test_distance_policy.py`, `reflex_gate.py`,
-`CameraView.tsx`의 대응 상수, 본 절을 같은 커밋에서 갱신합니다.
+`consumer.py`의 `_is_speech_worthy`/`_resolve_distance_class`, `CameraView.tsx`의 대응 상수,
+본 절을 같은 커밋에서 갱신합니다.
 
 ---
 
@@ -120,7 +130,9 @@ Near/Medium/Far 구역 판정(히스테리시스 포함), 하단 소형 장애�
 1. §2 표의 값 변경은 서버 참조 테이블·단말 코드를 **같은 커밋**에서 수정하고 본 문서 §2 표를 함께 갱신합니다.
 2. §2-B 상수 변경은 `reflex_gate.py`와 본 절·게이트 단위 테스트를 함께 갱신합니다.
 3. §2-C 상수(거리 경계값) 변경은 `distance_policy.py`, `tests/test_distance_policy.py`,
-   `CameraView.tsx`의 대응 상수, 본 절을 같은 커밋에서 갱신합니다.
+   `CameraView.tsx`의 대응 상수, 본 절을 같은 커밋에서 갱신합니다. 인지 발화 불변식
+   (near 차단·far 무발화·T1-b medium만)을 바꿀 때는 `consumer.py`와 관련 테스트
+   (`test_detection.py`, `test_distance_priority_integration.py`)를 함께 갱신합니다.
 4. 커밋 전 회귀 테스트 `tests/test_risk_ssot.py`(§5)가 §2 양측 일치 여부를 자동 검증합니다.
 5. 파일 소유권은 [`docs/mobile/ios_android_bifurcation_contract.md`](../mobile/ios_android_bifurcation_contract.md) §3을 따릅니다.
 

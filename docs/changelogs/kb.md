@@ -3109,3 +3109,21 @@
 - **관련 파일**: `server/detection/consumer.py`, `server/detection/yolo_detector.py`, `server/detection/gates/reflex_gate.py`, `server/services/pipeline_debug_builder.py`, `server/api/ws_router.py`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`, `client/app.json`, `client/ios/.../Minchodan.xcscheme`, `requirements.txt`, `tests/*`, `scripts/verify_*`
 - **검증 결과**: Docker pytest 우선순위·WS 라이브 관련 **29+ passed**(전체 suite 124 passed 구간 포함). `verify_distance_priority_policy.py` 13/13 PASS. 실기기 Debug 빌드·설치·런치 성공(`com.minchodan.app.kb.dev`). Metro/FastAPI Tailscale IP 헬스 200.
 - **비고**: `Podfile.lock` hermes 체크섬만 바뀐 로컬 CocoaPods 툴 차이는 커밋에서 제외. 푸시는 요청 시 별도 진행.
+
+---
+
+### 2026-07-18 | 문서 | Near/Medium/Far 우선순위·Tailscale 커밋 후 설계 문서 교차 정합
+
+- **배경**: `e281909` 커밋은 changelog만 갱신하고 `auto-publish-work` Step 2(설계 문서 교차 검증)가 누락된 채 푸시됨. 코드와 어긋난 서술을 일괄 정정.
+- **변경 내용**:
+  - `api_specification.md` v0.4.28: §3.1 `device_id` 쿼리 폴백, §6.1 `distance_class`=SSOT 우선·near 인지 TTS 비대상, §8.5 `pipeline_debug`에 `route`/`effective_distance_zone`/`route_reason`.
+  - `architecture.md` v0.4.12: T2-G near 차단·far 무발화, T1-b **medium만**, consumer 행 정정.
+  - `risk_ssot_contract.md` v0.4.1: §2-C 인지 발화 불변식·변경 절차에 `consumer` 포함.
+  - `pipeline_stage_design.md` v0.3.4: §5.3 거리 SSOT·Near/Medium/Far 발화 표.
+  - `wireless_test_guide.md` v1.1.1: `lap==0.5.13` 고정·`predict()` 폴백(AutoUpdate 서술 폐기).
+  - `environment_variables.md` v0.4.23: §2.11 Metro Tailscale 보강, §2.14 `METRO_BUNDLER_HOST`.
+- **관련 파일**: 위 6개 설계/운영 문서, `docs/changelogs/kb.md`
+- **검증 결과**: 코드(`consumer._is_speech_worthy`/`_resolve_distance_class`, `pipeline_debug_builder`, `ws_router` device_id 폴백, `requirements.txt` lap)와 문서 서술 대조 완료.
+- **비고**: 코드 변경 없음. 문서 전용 정합 커밋.
+
+---

@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.27 (2026-07-17 §6.8 distance_probe_sample 신설: LiDAR 실거리 검증 캡처, 검증 전용 스코프로 반사/인지 경로 판단에는 미관여 + 이전 v0.4.26: §8.5 Log 응답에 STT 원본 음성 저장 메타데이터 추가, 이벤트 프레임/사용자 음성 파일 중앙 저장 API 연동 계약 반영 + 이전 v0.4.25: §6.7 dial_action 자동 연결 PhoneDialBridge)
+> **버전**: v0.4.28 (2026-07-18 §3.1 detection `device_id` 쿼리 폴백, §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정, §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 추가 + 이전 v0.4.27: §6.8 distance_probe_sample 신설 + 이전 v0.4.26: §8.5 STT 원본 음성 저장 메타 + 이전 v0.4.25: §6.7 dial_action)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -182,6 +182,7 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `payload.frame_id` | 프레임 일련 번호 |
 | `payload.transport` | `"binary"` 고정 - 서버가 다음 바이너리 프레임을 이 메타와 짝지어야 함을 표시 |
 | `payload.is_outdoor` | **선택**. 온디바이스 씬 분류(iOS: `VNClassifyImageRequest`, Android: ML Kit Image Labeling) + 히스테리시스 결과. `true`=실외, `false`=실내, 생략/`null`=미판정(구버전). 서버는 `false`일 때 보도 이탈 판정과 mid/low `risk.events`(인지 TTS) 발행을 억제한다 (`indoor_fp_mitigation_design.md` §4.7~§4.10) |
+| `payload.device_id` | **선택**. 단말 식별자. **2026-07-18 정정**: 메타에 누락되면 서버(`ws_router`)가 WS 쿼리 `?device_id=` 값을 폴백 주입한다(바이너리·base64 경로 공통). 누락 시 `server_detection`/로그의 device 매핑이 깨질 수 있어 방어한다 |
 
 > **바이너리 전송 도입 사유 (2026-07-07)**: base64 인코딩은 페이로드 크기를 약 33% 증가시키고 JS/서버 양쪽에 인코딩·디코딩 CPU 오버헤드를 유발한다. 클라이언트는 `expo-file-system`의 `File(uri).bytes()`로 raw JPEG `Uint8Array`를 직접 얻어 `WebSocket.send(bytes)`로 전송하고, 서버(`server/api/ws_router.py`)는 `ws.receive()`로 텍스트/바이너리 프레임을 구분해 `decode_frame_binary()`(`server/capture/frame_decoder.py`)로 base64 디코딩 단계 없이 바로 `cv2.imdecode`한다.
 
@@ -368,7 +369,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | :--- | :--- |
 | `guidance_text` | L2/L3 생성 **음성 합성용** 텍스트 (한국어 1문장, 20자 내, 객체+행동 중심). 방향·거리는 구조화 필드로 분리(2026-07-16 Phase 2) |
 | `clock_direction` | 구조화 시계 방향 (예: `"10시"`, `"12시"`). `estimate_clock_direction()` 산출값. 음성 텍스트와 분리 |
-| `distance_class` | 구조화 거리 등급 (`near` / `medium` / `far`). `estimate_distance()` 산출값. **반사 `reflex_alert`의 미터 단위 `distance`와 별개** |
+| `distance_class` | 구조화 거리 등급 (`near` / `medium` / `far`). **2026-07-18 정정**: `Detection.effective_distance_zone`(거리 정책 SSOT, 히스테리시스 포함)을 우선 사용하고, 없을 때만 `estimate_distance()`로 폴백. **반사 `reflex_alert`의 미터 단위 `distance`와 별개**. near는 인지 TTS 대상이 아님(`risk_ssot_contract.md` §2-C) |
 | `object_ko` | 구조화 한국어 주 탐지 객체명 (`CLASS_TEXT` SSoT). 패스트 레인 캐시 키에 사용 |
 | `audio_codec` | 오디오 코덱 (현재 `wav` 고정) |
 | `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
@@ -792,8 +793,9 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | path | 주요 필드 | 설명 |
 | :--- | :--- | :--- |
 | 공통 | `generation_mode` | 응답 생성 경로 식별 (`reflex_prebaked_clip`, `fast_lane_template`, `langgraph_l2_l3`, `llm_answer`, `echo_skipped` 등) |
+| 공통 | `route`, `effective_distance_zone`, `route_reason` | **2026-07-18 추가**. 거리 정책 SSOT 산출값. `route`는 `reflex`/`cognitive`, `effective_distance_zone`은 `near`/`medium`/`far`, `route_reason`은 구역·override 사유. `detections_summary` 항목에도 zone/route 메타가 포함될 수 있음 |
 | `reflex` | `alert_id`, `clip`, `direction`, `class_name`, `distance`, `risk_level`, `detections_summary` | 반사 사전합성 클립·탐지 요약(최대 8건 bbox/confidence/direction) |
-| `cognitive` | `rag_query`, `rag_context`, `clock_direction`, `distance_class`, `object_ko`, `used_fast_lane`, `fast_lane_cache_key`, `l1_risk_level`, `l3_verified`, `l2_drafts`, `detections_summary`, `surfaces_summary`, `llm_text`, `response_text` | 인지 LangGraph/패스트레인·RAG·L2 초안·노면 요약 |
+| `cognitive` | `rag_query`, `rag_context`, `clock_direction`, `distance_class`, `object_ko`, `used_fast_lane`, `fast_lane_cache_key`, `l1_risk_level`, `l3_verified`, `l2_drafts`, `detections_summary`, `surfaces_summary`, `llm_text`, `response_text` | 인지 LangGraph/패스트레인·RAG·L2 초안·노면 요약. `effective_distance_zone`이 비면 `distance_class`로 채움 |
 | `stt` | `stt_transcript`, `bridge_source`, `generation_mode`, `response_text`, `rag_query`, `rag_results`, `llm_text`, `template_text`, `response_skipped`, `skip_reason` | STT 전사·브릿지 분기·RAG 미리보기(최대 5건)·에코 스킵 |
 
 **프레임 이미지 저장 계약** (`server/services/event_frame_store.py`):
@@ -887,6 +889,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.16** | **2026-07-13** | **§2.5 `network_probe`/`network_probe_ack` 신설 - ngrok/Tailscale/LAN 순수 WebSocket RTT 비교용 echo 메시지 및 iOS 앱 계측 경로 반영** |
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
+| **v0.4.28** | **2026-07-18** | **§3.1 detection `device_id` 쿼리 폴백. §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정(near=인지 TTS 비대상). §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 공통 필드 추가** |
 | **v0.4.27** | **2026-07-17** | **§6.8 `distance_probe_sample` 신설 - LiDAR 실거리 검증 캡처(검증 전용, 반사/인지 경로 판단 미관여), `lidar_distance_validation_samples` DB 테이블 연동** |
 | **v0.4.24** | **2026-07-16** | **§6.7 `dial_action` STT 전화 연결 복원(convenience RAG·보호자 DB·긴급번호), §6.3 발화 표 추가** |
 | **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |

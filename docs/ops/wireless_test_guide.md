@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.1.0 (2026-07-07 §4.2/§5.1 프레임 전송 방식을 바이너리 기본/base64 구버전 호환으로 갱신)
+> **버전**: v1.1.1 (2026-07-18 §5.2 `lap==0.5.13`을 `requirements.txt`에 고정 - AutoUpdate 의존 서술 폐기 + 이전 v1.1.0: 바이너리 전송 기본)
 > **설계 기준**: docs/design/minchodan_design_note.md (비전 설계서 v1.1)
 
 # 실기기 무선 연동 테스트 및 Docker 환경 가이드
@@ -101,9 +101,10 @@ graph TD
 - **참고 (2026-07-07)**: 실기기 기본 전송 경로는 base64가 아닌 바이너리 프레임이므로, 이 에러는 `payload.transport`가 `"binary"`로 설정되지 않은 구버전 호환 경로(Mock 등)에서만 발생한다. 바이너리 경로 관련 이슈는 `[WS] 대기 중인 메타데이터 없이 바이너리 프레임 수신` 경고 로그를 확인한다(메타-바이너리 프레임 순서가 어긋난 경우).
 
 ### 5.2 lap 트래킹 라이브러리 부재 에러
-- **현상**: `requirements: Ultralytics requirement ['lap>=0.5.12'] not found` 로그가 출력되는 경우.
-- **원인**: YOLO26n 객체 추적기(ByteTrack) 구동을 위한 선형 할당(Linear Assignment) 패키지가 Docker 이미지에 누락되어 있기 때문입니다.
-- **해결**: 컨테이너가 자동으로 pip AutoUpdate를 통해 `lap`을 수집하므로, 성공 메시지 확인 후 `docker restart minchodan-fastapi` 명령어로 컨테이너를 가볍게 1회 재기동해주면 정상 바인딩됩니다.
+- **현상**: `requirements: Ultralytics requirement ['lap>=0.5.12'] not found` 로그가 출력되거나, ByteTrack `track()`이 실패하는 경우.
+- **원인**: YOLO26n 객체 추적기(ByteTrack) 구동을 위한 선형 할당(Linear Assignment) 패키지 `lap`이 이미지/컨테이너에 없었기 때문입니다.
+- **해결 (2026-07-18 정정)**: `requirements.txt`에 `lap==0.5.13`을 명시해 이미지 빌드·`pip install` 시점에 고정 설치합니다. 런타임 Ultralytics AutoUpdate에 의존하지 마십시오(`YOLO_AUTOINSTALL=False` 기본). 이미 기동 중인 컨테이너면 이미지 재빌드 또는 `pip install lap==0.5.13` 후 재기동합니다.
+- **폴백**: `yolo_detector.py`는 `track()` 실패 시(`lap` 미설치·`'Conv' object has no attribute 'bn'` 등) `predict()`로 폴백해 빈 BBox를 피합니다(추적은 해당 프레임에서 비활성).
 
 ### 5.3 이미지 대용량으로 인한 무선 네트워크 병목 및 소켓 끊김 현상
 - **현상**: 단말기 구동 중 화면에 연결 끊김 경보가 자주 표시되며, Metro 번들러 콘솔에 `[WS] 연결 종료`와 `연결 시도 주소` 로그가 무한 반복 출력되는 경우.

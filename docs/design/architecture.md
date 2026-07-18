@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.11 (2026-07-18 T3-C/T3-S/T2-G/T1-a/b 구현 반영: audioEngine 우선순위 조정자, session_manager STT 활성 레지스트리, consumer 회랑/접근 필터·쿨다운 단축, detection_pipeline 접근 객체 선필터 완화 + 이전 v0.4.10: §6.7 `distance_probe_sample` 데이터 계약 추가 등)
+> **버전**: v0.4.12 (2026-07-18 Near/Medium/Far 인지 발화 정합: near=반사 전담(인지 TTS 차단), T1-b 쿨다운 단축은 medium만, `effective_distance_zone` SSOT 우선 + 이전 v0.4.11: T3-C/T3-S/T2-G/T1-a/b 구현 반영 + 이전 v0.4.10: §6.7 `distance_probe_sample` 데이터 계약 추가 등)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -198,7 +198,7 @@ graph TD
 | `server/bus/redis_client.py`                  | aioredis 연결 풀                                                           | 3·6  |
 | `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                                    | 3    |
 | `server/bus/consumer.py`                      | `xread` 구독, orchestration 진입                                           | 6    |
-| `server/detection/consumer.py`                | **2026-07-18 추가**: 이중 큐(반사/인지) 소비, DetectionPipeline 실행, 반사 WS 고우선 전송, 인지 Redis 발행. T2-G(회랑/접근 필터), T3-S(STT 활성 중 인지 발행 억제), T1-b(12시 회랑 접근 시 쿨다운 단축) 적용 | 3·6·7 |
+| `server/detection/consumer.py`                | **2026-07-18**: 이중 큐(반사/인지) 소비, DetectionPipeline 실행, 반사 WS 고우선 전송, 인지 Redis 발행. T2-G(회랑/접근 필터 + **near 인지 TTS 차단·far 무발화**), T3-S(STT 활성 중 인지 발행 억제), T1-b(**medium만** 12시 회랑 접근 시 쿨다운 3초 단축). 거리 등급은 `_resolve_distance_class()`로 `effective_distance_zone` SSOT 우선 | 3·6·7 |
 | `server/models/yolo26n/`                      | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 가중치 (git-ignore) | 3    |
 | `data/raw/`                                   | AI Hub 보행자 데이터셋 원본                                                | 4    |
 | `data/frames/`                                | 영상 1fps 추출 프레임                                                      | 4    |
@@ -679,10 +679,10 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | :--- | :--- | :--- |
 | **M4/P1-2** | 발화 가치 게이트 (동일 상황 30s 쿨다운, TTS 합성 생략) | `consumer` |
 | **M5/P1-1** | 반사 후속 avoidance fast lane (LangGraph 우회, 우회 방향 즉시 안내) | `avoidance.py` 신규, `consumer` |
-| **M6/T2-G** | 인지 발화 회랑/접근 필터 (측면·원거리·정적 저위험 무발화) | `consumer`, `direction` |
+| **M6/T2-G** | 인지 발화 회랑/접근 필터. **2026-07-18 정합**: near=인지 TTS 차단(반사 전담), far=무발화(BBox만), medium=12시 회랑·접근 시 발화 | `consumer`, `direction`, `distance_policy` |
 | **M7/T3-C** | 단말 통합 오디오 우선순위 조정자 (P3 반사/P2 STT/P1 인지) | `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts` |
 | **M8/T3-S** | 서버 STT 활성 중 인지 발행 억제 게이트 | `server/api/session_manager.py`, `server/api/ws_router.py`, `server/detection/consumer.py` |
-| **M9/T1-b** | 12시 회랑 접근 객체 쿨다운 단축 (near/medium 3초) | `consumer` |
+| **M9/T1-b** | 12시 회랑 접근 객체 쿨다운 단축 (**medium만** 3초; near는 반사 전담이라 인지 쿨다운 단축 대상 제외) | `consumer` |
 
 ### 11.3 노면/지연 보정 (P2)
 
