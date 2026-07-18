@@ -3064,3 +3064,20 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`
 - **검증 결과**: `npx tsc --noEmit`(client) 클린.
 - **비고**: 실기기에서 "검증 캡처" 후 bbox 위에 LiDAR 거리가 실제로 표시되는지는 사용자가 다음 실기기 세션(줄자 실측과 함께)에서 확인 필요.
+
+---
+
+### 2026-07-19 | 실기기 라이브 디버깅 | 검증 캡처 파이프라인 결함 3건 수정 + 고정 지점 캡처 기능 추가 + 근접 캘리브레이션 실측
+
+- **배경**: `integration-test-orchestrator` 스킬로 Docker+DB+실기기 통합 테스트 세션을 열고 팀원이 실기기로 "검증 캡처"를 반복 시도하는 동안 실시간으로 로그를 감시하며 발견되는 문제를 그 자리에서 진단·수정했다. 3개의 서로 다른 계층 결함이 겹쳐 있었다.
+- **결함 1 - DB 인증 실패**: `docker compose -f docker/docker-compose.macos.yml`처럼 `--env-file`을 생략하면 Compose가 컴포즈 파일 위치(`docker/`)를 프로젝트 디렉토리로 잡아 루트 `.env`(팀 공동 Tailscale `DB_HOST`)를 전혀 읽지 못하고 로컬 빈 DB로 조용히 폴백되고 있었다(콘솔 관리자 로그인이 항상 401인 근본 원인이기도 했음). `docker compose --env-file .env -f docker/docker-compose.macos.yml ...`로 재기동해 팀 공동 DB(`100.105.221.31`)에 정상 연결시켰다. 진단 중 `docker compose config`를 필터 없이 출력해 `DB_PASSWORD` 평문이 도구 로그에 한 차례 노출된 사고가 있었음을 사용자에게 즉시 고지함.
+- **결함 2 - YOLO 추론 실패**: ultralytics가 모델 로드/추론 시마다 체크포인트 내장 requirements를 현재 설치본과 비교해 불일치하면 `AUTOINSTALL`(기본 True, `YOLO_AUTOINSTALL` 환경변수) 설정에 따라 런타임에 조용히 `pip install`한다. 방금 갱신된 디스크 상 패키지와 이미 임포트된 모듈 상태가 어긋나며 프레임마다 `'Conv' object has no attribute 'bn'` 오류가 재발했다. `docker-compose.macos.yml`의 fastapi `environment:`에 `YOLO_AUTOINSTALL=False` 추가.
+- **결함 3 - 검증 캡처 단발 프레임이 시간적 지속성 필터에 걸림(핵심 결함)**: "거리측정" 모드의 "검증 캡처"는 사용자가 명시적으로 트리거한 1회성 정지 프레임을 기존 `detection` 경로로 보내는데, `detection_pipeline.py`의 시간적 지속성 필터(연속 4프레임 이상 유지돼야 통과)가 연속 스트림을 전제로 하고 있어 단발 캡처는 항상 `hit_count=1`로 걸러져 탐지 0건(`risk_hint=none`)이 됐다. 클라이언트가 이미 보내고 있었지만 서버 어디에서도 읽지 않던 `probe_source: "lidar_validation"` 플래그를 `ProcessedFrame`(`frame_decoder.py`) → `DetectionPipeline.run()` → 시간적 지속성 필터까지 배선해, 검증 캡처 프레임만 이 필터를 우회하도록 수정.
+- **신규 기능 - 고정 지점(중앙/전방 하단/발밑) 캡처**: 사용자 요청으로 객체 탐지와 무관하게 거리측정 화면에 항상 표시 중인 고정 3지점 LiDAR 실측을 "검증 캡처" 버튼 한 번으로 함께 저장하도록 확장. YOLO 탐지 왕복이 필요 없어 클라이언트가 이미 보유한 `probeDepth()` 결과를 즉시 전송한다.
+  - 신규: `FixedPointProbeSample`/`FixedPointProbeReport`(schemas.py), `LidarFixedPointSample` ORM + `lidar_fixed_point_samples` 테이블(마이그레이션 `20260719_001`), `LidarFixedPointRepository`, `persist_fixed_point_samples()`, WS `fixed_point_probe_sample` 핸들러.
+  - 클라이언트: `handleDistanceProbeCapture()`가 기존 객체 기반 전송과 함께 `depthResult.samples`를 `DEPTH_PROBE_POINTS` 라벨과 매칭해 즉시 전송.
+- **실측 캘리브레이션 결과**: 팀원이 카메라-벽면 직선 거리를 줄자로 실측하며 0.3m/0.5m/1.0m 세 구간에서 캡처. 0.5m(+11~28%)·1.0m(거의 정확)는 근거리일수록 RGB-LiDAR 시차가 커진다는 가설과 일치했으나, 0.3m는 LiDAR가 1.43~1.58m(4.8~5.3배 과대)로 읽어 시차만으로 설명 불가능한 규모였다. LiDAR ToF 센서의 최소 유효 거리(통상 0.3~0.5m) 미만에서 위상 랩어라운드가 발생했을 가능성이 가장 유력하다는 가설과 함께 `docs/research/lidar_realtime_fusion_design_v2.md` §4.3에 기록. 반사 게이트는 이미 LiDAR가 아닌 area_ratio만 실시간 판단에 쓰므로 실제 안전 판단에는 영향 없음을 명시.
+- **되돌린 변경**: `pod install` 실행 중 `package.json`에 여전히 선언된 `expo-dev-client`가 `Podfile.lock`/`project.pbxproj`에서 실수로 누락되는 것을 발견해 두 파일을 git 상태로 즉시 되돌림(커밋하지 않음). CocoaPods sandbox와 lockfile이 다시 어긋난 상태라 다음 네이티브 빌드 전 `pod install` 재검증 필요(잔여 과제로 기록).
+- **관련 파일**: `docker/docker-compose.macos.yml`, `server/capture/frame_decoder.py`, `server/detection/detection_pipeline.py`, `server/detection/consumer.py`, `server/detection/schemas.py`, `server/db/models.py`, `server/db/repositories.py`, `server/db/migrations/20260719_001_add_lidar_fixed_point_samples.sql`(신규), `server/services/lidar_validation_service.py`, `server/api/ws_router.py`, `client/src/components/CameraView.tsx`, `docs/research/lidar_realtime_fusion_design_v2.md`, `.agents/skills/integration-test-orchestrator/`(SKILL.md·implementation_detail.md, `.claude/skills/` 미러 동일 반영)
+- **검증 결과**: `ruff check .` 전체 통과, `mypy` 신규 에러 없음(기존 5건과 동일 파일들 - 미변경). `pytest tests/` 346 passed(환경 의존 실패 3건은 기존과 동일). `npx tsc --noEmit`(client) 클린. 실기기 라이브 검증: 객체 기반 캡처 16건 + 고정 지점 캡처 54건 이상 팀 공동 DB에 실제 저장 확인.
+- **비고**: 통합 테스트 스킬(`integration-test-orchestrator`)에 이번에 발견한 `--env-file` 필수 사용법, 콘솔(운영 콘솔) 프론트 기동 누락, `docker compose config` 비밀값 노출 위험을 모두 반영해 다음 세션부터 반복 재발하지 않도록 함.

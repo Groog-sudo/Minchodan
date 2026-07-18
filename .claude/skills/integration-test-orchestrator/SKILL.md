@@ -11,7 +11,7 @@ description: |
 # 통합 테스트 환경 오케스트레이션 스킬 (iOS 실기기 - Docker - DB)
 
 > **작성일**: 2026-07-18
-> **버전**: v1.0.0
+> **버전**: v1.1.0 (2026-07-19: `docker compose` 실행 시 `--env-file .env` 명시 필수 항목 추가 - `-f docker/docker-compose.macos.yml`만 쓰면 Compose가 프로젝트 디렉토리를 `docker/`로 잡아 루트 `.env`(테일스케일 `DB_HOST` 포함)를 읽지 못하고 로컬 `mariadb`로 조용히 폴백되는 실측 결함 반영. §5-B 콘솔(운영 콘솔) 프론트 기동 단계 신설 - 기존에 누락되어 반복 재발. `docker compose config` 비밀값 노출 경고를 가드레일에 추가)
 > **설계 기준**: `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
 > **관련 스킬**: [`xcode-build-management`](../xcode-build-management/SKILL.md) (iOS 빌드 세부 절차 전담), 본 스킬은 그 위 계층(Docker+DB+로그/모니터링)까지 포함한 세션 오케스트레이션을 전담
 
@@ -114,12 +114,19 @@ graph TD
 
 ### 1. Docker 스택 기동
 
+> **필수: `--env-file .env`를 항상 명시합니다.** `-f docker/<compose file>`만 지정하면 Docker
+> Compose는 프로젝트 디렉토리를 컴포즈 파일이 있는 `docker/`로 잡고, 그 안에 없는 `.env`를
+> 찾습니다(`docker/.env`는 존재하지 않음). 그 결과 루트 `.env`의 `DB_HOST`(팀 공동 Tailscale
+> 원격 DB 주소)가 전혀 반영되지 않고 `${DB_HOST:-mariadb}`가 조용히 `mariadb`(로컬, 대개 빈
+> DB)로 폴백됩니다(2026-07-19 실측 발견 - `docker compose config`로 재현 확인, 로그인 실패의
+> 실제 원인이었음). 항상 저장소 루트에서 `--env-file .env`를 붙여 실행합니다.
+
 ```bash
-# macOS CPU Fallback (로컬 mariadb 포함, 호스트 Ollama 연동)
-docker compose -f docker/docker-compose.macos.yml up -d --build
+# macOS CPU Fallback (호스트 Ollama 연동). --env-file 없이 실행하지 않는다.
+docker compose --env-file .env -f docker/docker-compose.macos.yml up -d --build
 
 # GPU/원격 DB 환경 (기본 원격 DB_HOST 유지, 로컬 mariadb는 폴백 전용)
-docker compose -f docker/docker-compose.yml up -d --build
+docker compose --env-file .env -f docker/docker-compose.yml up -d --build
 ```
 
 헬스체크 대기(최대 20회, 5초 간격):
@@ -131,8 +138,18 @@ for i in $(seq 1 20); do
   [ "$status" = "healthy" ] && echo "mariadb healthy" && break
   sleep 5
 done
-docker compose -f "$COMPOSE_FILE" ps
+docker compose --env-file .env -f "$COMPOSE_FILE" ps
 curl -sf http://localhost:${WS_PORT:-8000}/ || echo "fastapi 헬스체크 실패 - server/api/heartbeat.py 라우트 확인"
+```
+
+FastAPI가 실제로 어떤 DB를 보고 있는지는 아래처럼 **비밀값을 제외한** 변수만 확인합니다
+(`docker compose config`를 필터 없이 그대로 출력하면 `DB_PASSWORD` 평문이 그대로 찍힙니다 -
+2026-07-19 실측: 필터 없이 `docker compose config | grep DB_HOST` 대신 넓은 범위를 출력해
+비밀값이 노출된 사고가 있었음. 반드시 특정 키만 골라 출력합니다).
+
+```bash
+docker compose -f docker/docker-compose.macos.yml exec fastapi \
+  sh -c 'echo "DB_HOST=$DB_HOST DB_PORT=$DB_PORT DB_NAME=$DB_NAME DB_USER=$DB_USER"'
 ```
 
 ### 2. DB 계층 확인
@@ -145,7 +162,12 @@ docker compose -f docker/docker-compose.macos.yml exec mariadb \
   -e "SELECT 1;"
 ```
 
-**팀 공동 Tailscale 원격 DB 사용 시**: `docs/db_tailscale_guide/README.md` §7·§10 순서를 그대로 읽기 전용으로 따릅니다(Tailscale 연결 → TCP 포트 → `SELECT 1` → 미디어 API 인증). 이 경로에서는 절대 `docker compose down -v`를 실행하지 않고, DDL/DROP/TRUNCATE도 실행하지 않습니다.
+**팀 공동 Tailscale 원격 DB 사용 시(기본값)**: `docs/db_tailscale_guide/README.md` §7·§10 순서를
+그대로 읽기 전용으로 따릅니다(Tailscale 연결 → TCP 포트 → `SELECT 1` → 미디어 API 인증). 이
+경로에서는 절대 `docker compose down -v`를 실행하지 않고, DDL/DROP/TRUNCATE도 실행하지
+않습니다. **위 `--env-file .env` 없이 컴포즈를 띄우면 이 경로가 아니라 로컬 DB로 조용히
+전환되어 관리자 계정이 하나도 없는 빈 DB를 보게 됩니다** - 콘솔 로그인이 항상 401로 실패하면
+가장 먼저 이 항목을 의심합니다.
 
 ### 3. 호스트 로컬 Ollama 확인
 
@@ -177,6 +199,24 @@ Metro는 빌드/실행 전에 별도 백그라운드 프로세스로 계속 떠 
 ```bash
 cd client && npm run start -- --clear
 ```
+
+### 5-B. 운영 콘솔(console) 프론트 기동
+
+> **자주 누락되는 단계입니다 — 세션마다 빠뜨리지 않습니다.** iOS 실기기·Docker·DB만 띄우고
+> `console/`(React 운영자 모니터링 콘솔, Vite dev server)을 기동하지 않으면, 탐지 로그·MCP
+> 모니터·관리자 로그인 확인 등 콘솔에서만 볼 수 있는 검증을 전혀 할 수 없습니다. 실기기 앱과
+> 별개로 매 세션 반드시 함께 켭니다.
+
+```bash
+cd console && npm install   # node_modules 없을 때만
+nohup npm run dev > "../$LOG_DIR/console_vite.log" 2>&1 &
+```
+
+기본 포트는 `vite --host 0.0.0.0 --port 5174`(`console/package.json`)입니다. 기동 후
+`curl -sf -o /dev/null -w "%{http_code}" http://localhost:5174/`로 200을 확인합니다. 콘솔은
+FastAPI(`:8000`)를 Vite 프록시로 호출하므로, FastAPI 컨테이너를 재생성/재시작한 직후에는
+`console_vite.log`에 `ws proxy error`/`ECONNREFUSED`가 잠깐 찍힐 수 있습니다(재연결되면 정상,
+지속되면 FastAPI 헬스체크부터 재확인).
 
 ### 6. 실기기 빌드-설치-실행
 
@@ -228,6 +268,7 @@ mkdir -p "$LOG_DIR"
 | `docker compose down -v` | 로컬 MariaDB/Redis 영속 볼륨 삭제, 원인 증거 소실 |
 | 공동/원격 DB에 `DROP`/`TRUNCATE`/무조건 `CREATE`, 미승인 마이그레이션 실행 | 팀 공유 데이터 손실 |
 | `.env` 전체 내용 `cat`/출력, 비밀값을 명령 인자·로그·채팅에 노출 | DB 비밀번호·API 토큰·미디어 API 토큰 유출 |
+| `docker compose config`를 필터 없이 그대로 출력(전체 또는 `DB_HOST` 주변 넓은 범위) | `environment:` 블록에 `DB_PASSWORD` 등 비밀값이 평문 해석되어 함께 출력됨(2026-07-19 실측 사고) - 확인이 필요하면 `sh -c 'echo "DB_HOST=$DB_HOST ..."'`처럼 원하는 키만 골라 출력 |
 | `server/detection/gates/`(반사 경로)에 LLM/RAG/TTS 임포트 추가 | 이중 경로 분리 정책 위반 |
 | 개인 절대경로·단말 UDID·Apple 계정 정보를 공유 문서/커밋에 남기기 | `.xcodebuildmcp/Copy_config.yaml`에만 보관(`docs/ops/local_private_config_guide.md`) |
 | 실제 사용자 STT 음성/이벤트 프레임을 진단 로그로 출력 | 개인정보 노출 |
