@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.10 (2026-07-17 §6.7 `distance_probe_sample` 데이터 계약 추가 - LiDAR 실거리 검증 캡처, 검증 전용 스코프로 반사/인지 경로 판단에는 미관여 + 이전 v0.4.9: §13.3.1 이벤트 프레임 중앙 저장 API 연동 및 STT 사용자 원본 음성 파일 Log 메타데이터 보존 구조 반영 + 이전 v0.4.8: §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
+> **버전**: v0.4.11 (2026-07-18 T3-C/T3-S/T2-G/T1-a/b 구현 반영: audioEngine 우선순위 조정자, session_manager STT 활성 레지스트리, consumer 회랑/접근 필터·쿨다운 단축, detection_pipeline 접근 객체 선필터 완화 + 이전 v0.4.10: §6.7 `distance_probe_sample` 데이터 계약 추가 등)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -163,7 +163,7 @@ graph TD
 | :-------------------------------------------- | :------------------------------------------------------------------------- | :--- |
 | `server/api/`                                 | WebSocket 엔드포인트, 세션 관리, 하트비트                                  | 1    |
 | `server/api/ws_router.py`                     | `APIRouter` + `WebSocket /ws/detect`                                       | 1    |
-| `server/api/session_manager.py`               | `device_token` 검증, `session_id` 발급                                     | 1    |
+| `server/api/session_manager.py`               | `device_token` 검증, `session_id` 발급, **2026-07-18 추가(T3-S)**: device_id별 STT 상호작용 활성 레지스트리(`_stt_activity`)로 인지 가이드 발행 억제 상태 공유 | 1    |
 | `server/api/heartbeat.py`                     | 5초 ping/pong asyncio 루프                                                 | 1    |
 | `server/capture/frame_decoder.py`             | base64 `np.frombuffer` `cv2.imdecode` resize(640,640)                      | 2    |
 | `server/capture/stream_splitter.py`           | 반사 스트림(8~10fps) / 인지 스트림(1~2fps) 분기                            | 2    |
@@ -175,7 +175,7 @@ graph TD
 | `server/detection/gates/head_level_gate.py`   | 두상 높이 장애물(간판/차양 등) 게이트 판정                                 | 3    |
 | `server/detection/direction.py`               | bbox 기준 좌/우/직진 방향 판정 로직                                        | 3    |
 | `server/detection/risk_rules.py`               | 클래스별 위험도(high/mid/low) 규칙 판정                                    | 3    |
-| `server/detection/detection_pipeline.py`      | 탐지→게이트 전체 파이프라인 조립, `run()` 3-tuple 반환                     | 3    |
+| `server/detection/detection_pipeline.py`      | 탐지→게이트 전체 파이프라인 조립, `run()` 3-tuple 반환. **2026-07-18 추가(T1-a)**: 접근 객체(`direction==approaching`)의 hit_count 선필터를 4→2로 완화해 신규 접근 위험에 빠르게 반응 | 3    |
 | `server/detection/schemas.py`                 | `DetectionResult`, `SurfaceResult`, `RiskEvent` 타입                       | 3    |
 | `server/rag/build/frame_extractor.py`         | 영상 1fps 프레임 추출                                                      | 4    |
 | `server/rag/build/dedup_phash.py`             | pHash 중복 제거                                                            | 4    |
@@ -198,6 +198,7 @@ graph TD
 | `server/bus/redis_client.py`                  | aioredis 연결 풀                                                           | 3·6  |
 | `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                                    | 3    |
 | `server/bus/consumer.py`                      | `xread` 구독, orchestration 진입                                           | 6    |
+| `server/detection/consumer.py`                | **2026-07-18 추가**: 이중 큐(반사/인지) 소비, DetectionPipeline 실행, 반사 WS 고우선 전송, 인지 Redis 발행. T2-G(회랑/접근 필터), T3-S(STT 활성 중 인지 발행 억제), T1-b(12시 회랑 접근 시 쿨다운 단축) 적용 | 3·6·7 |
 | `server/models/yolo26n/`                      | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 가중치 (git-ignore) | 3    |
 | `data/raw/`                                   | AI Hub 보행자 데이터셋 원본                                                | 4    |
 | `data/frames/`                                | 영상 1fps 추출 프레임                                                      | 4    |
@@ -211,7 +212,7 @@ graph TD
 | `client/src/services/frameCaptureProvider.ts` | **2026-07-10 정정**: 카메라 하드웨어 접근을 플랫폼별로 분리(iOS/Android 이원화 계약 §4). 공통 인터페이스(`FrameCaptureController`) + `takePhoto()` 공용 크롭 로직(`captureViaTakePhoto`)을 이 파일에 두고, 실제 캡처 방식은 `frameCaptureProviderSelect.ios.ts`/`.android.ts`(Metro 플랫폼 확장자 분기)가 구현 | 2    |
 | `client/src/services/frameCaptureProviderSelect.ios.ts` | 반사 캡처 기본 경로(iOS). `useFrameProcessor` + `client/ios/ReflexFrameProcessorPlugin.swift`(CVPixelBuffer→크롭/리사이즈/JPEG→base64) | 2    |
 | `client/src/services/frameCaptureProviderSelect.android.ts` | 반사 캡처 과도기 경로(Android). 네이티브 Frame Processor 플러그인이 아직 없어 `takePhoto()` 기반 단발 촬영으로 동작(`docs/mobile/ios_android_bifurcation_contract.md` §4.5 참조) | 2    |
-| `client/src/services/audioEngine.ts`          | `expo-audio` 상시 웜 플레이어로 반사/인지 음성 재생 및 선점 정지           | 7    |
+| `client/src/services/audioEngine.ts`          | `expo-audio` 상시 웜 플레이어로 반사/인지 음성 재생 및 선점 정지. **2026-07-18 추가(T3-C)**: P3(반사)/P2(STT)/P1(인지) 3단계 우선순위 조정자로 STT 응답과 인지 안내 충돌 해결 | 7    |
 | `client/src/services/audioSessionBridge.ts`   | iOS AVAudioSession voiceChat(AEC) 전환 TS 래퍼. STT 녹음 구간에서 스피커 출력의 마이크 유입(음향 블리드)을 상쇄(2026-07-11 신규, Android는 no-op) | -    |
 | `client/ios/AudioSessionBridge.swift`         | AVAudioSession `.playAndRecord`+`.voiceChat` 전환 네이티브 브릿지(`.defaultToSpeaker` 유지, 이전 세션 저장/복구, 검증용 `getSessionInfo`) | -    |
 | `client/src/services/depthProbe.ts`           | LiDAR 실거리 프로브 TS 래퍼(2026-07-11 프로토타입). iOS Pro 계열 전용, 그 외 null. bbox 거리 휴리스틱 검증 계측용 | -    |
@@ -254,7 +255,7 @@ graph TD
 1. `cv2.imdecode`로 프레임 복원
 2. **Yolo 26N - Object Detection** `predict(conf=0.35)` 클래스·bbox 파싱
 3. **Yolo 26N - Segmentation** 노면 의미 분할 마스크
-4. **ByteTrack** `update()` Track ID 부여, Redis `hset`+TTL=30 접근/이탈·속도 산출
+4. **ByteTrack** `update()` Track ID 부여, Redis `hset`+TTL=30 접근/이탈·속도 산출. **2026-07-18 추가(T1-a)**: 접근 객체(`direction=="approaching"`)는 hit_count 선필터를 4→2로 완화해 신규 접근 위험에 빠르게 반응. 정적 오탐은 여전히 4프레임 유지
 5. **Reflex Risk Gate(룰베이스, LLM 미경유)**: 고위험 클래스 && 근접(면적·하단) 즉시 `alert_id`+방향
 6. **Surface Fast-Alert Gate(룰베이스)**: P0 노면(횡단볼도/맨홀/계단/그레이팅/점자블록파손) 하단 검출 즉시 `alert_id`
 7. mid/low만 `redis_bus.xadd("risk.events", …)`로 인지 경로에 발행
@@ -281,6 +282,7 @@ graph TD
 
 - `StateGraph(OrchState)` 조립
 - **L1**: 룰 기반 위험도 분류 (high는 이미 즉시 경보 처리됨 / mid·low만 진입)
+- **T2-G (2026-07-18)**: 인지 발화 회랑/접근 필터. 보도 이탈·고위험·접근 객체·유의미 노면은 통과, 측면·원거리·정적 저위험은 무발화
 - **L2**: RAG+탐지 결합 프롬프트로 ChatOllama(gemma4-e4b) `ainvoke` — "한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함"
 - **L3**: 길이·방향 키워드 검증, 위반 시 L2 RETRY(최대 1회)
 - **Fallback/핫스왑**: L3 실패율 >10% 또는 `LLM_PROVIDER=openai` 시 gpt-4o-mini 자동 전환; 최종 실패 시 고정 문장("전방 주의, 천천히 멈추세요")
@@ -291,6 +293,8 @@ graph TD
 > **2026-07-09 정정**: 아래는 실제 구현 기준이다(최초 계획 Kokoro/Coqui·MP3·Web Audio는 미구현).
 
 - **(인지)** 로컬 TTS(**Supertonic**, `TTS_ENGINE=supertonic` 기본. **Piper**는 `TTS_ENGINE=piper` 핫스왑 폴백으로 코드 보존) `generate(guidance_text, voice="ko")` → WAV bytes → WS 바이너리 프레임(`transport:"binary"`, base64 미경유) → 단말 `expo-audio` 상시 재생 웜 플레이어(`player.replace()`, iOS Hearing Protection 우회)
+- **T3-C (2026-07-18)**: 단말 `audioEngine`에서 P3(반사)/P2(STT)/P1(인지) 우선순위 조정. STT 상호작용 중 인지 안내 드롭, STT 응답은 인지 안내를 선점. 결정론적 콜백 해제 + 안전 상한 타이머
+- **T3-S (2026-07-18)**: 서버 `session_manager`의 `_stt_activity` 레지스트리로 STT 처리 중인 device_id를 추적. `DetectionConsumer`는 해당 device_id의 인지 가이드 발행을 조기 반환(반사는 제외)
 - **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생 (실시간 TTS 합성 금지)
 - **선점(preempt)**: 반사 음성은 인지 음성을 중단시키고 재생. WS에서 반사 이벤트는 별도 고우선 타입
 - 중복 억제 `setex(suppress:…, 60)`
@@ -369,7 +373,7 @@ graph TD
 | 경로     | 위험도  | 흐름                                                            | 음성                      | 목표 지연               |
 | -------- | ------- | --------------------------------------------------------------- | ------------------------- | ----------------------- |
 | **반사** | high    | Detection Reflex Gate / Seg Surface Gate 사전합성 클립          | 사전합성 고정 클립 (선점) | <300ms (Detection 기준) |
-| **인지** | mid/low | Detection+Seg Redis Streams LangGraph L1/L2/L3 + RAG 실시간 TTS | 실시간 합성 상세 가이드   | 1~2Hz                   |
+| **인지** | mid/low | Detection+Seg → Redis Streams → LangGraph L1/T2-G/L2/L3 + RAG 실시간 TTS. STT 활성 중 발행 억제(T3-S) | 실시간 합성 상세 가이드   | 1~2Hz                   |
 
 반사 경로는 **LLM/RAG/실시간 TTS를 절대 경유하지 않습니다** (비협상 원칙).
 
@@ -675,6 +679,10 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | :--- | :--- | :--- |
 | **M4/P1-2** | 발화 가치 게이트 (동일 상황 30s 쿨다운, TTS 합성 생략) | `consumer` |
 | **M5/P1-1** | 반사 후속 avoidance fast lane (LangGraph 우회, 우회 방향 즉시 안내) | `avoidance.py` 신규, `consumer` |
+| **M6/T2-G** | 인지 발화 회랑/접근 필터 (측면·원거리·정적 저위험 무발화) | `consumer`, `direction` |
+| **M7/T3-C** | 단말 통합 오디오 우선순위 조정자 (P3 반사/P2 STT/P1 인지) | `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts` |
+| **M8/T3-S** | 서버 STT 활성 중 인지 발행 억제 게이트 | `server/api/session_manager.py`, `server/api/ws_router.py`, `server/detection/consumer.py` |
+| **M9/T1-b** | 12시 회랑 접근 객체 쿨다운 단축 (near/medium 3초) | `consumer` |
 
 ### 11.3 노면/지연 보정 (P2)
 

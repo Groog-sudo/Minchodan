@@ -8,7 +8,8 @@ import base64
 import pytest
 
 import server.api.ws_router as ws_router_module
-from server.api.ws_router import _handle_stt_audio
+from server.api.session_manager import manager
+from server.api.ws_router import _estimate_stt_hold_seconds, _handle_stt_audio
 from server.services.remote_storage_client import RemoteStoreResult
 from server.stt.stt_schema import SttTranscribeResult
 
@@ -207,6 +208,110 @@ async def test_stt_audio_success_sends_guide_with_audio(monkeypatch: pytest.Monk
     assert persisted[0]["stt_audio_format"] == "wav"
     assert persisted[0]["stt_audio_duration_ms"] == 1200
     assert persisted[0]["stt_audio_sha256"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_stt_audio_success_extends_stt_active_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """T3-S (2026-07-18): 응답 전송 직후 즉시 해제하지 않고, 예상 재생시간까지
+    manager.is_stt_active(device_id)가 True로 유지되는지 검증한다(재생 구간의
+    인지 가이드 발행 억제 - 회귀 방지: 이전에는 전송 직후 즉시 해제되어 재생
+    구간 동안 억제가 풀려 있었다)."""
+    fake_result = SttTranscribeResult(
+        model_name="faster-whisper-medium",
+        text="네비게이션 켜줘",
+        language="ko",
+        duration=1.2,
+        segments=[],
+        has_input=True,
+        saved_file="dummy.wav",
+    )
+    monkeypatch.setattr(
+        ws_router_module.SttService,
+        "transcribe_file",
+        classmethod(lambda cls, saved_path, model_name: fake_result),
+    )
+
+    async def _fake_invoke(self, stt_result, device_id):
+        return {
+            "guidance_text": "네비게이션 기능을 시작합니다. 목적지를 말씀해 주세요.",
+            "used_fallback_llm": True,
+            "source": "navigation-setup-wakeup",
+        }
+
+    monkeypatch.setattr(ws_router_module.SttToLlmBridge, "invoke_existing_llm", _fake_invoke)
+
+    async def _fake_synthesize(self, text, voice="ko", speed=0.9):
+        return "ZmFrZS1hdWRpbw==", 900.0
+
+    monkeypatch.setattr(
+        ws_router_module.realtime_tts,
+        "synthesize",
+        _fake_synthesize.__get__(ws_router_module.realtime_tts),
+    )
+
+    async def _fake_upload_stt_audio(event_id, audio_bytes, content_type, format_):
+        return RemoteStoreResult(
+            object_key=f"20260716/{event_id}.wav",
+            status="available",
+            format="wav",
+            size_bytes=len(audio_bytes),
+            sha256="a" * 64,
+        )
+
+    monkeypatch.setattr(ws_router_module, "upload_stt_audio", _fake_upload_stt_audio)
+
+    async def _fake_persist(**_kwargs):
+        return None
+
+    monkeypatch.setattr(ws_router_module, "persist_detection_guidance_log", _fake_persist)
+
+    class _FakeNavIdle:
+        def get_status(self, device_id: str) -> str:
+            return "IDLE"
+
+        def is_awaiting_question(self, device_id: str) -> bool:
+            return False
+
+        def is_awaiting_intent(self, device_id: str) -> bool:
+            return False
+
+        def is_detection_enabled(self, device_id: str) -> bool:
+            return True
+
+    monkeypatch.setattr("server.navigation.manager.nav_manager", _FakeNavIdle())
+
+    manager.set_stt_active("dev-ttl-test", False)
+    try:
+        ws = _FakeWebSocket()
+        await _handle_stt_audio(
+            ws, "dev-ttl-test", {"type": "stt_audio", "audio_b64": _fake_wav_b64()}
+        )
+        # 응답 전송은 이미 끝났지만(ws.sent 채워짐), 예상 재생시간(duration_ms=900ms)
+        # + 마진(1200ms) 동안은 여전히 STT 활성 상태로 유지돼야 한다.
+        assert len(ws.sent) == 1
+        assert manager.is_stt_active("dev-ttl-test") is True
+    finally:
+        manager.set_stt_active("dev-ttl-test", False)
+
+
+class TestEstimateSttHoldSeconds:
+    """T3-S (2026-07-18): STT 응답 재생 예상 시간 추정 헬퍼 단위 테스트."""
+
+    def test_empty_text_returns_zero(self) -> None:
+        assert _estimate_stt_hold_seconds("") == 0.0
+
+    def test_short_text_uses_minimum_with_margin(self) -> None:
+        # 최소 텍스트 추정치(2000ms) + 마진(1200ms) = 3.2초. duration_ms=0이면 텍스트
+        # 추정치가 그대로 쓰인다.
+        assert _estimate_stt_hold_seconds("짧은 안내") == pytest.approx(3.2)
+
+    def test_long_duration_ms_overrides_short_text_estimate(self) -> None:
+        # 서버 duration_ms(5000ms)가 텍스트 추정치(2000ms)보다 크면 duration_ms 기준.
+        assert _estimate_stt_hold_seconds("짧은 안내", duration_ms=5000.0) == pytest.approx(6.2)
+
+    def test_long_text_uses_char_based_estimate(self) -> None:
+        text = "가" * 20  # 20자 * 180ms = 3600ms > 최소 2000ms
+        assert _estimate_stt_hold_seconds(text) == pytest.approx((3600.0 + 1200.0) / 1000.0)
 
 
 @pytest.mark.asyncio

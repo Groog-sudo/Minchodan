@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import logging
 import sys
+import time
 from dataclasses import dataclass, field
 
 from fastapi import WebSocket
@@ -41,6 +42,9 @@ class SessionManager:
         self.active_connections: dict[str, WebSocket] = {}
         self.console_connections: set[WebSocket] = set()
         self._console_sessions: dict[WebSocket, _ConsoleSession] = {}
+        # T3-S (2026-07-18): 디바이스별 STT 상호작용 활성 상태. consumer가 인지 가이드
+        # 발행을 억제할 때 참조한다. 값은 monotonic 시간 기준 만료 시각.
+        self._stt_activity: dict[str, float] = {}
 
     async def connect(self, device_id: str, websocket: WebSocket) -> None:
         """새 연결 수락 및 등록.
@@ -198,6 +202,36 @@ class SessionManager:
         """디바이스 연결 여부 확인. application_state도 함께 검증한다."""
         ws = self.active_connections.get(device_id)
         return ws is not None and ws.application_state == WebSocketState.CONNECTED
+
+    def set_stt_active(self, device_id: str, active: bool, ttl_seconds: float = 0.0) -> None:
+        """디바이스별 STT 상호작용 활성 상태를 설정한다.
+
+        T3-S (2026-07-18): STT 처리 중 인지 경로 발행을 억제하기 위한 레지스트리.
+        active=False이고 ttl_seconds>0이면 ttl_seconds 후에 자동 만료된다.
+        """
+        if active:
+            expire_at = time.monotonic() + ttl_seconds if ttl_seconds > 0 else float("inf")
+            self._stt_activity[device_id] = expire_at
+            logger.debug(f"[Session] STT 활성: device_id={device_id}")
+        else:
+            if ttl_seconds > 0:
+                self._stt_activity[device_id] = time.monotonic() + ttl_seconds
+                logger.debug(
+                    f"[Session] STT 활성 TTL 연장: device_id={device_id}, ttl={ttl_seconds:.1f}s"
+                )
+            else:
+                self._stt_activity.pop(device_id, None)
+                logger.debug(f"[Session] STT 비활성: device_id={device_id}")
+
+    def is_stt_active(self, device_id: str) -> bool:
+        """디바이스가 STT 상호작용 중인지 확인한다. TTL이 만료된 항목은 정리한다."""
+        expire_at = self._stt_activity.get(device_id)
+        if expire_at is None:
+            return False
+        if time.monotonic() > expire_at:
+            self._stt_activity.pop(device_id, None)
+            return False
+        return True
 
 
 manager = SessionManager()

@@ -1,3 +1,4 @@
+import json
 import sys
 from unittest.mock import AsyncMock
 
@@ -20,6 +21,7 @@ from server.detection import (
     SegmentorInterface,
     YoloDetector,
 )
+from server.detection.consumer import DetectionConsumer
 from server.detection.gates import reflex_gate, surface_gate
 from server.detection.schemas import SurfaceResult
 
@@ -943,3 +945,169 @@ class TestLatencyAlertAndStairDown:
             ts=0.0,
         )
         assert _hint_id_for_alert(alert) == "STAIR_DOWN"
+
+
+class TestApproachingHitCountRelax:
+    """T1-a (2026-07-18): 접근 객체의 hit_count 선필터 완화 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_approaching_hit_count_two_passes(self, frame, mock_redis_bus):
+        """direction=="approaching"이면 hit_count=2로 인지 경로에 통과한다.
+
+        ByteTrackTracker.update()는 stub Detection의 direction/hit_count를 항상
+        재계산해 덮어쓰므로(_compute_motion), "approaching"을 실제로 발동시키려면
+        prev 컨텍스트에 last_pos(이전 프레임 bbox)까지 채워 현재 bbox보다 더 위(=화면
+        하단과의 거리가 먼)에 있었던 것처럼 만들어야 한다(하단 y가 커질수록 접근으로 판정).
+        """
+        prev_bbox_json = json.dumps({"x": 100.0, "y": 50.0, "w": 200.0, "h": 200.0})
+        mock_redis_bus.get_track_context = AsyncMock(
+            return_value={"hit_count": "1", "last_pos": prev_bbox_json}
+        )
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=100.0, y=100.0, w=200.0, h=200.0),
+            track_id="T-0001",
+            direction="approaching",
+            hit_count=2,
+        )
+        pipeline = DetectionPipeline(
+            detector=StubDetector(detections=[det]),
+            segmentor=StubSegmentor(surfaces=[]),
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result, _, _ = await pipeline.run(frame, "test", "evt-approach-2", "dev-1")
+        assert isinstance(result, DetectionResult)
+        assert result.detections, "접근 객체 hit_count=2는 필터를 통과해야 한다"
+        assert result.detections[0].direction == "approaching"
+
+    @pytest.mark.asyncio
+    async def test_static_hit_count_three_rejected(self, frame, mock_redis_bus):
+        """direction!="approaching"이면 hit_count=3은 여전히 필터된다."""
+        mock_redis_bus.get_track_context = AsyncMock(return_value={"hit_count": "2"})
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=100.0, y=100.0, w=200.0, h=200.0),
+            track_id="T-0001",
+            direction="front",
+            hit_count=3,
+        )
+        pipeline = DetectionPipeline(
+            detector=StubDetector(detections=[det]),
+            segmentor=StubSegmentor(surfaces=[]),
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        result, _, _ = await pipeline.run(frame, "test", "evt-static-3", "dev-1")
+        assert isinstance(result, DetectionResult)
+        assert not result.detections, "정적 객체 hit_count=3은 필터되어야 한다"
+
+
+class TestSpeechWorthyFilter:
+    """T2-G (2026-07-18): 인지 발화 회랑/접근 필터 단위 테스트."""
+
+    def test_departure_confirmed_always_worthy(self):
+        consumer = DetectionConsumer()
+        assert consumer._is_speech_worthy(None, None, "", "low", True) is True
+
+    def test_high_risk_always_worthy(self):
+        consumer = DetectionConsumer()
+        assert consumer._is_speech_worthy(None, None, "", "high", False) is True
+
+    def test_far_static_not_worthy(self):
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=10.0, y=10.0, w=50.0, h=50.0),
+            track_id="T-0001",
+            direction="unknown",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        assert consumer._is_speech_worthy(det, frame, "far", "low", False) is False
+
+    def test_side_static_not_worthy(self):
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=10.0, y=200.0, w=100.0, h=200.0),
+            track_id="T-0001",
+            direction="unknown",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        assert consumer._is_speech_worthy(det, frame, "medium", "low", False) is False
+
+    def test_approaching_side_worthy(self):
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=10.0, y=200.0, w=100.0, h=200.0),
+            track_id="T-0001",
+            direction="approaching",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        assert consumer._is_speech_worthy(det, frame, "medium", "low", False) is True
+
+
+class TestApproachingCooldownShortcut:
+    """T1-b (2026-07-18): 12시 회랑 접근 객체 쿨다운 단축 단위 테스트."""
+
+    def test_approaching_front_near_shortens_gap(self):
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=240.0, y=200.0, w=160.0, h=200.0),
+            track_id="T-0001",
+            direction="approaching",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        gap = consumer._required_guide_gap_sec("dev1", det, frame, "near")
+        assert gap == 3.0
+
+    def test_static_front_near_uses_base_gap(self):
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=240.0, y=200.0, w=160.0, h=200.0),
+            track_id="T-0001",
+            direction="unknown",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        gap = consumer._required_guide_gap_sec("dev1", det, frame, "near")
+        assert gap >= 8.0
+
+
+class TestSttActiveCognitiveSuppression:
+    """T3-S (2026-07-18): 서버 STT 활성 중 인지 발행 억제 게이트 단위 테스트."""
+
+    def test_stt_active_blocks_then_clears(self):
+        from server.api.session_manager import SessionManager
+
+        mgr = SessionManager()
+        mgr.set_stt_active("dev1", True)
+        assert mgr.is_stt_active("dev1") is True
+        mgr.set_stt_active("dev1", False)
+        assert mgr.is_stt_active("dev1") is False
+
+    def test_stt_ttl_expires(self):
+        import time
+
+        from server.api.session_manager import SessionManager
+
+        mgr = SessionManager()
+        mgr.set_stt_active("dev1", True, 0.01)
+        time.sleep(0.02)
+        assert mgr.is_stt_active("dev1") is False

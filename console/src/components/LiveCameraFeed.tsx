@@ -113,6 +113,7 @@ export function LiveCameraFeed({
   } | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // iframe onLoad 콜백(마운트 시 1회)이 항상 최신 lastGps를 읽도록 ref로 미러링한다.
   const lastGpsRef = useRef(lastGps);
   lastGpsRef.current = lastGps;
 

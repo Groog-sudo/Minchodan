@@ -2924,3 +2924,61 @@
 - **관련 파일**: `docs/ops/deployment_guide.md`(§2.1 mariadb 포트 열, §9 트러블슈팅 표, v0.5.3), `docs/ops/environment_variables.md`(`DB_HOST_PORT` 행, v0.4.20)
 - **검증 결과**: 병합 후 `ruff check .` All checks passed. 문서 수정은 서술형이라 별도 린트 대상 아님.
 - **비고**: vision-camera 세션과 LiDAR 세션 동시 실행(실시간 라이브 융합), `scripts/analyze_lidar_validation.py`의 실데이터 집계, dg2의 index.html GPS 수정에 대한 실기기 회귀 검증은 이번 병합 작업 범위 밖(각 원 브랜치 커밋 시점에 개별 검증됨).
+
+
+---
+
+### 2026-07-18 | 기능 | 필드 테스트 2차 개선 T1/T2/T3 구현 (문서-코드 정합성 동기화)
+
+- **커밋**: `feat: 필드 테스트 2차 개선 T1/T2/T3 구현 (T3-C 오디오 우선순위, T3-S STT 억제, T2-G 회랑/접근 필터, T1-a/b 접근 객체 완화/쿨다운 단축)`
+- **변경 내용**:
+  - **T3-C 클라이언트 통합 오디오 우선순위 조정자**: client/src/services/audioEngine.ts에 P3(반사)/P2(STT)/P1(인지) 우선순위 모델 도입, setSttActive/priority 인자 추가, 결정론적 콜백 해제. client/src/hooks/useWebSocket.ts에서 sttInteractionActiveRef 기반 뮤트를 제거하고 audioEngine 우선순위 게이트에 의존. client/src/components/CameraView.tsx에서 STT 녹음 시작 시 setSttActive(true) 호출.
+  - **T3-S 서버 STT 활성 중 인지 발행 억제 게이트**: server/api/session_manager.py에 _stt_activity 레지스트리 추가. server/api/ws_router.py에서 STT 처리 구간 동안 set_stt_active(true/false). server/detection/consumer.py에서 _send_cognitive_guide 진입부에 is_stt_active 체크, 반사 경로는 제외.
+  - **T2-G 인지 발화 회랑/접근 필터**: server/detection/consumer.py에 _is_speech_worthy 메서드 추가. 보도 이탈/고위험/중위험/접근 객체/유의미 노면은 통과, 측면/원거리/정적 저위험은 무발화. GUIDE_LOW_RISK_NARRATION 환경 변수로 저위험 내레이션 제어.
+  - **T1-a/b 접근 신규 객체 완화 및 쿨다운 단축**: server/detection/detection_pipeline.py에서 접근 객체(direction==approaching) hit_count 선필터를 4에서 2로 완화. server/detection/consumer.py에서 12시 회랑 접근 + near/medium이면 쿨다운을 3초로 단축.
+  - **문서 동기화**: docs/design/reflex_audio_specification.md, docs/design/architecture.md(v0.4.11), docs/ops/environment_variables.md(v0.4.21), docs/ops/test_specification.md(v0.6.8), .env.example에 T1/T2/T3 설계 반영.
+  - **테스트 추가**: tests/test_detection.py에 TestApproachingHitCountRelax, TestSpeechWorthyFilter, TestApproachingCooldownShortcut, TestSttActiveCognitiveSuppression 클래스 추가.
+  - **기존 린트 잔여 오류 정리**: client/src/components/CameraView.tsx absoluteFillObject -> absoluteFill, client/src/hooks/useSttRecorder.ts 상태 비교 조건 정정.
+- **관련 파일**: client/src/services/audioEngine.ts, client/src/hooks/useWebSocket.ts, client/src/components/CameraView.tsx, server/api/session_manager.py, server/api/ws_router.py, server/detection/consumer.py, server/detection/detection_pipeline.py, docs/design/reflex_audio_specification.md, docs/design/architecture.md, docs/ops/environment_variables.md, docs/ops/test_specification.md, .env.example, tests/test_detection.py, client/src/hooks/useSttRecorder.ts
+- **검증 결과**: python3 -m ruff format . && python3 -m ruff check . All checks passed. npx tsc --noEmit(client) 통과. pytest는 현재 Python 3.9/macOS 시스템 Python 환경에 redis 의존성 미설치로 실행 불가(개발/배포 환경 Python 3.13에서 재검증 필요). bandit/mypy는 해당 환경에 미설치.
+- **비고**: field_test_round2_improvement_plan.md 설계대로 구현. 서버 억제는 클라이언트 audioEngine 우선순위 조정자의 이중 방어/연산 낭비 제거용. 반사 경로는 T3-S 억제 게이트를 거치지 않는다(비협상 원칙).
+
+---
+
+### 2026-07-18 | 수정 | T1/T2/T3 구현 정합성 검토 및 결함 2건 수정
+
+- **배경**: 사용자 요청으로 위 T1/T2/T3 구현 커밋(`596ff35`)이 `field_test_round2_improvement_plan.md` 설계와 실제로 정합한지 검토. 해당 커밋의 changelog는 "pytest는 Python 3.9/macOS 시스템 환경에 redis 미설치로 실행 불가 - 재검증 필요"라고 명시하고 있어, 이번 세션(Python 3.13 `.venv`)에서 실제로 `pytest`를 돌려 재검증했다.
+- **발견 및 수정 1 - 신규 테스트 mock 결함**: `tests/test_detection.py::TestApproachingHitCountRelax::test_approaching_hit_count_two_passes`가 실패 상태로 커밋돼 있었다. `ByteTrackTracker._compute_motion()`(`bytetrack_tracker.py:128`)은 `prev`에 `last_pos`가 없으면 무조건 `direction="unknown"`을 반환하는데, 테스트의 mock(`{"hit_count": "1"}`)에 `last_pos`가 빠져 있어 tracker가 stub Detection의 `direction="approaching"`을 실제로는 재현하지 못하고 있었다(tracker.update()가 stub 필드를 항상 재계산해 덮어씀). `last_pos`(이전 프레임 bbox JSON)를 mock에 추가해 실제로 "approaching"이 발동하도록 수정. T1-a 로직 자체는 정상이었음(`test_static_hit_count_three_rejected`는 원래도 통과).
+- **발견 및 수정 2 - T3-S 서버 억제 창이 설계보다 좁음**: `field_test_round2_improvement_plan.md` §4.3은 "응답 전송 완료 후 예상 재생시간 + 마진까지 유지"를 명시했으나, 실제 구현(`_handle_stt_audio`)은 `_process_stt_audio` 반환 즉시(`finally`) `manager.set_stt_active(device_id, False)`를 호출해 실제 오디오 재생 구간에는 서버 억제가 이미 풀려 있었다(`ttl_seconds` 파라미터가 존재했으나 호출부에서 전달되지 않아 죽은 기능). 클라이언트 audioEngine 우선순위 조정자(T3-C)가 최종 방어선이라 실제 오디오 충돌은 없었지만, 계획서가 명시한 "연산 낭비까지 제거"라는 T3-S의 목표는 재생 구간에서 달성되지 않고 있었다.
+  - `server/api/ws_router.py`: `_estimate_stt_hold_seconds(guidance_text, duration_ms)` 헬퍼 신설(클라이언트 `useWebSocket.ts`의 텍스트 길이 추정(180ms/자, 최소 2000ms) + 1200ms 마진 공식과 동일). `_process_stt_audio`의 반환 타입을 `float`로 바꾸고 모든 반환 지점(base64 디코딩 실패/음성 길이 부족/빈 오디오/에코 감지/전사 실패/정상 응답)에서 적절한 hold 초를 반환하도록 수정. `_handle_stt_audio`가 이 값을 `manager.set_stt_active(device_id, False, ttl_seconds=hold_seconds)`로 전달.
+- **테스트 추가**: `tests/test_ws_router_stt.py`에 `test_stt_audio_success_extends_stt_active_ttl`(통합, 응답 전송 후에도 `manager.is_stt_active`가 True로 유지되는지 확인) 및 `TestEstimateSttHoldSeconds`(헬퍼 단위테스트 4건) 추가.
+- **부수 발견**: `docs/ops/test_specification.md`의 TC-TTS-009가 검증 근거로 `tests/test_ws_router_stt.py`를 인용했으나 실제로는 해당 파일이 T3-S 배선을 전혀 검증하지 않고 있었다 - 이번에 추가한 테스트로 인용이 실제로 정확해짐.
+- **관련 파일**: `tests/test_detection.py`, `server/api/ws_router.py`, `tests/test_ws_router_stt.py`, `docs/design/reflex_audio_specification.md`(§5.3 정정, v1.3.1), `docs/ops/test_specification.md`(TC-TTS-009 정정, v0.6.9)
+- **검증 결과**: `ruff check .`/`ruff format --check` 전체 통과, `mypy server/api/ws_router.py` 신규 에러 없음(기존 베이스라인 7건과 동일). 관련 테스트 75건(`test_detection.py` 65건 + `test_ws_router_stt.py` 10건) 전체 통과. 전체 스위트(`pytest tests/`) 322 passed / 3 failed - 실패 3건(`test_convenience_dial_resolver.py` 2건, `test_embedding_engine_factory.py` 1건)은 로컬 Ollama 미연결로 인한 환경 의존 실패로, 이번 변경 전에도 동일하게 실패함을 별도 확인(회귀 아님).
+- **비고**: T1-a/T2-G 로직 자체, 반사 경로 비적용(dual-path discipline), 클라이언트 T3-C 오디오 우선순위 조정자는 모두 정상 구현으로 확인됨(별도 수정 없음).
+
+---
+
+### 2026-07-18 | 병합 | th 브랜치 정합성 검토 및 결함 4건 수정 후 dev 병합
+
+- **배경**: 사용자 요청으로 dev 대비 미병합 상태였던 `th` 브랜치(신규 커밋 6건: GPS 폴백 제거, Gemini LLM 폴백 정합, ROI 소실점 재설계 등)를 정합성 검토 후 병합.
+- **발견 및 수정 1 - `client/src/components/CameraView.tsx` 컴파일 불가**: `ROIOverlay()` 함수 내 `<View style={StyleSheet.absoluteFill}` 가 완결되지 않은 채 곧바로 또 다른 `<View style={StyleSheet.absoluteFill} pointerEvents="none" ...>`가 이어지는 중복/미완성 JSX 태그가 있어 `tsc`가 30개 가까운 연쇄 오류를 냄. 명백한 편집 잔재로 판단해 중복분 삭제.
+- **발견 및 수정 2 - 동일 파일, 두 번째 컴파일 결함**: `CameraView()`의 최상위 `<View style={styles.container}>`가 끝까지 닫히지 않아(`</View>` 1개 누락) babel/tsc 파싱이 실패. 누락된 `</View>` 추가로 해결. **두 결함 모두 실기기 Metro 세션에서 실시간으로 `SyntaxError`가 재현되는 것을 직접 확인함**(라이브 테스트 중이었기에 즉시 검증 가능했음).
+- **발견 및 수정 3 - `console/src/components/LiveCameraFeed.tsx` 런타임 참조 오류**: HUD 미니맵 GPS 주입 함수(`injectGpsToMap`)가 정의되지 않은 `lastGpsRef.current`를 참조해 `tsc`가 `Cannot find name 'lastGpsRef'`로 실패. `useRef(lastGps)` + 렌더마다 `.current` 갱신하는 최신값 미러링 패턴을 추가해 해결(iframe `onLoad` 콜백이 마운트 시점 stale closure가 아닌 최신 GPS를 읽도록).
+- **발견 및 수정 4 - 기존 테스트 2건 회귀**: `server/stt/stt_to_llm_bridge.py`의 서울역 GPS 폴백 제거(의도된 변경, 가짜 좌표로 길안내를 만들지 않도록 함)로 `tests/test_stt_to_llm_bridge_template.py`의 `test_navigation_destination_setup_success`/`test_navigation_destination_setup_fail_when_poi_not_found`가 `_FakeNavManager`의 `session.lat/lon=None` 기본값 때문에 새로 추가된 `navigation-setup-no-gps` 조기 반환 분기에 걸려 실패. 두 테스트에 실좌표를 채워 원래 검증하려던 POI 성공/실패 분기를 다시 테스트하도록 수정하고, GPS 미수신 조기 반환 자체를 검증하는 신규 테스트(`test_navigation_destination_setup_no_gps`)를 추가.
+- **제외 파일**: `CONTRIBUTING.md` - 완전히 무관한 타 프로젝트("Awesome Design MD") 템플릿 파일이 실수로 커밋에 포함됨. th 자신의 changelog에도 "커밋 대상에서 제외"라고 명시돼 있어 병합에서 제외.
+- **정상 확인**: `server/orchestration/llm_client_factory.py`(Gemini 기본 시 OpenAI 키 부재를 Ollama 성공으로 위장하지 않도록 예외 재발생), `server/orchestration/nodes/l2_generator.py`(로그에 실제 provider명 출력), `server/navigation/index.html`(embed 모드에서 브라우저 GPS/서울역 타임아웃 폴백 비활성화 - 콘솔이 이미 `?embed=true`로 임베드하고 있어 dg2가 앞서 고친 "PC 브라우저 GPS가 앱 GPS를 덮어쓰는 버그"를 override 방지 대신 원천 차단 방식으로 재해결함을 확인)는 모두 정상 구현으로 확인됨(별도 수정 없음).
+- **관련 파일**: `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `tests/test_stt_to_llm_bridge_template.py`, `server/stt/stt_to_llm_bridge.py`(ruff format만 재적용)
+- **검증 결과**: `ruff check .`/`ruff format --check` 전체 통과, `mypy` 신규 에러 없음(베이스라인 동일), client·console `npx tsc --noEmit` 둘 다 클린. 전체 pytest 스위트 321 passed(환경 의존 실패 3건 제외, 회귀 아님 재확인).
+- **비고**: dev는 kb(817558f)와 th(4d0d429)가 각각 독립적으로 dev에서 분기된 상태였어 순수 fast-forward가 아닌 실제 3-way 병합(두 부모)으로 처리함.
+
+---
+
+### 2026-07-18 | 수정 | th 병합 후 조작 버튼 전체 무반응 회귀 수정
+
+- **배경**: 위 th 병합·push 직후 실기기 테스트 중 "탐지 시작 등 버튼이 안 눌린다"는 실사용 리포트로 발견. 정합성 검토에서는 컴파일(tsc)만 확인했고 런타임 터치 동작까지는 검증하지 못했던 gap.
+- **원인**: th가 `controlRowDock`(탐지 시작/지도/USB-WiFi 전환/거리측정/검증캡처 버튼)을 기존의 별도 `controlsOverlay`(`pointerEvents="box-none"`, container와 형제) 밖에서 `operatorPanel`의 `ScrollView` 안으로 옮겼다. `operatorPanel`은 `pointerEvents="none"`인데, React Native에서 `"none"`은 자신뿐 아니라 하위 서브트리 전체를 터치 타깃에서 제외한다(`"box-none"`과의 핵심 차이). 안쪽 `controlRowDock`에 `"box-none"`을 다시 걸어도 조상이 이미 히트테스트를 막아 무의미했다.
+- **수정**: `controlRowDock`, `mapVisible` 상태의 `NavMapPanel`, `DebugTriggerPanel`을 `operatorPanel`/`ScrollView` 밖으로 다시 꺼내 원래 있던(현재는 미사용 상태로 남아 있던) `controlsOverlay`(`pointerEvents="box-none"`) 스타일의 형제 `View`로 복원. th가 실제로 의도한 변경(버튼 텍스트, `navToggleActive` 스타일, 지도 패널 위치)은 그대로 유지.
+- **관련 파일**: `client/src/components/CameraView.tsx`
+- **검증 결과**: `npx tsc --noEmit` 클린. 실기기 Metro 세션에서 정상 재번들링 확인. 버튼 터치 자체는 시뮬레이터/실기기 UI 조작이 필요해 코드 검토·정적 분석으로만 검증(사용자 실기기 재확인 필요).
+- **비고**: 정합성 검토가 컴파일 가능 여부(tsc)에 집중돼 `pointerEvents` 계층 구조 같은 런타임 전용 회귀는 놓쳤다 - 향후 UI 관련 병합은 정적 검토와 별개로 실제 터치 동작 확인이 필요함.

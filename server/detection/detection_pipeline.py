@@ -147,8 +147,14 @@ class DetectionPipeline:
 
         for det in detections:
             # 시간적 지속성 강화 (최소 4프레임 이상 유지된 경우만 승격, Mock/테스트 등은 예외)
-            if det.track_id is not None and det.hit_count < 4:
-                continue
+            # T1-a (2026-07-18): 접근 중인 객체는 hit_count 선필터를 완화해 빠른 안내가
+            # 가능하도록 한다. 정적 객체는 4프레임, 접근 객체는 2프레임을 요구한다.
+            # [면접 대비 주석] 먼 객체는 누적으로 안전 확보, 근접 신규 객체는 접근성으로
+            # 조기 통과하는 비대칭 설계. 정적 오탐은 여전히 4프레임으로 필터링 유지.
+            if det.track_id is not None:
+                min_hit_count = 2 if det.direction == "approaching" else 4
+                if det.hit_count < min_hit_count:
+                    continue
 
             # 세그멘테이션이 없으면 교차검증을 건너뛴다(seg 실패 시 반사까지 전량 드롭 방지).
             if surfaces:

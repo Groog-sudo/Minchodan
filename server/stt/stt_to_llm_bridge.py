@@ -576,8 +576,7 @@ class SttToLlmBridge:
                 if session.lat is None or session.lon is None:
                     return {
                         "guidance_text": (
-                            "현재 위치를 아직 받지 못했습니다. "
-                            "잠시 후 목적지를 다시 말씀해 주세요."
+                            "현재 위치를 아직 받지 못했습니다. 잠시 후 목적지를 다시 말씀해 주세요."
                         ),
                         "used_fallback_llm": True,
                         "source": "navigation-setup-no-gps",

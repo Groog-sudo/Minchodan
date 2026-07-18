@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.0 (2026-07-13 긴급=핑퐁만 / 여유=음성 채널 분기, §3.1·§4.2·§5 정합)
+> **버전**: v1.3.1 (2026-07-18 §5.3 T3-S 서버 STT 억제 게이트 정정 - 응답 전송 직후 즉시 해제하던 것을 예상 재생시간+마진까지 TTL 연장하도록 수정. 기존 v1.3.0 이력 유지: 2026-07-13 긴급=핑퐁만 / 여유=음성 채널 분기, §3.1·§4.2·§5 정합)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -124,9 +124,32 @@ graph TD
 
 ## 5. 선점(Preemption) 정책 및 안전 규칙
 
+### 5.1 반사-인지 선점 (기존)
+
 1. **오디오 채널 선점**: 긴급 반사(`beep_interval_ms<=100`) 발생 시 인지 TTS를 즉각 중단하고 핑퐁 비프를 우선 송출한다. 여유 단계(`>100`)는 음성 클립/인지 안내를 허용하되, 비프는 가이드 재생 중 덕킹될 수 있다(`audioEngine` HIGH_DANGER 정책).
 2. **햅틱 동시성**: 비프음이 울리는 매 프레임마다 모바일 기기의 진동 모터를 연동 구동시켜 청각장애 동반 시각장애인 또는 시끄러운 실외 환경에서도 위험을 직감하도록 보장합니다.
 3. **독립성 유지**: 반사 오디오 생성과 햅틱 제어 로직은 단말 내부에서 로컬 연산으로 완결되며, 어떠한 경우에도 외부 API 호출이나 LLM/RAG 연산 결과에 대기하지 않는 비동기 병렬 구조를 취합니다.
+
+### 5.2 T3-C 통합 오디오 우선순위 모델 (2026-07-18)
+
+클라이언트 `audioEngine`은 단일 가이드 채널을 다음 우선순위로 조정한다. 이 모델은 인지 안내와 STT 응답 간 충돌을 해결하고, 반사 경로는 별도 최상위 채널로 유지한다.
+
+| 우선순위 | 소스 | 정책 |
+| :--- | :--- | :--- |
+| **P3 (최상위)** | 반사 비프·햅틱·사전합성 클립 | 안전 비협상. 항상 즉시 재생, 어떤 하위도 막지 못함. |
+| **P2** | STT 응답(사용자 명시 요청) | 인지 안내를 선점·차단. 반사에만 양보. |
+| **P1 (하위)** | 인지 안내 TTS(선제) | P2·P3 활성 중이면 드롭(지연 재생 아님). |
+
+- STT 상호작용(녹음~응답 종료) 구간 동안 `audioEngine.setSttActive(true)`로 인지 경로(priority=1)를 드롭한다. 녹음 시작은 `CameraView.tsx`가 담당한다.
+- STT 응답 수신 시 `useWebSocket.ts`가 priority=2로 재생하며, `didJustFinish`/`onDone`/`onStopped` 콜백에서 결정론적으로 상태를 해제한다.
+- 콜백 누락 시 `useWebSocket.ts`의 안전 상한 타이머(`STT_INTERACTION_TIMEOUT_MS`, 20초)가 강제 해제한다.
+- 반사 클립/비프는 별도 최상위 채널로 유지되며, 이 우선순위 모델을 거치지 않는다.
+
+### 5.3 서버 STT 억제 게이트 (T3-S, 2026-07-18)
+
+`server/api/session_manager.py`의 `_stt_activity` 레지스트리를 통해 STT 처리 중인 device_id를 추적한다. `server/api/ws_router.py`의 `_handle_stt_audio`가 `_process_stt_audio` 진입 시 `manager.set_stt_active(device_id, True)`를 호출한다. `server/detection/consumer.py`의 `_send_cognitive_guide` 진입부에서 `manager.is_stt_active(device_id)`가 true면 인지 가이드 발행을 조기 반환하여 연산 낭비와 경쟁 창을 제거한다. 반사 경로 `_send_reflex_alert`는 이 게이트를 적용하지 않는다.
+
+**2026-07-18 정정**: 최초 구현은 응답 전송 직후(`finally`) 즉시 `manager.set_stt_active(device_id, False)`를 호출해, 실제 오디오 재생 구간에는 서버 억제가 이미 풀려 있는 gap이 있었다. `_process_stt_audio`가 응답 전송 시점에 `_estimate_stt_hold_seconds()`(클라이언트 `useWebSocket.ts`의 텍스트 길이 추정 + 1200ms 마진 공식과 동일)로 예상 재생 시간(초)을 계산해 반환하고, `_handle_stt_audio`가 이를 `set_stt_active(device_id, False, ttl_seconds=hold_seconds)`로 전달해 예상 재생 종료 시점까지 억제를 연장하도록 정정했다.
 
 ---
 

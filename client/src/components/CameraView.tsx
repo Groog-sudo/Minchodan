@@ -495,7 +495,6 @@ export function CameraView() {
     sendDetectionFrame,
     lastMessage,
     navRoute,
-    setSttInteractionActive,
     networkRttMs,
     networkRttAvgMs,
   } = useWebSocket(
@@ -591,7 +590,10 @@ export function CameraView() {
       delayedSttStartTimerRef.current = null;
     }
     void hapticEngine.trigger("short");
-    setSttInteractionActive(true);
+    // T3-C (2026-07-18): STT 녹음 시작 시점부터 인지 경로 가이드를 드롭한다.
+    // STT 응답 수신 시 useWebSocket.ts가 다시 활성화하고, 종료 콜백/안전 상한
+    // 타이머에서 해제한다.
+    audioEngine.setSttActive(true);
     setSttErrorInfo("");
     if (audioEngine.isGuidePlaying) {
       audioEngine.stopGuideAudio();
@@ -604,7 +606,7 @@ export function CameraView() {
     } else {
       void startSttRecording();
     }
-  }, [setSttInteractionActive, startSttRecording, setCapturePaused]);
+  }, [startSttRecording, setCapturePaused]);
 
   const onSttPressOut = useCallback(() => {
     if (!sttPressActiveRef.current) return;
@@ -661,6 +663,9 @@ export function CameraView() {
   const [mapVisible, setMapVisible] = useState(false);
   const [mapPos, setMapPos] = useState<NavMapWaypoint | null>(null);
   const lastMapPosTsRef = useRef(0);
+  // 2026-07-18: DEBUG 트리거 패널은 화면을 크게 가려 실기기 테스트를 방해하므로
+  // 기본은 접힌 상태(작은 토글 버튼만 노출)로 시작하고 필요할 때만 펼친다.
+  const [debugPanelExpanded, setDebugPanelExpanded] = useState(false);
 
   // GPS 전송: 앱 부팅 직후부터 watch를 시작해 공기계의 첫 GPS fix 지연을 줄인다.
   // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
@@ -1416,7 +1421,10 @@ export function CameraView() {
         </ScrollView>
       </View>
 
-      {/* 운영자 버튼 오버레이: STT보다 위(zIndex). 빈 영역은 box-none으로 STT에 통과. */}
+      {/* 조작 버튼 오버레이: operatorPanel(표시 전용, pointerEvents=none) 밖의 별도
+          box-none 레이어. none 안에 중첩하면 자식 Pressable이 조상의 none 때문에
+          터치를 아예 받지 못한다(2026-07-18 th 병합 회귀 수정 - 탐지 시작 등 버튼
+          무반응 버그의 원인). */}
       <View style={styles.controlsOverlay} pointerEvents="box-none">
         <View style={styles.confThresholdRow} pointerEvents="box-none">
           <Text style={styles.confThresholdLabel} pointerEvents="none">
@@ -1546,11 +1554,21 @@ export function CameraView() {
           </View>
         )}
 
-        {__DEV__ ? (
+        {__DEV__ && (
           <View style={styles.devPanelWrap} pointerEvents="box-none">
-            <DebugTriggerPanel />
+            <Pressable
+              style={styles.devPanelToggle}
+              onPress={() => setDebugPanelExpanded((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={debugPanelExpanded ? "DEBUG 패널 접기" : "DEBUG 패널 펼치기"}
+            >
+              <Text style={styles.devPanelToggleText}>
+                {debugPanelExpanded ? "DEBUG 패널 접기 ▲" : "DEBUG 패널 펼치기 ▼"}
+              </Text>
+            </Pressable>
+            {debugPanelExpanded && <DebugTriggerPanel />}
           </View>
-        ) : null}
+        )}
       </View>
     </View>
   );
@@ -1913,7 +1931,24 @@ const styles = StyleSheet.create({
     borderColor: COLOR_BORDER_TACTICAL,
   },
   devPanelWrap: {
+    // 2026-07-18: 아코디언 방식. 접힌 기본 상태는 작은 토글 버튼 한 줄만 차지해
+    // controlRowDock 높이에 거의 영향을 주지 않는다. 펼쳤을 때만 패널만큼 dock 전체가
+    // 위로 확장되며(사용자가 의도적으로 연 상태이므로 허용), 접으면 즉시 원래 높이로 복귀.
     alignSelf: "stretch",
+  },
+  devPanelToggle: {
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(10, 13, 16, 0.85)",
+    borderWidth: 1,
+    borderColor: "#222A30",
+  },
+  devPanelToggleText: {
+    color: "#39FF14",
+    fontSize: 11,
+    fontFamily: "monospace",
   },
   operatorCard: {
     padding: 8,

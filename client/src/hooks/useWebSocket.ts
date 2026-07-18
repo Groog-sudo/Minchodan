@@ -77,10 +77,6 @@ export interface UseWebSocketReturn {
    * 저빈도 이벤트가 React 배칭으로 유실될 수 있어(guide 오디오와 동일한 이유)
    * nav_route는 전용 상태로 직접 보존한다. null = 경로 미설정/해제. */
   navRoute: NavRouteData | null;
-  /** STT 질문 상호작용(녹음~응답 수신) 구간 동안 인지 경로 가이드 음성을 뮤트한다.
-   * 반사 경로(reflex_alert)는 안전 비협상 원칙에 따라 절대 뮤트하지 않는다.
-   * timeoutMs를 넘기면 해당 시간 뒤 자동 해제(기본은 STT_INTERACTION_TIMEOUT_MS 안전 상한). */
-  setSttInteractionActive: (active: boolean, timeoutMs?: number) => void;
   /** network_probe RTT 최신값(ms). EXPO_PUBLIC_NETWORK_BENCHMARK=true일 때 갱신된다. */
   networkRttMs: number | null;
   /** network_probe RTT 최근 30개 평균(ms). */
@@ -97,6 +93,11 @@ const STT_INTERACTION_TIMEOUT_MS = 20000;
 // 다음 프레임으로 교체하는 최소 역압력(backpressure). 2는 "현재 전송중 + 여유 1" 의미로,
 // 단일 RTT 지연 동안 다음 프레임을 멈추지 않기 위한 여유분이다.
 const MAX_IN_FLIGHT_FRAMES = 2;
+
+// 2026-07-18: 핸드셰이크(welcome)까지 못 가고 끊긴 후보를 재시도 순환에서 잠시 제외하는
+// 쿨다운(ms). RECONNECT_DELAY_MAX보다 넉넉히 길게 잡아, 짧은 백오프 구간 동안은 계속
+// 건너뛰고 망 상태가 바뀔 시간을 준 뒤에만 다시 시도한다.
+const CANDIDATE_COOLDOWN_MS = 45000;
 
 export function useWebSocket(
   deviceId: string = DEVICE_ID,
@@ -122,10 +123,11 @@ export function useWebSocket(
   const [networkRttAvgMs, setNetworkRttAvgMs] = useState<number | null>(null);
   const appStateRef = useRef(AppState.currentState);
 
-  // STT 상호작용 중 인지 경로 뮤트 상태. ref로 관리해 onmessage 클로저 안에서도
-  // 항상 최신 값을 읽는다(state였다면 connect()가 재실행되지 않는 한 stale closure).
-  const sttInteractionActiveRef = useRef(false);
-  const sttInteractionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // T3-C (2026-07-18): STT 응답 종료 콜백 누락 시 강제 해제하기 위한 안전 상한 타이머.
+  // audioEngine.setSttActive(false)는 원칙적으로 STT 응답 오디오의 onDone/onStopped
+  // 콜백에서 호출되지만, iOS 백그라운드 전환 등으로 콜백이 도착하지 않을 경우를
+  // 대비해 최대 STT_INTERACTION_TIMEOUT_MS 후에는 강제 해제한다.
+  const sttSafetyReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 폴백 모드 진입 음성 고지를 단절 1회당 한 번만 내보내기 위한 플래그.
   // true인 동안 재연결이 성공하면 복구 고지를 내보내고 다시 false로 돌린다.
   const fallbackAnnouncedRef = useRef(false);
@@ -133,29 +135,43 @@ export function useWebSocket(
   // 성공한 후보 우선순위는 welcome에서 승격하며, wsBaseUrl이 바뀔 때만 목록을 재생성한다.
   const wsUrlCandidatesRef = useRef<string[]>(expandWsUrlCandidates(wsBaseUrl));
   const wsUrlIndexRef = useRef(0);
+  // 2026-07-18: 후보가 welcome까지 못 가고(핸드셰이크 전) 끊기면 "연결 실패"로 보고
+  // 이 시각까지 재시도 순환에서 제외한다. 도달 불가능한 후보(예: Tailscale 미설정망)를
+  // 매 재연결마다 블라인드하게 다시 시도해 10초씩 낭비하던 문제를 해소한다(실기기 실측).
+  const candidateCooldownUntilRef = useRef<Map<string, number>>(new Map());
   const lastWsBaseUrlRef = useRef(wsBaseUrl);
-  // 직전에 수신한 "guide" JSON 메시지가 인지(카메라) 출처인지 기록해, 뒤이어 오는
-  // 바이너리 오디오 프레임(ArrayBuffer)도 같은 기준으로 뮤트할지 판단한다.
-  const pendingGuideIsCognitiveRef = useRef(false);
+  // T3-C (2026-07-18): 직전 guide JSON 메시지의 event_id를 임시 저장해, 이어 도착하는
+  // 바이너리 WAV 프레임이 STT 응답("stt-")인지 인지 안내("event-")인지 구분한다.
+  const pendingGuideEventIdRef = useRef<string | null>(null);
   // onclose/AppState 타이머가 항상 최신 connect를 호출하도록 한다.
   const connectRef = useRef<() => void>(() => {});
 
-  const setSttInteractionActive = useCallback(
-    (active: boolean, timeoutMs: number = STT_INTERACTION_TIMEOUT_MS) => {
-      sttInteractionActiveRef.current = active;
-      if (sttInteractionTimeoutRef.current) {
-        clearTimeout(sttInteractionTimeoutRef.current);
-        sttInteractionTimeoutRef.current = null;
+  /**
+   * T3-C (2026-07-18): STT 상호작용 안전 상한 타이머를 설정한다.
+   * CameraView.tsx에서 STT 녹음 시작 시 직접 audioEngine.setSttActive(true)를 호출하며,
+   * 이 훅에서는 STT 응답 수신 후 최대 timeoutMs까지의 백스톱만 관리한다.
+   */
+  const scheduleSttSafetyRelease = useCallback(
+    (timeoutMs: number = STT_INTERACTION_TIMEOUT_MS) => {
+      if (sttSafetyReleaseTimerRef.current) {
+        clearTimeout(sttSafetyReleaseTimerRef.current);
+        sttSafetyReleaseTimerRef.current = null;
       }
-      if (active) {
-        sttInteractionTimeoutRef.current = setTimeout(() => {
-          sttInteractionActiveRef.current = false;
-          sttInteractionTimeoutRef.current = null;
-        }, timeoutMs);
-      }
+      sttSafetyReleaseTimerRef.current = setTimeout(() => {
+        console.log("[WS] STT 안전 상한 타이머 - audioEngine STT 상태 강제 해제");
+        audioEngine.setSttActive(false);
+        sttSafetyReleaseTimerRef.current = null;
+      }, timeoutMs);
     },
     [],
   );
+
+  const clearSttSafetyRelease = useCallback(() => {
+    if (sttSafetyReleaseTimerRef.current) {
+      clearTimeout(sttSafetyReleaseTimerRef.current);
+      sttSafetyReleaseTimerRef.current = null;
+    }
+  }, []);
 
   const clearHeartbeat = useCallback(() => {
     if (heartbeatTimer.current) {
@@ -213,10 +229,21 @@ export function useWebSocket(
       wsUrlIndexRef.current = 0;
     }
     const candidates = wsUrlCandidatesRef.current;
-    if (candidates.length > 1) {
-      wsUrlIndexRef.current = reconnectCount.current % candidates.length;
+    // 2026-07-18: 쿨다운 중인(최근 핸드셰이크 실패) 후보는 건너뛰고, 남은 후보들 안에서만
+    // 순환한다. 전부 쿨다운 중이면(모두 최근 실패) 어쩔 수 없이 원래 순환으로 되돌아간다 -
+    // 재시도를 완전히 멈추지 않기 위한 안전장치.
+    const now = Date.now();
+    const availableIndices = candidates
+      .map((_, i) => i)
+      .filter((i) => {
+        const until = candidateCooldownUntilRef.current.get(candidates[i]);
+        return until === undefined || until <= now;
+      });
+    const pool = availableIndices.length > 0 ? availableIndices : candidates.map((_, i) => i);
+    if (pool.length > 1) {
+      wsUrlIndexRef.current = pool[reconnectCount.current % pool.length];
     } else {
-      wsUrlIndexRef.current = 0;
+      wsUrlIndexRef.current = pool[0] ?? 0;
     }
     const selectedBase = candidates[wsUrlIndexRef.current] ?? wsBaseUrl;
     const wsUrl = `${selectedBase}?device_id=${deviceId}`;
@@ -227,6 +254,9 @@ export function useWebSocket(
           : ""),
     );
     const ws = new WebSocket(wsUrl);
+    // 이 후보로 welcome(핸드셰이크 성공)까지 도달했는지 추적한다. onclose에서 false면
+    // "이 후보가 연결 자체에 실패했다"로 보고 쿨다운을 건다(예: Tailscale 미도달망).
+    let receivedWelcome = false;
     // guide 오디오(WAV)를 서버가 바이너리 프레임으로 보내므로(2026-07-09 도입),
     // 수신 시 Blob이 아닌 ArrayBuffer로 받아 동기적으로 다루기 쉽게 한다.
     ws.binaryType = "arraybuffer";
@@ -265,13 +295,22 @@ export function useWebSocket(
       if (wsRef.current !== ws) return;
       // guide 오디오 바이너리 프레임: 직전 "guide" JSON 메시지(transport:"binary")에
       // 이어 도착하는 원본 WAV 바이트다. base64 인코딩을 완전히 우회한다(2026-07-09).
+      // T3-C (2026-07-18): audioEngine 우선순위 조정자에 STT/인지 구분을 전달한다.
       if (event.data instanceof ArrayBuffer) {
-        if (pendingGuideIsCognitiveRef.current && sttInteractionActiveRef.current) {
-          console.log(`[WS] STT 상호작용 중 - 인지 경로 오디오 뮤트(bytes=${event.data.byteLength})`);
-          return;
-        }
-          console.log(`[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}`);
-        void audioEngine.playGuideAudioBytes(new Uint8Array(event.data));
+        const isStt = String(pendingGuideEventIdRef.current ?? "").startsWith("stt-");
+        const priority = isStt ? 2 : 1;
+        console.log(`[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}, isStt=${isStt}`);
+        void audioEngine.playGuideAudioBytes(
+          new Uint8Array(event.data),
+          priority,
+          () => {
+            // STT 응답 종료 시 결정론적으로 상태 해제
+            if (isStt) {
+              audioEngine.setSttActive(false);
+              clearSttSafetyRelease();
+            }
+          },
+        );
         return;
       }
 
@@ -279,11 +318,15 @@ export function useWebSocket(
         const data: WSMessage = JSON.parse(event.data);
 
         if (data.type === "welcome") {
+          receivedWelcome = true;
           setLastMessage(data);
           setStatus("connected");
           reconnectCount.current = 0;
           // 성공한 후보를 다음 재연결의 1순위로 고정한다.
           const working = wsUrlCandidatesRef.current[wsUrlIndexRef.current];
+          if (working) {
+            candidateCooldownUntilRef.current.delete(working);
+          }
           if (working && wsUrlIndexRef.current > 0) {
             wsUrlCandidatesRef.current = [
               working,
@@ -344,34 +387,40 @@ export function useWebSocket(
               `transport=${data.transport}`,
           );
 
-          // event_id가 "stt-"로 시작하면 STT 질문/네비게이션 응답(항상 재생),
-          // 그 외(카메라 event-*)는 인지 경로 - STT 상호작용 중이면 뮤트 대상이다.
+          // T3-C (2026-07-18): event_id가 "stt-"로 시작하면 STT 응답(priority=2),
+          // 그 외(카메라 event-*)는 인지 경로(priority=1). audioEngine 우선순위
+          // 조정자가 충돌을 방지하며, STT 응답은 결정론적 종료 콜백에서 상태를 해제한다.
           const isStt = String(data.event_id ?? "").startsWith("stt-");
-          pendingGuideIsCognitiveRef.current = !isStt;
+          pendingGuideEventIdRef.current = data.event_id ?? null;
+          const priority = isStt ? 2 : 1;
+
           if (isStt) {
-            // 2026-07-10 실기기 실측: 응답 텍스트가 "도착한 순간" 바로 뮤트를 풀면,
-            // 실제 오디오 재생은 그 뒤로도 몇 초 더 이어지는데 그 사이 인지 경로
-            // 메시지가 끼어들어 답변이 중간에 끊기는 문제가 있었다("직진하면 차량을
-            // 건너주세요"가 답변을 끊음). 응답 재생이 끝날 것으로 추정되는 시점까지
-            // 뮤트를 유지한다 - duration_ms(바이너리 WAV 실측 길이)가 있으면 그 값을,
-            // 없으면(speakFallback 폴백) 텍스트 길이로 대략 추정한다.
-            // 2026-07-10 추가 실측: 서버가 보낸 duration_ms가 긴 문장(TTS 청크 분할
-            // 추정)에서 실제 재생 길이보다 훨씬 짧게 나오는 경우가 확인됐다(13초 분량
-            // 오디오인데 duration_ms 기준 홀드가 1.3초 만에 풀려 끊김 재현). 서버 값을
-            // 그대로 신뢰하지 않고 텍스트 길이 추정치와 큰 값을 사용한다(방어적 하한).
+            // STT 응답 수신: audioEngine에 STT 활성화를 알리고 안전 상한 타이머 설정.
+            // 2026-07-10 실기기 실측: duration_ms가 실제보다 짧게 나오는 경우가 있어
+            // 텍스트 길이 추정치와 큰 값을 사용한다(방어적 하한). 콜백 누락 시 타이머가
+            // 강제 해제한다.
+            audioEngine.setSttActive(true);
             const guideText = data.guidance_text ?? "";
             const serverDurationMs =
               typeof data.duration_ms === "number" && data.duration_ms > 0 ? data.duration_ms : 0;
             const textEstimateMs = Math.max(guideText.length * 180, 2000);
             const estimatedMs = Math.max(serverDurationMs, textEstimateMs);
-            setSttInteractionActive(true, estimatedMs + 1200);
+            scheduleSttSafetyRelease(estimatedMs + 1200);
           }
 
-          if (!isStt && sttInteractionActiveRef.current) {
-            console.log("[WS] STT 상호작용 중 - 인지 경로 가이드 텍스트 뮤트");
-          } else if (data.transport !== "binary" && data.guidance_text) {
+          if (data.transport !== "binary" && data.guidance_text) {
             console.log("[WS] -> speakFallback(단말 TTS) 경로 진입");
-            audioEngine.speakFallback(data.guidance_text);
+            audioEngine.speakFallback(
+              data.guidance_text,
+              priority,
+              () => {
+                // STT 응답 종료 시 결정론적으로 상태 해제
+                if (isStt) {
+                  audioEngine.setSttActive(false);
+                  clearSttSafetyRelease();
+                }
+              },
+            );
           }
           setLastMessage(data as WSMessage);
         } else if (data.type === "nav_route") {
@@ -424,6 +473,17 @@ export function useWebSocket(
       const closeCode = typeof event?.code === "number" ? event.code : -1;
       const closeReason = typeof event?.reason === "string" ? event.reason : "";
       console.log(`[WS] 연결 종료 code=${closeCode} reason=${closeReason}`);
+
+      // 2026-07-18: welcome을 못 받고 끊겼다 = 이 후보가 연결 자체에 실패했다.
+      // 다음 재연결 순환에서 쿨다운이 끝날 때까지 건너뛴다(Tailscale 등 도달 불가 후보를
+      // 매번 10초씩 재시도해 LAN 폴백을 지연시키던 문제 해소, 실기기 실측).
+      if (!receivedWelcome) {
+        const failedBase = wsUrlCandidatesRef.current[wsUrlIndexRef.current];
+        if (failedBase) {
+          candidateCooldownUntilRef.current.set(failedBase, Date.now() + CANDIDATE_COOLDOWN_MS);
+          console.log(`[WS] 후보 쿨다운 설정: ${failedBase} (${CANDIDATE_COOLDOWN_MS}ms)`);
+        }
+      }
 
       // 오디오 및 진동 피드백 즉각 종료
       audioEngine.stopBeep();
@@ -580,9 +640,9 @@ export function useWebSocket(
       audioEngine.stopBeep();
       hapticEngine.stopContinuous();
 
-      if (sttInteractionTimeoutRef.current) {
-        clearTimeout(sttInteractionTimeoutRef.current);
-        sttInteractionTimeoutRef.current = null;
+      if (sttSafetyReleaseTimerRef.current) {
+        clearTimeout(sttSafetyReleaseTimerRef.current);
+        sttSafetyReleaseTimerRef.current = null;
       }
 
       if (wsRef.current) {
@@ -632,7 +692,6 @@ export function useWebSocket(
     inFlightFrameCount,
     lastMessage,
     navRoute,
-    setSttInteractionActive,
     networkRttMs,
     networkRttAvgMs,
   };

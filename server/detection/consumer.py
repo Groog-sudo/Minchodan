@@ -27,9 +27,13 @@ from server.capture.stream_splitter import StreamSplitter, get_default_splitter
 from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
-from server.detection.direction import estimate_clock_direction, estimate_distance
+from server.detection.direction import (
+    estimate_clock_direction,
+    estimate_direction,
+    estimate_distance,
+)
 from server.detection.risk_rules import class_name_to_ko
-from server.detection.schemas import DetectionResult, ReflexAlert
+from server.detection.schemas import Detection, DetectionResult, ReflexAlert
 from server.orchestration import run_orchestrator
 from server.orchestration.llm_client_factory import LLMClientFactory
 from server.rag.retriever import get_default_retriever
@@ -70,6 +74,10 @@ SURFACE_CAUTION_CONFIRM_STREAK = int(os.getenv("SURFACE_CAUTION_CONFIRM_STREAK",
 # 반사 <300ms(비협상 목표), 인지 <3000ms(가이드 허용 범위) 기준.
 REFLEX_LATENCY_ALERT_MS = float(os.getenv("REFLEX_LATENCY_ALERT_MS", "300"))
 COGNITIVE_LATENCY_ALERT_MS = float(os.getenv("COGNITIVE_LATENCY_ALERT_MS", "3000"))
+
+# T2-G (2026-07-18): 저위험(low) 순수 내레이션 발화 여부.
+# false이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 내레이션을 억제한다.
+GUIDE_LOW_RISK_NARRATION = os.getenv("GUIDE_LOW_RISK_NARRATION", "false").lower() == "true"
 
 
 class DetectionConsumer:
@@ -132,12 +140,36 @@ class DetectionConsumer:
         self._departure_streak[device_id] = streak
         return streak >= DEPARTURE_CONFIRM_STREAK
 
-    def _required_guide_gap_sec(self, device_id: str) -> float:
-        """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다."""
+    def _required_guide_gap_sec(
+        self,
+        device_id: str,
+        primary_det: Detection | None = None,
+        frame: np.ndarray | None = None,
+        distance_class: str = "",
+    ) -> float:
+        """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다.
+
+        T1-b (2026-07-18): 12시 회랑 접근 객체가 근접/중거리면 쿨다운을 단축해 신규 위험에
+        빠르게 반응한다. 단, 이전 안내가 아직 재생 중이면 그 길이만큼은 기다려야 한다.
+        """
         prev_duration_sec = self._last_guide_duration_sec.get(device_id, 0.0)
-        return max(
+        base_gap = max(
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
+
+        # T1-b: 12시 회랑 + approaching + near/medium이면 쿨다운을 3초로 단축
+        if (
+            primary_det is not None
+            and frame is not None
+            and distance_class in ("near", "medium")
+            and primary_det.direction == "approaching"
+        ):
+            _h, w = frame.shape[:2]
+            spatial_dir = estimate_direction(primary_det.bbox, w, distance_class)
+            if spatial_dir == "front":
+                return max(3.0, prev_duration_sec + self._guide_cooldown_margin_sec)
+
+        return base_gap
 
     @staticmethod
     def _compute_cognitive_signature(result: DetectionResult, departure_confirmed: bool) -> str:
@@ -176,6 +208,45 @@ class DetectionConsumer:
             time.monotonic() - self._last_guide_ts.get(device_id, 0.0)
             >= COGNITIVE_UTTERANCE_COOLDOWN_S
         )
+
+    def _is_speech_worthy(
+        self,
+        primary_det: Detection | None,
+        frame: np.ndarray | None,
+        distance_class: str,
+        risk_hint: str,
+        departure_confirmed: bool,
+    ) -> bool:
+        """T2-G (2026-07-18): 인지 발화 회랑/접근 필터.
+
+        발화 가치 게이트(_has_utterance_value) 앞단에서 "처음부터 발화할 가치가 있는가"를
+        먼저 판정한다. 측면·원거리·정적 저위험 객체는 흰지팡이·주변 소리로 인지 가능하므로
+        음성 안내 가치가 낮다. 반면 12시 회랑 접근 객체, 보도 이탈, 노면 위험은 절대
+        침묵하지 않는다.
+
+        # [면접 대비 주석]
+        # 이 필터는 안전 관련 경로(보도 이탈, 고위험, 접근 객체, 유의미 노면)를 보수적으로
+        # 예외 처리하고, 오직 "측면·원거리·정적 저위험"만 무발화한다.
+        """
+        # 안전 예외: 보도 이탈, 고위험/중위험, 저위험 내레이션 설정 시
+        if departure_confirmed:
+            return True
+        if risk_hint in ("high", "medium"):
+            return True
+        if GUIDE_LOW_RISK_NARRATION:
+            return True
+
+        if primary_det is None or frame is None:
+            return False
+
+        # 원거리 정적 객체는 무발화
+        if distance_class == "far" and primary_det.direction != "approaching":
+            return False
+
+        # 12시 회랑 밖 정적 객체는 무발화
+        _h, w = frame.shape[:2]
+        spatial_dir = estimate_direction(primary_det.bbox, w, distance_class)
+        return spatial_dir == "front" or primary_det.direction == "approaching"
 
     def get_runtime_status(self) -> dict[str, str | float | int | None]:
         """최근 DetectionConsumer 처리 상태를 반환한다."""
@@ -906,6 +977,43 @@ class DetectionConsumer:
         if not result.detections and not departure_confirmed and not has_significant_surface:
             return
 
+        # T3-S (2026-07-18): 서버 차원에서 STT 상호작용 중이면 인지 가이드 발행을 억제한다.
+        # 반사 경로는 이 게이트를 거치지 않는다(비협상). 클라이언트 audioEngine 우선순위
+        # 조정자가 1차 방어선이며, 서버 억제는 연산 낭비 제거용 이중 방어.
+        if manager.is_stt_active(device_id):
+            logger.debug(
+                f"[DetectionConsumer] STT 상호작용 중 - 인지 가이드 발행 억제: "
+                f"device_id={device_id}"
+            )
+            return
+
+        # T2-G (2026-07-18): 회랑/접근 필터. 발화 가치 게이트 앞단에서 "처음부터 발화할
+        # 가치가 있는가"를 먼저 판정한다. 안전 예외(보도 이탈, 고위험, 접근 객체,
+        # 유의미 노면)는 통과시키고 측면·원거리·정적 저위험만 무발화한다.
+        primary_det = (
+            max(result.detections, key=lambda d: d.confidence) if result.detections else None
+        )
+        distance_class = ""
+        if primary_det is not None and frame is not None:
+            distance_class = estimate_distance(
+                primary_det.bbox,
+                frame.shape[1],
+                frame.shape[0],
+                primary_det.class_name,
+            )
+        if not self._is_speech_worthy(
+            primary_det,
+            frame,
+            distance_class,
+            result.risk_hint,
+            departure_confirmed,
+        ):
+            logger.debug(
+                f"[DetectionConsumer] 회랑/접근 필터 탈락 - 인지 가이드 무발화: "
+                f"device_id={device_id}, risk_hint={result.risk_hint}, distance={distance_class}"
+            )
+            return
+
         # P1-2 (2026-07-17): 발화 가치(Utterance Value) 게이트.
         # 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S 동안
         # TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시에만 발화.
@@ -923,7 +1031,7 @@ class DetectionConsumer:
         # 보장은 아래 전송 직전 재검사에서 확정하므로 여기서는 슬롯을 갱신하지 않는다.
         if time.monotonic() - self._last_guide_ts.get(
             device_id, 0.0
-        ) < self._required_guide_gap_sec(device_id):
+        ) < self._required_guide_gap_sec(device_id, primary_det, frame, distance_class):
             logger.debug(
                 f"[DetectionConsumer] 인지 가이드 쿨다운 중 - 전송 생략: device_id={device_id}"
             )
@@ -942,15 +1050,14 @@ class DetectionConsumer:
 
         # RAG 검색: 가장 신뢰도 높은 탐지 사물 기준으로 안전 수칙 조회 (실패 시 빈 문자열, fallback 미경유 유지)
         # detections가 비어 있는(순수 보도 이탈) 이벤트는 조회할 사물이 없으므로 건너뛴다.
+        # T2-G: 위 회랑/접근 필터에서 이미 primary_det/distance_class를 계산했으므로 재사용.
         rag_context = ""
         clock_direction = ""
-        distance_class = ""
         object_ko = ""
         rag_start = time.perf_counter()
         try:
             retriever = get_default_retriever()
-            if result.detections:
-                primary_det = max(result.detections, key=lambda d: d.confidence)
+            if primary_det is not None:
                 if retriever is not None:
                     rag_context = await asyncio.to_thread(
                         retriever.search_guidance,
@@ -961,12 +1068,13 @@ class DetectionConsumer:
                     )
                 if frame is not None:
                     clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
-                    distance_class = estimate_distance(
-                        primary_det.bbox,
-                        frame.shape[1],
-                        frame.shape[0],
-                        primary_det.class_name,
-                    )
+                    if not distance_class:
+                        distance_class = estimate_distance(
+                            primary_det.bbox,
+                            frame.shape[1],
+                            frame.shape[0],
+                            primary_det.class_name,
+                        )
                 object_ko = class_name_to_ko(primary_det.class_name)
         except Exception as e:
             logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
