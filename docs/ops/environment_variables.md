@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-19
-> **버전**: v0.4.23 (2026-07-18 §2.11/§2.14 iOS 네이티브 Metro `METRO_BUNDLER_HOST`·Dev Launcher Tailscale 기본 호스트 등재 + 이전 v0.4.22: `YOLO_AUTOINSTALL` + 이전 v0.4.21: `GUIDE_LOW_RISK_NARRATION`)
+> **버전**: v0.4.24 (2026-07-18 §2.11/§2.14 Tailscale Metro를 팀 공유 표준으로 유지하되 **개발 PC IP는 각자 덮어쓰기** 운영 규칙 명시 + 이전 v0.4.23: `METRO_BUNDLER_HOST` 등재 + 이전 v0.4.22: `YOLO_AUTOINSTALL`)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -159,7 +159,17 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 **2026-07-13 변경**: ngrok 프록시(클라우드 경유 지연)를 Tailscale P2P VPN으로 전면 교체. `NGROK_AUTHTOKEN` 변수 및 `docker-compose.yml`/`docker-compose.macos.yml`의 `ngrok` 서비스를 완전히 제거했다(서버 인프라 결정 - kb). 클라이언트 접속 방식은 처음엔 기존 `lan` 모드(`EXPO_PUBLIC_LAN_IP`)를 재사용해 구현했으나, jy 브랜치 병합 시 §2.14의 전용 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다(jy가 같은 세션에서 독립적으로 구현, `network_probe` RTT 계측과도 통합됨). 실기기는 `client/.env`에 `EXPO_PUBLIC_NETWORK_MODE=tailscale`, `EXPO_PUBLIC_TAILSCALE_HOST=<개발 PC의 Tailscale IP 또는 MagicDNS 이름>`을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다(서버 측 환경변수는 불요 - Tailscale 자체가 OS 레벨 네트워크 인터페이스). 클라이언트 쪽 `NETWORK_MODE=ngrok` 분기와 `@expo/ngrok` 의존성은 폴백으로 코드에 보존되어 있으나, ngrok 도커 인프라 자체는 없으므로 실제로 그 경로를 쓰려면 컨테이너를 별도로 다시 구성해야 한다. 상세: [`docs/changelogs/kb.md`](../changelogs/kb.md), [`docs/changelogs/jy.md`](../changelogs/jy.md) 2026-07-13 항목.
 
-**2026-07-18 보강 (iOS 네이티브 Metro)**: LTE/Tailscale에서 Expo Dev Launcher가 Bonjour로 Metro를 못 찾아 `Finding Dev Servers`에 머무는 문제를 막기 위해, `AppDelegate.bundleURL()`이 `METRO_BUNDLER_HOST`(미설정 시 Tailscale IP `100.121.247.4:8081`)로 JS 번들 URL을 고정하고, `app.json`/`Info.plist`/`Minchodan.xcscheme`에 Dev Launcher 온보딩 스킵·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`을 둔다. 서버 API 호스트(`EXPO_PUBLIC_TAILSCALE_HOST`)와 Metro 호스트는 역할이 다르므로 각각 설정한다.
+**2026-07-18 보강 (iOS 네이티브 Metro, 팀 표준)**: LTE/Tailscale에서 Expo Dev Launcher가 Bonjour로 Metro를 못 찾아 `Finding Dev Servers`에 머무는 문제를 막기 위해, Tailscale 기반 Metro 접속을 **공유 표준**으로 유지한다. `AppDelegate.bundleURL()`은 `METRO_BUNDLER_HOST`(미설정 시 저장소 기본값 `100.121.247.4:8081`)로 JS 번들 URL을 고정하고, `app.json`/`Info.plist`/`Minchodan.xcscheme`에 Dev Launcher 온보딩 스킵·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`을 둔다. 서버 API 호스트(`EXPO_PUBLIC_TAILSCALE_HOST`)와 Metro 호스트는 역할이 다르므로 각각 설정한다.
+
+> **팀 운영 규칙 (개발 PC IP는 각자 덮어쓰기)**: 저장소에 있는 `100.121.247.4`는 예시·공통 폴백일 뿐, **본인 개발 Mac의 Tailscale IPv4로 반드시 교체**한다. 덮어쓰지 않으면 다른 팀원 Metro에 붙거나 연결이 실패한다.
+>
+> | 대상 | 덮어쓰기 방법 |
+> | :--- | :--- |
+> | Metro JS 번들 (재빌드 최소) | Xcode 스킴 `METRO_BUNDLER_HOST=<본인_Tailscale_IP>:8081` 또는 프로세스 env |
+> | Dev Launcher 기본 URL | `Info.plist`의 `DEV_CLIENT_DEFAULT_LAUNCHER_URL`, `app.json` expo-dev-client `ios.defaultLaunchURL` |
+> | FastAPI/WS 서버 | `client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST=<본인_또는_서버_Tailscale_IP>` (gitignore, 커밋 금지) |
+>
+> Tailscale IP 확인: macOS에서 `tailscale ip -4`. MagicDNS 이름을 쓸 수 있으면 IP 대신 호스트명도 가능하다.
 
 ### 2.12 데이터베이스 (MariaDB)
 
@@ -194,8 +204,8 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`EXPO_PUBLIC_WIFI_HOST`** | string | 선택 | `192.168.137.1` | **평상시 WiFi 모드** PC 호스트. Windows 노트북 모바일 핫스팟 게이트웨이 기본값(2026-07-13) | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
 | **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | (WIFI_HOST 폴백) | 구 명칭. 설정 시 `WIFI_HOST`가 없으면 이 값을 WiFi 호스트로 사용 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_USB_HOST`** | string | 선택 | `127.0.0.1` | **개발 USB 모드** + `adb reverse` 호스트 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
-| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | 선택 | (`WIFI_HOST` 폴백) | **외부망 Tailscale 모드** 서버 호스트. iOS/Android 단말의 Tailscale VPN이 켜진 상태에서 서버의 `100.x` 주소 또는 MagicDNS 이름을 사용 | `client/src/config/index.ts`, `client/.env.example` |
-| **`METRO_BUNDLER_HOST`** | string | 선택 | `100.121.247.4:8081` | **iOS 네이티브 전용**. Debug 빌드에서 Metro JS 번들 호스트(`AppDelegate.bundleURL`). Process 환경변수 또는 Xcode 스킴으로 덮어씀. Expo `EXPO_PUBLIC_*`와 별개 | `client/ios/Minchodan/AppDelegate.swift`, `Minchodan.xcscheme` |
+| **`METRO_BUNDLER_HOST`** | string | 선택 | `100.121.247.4:8081`(저장소 예시) | **iOS 네이티브 전용**. Debug Metro 호스트. **본인 개발 PC Tailscale IP로 덮어쓰기**(§2.11 팀 운영 규칙). Xcode 스킴/프로세스 env. Expo `EXPO_PUBLIC_*`와 별개 | `client/ios/Minchodan/AppDelegate.swift`, `Minchodan.xcscheme` |
+| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | 선택 | (`WIFI_HOST` 폴백) | **외부망 Tailscale 모드** FastAPI/WS 호스트. **본인(또는 공용) 개발 PC Tailscale IP로 `client/.env`에서 덮어쓰기**(커밋 금지). MagicDNS 가능 | `client/src/config/index.ts`, `client/.env.example` |
 | **`EXPO_PUBLIC_SERVER_PORT`** | string | 선택 | `8000` | 단말이 접속할 FastAPI/WebSocket 포트. 기본 `/ws/detect` 포트와 동일 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEFAULT_TRANSPORT`** | string | 선택 | `wifi` | 앱 최초 기동 기본 수송(`wifi`/`usb`). 이후 선택은 단말에 영속 | `client/src/config/index.ts`, `client/src/services/serverTransport.ts` |
 | **`EXPO_PUBLIC_NGROK_DOMAIN`** | string | 선택 | `partake-primer-surround.ngrok-free.dev` | 외부망 터널 도메인 | `client/src/config/index.ts` |

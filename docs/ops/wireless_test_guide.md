@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.1.1 (2026-07-18 §5.2 `lap==0.5.13`을 `requirements.txt`에 고정 - AutoUpdate 의존 서술 폐기 + 이전 v1.1.0: 바이너리 전송 기본)
+> **버전**: v1.1.2 (2026-07-18 §5.4 Tailscale Metro 팀 표준·개발 PC IP 각자 덮어쓰기 안내 + 이전 v1.1.1: lap 고정 + 이전 v1.1.0: 바이너리 전송)
 > **설계 기준**: docs/design/minchodan_design_note.md (비전 설계서 v1.1)
 
 # 실기기 무선 연동 테스트 및 Docker 환경 가이드
@@ -105,6 +105,11 @@ graph TD
 - **원인**: YOLO26n 객체 추적기(ByteTrack) 구동을 위한 선형 할당(Linear Assignment) 패키지 `lap`이 이미지/컨테이너에 없었기 때문입니다.
 - **해결 (2026-07-18 정정)**: `requirements.txt`에 `lap==0.5.13`을 명시해 이미지 빌드·`pip install` 시점에 고정 설치합니다. 런타임 Ultralytics AutoUpdate에 의존하지 마십시오(`YOLO_AUTOINSTALL=False` 기본). 이미 기동 중인 컨테이너면 이미지 재빌드 또는 `pip install lap==0.5.13` 후 재기동합니다.
 - **폴백**: `yolo_detector.py`는 `track()` 실패 시(`lap` 미설치·`'Conv' object has no attribute 'bn'` 등) `predict()`로 폴백해 빈 BBox를 피합니다(추적은 해당 프레임에서 비활성).
+
+### 5.4 Tailscale Metro가 다른 PC / Finding Dev Servers에 붙는 경우
+- **현상**: iOS Debug 앱이 Metro를 못 찾거나, 본인 Mac이 아닌 다른 팀원 호스트로 붙는다.
+- **원인**: 저장소 기본값(`100.121.247.4:8081`)은 Tailscale Metro **팀 공유 표준(예시 폴백)** 이며, 각 개발자 PC의 Tailscale IP와 다를 수 있다.
+- **해결**: **개발 PC IP는 각자 덮어쓰기**. `METRO_BUNDLER_HOST`·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`·`client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST`를 `tailscale ip -4` 결과로 교체한다. 상세 표는 [`environment_variables.md`](environment_variables.md) §2.11.
 
 ### 5.3 이미지 대용량으로 인한 무선 네트워크 병목 및 소켓 끊김 현상
 - **현상**: 단말기 구동 중 화면에 연결 끊김 경보가 자주 표시되며, Metro 번들러 콘솔에 `[WS] 연결 종료`와 `연결 시도 주소` 로그가 무한 반복 출력되는 경우.

@@ -3127,3 +3127,16 @@
 - **비고**: 코드 변경 없음. 문서 전용 정합 커밋.
 
 ---
+
+### 2026-07-18 | 문서+병합 | Tailscale Metro 팀 표준 확정·개발 PC IP 덮어쓰기 명시 후 kb→dev
+
+- **배경**: `kb`→`dev` 병합 정합성 검토에서 Tailscale 기본값(`100.121.247.4`) 하드코딩이 개인 랩 이슈로 지적됨. 팀 합의로 Tailscale Metro를 **공유 표준으로 유지**하고, 문서에 **개발 PC IP는 각자 덮어쓰기**를 명시하기로 함.
+- **변경 내용**:
+  - `environment_variables.md` v0.4.24: §2.11 운영 규칙 표(Metro/Dev Launcher/`EXPO_PUBLIC_TAILSCALE_HOST`), §2.14 변수 설명 보강.
+  - `wireless_test_guide.md` v1.1.2: §5.4 트러블슈팅 추가.
+- **병합**: `kb` fast-forward → `dev` (`e281909` Near/Medium/Far·Tailscale + `d71db64` 문서 정합 + 본 문서 커밋).
+- **관련 파일**: `docs/ops/environment_variables.md`, `docs/ops/wireless_test_guide.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `origin/dev`는 `kb`의 ancestor라 충돌 없이 FF 가능. 비밀·가중치 파일 없음.
+- **비고**: 팀원은 clone/pull 후 반드시 본인 Tailscale IP로 Metro·서버 호스트를 덮어쓸 것.
+
+---
