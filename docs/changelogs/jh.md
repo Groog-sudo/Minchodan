@@ -723,6 +723,21 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 
 ---
 
+### 2026-07-18 | 콘솔 UI | 위젯 기능상자 전체삭제 확인 모달 구현
+
+- **커밋**: `feat(console): 기능상자 전체삭제 확인 모달 추가`
+- **변경 내용**:
+  - 기능상자 메뉴의 `전체 삭제`를 즉시 실행 방식에서 확인 모달 방식으로 변경함
+  - `DashboardPage.tsx`에 `isRemoveAllConfirmOpen` 상태와 모달 열기/취소 핸들러를 추가해 삭제 의사 확인 플로우를 구현함
+  - 확인 모달 문구를 `현재 기능상자들을 전부 삭제하시겠습니까?`로 표시하고, `예` 선택 시 전체삭제 실행, `아니오` 선택 시 모달만 닫히도록 처리함
+  - `removeAllWidgets` 실행 완료 시 모달 상태까지 초기화해 잔여 UI 상태가 남지 않도록 정리함
+  - `styles.css`에 모달 오버레이/컨테이너/버튼 스타일(`widget-confirm-*`)을 추가해 대시보드 톤과 맞는 확인 UI를 적용함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 요청사항인 `위젯 기능 기능상자 안에 전체삭제 기능에서 모달상자로 삭제 여부 창 기능 구현` 기준으로 최소 범위 변경만 반영함
+
+---
+
 ### 2026-07-18 | 콘솔 UI | MCP 검증 및 저지연 모니터 기능상자 누락 명칭 복구 및 타임라인 상단 배치
 
 - **커밋**: `fix(console): DashboardPage 위젯 누락(mcpMonitor) 복구 및 타임라인 위 배치`
@@ -924,3 +939,16 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: 기존 `기능상자 추가`와 `기능상자 전체 삭제`의 분리 배치를 메뉴형 UX로 통합해 관리 동선을 단순화함
+
+---
+
+### 2026-07-18 | 콘솔 UI | 기능상자 추가 버튼 비활성화 조건 적용
+
+- **커밋**: `feat(console): 기능상자 추가 버튼 비활성화 적용`
+- **변경 내용**:
+  - 관제 대시보드 `기능상자` 메뉴에서 `추가` 버튼에 비활성화 조건을 적용함
+  - 추가 가능한 기능상자가 하나도 없을 때(`availableWidgets.length === 0`) `추가` 버튼이 비활성화되도록 처리함
+  - 모든 기능상자가 이미 배치된 상태에서는 `추가` 버튼이 즉시 비활성 상태로 표시되어 불필요한 클릭을 방지함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 요청사항인 `위젯 기능 기능상자 버튼 내 추가되는 기능상자 없을 시 추가 버튼 비활성화` 기준으로 최소 변경만 반영함
