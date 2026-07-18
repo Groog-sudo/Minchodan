@@ -1,10 +1,14 @@
+import logging
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from server.detection.direction import estimate_direction
+from server.detection.distance_policy import NEAR_ENTER_AREA_RATIO
 from server.detection.schemas import Detection, ReflexAlert
+
+logger = logging.getLogger(__name__)
 
 # =========================================================================
 # 👨‍💻 담당자 직접 코딩 영역 시작: 1. 반사 게이트 상수 (Option A class-agnostic) 👨‍💻
@@ -98,6 +102,18 @@ def reflex_gate(
     center_x = detection.bbox.x + detection.bbox.w / 2
     center_x_norm = center_x / frame_width
     is_centered = CENTER_X_MIN <= center_x_norm <= CENTER_X_MAX
+
+    # 2026-07-19 임시 진단 로그: 실기기 테스트에서 near 진입 시 반사 미발동 원인 추적용.
+    # 신뢰도·hit_count를 이미 통과한 후보만 찍어 로그 폭주를 막는다.
+    logger.debug(
+        f"[ReflexGate] 후보 평가: track_id={detection.track_id}, "
+        f"center_x_norm={center_x_norm:.3f} (범위 {CENTER_X_MIN}~{CENTER_X_MAX}), "
+        f"centered={is_centered}, route={detection.route}, "
+        f"effective_zone={detection.effective_distance_zone}, "
+        f"area_ratio={detection.area_ratio:.4f} (near 진입 {NEAR_ENTER_AREA_RATIO}), "
+        f"heuristic_m={detection.heuristic_distance_m:.2f}"
+    )
+
     if not is_centered:
         return None
 

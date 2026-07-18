@@ -91,5 +91,9 @@
 	<string>Light</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>DEV_CLIENT_DEFAULT_LAUNCHER_URL</key>
+	<string>http://100.121.247.4:8081</string>
+	<key>EXDevMenuIsOnboardingFinished</key>
+	<true/>
 </dict>
 </plist>

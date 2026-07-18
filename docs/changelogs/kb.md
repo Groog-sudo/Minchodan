@@ -3092,3 +3092,20 @@
 - **관련 파일**: `docker/Dockerfile`, `docker/docker-compose.yml`, `docs/ops/environment_variables.md`, `docs/research/lidar_realtime_fusion_design_v2.md`(client/ios Pods 변경은 로컬 전용, 커밋 없음)
 - **검증 결과**: `docker compose --env-file .env -f docker/docker-compose.macos.yml build fastapi` 캐시 재사용 확인. 재기동 후 `docker exec ... echo $YOLO_AUTOINSTALL` → `False` 확인. `pod install` 재실행 후 109 dependencies/112 total pods 정상 복구.
 - **비고**: 거리값 다중 프레임 평활화와 area_ratio 대 줄자 직접 대조는 이번 세션 범위 밖으로 명시적으로 보류 - 코드 변경 없이 문서 기록만 진행(사용자 확인).
+
+---
+
+### 2026-07-18 | 3단계·7단계·실기기 | Near/Medium/Far 우선순위 정합 + Tailscale Metro/WS + 검증 테스트
+
+- **배경**: 통합 테스트 중 DB에 `distance_class=near`인데 `path=cognitive`로 저장되는 사례, YOLO `'Conv'...'bn'`로 서버 BBox 0건, LTE에서 Dev Launcher(`Finding Dev Servers`)만 뜨는 문제가 겹쳤다.
+- **변경 내용**:
+  - `consumer.py`: `_resolve_distance_class()` — `effective_distance_zone` SSOT 우선. `_is_speech_worthy()`에서 near는 인지 TTS 차단(반사 전담), far 무발화 유지. T1-b 쿨다운 단축은 medium만.
+  - `pipeline_debug_builder.py`: reflex/cognitive debug에 `route`, `effective_distance_zone`, `route_reason` 추가.
+  - `yolo_detector.py`: `track()` 실패 시 `lap` 및 `'Conv'...'bn'` 모두 `predict()` 폴백. RuntimeError도 동일 판정.
+  - `ws_router.py`: binary detection 메타에 `device_id` 누락 시 query `device_id` 폴백(server_detection 미전송 방어).
+  - `requirements.txt`: `lap==0.5.13` 명시.
+  - 클라이언트(LTE/Tailscale): `AppDelegate`/`Info.plist`/`app.json`/`Minchodan.xcscheme` Metro 기본 호스트를 Tailscale IP(`100.121.247.4:8081`)로 고정, Dev Launcher 온보딩 스킵·`DEV_CLIENT_DEFAULT_LAUNCHER_URL` 설정. `client/.env`는 `NETWORK_MODE=tailscale`(gitignore, 커밋 없음).
+  - 테스트/스크립트: `tests/test_distance_priority_integration.py`, `tests/test_ws_live_priority.py`, `scripts/verify_distance_priority_policy.py`, `scripts/verify_db_pipeline_debug_route.py` 추가.
+- **관련 파일**: `server/detection/consumer.py`, `server/detection/yolo_detector.py`, `server/detection/gates/reflex_gate.py`, `server/services/pipeline_debug_builder.py`, `server/api/ws_router.py`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`, `client/app.json`, `client/ios/.../Minchodan.xcscheme`, `requirements.txt`, `tests/*`, `scripts/verify_*`
+- **검증 결과**: Docker pytest 우선순위·WS 라이브 관련 **29+ passed**(전체 suite 124 passed 구간 포함). `verify_distance_priority_policy.py` 13/13 PASS. 실기기 Debug 빌드·설치·런치 성공(`com.minchodan.app.kb.dev`). Metro/FastAPI Tailscale IP 헬스 200.
+- **비고**: `Podfile.lock` hermes 체크섬만 바뀐 로컬 CocoaPods 툴 차이는 커밋에서 제외. 푸시는 요청 시 별도 진행.

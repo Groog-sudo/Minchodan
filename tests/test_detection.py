@@ -1089,11 +1089,54 @@ class TestSpeechWorthyFilter:
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         assert consumer._is_speech_worthy(det, frame, "medium", "low", False) is True
 
+    def test_far_approaching_not_worthy(self):
+        """2026-07-19: far는 접근 중이어도 무발화 - medium 진입 시에만 발화 대상이 된다."""
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.8,
+            bbox=BBox(x=10.0, y=10.0, w=50.0, h=50.0),
+            track_id="T-0001",
+            direction="approaching",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        assert consumer._is_speech_worthy(det, frame, "far", "low", False) is False
+
+    def test_near_not_worthy_for_cognitive(self):
+        """near는 반사 전담 - 인지 TTS 대상에서 제외한다."""
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=240.0, y=200.0, w=160.0, h=200.0),
+            track_id="T-0001",
+            direction="approaching",
+            hit_count=4,
+            effective_distance_zone="near",
+            route="reflex",
+            route_reason="zone_near",
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        assert consumer._is_speech_worthy(det, frame, "near", "low", False) is False
+
+    def test_resolve_distance_class_prefers_effective_zone(self):
+        consumer = DetectionConsumer()
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=240.0, y=400.0, w=40.0, h=40.0),
+            track_id="T-0001",
+            effective_distance_zone="medium",
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        assert consumer._resolve_distance_class(det, frame) == "medium"
+
 
 class TestApproachingCooldownShortcut:
     """T1-b (2026-07-18): 12시 회랑 접근 객체 쿨다운 단축 단위 테스트."""
 
-    def test_approaching_front_near_shortens_gap(self):
+    def test_approaching_front_medium_shortens_gap(self):
         consumer = DetectionConsumer()
         det = Detection(
             class_name="bicycle",
@@ -1104,10 +1147,10 @@ class TestApproachingCooldownShortcut:
             hit_count=4,
         )
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        gap = consumer._required_guide_gap_sec("dev1", det, frame, "near")
+        gap = consumer._required_guide_gap_sec("dev1", det, frame, "medium")
         assert gap == 3.0
 
-    def test_static_front_near_uses_base_gap(self):
+    def test_static_front_medium_uses_base_gap(self):
         consumer = DetectionConsumer()
         det = Detection(
             class_name="bicycle",
@@ -1118,7 +1161,7 @@ class TestApproachingCooldownShortcut:
             hit_count=4,
         )
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        gap = consumer._required_guide_gap_sec("dev1", det, frame, "near")
+        gap = consumer._required_guide_gap_sec("dev1", det, frame, "medium")
         assert gap >= 8.0
 
 

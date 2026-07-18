@@ -930,6 +930,8 @@ async def ws_detect(
 
                 meta = pending_binary_meta
                 pending_binary_meta = None
+                if not meta.get("device_id"):
+                    meta = {**meta, "device_id": device_id}
                 event_id = meta.get("event_id", "unknown")
                 frame_id = meta.get("frame_id", 0)
 
@@ -1028,10 +1030,14 @@ async def ws_detect(
 
                 if payload.get("transport") == "binary":
                     # 뒤이어 도착할 바이너리 프레임을 대기 (ack는 그때 응답)
-                    pending_binary_meta = payload
+                    pending_binary_meta = {
+                        **payload,
+                        "device_id": payload.get("device_id") or device_id,
+                    }
                     continue
 
                 # 구버전 호환 경로: base64 JPEG가 payload에 직접 포함된 단일 메시지
+                payload = {**payload, "device_id": payload.get("device_id") or device_id}
                 decode_start = time.perf_counter()
                 processed = await decode_frame(payload)
                 decode_ms = (time.perf_counter() - decode_start) * 1000

@@ -140,6 +140,23 @@ class DetectionConsumer:
         self._departure_streak[device_id] = streak
         return streak >= DEPARTURE_CONFIRM_STREAK
 
+    @staticmethod
+    def _resolve_distance_class(primary_det: Detection | None, frame: np.ndarray | None) -> str:
+        """인지/로그용 거리 구역. SSOT effective_distance_zone 우선, 없으면 stateless 폴백."""
+        if primary_det is None:
+            return ""
+        zone = getattr(primary_det, "effective_distance_zone", "") or ""
+        if zone in ("near", "medium", "far"):
+            return zone
+        if frame is None:
+            return ""
+        return estimate_distance(
+            primary_det.bbox,
+            frame.shape[1],
+            frame.shape[0],
+            primary_det.class_name,
+        )
+
     def _required_guide_gap_sec(
         self,
         device_id: str,
@@ -157,11 +174,14 @@ class DetectionConsumer:
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
 
-        # T1-b: 12시 회랑 + approaching + near/medium이면 쿨다운을 3초로 단축
+        # T1-b: 12시 회랑 + approaching + medium이면 쿨다운을 3초로 단축
+        # (near는 반사 전담이므로 인지 쿨다운 단축 대상에서 제외)
+        if not distance_class and primary_det is not None and frame is not None:
+            distance_class = self._resolve_distance_class(primary_det, frame)
         if (
             primary_det is not None
             and frame is not None
-            and distance_class in ("near", "medium")
+            and distance_class == "medium"
             and primary_det.direction == "approaching"
         ):
             _h, w = frame.shape[:2]
@@ -220,13 +240,15 @@ class DetectionConsumer:
         """T2-G (2026-07-18): 인지 발화 회랑/접근 필터.
 
         발화 가치 게이트(_has_utterance_value) 앞단에서 "처음부터 발화할 가치가 있는가"를
-        먼저 판정한다. 측면·원거리·정적 저위험 객체는 흰지팡이·주변 소리로 인지 가능하므로
-        음성 안내 가치가 낮다. 반면 12시 회랑 접근 객체, 보도 이탈, 노면 위험은 절대
-        침묵하지 않는다.
+        먼저 판정한다. 측면·원거리 객체는 흰지팡이·주변 소리로 인지 가능하므로 음성 안내
+        가치가 낮다. 반면 12시 회랑 접근 medium, 보도 이탈, 노면 위험은 절대 침묵하지
+        않는다. near는 반사(햅틱+비프) 전담이므로 인지 TTS 대상에서 제외한다.
 
         # [면접 대비 주석]
-        # 이 필터는 안전 관련 경로(보도 이탈, 고위험, 접근 객체, 유의미 노면)를 보수적으로
-        # 예외 처리하고, 오직 "측면·원거리·정적 저위험"만 무발화한다.
+        # 질문: near=반사(햅틱+비프), medium=인지 안내라면 far는 왜 완전히 무발화인가요?
+        # 답변: 2026-07-19 우선순위 재정의 - far는 탐지·화면 표시(BBox)는 계속하되 음성
+        # 안내 대상에서 제외한다. near는 reflex_gate가 담당하고, medium부터 인지 TTS가
+        # 개입한다. post_reflex avoidance(fast lane)는 risk_hint=high로 별도 허용된다.
         """
         # 안전 예외: 보도 이탈, 고위험/중위험, 저위험 내레이션 설정 시
         if departure_confirmed:
@@ -239,8 +261,15 @@ class DetectionConsumer:
         if primary_det is None or frame is None:
             return False
 
-        # 원거리 정적 객체는 무발화
-        if distance_class == "far" and primary_det.direction != "approaching":
+        if not distance_class:
+            distance_class = self._resolve_distance_class(primary_det, frame)
+
+        # near는 반사 경로 전담 - 인지 TTS/DB cognitive 로그로 내려가지 않는다.
+        if distance_class == "near":
+            return False
+
+        # far(원거리)는 접근 여부와 무관하게 항상 무발화 - medium 진입 시에만 발화 대상이 된다.
+        if distance_class == "far":
             return False
 
         # 12시 회랑 밖 정적 객체는 무발화
@@ -938,6 +967,13 @@ class DetectionConsumer:
                 device_id=device_id,
             )
             reg_user_id, reg_device_id = get_cached_device_ids(device_id)
+            reflex_primary = None
+            if detections:
+                if alert.track_id:
+                    matched = [d for d in detections if d.track_id == alert.track_id]
+                    reflex_primary = matched[0] if matched else None
+                if reflex_primary is None:
+                    reflex_primary = max(detections, key=lambda d: d.confidence)
             self._schedule_log_persist(
                 event_id=alert.event_id,
                 stream_type="reflex",
@@ -968,6 +1004,17 @@ class DetectionConsumer:
                     track_id=alert.track_id,
                     inference_ms=alert.inference_ms,
                     detections=detections,
+                    route="reflex",
+                    effective_distance_zone=(
+                        getattr(reflex_primary, "effective_distance_zone", "near")
+                        if reflex_primary
+                        else "near"
+                    ),
+                    route_reason=(
+                        getattr(reflex_primary, "route_reason", "zone_near")
+                        if reflex_primary
+                        else "zone_near"
+                    ),
                 ),
             )
             return True
@@ -1083,14 +1130,7 @@ class DetectionConsumer:
         primary_det = (
             max(result.detections, key=lambda d: d.confidence) if result.detections else None
         )
-        distance_class = ""
-        if primary_det is not None and frame is not None:
-            distance_class = estimate_distance(
-                primary_det.bbox,
-                frame.shape[1],
-                frame.shape[0],
-                primary_det.class_name,
-            )
+        distance_class = self._resolve_distance_class(primary_det, frame)
         if not self._is_speech_worthy(
             primary_det,
             frame,
@@ -1158,13 +1198,6 @@ class DetectionConsumer:
                     )
                 if frame is not None:
                     clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
-                    if not distance_class:
-                        distance_class = estimate_distance(
-                            primary_det.bbox,
-                            frame.shape[1],
-                            frame.shape[0],
-                            primary_det.class_name,
-                        )
                 object_ko = class_name_to_ko(primary_det.class_name)
         except Exception as e:
             logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
@@ -1375,6 +1408,13 @@ class DetectionConsumer:
                 braille_direction=result.braille_direction or "",
                 navigation_guidance=navigation_guidance,
                 detected_classes_ko=korean_classes,
+                route=getattr(primary_det, "route", "cognitive") if primary_det else "cognitive",
+                effective_distance_zone=(
+                    getattr(primary_det, "effective_distance_zone", distance_class)
+                    if primary_det
+                    else distance_class
+                ),
+                route_reason=getattr(primary_det, "route_reason", "") if primary_det else "",
             )
             self._schedule_log_persist(
                 event_id=result.event_id,

@@ -52,6 +52,16 @@
     },
     "plugins": [
       [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent",
+          "skipOnboarding": true,
+          "ios": {
+            "defaultLaunchURL": "http://100.121.247.4:8081"
+          }
+        }
+      ],
+      [
         "react-native-vision-camera",
         {
           "enableFrameProcessors": true
