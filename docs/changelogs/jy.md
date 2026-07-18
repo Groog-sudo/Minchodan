@@ -601,3 +601,25 @@
   - 실제 호스트/IP가 포함된 `client/ios/Minchodan/AppDelegate.swift`, `client/src/config/index.ts`와 로컬 `.env` 파일은 이번 커밋에서 제외했습니다.
 
 ---
+
+### 2026-07-18 | 설계 | 휴리스틱 거리 구역 기반 알림 라우팅 구현 계획 수립
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 현장 테스트에서 객체 탐지 알림이 과도하게 반복되어 비프·햅틱·TTS 알림 피로를 유발하는 문제가 확인됐습니다.
+  - 서버 면적비 구역, 서버 bbox 하단 의사 거리, 단말 면적비 휴리스틱, 수동 LiDAR 거리 기준이 서로 다른 의미로 사용되어 Near/Medium/Far 경로를 단일 규칙으로 적용하기 어려웠습니다.
+- **변경 내용**:
+  - 현행 서버·클라이언트·WebSocket·억제기·Fast Lane·LiDAR 검증 경로와 관련 설계 문서를 교차 감사했습니다.
+  - 일반 객체는 유효 Near에서 비프·햅틱 반사 경로, Medium/Far에서 발화 가치 필터를 거친 짧은 인지 TTS 경로를 사용하도록 목표 정책을 정의했습니다.
+  - 거리 정책 SSOT, 구역 히스테리시스, Near enter/update/clear 상태, 서버·단말 알림 소유권, API 호환, 테스트·KPI·문서 동기화 계획을 모바일 구현 계획서로 정리했습니다.
+  - 루트 경로의 구현 계획서를 `docs/mobile/` 하위로 이동해 모바일 관련 설계 문서 위치와 정합화했습니다.
+- **관련 파일**: `docs/mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md`, `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `tests/test_cognitive_fields.py`, `tests/test_fast_lane.py`, `tests/test_suppressor_rearm.py`: 27개 통과
+  - `tests/test_detection.py`, `tests/test_risk_ssot.py`, `tests/test_langgraph.py`: 91개 통과
+  - 계획서 UTF-8 확인 및 `git diff --check` 통과
+- **비고**:
+  - 초기 Near 진입 면적비 0.10, 이탈 0.08, Medium 진입 0.03, Far 이탈 0.025는 LiDAR 클래스별 검증 전 잠정 권장값입니다.
+  - 기존 사용자 로컬 변경 파일은 수정하지 않았습니다.
+
+---

@@ -31,6 +31,7 @@
 | 6단계 오케스트레이션 설계서 | [stage-guides/stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
 | **Post-MVP 하이브리드 로드맵** | [research/post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
 | **iOS/Android 이원화 통합 계약서** | [mobile/ios_android_bifurcation_contract.md](mobile/ios_android_bifurcation_contract.md) | **파일 소유권·인터페이스 계약·인프라 거버넌스로 병합 충돌 방지 (kb/dg2 병합 시뮬레이션 근거)** |
+| **휴리스틱 거리 구역 알림 라우팅 구현 계획서** | [mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md](mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md) | **Near/Medium/Far 거리 구역 기반 반사·인지 알림 라우팅, 억제, 서버·단말 계약 구현 계획** |
 | 보행이론 인사이트 보고서 | [design/behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
 | Changelog 템플릿     | [changelogs/TEMPLATE.md](changelogs/TEMPLATE.md)       | 신규 changelog 작성 양식                                           |
@@ -108,6 +109,7 @@ docs/
 | iOS 구현 설계서 | [mobile_ios_implementation_plan.md](mobile/mobile_ios_implementation_plan.md) | iOS 전용 1+2단계 구현 설계 (Mac mini 환경 기준) |
 | Android 구현 설계서 | [mobile_android_implementation_plan.md](mobile/mobile_android_implementation_plan.md) | Android 전용 1+2단계 구현 설계 |
 | 온디바이스 추론 엔진 격리 설계서 | [ondevice_inference_engine_isolation_plan.md](mobile/ondevice_inference_engine_isolation_plan.md) | YOLO26n + CoreML 이중 전략 기반 플랫폼별 추론 엔진 격리 (Post-MVP) |
+| 휴리스틱 거리 구역 알림 라우팅 구현 계획서 | [HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md](mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md) | Near/Medium/Far 거리 구역 기반 반사·인지 알림 라우팅, 억제, 서버·단말 계약 구현 계획 |
 
 ---
 
