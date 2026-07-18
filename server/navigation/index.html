@@ -605,6 +605,7 @@
         let currentHeading = 0; // Degrees (0-359)
         let gpsWatcherId = null;
         let ws = null;
+        let isGpsInjected = false; // 앱 실기기 GPS 연동 여부
 
         // Leaflet Map objects
         let map = null;
@@ -693,6 +694,14 @@
                 const injectedLon = parseFloat(event.data.lon);
                 const injectedHeading = parseFloat(event.data.heading ?? 0);
                 if (isNaN(injectedLat) || isNaN(injectedLon)) return;
+
+                isGpsInjected = true;
+                clearTimeout(fallbackTimer);
+                if (gpsWatcherId) {
+                    navigator.geolocation.clearWatch(gpsWatcherId);
+                    gpsWatcherId = null;
+                }
+
                 currentLat = injectedLat;
                 currentLon = injectedLon;
                 currentHeading = injectedHeading || currentHeading;
@@ -700,11 +709,15 @@
                 gpsText.innerText = "GPS 앱 연동 (실기기 위치)";
                 coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
                 updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+
+                if (!ws) {
+                    connectWebSocket();
+                }
             });
 
             // GPS Timeout Safety fallback (8초 대기 후 서울역 임시 좌표)
             const fallbackTimer = setTimeout(() => {
-                if (currentLat === null) {
+                if (currentLat === null && !isGpsInjected) {
                     currentLat = 37.5560;
                     currentLon = 126.9722;
                     gpsDot.className = "status-dot danger";
@@ -721,6 +734,7 @@
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
                         clearTimeout(fallbackTimer);
+                        if (isGpsInjected) return;
                         currentLat = position.coords.latitude;
                         currentLon = position.coords.longitude;
                         gpsDot.className = "status-dot active";
@@ -734,6 +748,7 @@
                     },
                     (error) => {
                         clearTimeout(fallbackTimer);
+                        if (isGpsInjected) return;
                         logMessage("danger", `[GPS ERROR] 위치 획득 실패: ${error.message}. 서울역 임시 좌표를 사용합니다.`);
                         currentLat = 37.5560;
                         currentLon = 126.9722;
@@ -747,19 +762,22 @@
                 );
             } else {
                 clearTimeout(fallbackTimer);
-                gpsText.innerText = "GPS 지원하지 않는 브라우저";
-                logMessage("danger", "[GPS ERROR] 이 브라우저는 GPS 위치정보를 지원하지 않습니다.");
+                if (!isGpsInjected) {
+                    gpsText.innerText = "GPS 지원하지 않는 브라우저";
+                    logMessage("danger", "[GPS ERROR] 이 브라우저는 GPS 위치정보를 지원하지 않습니다.");
+                }
             }
         }
 
         // Real-time GPS tracker
         function startGPSTracking() {
             if (gpsWatcherId) navigator.geolocation.clearWatch(gpsWatcherId);
+            if (isGpsInjected) return;
 
             gpsWatcherId = navigator.geolocation.watchPosition(
                 (position) => {
-                    // 시뮬레이션 작동 중에는 실제 GPS 업데이트 무시
-                    if (isSimulating) return;
+                    // 시뮬레이션 작동 중 또는 앱 GPS 주입 상태라면 실제 GPS 업데이트 무시
+                    if (isSimulating || isGpsInjected) return;
 
                     currentLat = position.coords.latitude;
                     currentLon = position.coords.longitude;
@@ -769,6 +787,7 @@
                     sendGPSUpdateToServer();
                 },
                 (error) => {
+                    if (isGpsInjected) return;
                     console.error("GPS Tracking error:", error);
                 },
                 { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
