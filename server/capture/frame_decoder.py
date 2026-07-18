@@ -43,14 +43,18 @@ class ProcessedFrame:
     # None: 클라이언트가 판정 불가(구버전/Android 등)로 미전송 - 기존처럼 신뢰.
     # True/False: 클라이언트가 보낸 최근 판정값(1프레임 지연 허용, CameraView.tsx 참조).
     is_outdoor: bool | None = None
+    # 2026-07-19: "거리측정" 모드의 단발 검증 캡처 프레임 식별용("lidar_validation").
+    # None이면 일반 연속 스트림 프레임(반사/인지). CameraView.tsx의
+    # handleDistanceProbeCapture()가 채운다.
+    probe_source: str | None = None
 
 
-def _parse_frame_meta(payload: dict) -> tuple[str, str, str, int, bool | None]:
-    """detection 메시지 payload/메타데이터에서 event_id/device_id/stream/ts/is_outdoor를 추출.
+def _parse_frame_meta(payload: dict) -> tuple[str, str, str, int, bool | None, str | None]:
+    """detection 메시지 payload/메타데이터에서 event_id/device_id/stream/ts/is_outdoor/probe_source를 추출.
 
     base64 방식(단일 JSON 메시지)과 바이너리 방식(메타 JSON + 바이너리 프레임 2단계)
-    양쪽 모두 동일한 키 이름(event_id, device_id, stream, ts, timestamp, is_outdoor)을
-    사용하므로 공통 파싱 로직으로 공유한다.
+    양쪽 모두 동일한 키 이름(event_id, device_id, stream, ts, timestamp, is_outdoor,
+    probe_source)을 사용하므로 공통 파싱 로직으로 공유한다.
     """
     event_id = payload.get("event_id", "unknown")
     device_id = payload.get("device_id", "unknown")
@@ -58,6 +62,7 @@ def _parse_frame_meta(payload: dict) -> tuple[str, str, str, int, bool | None]:
     is_outdoor = payload.get("is_outdoor")
     if is_outdoor is not None:
         is_outdoor = bool(is_outdoor)
+    probe_source = payload.get("probe_source")
 
     # 방어적 시간 정보 파싱: ts(밀리초 epoch) 우선, 없을 경우 ISO 8601형식 timestamp 파싱 시도
     raw_ts = payload.get("ts")
@@ -77,7 +82,7 @@ def _parse_frame_meta(payload: dict) -> tuple[str, str, str, int, bool | None]:
                 dt = datetime.fromisoformat(timestamp_str)
                 ts = int(dt.timestamp() * 1000)
 
-    return event_id, device_id, stream, ts, is_outdoor
+    return event_id, device_id, stream, ts, is_outdoor, probe_source
 
 
 def _build_processed_frame(
@@ -88,6 +93,7 @@ def _build_processed_frame(
     ts: int,
     start_ts: float,
     is_outdoor: bool | None = None,
+    probe_source: str | None = None,
 ) -> ProcessedFrame | None:
     """raw JPEG 바이트를 디코딩하여 640x640 BGR ProcessedFrame으로 변환.
 
@@ -133,6 +139,7 @@ def _build_processed_frame(
             processing_time_ms=elapsed_ms,
             ts=ts,
             is_outdoor=is_outdoor,
+            probe_source=probe_source,
         )
 
     except Exception as e:
@@ -148,7 +155,7 @@ async def decode_frame(payload: dict) -> ProcessedFrame | None:
         - 그 외는 _build_processed_frame과 동일
     """
     start_ts = time.perf_counter()
-    event_id, device_id, stream, ts, is_outdoor = _parse_frame_meta(payload)
+    event_id, device_id, stream, ts, is_outdoor, probe_source = _parse_frame_meta(payload)
 
     b64_str = payload.get("thumbnail_jpeg_b64")
     if not b64_str:
@@ -167,7 +174,9 @@ async def decode_frame(payload: dict) -> ProcessedFrame | None:
         logger.error(f"[FrameDecoder] base64 디코딩 오류: event_id={event_id}, {e}")
         return None
 
-    return _build_processed_frame(jpeg_bytes, event_id, device_id, stream, ts, start_ts, is_outdoor)
+    return _build_processed_frame(
+        jpeg_bytes, event_id, device_id, stream, ts, start_ts, is_outdoor, probe_source
+    )
 
 
 async def decode_frame_binary(jpeg_bytes: bytes, meta: dict) -> ProcessedFrame | None:
@@ -178,10 +187,12 @@ async def decode_frame_binary(jpeg_bytes: bytes, meta: dict) -> ProcessedFrame |
     없어 페이로드 크기(약 33%)와 CPU 오버헤드를 절감한다.
     """
     start_ts = time.perf_counter()
-    event_id, device_id, stream, ts, is_outdoor = _parse_frame_meta(meta)
+    event_id, device_id, stream, ts, is_outdoor, probe_source = _parse_frame_meta(meta)
 
     if not jpeg_bytes:
         logger.warning(f"[FrameDecoder] 바이너리 데이터 없음: event_id={event_id}")
         return None
 
-    return _build_processed_frame(jpeg_bytes, event_id, device_id, stream, ts, start_ts, is_outdoor)
+    return _build_processed_frame(
+        jpeg_bytes, event_id, device_id, stream, ts, start_ts, is_outdoor, probe_source
+    )

@@ -28,6 +28,13 @@ services:
       - MKL_NUM_THREADS=4
       - OPENBLAS_NUM_THREADS=4
       - NUMEXPR_NUM_THREADS=4
+      # 2026-07-19 실측 발견: ultralytics가 모델 로드/추론 시마다 체크포인트에 내장된
+      # requirements를 현재 설치본과 비교해 불일치하면 런타임 중 pip install로 조용히
+      # 갱신한다(AUTOINSTALL 기본값 True). 이미 임포트된 모듈과 방금 갱신된 디스크 상의
+      # 패키지가 어긋나면서 'Conv' object has no attribute 'bn' 추론 오류가 프레임마다
+      # 재발했다. requirements.txt로 버전을 이미 고정하고 있으므로 런타임 자동 설치를
+      # 끈다(비협상 아님, 순수 안정성 수정).
+      - YOLO_AUTOINSTALL=False
       # Docker Compose 환경에서는 컨테이너 서비스명과 호스트 Ollama 주소로 재설정
       - REDIS_URL=redis://redis:6379
       # macOS에서도 Ollama는 도커 외부 로컬에서 별도로 띄움

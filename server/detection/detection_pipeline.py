@@ -101,6 +101,7 @@ class DetectionPipeline:
         event_id: str,
         device_id: str,
         is_outdoor: bool | None = None,
+        probe_source: str | None = None,
     ) -> tuple[DetectionResult | ReflexAlert, list[Detection], list[SurfaceResult]]:
         start_ts = time.time()
 
@@ -153,7 +154,11 @@ class DetectionPipeline:
             # 가능하도록 한다. 정적 객체는 4프레임, 접근 객체는 2프레임을 요구한다.
             # [면접 대비 주석] 먼 객체는 누적으로 안전 확보, 근접 신규 객체는 접근성으로
             # 조기 통과하는 비대칭 설계. 정적 오탐은 여전히 4프레임으로 필터링 유지.
-            if det.track_id is not None:
+            # 2026-07-19: "거리측정" 모드의 단발 검증 캡처(probe_source="lidar_validation")는
+            # 연속 스트림이 아니라 사용자가 명시적으로 트리거한 1회성 정지 프레임이므로,
+            # 연속 프레임 누적을 전제로 하는 이 필터를 적용할 수 없다(항상 hit_count=1로
+            # 걸러져 탐지 0건이 되는 결함이었음). 검증 캡처는 이 필터를 건너뛴다.
+            if det.track_id is not None and probe_source != "lidar_validation":
                 min_hit_count = 2 if det.direction == "approaching" else 4
                 if det.hit_count < min_hit_count:
                     continue

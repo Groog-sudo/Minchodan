@@ -491,6 +491,7 @@ class DetectionConsumer:
                 event_id=processed.event_id,
                 device_id=processed.device_id,
                 is_outdoor=processed.is_outdoor,
+                probe_source=processed.probe_source,
             )
         except Exception as e:
             logger.error(
