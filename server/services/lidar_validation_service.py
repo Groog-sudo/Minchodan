@@ -4,6 +4,7 @@ import sys
 from server.db.connection import async_sessionmaker_factory
 from server.db.models import LidarDistanceValidationSample
 from server.db.repositories import LidarDistanceValidationRepository
+from server.detection import distance_policy
 from server.detection.direction import bbox_area_ratio, estimate_distance
 from server.detection.schemas import DistanceProbeReport
 
@@ -33,6 +34,15 @@ async def persist_distance_probe_samples(
         distance_class = estimate_distance(
             sample.bbox, _PROBE_FRAME_SIZE, _PROBE_FRAME_SIZE, sample.class_name
         )
+        # 2026-07-19 (거리 정책 SSOT 2단계, 온디맨드 유지 결정): LiDAR 실측이 있으면
+        # 자문용 구역도 함께 계산해 저장한다. 실시간 반사/인지 라우팅에는 관여하지
+        # 않고(distance_policy.zone_from_lidar_meters docstring 참조), 캘리브레이션
+        # 비교(scripts/analyze_lidar_validation.py 구역 혼동 행렬)에만 쓰인다.
+        lidar_zone = (
+            distance_policy.zone_from_lidar_meters(sample.lidar_meters)
+            if sample.lidar_meters is not None
+            else None
+        )
         rows.append(
             LidarDistanceValidationSample(
                 event_id=report.event_id,
@@ -47,6 +57,7 @@ async def persist_distance_probe_samples(
                 lidar_calibrated=sample.lidar_calibrated,
                 heuristic_distance_class=distance_class,
                 heuristic_area_ratio=area_ratio,
+                lidar_distance_zone=lidar_zone,
             )
         )
 

@@ -150,6 +150,43 @@ def compute_heuristic_distance_m(area_ratio: float) -> float:
 
 
 # =========================================================================
+# 2026-07-19 (2단계, 온디맨드 유지 결정): LiDAR 실측 미터를 area_ratio 경계와 같은
+# 정책으로 비교하기 위한 미터 환산 경계.
+# 💡 [면접 대비 주석]
+# 질문: 왜 LiDAR 미터 경계를 area_ratio 경계와 별도로 하드코딩하지 않았나요?
+# 답변: compute_heuristic_distance_m()의 공식(0.22/sqrt(area_ratio))을 area_ratio에
+# 대해 역산하면 area_ratio = (0.22/meters)^2 이므로, 기존 area_ratio 경계값(0.10/0.08/
+# 0.03/0.025)을 그대로 미터로 환산할 수 있다. 두 값을 따로 하드코딩하면 area_ratio
+# 경계를 바꿀 때 미터 경계를 깜빡하고 안 바꾸는 정책 드리프트가 생긴다.
+def _area_ratio_to_meters(area_ratio: float) -> float:
+    return HEURISTIC_COEFFICIENT / sqrt(area_ratio)
+
+
+LIDAR_NEAR_ENTER_METERS = _area_ratio_to_meters(NEAR_ENTER_AREA_RATIO)  # ≈ 0.696m
+LIDAR_NEAR_EXIT_METERS = _area_ratio_to_meters(NEAR_EXIT_AREA_RATIO)  # ≈ 0.778m
+LIDAR_MEDIUM_ENTER_METERS = _area_ratio_to_meters(MEDIUM_ENTER_AREA_RATIO)  # ≈ 1.270m
+LIDAR_MEDIUM_EXIT_METERS = _area_ratio_to_meters(MEDIUM_EXIT_AREA_RATIO)  # ≈ 1.391m
+
+
+def zone_from_lidar_meters(meters: float) -> Zone:
+    """LiDAR 실측 거리(m)를 area_ratio 경계와 동일한 스케일의 구역으로 변환한다.
+
+    **자문(advisory) 전용 함수다.** `evaluate_distance()`의 route 결정에는 관여하지
+    않는다 - `docs/research/lidar_fusion_sequencing_plan.md` §4.2에 따라 실시간 반사/
+    인지 라우팅은 여전히 area_ratio(히스테리시스 포함) 단독 기준이며, 이 함수는
+    `lidar_distance_validation_samples`의 온디맨드 검증 캡처(거리측정 모드)에서
+    "면적비 휴리스틱 구역"과 "LiDAR 구역"을 나란히 비교하는 캘리브레이션 용도로만
+    쓰인다. 히스테리시스(진입/이탈 경계 분리)는 상태가 없는 단발 캡처에는 적용할
+    근거(이전 프레임)가 없으므로 진입 경계만 사용한다.
+    """
+    if meters <= LIDAR_NEAR_ENTER_METERS:
+        return "near"
+    if meters <= LIDAR_MEDIUM_ENTER_METERS:
+        return "medium"
+    return "far"
+
+
+# =========================================================================
 
 
 def evaluate_distance(

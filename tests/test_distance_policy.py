@@ -131,3 +131,27 @@ def test_evaluate_distance_bottom_override_reason_surfaces():
     result = dp.evaluate_distance(bbox, frame_width=100, frame_height=100)
     assert result.effective_distance_zone == "near"
     assert result.route_reason == "bottom_close_override"
+
+
+def test_lidar_meter_boundaries_derived_from_area_ratio_boundaries():
+    # meters = coefficient / sqrt(area_ratio) 역산이므로 area_ratio가 클수록(가까울수록)
+    # 미터 경계는 작다. near_enter(0.10)가 near_exit(0.08)보다 더 가까운 미터여야 한다.
+    assert dp.LIDAR_NEAR_ENTER_METERS < dp.LIDAR_NEAR_EXIT_METERS
+    assert dp.LIDAR_NEAR_EXIT_METERS < dp.LIDAR_MEDIUM_ENTER_METERS
+    assert dp.LIDAR_MEDIUM_ENTER_METERS < dp.LIDAR_MEDIUM_EXIT_METERS
+    assert dp.compute_heuristic_distance_m(dp.NEAR_ENTER_AREA_RATIO) == dp.LIDAR_NEAR_ENTER_METERS
+
+
+def test_zone_from_lidar_meters_near():
+    assert dp.zone_from_lidar_meters(0.5) == "near"
+    assert dp.zone_from_lidar_meters(dp.LIDAR_NEAR_ENTER_METERS) == "near"
+
+
+def test_zone_from_lidar_meters_medium():
+    assert dp.zone_from_lidar_meters(1.0) == "medium"
+    assert dp.zone_from_lidar_meters(dp.LIDAR_MEDIUM_ENTER_METERS) == "medium"
+
+
+def test_zone_from_lidar_meters_far():
+    assert dp.zone_from_lidar_meters(2.0) == "far"
+    assert dp.zone_from_lidar_meters(3.0) == "far"

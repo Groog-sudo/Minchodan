@@ -47,6 +47,44 @@ def _print_heuristic_class_breakdown(rows) -> None:
     print(f"  LiDAR 실측 없음(유효 depth 샘플 부족): {missing_count}건")
 
 
+_ZONES = ("near", "medium", "far")
+
+
+def _print_zone_confusion_matrix(rows) -> None:
+    """휴리스틱 구역(area_ratio 기반) vs LiDAR 자문 구역의 혼동 행렬을 출력한다.
+
+    HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md §13.4가 요구한
+    "구역 혼동 행렬" 산출물이다. 일치율·오분류 방향(near를 medium/far로 과소평가하는지
+    등)의 임계값 판정은 담당자가 직접 해석하도록 자동 판정 로직은 넣지 않는다
+    (server/detection/distance_policy.py:zone_from_lidar_meters 참조 - 이 구역은
+    반사/인지 실시간 라우팅에 관여하지 않는 검증 전용 값).
+    """
+    matrix: dict[str, dict[str, int]] = {h: dict.fromkeys(_ZONES, 0) for h in _ZONES}
+    skipped_no_lidar_zone = 0
+    for row in rows:
+        if row.lidar_distance_zone is None:
+            skipped_no_lidar_zone += 1
+            continue
+        heuristic = row.heuristic_distance_class if row.heuristic_distance_class in _ZONES else None
+        lidar_zone = row.lidar_distance_zone if row.lidar_distance_zone in _ZONES else None
+        if heuristic is None or lidar_zone is None:
+            continue
+        matrix[heuristic][lidar_zone] += 1
+
+    print("\n[구역 혼동 행렬] 행=휴리스틱(area_ratio) / 열=LiDAR 자문 구역")
+    header = "  " + "".join(f"{z:>10s}" for z in _ZONES)
+    print(header)
+    for heuristic in _ZONES:
+        cells = "".join(f"{matrix[heuristic][z]:>10d}" for z in _ZONES)
+        print(f"  {heuristic:<10s}{cells}")
+
+    total = sum(sum(row.values()) for row in matrix.values())
+    diagonal = sum(matrix[z][z] for z in _ZONES)
+    if total > 0:
+        print(f"  대각선 일치: {diagonal}/{total} ({diagonal / total * 100:.1f}%)")
+    print(f"  LiDAR 자문 구역 없음(lidar_meters 미확보): {skipped_no_lidar_zone}건")
+
+
 def _print_class_name_breakdown(rows) -> None:
     by_class: dict[str, list[tuple[str, float | None]]] = {}
     for row in rows:
@@ -76,6 +114,7 @@ async def main() -> None:
 
     print(f"총 {len(rows)}건 조회 (최신 {args.limit}건 이내)")
     _print_heuristic_class_breakdown(rows)
+    _print_zone_confusion_matrix(rows)
     _print_class_name_breakdown(rows)
 
 

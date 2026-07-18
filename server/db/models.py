@@ -483,6 +483,11 @@ class LidarDistanceValidationSample(Base):
     lidar_calibrated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     heuristic_distance_class: Mapped[str] = mapped_column(String(16), nullable=False)
     heuristic_area_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    # 2026-07-19 (거리 정책 SSOT 2단계, 온디맨드 유지 결정): distance_policy.zone_from_lidar_meters()
+    # 로 계산한 LiDAR 자문 구역. lidar_meters가 없으면 NULL(휴리스틱만 존재하는 경우).
+    # 반사/인지 실시간 라우팅에는 쓰이지 않고, heuristic_distance_class와의 혼동 행렬
+    # 비교(scripts/analyze_lidar_validation.py)를 위한 캘리브레이션 전용 컬럼이다.
+    lidar_distance_zone: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
