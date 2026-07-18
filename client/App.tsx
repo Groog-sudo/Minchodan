@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { View, StyleSheet, Platform, StatusBar, AppState } from "react-native";
+import { View, StyleSheet, Platform, StatusBar, AppState, LogBox } from "react-native";
 import { setAudioModeAsync } from "expo-audio";
 import * as ExpoSplashScreen from "expo-splash-screen";
 
@@ -8,6 +8,15 @@ import { LoadingScreen } from "./src/components/LoadingScreen";
 import { audioEngine } from "./src/services/audioEngine";
 
 void ExpoSplashScreen.preventAutoHideAsync();
+
+// 2026-07-18: 실기기 테스트 중 반복 확인된 무해한 경고들이 LogBox 알림 토스트를 계속
+// 재노출시켜(각 console.warn/error마다 다시 뜸) 하단 버튼 dock을 가려 닫을 수 없게 만드는
+// 문제가 있었다. 원인이 이미 파악되고 안전하게 처리되는(catch됨) 경고만 화이트리스트로
+// 무시한다 - 새로운 유형의 경고는 계속 정상적으로 노출된다.
+LogBox.ignoreLogs([
+  "Packager status check returned unexpected result",
+  "오디오 세션 전환 실패",
+]);
 
 // CameraView가 아직 별도의 "준비 완료" 콜백을 제공하지 않아 고정 시간으로 처리한다.
 const MIN_LOADING_DURATION_MS = 1800;
