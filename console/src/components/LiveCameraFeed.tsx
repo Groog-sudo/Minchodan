@@ -113,6 +113,8 @@ export function LiveCameraFeed({
   } | null>(null);
   const [mapVisible, setMapVisible] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const lastGpsRef = useRef(lastGps);
+  lastGpsRef.current = lastGps;
 
   // platform에 따른 동적 회전 각도 결정 (Android는 기본 90도, iOS 및 기타는 0도)
   const defaultRotate = platform === "android" ? 90 : 0;
