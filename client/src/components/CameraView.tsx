@@ -1412,7 +1412,14 @@ export function CameraView() {
             )}
           </View>
         )}
+        </ScrollView>
+      </View>
 
+      {/* 조작 버튼 오버레이: operatorPanel(표시 전용, pointerEvents=none) 밖의 별도
+          box-none 레이어. none 안에 중첩하면 자식 Pressable이 조상의 none 때문에
+          터치를 아예 받지 못한다(2026-07-18 th 병합 회귀 수정 - 탐지 시작 등 버튼
+          무반응 버그의 원인). */}
+      <View style={styles.controlsOverlay} pointerEvents="box-none">
         <View style={styles.controlRowDock} pointerEvents="box-none">
           <Pressable
             style={[
@@ -1509,8 +1516,7 @@ export function CameraView() {
         )}
 
         {__DEV__ && <DebugTriggerPanel />}
-      </ScrollView>
-    </View>
+      </View>
     </View>
   );
 }

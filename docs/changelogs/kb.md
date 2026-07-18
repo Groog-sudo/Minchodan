@@ -2971,3 +2971,14 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `tests/test_stt_to_llm_bridge_template.py`, `server/stt/stt_to_llm_bridge.py`(ruff format만 재적용)
 - **검증 결과**: `ruff check .`/`ruff format --check` 전체 통과, `mypy` 신규 에러 없음(베이스라인 동일), client·console `npx tsc --noEmit` 둘 다 클린. 전체 pytest 스위트 321 passed(환경 의존 실패 3건 제외, 회귀 아님 재확인).
 - **비고**: dev는 kb(817558f)와 th(4d0d429)가 각각 독립적으로 dev에서 분기된 상태였어 순수 fast-forward가 아닌 실제 3-way 병합(두 부모)으로 처리함.
+
+---
+
+### 2026-07-18 | 수정 | th 병합 후 조작 버튼 전체 무반응 회귀 수정
+
+- **배경**: 위 th 병합·push 직후 실기기 테스트 중 "탐지 시작 등 버튼이 안 눌린다"는 실사용 리포트로 발견. 정합성 검토에서는 컴파일(tsc)만 확인했고 런타임 터치 동작까지는 검증하지 못했던 gap.
+- **원인**: th가 `controlRowDock`(탐지 시작/지도/USB-WiFi 전환/거리측정/검증캡처 버튼)을 기존의 별도 `controlsOverlay`(`pointerEvents="box-none"`, container와 형제) 밖에서 `operatorPanel`의 `ScrollView` 안으로 옮겼다. `operatorPanel`은 `pointerEvents="none"`인데, React Native에서 `"none"`은 자신뿐 아니라 하위 서브트리 전체를 터치 타깃에서 제외한다(`"box-none"`과의 핵심 차이). 안쪽 `controlRowDock`에 `"box-none"`을 다시 걸어도 조상이 이미 히트테스트를 막아 무의미했다.
+- **수정**: `controlRowDock`, `mapVisible` 상태의 `NavMapPanel`, `DebugTriggerPanel`을 `operatorPanel`/`ScrollView` 밖으로 다시 꺼내 원래 있던(현재는 미사용 상태로 남아 있던) `controlsOverlay`(`pointerEvents="box-none"`) 스타일의 형제 `View`로 복원. th가 실제로 의도한 변경(버튼 텍스트, `navToggleActive` 스타일, 지도 패널 위치)은 그대로 유지.
+- **관련 파일**: `client/src/components/CameraView.tsx`
+- **검증 결과**: `npx tsc --noEmit` 클린. 실기기 Metro 세션에서 정상 재번들링 확인. 버튼 터치 자체는 시뮬레이터/실기기 UI 조작이 필요해 코드 검토·정적 분석으로만 검증(사용자 실기기 재확인 필요).
+- **비고**: 정합성 검토가 컴파일 가능 여부(tsc)에 집중돼 `pointerEvents` 계층 구조 같은 런타임 전용 회귀는 놓쳤다 - 향후 UI 관련 병합은 정적 검토와 별개로 실제 터치 동작 확인이 필요함.
