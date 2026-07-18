@@ -1401,17 +1401,57 @@ export function CameraView() {
                       {point.label}:{" "}
                       {sample && sample.meters != null
                         ? `${sample.meters.toFixed(2)} m ` +
-                        `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
-                        `${sample.sampleCount ?? 0})`
-                      : "측정 불가"}
-                  </Text>
-                );
-              })
-            )}
-          </View>
-        )}
+                          `(원본 z ${sample.axialMeters?.toFixed(2) ?? "-"} m, ` +
+                          `${sample.sampleCount ?? 0})`
+                        : "측정 불가"}
+                    </Text>
+                  );
+                })
+              )}
+              {depthProbeStatus ? (
+                <Text style={styles.depthRow}>{depthProbeStatus}</Text>
+              ) : null}
+            </View>
+          )}
+        </ScrollView>
+      </View>
 
-        <View style={styles.controlRowDock} pointerEvents="box-none">
+      {/* 운영자 버튼 오버레이: STT보다 위(zIndex). 빈 영역은 box-none으로 STT에 통과. */}
+      <View style={styles.controlsOverlay} pointerEvents="box-none">
+        <View style={styles.confThresholdRow} pointerEvents="box-none">
+          <Text style={styles.confThresholdLabel} pointerEvents="none">
+            신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%
+          </Text>
+          <View style={styles.confThresholdButtons} pointerEvents="box-none">
+            <Pressable
+              style={styles.confThresholdButton}
+              onPress={() => setConfThreshold(v => Math.max(0.05, Math.round((v - 0.05) * 100) / 100))}
+            >
+              <Text style={styles.confThresholdButtonText}>-</Text>
+            </Pressable>
+            <Pressable
+              style={styles.confThresholdButton}
+              onPress={() => setConfThreshold(v => Math.min(0.95, Math.round((v + 0.05) * 100) / 100))}
+            >
+              <Text style={styles.confThresholdButtonText}>+</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {navRoute ? (
+          <View style={styles.mapToggleWrap} pointerEvents="box-none">
+            <Pressable
+              style={styles.mapToggleButton}
+              onPress={() => setMapVisible((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={mapVisible ? "지도 끄기" : "지도 켜기"}
+            >
+              <Text style={styles.mapToggleText}>{mapVisible ? "지도 끄기" : "지도 켜기"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.controlRow} pointerEvents="box-none">
           <Pressable
             style={[
               styles.mapToggleButton,
@@ -1506,8 +1546,12 @@ export function CameraView() {
           </View>
         )}
 
-        {__DEV__ && <DebugTriggerPanel />}
-      </ScrollView>
+        {__DEV__ ? (
+          <View style={styles.devPanelWrap} pointerEvents="box-none">
+            <DebugTriggerPanel />
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -1649,8 +1693,6 @@ function ROIOverlay() {
   const side = Math.min(size.width, size.height);
 
   return (
-    <View
-      style={StyleSheet.absoluteFill}
     <View
       style={StyleSheet.absoluteFill}
       pointerEvents="none"
@@ -1847,7 +1889,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   controlsOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 20,
     justifyContent: "flex-end",
     paddingBottom: 12,
