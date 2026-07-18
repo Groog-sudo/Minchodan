@@ -121,7 +121,9 @@ function parsePipelineDebug(raw: string | PipelineDebug | null | undefined): Pip
   }
 }
 
-/** 테이블 한 줄 요약용: STT 전사 / LLM 응답 / 패스트레인 등 핵심 텍스트 추출. */
+/** 테이블 한 줄 요약용: 사용자 발화(STT 전사)만 노출한다.
+ *  - "TTS 안내문" 컬럼과 겹치지 않도록 LLM 응답/최종 안내문은 이 컬럼에서 제외한다.
+ *  - 반사/인지 등 STT 입력이 없는 경로는 빈 문자열을 반환한다(테이블에서는 "-"로 표시). */
 function summarizePipelineDebug(
   debugJson: string | PipelineDebug | null | undefined,
   detectedObjectsJson: string,
@@ -131,25 +133,8 @@ function summarizePipelineDebug(
     return `[에코 스킵] ${debug.stt_transcript}`;
   }
   if (debug?.stt_transcript) {
-    const parts = [debug.stt_transcript];
-    if (debug.llm_text && debug.llm_text !== debug.stt_transcript) {
-      parts.push(`-> ${debug.llm_text}`);
-    } else if (debug.template_text && debug.template_text !== debug.stt_transcript) {
-      parts.push(`-> ${debug.template_text}`);
-    } else if (debug.response_text && debug.response_text !== debug.stt_transcript) {
-      parts.push(`-> ${debug.response_text}`);
-    }
-    return parts.join(" ");
+    return debug.stt_transcript;
   }
-  if (debug?.llm_text) return debug.llm_text;
-  if (debug?.response_text) return debug.response_text;
-  if (debug?.detections_summary?.length) {
-    const det = debug.detections_summary[0];
-    const cls = String(det.class_name ?? "");
-    const conf = det.confidence != null ? ` ${det.confidence}` : "";
-    return `${cls}${conf}`;
-  }
-  if (debug?.rag_context) return debug.rag_context.slice(0, 80);
 
   // pipeline_debug_json 이전 STT 로그 폴백: detected_objects_json.stt_transcript
   try {
@@ -551,6 +536,12 @@ function FrameLightbox({
             </div>
             <div className="frame-detail-item frame-detail-item-full">
               <span className="frame-detail-label">파이프라인 텍스트</span>
+              <span className="frame-detail-value">
+                {summarizePipelineDebug(row.pipeline_debug_json, row.detected_objects_json) || "-"}
+              </span>
+            </div>
+            <div className="frame-detail-item frame-detail-item-full">
+              <span className="frame-detail-label">파이프라인 디버그</span>
               <div className="frame-detail-value">
                 <PipelineDebugPanel
                   debugJson={row.pipeline_debug_json}
@@ -975,6 +966,12 @@ export function DetectionGuidanceLogTable({
                 </div>
                 <div className="frame-detail-item frame-detail-item-full">
                   <span className="frame-detail-label">파이프라인 텍스트</span>
+                  <span className="frame-detail-value">
+                    {summarizePipelineDebug(selected.pipeline_debug_json, selected.detected_objects_json) || "-"}
+                  </span>
+                </div>
+                <div className="frame-detail-item frame-detail-item-full">
+                  <span className="frame-detail-label">파이프라인 디버그</span>
                   <div className="frame-detail-value">
                     <PipelineDebugPanel
                       debugJson={selected.pipeline_debug_json}

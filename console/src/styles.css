@@ -184,6 +184,7 @@ h2 {
   align-items: center;
   position: relative;
   margin-top: 2px;
+  gap: 8px;
 }
 
 .widget-add-btn {
@@ -225,6 +226,26 @@ h2 {
   color: #ffffff;
 }
 
+.widget-picker-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.widget-picker-item-danger {
+  color: #ff8a8a;
+}
+
+.widget-picker-item-danger:hover {
+  border-color: rgba(255, 95, 95, 0.45);
+  color: #ffd1d1;
+}
+
+.widget-picker-divider {
+  height: 1px;
+  background: rgba(148, 163, 184, 0.22);
+  margin: 4px 0;
+}
+
 .widget-picker-empty {
   color: #6b7590;
   font-size: 12px;
@@ -242,6 +263,23 @@ h2 {
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.dashboard-widget-item.widget-move-mode {
+  outline: 1px dashed rgba(249, 183, 0, 0.22);
+  outline-offset: 2px;
+}
+
+.dashboard-widget-item.widget-move-target {
+  cursor: grab;
+}
+
+.dashboard-widget-item.widget-move-target:active {
+  cursor: grabbing;
+}
+
+.dashboard-widget-item.widget-drop-target {
+  box-shadow: 0 0 0 2px rgba(249, 183, 0, 0.35);
 }
 
 .dashboard-widget-item > .panel,
@@ -296,6 +334,22 @@ h2 {
   border: 1px solid transparent;
   padding: 7px 8px;
   font-size: 12px;
+}
+
+.widget-option-move {
+  width: 100%;
+  text-align: left;
+  color: #ffffff;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 7px 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.widget-option-move:hover {
+  border-color: rgba(249, 183, 0, 0.35);
+  color: var(--color-gildang-yellow);
 }
 
 .widget-option-delete:hover {

@@ -112,8 +112,13 @@ export function MembersPage({ token }: { token: string }) {
 
     if (field === "disabilitySeverity") {
       if (!trimmed) return "장애 정도는 필수입니다.";
-      if (!/^장애등급\s*\d+급$/.test(trimmed)) {
+      const match = trimmed.match(/^장애등급\s*(\d+)급$/);
+      if (!match) {
         return "잘못된 입력 정보입니다. 예: 장애등급 1급";
+      }
+      const grade = Number.parseInt(match[1], 10);
+      if (Number.isNaN(grade) || grade < 1 || grade > 6) {
+        return "올바르지 않은 장애등급입니다. 최대 장애 등급은 6급입니다.";
       }
       return "";
     }

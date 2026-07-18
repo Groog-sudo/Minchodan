@@ -165,11 +165,15 @@ export function DashboardPage({
   liveFeed: ReturnType<typeof useLiveFeed>;
   isDemoMode: boolean;
 }) {
+  type WidgetMenuMode = "root" | "add";
   const [widgetOrder, setWidgetOrder] = useState<DashboardWidgetKey[]>(
     DEFAULT_DASHBOARD_WIDGET_ORDER,
   );
   const [isWidgetPickerOpen, setIsWidgetPickerOpen] = useState(false);
+  const [widgetMenuMode, setWidgetMenuMode] = useState<WidgetMenuMode>("root");
   const [openWidgetOptionKey, setOpenWidgetOptionKey] = useState<DashboardWidgetKey | null>(null);
+  const [movingWidgetKey, setMovingWidgetKey] = useState<DashboardWidgetKey | null>(null);
+  const [dragOverWidgetKey, setDragOverWidgetKey] = useState<DashboardWidgetKey | null>(null);
 
   const { imageUrl, latestDetections, connected: liveFeedConnected, latencyEvents, guidanceLogEvents, lastGps } =
     liveFeed;
@@ -229,12 +233,48 @@ export function DashboardPage({
 
   const removeWidget = (widgetKey: DashboardWidgetKey) => {
     setWidgetOrder((prev) => prev.filter((key) => key !== widgetKey));
+    if (movingWidgetKey === widgetKey) {
+      setMovingWidgetKey(null);
+    }
     setOpenWidgetOptionKey(null);
   };
 
   const addWidget = (widgetKey: DashboardWidgetKey) => {
     setWidgetOrder((prev) => (prev.includes(widgetKey) ? prev : [...prev, widgetKey]));
     setIsWidgetPickerOpen(false);
+    setWidgetMenuMode("root");
+  };
+
+  const removeAllWidgets = () => {
+    setWidgetOrder([]);
+    setIsWidgetPickerOpen(false);
+    setWidgetMenuMode("root");
+    setOpenWidgetOptionKey(null);
+    setMovingWidgetKey(null);
+    setDragOverWidgetKey(null);
+  };
+
+  const enableMoveMode = (widgetKey: DashboardWidgetKey) => {
+    setMovingWidgetKey(widgetKey);
+    setDragOverWidgetKey(null);
+    setOpenWidgetOptionKey(null);
+  };
+
+  const moveWidget = (fromKey: DashboardWidgetKey, toKey: DashboardWidgetKey) => {
+    if (fromKey === toKey) {
+      return;
+    }
+    setWidgetOrder((prev) => {
+      const fromIndex = prev.indexOf(fromKey);
+      const toIndex = prev.indexOf(toKey);
+      if (fromIndex < 0 || toIndex < 0) {
+        return prev;
+      }
+      const next = [...prev];
+      const [dragged] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, dragged);
+      return next;
+    });
   };
 
   const renderWidget = (widgetKey: DashboardWidgetKey) => {
@@ -316,26 +356,55 @@ export function DashboardPage({
         <button
           type="button"
           className="widget-add-btn"
-          onClick={() => setIsWidgetPickerOpen((prev) => !prev)}
+          onClick={() => {
+            setIsWidgetPickerOpen((prev) => {
+              const next = !prev;
+              if (next) {
+                setWidgetMenuMode("root");
+              }
+              return next;
+            });
+          }}
           aria-expanded={isWidgetPickerOpen}
         >
-          기능상자 추가
+          기능상자
         </button>
         {isWidgetPickerOpen && (
-          <div className="widget-picker-menu" role="menu" aria-label="위젯 선택 목록">
-            {availableWidgets.length === 0 ? (
-              <span className="widget-picker-empty">추가 가능한 위젯이 없습니다.</span>
-            ) : (
-              availableWidgets.map((widget) => (
-                <button
-                  key={widget.key}
-                  type="button"
-                  className="widget-picker-item"
-                  onClick={() => addWidget(widget.key)}
-                >
-                  {widget.label}
-                </button>
-              ))
+          <div className="widget-picker-menu" role="menu" aria-label="기능상자 메뉴">
+            <button
+              type="button"
+              className="widget-picker-item"
+              onClick={() => setWidgetMenuMode("add")}
+            >
+              추가
+            </button>
+            <button
+              type="button"
+              className="widget-picker-item widget-picker-item-danger"
+              onClick={removeAllWidgets}
+              disabled={widgetOrder.length === 0}
+            >
+              전체 삭제
+            </button>
+
+            {widgetMenuMode === "add" && (
+              <>
+                <div className="widget-picker-divider" />
+                {availableWidgets.length === 0 ? (
+                  <span className="widget-picker-empty">추가 가능한 위젯이 없습니다.</span>
+                ) : (
+                  availableWidgets.map((widget) => (
+                    <button
+                      key={widget.key}
+                      type="button"
+                      className="widget-picker-item"
+                      onClick={() => addWidget(widget.key)}
+                    >
+                      {widget.label}
+                    </button>
+                  ))
+                )}
+              </>
             )}
           </div>
         )}
@@ -353,10 +422,44 @@ export function DashboardPage({
       <section className="dashboard-widget-grid">
         {widgetOrder.map((widgetKey) => {
           const widgetMeta = DASHBOARD_WIDGETS.find((widget) => widget.key === widgetKey);
+          const moveModeActive = movingWidgetKey !== null;
+          const isMovableTarget = movingWidgetKey === widgetKey;
           return (
             <div
               key={widgetKey}
-              className={`dashboard-widget-item widget-${widgetKey} ${widgetMeta?.fullWidth ? "dashboard-widget-item-full" : ""}`}
+              className={`dashboard-widget-item widget-${widgetKey} ${widgetMeta?.fullWidth ? "dashboard-widget-item-full" : ""} ${moveModeActive ? "widget-move-mode" : ""} ${isMovableTarget ? "widget-move-target" : ""} ${dragOverWidgetKey === widgetKey ? "widget-drop-target" : ""}`}
+              draggable={isMovableTarget}
+              onDragStart={() => {
+                if (!isMovableTarget) {
+                  return;
+                }
+                setDragOverWidgetKey(null);
+              }}
+              onDragOver={(event) => {
+                if (!moveModeActive || !movingWidgetKey || movingWidgetKey === widgetKey) {
+                  return;
+                }
+                event.preventDefault();
+                setDragOverWidgetKey(widgetKey);
+              }}
+              onDragLeave={() => {
+                if (dragOverWidgetKey === widgetKey) {
+                  setDragOverWidgetKey(null);
+                }
+              }}
+              onDrop={(event) => {
+                if (!moveModeActive || !movingWidgetKey) {
+                  return;
+                }
+                event.preventDefault();
+                moveWidget(movingWidgetKey, widgetKey);
+                setDragOverWidgetKey(null);
+                setMovingWidgetKey(null);
+              }}
+              onDragEnd={() => {
+                setDragOverWidgetKey(null);
+                setMovingWidgetKey(null);
+              }}
             >
               <div className="widget-card-actions">
                 <button
@@ -371,6 +474,13 @@ export function DashboardPage({
                 </button>
                 {openWidgetOptionKey === widgetKey && (
                   <div className="widget-option-menu" role="menu" aria-label="위젯 옵션 메뉴">
+                    <button
+                      type="button"
+                      className="widget-option-move"
+                      onClick={() => enableMoveMode(widgetKey)}
+                    >
+                      옮기기
+                    </button>
                     <button
                       type="button"
                       className="widget-option-delete"
