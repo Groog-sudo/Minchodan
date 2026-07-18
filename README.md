@@ -93,7 +93,7 @@
 Minchodan/
 │
 ├── server/                          # GPU 서버 (FastAPI)
-│   ├── api/                         # WebSocket /ws/detect, 세션, 하트비트
+│   ├── api/                         # WebSocket /ws/detect, 세션, 하트비트, REST 라우터
 │   ├── capture/                     # 프레임 디코딩, 이중 스트림 분기
 │   ├── detection/                   # Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack, Gates
 │   │   └── gates/                   # Reflex Gate, Surface Gate
@@ -104,8 +104,14 @@ Minchodan/
 │   ├── tts/                         # 실시간 TTS, 반사 클립 전송, 억제
 │   ├── bus/                         # Redis Streams 인터페이스
 │   ├── db/                          # RDB ORM/DTO/DDL (사용자, 단말, 관리자, 감사 로그)
-│   └── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
-│       └── yolo26n/
+│   ├── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
+│   │   └── yolo26n/
+│   ├── services/                    # 비즈니스 로직 Service 계층 (Router-Service-Repository)
+│   ├── stt/                         # faster-whisper STT 서비스, 음성 명령-LLM 브릿지
+│   ├── navigation/                  # TMAP 보행자 경로 API, NavigationManager
+│   └── mcp/                         # MCP 연동 모듈 (GPU 모니터, Slack, LangSmith, 접근성 시뮬레이터 등)
+│
+├── console/                         # React 운영자 모니터링 콘솔
 │
 ├── client/                          # React Native 앱 (thin client)
 │   ├── assets/sounds/reflex_clips/  # 사전합성 반사 음성 클립 (WAV 5종, 단말 번들)

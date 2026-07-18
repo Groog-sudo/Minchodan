@@ -14,6 +14,7 @@ server/db/init_db.py(스키마 생성 스크립트) 실행 이후 후속 작업�
 """
 
 import contextlib
+import hmac
 import logging
 import os
 import sys
@@ -76,7 +77,7 @@ def issue_device_token(device_id: str) -> str:
 
 def _verify_static_token(device_id: str, token: str) -> bool:
     expected_token = REGISTERED_DEVICES.get(device_id)
-    return expected_token is not None and expected_token == token
+    return expected_token is not None and hmac.compare_digest(expected_token, token)
 
 
 def _verify_jwt_token(device_id: str, token: str) -> bool:

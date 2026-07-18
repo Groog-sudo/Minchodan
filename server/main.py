@@ -222,10 +222,13 @@ app = FastAPI(
 # (.env의 CORS_ORIGINS, 기본값은 로컬 개발 콘솔 포트)로 제어한다.
 # 2026-07-09 정정: 이전에는 allow_origins=["*"]로 고정돼 있어 배포 환경에서도 모든
 # 출처를 허용하는 상태였다(allow_credentials=True와 결합 시 보안상 특히 부적절).
+# 2026-07-18 정정: allow_origin_regex="https?://.*"를 제거한다. Starlette
+# CORSMiddleware는 allow_origins 또는 allow_origin_regex 중 하나만 매치돼도
+# 요청을 허용하므로, regex가 화이트리스트를 무력화했고 allow_credentials=True와
+# 결합 시 임의 출처 자격증명 요청이 허용되는 위험이 있었다.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex="https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

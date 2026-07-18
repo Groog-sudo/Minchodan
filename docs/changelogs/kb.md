@@ -2887,3 +2887,20 @@
 - **관련 파일**: `server/detection/schemas.py`, `server/db/models.py`, `server/db/migrations/20260717_001_add_lidar_distance_validation_samples.sql`, `server/db/repositories.py`, `server/services/lidar_validation_service.py`, `server/api/ws_router.py`, `client/src/services/depthProbe.ts`, `client/src/components/CameraView.tsx`, `scripts/analyze_lidar_validation.py`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/research/mitos_improvement_roadmap.md`
 - **검증 결과**: `ruff check`/`ruff format` 전체 통과, `bandit` 신규 파일 무결과(이슈 없음), `mypy` 신규/수정 서버 파일 무결과. `npx tsc --noEmit` 신규 오류 없음(기존 3건은 이번 변경과 무관한 pre-existing 오류로 확인 - `CameraView.tsx` StyleSheet.absoluteFillObject, `useSttRecorder.ts` 상태 비교 2건). 신규 모듈 import 스모크 테스트 통과(`server.db.models`, `server.db.repositories`, `server.detection.schemas`, `server.services.lidar_validation_service`, `server.api.ws_router`).
 - **비고**: 반사/인지 경로의 실시간 거리 판단 로직은 변경하지 않았다(휴리스틱이 여전히 운영 판단의 단일 소스). vision-camera 세션과 LiDAR 세션의 동시 실행(실시간 라이브 융합)은 별도 후속 과제로 명시적으로 범위 밖에 둠. 실기기(LiDAR 탑재 iPhone Pro) 검증 캡처 E2E 테스트와 `scripts/analyze_lidar_validation.py` 실행에 의한 실데이터 집계 확인은 아직 미실시(로컬 DB에 데이터 없음).
+
+---
+
+### 2026-07-18 | 전체 | 정합성 검토 보고서 개선사항 반영
+
+- **커밋**: `fix: 정합성 검토 보고서 개선사항 반영 (CORS, 인증, 문서, 고아 파일, 스캔 보고서)`
+- **변경 내용**:
+  - `server/main.py`: CORS `allow_origin_regex="https?://.*"` 제거. Starlette `CORSMiddleware`는 `allow_origins` 또는 `allow_origin_regex` 중 하나만 매치돼도 요청을 허용하므로, regex가 `settings.CORS_ORIGINS` 화이트리스트를 무력화했고 `allow_credentials=True`와 결합 시 임의 출처 자격증명 요청이 허용되는 위험이 있었다. 주석에 2026-07-18 정정 이력 추가.
+  - `server/api/auth.py`: `_verify_static_token`을 상수시간 비교 `hmac.compare_digest`로 전환하여 타이밍 공격 여지를 제거. `import hmac` 추가.
+  - `README.md`: 디렉토리 구조에 `server/services/`, `server/stt/`, `server/navigation/`, `server/mcp/` 및 `console/` 추가. `docs/Directory_Structure.md`는 stale하다고 자체 정정한 상태이므로 README 트리를 코드 구조 기준으로 최신화.
+  - `server/navigation/pedestrian_navigation.py`: 프로덕션에 사용되지 않는 `input()` 기반 인터랙티브 CLI 프로토타입 삭제. 실제 길안내는 `NavigationSession`/`NavigationFilter`/`server.py`가 담당.
+  - `docs/ops/deployment_guide.md`: `docker/docker-compose.yml`이 로컬 개발·데모 전용임을 명시하고, Redis(`requirepass` 미설정, 6379 호스트 노출) 및 MariaDB(기본 비밀번호 폴백)의 프로덕션 강화 권장사항을 7.4절에 추가.
+  - `scripts/project_scan.py`: `Path.write_text(..., newline="\n")`가 Python 3.9에서 지원되지 않아 스크립트 실행이 실패하던 버그를 `open(..., newline="\n")`으로 수정.
+  - `scripts/project_scan_report.md`: 2026-07-18 기준으로 재생성. 이전 보고서(2026-07-06, 84016 파일)는 node_modules 등이 누적되어 stale했음.
+- **관련 파일**: `server/main.py`, `server/api/auth.py`, `README.md`, `server/navigation/pedestrian_navigation.py`, `docs/ops/deployment_guide.md`, `scripts/project_scan.py`, `scripts/project_scan_report.md`
+- **검증 결과**: `python3 -m ruff format .` 211개 파일 변경 없음, `python3 -m ruff check .` All checks passed.
+- **비고**: 외부 정합성 검토 보고서에서 식별된 6개 개선사항(1 Critical, 2 Medium, 3 Low)을 반영. 남은 Low 우선순위 항목은 이번 커밋에서 모두 처리됨.

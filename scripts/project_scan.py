@@ -443,12 +443,10 @@ def write_outputs(summary: dict[str, Any], output_dir: Path) -> tuple[Path, Path
     report_path = output_dir / "project_scan_report.md"
     summary_path = output_dir / "project_scan_summary.json"
 
-    report_path.write_text(render_report(summary), encoding="utf-8", newline="\n")
-    summary_path.write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-        newline="\n",
-    )
+    with report_path.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(render_report(summary))
+    with summary_path.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(summary, ensure_ascii=False, indent=2))
     return report_path, summary_path
 
 

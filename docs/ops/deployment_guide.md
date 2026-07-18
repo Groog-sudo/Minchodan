@@ -265,6 +265,14 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 > | `DB_HOST` | `.env`의 원격 또는 로컬 호스트 | `mariadb` |
 > | `DB_PORT` | `.env`의 MariaDB 포트 | `3306` |
 
+### 7.4 보안 및 인증 전제
+
+`docker/docker-compose.yml`은 **로컬 개발 및 데모 환경**을 전제로 작성되었습니다. 프로덕션 배포로 사용할 경우 Redis와 MariaDB 인증을 반드시 강화하십시오.
+
+- **Redis**: compose 파일에서 `requirepass`를 설정하지 않고 6379 포트를 호스트에 노출합니다. 로컬 개발에서는 `redis://redis:6379`로 컨테이너 간 통신만 사용하며, 외부망에 노출하지 마십시오.
+- **MariaDB**: `COMPOSE_DB_PASSWORD`와 `COMPOSE_DB_ROOT_PASSWORD`에 기본값 폴백(`minchodan_password`, `minchodan_root_password`)이 있습니다. `.env`에서 반드시 강력한 비밀번호로 교체하고, `.env`는 `.gitignore`에 등록되어 있는지 확인하십시오.
+- **프로덕션 권장**: Redis에 `requirepass` 및 TLS 설정, MariaDB에 별도 관리 계정과 강력한 비밀번호, 네트워크 단계적 분리, 호스트 포트 바인딩 제한 등을 추가하십시오.
+
 ---
 
 ## 8. .dockerignore 명세
