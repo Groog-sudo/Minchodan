@@ -174,6 +174,7 @@ export function DashboardPage({
   );
   const [isWidgetPickerOpen, setIsWidgetPickerOpen] = useState(false);
   const [widgetMenuMode, setWidgetMenuMode] = useState<WidgetMenuMode>("root");
+  const [isRemoveAllConfirmOpen, setIsRemoveAllConfirmOpen] = useState(false);
   const [openWidgetOptionKey, setOpenWidgetOptionKey] = useState<DashboardWidgetKey | null>(null);
   const [movingWidgetKey, setMovingWidgetKey] = useState<DashboardWidgetKey | null>(null);
   const [dragOverWidgetKey, setDragOverWidgetKey] = useState<DashboardWidgetKey | null>(null);
@@ -255,6 +256,20 @@ export function DashboardPage({
     setOpenWidgetOptionKey(null);
     setMovingWidgetKey(null);
     setDragOverWidgetKey(null);
+    setIsRemoveAllConfirmOpen(false);
+  };
+
+  const openRemoveAllConfirm = () => {
+    if (widgetOrder.length === 0) {
+      return;
+    }
+    setIsWidgetPickerOpen(false);
+    setWidgetMenuMode("root");
+    setIsRemoveAllConfirmOpen(true);
+  };
+
+  const cancelRemoveAllWidgets = () => {
+    setIsRemoveAllConfirmOpen(false);
   };
 
   const enableMoveMode = (widgetKey: DashboardWidgetKey) => {
@@ -395,7 +410,7 @@ export function DashboardPage({
             <button
               type="button"
               className="widget-picker-item widget-picker-item-danger"
-              onClick={removeAllWidgets}
+              onClick={openRemoveAllConfirm}
               disabled={widgetOrder.length === 0}
             >
               전체 삭제
@@ -423,6 +438,30 @@ export function DashboardPage({
           </div>
         )}
       </section>
+
+      {isRemoveAllConfirmOpen && (
+        <div className="widget-confirm-overlay" role="dialog" aria-modal="true" aria-label="기능상자 전체 삭제 확인">
+          <div className="widget-confirm-modal">
+            <p className="widget-confirm-message">현재 기능상자들을 전부 삭제하시겠습니까?</p>
+            <div className="widget-confirm-actions">
+              <button
+                type="button"
+                className="widget-confirm-yes"
+                onClick={removeAllWidgets}
+              >
+                예
+              </button>
+              <button
+                type="button"
+                className="widget-confirm-no"
+                onClick={cancelRemoveAllWidgets}
+              >
+                아니오
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="stream-line">
         <span>SSE</span>
