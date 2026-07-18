@@ -714,6 +714,12 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
   - `MembersPage.tsx`에 `activeCategory` 상태(`"register" | "list"`)를 추가해 단일 컨테이너 내 화면 전환 상태를 관리하도록 구현함
   - 기존 분리되어 있던 `회원 등록` 패널과 `등록 회원 목록` 패널을 `panel-member-shell` 하나로 병합하고, 내부를 `member-shell-layout`(좌측 nav + 우측 content) 구조로 재배치함
   - 좌측 네비게이션에 `회원 등록`, `등록 회원 목록` 버튼을 추가하고 클릭 시 `activeCategory` 값 변경으로 각 섹션만 렌더링되도록 조건부 렌더링을 적용함
+  - 목록의 `회원 정보 입력` 버튼 클릭 시 폼 프리필 동작과 함께 `setActiveCategory("register")`를 호출해 등록 탭으로 즉시 전환되도록 연결함
+  - `styles.css`에 `member-shell-nav`를 `10%` 폭(`flex-basis/max-width 10%`)으로 제한하는 규칙과 활성 버튼(`member-shell-nav-btn-active`) 스타일을 추가해 요구된 배치 기준을 반영함
+  - 반응형 대응으로 1024px 이하에서 좌측 nav를 상단 2열 버튼으로 전환하는 폴백 규칙을 추가해 좁은 화면에서의 사용성을 유지함
+- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공
+- **비고**: 서버/API 함수·import 변경 없이 화면 구조와 로컬 상태 기반 탭 전환만 구현한 UI 레이어 작업
 
 ---
 
@@ -727,12 +733,6 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: 요청사항인 `MCP 검증 및 저지연 모니터 기능상자 import 밑 DashboardPage.tsx 에서 누락된 명칭 살리기`를 기준으로 최소 범위만 반영함
-  - 목록의 `회원 정보 입력` 버튼 클릭 시 폼 프리필 동작과 함께 `setActiveCategory("register")`를 호출해 등록 탭으로 즉시 전환되도록 연결함
-  - `styles.css`에 `member-shell-nav`를 `10%` 폭(`flex-basis/max-width 10%`)으로 제한하는 규칙과 활성 버튼(`member-shell-nav-btn-active`) 스타일을 추가해 요구된 배치 기준을 반영함
-  - 반응형 대응으로 1024px 이하에서 좌측 nav를 상단 2열 버튼으로 전환하는 폴백 규칙을 추가해 좁은 화면에서의 사용성을 유지함
-- **관련 파일**: `console/src/pages/MembersPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
-- **검증 결과**: `npm run build` 성공
-- **비고**: 서버/API 함수·import 변경 없이 화면 구조와 로컬 상태 기반 탭 전환만 구현한 UI 레이어 작업
 
 ---
 

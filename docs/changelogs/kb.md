@@ -2982,3 +2982,14 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`
 - **검증 결과**: `npx tsc --noEmit` 클린. 실기기 Metro 세션에서 정상 재번들링 확인. 버튼 터치 자체는 시뮬레이터/실기기 UI 조작이 필요해 코드 검토·정적 분석으로만 검증(사용자 실기기 재확인 필요).
 - **비고**: 정합성 검토가 컴파일 가능 여부(tsc)에 집중돼 `pointerEvents` 계층 구조 같은 런타임 전용 회귀는 놓쳤다 - 향후 UI 관련 병합은 정적 검토와 별개로 실제 터치 동작 확인이 필요함.
+
+---
+
+### 2026-07-18 | 병합 | jh 브랜치 병합 (MCP 검증 모니터 위젯 누락 복구)
+
+- **배경**: 사용자가 콘솔에서 "MCP들로 모니터링 하는 렌더링 내역들이 안 보인다"고 리포트한 직후, jh 브랜치에 정확히 이 문제를 고치는 신규 커밋 1건이 있어 정합성 검토 후 병합.
+- **검토 내용**: `console/src/pages/DashboardPage.tsx`의 `DashboardWidgetKey` 타입·`DASHBOARD_WIDGETS`·`DEFAULT_DASHBOARD_WIDGET_ORDER`·`renderWidget()` 4곳 모두에서 `"mcpMonitor"`가 누락돼 있어, 이미 import돼 있던 `McpValidationMonitor` 컴포넌트가 위젯 시스템에 전혀 연결되지 않았던 것을 확인(사용자 리포트의 직접 원인). `McpValidationMonitor`가 참조하는 `state.audio_validation`/`cache_suppression`/`accessibility_validation`/`langsmith_trace` 필드는 `types/monitor.ts`에 이미 정의돼 있어 타입 정합성 문제 없음.
+- **부수 발견 및 정정**: `docs/changelogs/jh.md`에 새 엔트리가 직전 엔트리(2026-07-15 회원관리 컨테이너화)의 불릿 목록 중간에 삽입되어 있어, 해당 엔트리가 두 조각으로 쪼개져 있었다. 순서를 바로잡아 각 엔트리가 온전한 블록으로 이어지도록 정정.
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
+- **검증 결과**: `npx tsc --noEmit`(console) 클린. 충돌 없이 병합됨.
+- **비고**: 콘솔 브라우저에서 위젯이 실제로 표시되는지는 사용자 확인 필요(코드 검토로는 위젯 등록 자체가 정상 복구됐음만 확인).
