@@ -2993,3 +2993,17 @@
 - **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
 - **검증 결과**: `npx tsc --noEmit`(console) 클린. 충돌 없이 병합됨.
 - **비고**: 콘솔 브라우저에서 위젯이 실제로 표시되는지는 사용자 확인 필요(코드 검토로는 위젯 등록 자체가 정상 복구됐음만 확인).
+
+---
+
+### 2026-07-18 | 스킬 | integration-test-orchestrator 스킬 패키징 완성 및 다중 에이전트 등재
+
+- **배경**: `.agents/skills/integration-test-orchestrator/SKILL.md`가 커밋되지 않은 상태로 저장소에 생성돼 있는 것을 사용자가 발견해 정합성 검토 요청. 검토 결과 내용(실기기-Docker-DB 통합 테스트 오케스트레이션 절차)은 정확했으나 패키징이 3가지 미완성 상태였음: `.claude/skills/` 사본 없음, 본문이 참조하는 `references/implementation_detail.md` 없음, `SKILLS.md`/`AGENTS.md` §8 스킬 인덱스 미등재.
+- **변경 내용**:
+  - `.agents/skills/integration-test-orchestrator/references/implementation_detail.md` 신규 작성 - 이번 세션 실측 트러블슈팅 사례(Docker Desktop 미기동, DB 마이그레이션 수동 반영 필요, LAN IP 갱신, WS 후보 쿨다운, `pointerEvents="none"` 하위 서브트리 터치 불가, index.html iframe 재로드 필요, WS 재연결 가드 부재 등)를 계층별 트러블슈팅 표로 정리.
+  - `.claude/skills/integration-test-orchestrator/`에 `.agents/skills/` 정본을 그대로 미러링(`diff -rq` 일치 확인).
+  - `SKILLS.md`, `AGENTS.md` §8 스킬 인덱스 표에 신규 등재. `AGENTS.md`는 Codex/ZCode/opencode/Grok Build가 네이티브로 직접 읽는 정본이므로, 이 등재만으로 해당 에이전트들도 스킬 존재를 인식함.
+  - `.antigravity/rules.md`(12,000자 캡 대응 요약본) §10 스킬 인덱스에도 동일 등재(6,168자, 캡 대비 여유 5,832자) - Antigravity 사용 팀원도 인식 가능.
+- **관련 파일**: `.agents/skills/integration-test-orchestrator/references/implementation_detail.md`(신규), `.claude/skills/integration-test-orchestrator/`(신규 미러), `SKILLS.md`, `AGENTS.md`, `.antigravity/rules.md`
+- **검증 결과**: `python3 scripts/validate_agent_rules.py` 6/6 통과(CLAUDE.md thin pointer, GEMINI.md symlink, `.antigravity/rules.md` 캡·핵심섹션, `.cursor` core rule, 스킬 미러, `AGENTS.md` `@SKILLS.md` import).
+- **비고**: Cursor는 `.cursor/rules/00-core-guidelines.mdc`를 통해 AGENTS.md를 간접 참조하므로 별도 등재 불필요(기존 아키텍처 그대로 적용됨). Claude Code는 스킬 파일 생성 시점부터 자동 인식(Skill 도구 목록에 즉시 노출 확인).

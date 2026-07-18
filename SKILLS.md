@@ -96,6 +96,7 @@ Minchodan은 결과물뿐 아니라 담당자의 발표와 학습이 중요한 �
 | `xcode-build-management`    | -    | `.agents/skills/xcode-build-management/`    | iOS Xcode 프로젝트 빌드, 시뮬레이터 관리 및 Swift/SwiftUI 코드 리팩토링/디버깅 |
 | `auto-publish-work`         | -    | `.agents/skills/auto-publish-work/`         | 작업 완료 후 문서 정합성 분석, 린트/테스트 검증, Changelog 작성 및 Git 자동 마감 |
 | `react-doctor`              | -    | `.agents/skills/react-doctor/`              | react-doctor 정적 분석기를 활용한 React 및 React Native 코드 품질 관리 및 개선 |
+| `integration-test-orchestrator` | -  | `.agents/skills/integration-test-orchestrator/` | 실기기(iOS)-Docker(FastAPI/Redis/MariaDB)-DB 통합 테스트 환경 기동, Expo/Metro·xcodebuildmcp 빌드·설치·실행, 전 구간 로그·모니터링 오케스트레이션 |
 
 ---
 
