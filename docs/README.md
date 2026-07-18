@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-11
-> **버전**: v0.13.11 (2026-07-13 신규 MCP 5종 백엔드 실연동 및 관제 대시보드 마운트 명세 정합)
+> **버전**: v0.13.12 (2026-07-17 MariaDB·미디어 저장 API Tailscale 팀 연결 가이드 확장)
 
 ## 문서 목록
 
@@ -19,7 +19,7 @@
 | **환경 변수 명세서** | [ops/environment_variables.md](ops/environment_variables.md)   | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류**             |
 | **배포 가이드**      | [ops/deployment_guide.md](ops/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
 | **개인 설정 파일 Git 제외 가이드** | [ops/local_private_config_guide.md](ops/local_private_config_guide.md) | **`Copy_` 접두어 기반 로컬 개인 설정 복사본 제외 규칙** |
-| **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
+| **DB·미디어 API Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **외부 공개 가능한 플레이스홀더 기반 연결·진단 절차. 실접속 정보 문서는 Git 제외 후 내부 공유** |
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
 | **dev 통합 개선 실행 계획서** | [ops/dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 기반 P0/P1 개선 순서와 완료 기준** |
@@ -49,7 +49,7 @@ docs/
 ├── research/        # 분석 보고서 및 Post-MVP 검토
 ├── ops/             # 운영·개발 환경 설정 및 절차
 │   └── reports/     # 단발성 운영 보고서
-├── db_tailscale_guide/ # MariaDB Tailscale 외부망 연결 가이드
+├── db_tailscale_guide/ # 외부 공개용 가이드와 Git 제외 내부 연결 문서
 ├── dev-guides/      # 코딩 표준 및 개발 참고 자료
 │   ├── prompts/     # 1회성 에이전트 작업 프롬프트 아카이브
 │   ├── templates/   # 설계서 예시/템플릿
@@ -137,7 +137,7 @@ docs/
 | :--- | :--- | :--- |
 | **환경 변수 명세서** | [environment_variables.md](ops/environment_variables.md) | **환경 변수 단일 명세 (3원화 해소), 카테고리별 분류** |
 | **배포 가이드** | [deployment_guide.md](ops/deployment_guide.md) | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동** |
-| **DB Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **macOS/Windows 팀원용 MariaDB Tailscale 외부망 접속 절차** |
+| **DB·미디어 API Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **외부 공개 가능한 플레이스홀더 기반 연결·진단 절차. 실접속 정보 문서는 Git 제외 후 내부 공유** |
 | **Android 빌드 및 무선 테스트 가이드** | [android_build_and_wireless_test_guide.md](ops/android_build_and_wireless_test_guide.md) | **Android 개발 빌드, adb reverse, 무선 연동 기본 절차** |
 | **Android WiFi/USB 이중 접속** | [android_wifi_usb_transport.md](ops/android_wifi_usb_transport.md) | **평상시 WiFi vs 개발 USB 토글, 노트북 핫스팟 `192.168.137.1` 실측** |
 | **Android 무선 테스트 가이드 v2** | [android_wireless_test_guide_v2.md](ops/android_wireless_test_guide_v2.md) | **실기기 테스트 중 Metro 연결 끊김, adb 데드락, reverse 복구 절차 상세판** |
@@ -176,7 +176,6 @@ docs/
 
 | 문서 | 파일 | 설명 |
 | :--- | :--- | :--- |
-| 역할 C 연동 완료 보고서 | [역할_C_TTS_반사경로_Navigation_가이드_기준_연동_적용_완료_보고서.md](ops/reports/역할_C_TTS_반사경로_Navigation_가이드_기준_연동_적용_완료_보고서.md) | TTS·반사경로·Navigation 연동 수정 및 검증 기록 |
 
 ---
 

@@ -1,10 +1,10 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.5.1 (2026-07-15 WSL/Linux 로컬 Ollama 자동 기동 및 모델 준비 흐름 반영)
-> **설계 기준**: [`docs/architecture.md`](architecture.md) 2절(기술 스택)·13절(MCP 연동)
-> **환경 변수 기준**: [`docs/environment_variables.md`](environment_variables.md)
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.3(경로)·3.4(.env)
+> **버전**: v0.5.2 (2026-07-17 Docker 공동 MariaDB 대상 보존 규칙 정합화)
+> **설계 기준**: [`../design/architecture.md`](../design/architecture.md) 2절(기술 스택)·13절(MCP 연동)
+> **환경 변수 기준**: [`environment_variables.md`](environment_variables.md)
+> **코딩 패턴 기준**: [`../dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.3(경로)·3.4(.env)
 
 ---
 
@@ -254,16 +254,16 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 
 ### 7.3 네트워크
 
-모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유하며, Redis와 MariaDB는 서비스 이름으로 상호 참조합니다 (`redis://redis:6379`, `mariadb:3306`). Ollama는 컨테이너가 아니라 호스트 로컬 프로세스이므로 `COMPOSE_OLLAMA_BASE_URL`로 접속 주소를 별도 주입합니다.
+모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유합니다. Redis는 `redis://redis:6379`를 사용하고, MariaDB는 루트 `.env`의 원격 `DB_HOST`를 기본 유지하되 로컬 Compose DB가 필요할 때만 `COMPOSE_DB_HOST=mariadb`로 전환합니다. Ollama는 컨테이너가 아니라 호스트 로컬 프로세스이므로 `COMPOSE_OLLAMA_BASE_URL`로 접속 주소를 별도 주입합니다.
 
-> 주의: `.env` 파일의 `REDIS_URL`, `OLLAMA_BASE_URL`, `DB_HOST`, `DB_PORT`는 Docker Compose 환경에서 컨테이너/호스트 연결 기준으로 재설정해야 합니다. compose 파일은 FastAPI 컨테이너에 대해 이 값을 자동 오버라이드합니다.
+> 주의: Compose는 FastAPI의 `REDIS_URL`과 `OLLAMA_BASE_URL`을 컨테이너·호스트 연결 기준으로 재설정합니다. DB는 공동 Raspberry Pi MariaDB 사용 시 루트 `.env` 값을 유지하고, 로컬 Compose DB가 필요한 경우에만 `COMPOSE_DB_HOST`, `COMPOSE_DB_PORT`, `COMPOSE_DB_NAME`, `COMPOSE_DB_USER`로 재정의합니다.
 >
 > | 변수 | 로컬 개발 | Docker Compose |
 > | :--- | :--- | :--- |
 > | `REDIS_URL` | `redis://localhost:6379` | `redis://redis:6379` |
 > | `OLLAMA_BASE_URL` | `http://localhost:11434` | `${COMPOSE_OLLAMA_BASE_URL}` |
-> | `DB_HOST` | `.env`의 원격 또는 로컬 호스트 | `mariadb` |
-> | `DB_PORT` | `.env`의 MariaDB 포트 | `3306` |
+> | `DB_HOST` | `.env`의 원격 또는 로컬 호스트 | `${COMPOSE_DB_HOST:-${DB_HOST:-mariadb}}` |
+> | `DB_PORT` | `.env`의 MariaDB 포트 | `${COMPOSE_DB_PORT:-3306}` |
 
 ### 7.4 보안 및 인증 전제
 
@@ -323,7 +323,7 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 | 검증 항목 | 기준 | 본 가이드 대응 |
 | :--- | :--- | :--- |
 | 컨테이너 3종 기동 | Redis + MariaDB + FastAPI 동시 실행 | 7.1절 서비스 정의 |
-| 컨테이너 간 통신 | FastAPI -> Redis, FastAPI -> MariaDB | 7.3절 네트워크 (서비스 이름 기반 참조) |
+| 컨테이너 간 통신 | FastAPI -> Redis, FastAPI -> 원격 또는 로컬 MariaDB | 7.3절 네트워크 (`DB_HOST`·`COMPOSE_DB_HOST` 대상 선택) |
 | 호스트 Ollama 연결 | FastAPI -> 호스트 로컬 Ollama | `COMPOSE_OLLAMA_BASE_URL` 환경 변수 |
 | GPU 접근 | FastAPI 컨테이너에서 CUDA 연산 | 2.2절 GPU 접근 가드레일 |
 | 볼륨 영속화 | Redis 데이터, MariaDB 데이터 | 7.2절 볼륨 정의 |
@@ -336,7 +336,7 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 | :--- | :--- | :--- |
 | FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동, `127.0.0.1`로만 바인딩, 또는 `COMPOSE_OLLAMA_BASE_URL`이 현재 Docker 런타임과 맞지 않음 | Linux/WSL은 `bash docker/linux_docker_start.sh`로 자동 기동합니다. Docker 컨테이너 접근까지 필요하면 신뢰할 수 있는 로컬망에서만 `MINCHODAN_EXPOSE_OLLAMA=1`, `OLLAMA_HOST=0.0.0.0:11434`를 설정합니다. Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`로 설정 |
 | FastAPI 컨테이너가 Redis에 연결 불가 | `REDIS_URL`이 `localhost`로 설정됨 | `.env`에서 `REDIS_URL=redis://redis:6379`로 변경 |
-| FastAPI 컨테이너가 MariaDB에 연결 불가 | `DB_HOST`가 컨테이너 서비스 이름이 아니거나 MariaDB healthcheck 실패 | compose 환경에서는 `DB_HOST=mariadb`, `DB_PORT=3306` 오버라이드가 적용되는지 확인 |
+| FastAPI 컨테이너가 MariaDB에 연결 불가 | 기존 원격 `DB_HOST` 또는 선택적 `COMPOSE_DB_HOST`가 의도한 대상을 가리키지 않거나 MariaDB healthcheck 실패 | 원격 DB 유지 시 `.env`의 `DB_HOST`, 로컬 컨테이너 사용 시 `COMPOSE_DB_HOST=mariadb`, 공통으로 `DB_PORT=3306` 적용 여부를 확인 |
 | MariaDB 컨테이너가 시작되지 않음 | `COMPOSE_DB_PASSWORD` 또는 `COMPOSE_DB_ROOT_PASSWORD` 누락, 호스트 포트 충돌 | `.env` 값 확인 또는 `DB_HOST_PORT`를 빈 포트로 변경 |
 | GPU 인식 실패 | NVIDIA Container Toolkit 미설치 | `nvidia-container-toolkit` 설치 후 Docker 데몬 재시작 |
 | Ollama 모델 pull 실패 | 디스크 공간 부족 또는 네트워크 | 호스트에서 디스크 여유 공간 확인 (gemma4:e4b 약 9.6GB) |
@@ -349,12 +349,12 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 
 | 파일 | 경로 | 설명 |
 | :--- | :--- | :--- |
-| Dockerfile | [`docker/Dockerfile`](../docker/Dockerfile) | FastAPI 컨테이너 이미지 정의 |
-| docker-compose.yml | [`docker/docker-compose.yml`](../docker/docker-compose.yml) | 3컨테이너 오케스트레이션 (GPU 서버용, `deploy.resources` GPU 예약 포함) |
-| docker-compose.macos.yml | [`docker/docker-compose.macos.yml`](../docker/docker-compose.macos.yml) | macOS 로컬 테스트용 CPU 전용 3컨테이너 변형 (GPU `deploy` 블록 없음). `macos_docker_start.sh`/`windows_docker_start.bat`가 실제로 이 파일을 사용함 |
+| Dockerfile | [`docker/Dockerfile`](../../docker/Dockerfile) | FastAPI 컨테이너 이미지 정의 |
+| docker-compose.yml | [`docker/docker-compose.yml`](../../docker/docker-compose.yml) | 3컨테이너 오케스트레이션 (GPU 서버용, `deploy.resources` GPU 예약 포함) |
+| docker-compose.macos.yml | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml) | macOS 로컬 테스트용 CPU 전용 3컨테이너 변형 (GPU `deploy` 블록 없음). `macos_docker_start.sh`/`windows_docker_start.bat`가 실제로 이 파일을 사용함 |
 | .dockerignore | [`.dockerignore`](../../.dockerignore) | 루트 build context 기준 제외 패턴 |
-| Windows 시작 스크립트 | [`docker/windows_docker_start.bat`](../docker/windows_docker_start.bat) | Windows용 빌드·시작 자동화 |
-| Linux 시작 스크립트 | [`docker/linux_docker_start.sh`](../docker/linux_docker_start.sh) | Linux용 빌드·시작 자동화 |
-| macOS 시작 스크립트 | [`docker/macos_docker_start.sh`](../docker/macos_docker_start.sh) | macOS용 빌드·시작 자동화 |
-| 환경 변수 명세서 | [`docs/environment_variables.md`](environment_variables.md) | 환경 변수 단일 명세 |
-| GPU 검증 스크립트 | [`scripts/verify_gpu.py`](../scripts/verify_gpu.py) | sm_120 + CUDA 12.8 검증 |
+| Windows 시작 스크립트 | [`docker/windows_docker_start.bat`](../../docker/windows_docker_start.bat) | Windows용 빌드·시작 자동화 |
+| Linux 시작 스크립트 | [`docker/linux_docker_start.sh`](../../docker/linux_docker_start.sh) | Linux용 빌드·시작 자동화 |
+| macOS 시작 스크립트 | [`docker/macos_docker_start.sh`](../../docker/macos_docker_start.sh) | macOS용 빌드·시작 자동화 |
+| 환경 변수 명세서 | [`environment_variables.md`](environment_variables.md) | 환경 변수 단일 명세 |
+| GPU 검증 스크립트 | [`scripts/verify_gpu.py`](../../scripts/verify_gpu.py) | sm_120 + CUDA 12.8 검증 |
