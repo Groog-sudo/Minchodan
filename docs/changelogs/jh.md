@@ -939,3 +939,16 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/DashboardPage.tsx`, `console/src/styles.css`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: 기존 `기능상자 추가`와 `기능상자 전체 삭제`의 분리 배치를 메뉴형 UX로 통합해 관리 동선을 단순화함
+
+---
+
+### 2026-07-18 | 콘솔 UI | 기능상자 추가 버튼 비활성화 조건 적용
+
+- **커밋**: `feat(console): 기능상자 추가 버튼 비활성화 적용`
+- **변경 내용**:
+  - 관제 대시보드 `기능상자` 메뉴에서 `추가` 버튼에 비활성화 조건을 적용함
+  - 추가 가능한 기능상자가 하나도 없을 때(`availableWidgets.length === 0`) `추가` 버튼이 비활성화되도록 처리함
+  - 모든 기능상자가 이미 배치된 상태에서는 `추가` 버튼이 즉시 비활성 상태로 표시되어 불필요한 클릭을 방지함
+- **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
+- **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
+- **비고**: 요청사항인 `위젯 기능 기능상자 버튼 내 추가되는 기능상자 없을 시 추가 버튼 비활성화` 기준으로 최소 변경만 반영함

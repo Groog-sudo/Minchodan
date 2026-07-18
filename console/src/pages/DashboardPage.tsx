@@ -404,6 +404,7 @@ export function DashboardPage({
               type="button"
               className="widget-picker-item"
               onClick={() => setWidgetMenuMode("add")}
+              disabled={availableWidgets.length === 0}
             >
               추가
             </button>
