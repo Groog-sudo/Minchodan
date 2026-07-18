@@ -36,6 +36,15 @@ RUN python -c "from pygoruut.pygoruut import Pygoruut; p = Pygoruut(writeable_bi
 # 마운트가 컨테이너 시작 시 이 레이어의 내용을 호스트 쪽으로 덮어써 버린다.
 RUN python -c "from supertonic import TTS; t = TTS(auto_download=True); s = t.get_voice_style(voice_name='F1'); w, d = t.synthesize(text='빌드 타임 캐시 확인', lang='ko', voice_style=s, total_steps=8); print('Supertonic 캐시 완료, duration=', d)"
 
+# 2026-07-19 실측 발견: ultralytics가 모델 로드/추론 시마다 체크포인트에 내장된
+# requirements를 현재 설치본과 비교해 불일치하면 런타임 중 pip install로 조용히
+# 갱신한다(AUTOINSTALL 기본값 True). 이미 임포트된 모듈과 방금 갱신된 디스크 상의
+# 패키지가 어긋나면서 'Conv' object has no attribute 'bn' 추론 오류가 프레임마다
+# 재발했다. requirements.txt로 버전을 이미 고정하고 있으므로 이미지 레벨에서
+# 기본값으로 런타임 자동 설치를 끈다(비협상 아님, 순수 안정성 수정). 캐시 무효화를
+# 피하기 위해 무거운 RUN 레이어(위 pygoruut/Supertonic 다운로드) 이후에 배치한다.
+ENV YOLO_AUTOINSTALL=False
+
 # 앱 코드는 docker-compose.yml에서 볼륨 마운트로 전달
 # 포트 노출
 EXPOSE 8000

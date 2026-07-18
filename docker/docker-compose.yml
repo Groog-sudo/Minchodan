@@ -26,6 +26,9 @@ services:
       - REDIS_URL=redis://redis:6379
       # Ollama는 도커 외부 로컬에서 별도로 띄우므로 host.docker.internal 사용
       - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # 2026-07-19: ultralytics 런타임 AutoUpdate 비활성화(Dockerfile ENV로도 이미 기본값이지만
+      # compose 설정만 봐도 알 수 있도록 명시). docker-compose.macos.yml과 동일 이유.
+      - YOLO_AUTOINSTALL=False
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

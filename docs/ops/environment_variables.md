@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-16
-> **버전**: v0.4.21 (2026-07-18 T2-G `GUIDE_LOW_RISK_NARRATION` 환경 변수 추가 — 이전 v0.4.20: `DB_HOST_PORT` 적용 범위 정정 — dg2 브랜치 병합으로 `docker-compose.yml`의 MariaDB 호스트 포트 노출이 비활성화되어 `docker-compose.macos.yml` 전용으로 명시. 기존 v0.4.19 이력 유지: §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영)
+> **수정일**: 2026-07-19
+> **버전**: v0.4.22 (2026-07-19 `YOLO_AUTOINSTALL` 환경 변수 추가 - ultralytics 런타임 AutoUpdate가 'Conv' object has no attribute 'bn' 추론 오류를 재발시키는 것을 실측 확인해 Dockerfile/compose 기본값을 False로 고정 — 이전 v0.4.21: T2-G `GUIDE_LOW_RISK_NARRATION` 환경 변수 추가 — 이전 v0.4.20: `DB_HOST_PORT` 적용 범위 정정 — dg2 브랜치 병합으로 `docker-compose.yml`의 MariaDB 호스트 포트 노출이 비활성화되어 `docker-compose.macos.yml` 전용으로 명시. 기존 v0.4.19 이력 유지: §2.7 중앙 저장 API 환경 변수 6종 추가 — 이벤트 프레임과 STT 원본 음성 파일을 Raspberry Pi 저장 API로 업로드하고 Log 테이블에는 object key만 남기는 구조 반영)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -84,6 +84,7 @@
 | **`GUIDE_LOW_RISK_NARRATION`** | bool | 선택 | `false` | **2026-07-18 신규 (T2-G).** `true`이면 저위험(low) 순수 내레이션을 발화한다. `false`이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 안내를 억제해 청각 피로를 줄인다. 보도 이탈, 고위험, 접근 객체, 유의미 노면은 예외로 항상 발화 | `server/detection/consumer.py` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
+| **`YOLO_AUTOINSTALL`** | bool | 선택 | `False` | **2026-07-19 신규.** ultralytics 자체 환경변수(`YOLO_AUTOINSTALL`, Minchodan 접두사 아님). 모델 로드/추론마다 체크포인트 내장 requirements를 현재 설치본과 비교해 불일치 시 런타임 `pip install`을 시도하는 AutoUpdate 기능을 제어. `True`(ultralytics 기본값)면 방금 갱신된 패키지와 이미 임포트된 모듈이 어긋나 `'Conv' object has no attribute 'bn'` 추론 오류가 재발한다(실측 확인). `docker/Dockerfile`에 `ENV`로 기본값 고정, `docker-compose*.yml`에도 명시 | `docker/Dockerfile`, `docker/docker-compose*.yml` |
 
 ### 2.6 TTS (7단계 음성 출력)
 
