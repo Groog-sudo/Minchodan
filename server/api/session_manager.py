@@ -55,6 +55,11 @@ class SessionManager:
         망 전환(Wi-Fi <-> 핫스팟) 또는 앱 강제 종료 시 기존 TCP 연결이 FIN 없이
         사라져 서버에 세션이 잔류하는 문제를 방지한다.
         """
+        await websocket.accept()
+        await self.register_authenticated(device_id, websocket)
+
+    async def register_authenticated(self, device_id: str, websocket: WebSocket) -> None:
+        """인증이 끝난 소켓만 활성 세션으로 등록한다."""
         old_ws = self.active_connections.get(device_id)
         if old_ws is not None:
             with contextlib.suppress(Exception):
@@ -62,7 +67,6 @@ class SessionManager:
             self.active_connections.pop(device_id, None)
             logger.info(f"[Session] 잔류 세션 강제 종료: device_id={device_id}")
 
-        await websocket.accept()
         self.active_connections[device_id] = websocket
         logger.info(
             f"[Session] 연결: device_id={device_id}, 현재 접속: {len(self.active_connections)}명"

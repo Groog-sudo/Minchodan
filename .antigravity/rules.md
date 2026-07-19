@@ -30,7 +30,7 @@
 | Navigation | TMAP 보행자 경로 API + NavigationManager |
 | 메시지 버스 | Redis (Streams + 컨텍스트 TTL) |
 | 클라이언트 | React Native, react-native-vision-camera (Frame Processor), CoreML/TFLite (온디바이스 반사), expo-audio, expo-speech |
-| 인프라 | Docker (Redis+MariaDB+FastAPI, Ollama는 호스트 로컬), CUDA 12.8 + cu128 (Blackwell sm_120) |
+| 인프라 | Docker (Redis+MariaDB+FastAPI, Ollama는 호스트 로컬), RTX 5090 최대(Blackwell sm_120), Ubuntu/Windows=PyTorch 2.13+cu130, macOS=PyTorch 2.13 MPS/CPU |
 
 ---
 

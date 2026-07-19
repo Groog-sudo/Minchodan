@@ -20,13 +20,14 @@ import sys
 import time
 from contextlib import suppress
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 if hasattr(sys.stdout, "reconfigure"):
     with suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
 
+from server.api.dependencies import require_super_admin
 from server.api.session_manager import manager
 from server.tts.realtime_tts import RealtimeTTS
 
@@ -49,12 +50,16 @@ class SpeakToDeviceRequest(BaseModel):
 
 
 def _debug_enabled() -> bool:
-    # [하드 코딩 부분 - 핵심] 운영 환경에서는 디버그 TTS 푸시를 완전히 끈다.
-    return os.getenv("APP_ENV", "development").strip().lower() != "production"
+    # 비운영 환경이어도 명시적으로 허용하지 않으면 디버그 API를 닫는다.
+    enabled = os.getenv("ENABLE_DEBUG_API", "false").strip().lower() in {"1", "true", "yes"}
+    return enabled and os.getenv("APP_ENV", "development").strip().lower() != "production"
 
 
 @router.post("/speak-to-device")
-async def speak_to_device(body: SpeakToDeviceRequest) -> dict:
+async def speak_to_device(
+    body: SpeakToDeviceRequest,
+    _super_admin: str = Depends(require_super_admin),
+) -> dict:
     """서버 TTS로 합성한 WAV를 연결된 앱에 guide + binary로 전송한다.
 
     # 💡 [면접 대비 주석]
@@ -151,7 +156,9 @@ async def speak_to_device(body: SpeakToDeviceRequest) -> dict:
 
 
 @router.get("/connected-devices")
-async def connected_devices() -> dict:
+async def connected_devices(
+    _super_admin: str = Depends(require_super_admin),
+) -> dict:
     if not _debug_enabled():
         raise HTTPException(status_code=404, detail="Not found")
     devices = manager.list_connected_device_ids()

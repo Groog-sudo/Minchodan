@@ -5,8 +5,9 @@ import json
 import re
 import shutil
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from defusedxml import ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -160,7 +161,7 @@ def process_aihub_cvat_xml(
 ) -> int:
     """Process Type B CVAT XML (dataSetSn=189 format)."""
     try:
-        tree = ET.parse(xml_path)  # noqa: S314
+        tree = ET.parse(xml_path)
         root = tree.getroot()
     except Exception as e:
         print(f"[ERROR] Failed to read XML {xml_path.name}: {e}")

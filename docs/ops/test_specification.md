@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.9 (2026-07-18 정합성 검토로 발견된 결함 2건 수정 반영: TC-DET-019 테스트 mock에 last_pos 누락으로 실패하던 것을 수정, TC-TTS-009 서버 STT 억제가 응답 전송 직후 즉시 풀리던 gap을 예상 재생시간+마진 TTL로 정정 + 이전 v0.6.8: T1/T2/T3 신규 TC 등재 + 이전 v0.6.7: M1-M7 TC 등재)
+> **버전**: v0.6.10 (2026-07-19 RTX 5090 최대 사양과 Ubuntu·Windows·macOS 가속 검증 기준 반영)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/design/minchodan_design_note.md`, [`docs/dev-guides/course_codebase_guide.md`](dev-guides/course_codebase_guide.md), [`docs/ops/code_quality_guide.md`](ops/code_quality_guide.md)
 
 ---
@@ -75,8 +75,8 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 ## 4. 실행 환경
 
-- OS: Windows + PowerShell 또는 macOS/Linux + bash/zsh
-- GPU: Blackwell sm_120 (RTX 5090 / 5070 Ti), CUDA 12.8 + cu128 PyTorch 휠
+- OS: Ubuntu + bash, Windows + PowerShell, macOS + zsh
+- 가속기: 팀 최대 RTX 5090(Blackwell sm_120). Ubuntu/Windows는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU
 - 서버 루트: `./Minchodan`
 - Vector Store: 로컬 `data/chroma_db/`
 - 외부 의존성: 호스트 로컬 Ollama(gemma4:e4b, nomic-embed-text), Redis, MariaDB, Piper TTS
@@ -275,7 +275,7 @@ GPU, Ollama, Redis, 실제 카메라가 필요한 흐름은 통합 smoke로 분�
 | ------------ | -------------- | ---------------------------------- | ---- |
 | TC-SMOKE-001 | 종단 반사 지연 | 실제 카메라 + GPU, 목표 <300ms     | 대기 |
 | TC-SMOKE-002 | 종단 인지 흐름 | 카메라탐지RAGLangGraphTTS 왕복     | 대기 |
-| TC-SMOKE-003 | GPU 환경 검증  | `verify_gpu.py` sm_120 + CUDA 12.8 | 대기 |
+| TC-SMOKE-003 | 가속 환경 검증 | `verify_gpu.py` CUDA 13.0 또는 macOS MPS/CPU | 대기 |
 | TC-SMOKE-004 | Docker 구성    | Redis + MariaDB + FastAPI 컨테이너 + 호스트 Ollama 연결 | 대기 |
 | TC-SMOKE-005 | RAG DB 빌드    | `python scripts/build_safety_db.py` | 대기 |
 | TC-SMOKE-006 | 생활지원 RAG 통합 | `ollama pull bge-m3` + `python scripts/build_convenience_db.py` 후 컨테이너에서 `answer_convenience_question()` 검색 응답 검증 (2026-07-17 신설, jh 병합 반영) | 완료 |

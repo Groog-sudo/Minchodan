@@ -46,7 +46,19 @@ jobs:
         run: jscpd
 
       - name: pip-audit CVE Scan
-        run: pip-audit -r requirements.txt
+        # ChromaDB는 수정 릴리스가 없고 로컬 PersistentClient만 사용한다.
+        # 이 식별자 외에는 실패 처리한다.
+        run: >-
+          pip-audit -r requirements.txt
+          --ignore-vuln CVE-2026-45829
+
+      - name: Client npm Audit
+        working-directory: client
+        run: npm audit --audit-level=high
+
+      - name: Console npm Audit
+        working-directory: console
+        run: npm audit --audit-level=high
 
       - name: pytest - Unit Tests
         # 2026-07-19: pytest 단계 신설. Ollama/실행 서버가 필요한 통합 테스트는 마커로 제외.

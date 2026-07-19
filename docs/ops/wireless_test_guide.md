@@ -4,13 +4,13 @@
 
 # 실기기 무선 연동 테스트 및 Docker 환경 가이드
 
-이 문서는 Minchodan 프로젝트의 보행 보조 스마트 가이드독 시스템을 실기기(iPhone)와 로컬 GPU/CPU 추론 서버 간에 **외부 이동통신망(LTE/5G)**을 경유하여 무선으로 연동 테스트하기 위한 Docker 인프라 구성 및 네트워크 터널링 명세를 다룹니다.
+이 문서는 Minchodan 프로젝트의 보행 보조 스마트 가이드독 시스템을 실기기(iPhone)와 로컬 GPU/CPU 추론 서버 간에 **외부 이동통신망(LTE/5G)**을 경유하여 무선으로 연동 테스트하기 위한 Docker 인프라 구성 및 Tailscale 연결 명세를 다룹니다.
 
 ---
 
 ## 1. 전체 연동 아키텍처
 
-실기기 단말과 로컬 서버는 퍼블릭 인터넷 망을 통해 통신하며, 방화벽 및 사설 IP 제약을 극복하기 위해 **Ngrok 터널링 프록시**를 중계 계층으로 활용합니다.
+실기기 단말과 로컬 서버는 같은 Tailscale tailnet에 연결하고, 암호화된 사설망 주소로 직접 통신합니다.
 
 ```mermaid
 graph TD
@@ -18,8 +18,8 @@ graph TD
         App["Minchodan App<br/>(Release Build / JS 내장)"]
     end
 
-    subgraph Internet ["공용 인터넷 및 중계 계층 (Ngrok)"]
-        Tunnel["Ngrok Secure Tunnel<br/>(partake-primer-surround.ngrok-free.dev)"]
+    subgraph Internet ["Tailscale 사설망"]
+        Tunnel["Tailnet P2P 또는 DERP<br/>(100.x 또는 MagicDNS)"]
     end
 
     subgraph Host ["개발용 호스트 (macOS MacBook)"]
@@ -30,8 +30,8 @@ graph TD
         end
     end
 
-    App -->|1. wss WebSocket 접속| Tunnel
-    Tunnel -->|2. TCP 포트 포워딩 (8000)| FastAPI
+    App -->|1. ws WebSocket 접속| Tunnel
+    Tunnel -->|2. Tailscale 주소 8000| FastAPI
     FastAPI -->|3. 프레임 버스 XADD| Redis
     FastAPI -->|4. L2/RAG 추론 요청| Ollama
 ```
@@ -55,16 +55,16 @@ graph TD
 
 ---
 
-## 3. 네트워크 터널링 및 포트 바인딩 명세
+## 3. Tailscale 네트워크 및 포트 바인딩 명세
 
-실외 LTE망 테스트 환경에서는 단말이 맥북의 로컬 IP(`192.168.x.x`)에 직접 접근할 수 없으므로, 로컬 포트를 외부 퍼블릭 도메인으로 중계해 줍니다.
+실외 LTE망 테스트 환경에서는 단말과 개발 PC를 같은 tailnet에 연결하고, 개발 PC의 Tailscale IP 또는 MagicDNS 이름으로 접속합니다.
 
 ### 3.1 터널 바인딩 테이블
 
-| 서비스 구분 | 로컬 포트 | 중계 터널링 주소 | 목적 및 사용처 |
+| 서비스 구분 | 로컬 포트 | Tailscale 주소 | 목적 및 사용처 |
 | :--- | :--- | :--- | :--- |
-| **FastAPI API/WebSocket** | `8000` | `https://partake-primer-surround.ngrok-free.dev` | 실기기 카메라 base64 프레임 전송 및 TTS 합성 MP3 수신 채널 (**wss** 통신) |
-| **Metro Bundler** | `8081` | `https://g7dc9jg-anonymous-8081.exp.direct` | 개발(Development) 빌드 기동 시 무선으로 JS 번들을 가져오기 위한 터널 (릴리즈 빌드 기동 시 사용 안 함) |
+| **FastAPI API/WebSocket** | `443` | `https://[SERVER_MAGICDNS_NAME]` | Tailscale Serve TLS 종단을 통한 실기기 카메라·TTS 채널 (`wss`) |
+| **Metro Bundler** | `8081` | `http://[DEVELOPMENT_PC_TAILSCALE_IP]:8081` | 개발 빌드가 무선으로 JS 번들을 가져오는 주소 |
 
 ---
 
@@ -73,9 +73,9 @@ graph TD
 단말(iPhone)이 켜진 후 서버와 체결되는 양방향 통신 규격 흐름은 다음과 같습니다.
 
 ### 4.1 핸드셰이크 및 검증 단계
-1. **WebSocket 연결 수립**: 단말이 `wss://partake-primer-surround.ngrok-free.dev/ws/detect?device_id=dev-001` 경로로 소켓 연결을 요청하고 서버가 이를 승인(`accepted`)합니다.
+1. **WebSocket 연결 수립**: 단말이 `wss://[SERVER_MAGICDNS_NAME]/ws/detect?device_id=[DEVICE_ID]` 경로로 소켓 연결을 요청하고 서버가 이를 승인(`accepted`)합니다.
 2. **Welcome 송신**: 서버가 단말로 환영 메시지(`{"type": "welcome", "session_id": "dev-001"}`)를 보냅니다.
-3. **Hello 송신**: 단말이 서버로 디바이스 식별 토큰을 동봉하여 `hello` 패킷(`{"type": "hello", "token": "token-abc-001"}`)을 응답합니다.
+3. **Hello 송신**: 단말이 서버로 디바이스 JWT를 동봉하여 `hello` 패킷(`{"type": "hello", "token": "[DEVICE_JWT]"}`)을 응답합니다.
 4. **인증 통과**: 서버가 토큰 무결성을 대조 및 검증한 뒤, `auth_ok` 패킷을 전송하고 Redis 메시지 버스를 바인딩하여 메인 루프에 진입합니다.
 
 ### 4.2 실시간 추론 스트리밍 단계
@@ -108,7 +108,7 @@ graph TD
 
 ### 5.4 Tailscale Metro가 다른 PC / Finding Dev Servers에 붙는 경우
 - **현상**: iOS Debug 앱이 Metro를 못 찾거나, 본인 Mac이 아닌 다른 팀원 호스트로 붙는다.
-- **원인**: 저장소 기본값(`100.121.247.4:8081`)은 Tailscale Metro **팀 공유 표준(예시 폴백)** 이며, 각 개발자 PC의 Tailscale IP와 다를 수 있다.
+- **원인**: 로컬 `METRO_BUNDLER_HOST`가 없거나 현재 개발 PC의 MagicDNS/주소와 다를 수 있다.
 - **해결**: **개발 PC IP는 각자 덮어쓰기**. `METRO_BUNDLER_HOST`·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`·`client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST`를 `tailscale ip -4` 결과로 교체한다. 상세 표는 [`environment_variables.md`](environment_variables.md) §2.11.
 
 ### 5.3 이미지 대용량으로 인한 무선 네트워크 병목 및 소켓 끊김 현상

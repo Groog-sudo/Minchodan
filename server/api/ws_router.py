@@ -8,10 +8,12 @@ detection: decode_frame -> stream_splitter -> ack
 
 import asyncio
 import base64
+import binascii
 import contextlib
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import time
@@ -22,13 +24,14 @@ from pydantic import ValidationError
 
 from server.api.auth import verify_device
 from server.api.config import settings
-from server.api.dependencies import get_current_admin
+from server.api.dependencies import authenticate_admin_token
 from server.api.heartbeat import HeartbeatManager
 from server.api.schemas import now_iso, now_ts
 from server.api.session_manager import manager
 from server.bus.redis_client import redis_bus
 from server.capture.frame_decoder import decode_frame, decode_frame_binary
 from server.capture.stream_splitter import get_default_splitter
+from server.db.connection import async_sessionmaker_factory
 from server.detection.schemas import DistanceProbeReport, FixedPointProbeReport
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.services.device_registry_service import (
@@ -53,6 +56,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MIN_STT_AUDIO_BYTES = 11200  # 2026-07-19: ~0.35s @16kHz mono PCM16 (이전 4096은 탭 오탐 통과)
+MAX_STT_AUDIO_BYTES = max(1, int(os.getenv("STT_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))))
+MAX_STT_BASE64_CHARS = ((MAX_STT_AUDIO_BYTES + 2) // 3) * 4 + 4
+_WS_STT_SEMAPHORE = asyncio.Semaphore(max(1, int(os.getenv("STT_MAX_CONCURRENT_REQUESTS", "2"))))
 
 
 async def _send_detection_ack(
@@ -176,15 +182,21 @@ async def _handle_stt_audio(ws: WebSocket, device_id: str, data: dict) -> None:
     인지 경로가 계속 오케스트레이션을 시도하는 경쟁 창이 남아 있었다).
     """
     audio_b64 = data.get("audio_b64", "")
-    if not audio_b64:
+    if not isinstance(audio_b64, str) or not audio_b64:
         logger.warning(f"[WS] stt_audio 메시지에 audio_b64 없음: device_id={device_id}")
+        return
+    if len(audio_b64) > MAX_STT_BASE64_CHARS:
+        logger.warning(f"[WS] stt_audio 크기 제한 초과: device_id={device_id}")
+        with contextlib.suppress(Exception):
+            await ws.send_json({"type": "error", "code": "stt_audio_too_large"})
         return
 
     async with _get_stt_lock(device_id):
         manager.set_stt_active(device_id, True)
         hold_seconds = 0.0
         try:
-            hold_seconds = await _process_stt_audio(ws, device_id, data, audio_b64)
+            async with _WS_STT_SEMAPHORE:
+                hold_seconds = await _process_stt_audio(ws, device_id, data, audio_b64)
         finally:
             # 응답 예상 재생시간 + 마진까지 억제를 연장(ttl_seconds=0이면 즉시 해제).
             # 클라이언트 audioEngine이 실제 재생 종료 콜백으로 결정론적 해제를 담당하므로
@@ -398,9 +410,13 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
         logger.error(f"[WS] stt_status broadcast failed: {e}")
 
     try:
-        audio_bytes = base64.b64decode(audio_b64)
-    except (ValueError, TypeError) as e:
+        audio_bytes = base64.b64decode(audio_b64, validate=True)
+    except (binascii.Error, ValueError, TypeError) as e:
         logger.error(f"[WS] stt_audio base64 디코딩 실패: device_id={device_id}, {e}")
+        return 0.0
+
+    if len(audio_bytes) > MAX_STT_AUDIO_BYTES:
+        logger.warning(f"[WS] stt_audio 디코딩 크기 제한 초과: device_id={device_id}")
         return 0.0
 
     if len(audio_bytes) < MIN_STT_AUDIO_BYTES:
@@ -587,7 +603,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                     )
                 logger.info(
                     f"[WS] dial_action 전송: device_id={device_id}, "
-                    f"contact={dial_action.get('contact_name')}, phone={phone_number}"
+                    "contact_present=true, phone_redacted=true"
                 )
 
         # 2026-07-11 지도 패널용: 경로 설정/해제 시 좌표 목록을 nav_route 메시지로
@@ -711,7 +727,6 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 @router.websocket("/ws/console/live-feed")
 async def ws_console_live_feed(
     ws: WebSocket,
-    token: str | None = Query(None, alias="token"),
 ) -> None:
     """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트.
 
@@ -719,20 +734,28 @@ async def ws_console_live_feed(
     끊기거나, uvicorn 재기동 후 반쯤 열린(half-open) 소켓을 감지하기 어렵다.
     receive()로 모든 메시지 타입을 흡수하고 disconnect만 정리한다.
 
-    2026-07-19: connect_console 이전에 JWT 관리자 토큰을 검증한다.
-    SSE/REST와 동일하게 ?token= 쿼리를 사용(EventSource는 커스텀 헤더를
-    붙일 수 없으므로). 인증 실패 시 1008 정책 위반으로 즉시 종료한다.
+    토큰은 URL에 남기지 않고 연결 직후 첫 JSON 메시지로 전달한다.
     """
-    await ws.accept()
-    if not token:
-        await ws.close(code=1008, reason="token required")
+    origin = ws.headers.get("origin")
+    if origin and origin not in settings.CORS_ORIGINS:
+        await ws.close(code=1008, reason="origin not allowed")
         return
+    await ws.accept()
     try:
-        await get_current_admin(token_query=token, token_header=None)
-    except HTTPException:
+        auth_message = await asyncio.wait_for(
+            ws.receive_json(),
+            timeout=settings.WS_AUTH_TIMEOUT_SECONDS,
+        )
+        token = auth_message.get("token") if auth_message.get("type") == "auth" else None
+        if not isinstance(token, str) or not token:
+            raise HTTPException(status_code=401, detail="invalid token")
+        async with async_sessionmaker_factory() as db:
+            await authenticate_admin_token(token, db)
+    except (TimeoutError, HTTPException, ValueError, json.JSONDecodeError, WebSocketDisconnect):
         await ws.close(code=1008, reason="invalid token")
         return
     await manager.connect_console(ws, accept=False)
+    await ws.send_json({"type": "auth_ok"})
     try:
         while True:
             message = await ws.receive()
@@ -763,7 +786,10 @@ async def ws_detect(
         - JSONDecodeError: 1003 종료
         - decode_frame None 반환: ack 정상 응답 (파이프라인 영속성)
     """
-    await manager.connect(device_id, ws)
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", device_id):
+        await ws.close(code=1008, reason="invalid device_id")
+        return
+    await ws.accept()
 
     heartbeat: HeartbeatManager | None = None
     heartbeat_task: asyncio.Task[None] | None = None
@@ -779,8 +805,10 @@ async def ws_detect(
         )
         logger.info(f"[WS] welcome 송신 완료 - device_id: {device_id}")
 
-        raw_hello = await ws.receive_text()
-        logger.info(f"[WS] hello 수신 - raw: {raw_hello}")
+        raw_hello = await asyncio.wait_for(
+            ws.receive_text(),
+            timeout=settings.WS_AUTH_TIMEOUT_SECONDS,
+        )
         hello_data = json.loads(raw_hello)
 
         if hello_data.get("type") != "hello":
@@ -796,6 +824,9 @@ async def ws_detect(
             return
 
         token = hello_data.get("token", "")
+        if not isinstance(token, str):
+            await ws.close(code=1008, reason="authentication failed")
+            return
         is_valid = await verify_device(device_id, token)
         if not is_valid:
             # 토큰 원문은 로그에 남기지 않는다(2026-07-11, dev 개선 계획서 §2 보안 기준).
@@ -812,6 +843,7 @@ async def ws_detect(
             await ws.close(code=1008, reason="authentication failed")
             return
 
+        await manager.register_authenticated(device_id, ws)
         logger.info(f"[WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}")
         # auth_ok 송신 "전"에 등록을 끝낸다: 클라이언트는 auth_ok를 받는 즉시 프레임을
         # 보내기 시작할 수 있어, 먼저 보내버리면 DetectionConsumer가 등록 완료 전에
@@ -1170,6 +1202,10 @@ async def ws_detect(
             else:
                 logger.warning(f"[WS] 알 수 없는 메시지 타입: {msg_type}")
 
+    except TimeoutError:
+        logger.warning(f"[WS] 인증 시간 초과: device_id={device_id}")
+        with contextlib.suppress(Exception):
+            await ws.close(code=1008, reason="authentication timeout")
     except WebSocketDisconnect as e:
         logger.info(f"[WS] 연결 끊김: device_id={device_id}, code={e.code}")
     except json.JSONDecodeError as e:

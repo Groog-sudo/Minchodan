@@ -5,9 +5,8 @@
 - GET /api/v1/admin/detection-logs: 최신 로그 목록 (frame_path 포함)
 - GET /api/v1/admin/event-frames/{event_id}: 이벤트 발생 시점 프레임 JPEG
 
-인증: get_current_admin (Authorization 헤더 또는 ?token= 쿼리).
-<img> 태그는 커스텀 헤더를 못 붙이므로 이미지 요청은 쿼리 토큰을 사용합니다
-(SSE EventSource와 동일한 우회 패턴).
+인증: get_current_admin의 Authorization Bearer 헤더만 허용합니다.
+콘솔은 인증 fetch로 프레임 Blob을 받은 뒤 브라우저 전용 object URL로 표시합니다.
 """
 
 import sys
@@ -19,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.api.dependencies import get_current_admin
+from server.api.dependencies import get_current_admin, require_operator
 from server.db.connection import get_db
 from server.db.schemas import DetectionGuidanceLogResponse, FalsePositiveUpdateRequest
 from server.services.detection_guidance_log_service import DetectionGuidanceLogService
@@ -33,7 +32,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 async def update_detection_log_false_positive(
     log_id: int,
     payload: FalsePositiveUpdateRequest,
-    admin_id: str = Depends(get_current_admin),
+    admin_id: str = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> DetectionGuidanceLogResponse:
     # ==========================================

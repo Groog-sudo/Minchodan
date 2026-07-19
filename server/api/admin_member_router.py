@@ -18,7 +18,7 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.api.dependencies import get_current_admin
+from server.api.dependencies import get_current_admin, require_operator
 from server.db.connection import get_db
 from server.db.schemas import AppUserResponse, AppUserWithDevicesResponse, MemberRegisterRequest
 from server.services.user_service import UserService
@@ -45,7 +45,7 @@ async def list_members(
 @router.post("", response_model=AppUserResponse, status_code=status.HTTP_201_CREATED)
 async def register_member(
     payload: MemberRegisterRequest,
-    admin_id: str = Depends(get_current_admin),
+    admin_id: str = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ) -> AppUserResponse:
     """회원을 등록하거나(신규 device_uuid) 기존 익명 자동등록 레코드를 실명으로 전환한다."""

@@ -30,7 +30,7 @@
 - 기본값: **WiFi**
 - 선택값은 `expo-file-system`으로 단말에 저장되어 앱 재시작 후에도 유지된다.
 - STT·가이드·연락처 등도 동일 WS 세션을 쓰므로, 수송 모드만 맞으면 부가 기능도 같이 동작한다.
-- `tailscale`/`ngrok` 모드에서는 앱 버튼이 현재 외부망 라벨만 표시하고 WiFi/USB 주소 전환은 수행하지 않는다.
+- `tailscale` 모드에서는 앱 버튼이 현재 외부망 라벨만 표시하고 WiFi/USB 주소 전환은 수행하지 않는다.
 
 ## 3. 코드 위치
 
@@ -113,7 +113,7 @@ adb reverse --list
 | `EXPO_PUBLIC_TAILSCALE_HOST` | (WIFI_HOST 폴백) | Tailscale 외부망 서버 호스트 |
 | `EXPO_PUBLIC_SERVER_PORT` | `8000` | FastAPI/WebSocket 포트 |
 | `EXPO_PUBLIC_DEFAULT_TRANSPORT` | `wifi` | 최초 기동 기본 모드 (`wifi` \| `usb`) |
-| `EXPO_PUBLIC_NETWORK_MODE` | `lan` | `ngrok` 또는 `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 |
+| `EXPO_PUBLIC_NETWORK_MODE` | `tailscale` | `lan` 또는 `tailscale`. `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 |
 | `EXPO_PUBLIC_NETWORK_BENCHMARK` | `false` | `true`이면 앱에서 `network_probe` RTT 표시 |
 
 명세 표: [environment_variables.md](environment_variables.md) §2.14.
@@ -134,6 +134,5 @@ TCP 8081  (Metro, 개발 번들 로드 시)
 | 문서 | 용도 |
 | :--- | :--- |
 | [android_wireless_test_guide_v2.md](android_wireless_test_guide_v2.md) | adb reverse 끊김·데드락 복구 |
-| [android_build_and_wireless_test_guide.md](android_build_and_wireless_test_guide.md) | 빌드·ngrok 기본 절차 |
-| [wireless_test_guide.md](wireless_test_guide.md) | LTE/ngrok 외부망 |
+| [tailscale_connection_guide.md](tailscale_connection_guide.md) | Tailscale 설치·외부망 연결 절차 |
 | [ios_android_bifurcation_contract.md](../mobile/ios_android_bifurcation_contract.md) §7.3 | 네트워크 상수 보존 계약 |

@@ -17,15 +17,44 @@ const API_BASE_URL: string =
 const LOGS_ENDPOINT = `${API_BASE_URL}/api/v1/admin/detection-logs`;
 const DEFAULT_POLL_MS = 30000;
 
-/**
- * 이벤트 프레임 이미지 URL을 만듭니다.
- * <img> 태그는 Authorization 헤더를 붙일 수 없어 SSE와 동일하게
- * 쿼리 토큰(?token=...)으로 인증합니다.
- */
-export function eventFrameUrl(eventId: string, token: string): string {
-  return `${API_BASE_URL}/api/v1/admin/event-frames/${encodeURIComponent(
-    eventId,
-  )}?${new URLSearchParams({ token }).toString()}`;
+/** 이벤트 프레임을 Authorization 헤더로 조회해 브라우저 전용 Blob URL로 반환합니다. */
+export function useAuthorizedEventFrameUrl(
+  eventId: string,
+  token: string,
+): string | null {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let createdUrl: string | null = null;
+
+    void (async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/admin/event-frames/${encodeURIComponent(eventId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        },
+      );
+      if (response.status === 401 || response.status === 403) {
+        forceAdminRelogin(`event_frame_${response.status}`);
+        return;
+      }
+      if (!response.ok) return;
+      createdUrl = URL.createObjectURL(await response.blob());
+      setObjectUrl(createdUrl);
+    })().catch(() => {
+      if (!controller.signal.aborted) setObjectUrl(null);
+    });
+
+    return () => {
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+      setObjectUrl(null);
+    };
+  }, [eventId, token]);
+
+  return objectUrl;
 }
 
 export function useDetectionLogs(

@@ -11,7 +11,7 @@ guidedog-ai/
 │   ├── main.py                      # FastAPI 앱 진입점, CORS, 라우터 등록
 │   ├── config.py                    # 환경변수 (LLM_PROVIDER, Redis URL 등)
 │   ├── requirements.txt
-│   ├── verify_gpu.py                # [부록C] sm_120 / CUDA 12.8 검증 스크립트
+│   ├── verify_gpu.py                # [부록C] CUDA 13.0 / macOS MPS 검증 스크립트
 │   │
 │   ├── api/                         # ─── 1단계: 통신망 ───
 │   │   ├── ws_router.py             # APIRouter + WebSocket /ws/detect
@@ -127,7 +127,7 @@ guidedog-ai/
 │   └── package.json
 │
 ├── scripts/                         # ─── 유틸리티 스크립트 ───
-│   ├── verify_gpu.py                # sm_120 + CUDA 12.8 + GPU 1-step 연산 검증
+│   ├── verify_gpu.py                # RTX 5090·CUDA 13.0 또는 macOS MPS/CPU 연산 검증
 │   ├── build_safety_db.py           # 4단계 RAG (safety_guidelines.json → ChromaDB)
 │   ├── build_convenience_db.py      # 편의 RAG 빌드
 │   ├── build_guide_clips.py         # 반사 안내 클립 합성

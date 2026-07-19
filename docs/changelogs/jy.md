@@ -5,6 +5,28 @@
 
 ---
 
+### 2026-07-19 | 보안/클라이언트/문서 | ngrok 제거 및 uuid 취약점 해소
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 외부망 연결을 Tailscale로 단일화한 이후에도 `@expo/ngrok`와 플랫폼별 실행 바이너리, 클라이언트 ngrok 네트워크 모드, 과거 실행 안내가 남아 있었습니다.
+  - `@expo/ngrok -> uuid@3.4.0`과 `expo-splash-screen -> xcode -> uuid@7.0.3` 경로에서 `GHSA-w5hq-g745-h8pq` 취약점이 탐지됐습니다.
+- **변경 내용**:
+  - `@expo/ngrok` 직접 개발 의존성과 관련 바이너리·전이 패키지 34개를 제거하고 `package-lock.json`을 재생성했습니다.
+  - `NetworkMode`를 `lan | tailscale`로 축소하고, ngrok 도메인 환경변수·URL 생성·UI 라벨·접근성 분기를 제거했습니다.
+  - `xcode@3.0.1`의 미사용 취약 전이 의존성은 npm scoped override로 `uuid@11.1.1`에 고정했습니다.
+  - 루트 `.env`의 로컬 ngrok 환경변수 한 줄을 값 출력 없이 제거하고, Windows 시작 스크립트 및 실기기·통합 운영 문서를 Tailscale 기준으로 동기화했습니다.
+- **검증 결과**:
+  - `npm ls @expo/ngrok @expo/ngrok-bin uuid --all`: ngrok 패키지 없음, `uuid@11.1.1 overridden` 확인
+  - `npm audit --json`: 취약점 0건(Moderate/High/Critical 포함 전체 0)
+  - `npx tsc --noEmit`: 통과
+  - `npx expo config --type public`: 통과, ngrok 환경변수 미노출 확인
+  - `git diff --check`: 통과
+- **별도 기존 이슈**:
+  - `npx expo-doctor`는 21개 중 15개 통과, 6개 실패했습니다. 실패 항목은 이번 보안 변경과 무관한 기존 `app.json` splash 스키마, `expo-asset` peer·중복, 네이티브 폴더와 Prebuild 설정 병존, `react-native-fast-tflite` New Architecture 메타데이터, Expo SDK 56 패키지 버전 불일치입니다.
+
+---
+
 ### 2026-07-17 | 문서 보안 | DB·미디어 API 가이드 외부 공개용·내부용 분리
 
 - **커밋**: (이번 커밋)
@@ -599,5 +621,50 @@
   - `git diff --check` 통과
 - **비고**:
   - 실제 호스트/IP가 포함된 `client/ios/Minchodan/AppDelegate.swift`, `client/src/config/index.ts`와 로컬 `.env` 파일은 이번 커밋에서 제외했습니다.
+
+---
+
+### 2026-07-18 | 설계 | 휴리스틱 거리 구역 기반 알림 라우팅 구현 계획 수립
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 현장 테스트에서 객체 탐지 알림이 과도하게 반복되어 비프·햅틱·TTS 알림 피로를 유발하는 문제가 확인됐습니다.
+  - 서버 면적비 구역, 서버 bbox 하단 의사 거리, 단말 면적비 휴리스틱, 수동 LiDAR 거리 기준이 서로 다른 의미로 사용되어 Near/Medium/Far 경로를 단일 규칙으로 적용하기 어려웠습니다.
+- **변경 내용**:
+  - 현행 서버·클라이언트·WebSocket·억제기·Fast Lane·LiDAR 검증 경로와 관련 설계 문서를 교차 감사했습니다.
+  - 일반 객체는 유효 Near에서 비프·햅틱 반사 경로, Medium/Far에서 발화 가치 필터를 거친 짧은 인지 TTS 경로를 사용하도록 목표 정책을 정의했습니다.
+  - 거리 정책 SSOT, 구역 히스테리시스, Near enter/update/clear 상태, 서버·단말 알림 소유권, API 호환, 테스트·KPI·문서 동기화 계획을 모바일 구현 계획서로 정리했습니다.
+  - 루트 경로의 구현 계획서를 `docs/mobile/` 하위로 이동해 모바일 관련 설계 문서 위치와 정합화했습니다.
+- **관련 파일**: `docs/mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md`, `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `tests/test_cognitive_fields.py`, `tests/test_fast_lane.py`, `tests/test_suppressor_rearm.py`: 27개 통과
+  - `tests/test_detection.py`, `tests/test_risk_ssot.py`, `tests/test_langgraph.py`: 91개 통과
+  - 계획서 UTF-8 확인 및 `git diff --check` 통과
+- **비고**:
+  - 초기 Near 진입 면적비 0.10, 이탈 0.08, Medium 진입 0.03, Far 이탈 0.025는 LiDAR 클래스별 검증 전 잠정 권장값입니다.
+  - 기존 사용자 로컬 변경 파일은 수정하지 않았습니다.
+
+---
+
+### 2026-07-19 | 보안 | 인증·전송·컨테이너·의존성 전면 보강
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 개발 기본 JWT·단말 토큰, 공개 관리자 생성, URL 쿼리 토큰, 인증 전 WebSocket 세션 교체, 무제한 STT 업로드와 공개 개발 API가 계정 탈취·서비스 고갈 경로가 될 수 있었습니다.
+  - Redis/MariaDB 약한 기본 비밀번호와 전체 인터페이스 포트, iOS ATS 전역 허용, 취약 버전 의존성 및 표준 XML 파서가 남아 있었습니다.
+- **변경 내용**:
+  - JWT를 모든 환경에서 fail-closed로 전환하고 표준 클레임 검증, 최초 최고관리자 1회 부트스트랩, 관리자 RBAC, 로그인 제한, 만료형 단말 JWT 발급을 적용했습니다.
+  - 콘솔 SSE·프레임·WebSocket의 URL 토큰을 제거하고 Authorization 헤더·최초 인증 메시지, Origin 검증, 인증 제한시간을 적용했습니다.
+  - STT 파일 형식·용량·동시성 제한, 디버그/내비게이션 시뮬레이터 명시 허용, 사용자 등록 운영자 권한을 적용했습니다.
+  - 공개 단말 토큰/IP 폴백과 iOS ATS 전역 허용을 제거하고 기본 WSS로 전환했습니다.
+  - 로컬 전용 비밀값 생성 스크립트, `.env` 권한 600, Redis 인증, Compose 필수 DB 비밀번호, 루프백 포트, 비루트 컨테이너와 `no-new-privileges`를 적용했습니다.
+  - Pillow·setuptools와 PyTorch 계열을 보안 수정 버전으로 올리고 XML 파서를 `defusedxml`로 교체했습니다. 팀 최대 RTX 5090 기준으로 Ubuntu x86_64/Windows amd64는 `torch==2.13.0+cu130`/`torchvision==0.28.0+cu130`, macOS는 PyPI 2.13.0/0.28.0 MPS·CPU 경로로 분리했습니다.
+- **검증 결과**:
+  - Python Ruff·Bandit, 콘솔 운영 빌드, 클라이언트 TypeScript, 양쪽 npm audit, Docker Compose 2종 구성 검증을 통과했습니다.
+  - 인증·JWT·단말 바인딩·요청 제한 회귀 테스트를 추가하고 비통합 테스트 361건 통과를 확인했습니다.
+  - macOS 로컬 `.venv`를 PyTorch 2.13/torchvision 0.28로 갱신하고 CPU 폴백 1 step 연산을 확인했습니다. 현재 호스트에서는 MPS가 비활성 상태였습니다.
+- **잔여 검증**:
+  - Tailscale Serve TLS 종단 구성 후 iOS 실기기 WSS 연결을 검증해야 합니다. RTX 5090 실장 Ubuntu·Windows 서버에서는 NVIDIA R580 이상 드라이버와 cu130 빌드의 실제 추론을 각각 검증해야 합니다.
+  - 패치가 없는 ChromaDB 임베디드 모드 취약점(`CVE-2026-45829`/`PYSEC-2026-311`)과 데이터베이스 개인정보 컬럼의 애플리케이션 계층 암호화는 별도 마이그레이션 과제로 유지합니다.
 
 ---

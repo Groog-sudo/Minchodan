@@ -70,16 +70,15 @@ function Layout({
 }
 
 export default function App() {
-  // 새로고침 시 로그인 풀림 방지를 위해 localStorage에 토큰을 영속 보존합니다.
-  // 만료된 JWT는 읽기 시점에 제거해 401 스팸을 막는다.
+  // 새로고침은 유지하되 브라우저 탭 종료 시 삭제되는 sessionStorage만 사용한다.
   const [token, setToken] = useState<string | null>(() => readAdminToken());
 
-  // 토큰 변경 시 localStorage 반영 사이드 이펙트를 useEffect로 격리
+  // 토큰 변경 시 sessionStorage 반영 사이드 이펙트를 useEffect로 격리
   useEffect(() => {
     if (token) {
-      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
     } else {
-      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
     }
   }, [token]);
 

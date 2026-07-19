@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DetectionGuidanceLogRow, LatencyStages, PipelineDebug } from "../types/monitor";
-import { eventFrameUrl } from "../api/useDetectionLogs";
+import { useAuthorizedEventFrameUrl } from "../api/useDetectionLogs";
 
 // 발표/면접 포인트:
 // - 이 컴포넌트는 실시간 SSE DetectionFeed가 아니라,
@@ -473,6 +473,50 @@ function FrameWithOverlay({
   );
 }
 
+function AuthorizedFrameWithOverlay({
+  eventId,
+  token,
+  detections,
+  className,
+  onClick,
+}: {
+  eventId: string;
+  token: string;
+  detections: LoggedDetection[];
+  className?: string;
+  onClick?: () => void;
+}) {
+  const src = useAuthorizedEventFrameUrl(eventId, token);
+  if (!src) return <span className="frame-loading">프레임 불러오는 중</span>;
+  return (
+    <FrameWithOverlay
+      src={src}
+      detections={detections}
+      className={className}
+      onClick={onClick}
+    />
+  );
+}
+
+function AuthorizedFrameThumbnail({
+  eventId,
+  token,
+}: {
+  eventId: string;
+  token: string;
+}) {
+  const src = useAuthorizedEventFrameUrl(eventId, token);
+  if (!src) return <span className="frame-loading">로딩 중</span>;
+  return (
+    <img
+      src={src}
+      alt="이벤트 썸네일 (클릭하면 확대)"
+      className="frame-thumb"
+      loading="lazy"
+    />
+  );
+}
+
 /** 이미지 확대 보기 모달. 배경 클릭/닫기 버튼/Esc로 닫습니다. */
 function FrameLightbox({
   row,
@@ -578,8 +622,9 @@ function FrameLightbox({
           </div>
         </div>
         <div className="frame-detail-image">
-          <FrameWithOverlay
-            src={eventFrameUrl(row.event_id!, token)}
+          <AuthorizedFrameWithOverlay
+            eventId={row.event_id!}
+            token={token}
             detections={parseDetections(row.detected_objects_json)}
             className="frame-overlay-lightbox"
           />
@@ -813,11 +858,9 @@ export function DetectionGuidanceLogTable({
                             setLightboxLogId(row.log_id);
                           }}
                         >
-                          <img
-                            src={eventFrameUrl(row.event_id!, token!)}
-                            alt="이벤트 썸네일 (클릭하면 확대)"
-                            className="frame-thumb"
-                            loading="lazy"
+                          <AuthorizedFrameThumbnail
+                            eventId={row.event_id!}
+                            token={token!}
                           />
                         </button>
                       ) : (
@@ -1017,8 +1060,9 @@ export function DetectionGuidanceLogTable({
               </div>
               {canShowFrame(selected) && token && (
                 <div className="frame-detail-image">
-                  <FrameWithOverlay
-                    src={eventFrameUrl(selected.event_id!, token)}
+                  <AuthorizedFrameWithOverlay
+                    eventId={selected.event_id!}
+                    token={token}
                     detections={parseDetections(selected.detected_objects_json)}
                     onClick={() => setLightboxLogId(selected.log_id)}
                   />

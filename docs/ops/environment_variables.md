@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-19
-> **버전**: v0.4.25 (2026-07-19 §2.1 `LOG_LEVEL` 신규 등재 + 서버 로깅 레벨 외부화 + 이전 v0.4.24: §2.11/§2.14 Tailscale Metro를 팀 공유 표준으로 유지하되 **개발 PC IP는 각자 덮어쓰기** 운영 규칙 명시 + 이전 v0.4.23: `METRO_BUNDLER_HOST` 등재 + 이전 v0.4.22: `YOLO_AUTOINSTALL`)
+> **버전**: v0.4.26 (2026-07-19 인증 fail-closed·부트스트랩·Redis 암호·WSS·디버그 기능 명시 허용 변수 반영)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -48,7 +48,8 @@
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`REDIS_URL`** | string | 필수 | `redis://localhost:6379` | Redis 연결 URL. Streams(`risk.events`, `mcp:metrics`) 및 컨텍스트 TTL(30초)에 사용 | [`architecture.md`](architecture.md) 2절·13.3절 |
+| **`REDIS_PASSWORD`** | string | 필수 | 없음 | Redis `requirepass` 비밀값. `scripts/configure_security_secrets.py`로 생성하며 Git에 기록하지 않음 | `docker/docker-compose*.yml` |
+| **`REDIS_URL`** | string | 필수 | 없음 | 인증정보를 포함한 Redis 연결 URL. 로컬 예: `redis://:${REDIS_PASSWORD}@localhost:6379` | [`architecture.md`](architecture.md) 2절·13.3절 |
 
 ### 2.5 WebSocket 서버 (1단계 통신망)
 
@@ -59,10 +60,17 @@
 | **`HEARTBEAT_INTERVAL`** | int | 선택 | (코드 기본값) | 하트비트 송신 주기(초). `server/api/config.py` (2026-07-07 추가 — 기존 명세서에 누락돼 있었음) | `server/api/config.py:30` |
 | **`HEARTBEAT_TIMEOUT`** | int | 선택 | `15` | 하트비트 미수신 타임아웃(초). 총 유예 시간은 `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 20초). **2026-07-10 변경**(기존 5): ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료되는 문제를 실기기 LTE 테스트로 확인해 상향 | `server/api/config.py:31` |
 | **`MAX_RECONNECT_ATTEMPTS`** | int | 선택 | (코드 기본값) | 서버 측 재연결 허용 횟수 | `server/api/config.py:32` |
+| **`WS_AUTH_TIMEOUT_SECONDS`** | float | 선택 | `10` | 단말·콘솔 WebSocket 연결 후 인증 메시지를 기다리는 최대 시간. 초과 시 정책 위반 코드로 종료 | `server/api/config.py`, `server/api/ws_router.py` |
 | **`CORS_ORIGINS`** | JSON 배열 문자열 | 선택 | `["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"]` | 운영자 콘솔 CORS 허용 출처. **2026-07-13 개선**: Pydantic Settings 초기화 시 환경변수 `CORS_ORIGINS`의 JSON 포맷 또는 쉼표 구분값으로부터 동적으로 안전하게 파싱 및 바인딩되도록 개선. | `server/api/config.py`, `server/main.py` |
-| **`JWT_SECRET_KEY`** | string | 필수(운영) / 선택(개발) | (개발 전용 임시 키) | 관리자/유저·디바이스 JWT 서명 키. **2026-07-11 강화**: `APP_ENV=production`에서 미설정 시 `RuntimeError`로 서버 기동 거부(fail-closed). 개발 환경에서만 임시 키 폴백. `.env.example`에 등재됨 | `server/db/security.py` |
-| **`APP_ENV`** | string | 선택 | `development` | 배포 환경 구분(`development`/`production`). **2026-07-11 신설**: `production`이면 (1) `JWT_SECRET_KEY` 필수(기동 거부), (2) `DEVICE_STATIC_TOKENS` 미설정 시 정적 디바이스 토큰 경로 비활성화(JWT만 인정) | `server/db/security.py`, `server/api/auth.py` |
-| **`DEVICE_STATIC_TOKENS`** | string | 선택 | (개발 기본 2식) | 정적 디바이스 토큰 목록, `device_id:token` 쉼표 구분(예: `dev-001:token-abc-001,dev-002:token-abc-002`). **2026-07-11 신설**: 코드 하드코딩 딕셔너리를 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록 | `server/api/auth.py` |
+| **`JWT_SECRET_KEY`** | string | 필수(모든 환경) | 없음 | 관리자·디바이스 JWT 서명 키. 32자 미만 또는 알려진 플레이스홀더면 환경과 무관하게 서버 기동을 거부함 | `server/db/security.py` |
+| **`JWT_ISSUER`** | string | 선택 | `minchodan-api` | JWT 발급자 `iss` 검증값 | `server/db/security.py` |
+| **`JWT_AUDIENCE`** | string | 선택 | `minchodan-clients` | JWT 대상 `aud` 검증값 | `server/db/security.py` |
+| **`ADMIN_BOOTSTRAP_TOKEN`** | string | 최초 구축 시 필수 | 없음 | 관리자 테이블이 비었을 때 `/api/v1/admin/bootstrap`으로 최초 최고관리자를 1회 생성하는 32자 이상 토큰 | `server/api/admin_router.py` |
+| **`APP_ENV`** | string | 선택 | `development` | 배포 환경 구분. `production`에서는 API 문서가 비활성화되고 정적 단말 토큰을 사용하지 않음 | `server/main.py`, `server/api/auth.py` |
+| **`ALLOW_STATIC_DEVICE_TOKENS`** | bool | 선택 | `false` | 개발용 정적 단말 토큰을 명시적으로 허용. 운영에서는 `false` 유지하고 관리자 발급 단말 JWT 사용 | `server/api/auth.py` |
+| **`DEVICE_STATIC_TOKENS`** | string | 선택 | 없음 | 32자 이상 정적 토큰의 `device_id:token` 목록. `ALLOW_STATIC_DEVICE_TOKENS=true`일 때만 로드 | `server/api/auth.py` |
+| **`ENABLE_DEBUG_API`** | bool | 선택 | `false` | 비운영 환경에서 최고관리자용 디버그 TTS API를 명시적으로 활성화 | `server/api/debug_router.py` |
+| **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | 개발용 내비게이션 시뮬레이터 서브앱 마운트를 명시적으로 활성화 | `server/main.py` |
 
 ### 2.6 탐지 설정 (3단계 Detection)
 
@@ -163,16 +171,18 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 ### 2.12 외부망 연결 (Tailscale, 야외 도로 테스트용)
 
-**2026-07-13 변경**: ngrok 프록시(클라우드 경유 지연)를 Tailscale P2P VPN으로 전면 교체. `NGROK_AUTHTOKEN` 변수 및 `docker-compose.yml`/`docker-compose.macos.yml`의 `ngrok` 서비스를 완전히 제거했다(서버 인프라 결정 - kb). 클라이언트 접속 방식은 처음엔 기존 `lan` 모드(`EXPO_PUBLIC_LAN_IP`)를 재사용해 구현했으나, jy 브랜치 병합 시 §2.14의 전용 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다(jy가 같은 세션에서 독립적으로 구현, `network_probe` RTT 계측과도 통합됨). 실기기는 `client/.env`에 `EXPO_PUBLIC_NETWORK_MODE=tailscale`, `EXPO_PUBLIC_TAILSCALE_HOST=<개발 PC의 Tailscale IP 또는 MagicDNS 이름>`을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다(서버 측 환경변수는 불요 - Tailscale 자체가 OS 레벨 네트워크 인터페이스). 클라이언트 쪽 `NETWORK_MODE=ngrok` 분기와 `@expo/ngrok` 의존성은 폴백으로 코드에 보존되어 있으나, ngrok 도커 인프라 자체는 없으므로 실제로 그 경로를 쓰려면 컨테이너를 별도로 다시 구성해야 한다. 상세: [`docs/changelogs/kb.md`](../changelogs/kb.md), [`docs/changelogs/jy.md`](../changelogs/jy.md) 2026-07-13 항목.
+**2026-07-13 변경**: 기존 공인 프록시를 Tailscale P2P VPN으로 전면 교체하고, 서버 측 인증 토큰 변수와 Docker 터널 서비스를 제거했다. 클라이언트 접속 방식은 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다. 실기기는 `client/.env`에 개발 PC의 Tailscale IP 또는 MagicDNS 이름을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다. 서버 측 별도 터널 환경변수는 필요하지 않다.
 
-**2026-07-18 보강 (iOS 네이티브 Metro, 팀 표준)**: LTE/Tailscale에서 Expo Dev Launcher가 Bonjour로 Metro를 못 찾아 `Finding Dev Servers`에 머무는 문제를 막기 위해, Tailscale 기반 Metro 접속을 **공유 표준**으로 유지한다. `AppDelegate.bundleURL()`은 `METRO_BUNDLER_HOST`(미설정 시 저장소 기본값 `100.121.247.4:8081`)로 JS 번들 URL을 고정하고, `app.json`/`Info.plist`/`Minchodan.xcscheme`에 Dev Launcher 온보딩 스킵·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`을 둔다. 서버 API 호스트(`EXPO_PUBLIC_TAILSCALE_HOST`)와 Metro 호스트는 역할이 다르므로 각각 설정한다.
+**2026-07-19 보안 정리**: 사용하지 않는 외부 터널 클라이언트 패키지와 바이너리 의존성, 클라이언트 네트워크 모드·도메인 환경변수 폴백을 제거했다. 외부망 연결은 Tailscale만 지원한다.
 
-> **팀 운영 규칙 (개발 PC IP는 각자 덮어쓰기)**: 저장소에 있는 `100.121.247.4`는 예시·공통 폴백일 뿐, **본인 개발 Mac의 Tailscale IPv4로 반드시 교체**한다. 덮어쓰지 않으면 다른 팀원 Metro에 붙거나 연결이 실패한다.
+**2026-07-19 보강 (iOS 네이티브 Metro)**: LTE/Tailscale에서 Expo Dev Launcher가 Bonjour로 Metro를 못 찾을 때 로컬 Xcode 환경의 `METRO_BUNDLER_HOST`에 개인 개발 PC의 MagicDNS 이름 또는 주소를 지정한다. 저장소 소스·공유 스킴·Info.plist에는 개인 주소 폴백을 두지 않는다. 서버 API 호스트(`EXPO_PUBLIC_TAILSCALE_HOST`)와 Metro 호스트는 역할이 다르므로 각각 설정한다.
+
+> **팀 운영 규칙**: 개인 개발 Mac 주소는 Git 추적 파일에 기록하지 않고 로컬 Xcode 환경에서만 설정한다.
 >
 > | 대상 | 덮어쓰기 방법 |
 > | :--- | :--- |
 > | Metro JS 번들 (재빌드 최소) | Xcode 스킴 `METRO_BUNDLER_HOST=<본인_Tailscale_IP>:8081` 또는 프로세스 env |
-> | Dev Launcher 기본 URL | `Info.plist`의 `DEV_CLIENT_DEFAULT_LAUNCHER_URL`, `app.json` expo-dev-client `ios.defaultLaunchURL` |
+> | Dev Launcher 기본 URL | 저장소에 고정하지 않으며 Expo Dev Launcher에서 로컬 세션을 선택 |
 > | FastAPI/WS 서버 | `client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST=<본인_또는_서버_Tailscale_IP>` (gitignore, 커밋 금지) |
 >
 > Tailscale IP 확인: macOS에서 `tailscale ip -4`. MagicDNS 이름을 쓸 수 있으면 IP 대신 호스트명도 가능하다.
@@ -206,20 +216,20 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 | 변수명 | 타입 | 필수/선택 | 기본값(코드 폴백) | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `lan` | 단말 접속 모드(`lan`/`ngrok`/`tailscale`). `ngrok` 또는 `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 | `client/src/config/index.ts` |
-| **`EXPO_PUBLIC_WIFI_HOST`** | string | 선택 | `192.168.137.1` | **평상시 WiFi 모드** PC 호스트. Windows 노트북 모바일 핫스팟 게이트웨이 기본값(2026-07-13) | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
+| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `tailscale` | 단말 접속 모드(`lan`/`tailscale`). `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_WIFI_HOST`** | string | LAN 사용 시 필수 | 없음 | **평상시 WiFi 모드** PC 호스트. 소스 코드에는 개인·공용 IP 폴백을 두지 않음 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
 | **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | (WIFI_HOST 폴백) | 구 명칭. 설정 시 `WIFI_HOST`가 없으면 이 값을 WiFi 호스트로 사용 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_USB_HOST`** | string | 선택 | `127.0.0.1` | **개발 USB 모드** + `adb reverse` 호스트 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
-| **`METRO_BUNDLER_HOST`** | string | 선택 | `100.121.247.4:8081`(저장소 예시) | **iOS 네이티브 전용**. Debug Metro 호스트. **본인 개발 PC Tailscale IP로 덮어쓰기**(§2.11 팀 운영 규칙). Xcode 스킴/프로세스 env. Expo `EXPO_PUBLIC_*`와 별개 | `client/ios/Minchodan/AppDelegate.swift`, `Minchodan.xcscheme` |
-| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | 선택 | (`WIFI_HOST` 폴백) | **외부망 Tailscale 모드** FastAPI/WS 호스트. **본인(또는 공용) 개발 PC Tailscale IP로 `client/.env`에서 덮어쓰기**(커밋 금지). MagicDNS 가능 | `client/src/config/index.ts`, `client/.env.example` |
+| **`METRO_BUNDLER_HOST`** | string | 선택 | 없음 | **iOS 네이티브 전용** Debug Metro 호스트. 개인 MagicDNS/주소는 로컬 Xcode 환경에만 설정하고 공유 스킴에 저장하지 않음 | `client/ios/Minchodan/AppDelegate.swift` |
+| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | Tailscale 사용 시 필수 | 없음 | **외부망 Tailscale 모드** FastAPI/WS MagicDNS 호스트. 개인 IP 폴백 없음 | `client/src/config/index.ts`, `client/.env.example` |
 | **`EXPO_PUBLIC_SERVER_PORT`** | string | 선택 | `8000` | 단말이 접속할 FastAPI/WebSocket 포트. 기본 `/ws/detect` 포트와 동일 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_WS_SCHEME`** | string | 선택 | `wss` | WebSocket 스킴. iOS ATS를 전역 허용하지 않으므로 Tailscale Serve 등 TLS 종단을 사용. USB 루프백만 `ws` 허용 | `client/src/config/index.ts`, `client/ios/Minchodan/Info.plist` |
 | **`EXPO_PUBLIC_DEFAULT_TRANSPORT`** | string | 선택 | `wifi` | 앱 최초 기동 기본 수송(`wifi`/`usb`). 이후 선택은 단말에 영속 | `client/src/config/index.ts`, `client/src/services/serverTransport.ts` |
-| **`EXPO_PUBLIC_NGROK_DOMAIN`** | string | 선택 | `partake-primer-surround.ngrok-free.dev` | 외부망 터널 도메인 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_NETWORK_BENCHMARK`** | string | 선택 | `false` | `true`이면 iOS/Android 앱이 `network_probe`를 주기적으로 보내 최신 RTT와 최근 30개 평균을 디버그 정보에 표시 | `client/src/config/index.ts`, `client/src/hooks/useWebSocket.ts` |
 | **`EXPO_PUBLIC_NETWORK_BENCHMARK_INTERVAL_MS`** | int | 선택 | `1000` | 앱 내 `network_probe` 전송 간격(ms) | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_NETWORK_BENCHMARK_PAYLOAD_BYTES`** | int | 선택 | `256` | 앱 내 `network_probe` 페이로드 크기(bytes). 작은 고정값으로 순수 WS 왕복 지연을 비교 | `client/src/config/index.ts` |
-| **`EXPO_PUBLIC_DEVICE_ID`** | string | 선택 | `dev-001` | 단말 식별자 | `client/src/config/index.ts` |
-| **`EXPO_PUBLIC_DEVICE_TOKEN`** | string | 선택 | `token-abc-001`(개발 전용) | 디바이스 토큰. **2026-07-11 분리**: 코드 하드코딩에서 환경 변수 우선으로 전환. 실질 보안은 서버 JWT 발급 체계(`issue_device_token`)로 이관 예정 | `client/src/config/index.ts`, `server/api/auth.py` |
+| **`EXPO_PUBLIC_DEVICE_ID`** | string | 필수 | 없음 | 단말 식별자. 소스 기본값 없음 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_DEVICE_TOKEN`** | string | 필수 | 없음 | 단말 JWT 또는 명시 허용된 개발 정적 토큰. 공개 빌드 변수이므로 운영 장기 토큰 저장소로 사용하지 않음 | `client/src/config/index.ts`, `server/api/auth.py` |
 | **`VITE_MONITOR_STREAM_URL`** | string | 선택 | `http://localhost:8000/api/v1/monitor/stream` | 콘솔 SSE 스트림 주소 | `console/src/api/useMonitorStream.ts`, `console/.env.example` |
 | **`VITE_ENABLE_DEMO_DATA`** | string | 선택 | `false` | 콘솔 데모 데이터 주입(개발 빌드 전용, api_specification §8.4) | `console/src/App.tsx` |
 | **`VITE_NAV_MAP_URL`** | string | 선택 | `http://localhost:8000/navigation/?embed=true` | 관제 지도 iframe 주소(2026-07-11 신설) | `console/src/components/OperatorLiveMap.tsx` |
@@ -294,7 +304,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 4 | **`DATA_*` 경로 누락** | `.env.example`에만 존재 (5종) | 본 명세서 2.7절에 통합 |
 | 5 | **`MOCK_GPU_*` 누락** | 어디에도 문서화되지 않음 (코드에만 존재) | 본 명세서 2.10절에 신규 명세 |
 | 6 | **`LANGCHAIN_*` 누락** | `architecture.md` 13.4절에만 산재 | 본 명세서 2.9절에 통합 |
-| 7 | **`NGROK_AUTHTOKEN` 누락** | 야외 도로 테스트용 터널 인증 변수가 `.env.example`에만 존재 | 본 명세서 2.11절에 통합 |
+| 7 | **외부 터널 인증 변수 제거** | 사용하지 않는 외부 터널 인증 설정이 과거 문서에 잔존 | 2026-07-19 Tailscale 단일 경로로 정리 |
 | 8 | **DB 환경 변수 누락** | `.env.example`에는 `DB_*` 6종이 있으나 본 명세서에는 누락 | 본 명세서 2.12절에 통합하고 `DB_NAME=minchodan_db` 기준으로 정합 |
 | 9 | **`TMAP_APP_KEY` 누락** | 코드(`server/navigation/`)에서 실사용되나 본 명세서·`.env.example` 모두 누락 | 본 명세서 2.13절에 신규 명세. **2026-07-13**: `.env.example` 반영 완료 |
 

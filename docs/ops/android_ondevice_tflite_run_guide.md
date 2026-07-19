@@ -79,20 +79,21 @@ Viewed .env:1-68
 
 ---
 
-## 4단계: ngrok 보안 터널 기동 및 모바일 설정 연동
+## 4단계: Tailscale 연결 및 모바일 설정 연동
 
-1. **ngrok 일회성 터널 기동**:
-   - 공용 PC에 내 계정 토큰을 저장하지 않기 위해 일회성 옵션과 함께 터널을 개방합니다.
+1. **Tailscale 연결 확인**:
+   - 서버 PC와 Android 단말을 같은 tailnet에 연결합니다.
      ```bash
-     ngrok http 8000 --authtoken <당신의_개인_ngrok_토큰>
+     tailscale status
+     tailscale ip -4
      ```
-   - 기동창에 나타나는 Forwarding 주소(`https://xxxx.ngrok-free.app`)를 복사합니다.
 
-2. **모바일 소스코드 접속 경로 변경**:
-   - 에디터로 다음 파일을 엽니다: [client/src/config/index.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/config/index.ts)
-   - 9번째 줄의 접속 URL을 ngrok 주소로 교체하되, 앞부분 프로토콜을 **`wss://`**로 수정하여 저장합니다.
-     ```typescript
-     export const WS_URL = "wss://xxxx.ngrok-free.app/ws/detect";
+2. **모바일 환경변수 설정**:
+   - `client/.env`에 서버 Tailscale IP 또는 MagicDNS 이름을 입력합니다.
+     ```ini
+     EXPO_PUBLIC_NETWORK_MODE=tailscale
+     EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
+     EXPO_PUBLIC_SERVER_PORT=8000
      ```
 
 ---

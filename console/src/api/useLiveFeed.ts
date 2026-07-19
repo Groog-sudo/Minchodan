@@ -87,8 +87,7 @@ export function useLiveFeed(token: string | null = null) {
     let disposed = false;
     let generation = 0;
 
-    // 2026-07-19: /ws/console/live-feed 는 JWT 관리자 토큰 필수(서버 1008 token required).
-    // SSE(/api/v1/monitor/stream)와 동일하게 ?token= 쿼리로 전달한다.
+    // 관리자 토큰은 URL/프록시 로그에 남지 않도록 연결 후 최초 인증 메시지로 전송한다.
     if (!token) {
       setConnected(false);
       return;
@@ -140,9 +139,7 @@ export function useLiveFeed(token: string | null = null) {
       }
 
       const myGen = ++generation;
-      const separator = WS_LIVE_FEED_URL.includes("?") ? "&" : "?";
-      const urlWithToken = `${WS_LIVE_FEED_URL}${separator}${new URLSearchParams({ token }).toString()}`;
-      const ws = new WebSocket(urlWithToken);
+      const ws = new WebSocket(WS_LIVE_FEED_URL);
       ws.binaryType = "blob";
       wsRef.current = ws;
 
@@ -155,7 +152,7 @@ export function useLiveFeed(token: string | null = null) {
           }
           return;
         }
-        setConnected(true);
+        ws.send(JSON.stringify({ type: "auth", token }));
       };
 
       ws.onmessage = (event) => {
@@ -247,7 +244,9 @@ export function useLiveFeed(token: string | null = null) {
         if (typeof event.data !== "string") return;
         try {
           const data = JSON.parse(event.data);
-          if (data.type === "server_detection") {
+          if (data.type === "auth_ok") {
+            setConnected(true);
+          } else if (data.type === "server_detection") {
             setLatestDetections(data.detections || []);
           } else if (data.type === "latency_event") {
             setLatencyEvents((prevEvents) =>

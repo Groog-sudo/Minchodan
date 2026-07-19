@@ -6,9 +6,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
+from server.api.dependencies import require_operator
+from server.api.rate_limit import enforce_rate_limit
 from server.stt import DEFAULT_REQUEST_MODEL, SttService, SttToLlmBridge
 from server.stt.stt_schema import SttTranscribeResult
 
@@ -18,6 +20,11 @@ if sys.stdout.encoding != "utf-8":
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/stt", tags=["STT"])
+
+_ALLOWED_AUDIO_SUFFIXES = {".aac", ".m4a", ".mp3", ".ogg", ".wav", ".webm"}
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+_STT_MAX_CONCURRENT = max(1, int(os.getenv("STT_MAX_CONCURRENT_REQUESTS", "2")))
+_STT_SEMAPHORE = asyncio.Semaphore(_STT_MAX_CONCURRENT)
 
 
 # ============================================================
@@ -67,30 +74,50 @@ async def _save_upload_to_temp(upload_file: UploadFile) -> Path:
     5) 보안 정책상 원본 파일명/원문 텍스트는 로그에 직접 남기지 않는다.
     """
 
-    # 업로드 원본 확장자를 최대한 보존해 디코더 호환성을 높인다.
-    # 확장자가 비어 있으면 Whisper 친화적인 .wav로 폴백한다.
-    suffix = Path(upload_file.filename or "input.wav").suffix or ".wav"
+    suffix = (Path(upload_file.filename or "input.wav").suffix or ".wav").lower()
+    if suffix not in _ALLOWED_AUDIO_SUFFIXES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="지원하지 않는 오디오 파일 형식입니다.",
+        )
 
-    # FastAPI UploadFile은 비동기 스트림이므로 await read()로 안전하게 버퍼링한다.
-    # (대용량 처리 최적화는 추후 청크 저장 방식으로 확장 가능)
-    data = await upload_file.read()
+    max_bytes = max(1, int(os.getenv("STT_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))))
+    total_bytes = 0
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_path = Path(temp_file.name)
+            while chunk := await upload_file.read(_UPLOAD_CHUNK_BYTES):
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="오디오 파일 크기 제한을 초과했습니다.",
+                    )
+                temp_file.write(chunk)
+        if total_bytes == 0:
+            raise HTTPException(status_code=400, detail="오디오 파일이 비어 있습니다.")
+        return temp_path
+    except Exception:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
 
-    if not data:
-        raise HTTPException(status_code=400, detail="오디오 파일이 비어 있습니다.")
 
-    # delete=False를 사용해 STT 엔진이 파일을 여는 시점까지 파일 경로를 보장한다.
-    # 삭제 책임은 라우터 finally 블록으로 명시적으로 이동한다.
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-        temp_file.write(data)
-        temp_path = Path(temp_file.name)
-
-    return temp_path
+async def _transcribe_with_limit(temp_path: Path, model_name: str | None) -> SttTranscribeResult:
+    async with _STT_SEMAPHORE:
+        return await asyncio.to_thread(
+            SttService.transcribe_file,
+            saved_path=temp_path,
+            model_name=model_name,
+        )
 
 
 @router.post("/transcribe", response_model=SttTranscribeResult)
 async def transcribe_audio(
     audio: UploadFile = File(..., description="음성 파일 (wav/mp3 등)"),
     model_name: str | None = Form(default=DEFAULT_REQUEST_MODEL),
+    operator_id: str = Depends(require_operator),
 ) -> SttTranscribeResult:
     """
     [바이브 코딩 부분]
@@ -112,6 +139,12 @@ async def transcribe_audio(
     temp_path: Path | None = None
 
     try:
+        await enforce_rate_limit(
+            "stt-transcribe",
+            operator_id,
+            limit=10,
+            window_seconds=60,
+        )
         # 1) 업로드를 로컬 임시 파일로 고정
         temp_path = await _save_upload_to_temp(audio)
 
@@ -121,9 +154,7 @@ async def transcribe_audio(
         # await 없이 직접 호출하면 처리가 끝날 때까지 프로세스의 단일 이벤트 루프 전체가
         # 멈춰, 이 요청과 무관한 다른 모든 연결(반사 경보 WS 포함)까지 함께 정지되는 것을
         # 실측으로 확인했다. asyncio.to_thread로 스레드에 위임해 이벤트 루프를 보존한다.
-        return await asyncio.to_thread(
-            SttService.transcribe_file, saved_path=temp_path, model_name=model_name
-        )
+        return await _transcribe_with_limit(temp_path, model_name)
     except KeyError as exc:
         # 모델명 매핑 정책 위반은 클라이언트 입력 오류로 처리(400)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -149,6 +180,7 @@ async def transcribe_and_guide(
     audio: UploadFile = File(..., description="음성 파일 (wav/mp3 등)"),
     model_name: str | None = Form(default=DEFAULT_REQUEST_MODEL),
     device_id: str = Form(default="rest-stt"),
+    operator_id: str = Depends(require_operator),
 ) -> SttGuideResponse:
     """
     [바이브 코딩 부분]
@@ -167,13 +199,17 @@ async def transcribe_and_guide(
     temp_path: Path | None = None
 
     try:
+        await enforce_rate_limit(
+            "stt-guide",
+            operator_id,
+            limit=5,
+            window_seconds=60,
+        )
         # 1) 업로드 저장
         temp_path = await _save_upload_to_temp(audio)
 
         # 2) STT 전사 수행 (2026-07-09: 이벤트 루프 블로킹 방지를 위해 스레드 위임, 위 참조)
-        stt_result = await asyncio.to_thread(
-            SttService.transcribe_file, saved_path=temp_path, model_name=model_name
-        )
+        stt_result = await _transcribe_with_limit(temp_path, model_name)
 
         # 3) 기존 오케스트레이션 브리지 재사용
         #    (라우터에서 LLM 직접 호출 대신, 도메인 어댑터를 통해 일관된 정책 유지)

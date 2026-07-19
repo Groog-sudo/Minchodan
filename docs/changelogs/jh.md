@@ -952,3 +952,48 @@ fix(console): localhost 하드코딩 제거 및 네트워크 URL 해석 공통�
 - **관련 파일**: `console/src/pages/DashboardPage.tsx`, `docs/changelogs/jh.md`
 - **검증 결과**: `npm run build` 성공(콘솔 타입체크/번들링 통과)
 - **비고**: 요청사항인 `위젯 기능 기능상자 버튼 내 추가되는 기능상자 없을 시 추가 버튼 비활성화` 기준으로 최소 변경만 반영함
+
+---
+
+### 2026-07-19 | 보안·인프라·문서 | 전면 보안 강화 이력 및 팀 반영 가이드 문서화
+
+- **커밋**: `security: 프로젝트 전면 보안 강화 및 팀 적용 가이드 추가`
+- **변경 배경**:
+  - 미사용 `@expo/ngrok`과 관련 전이 취약점 제거에서 시작해 프로젝트 전체를 다시 감사한 결과, JWT 기본값, 최초 관리자 생성, 역할 기반 권한, 단말 인증, URL 토큰, STT 자원 제한, 디버그 API, 모바일 평문 통신, Docker·Redis·MariaDB, 환경 파일 권한과 공급망 의존성까지 함께 보완해야 했음
+  - 코드만 병합하면 기존 JWT·Redis·DB 비밀번호, 콘솔 세션, 단말 토큰, 네이티브 앱 설정이 자동으로 전환되지 않으므로 팀원별 후속 절차를 단일 문서로 제공할 필요가 있었음
+  - 팀 GPU 서버 최대 사양인 RTX 5090과 Ubuntu·Windows·macOS 3개 운영체제에서 의존성 설치 기준이 달라, 보안 업데이트가 실행 호환성을 깨지 않도록 OS별 PyTorch·CUDA·MPS 경로와 검증 절차를 함께 기록함
+- **보안 구현 요약**:
+  - 모든 환경에서 예측 불가능한 32자 이상 JWT 서명 키를 강제하고, `aud`·`exp`·`iat`·`iss`·`jti`·`nbf` 클레임과 bcrypt 12 rounds·관리자 비밀번호 정책을 적용함
+  - 최초 최고관리자 1회 부트스트랩과 최고관리자 전용 추가 등록을 분리하고, 활성 DB 계정·현재 역할을 요청마다 검증해 관리자·운영자 권한 경계를 강화함
+  - 정적 단말 토큰을 기본 비활성화하고 장치 ID에 결합된 만료 JWT, 인증 후 WebSocket 세션 등록, 콘솔 첫 인증 메시지 방식을 적용함
+  - URL 쿼리 토큰을 제거하고 REST·SSE는 Authorization 헤더, 보호 이미지는 인증 fetch, 콘솔 토큰은 탭 종료 시 제거되는 `sessionStorage`를 사용하도록 변경함
+  - 관리자 로그인·부트스트랩·단말 JWT 발급·STT 요청에 제한을 추가하고 STT 업로드를 기본 최대 10 MiB·동시 2건·허용 확장자로 제한함
+  - 운영 API 문서와 상세 헬스 정보를 축소하고, 디버그·내비게이션 시뮬레이터를 명시적 플래그와 권한으로 잠그며 CORS·보안 응답 헤더를 강화함
+  - iOS ATS와 Android cleartext·backup·레거시 권한을 강화하고 개인 IP·토큰·Tailscale 주소 하드코딩 폴백을 제거해 필수 설정 누락 시 연결이 실패하도록 변경함
+  - Docker 포트를 loopback에 바인딩하고 Redis·MariaDB 비밀번호를 필수화했으며 비root 실행, 읽기 전용 마운트, `no-new-privileges`, 환경 파일 Docker context 제외를 적용함
+  - 비밀값을 출력하지 않고 원자적으로 생성하며 Unix 계열에서 환경 파일 권한을 `0600`으로 제한하는 `scripts/configure_security_secrets.py`를 추가함
+  - 외부 XML 파서를 `defusedxml`로 교체하고 취약 의존성을 갱신했으며 npm·pip 감사와 Dependabot을 CI 기준에 포함함
+  - Ubuntu·Windows RTX 5090은 PyTorch 2.13·CUDA 13.0 `cu130`, macOS는 PyTorch 2.13 MPS 우선·CPU 폴백으로 분리하고 실제 1-step을 확인하는 `scripts/verify_gpu.py`를 정합화함
+- **문서 변경 내용**:
+  - `docs/security/README.md`를 신규 작성해 보안 문서 원칙, 독해 순서, 갱신 조건, 비밀정보 금지 기준과 현재 잔여 위험을 인덱스화함
+  - `docs/security/security_hardening_and_team_adoption_guide.md`를 신규 작성해 수정 전 이슈와 피해 시나리오, 구현 조치, 제한 수치, 담당·운영체제별 반영 순서, 토큰 회전 영향, 검증 명령, 배포 승인, 사고 대응과 잔여 위험을 상세히 정리함
+  - `docs/README.md` 실제 문서 트리에 `security/`를 추가하고 문서 목록·권장 독해 순서를 갱신했으며, 루트 `README.md` 문서 인덱스에도 상세 가이드 링크를 추가함
+- **팀원 적용 핵심**:
+  - 운영 환경은 비밀값 스크립트 실행 전에 반드시 `APP_ENV=production`을 설정하고 `ALLOW_STATIC_DEVICE_TOKENS=false`를 유지해야 함
+  - 새 JWT 서명 키 적용 후 기존 관리자·단말 토큰은 모두 무효가 되므로 콘솔 재로그인과 장치별 JWT 재발급이 필요함
+  - Redis·DB 비밀번호 변경은 Compose와 기존 데이터 볼륨 계정을 안전하게 동기화해야 하며, 불일치를 이유로 공동 DB 볼륨을 삭제하면 안 됨
+  - iOS `Info.plist`·`AppDelegate.swift`와 Android manifest 변경은 Metro reload만으로 반영되지 않으므로 네이티브 clean build·실기기 재설치를 수행해야 함
+  - Tailscale 호스트 도달, FastAPI `/health`, 인증 WebSocket, 실제 음성·탐지 흐름을 서로 다른 검증 단계로 확인해야 함
+- **검증 결과**:
+  - Python 비통합 테스트 `361 passed, 11 deselected, 4 warnings`, 보안 집중 테스트 `17 passed`
+  - Ruff 전체 검사 오류 0, Bandit `server/`·`scripts/` 발견 이슈 0, 보안 변경 핵심 파일 mypy 오류 0
+  - 모바일 TypeScript 검사와 콘솔 production build 통과, `client`·`console` npm audit 알려진 취약점 0
+  - 일반·macOS Docker Compose config 통과, `pip check` 통과, ChromaDB의 수정 버전 없는 공개 취약점 예외 외 직접 고정 Python 의존성 감사 통과
+  - Git 추적 파일에서 비밀 패턴 미검출, 로컬 환경 파일 Git 제외·Unix 권한 `600`, `git diff --check` 통과
+  - macOS 로컬 PyTorch 2.13·torchvision 0.28 설치 및 CPU 1-step 통과; 현재 프로세스 MPS와 Ubuntu·Windows RTX 5090, iOS·Android 실기기 WSS는 후속 실장 검증으로 남김
+- **관련 파일**: `docs/security/README.md`, `docs/security/security_hardening_and_team_adoption_guide.md`, `docs/README.md`, `README.md`, `docs/changelogs/jh.md`
+- **잔여 위험**:
+  - `chromadb==1.5.9`의 `CVE-2026-45829`·`PYSEC-2026-311`은 현재 수정 버전이 없어 로컬 `PersistentClient`와 네트워크 경계로 임시 통제하며 수정 버전 발표 후 즉시 갱신해야 함
+  - 현재 요청 제한기는 단일 프로세스 메모리 기반이므로 다중 워커·다중 서버 전 Redis 기반 분산 제한기로 교체해야 함
+  - 개인정보 DB 필드 암호화, 장치 JWT 개별 `jti` 폐기 목록, Keychain·Keystore 기반 운영 단말 프로비저닝은 후속 과제로 남음
+- **비고**: 문서와 명령 예시에는 실제 비밀값·개인 IP·Tailscale 주소·사용자 개인정보를 기록하지 않았으며, 과거 Changelog·비교 연구의 ngrok 언급은 역사 기록일 뿐 현재 설치·운영 기준이 아님
