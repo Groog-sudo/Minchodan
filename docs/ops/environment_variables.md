@@ -163,7 +163,9 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 ### 2.12 외부망 연결 (Tailscale, 야외 도로 테스트용)
 
-**2026-07-13 변경**: ngrok 프록시(클라우드 경유 지연)를 Tailscale P2P VPN으로 전면 교체. `NGROK_AUTHTOKEN` 변수 및 `docker-compose.yml`/`docker-compose.macos.yml`의 `ngrok` 서비스를 완전히 제거했다(서버 인프라 결정 - kb). 클라이언트 접속 방식은 처음엔 기존 `lan` 모드(`EXPO_PUBLIC_LAN_IP`)를 재사용해 구현했으나, jy 브랜치 병합 시 §2.14의 전용 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다(jy가 같은 세션에서 독립적으로 구현, `network_probe` RTT 계측과도 통합됨). 실기기는 `client/.env`에 `EXPO_PUBLIC_NETWORK_MODE=tailscale`, `EXPO_PUBLIC_TAILSCALE_HOST=<개발 PC의 Tailscale IP 또는 MagicDNS 이름>`을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다(서버 측 환경변수는 불요 - Tailscale 자체가 OS 레벨 네트워크 인터페이스). 클라이언트 쪽 `NETWORK_MODE=ngrok` 분기와 `@expo/ngrok` 의존성은 폴백으로 코드에 보존되어 있으나, ngrok 도커 인프라 자체는 없으므로 실제로 그 경로를 쓰려면 컨테이너를 별도로 다시 구성해야 한다. 상세: [`docs/changelogs/kb.md`](../changelogs/kb.md), [`docs/changelogs/jy.md`](../changelogs/jy.md) 2026-07-13 항목.
+**2026-07-13 변경**: 기존 공인 프록시를 Tailscale P2P VPN으로 전면 교체하고, 서버 측 인증 토큰 변수와 Docker 터널 서비스를 제거했다. 클라이언트 접속 방식은 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다. 실기기는 `client/.env`에 개발 PC의 Tailscale IP 또는 MagicDNS 이름을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다. 서버 측 별도 터널 환경변수는 필요하지 않다.
+
+**2026-07-19 보안 정리**: 사용하지 않는 외부 터널 클라이언트 패키지와 바이너리 의존성, 클라이언트 네트워크 모드·도메인 환경변수 폴백을 제거했다. 외부망 연결은 Tailscale만 지원한다.
 
 **2026-07-18 보강 (iOS 네이티브 Metro, 팀 표준)**: LTE/Tailscale에서 Expo Dev Launcher가 Bonjour로 Metro를 못 찾아 `Finding Dev Servers`에 머무는 문제를 막기 위해, Tailscale 기반 Metro 접속을 **공유 표준**으로 유지한다. `AppDelegate.bundleURL()`은 `METRO_BUNDLER_HOST`(미설정 시 저장소 기본값 `100.121.247.4:8081`)로 JS 번들 URL을 고정하고, `app.json`/`Info.plist`/`Minchodan.xcscheme`에 Dev Launcher 온보딩 스킵·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`을 둔다. 서버 API 호스트(`EXPO_PUBLIC_TAILSCALE_HOST`)와 Metro 호스트는 역할이 다르므로 각각 설정한다.
 
@@ -206,7 +208,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 | 변수명 | 타입 | 필수/선택 | 기본값(코드 폴백) | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `lan` | 단말 접속 모드(`lan`/`ngrok`/`tailscale`). `ngrok` 또는 `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_NETWORK_MODE`** | string | 선택 | `tailscale` | 단말 접속 모드(`lan`/`tailscale`). `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_WIFI_HOST`** | string | 선택 | `192.168.137.1` | **평상시 WiFi 모드** PC 호스트. Windows 노트북 모바일 핫스팟 게이트웨이 기본값(2026-07-13) | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
 | **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | (WIFI_HOST 폴백) | 구 명칭. 설정 시 `WIFI_HOST`가 없으면 이 값을 WiFi 호스트로 사용 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_USB_HOST`** | string | 선택 | `127.0.0.1` | **개발 USB 모드** + `adb reverse` 호스트 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
@@ -214,7 +216,6 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | 선택 | (`WIFI_HOST` 폴백) | **외부망 Tailscale 모드** FastAPI/WS 호스트. **본인(또는 공용) 개발 PC Tailscale IP로 `client/.env`에서 덮어쓰기**(커밋 금지). MagicDNS 가능 | `client/src/config/index.ts`, `client/.env.example` |
 | **`EXPO_PUBLIC_SERVER_PORT`** | string | 선택 | `8000` | 단말이 접속할 FastAPI/WebSocket 포트. 기본 `/ws/detect` 포트와 동일 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_DEFAULT_TRANSPORT`** | string | 선택 | `wifi` | 앱 최초 기동 기본 수송(`wifi`/`usb`). 이후 선택은 단말에 영속 | `client/src/config/index.ts`, `client/src/services/serverTransport.ts` |
-| **`EXPO_PUBLIC_NGROK_DOMAIN`** | string | 선택 | `partake-primer-surround.ngrok-free.dev` | 외부망 터널 도메인 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_NETWORK_BENCHMARK`** | string | 선택 | `false` | `true`이면 iOS/Android 앱이 `network_probe`를 주기적으로 보내 최신 RTT와 최근 30개 평균을 디버그 정보에 표시 | `client/src/config/index.ts`, `client/src/hooks/useWebSocket.ts` |
 | **`EXPO_PUBLIC_NETWORK_BENCHMARK_INTERVAL_MS`** | int | 선택 | `1000` | 앱 내 `network_probe` 전송 간격(ms) | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_NETWORK_BENCHMARK_PAYLOAD_BYTES`** | int | 선택 | `256` | 앱 내 `network_probe` 페이로드 크기(bytes). 작은 고정값으로 순수 WS 왕복 지연을 비교 | `client/src/config/index.ts` |
@@ -294,7 +295,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 4 | **`DATA_*` 경로 누락** | `.env.example`에만 존재 (5종) | 본 명세서 2.7절에 통합 |
 | 5 | **`MOCK_GPU_*` 누락** | 어디에도 문서화되지 않음 (코드에만 존재) | 본 명세서 2.10절에 신규 명세 |
 | 6 | **`LANGCHAIN_*` 누락** | `architecture.md` 13.4절에만 산재 | 본 명세서 2.9절에 통합 |
-| 7 | **`NGROK_AUTHTOKEN` 누락** | 야외 도로 테스트용 터널 인증 변수가 `.env.example`에만 존재 | 본 명세서 2.11절에 통합 |
+| 7 | **외부 터널 인증 변수 제거** | 사용하지 않는 외부 터널 인증 설정이 과거 문서에 잔존 | 2026-07-19 Tailscale 단일 경로로 정리 |
 | 8 | **DB 환경 변수 누락** | `.env.example`에는 `DB_*` 6종이 있으나 본 명세서에는 누락 | 본 명세서 2.12절에 통합하고 `DB_NAME=minchodan_db` 기준으로 정합 |
 | 9 | **`TMAP_APP_KEY` 누락** | 코드(`server/navigation/`)에서 실사용되나 본 명세서·`.env.example` 모두 누락 | 본 명세서 2.13절에 신규 명세. **2026-07-13**: `.env.example` 반영 완료 |
 

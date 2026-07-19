@@ -482,34 +482,30 @@ client/src/
 
 ---
 
-## 12. 개발 환경 구축 및 ANE 가속/터널링 연동 가이드
+## 12. 개발 환경 구축 및 ANE 가속/Tailscale 연동 가이드
 
 팀원들이 동일한 야외 도로 테스트망 및 CoreML 직접 가속 환경을 구축하기 위한 의존성 설치 및 셋업 절차입니다.
 
-### 12.1 야외 도로 테스트용 ngrok 터널링 구축
+### 12.1 야외 도로 테스트용 Tailscale 구축
 
-1. **ngrok 패키지 설치**
-   * macOS 환경에서 Homebrew를 통해 외부망 터널링 툴을 설치합니다.
+1. **Tailscale 설치 및 로그인**
+   * macOS 개발 PC와 실기기에 Tailscale을 설치하고 같은 tailnet에 로그인합니다.
      ```bash
-     brew install ngrok/ngrok/ngrok
+     tailscale status
      ```
-2. **보안 인증 토큰 등록**
-   * 사용자 계정의 ngrok Authtoken을 로컬 설정 및 `.env` 파일에 보관합니다.
+2. **서버 주소 확인 및 클라이언트 설정**
+   * 개발 PC의 Tailscale IPv4 또는 MagicDNS 이름을 확인합니다.
      ```bash
-     # 시스템 설정 등록
-     ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
+     tailscale ip -4
      ```
-     * 프로젝트 루트 `.env` 파일에 `NGROK_AUTHTOKEN=<TOKEN>` 값을 기록하여 팀 내 기밀 명세를 동기화합니다.
-3. **터널 기동 및 클라이언트 바인딩**
-   * GPU 로컬 uvicorn 서버(8000포트)를 켠 상태에서, 외부 노출 터널을 기동합니다.
-     ```bash
-     ngrok http 8000
+   * `client/.env`에 다음 공개 환경변수를 설정합니다.
+     ```ini
+     EXPO_PUBLIC_NETWORK_MODE=tailscale
+     EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
+     EXPO_PUBLIC_SERVER_PORT=8000
      ```
-   * 터널 기동 시 출력되는 퍼블릭 도메인(예: `partake-primer-surround.ngrok-free.dev`)을 복사한 뒤, 클라이언트 소스코드 [client/src/config/index.ts](../client/src/config/index.ts) 내의 `WS_URL` 값을 수정합니다.
-     ```typescript
-     export const WS_URL = "wss://partake-primer-surround.ngrok-free.dev/ws/detect";
-     ```
-   * 실기기를 케이블에서 단절한 후 LTE 셀룰러 망 상태에서 앱을 실행하면 퍼블릭 wss 주소로 원격 GPU 서버와 실시간 통신망이 수립됩니다.
+3. **연결 검증**
+   * FastAPI를 `0.0.0.0:8000`으로 기동하고, 실기기 브라우저에서 `http://[SERVER_TAILSCALE_IP_OR_MAGICDNS]:8000/health`를 확인합니다.
 
 ### 12.2 iOS CoreML 직접 가속(.mlpackage) 셋업 절차
 
@@ -546,19 +542,12 @@ client/src/
 
 윈도우(Windows) 운영체제 기반의 개발 PC를 사용하는 팀원들은 macOS 고유의 iOS 빌드 프레임워크 제약으로 인해 다음과 같은 점을 숙지하고 환경을 구축해야 합니다.
 
-1. **Windows ngrok 설치 및 실행**
-   * 패키지 매니저를 통해 명령어로 간편히 설치할 수 있습니다.
+1. **Windows Tailscale 설치 및 연결**
+   * Windows용 Tailscale 앱을 설치하고 팀 tailnet에 로그인합니다.
+   * PowerShell에서 연결 상태와 서버 주소를 확인합니다.
      ```powershell
-     # Chocolatey 사용 시
-     choco install ngrok
-     # 또는 winget 사용 시
-     winget install ngrok
-     ```
-   * 수동 설치 시에는 ngrok 공식 다운로드 페이지에서 Windows용 zip 압축 파일을 해제하고, 실행 폴더 경로를 시스템 환경 변수 `Path`에 등록하여 사용합니다.
-   * 토큰 인증 및 터널 구동 명령어는 PowerShell 또는 CMD에서 동일하게 실행 가능합니다:
-     ```powershell
-     ngrok config add-authtoken <TOKEN>
-     ngrok http 8000
+     tailscale status
+     tailscale ip -4
      ```
 2. **iOS 빌드 및 CoreML 변환 불가 제약**
    * **iOS 실기기 빌드 불가**: Windows 환경에서는 Xcode 및 iOS SDK 툴체인이 지원되지 않으므로 `npx expo run:ios` 빌드가 불가합니다.

@@ -5,6 +5,28 @@
 
 ---
 
+### 2026-07-19 | 보안/클라이언트/문서 | ngrok 제거 및 uuid 취약점 해소
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 외부망 연결을 Tailscale로 단일화한 이후에도 `@expo/ngrok`와 플랫폼별 실행 바이너리, 클라이언트 ngrok 네트워크 모드, 과거 실행 안내가 남아 있었습니다.
+  - `@expo/ngrok -> uuid@3.4.0`과 `expo-splash-screen -> xcode -> uuid@7.0.3` 경로에서 `GHSA-w5hq-g745-h8pq` 취약점이 탐지됐습니다.
+- **변경 내용**:
+  - `@expo/ngrok` 직접 개발 의존성과 관련 바이너리·전이 패키지 34개를 제거하고 `package-lock.json`을 재생성했습니다.
+  - `NetworkMode`를 `lan | tailscale`로 축소하고, ngrok 도메인 환경변수·URL 생성·UI 라벨·접근성 분기를 제거했습니다.
+  - `xcode@3.0.1`의 미사용 취약 전이 의존성은 npm scoped override로 `uuid@11.1.1`에 고정했습니다.
+  - 루트 `.env`의 로컬 ngrok 환경변수 한 줄을 값 출력 없이 제거하고, Windows 시작 스크립트 및 실기기·통합 운영 문서를 Tailscale 기준으로 동기화했습니다.
+- **검증 결과**:
+  - `npm ls @expo/ngrok @expo/ngrok-bin uuid --all`: ngrok 패키지 없음, `uuid@11.1.1 overridden` 확인
+  - `npm audit --json`: 취약점 0건(Moderate/High/Critical 포함 전체 0)
+  - `npx tsc --noEmit`: 통과
+  - `npx expo config --type public`: 통과, ngrok 환경변수 미노출 확인
+  - `git diff --check`: 통과
+- **별도 기존 이슈**:
+  - `npx expo-doctor`는 21개 중 15개 통과, 6개 실패했습니다. 실패 항목은 이번 보안 변경과 무관한 기존 `app.json` splash 스키마, `expo-asset` peer·중복, 네이티브 폴더와 Prebuild 설정 병존, `react-native-fast-tflite` New Architecture 메타데이터, Expo SDK 56 패키지 버전 불일치입니다.
+
+---
+
 ### 2026-07-17 | 문서 보안 | DB·미디어 API 가이드 외부 공개용·내부용 분리
 
 - **커밋**: (이번 커밋)

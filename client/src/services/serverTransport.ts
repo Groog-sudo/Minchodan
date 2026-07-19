@@ -8,7 +8,6 @@ import * as FileSystem from "expo-file-system/legacy";
 import {
   DEFAULT_SERVER_TRANSPORT,
   NETWORK_MODE,
-  NGROK_DOMAIN,
   SERVER_PORT,
   TAILSCALE_HOST,
   USB_HOST,
@@ -22,22 +21,17 @@ const STORAGE_FILE = `${FileSystem.documentDirectory ?? ""}server_transport.txt`
 
 export function transportLabel(transport: ServerTransport): string {
   if (NETWORK_MODE === "tailscale") return `Tailscale(${TAILSCALE_HOST}:${SERVER_PORT})`;
-  if (NETWORK_MODE === "ngrok") return `ngrok(${NGROK_DOMAIN})`;
   return transport === "usb" ? `USB(${USB_HOST})` : `WiFi(${WIFI_HOST})`;
 }
 
 export function transportButtonText(transport: ServerTransport): string {
   if (NETWORK_MODE === "tailscale") return "연결: Tailscale";
-  if (NETWORK_MODE === "ngrok") return "연결: ngrok";
   return transport === "wifi" ? "연결: WiFi" : "연결: USB";
 }
 
 export function transportAccessibilityLabel(transport: ServerTransport): string {
   if (NETWORK_MODE === "tailscale") {
     return "Tailscale 외부망 연결 중. WiFi USB 토글은 Tailscale 모드에서 주소를 바꾸지 않습니다.";
-  }
-  if (NETWORK_MODE === "ngrok") {
-    return "ngrok 외부망 연결 중. WiFi USB 토글은 ngrok 모드에서 주소를 바꾸지 않습니다.";
   }
   return transport === "wifi"
     ? "WiFi 연결 중. USB 개발 모드로 전환"

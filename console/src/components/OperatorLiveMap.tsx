@@ -3,7 +3,7 @@
 // iframe으로 가져와 렌더링 부하를 없앤다.
 // 2026-07-11 정정: 구버전 8001 독립 포트 하드코딩을 8000 서브앱 경로로 교체
 // (docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md §2).
-// 원격(ngrok) 관제 시에는 VITE_NAV_MAP_URL로 주소를 주입한다.
+// 원격(Tailscale) 관제 시에는 VITE_NAV_MAP_URL로 주소를 주입한다.
 import { resolveServiceUrl } from "../config/network";
 
 const NAV_MAP_URL =

@@ -196,7 +196,7 @@ dg2가 추가한 `server_detection` 메시지(서버 YOLO/Seg 결과를 BBox 오
 
 ### 7.3 네트워크 접속 설정 (`client/src/config/index.ts`)
 
-`LAN_IP`(로컬 Wi-Fi 직결)와 `NGROK_DOMAIN`(외부망) 두 상수를 **둘 다 유지**하고, 실제 사용 여부는 하드코딩된 `WS_URL` 대신 별도 플래그(`NETWORK_MODE: "lan" | "ngrok"`)로 전환한다. 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다. ngrok 고정 도메인(`partake-primer-surround.ngrok-free.dev`)은 무료 티어라 **동시에 한 프로세스만** 터널을 열 수 있다(`ERR_NGROK_334` 충돌 실제 발생 이력 있음) — LTE/외부망 테스트 일정은 팀 채널에서 사전 조율한다.
+`WIFI_HOST`(로컬 Wi-Fi 직결), `USB_HOST`(`adb reverse`), `TAILSCALE_HOST`(외부망 VPN)를 유지하고, `NETWORK_MODE: "lan" | "tailscale"`로 접속 경로를 선택한다. 외부망 실기기 테스트는 Tailscale만 사용한다(2026-07-19 보안 정리).
 
 ### 7.4 `requirements.txt` 플랫폼 마커
 

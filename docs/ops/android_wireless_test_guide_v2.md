@@ -40,9 +40,6 @@ OLLAMA_BASE_URL=http://ollama:11434
 # --- 구글 Gemini API 키 (RAG 데이터베이스 구축용) ---
 GOOGLE_API_KEY=AIzaSy... (본인의 실제 구글 API 키 입력)
 
-# --- ngrok 터널 보안 인증 토큰 ---
-NGROK_AUTHTOKEN=여기에_본인의_ngrok_토큰_입력
-
 # --- 데이터베이스 (DB 미구성 환경 임시 우회용) ---
 DATABASE_URL=sqlite+aiosqlite:///./data/minchodan_temp.db
 ```
@@ -77,33 +74,29 @@ DATABASE_URL=sqlite+aiosqlite:///./data/minchodan_temp.db
 
 ---
 
-### 4단계: ngrok 보안 터널 기동 및 모바일 주소 연동
+### 4단계: Tailscale 연결 및 모바일 주소 연동
 
-공용 PC 터미널 이력에 토큰이 평문으로 남지 않도록 .env에서 동적으로 로드합니다.
+서버 PC와 Android 단말을 같은 tailnet에 연결하고 서버 주소를 확인합니다.
 
 **PowerShell 환경**:
 ```powershell
-$env:NGROK_AUTHTOKEN = (Get-Content .env | Select-String "NGROK_AUTHTOKEN=" | Out-String).Split("=")[1].Trim()
-npx ngrok http 8000 --authtoken $env:NGROK_AUTHTOKEN
+tailscale status
+tailscale ip -4
 ```
 
 **Git Bash 환경**:
 ```bash
-export NGROK_AUTHTOKEN=$(grep NGROK_AUTHTOKEN .env | cut -d '=' -f2)
-npx ngrok http 8000 --authtoken $NGROK_AUTHTOKEN
+tailscale status
+tailscale ip -4
 ```
 
-- ngrok이 로컬에 설치되지 않아도 `npx`가 자동 다운로드 후 실행합니다.
-- 최초 실행 시 `Ok to proceed? (y)` 물음이 뜨면 `y` 입력
+`client/.env`에 서버 Tailscale 주소를 설정합니다.
 
-기동 화면에서 Forwarding 주소(`https://xxxx.ngrok-free.app`)를 복사한 뒤, [client/src/config/index.ts](../../client/src/config/index.ts) 파일 9번째 줄의 `WS_URL`을 수정합니다.
-
-```typescript
-// 정적 따옴표 문자열로 작성 (백틱 템플릿 문법 사용 금지 - Android 번들링 오류 유발)
-export const WS_URL = "wss://xxxx.ngrok-free.app/ws/detect";
+```ini
+EXPO_PUBLIC_NETWORK_MODE=tailscale
+EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
+EXPO_PUBLIC_SERVER_PORT=8000
 ```
-
-> **중요**: 백틱(`` ` ``) 템플릿 문법과 변수 조합(`\`ws://${LAN_IP}...\``)은 Android Metro 번들러에서 500 에러를 유발합니다. 반드시 일반 따옴표(`"`)로 작성합니다.
 
 ---
 
@@ -192,17 +185,11 @@ python scripts/build_safety_db.py
 
 ---
 
-### 오류 D: `bash: ngrok: command not found`
+### 오류 D: `tailscale: command not found`
 
-**원인**: 로컬 PC에 ngrok이 직접 설치되어 있지 않음
+**원인**: 로컬 PC에 Tailscale CLI가 설치되어 있지 않거나 PATH에 등록되지 않음
 
-**해결**: `ngrok` 앞에 `npx`를 붙여 즉시 실행 (설치 불필요)
-
-```bash
-npx ngrok http 8000 --authtoken $NGROK_AUTHTOKEN
-```
-
-최초 실행 시 `Ok to proceed? (y)` 문구가 뜨면 `y` 입력
+**해결**: 운영체제용 Tailscale 앱을 설치하고 로그인한 뒤 `tailscale status`로 연결 상태를 확인합니다. 상세 절차는 [tailscale_connection_guide.md](tailscale_connection_guide.md)를 따릅니다.
 
 ---
 

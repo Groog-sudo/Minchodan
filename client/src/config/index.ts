@@ -4,14 +4,13 @@
  * 실기기 접속은 NETWORK_MODE와 앱 안 "WiFi / USB" 토글로 전환한다 (serverTransport).
  * - wifi(평상시): 노트북 핫스팟 게이트웨이 또는 같은 LAN의 PC IP
  * - usb(개발): adb reverse 후 127.0.0.1 (기능 추가/수정 시)
- * - ngrok: EXPO_PUBLIC_NETWORK_MODE=ngrok 일 때만 (외부망)
  * - tailscale: iOS/Android 실기기가 외부망에서 Tailscale VPN으로 서버에 직접 접속
  *
  * (docs/mobile/ios_android_bifurcation_contract.md §7.3)
  */
 
 export type ServerTransport = "wifi" | "usb";
-export type NetworkMode = "lan" | "ngrok" | "tailscale";
+export type NetworkMode = "lan" | "tailscale";
 
 export const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "tailscale") as NetworkMode;
 export const SERVER_PORT = process.env.EXPO_PUBLIC_SERVER_PORT ?? "8000";
@@ -29,17 +28,11 @@ export const TAILSCALE_HOST =
   process.env.EXPO_PUBLIC_TAILSCALE_HOST ??
   "100.82.167.31";
 
-export const NGROK_DOMAIN =
-  process.env.EXPO_PUBLIC_NGROK_DOMAIN ?? "partake-primer-surround.ngrok-free.dev";
-
 /** 앱 기동 기본값: 평상시는 WiFi. USB는 토글로 전환. */
 export const DEFAULT_SERVER_TRANSPORT: ServerTransport =
   (process.env.EXPO_PUBLIC_DEFAULT_TRANSPORT as ServerTransport | undefined) ?? "wifi";
 
 export function buildWsUrl(transport: ServerTransport = DEFAULT_SERVER_TRANSPORT): string {
-  if (NETWORK_MODE === "ngrok") {
-    return `wss://${NGROK_DOMAIN}/ws/detect`;
-  }
   if (NETWORK_MODE === "tailscale") {
     return `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
   }
@@ -50,14 +43,11 @@ export function buildWsUrl(transport: ServerTransport = DEFAULT_SERVER_TRANSPORT
 /**
  * WS 접속 후보 목록.
  * 학원 WiFi 기기격리 등으로 LAN이 실패할 때 Tailscale 호스트로 폴백한다.
- * NETWORK_MODE=tailscale/ngrok이면 해당 경로만 반환한다.
+ * NETWORK_MODE=tailscale이면 해당 경로만 반환한다.
  */
 export function getWsUrlCandidates(
   transport: ServerTransport = DEFAULT_SERVER_TRANSPORT,
 ): string[] {
-  if (NETWORK_MODE === "ngrok") {
-    return [`wss://${NGROK_DOMAIN}/ws/detect`];
-  }
   if (NETWORK_MODE === "tailscale") {
     return [`ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`];
   }

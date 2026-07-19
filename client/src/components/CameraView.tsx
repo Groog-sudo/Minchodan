@@ -1547,7 +1547,7 @@ export function CameraView() {
               serverTransport === "usb" && styles.transportToggleUsb,
             ]}
             onPress={() => {
-              if (NETWORK_MODE === "ngrok" || NETWORK_MODE === "tailscale") {
+              if (NETWORK_MODE === "tailscale") {
                 console.log(
                   `[ServerTransport] 외부망 고정 모드: ${transportLabel(serverTransport)} -> ${wsUrlFor(serverTransport)}`,
                 );

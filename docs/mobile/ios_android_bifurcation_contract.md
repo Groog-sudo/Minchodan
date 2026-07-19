@@ -209,13 +209,11 @@ dg2가 추가한 `server_detection` 메시지(서버 YOLO/Seg 결과를 BBox 오
 
 ### 7.3 네트워크 접속 설정 (`client/src/config/index.ts`, 완료)
 
-`WIFI_HOST`(평상시 LAN/핫스팟), `USB_HOST`(`127.0.0.1` + adb reverse), `NGROK_DOMAIN`(외부 터널), `TAILSCALE_HOST`(외부망 VPN)를 **모두 유지**한다. `NETWORK_MODE: "lan" | "ngrok" | "tailscale"` 로 외부망 여부를 정하고, lan일 때는 앱 UI 토글(`연결: WiFi` / `연결: USB`)로 런타임 전환한다(2026-07-13, [android_wifi_usb_transport.md](../ops/android_wifi_usb_transport.md)). 어느 한쪽이 이 파일을 손대 상수를 통째로 지우지 않는다.
+`WIFI_HOST`(평상시 LAN/핫스팟), `USB_HOST`(`127.0.0.1` + adb reverse), `TAILSCALE_HOST`(외부망 VPN)를 유지한다. `NETWORK_MODE: "lan" | "tailscale"`로 외부망 여부를 정하고, lan일 때는 앱 UI 토글(`연결: WiFi` / `연결: USB`)로 런타임 전환한다(2026-07-19 보안 정리).
 
 **2026-07-11 확장**: 상수와 `NETWORK_MODE`/`DEVICE_ID`/`TOKEN`은 `EXPO_PUBLIC_*` 환경 변수(빌드 시 인라인)가 있으면 그 값이 우선하고, 기존 상수는 개발 폴백으로 유지된다(인증 기본값 분리 - `docs/ops/environment_variables.md` §2.14).
 
 **2026-07-13 th 실측**: PC가 아이폰 핫스팟을 받으면서(`172.20.10.2`) 다시 모바일 핫스팟을 쏠 때, 공기계가 써야 할 주소는 업링크 IP가 아니라 Windows 핫스팟 게이트웨이 **`192.168.137.1`** 이다. `EXPO_PUBLIC_WIFI_HOST`(또는 구 `EXPO_PUBLIC_LAN_IP`)로 학원 공용 Wi-Fi IP를 주입할 수 있다.
-
-ngrok 고정 도메인(`partake-primer-surround.ngrok-free.dev`)은 무료 티어라 **동시에 한 프로세스만** 터널을 열 수 있다(`ERR_NGROK_334` 충돌 실제 발생 이력 있음) — LTE/외부망 테스트 일정은 팀 채널에서 사전 조율한다.
 
 **2026-07-13 외부망 계측 확장**: iOS 앱은 `EXPO_PUBLIC_NETWORK_MODE=tailscale`이면 `ws://{EXPO_PUBLIC_TAILSCALE_HOST}:{EXPO_PUBLIC_SERVER_PORT}/ws/detect`로 접속한다. `EXPO_PUBLIC_NETWORK_BENCHMARK=true`이면 앱이 `network_probe`를 주기적으로 보내 최신 RTT와 최근 30개 평균을 화면 디버그 줄에 표시한다.
 
