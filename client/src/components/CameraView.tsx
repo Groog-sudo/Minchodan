@@ -217,6 +217,44 @@ function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
   return bbox.w > maxSize || bbox.h > maxSize;
 }
 
+// 서버/콘솔 server_detection 과 동일한 seg 표시 규약(centroid 주변 80x80).
+// consumer._send_server_detection 과 값을 맞춰 단말·콘솔 BBox 비교가 가능하도록 한다.
+const CONSOLE_SEG_MARKER_SIZE = 80;
+
+function toConsoleAlignedOverlayBBox(
+  detection: OnDeviceDetectionResult,
+): { x: number; y: number; w: number; h: number } | null {
+  const { bbox, model } = detection;
+  if (!bbox || bbox.w <= 0 || bbox.h <= 0) return null;
+
+  if (model === "segmentation") {
+    const cx = bbox.x + bbox.w / 2;
+    const cy = bbox.y + bbox.h / 2;
+    const size = CONSOLE_SEG_MARKER_SIZE;
+    const x = Math.max(0, Math.min(FRAME_SIZE - size, cx - size / 2));
+    const y = Math.max(0, Math.min(FRAME_SIZE - size, cy - size / 2));
+    return { x, y, w: size, h: size };
+  }
+
+  // object_detection: 640 캔버스 안으로만 clamp (표시용, 추론/경보 로직은 원본 유지).
+  let x = bbox.x;
+  let y = bbox.y;
+  let w = bbox.w;
+  let h = bbox.h;
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (x + w > FRAME_SIZE) w = FRAME_SIZE - x;
+  if (y + h > FRAME_SIZE) h = FRAME_SIZE - y;
+  if (w <= 1 || h <= 1) return null;
+  return { x, y, w, h };
+}
+
 function detectionAreaRatio(bbox: { w: number; h: number }): number {
   return (bbox.w * bbox.h) / (FRAME_SIZE * FRAME_SIZE);
 }
@@ -1314,6 +1352,17 @@ export function CameraView() {
   const activeDetections = detections.filter(
     d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
   );
+  // 콘솔 Live Feed 와 동일 계약으로 맞춘 표시용 bbox.
+  // 서버 `_send_server_detection` 은 seg 를 centroid 주변 80x80 마커로만 보내고,
+  // 단말 CoreML seg 인스턴스 박스(노면 전체)를 그대로 그리면 콘솔 대비 박스가
+  // 비정상적으로 커 보인다(2026-07-19 실측).
+  const overlayDetections = activeDetections
+    .map((d) => {
+      const box = toConsoleAlignedOverlayBBox(d);
+      if (!box) return null;
+      return { ...d, bbox: box };
+    })
+    .filter((d): d is OnDeviceDetectionResult => d != null);
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
       const distance = resolveDetectionDistance(d);
@@ -1350,6 +1399,9 @@ export function CameraView() {
               video={true}
               audio={false}
               pixelFormat="yuv"
+              // 추론/전송 프레임(중앙 정사각 크롭)과 프리뷰 FOV를 맞춘다.
+              // contain 이면 레터박스가 생겨 640 좌표 % 오버레이가 콘솔 JPEG 대비 어긋난다.
+              resizeMode="cover"
               frameProcessor={frameProcessor}
               style={StyleSheet.absoluteFill}
             />
@@ -1360,6 +1412,7 @@ export function CameraView() {
               isActive={detectionEnabled && !depthMode}
               photo={true}
               audio={false}
+              resizeMode="cover"
               style={StyleSheet.absoluteFill}
             />
           ))
@@ -1391,8 +1444,8 @@ export function CameraView() {
             3구역 거리 경계선으로 교체. 시각적 도식화만 변경하고 반사 후보 필터링
             로직(roiPolygon/pointInPolygon)은 그대로 유지한다. */}
         {detectionEnabled && !depthMode && <DistanceZoneOverlay />}
-        {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
-        <BBoxOverlay detections={activeDetections} />
+        {/* BBox 오버레이: 콘솔 server_detection 계약과 동일한 표시 기하 */}
+        <BBoxOverlay detections={overlayDetections} />
       </View>
 
       {/* 2026-07-10 설계: 화면 전체가 STT press-and-hold.
@@ -1711,16 +1764,18 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
         const zone = getZoneTag(areaRatio);
         const hazardOverride = HIGH_HAZARDS.includes(d.className) || d.className === "caution" || d.className === "roadway";
         const color = hazardOverride ? getClassColor(d.className) : zone.color;
-        const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
-        const topPct = (d.bbox.y / FRAME_SIZE) * 100;
-        const widthPct = (d.bbox.w / FRAME_SIZE) * 100;
-        const heightPct = (d.bbox.h / FRAME_SIZE) * 100;
+        // 좌표 스케일 오류로 %가 100을 크게 넘으면 카메라 컨테이너(overflow:hidden)를
+        // 뚫고 운영자 UI 위까지 박스가 그려진다(2026-07-19 실기기). 표시만 캔버스 안으로 clamp.
+        const leftPct = Math.min(100, Math.max(0, (d.bbox.x / FRAME_SIZE) * 100));
+        const topPct = Math.min(100, Math.max(0, (d.bbox.y / FRAME_SIZE) * 100));
+        const widthPct = Math.min(100 - leftPct, Math.max(0, (d.bbox.w / FRAME_SIZE) * 100));
+        const heightPct = Math.min(100 - topPct, Math.max(0, (d.bbox.h / FRAME_SIZE) * 100));
         const distance = resolveDetectionDistance(d);
         const distanceText = distance.meters !== null ? `${distance.meters.toFixed(1)}m ${distance.label}` : distance.label;
         // 박스가 화면 밖(음수 좌표 등)으로 나가도 클래스명 라벨은 항상 화면 안쪽에 보이도록
         // 박스 테두리와 라벨의 위치를 분리하고, 라벨 좌표만 [0, 100]%로 clamp한다.
-        const labelLeftPct = Math.min(100, Math.max(0, leftPct));
-        const labelTopPct = Math.min(100, Math.max(0, topPct));
+        const labelLeftPct = leftPct;
+        const labelTopPct = topPct;
         // Fragment 사용 필수: 두 절대좌표 View를 감싸는 style 없는 중간 View를 두면
         // 그 View가 0x0으로 collapse되어, 안쪽 %기반 left/top/width/height가 그 0x0
         // 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생함(실기기 재현 확인, 2026-07-07).

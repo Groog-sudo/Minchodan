@@ -3456,3 +3456,31 @@
 - **관련 파일**: `client/assets/models/yolo26n/ios/object_detection.mlpackage`, `docs/changelogs/kb.md`
 - **검증 결과**: BUILD SUCCEEDED, 번들 det=`confidence`/`coordinates`(NMS), seg=`[1,300,38]`+proto, 둘 다 Float16. ANE 설정(`.cpuAndNeuralEngine`) 유지.
 - **비고**: 서버 det=`object_detection.pt`, seg=`segbest.pt`와 온디바이스 CoreML 소스가 각각 일치.
+
+### 2026-07-19 | 통합 | jy 보안 강화 → kb 병합
+
+- **커밋**: `347dc53` (`merge: origin/jy 보안 강화를 kb에 통합`)
+- **변경 내용**:
+  - `origin/jy` 보안 강화(JWT iss/aud·관리자 부트스트랩·RBAC·콘솔 live-feed `auth` JSON·STT 상한/세마포어·Redis `requirepass`·loopback 바인딩·ngrok 제거)를 `kb`에 병합.
+  - ort 자동 머지로 충돌 6파일(`ws_router`/`session_manager`/`useLiveFeed`/`debug_router`/`useWebSocket`/`CameraView`)이 양쪽 기능을 유지한 채 합성됨(인지 mid/가이드 큐/콘솔 WAV 미러 + 보안 계약).
+  - `scripts/configure_security_secrets.py`로 `.env` JWT/Redis/bootstrap/정적 단말 토큰 재발급. Compose Redis·FastAPI·MariaDB recreate(`DB_HOST_PORT=3307` — 호스트 MySQL 3306 점유 회피). Tailscale lab용 `EXPO_PUBLIC_WS_SCHEME=ws` 유지.
+- **관련 파일**: `server/api/ws_router.py`, `server/api/session_manager.py`, `console/src/api/useLiveFeed.ts`, `server/api/debug_router.py`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docker/docker-compose.macos.yml`, `scripts/configure_security_secrets.py`, `docs/security/security_hardening_and_team_adoption_guide.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - `pytest tests/test_security_hardening.py` + `TestSpeechWorthyFilter` + `test_l1_risk_classification` → **16 passed** (speech_worthy 단독 재실행 10 passed).
+  - 단말 WS: welcome → hello(정적 토큰) → `auth_ok`.
+  - 콘솔 live-feed: `auth` → `auth_ok` → `speak-to-device` 미러로 `console_guide_audio` + RIFF WAV 수신 확인(검증 후 `ENABLE_DEBUG_API=false` 복구).
+  - FastAPI `YOLO26N_SEG=segbest.pt`, `/health` 200. Tailscale Serve는 tailnet에서 미활성(`login.tailscale.com/f/serve?...`)이라 실기기 TS 직접 접속은 loopback 바인딩과 함께 후속 설정 필요.
+- **비고**: 콘솔은 JWT 시크릿 교체로 재로그인 필요. 실기기 외부 접속은 `0.0.0.0` 공개 대신 Tailscale Serve/프록시를 사용할 것.
+
+
+### 2026-07-19 | 단말·콘솔 | BBox 콘솔 정합 + GPS 지도 복구 + Tailscale Serve 연동
+
+- **커밋**: (본 엔트리 커밋)
+- **변경 내용**:
+  - 단말 BBox: 오늘 재변환 det CoreML을 어제(`ff553a1`) 번들로 복원. CoreML 좌표 스케일 가드·캔버스 clamp. 오버레이는 콘솔 `server_detection` 계약과 동일하게 seg를 centroid 80x80 마커로만 표시. Camera `resizeMode=cover`.
+  - ATS: Metro 로컬 HTTP용 `NSAllowsLocalNetworking=true` (`Info.plist`/`app.json`).
+  - 콘솔 GPS: jy 보안 병합 후 `ENABLE_NAVIGATION_SIMULATOR=false` + `X-Frame-Options: DENY`로 `/navigation` iframe이 404/차단되던 회귀 수정. development 기본 마운트 + `frame-ancestors` 콘솔 origin 허용.
+  - 클라이언트 `.env.example`: Tailscale Serve 사용 시 `wss`+`443`+MagicDNS 안내.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/ios/CoreMLInferenceBridge.swift`, `client/assets/.../object_detection.mlpackage`, `client/ios/Minchodan/Info.plist`, `client/app.json`, `client/.env.example`, `server/main.py`, `docs/ops/environment_variables.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `/navigation/?embed=true` 200, Vite 프록시 200. 단말 Metro 리로드로 오버레이 계약 반영. `ruff check server/main.py` 통과, `pytest tests/test_security_hardening.py` 5 passed.
+- **비고**: 루프백 바인딩 환경의 실기기 접속은 Tailscale Serve(`https://<magicdns>/`) 전제.

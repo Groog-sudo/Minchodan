@@ -70,7 +70,7 @@
 | **`ALLOW_STATIC_DEVICE_TOKENS`** | bool | 선택 | `false` | 개발용 정적 단말 토큰을 명시적으로 허용. 운영에서는 `false` 유지하고 관리자 발급 단말 JWT 사용 | `server/api/auth.py` |
 | **`DEVICE_STATIC_TOKENS`** | string | 선택 | 없음 | 32자 이상 정적 토큰의 `device_id:token` 목록. `ALLOW_STATIC_DEVICE_TOKENS=true`일 때만 로드 | `server/api/auth.py` |
 | **`ENABLE_DEBUG_API`** | bool | 선택 | `false` | 비운영 환경에서 최고관리자용 디버그 TTS API를 명시적으로 활성화 | `server/api/debug_router.py` |
-| **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | 개발용 내비게이션 시뮬레이터 서브앱 마운트를 명시적으로 활성화 | `server/main.py` |
+| **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | `/navigation` 서브앱(콘솔 GPS HUD·OperatorLiveMap iframe) 마운트. **production** 에서는 `true` 일 때만 열고, **development**(`APP_ENV!=production`)에서는 플래그와 무관하게 기본 마운트한다(관제 지도 404 방지, 2026-07-19). | `server/main.py` |
 
 ### 2.6 탐지 설정 (3단계 Detection)
 
