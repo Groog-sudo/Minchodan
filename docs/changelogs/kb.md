@@ -3271,3 +3271,13 @@
 - **관련 파일**: `client/src/services/audioEngine.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useSttRecorder.ts`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_ws_router_stt.py`, `tests/test_stt_to_llm_bridge_template.py`
 - **검증 결과**: `ruff check` 통과. `pytest tests/test_stt_to_llm_bridge_template.py::test_invoke_existing_llm_empty_fallback tests/test_ws_router_stt.py` 11 passed. FastAPI 재기동·앱 재실행.
 - **비고**: 푸시 브랜치 `kb`→`dev` ff 병합.
+
+---
+
+### 2026-07-19 | 도구 | client/.npmrc allow-scripts 추가 (npm 11 설치 가드)
+
+- **배경**: npm 11 환경에서 `npx expo install`/`npm install`이 `EALLOWSCRIPTS`로 실패해 `react-native-svg` 설치가 막힘. project-scoped installs는 CLI `--allow-scripts`가 거부되고 `.npmrc` 또는 package.json `allowScripts`가 필요함.
+- **변경 내용**: `client/.npmrc`에 `allow-scripts=true` 추가(비밀값 없음).
+- **관련 파일**: `client/.npmrc`, `docs/changelogs/kb.md`
+- **검증 결과**: 민감 정보 없음 확인. `kb`/`dev` 동기화 상태 확인.
+- **비고**: 푸시 브랜치 `kb`→`dev`.
