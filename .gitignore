@@ -186,6 +186,11 @@ tmp/
 !client/ios/**
 !client/android/**
 
+# 2026-07-19: 관제 콘솔 단말 오디오 미러용 반사 비프 클립 정적 자산.
+# client/assets/sounds/reflex_clips/와 동일 파일 5종을 복사해 둔 것으로,
+# 단말 번들과 동일 파일이므로 "동일"에 가장 근접한 재생을 위해 추적한다.
+!console/public/reflex_clips/**
+
 # 2026-07-13: 안드로이드 바이너리 데모/샘플 리소스는 로컬만 유지(git 미추적).
 # - index.android.bundle: 디버그 빌드 번들(빌드 시 재생성)
 # - assets_samples_frame_*.jpg: TFLite 추론 데모용 샘플 프레임

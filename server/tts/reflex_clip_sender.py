@@ -22,7 +22,7 @@ try:
     if os.path.exists(guidelines_path):
         with open(guidelines_path, encoding="utf-8") as f:
             REFLEX_GUIDELINES = json.load(f)
-        print(
+        logger.info(
             f"[ReflexClipSender] Loaded {len(REFLEX_GUIDELINES)} guidelines from {guidelines_path}"
         )
 except Exception as e:

@@ -11,6 +11,7 @@ import { LatencySummaryPanel } from "../components/LatencySummaryPanel";
 import { LiveCameraFeed } from "../components/LiveCameraFeed";
 import { DeviceTelemetryPanel } from "../components/DeviceTelemetryPanel";
 import { McpValidationMonitor } from "../components/McpValidationMonitor";
+import { ConsoleAudioMirror } from "../components/ConsoleAudioMirror";
 import type { DetectionGuidanceLogRow, MonitorState } from "../types/monitor";
 import type { useLiveFeed } from "../api/useLiveFeed";
 
@@ -133,7 +134,8 @@ type DashboardWidgetKey =
   | "mcpMonitor"
   | "timeline"
   | "guidanceLog"
-  | "riskLog";
+  | "riskLog"
+  | "audioMirror";
 
 const DASHBOARD_WIDGETS: Array<{ key: DashboardWidgetKey; label: string; fullWidth?: boolean }> = [
   { key: "latency", label: "파이프라인 지연 요약", fullWidth: true },
@@ -143,6 +145,7 @@ const DASHBOARD_WIDGETS: Array<{ key: DashboardWidgetKey; label: string; fullWid
   { key: "timeline", label: "발화 추적 타임라인", fullWidth: true },
   { key: "guidanceLog", label: "Detection Guidance Log", fullWidth: true },
   { key: "riskLog", label: "RiskEventLog", fullWidth: true },
+  { key: "audioMirror", label: "단말 오디오 미러", fullWidth: true },
 ];
 
 const DEFAULT_DASHBOARD_WIDGET_ORDER: DashboardWidgetKey[] = [
@@ -153,6 +156,7 @@ const DEFAULT_DASHBOARD_WIDGET_ORDER: DashboardWidgetKey[] = [
   "timeline",
   "guidanceLog",
   "riskLog",
+  "audioMirror",
 ];
 
 export function DashboardPage({
@@ -179,7 +183,7 @@ export function DashboardPage({
   const [movingWidgetKey, setMovingWidgetKey] = useState<DashboardWidgetKey | null>(null);
   const [dragOverWidgetKey, setDragOverWidgetKey] = useState<DashboardWidgetKey | null>(null);
 
-  const { imageUrl, latestDetections, connected: liveFeedConnected, latencyEvents, guidanceLogEvents, lastGps } =
+  const { imageUrl, latestDetections, connected: liveFeedConnected, latencyEvents, guidanceLogEvents, lastGps, guideAudioEvent, reflexAlertEvent } =
     liveFeed;
 
   // 사후 이력 로그는 REST로 페이지 단위(offset/limit) 조회한다 (frame_path 이미지 포함).
@@ -372,6 +376,15 @@ export function DashboardPage({
           cache={state.cache_suppression}
           accessibility={state.accessibility_validation}
           trace={state.langsmith_trace}
+        />
+      );
+    }
+
+    if (widgetKey === "audioMirror") {
+      return (
+        <ConsoleAudioMirror
+          guideAudioEvent={guideAudioEvent}
+          reflexAlertEvent={reflexAlertEvent}
         />
       );
     }

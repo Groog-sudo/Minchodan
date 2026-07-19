@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.28 (2026-07-18 §3.1 detection `device_id` 쿼리 폴백, §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정, §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 추가 + 이전 v0.4.27: §6.8 distance_probe_sample 신설 + 이전 v0.4.26: §8.5 STT 원본 음성 저장 메타 + 이전 v0.4.25: §6.7 dial_action)
+> **버전**: v0.4.29 (2026-07-19 §4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 단말 오디오(WAV)/반사 비프 클립을 관제 콘솔에 동일/유사 재생, 햅틱 시각 근사 + 이전 v0.4.28: §3.1 detection `device_id` 쿼리 폴백, §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정, §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 추가)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -42,7 +42,7 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, distance_probe_sample, fixed_point_probe_sample, detection_control, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
+| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, distance_probe_sample, fixed_point_probe_sample, detection_control, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url, console_guide_audio - 상세는 각 섹션 참조) |
 | `event_id` | 이벤트 추적 식별자. 단말 detection 프레임은 `event-{device_id}-{stream}-{epoch_ms}` 형식(**2026-07-11 구조화** - 기존 `event-{epoch_ms}`는 반사/인지 타이머가 같은 ms에 발화하면 충돌해 DB UNIQUE 중복 방지 로직이 두 번째 로그를 유실), 서버 발신은 `stt-`/`nav-` 접두 또는 UUID |
 | `device_id` | 단말 식별자 |
 | `ts` | 타임스탬프 (epoch ms) |
@@ -948,6 +948,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.18** | **2026-07-14** | **§4.1 reflex_alert 발화 추적용 신규 필드(track_id/class_name/hit_count) 스펙 추가** |
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
 | **v0.4.28** | **2026-07-18** | **§3.1 detection `device_id` 쿼리 폴백. §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정(near=인지 TTS 비대상). §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 공통 필드 추가** |
+| **v0.4.29** | **2026-07-19** | **§4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 서버가 단말에 보내는 guide WAV와 동일 바이너리를 관제 콘솔 `/ws/console/live-feed`에도 브로드캐스트하고, 반사 비프 클립 5종을 `console/public/reflex_clips/`로 정적 복사해 단말과 동일 파일 재생. 햅틱은 청각 재현 불가하므로 시각 펄스로 근사 표현** |
 | **v0.4.27** | **2026-07-17** | **§6.8 `distance_probe_sample` 신설 - LiDAR 실거리 검증 캡처(검증 전용, 반사/인지 경로 판단 미관여), `lidar_distance_validation_samples` DB 테이블 연동** |
 | **v0.4.24** | **2026-07-16** | **§6.7 `dial_action` STT 전화 연결 복원(convenience RAG·보호자 DB·긴급번호), §6.3 발화 표 추가** |
 | **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |
@@ -983,3 +984,39 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | `latency_alert` | **2026-07-17 신규 (P2-2).** `total_ms`가 임계 초과 시 `true`. 반사 `REFLEX_LATENCY_ALERT_MS=300`, 인지 `COGNITIVE_LATENCY_ALERT_MS=3000` |
 | `latency_threshold_ms` | **2026-07-17 신규 (P2-2).** 적용된 지연 임계(ms). 콘솔이 alert 기준 표시용 |
 | `queue_wait_ms` | **2026-07-17 신규 (P0-2).** 큐 대기 시간(ms). `processed.ts` 기반 산출, ts=0이면 0 |
+
+### 4.4 console_guide_audio (서버 → 콘솔, 2026-07-19 신설)
+
+관제 콘솔이 단말과 동일한 인지/STT/길안내 guide 오디오(WAV)를 실시간으로 재생하도록 미러링한다. 서버는 단말에 `guide` JSON + WAV 바이너리를 보낸 직후, 콘솔 WS(`/ws/console/live-feed`)에도 동일한 WAV 바이너리를 `console_guide_audio` JSON 예고 + 원본 바이너리 프레임 순서로 브로드캐스트한다. 단말의 `pending_binary_meta` 패턴과 동일한 상태 머신을 콘솔 세션에 이식한 것으로, 새 프로토콜이 아니라 기존 패턴의 재사용이다.
+
+```json
+{
+  "type": "console_guide_audio",
+  "event_id": "stt-wait-dev-001-1719216000000",
+  "device_id": "dev-001",
+  "audio_codec": "wav",
+  "duration_ms": 1820,
+  "guidance_text": "잠시만 기다려주세요, 경로를 찾고 있습니다.",
+  "source": "stt-wait-notice",
+  "ts": 1719216000000
+}
+// 직후: 원본 WAV 바이너리 프레임(ArrayBuffer)
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `event_id` | 단말 `guide` 메시지의 `event_id`와 동일. `stt-`/`nav-`/`debug-sms-`/`event-` 접두 규칙을 그대로 따른다 |
+| `device_id` | 발화 대상 단말 식별자. 콘솔이 다중 단말 환경에서 어느 단말의 안내인지 표시 |
+| `audio_codec` | 현재 `wav` 고정. 단말 `guide.audio_codec`과 동일 |
+| `duration_ms` | 오디오 재생 시간(ms). 콘솔 UI 표시용 |
+| `guidance_text` | 안내 문장 텍스트. 오디오 재생 실패 시 폴백 표시 |
+| `source` | `cognitive` / `stt-wait-notice` / `nav-guidance` / `stt-bridge` / `debug_sms_tts` 등 발화 경로 |
+| `ts` | 서버 송신 시각 (epoch ms) |
+
+> **프로토콜 주의**: 콘솔 WS `onmessage`는 기본적으로 ArrayBuffer를 `image/jpeg`로 강제 해석한다(`useLiveFeed.ts`). `console_guide_audio` JSON을 먼저 받으면 다음 ArrayBuffer를 오디오로 분류하는 상태(`pendingGuideAudioRef`)를 5초간 유지하고, 그 동안 도착한 바이너리만 오디오 Blob으로 래핑한다. 5초 내 바이너리가 오지 않으면 상태를 폐기해 정체를 방지한다.
+
+### 4.5 reflex_alert 콘솔 미러 (서버 → 콘솔, 2026-07-19 신설)
+
+반사 알림 `reflex_alert` payload를 단말과 동일하게 콘솔 WS에도 브로드캐스트한다. 콘솔은 `clip` 필드 파일명(`high_front.wav` 등 5종)으로 `console/public/reflex_clips/`에 복사된 동일 정적 자산을 재생해 단말과 "동일" 비프음을 출력한다. `haptic_pattern`은 진동이라 청각 재현이 원천 불가하므로, 콘솔 UI에서 강도/지속/패턴을 시각 펄스 인디케이터로만 표현하고 "시각 근사"임을 라벨에 명시한다.
+
+> **정적 자산 동기화**: `client/assets/sounds/reflex_clips/*.wav` 5종을 `console/public/reflex_clips/`에 동일 파일명으로 복사해 둔다. 단말 번들과 콘솔 정적 자산이 동일 파일이므로 "동일"에 가장 근접한 재현이 가능하다. 클립이 추가/변경되면 양쪽을 함께 갱신해야 한다.

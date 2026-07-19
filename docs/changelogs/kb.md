@@ -3177,3 +3177,21 @@
 - **관련 파일**: `server/api/ws_router.py`, `server/navigation/server.py`, `server/navigation/manager.py`, `server/main.py`, `server/stt/__init__.py`, `server/tts/tts_service.py`, `server/navigation/tts_engine.py`(삭제), `tests/test_reflex_and_nav.py`, `.env.example`, `README.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage7_tts_design.md`, `.agents/skills/tts-voice-streamer/SKILL.md`, `.claude/skills/tts-voice-streamer/SKILL.md`
 - **검증 결과**: `ruff check .` All checks passed. `ruff format .` 4 files reformatted. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `python -m compileall server scripts tests` 0 오류. 수정 모듈 import 정상.
 - **비고**: 푸시 브랜치는 `kb`.
+
+---
+
+### 2026-07-19 | 통합 | 관제 콘솔 단말 오디오 미러링 구현 (TTS/반사 비프/햅틱 시각화)
+
+- **배경**: 정합성 검토에서 클로드가 제시한 "단말 오디오를 웹 콘솔에 동일/유사하게 재생" 방안의 정합성을 검증한 뒤 착수. R3(콘솔 WS 인증)은 이미 선행 완료 상태이므로 오디오 미러링에 바로 착수.
+- **변경 내용**:
+  - **TTS 인지 음성 콘솔 미러링**: `server/detection/consumer.py` `_send_cognitive_guide`가 단말에 `guide` JSON + WAV 바이너리를 보낸 직후, 콘솔 WS에도 `console_guide_audio` JSON 예고 + 동일 WAV 바이너리를 브로드캐스트. `server/api/ws_router.py`의 `_send_stt_wait_notice`/`_send_nav_guidance`/STT 응답 안내 3개 경로와 `server/api/debug_router.py`의 `speak-to-device`에도 동일 패턴 적용.
+  - **반사 알림 콘솔 미러링**: `server/detection/consumer.py` `_send_reflex_alert`가 단말 전송 성공 후 동일 payload를 콘솔에도 브로드캐스트. 콘솔은 `clip` 필드 파일명으로 정적 자산을 재생.
+  - **반사 비프 정적 자산 복사**: `client/assets/sounds/reflex_clips/*.wav` 5종(head_level_warning, high_front, high_front-left, high_front-right, surface_caution)을 `console/public/reflex_clips/`에 동일 파일명으로 복사. 단말 번들과 동일 파일이므로 "동일"에 가장 근접한 재생.
+  - **콘솔 WS 프로토콜 상태 분기**: `console/src/api/useLiveFeed.ts`에 `pendingGuideAudioRef` 상태 머신 추가. 직전 `console_guide_audio` JSON을 보관하고 다음 ArrayBuffer를 오디오로 분류. 기존 image/jpeg 강제 해석은 그대로 유지하되 오디오 경로만 분리. 5초 가드레일 타임아웃으로 정체 방지.
+  - **ConsoleAudioMirror 컴포넌트 신규**: `console/src/components/ConsoleAudioMirror.tsx`에서 인지 가이드 `<audio>` 재생 + 반사 비프 `<audio>` 재생 + 햅틱 시각 펄스 인디케이터를 통합 렌더. 음소거 토글, 강도별 펄스 색상/크기 매핑, "시각 근사 표시 (진동은 청각 재현 불가)" 라벨 명시.
+  - **대시보드 위젯 추가**: `console/src/pages/DashboardPage.tsx`에 `audioMirror` 위젯 키 신규 등록, 기본 순서 맨 뒤에 배치.
+  - **잔여 print() 제거**: `server/tts/reflex_clip_sender.py`의 로딩 로그 `print()`를 `logger.info()`로 교체(R5 잔여).
+  - **API 명세 동기화**: `docs/design/api_specification.md`에 §4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 절 신설. 공통 `type` 필드 열거에 `console_guide_audio` 추가. v0.4.29 변경 이력 등재.
+- **관련 파일**: `server/detection/consumer.py`, `server/api/ws_router.py`, `server/api/debug_router.py`, `server/tts/reflex_clip_sender.py`, `console/src/api/useLiveFeed.ts`, `console/src/components/ConsoleAudioMirror.tsx`(신규), `console/src/pages/DashboardPage.tsx`, `console/public/reflex_clips/*.wav`(신규 5종), `docs/design/api_specification.md`
+- **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `npx tsc --noEmit`(console) 0 오류. `python -m compileall` 통과.
+- **비고**: 푸시 브랜치는 `kb`. 서버가 보내는 WAV는 단말과 동일 원본이므로 "동일"에 가장 근접하고, 반사 비프는 단말 번들과 동일 파일이므로 "동일", 햅틱은 청각 재현이 원천 불가해 시각 근사로만 대응(라벨 명시).

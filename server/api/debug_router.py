@@ -105,6 +105,20 @@ async def speak_to_device(body: SpeakToDeviceRequest) -> dict:
     sent_bytes = False
     if audio_bytes:
         sent_bytes = await manager.send_bytes(device_id, audio_bytes)
+        # 2026-07-19: 관제 콘솔 미러링. 디버그 TTS도 단말과 동일하게 재생.
+        await manager.broadcast_json_to_consoles(
+            {
+                "type": "console_guide_audio",
+                "event_id": event_id,
+                "device_id": device_id,
+                "audio_codec": "wav",
+                "duration_ms": duration_ms,
+                "guidance_text": text,
+                "source": "debug_sms_tts",
+                "ts": int(time.time() * 1000),
+            }
+        )
+        await manager.broadcast_to_consoles(audio_bytes)
 
     if not sent_json:
         raise HTTPException(
