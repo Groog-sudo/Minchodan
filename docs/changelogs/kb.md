@@ -3242,3 +3242,17 @@
 - **관련 파일**: `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
 - **검증 결과**: 미러 diff 0건(동일 내용). 스킬 내 링크/코드펜스 정합성 육안 확인.
 - **비고**: 푸시 브랜치는 `kb`. 이번 보완으로 외부 LTE/핫스팟 테스트 시 단말 흰 화면 실패를 사전에 차단하고, Metro 백그라운드 실행 안정성을 확보함.
+
+---
+
+### 2026-07-19 | 2·7단계 | 거리 구역 SVG 호 도식화 + 콘솔 live-feed JWT 연결 수정
+
+- **배경**: Near/Medium/Far 직선 경계선이 원근을 전달하지 못해 SVG 호로 교체. 호 끝점이 화면 중앙에만 그려지던 기하학 오류를 좌·우 가장자리까지 연결하도록 수정하고, FAR처럼 보이던 파란 측면 빗변은 제거. 동시에 관제 콘솔 실시간 화면이 비는 원인을 추적한 결과 `/ws/console/live-feed`가 관리자 JWT를 요구하는데 `useLiveFeed`가 토큰을 붙이지 않아 `1008 token required`로 즉시 종료되고 있었음.
+- **변경 내용**:
+  - **단말**: `react-native-svg` 추가. `CameraView.tsx` `DistanceZoneOverlay`를 SVG Path 호(NEAR y≈78%, MED y≈52%, 끝점 x=0/W) + 라벨로 교체. 측면선 제거.
+  - **콘솔**: `LiveCameraFeed.tsx` 동일 기하학의 인라인 SVG 호. 미사용 `getZoneBoundaryStyle` 제거.
+  - **콘솔 WS 인증**: `useLiveFeed(token)` + `App.tsx`에서 로그인 JWT를 `?token=`으로 전달(SSE와 동일).
+  - **API 명세**: `docs/design/api_specification.md` §8.7·v0.4.31에 live-feed JWT 계약 등재.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/src/components/CameraView.tsx`, `console/src/api/useLiveFeed.ts`, `console/src/App.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/design/api_specification.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 실기기에서 호+라벨 표시 확인. live-feed에 JWT 부착 시 JPEG/`server_detection` 수신 확인. `npx tsc --noEmit`(console) 통과. `expo prebuild --clean`으로 생긴 네이티브 브릿지/CoreML 삭제는 커밋 전 `git checkout`으로 복구(의도 변경 아님).
+- **비고**: 푸시 브랜치 `kb`. 안내 음성 끊김은 STT 시작 시 `stopGuideAudio`·오탐 실패 안내 중복이 주원인으로 로그 진단 완료(이번 커밋 범위 외, 후속 수정 예정).

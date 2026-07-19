@@ -12,6 +12,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Dimensions, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
+import Svg, { Path, Text as SvgText } from "react-native-svg";
 
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
@@ -1747,37 +1748,56 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 }
 
 /**
- * 2026-07-19: Near/Medium/Far 3구역 거리 경계선 오버레이.
- * 기존 소실점 사다리꼴 ROIOverlay를 교체. 단말 부하 감소:
- * - 렌더 요소: 12개 → 5개 (경계선 2 + 라벨 3)
- * - 삼각함수 연산: 4회 → 0회 (수평선만, 회전 없음)
+ * 2026-07-19: Near/Medium/Far 3구역 거리 경계선 오버레이 (SVG 부채꼴).
+ * 소실점(apex)에서 하단 좌·우 모서리로 퍼지는 부채꼴.
  *
- * 구역 경계 y좌표는 area_ratio 임계(distance_policy SSOT)를 화면 원근에 매핑:
- * - NEAR/MED 경계: y=0.75 (하단 25% = 근접 객체가 위치하는 발밑 영역)
- * - MED/FAR 경계: y=0.50 (소실점 = 원거리 객체가 수렴하는 중앙)
- * - FAR 상단 경계: 프레임 상단이 자연 경계 (추가 선 없음)
+ * 기하학 (좌우 끝까지 연결):
+ * - 호 끝점: 좌·우 화면 가장자리(x=0, x=W)에 고정
+ *   예) NEAR 호 = (0, H*0.78) ↔ (W, H*0.78) 를 apex 중심 원호로 연결
+ * - 측면선(소실점→하단 모서리)은 시각적으로 FAR 삼각형처럼 보여 혼동을 주므로 제거
+ * - 이전 구현은 레이 위 짧은 반경만 써서 호가 화면 중앙에만 그려지는 문제가 있었음
  *
- * 색상은 BBox zone 색상과 동일 팔레트로 시각적 일관성 유지.
+ * 색상은 BBox zone 색상과 동일 팔레트.
  */
 function DistanceZoneOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
 
-  const LINE_W = 2;
-  const side = Math.min(size.width, size.height);
+  const W = size.width;
+  const H = size.height;
 
-  // 구역 경계 y 비율 (0~1, 프레임 상단 기준)
-  const NEAR_MED_BOUNDARY_Y = 0.75;
-  const MED_FAR_BOUNDARY_Y = 0.50;
+  const NEAR_COLOR = "#EF4444";
+  const MED_COLOR = "#F59E0B";
+  const FAR_COLOR = "#3B82F6";
+  const STROKE_W = 2;
+  const STROKE_OPACITY = 0.75;
 
-  // 구역 색상 (getZoneColor와 동일 팔레트)
-  const NEAR_COLOR = "#EF4444"; // 빨강
-  const MED_COLOR = "#F59E0B";  // 주황
-  const FAR_COLOR = "#3B82F6";  // 파랑
+  if (W === 0 || H === 0) {
+    return (
+      <View
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+        onLayout={(e) => setSize(e.nativeEvent.layout)}
+      />
+    );
+  }
 
-  // 라벨 배지 스타일
-  const LABEL_PADDING_H = 6;
-  const LABEL_PADDING_V = 3;
-  const LABEL_FONT_SIZE = 10;
+  // 소실점: 화면 중앙, 상단 22% (부채꼴이 아래로 더 넓게 퍼지도록)
+  const apexX = W / 2;
+  const apexY = H * 0.22;
+
+  // 좌·우 가장자리에 끝점을 두고, apex 중심 원호로 연결 (화면 끝까지 연결)
+  const edgeArc = (edgeYRatio: number) => {
+    const edgeY = H * edgeYRatio;
+    const r = Math.sqrt(apexX ** 2 + (edgeY - apexY) ** 2);
+    const left = { x: 0, y: edgeY };
+    const right = { x: W, y: edgeY };
+    // y 하향 좌표계에서 좌→우, 아래로 볼록한 호: sweep=1
+    const d = `M ${left.x} ${left.y} A ${r} ${r} 0 0 1 ${right.x} ${right.y}`;
+    return { d, r, left, right, edgeY };
+  };
+
+  const nearArc = edgeArc(0.78); // NEAR/MED
+  const medArc = edgeArc(0.52);  // MED/FAR
 
   return (
     <View
@@ -1785,82 +1805,33 @@ function DistanceZoneOverlay() {
       pointerEvents="none"
       onLayout={(e) => setSize(e.nativeEvent.layout)}
     >
-      {side > 0 && (
-        <>
-          {/* NEAR/MED 경계선 (y=75%) - 빨강 */}
-          <View
-            style={{
-              position: "absolute",
-              left: 0,
-              top: NEAR_MED_BOUNDARY_Y * side - LINE_W / 2,
-              width: side,
-              height: LINE_W,
-              backgroundColor: NEAR_COLOR,
-              opacity: 0.7,
-            }}
-          />
-          {/* MED/FAR 경계선 (y=50%) - 주황 */}
-          <View
-            style={{
-              position: "absolute",
-              left: 0,
-              top: MED_FAR_BOUNDARY_Y * side - LINE_W / 2,
-              width: side,
-              height: LINE_W,
-              backgroundColor: MED_COLOR,
-              opacity: 0.7,
-            }}
-          />
-          {/* NEAR 라벨 (하단 우측) */}
-          <View
-            style={{
-              position: "absolute",
-              right: 4,
-              top: NEAR_MED_BOUNDARY_Y * side + 4,
-              backgroundColor: NEAR_COLOR,
-              paddingHorizontal: LABEL_PADDING_H,
-              paddingVertical: LABEL_PADDING_V,
-              borderRadius: 3,
-            }}
-          >
-            <Text style={{ color: "#FFFFFF", fontSize: LABEL_FONT_SIZE, fontWeight: "bold" }}>
-              NEAR
-            </Text>
-          </View>
-          {/* MED 라벨 (중간 우측) */}
-          <View
-            style={{
-              position: "absolute",
-              right: 4,
-              top: MED_FAR_BOUNDARY_Y * side + 4,
-              backgroundColor: MED_COLOR,
-              paddingHorizontal: LABEL_PADDING_H,
-              paddingVertical: LABEL_PADDING_V,
-              borderRadius: 3,
-            }}
-          >
-            <Text style={{ color: "#000000", fontSize: LABEL_FONT_SIZE, fontWeight: "bold" }}>
-              MED
-            </Text>
-          </View>
-          {/* FAR 라벨 (상단 우측) */}
-          <View
-            style={{
-              position: "absolute",
-              right: 4,
-              top: 4,
-              backgroundColor: FAR_COLOR,
-              paddingHorizontal: LABEL_PADDING_H,
-              paddingVertical: LABEL_PADDING_V,
-              borderRadius: 3,
-            }}
-          >
-            <Text style={{ color: "#FFFFFF", fontSize: LABEL_FONT_SIZE, fontWeight: "bold" }}>
-              FAR
-            </Text>
-          </View>
-        </>
-      )}
+      <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
+        {/* NEAR/MED 호 (좌우 끝 → 끝) */}
+        <Path
+          d={nearArc.d}
+          fill="none"
+          stroke={NEAR_COLOR}
+          strokeWidth={STROKE_W}
+          strokeOpacity={STROKE_OPACITY}
+        />
+        {/* MED/FAR 호 (좌우 끝 → 끝) */}
+        <Path
+          d={medArc.d}
+          fill="none"
+          stroke={MED_COLOR}
+          strokeWidth={STROKE_W}
+          strokeOpacity={STROKE_OPACITY}
+        />
+        <SvgText x={W - 44} y={nearArc.edgeY - 6} fill={NEAR_COLOR} fontSize={11} fontWeight="bold">
+          NEAR
+        </SvgText>
+        <SvgText x={W - 40} y={medArc.edgeY - 6} fill={MED_COLOR} fontSize={11} fontWeight="bold">
+          MED
+        </SvgText>
+        <SvgText x={apexX + 8} y={apexY - 4} fill={FAR_COLOR} fontSize={11} fontWeight="bold">
+          FAR
+        </SvgText>
+      </Svg>
     </View>
   );
 }

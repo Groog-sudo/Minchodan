@@ -55,7 +55,7 @@ export interface ConsoleReflexAlertEvent {
   received_at: number;
 }
 
-export function useLiveFeed() {
+export function useLiveFeed(token: string | null = null) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [connected, setConnected] = useState<boolean>(false);
   const [latestDetections, setLatestDetections] = useState<any[]>([]);
@@ -86,6 +86,13 @@ export function useLiveFeed() {
   useEffect(() => {
     let disposed = false;
     let generation = 0;
+
+    // 2026-07-19: /ws/console/live-feed 는 JWT 관리자 토큰 필수(서버 1008 token required).
+    // SSE(/api/v1/monitor/stream)와 동일하게 ?token= 쿼리로 전달한다.
+    if (!token) {
+      setConnected(false);
+      return;
+    }
 
     const revokePrevUrl = () => {
       if (prevUrlRef.current) {
@@ -133,7 +140,9 @@ export function useLiveFeed() {
       }
 
       const myGen = ++generation;
-      const ws = new WebSocket(WS_LIVE_FEED_URL);
+      const separator = WS_LIVE_FEED_URL.includes("?") ? "&" : "?";
+      const urlWithToken = `${WS_LIVE_FEED_URL}${separator}${new URLSearchParams({ token }).toString()}`;
+      const ws = new WebSocket(urlWithToken);
       ws.binaryType = "blob";
       wsRef.current = ws;
 
@@ -335,7 +344,7 @@ export function useLiveFeed() {
       pendingGuideAudioRef.current = null;
       setConnected(false);
     };
-  }, []);
+  }, [token]);
 
   return {
     imageUrl,
