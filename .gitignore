@@ -320,6 +320,10 @@ node_modules/
 # ==========================================
 server/models/yolo26n/segbest.pt
 server/models/yolo26n/segbest.tflite
+# 커스텀 파인튜닝 산출물 (*.pt는 상단 *.pt 규칙으로 이미 무시).
+# mlpackage는 *.pt 예외가 없으므로 명시적으로 제외한다.
+server/models/yolo26n/det_best_*/
+server/models/yolo26n/det_best_*
 
 # TTS 서버 기동 시 자동 생성되는 런타임 호환 설정 (server/tts/tts_service.py)
 server/models/piper/*.runtime.compat.json

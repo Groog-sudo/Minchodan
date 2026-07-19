@@ -3281,3 +3281,16 @@
 - **관련 파일**: `client/.npmrc`, `docs/changelogs/kb.md`
 - **검증 결과**: 민감 정보 없음 확인. `kb`/`dev` 동기화 상태 확인.
 - **비고**: 푸시 브랜치 `kb`→`dev`.
+
+---
+
+### 2026-07-19 | 도구 | Git 추적 정리 (det_best mlpackage 해제 + RNSVG Pod 동기화)
+
+- **배경**: AGENTS.md 정책상 커스텀 파인튜닝 가중치(`det_best_*`)는 git-ignore인데 `server/models/yolo26n/det_best_20260705.mlpackage`(~9MB)가 추적 중이었다. 또한 `react-native-svg` 추가 후 Minchodan 트리 복원으로 `Podfile.lock`에 RNSVG가 빠져 있었다.
+- **변경 내용**:
+  - `det_best_20260705.mlpackage`를 `git rm --cached`로 추적 해제(로컬 파일 유지).
+  - `.gitignore`에 `server/models/yolo26n/det_best_*/`·`det_best_*` 규칙 추가.
+  - `pod install`로 `Podfile.lock`/`project.pbxproj`에 RNSVG 번들 반영.
+- **관련 파일**: `.gitignore`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `docs/changelogs/kb.md`
+- **검증 결과**: `git check-ignore`로 det_best mlpackage 무시 확인. `Podfile.lock` RNSVG 6건 매칭. 디스크상 mlpackage 유지.
+- **비고**: CoreML 이중 사본(`assets/.../segmentation.mlpackage` ↔ `ios/segmentation.mlpackage`, 동일 checksum)은 Xcode가 ios 경로를 참조하므로 유지. 히스토리 대용량 blob(yolov8n 등) 제거는 filter-repo 범위라 이번 정리에서 제외.
