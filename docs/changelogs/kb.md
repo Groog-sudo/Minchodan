@@ -3140,3 +3140,24 @@
 - **비고**: 팀원은 clone/pull 후 반드시 본인 Tailscale IP로 Metro·서버 호스트를 덮어쓸 것.
 
 ---
+
+---
+
+### 2026-07-19 | 통합 | 정합성 검토 보고서 P1 결함 수정 및 CI pytest 게이트 추가
+
+- **배경**: `2026-07-18` kb=dev 통합 시점에 대한 외부 정합성 검토 보고서에서 P1 실행 경로/보안 결함 3건(R1~R3)과 문서/CI 드리프트 4건(C1, C4, C7, C8)을 지적.
+- **변경 내용**:
+  - **R3 콘솔 라이브 피드 인증**: `server/api/ws_router.py` `/ws/console/live-feed`에 `?token=` JWT 관리자 검증을 `connect_console` 이전에 추가. `server/api/session_manager.py` `connect_console()`에 `accept=False` 옵션 추가로 인증 후 등록만 수행.
+  - **R1 navigation lifespan 통합**: `server/main.py` lifespan에서 `server/navigation/server.py`의 `redis_stream_listener()`를 직접 `asyncio.create_task`로 기동 및 종료 시 cancel. Starlette 마운트 서브앱 lifespan 미전파 문제 회복.
+  - **R2 TMAP 비동기 격리**: `server/stt/stt_to_llm_bridge.py`의 `helper_search_poi`/`helper_fetch_route` 호출을 `asyncio.to_thread(...)`로 래핑해 이벤트 루프 블로킹 방지.
+  - **C3 Docker 시드 SQL**: `docker/docker-compose.yml`에서 존재하지 않는 `scripts/seed_dummy_data.sql` 마운트 제거. Docker가 동명 빈 디렉터리를 생성하던 문제 해소.
+  - **C1 API 명세 동기화**: `docs/design/api_specification.md`에 `detection_control` (§2.7) 및 `fixed_point_probe_sample` (§6.9) 절 신규 추가. 공통 `type` 필드 열거에도 두 타입 반영.
+  - **C4 스테일 문서 경로**: `docker/*`, `pyproject.toml`, `.pre-commit-config.yaml`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`의 `docs/deployment_guide.md`/`docs/code_quality_guide.md`/`docs/course_codebase_guide.md` 참조를 `docs/ops/`/`docs/dev-guides/` 실제 경로로 정정.
+  - **C7 CI pytest**: `.github/workflows/lint.yml`의 `push.branches`에 `dev` 추가. pytest 단계 신설. `tests/test_convenience_dial_resolver.py`, `tests/test_embedding_engine_factory.py`, `tests/test_ws_echo.py`, `tests/test_ws_live_priority.py`에 `ollama`/`live_server` 마커 추가 및 `pyproject.toml` 마커 등록으로 CI에서 외부 서비스 의존 테스트 제외.
+  - **C8 README 빠른 시작**: `README.md` 1단계 환경 변수 설정에 DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 필수 명시.
+  - **린트 정책 정합**: `pyproject.toml`에 `UP009`를 ignore 추가(`docs/dev-guides/course_codebase_guide.md` 3.1이 UTF-8 선언을 요구). `scripts/tts_read_text_experiment.py` 미사용 `noqa: S310` 제거 및 Bandit B310/B606 양쪽 호환 `# nosec` 주석 보강.
+  - **소모성 경고 제거**: `server/mcp/manager.py`의 deprecated `client.close()`를 `aclose()`로 교체.
+  - **pre-commit 차단 해소**: `scripts/run_test_100_samples.py`, `scripts/run_test_per_class.py`의 기존 `random.sample` 사용에 `# nosec B311` 추가로 Bandit pre-commit 통과.
+- **관련 파일**: `server/api/ws_router.py`, `server/api/session_manager.py`, `server/main.py`, `server/stt/stt_to_llm_bridge.py`, `server/mcp/manager.py`, `docker/docker-compose.yml`, `docker/Dockerfile`, `docker/docker-compose.macos.yml`, `docker/linux_docker_start.sh`, `docker/macos_docker_start.sh`, `docker/windows_docker_start.bat`, `docker/.dockerignore`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`, `README.md`, `.github/workflows/lint.yml`, `.pre-commit-config.yaml`, `pyproject.toml`, `scripts/tts_read_text_experiment.py`, `scripts/run_test_100_samples.py`, `scripts/run_test_per_class.py`, `tests/test_convenience_dial_resolver.py`, `tests/test_embedding_engine_factory.py`, `tests/test_ws_echo.py`, `tests/test_ws_live_priority.py`
+- **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 353 passed, 1 skipped, 11 deselected. `python -m compileall server scripts tests` 0 오류. 수정 모듈 import 정상.
+- **비고**: `auto-publish-work` 스크립트의 외부 의존성(ruff/react-doctor PATH) 문제로 수동 커밋/푸시. 푸시 브랜치는 `kb`.

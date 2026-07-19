@@ -1,6 +1,6 @@
 # Minchodan Docker Compose (macOS CPU Fallback)
 # Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
-# 상세 명세: docs/deployment_guide.md 및 docker/macos_docker_start.sh
+# 상세 명세: docs/ops/deployment_guide.md 및 docker/macos_docker_start.sh
 
 services:
   fastapi:

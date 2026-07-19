@@ -36,6 +36,7 @@ from server.api.ws_router import router as ws_router
 from server.detection.consumer import get_default_consumer
 from server.mcp.manager import mcp_manager
 from server.navigation.server import app as navigation_app
+from server.navigation.server import redis_stream_listener
 
 if not logging.getLogger().handlers:
     logging.basicConfig(
@@ -147,7 +148,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"중앙 저장소 공유 httpx.AsyncClient 생성 실패 (요청별 폴백): {e}")
 
+    # 8. Navigation Redis Stream 리스너 기동 (2026-07-19, P1).
+    # Starlette는 마운트된 서브앱의 lifespan을 실행하지 않으므로, navigation_app의
+    # redis_stream_listener()를 메인 lifespan에서 직접 띄운다.
+    nav_listener_task = asyncio.create_task(redis_stream_listener())
+    logger.info("Navigation Redis Stream 리스너 기동 완료")
+
     yield
+
+    nav_listener_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await nav_listener_task
 
     frame_cleanup_task.cancel()
 

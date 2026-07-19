@@ -1,5 +1,5 @@
 # Minchodan .dockerignore
-# 상세 명세: docs/deployment_guide.md 8절
+# 상세 명세: docs/ops/deployment_guide.md 8절
 #
 # 주의: docker-compose.yml의 build context는 프로젝트 루트(`..`)이므로
 # 실제 compose 빌드에 적용되는 파일은 루트 `.dockerignore`입니다.

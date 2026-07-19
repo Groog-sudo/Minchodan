@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import time
 from typing import ClassVar
@@ -586,9 +587,9 @@ class SttToLlmBridge:
 
                 start_poi = {"name": "내 실시간 위치", "x": str(curr_lon), "y": str(curr_lat)}
 
-                end_poi = helper_search_poi(destination)
+                end_poi = await asyncio.to_thread(helper_search_poi, destination)
                 if end_poi:
-                    route_data = helper_fetch_route(start_poi, end_poi)
+                    route_data = await asyncio.to_thread(helper_fetch_route, start_poi, end_poi)
                     if route_data:
                         session_waypoints = []
                         features = route_data.get("features", [])

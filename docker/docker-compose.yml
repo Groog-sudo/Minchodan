@@ -1,6 +1,6 @@
 # Minchodan Docker Compose
 # Redis + MariaDB + FastAPI 3컨테이너 구성
-# 상세 명세: docs/deployment_guide.md 7절
+# 상세 명세: docs/ops/deployment_guide.md 7절
 
 services:
   fastapi:
@@ -70,7 +70,10 @@ services:
     volumes:
       - mariadb_data:/var/lib/mysql
       - ../server/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
-      - ../scripts/seed_dummy_data.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
+      # 2026-07-19: seed_dummy_data.sql 파일이 저장소에 없어 Docker가 동명 빈 디렉터리를
+      # 생성하는 문제가 있어 마운트를 제거한다. 시드가 필요하면 scripts/seed_dummy_data.sql
+      # 을 추가하고 아래 라인을 복원한다:
+      # - ../scripts/seed_dummy_data.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
     environment:
       MARIADB_DATABASE: ${COMPOSE_DB_NAME:-minchodan_db}
       MARIADB_USER: ${COMPOSE_DB_USER:-minchodan_team}

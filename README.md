@@ -157,14 +157,14 @@ Minchodan/
 
 ```powershell
 Copy-Item .env.example .env
-# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL 등을 설정합니다.
+# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 등을 설정합니다.
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
 cp .env.example .env
-# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL 등을 설정합니다.
+# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 등을 설정합니다.
 ```
 
 ### 2. 서버 의존성 설치 및 실행

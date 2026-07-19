@@ -27,6 +27,7 @@ def test_embedding_engine_factory_mock():
     assert len(docs_vecs[0]) == 768
 
 
+@pytest.mark.ollama
 def test_embedding_engine_factory_ollama():
     # 로컬 Ollama 구동 여부 사전 확인
     import requests

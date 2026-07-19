@@ -246,7 +246,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 ## 3. 환경 변수 로드 패턴
 
-모든 Python 모듈은 [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.4절의 표준 패턴을 준수합니다.
+모든 Python 모듈은 [`docs/dev-guides/course_codebase_guide.md`](dev-guides/course_codebase_guide.md) 3.4절의 표준 패턴을 준수합니다.
 
 ```python
 from dotenv import load_dotenv

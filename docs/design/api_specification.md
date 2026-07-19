@@ -42,7 +42,7 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, distance_probe_sample, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
+| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, distance_probe_sample, fixed_point_probe_sample, detection_control, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url - 상세는 각 섹션 참조) |
 | `event_id` | 이벤트 추적 식별자. 단말 detection 프레임은 `event-{device_id}-{stream}-{epoch_ms}` 형식(**2026-07-11 구조화** - 기존 `event-{epoch_ms}`는 반사/인지 타이머가 같은 ms에 발화하면 충돌해 DB UNIQUE 중복 방지 로직이 두 번째 로그를 유실), 서버 발신은 `stt-`/`nav-` 접두 또는 UUID |
 | `device_id` | 단말 식별자 |
 | `ts` | 타임스탬프 (epoch ms) |
@@ -150,6 +150,25 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `bad_request` | 메시지 형식 오류 |
 | `rate_limited` | 프레임 전송 과다 |
 | `internal` | 서버 내부 오류 |
+
+### 2.7 detection_control (단말 → 서버, 2026-07-19 신설)
+
+단말이 탐지 파이프라인을 일시적으로 켜거나 끌 때 보내는 제어 메시지입니다. `거리측정` 모드처럼 YOLO 탐지와 섞이면 안 되는 화면에서 클라이언트가 반사/인지 경보를 억제하기 위해 사용합니다.
+
+```json
+{
+  "type": "detection_control",
+  "enabled": true,
+  "ts": 1720574000000
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `enabled` | `true`면 탐지 활성, `false`면 탐지 중지 |
+| `ts` | 클라이언트 송신 시각 (epoch ms) |
+
+서버(`server/api/ws_router.py`)는 `enabled` 값을 `NavigationManager.set_detection_enabled()`에 전달해, 탐지 OFF 상태에서는 목적지/인텐트 대기를 해제하고 STT 일반 발화를 자유 질문으로 라우팅합니다.
 
 ---
 
@@ -696,6 +715,45 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 서버(`server/api/ws_router.py`의 `_handle_distance_probe_sample`)는 `estimate_distance()`(`server/detection/direction.py`)로 동일 bbox의 휴리스틱 라벨을 재계산해 LiDAR 실측과 함께 저장한다(휴리스틱 계산의 단일 소스는 서버 유지). 응답 메시지는 없다(fire-and-forget). 담당자는 `scripts/analyze_lidar_validation.py`로 집계를 확인한다.
 
 > **비범위**: vision-camera 세션과 LiDAR 세션의 동시 실행(실시간 라이브 융합)은 포함하지 않는다. 별도의 네이티브 세션 재설계가 필요한 후속 과제로 남긴다.
+
+### 6.9 fixed_point_probe_sample (단말 → 서버, LiDAR 고정 지점 캡처, 2026-07-19 신설)
+
+**검증 전용 스코프**: 객체 탐지와 무관하게, `거리측정` 모드 화면에 고정 표시 중인 3지점(중앙/전방 하단/발밑)의 LiDAR 실측을 한 번에 저장한다. `distance_probe_sample`과 달리 YOLO 탐지 왕복이 필요 없으므로, 클라이언트가 이미 보유한 `probeDepth()` 결과를 즉시 보고한다.
+
+```json
+{
+  "type": "fixed_point_probe_sample",
+  "payload": {
+    "event_id": "probe-dev-001-fixed-1721200000000",
+    "samples": [
+      {
+        "point_label": "중앙",
+        "x": 0.5,
+        "y": 0.5,
+        "lidar_meters": 1.42,
+        "axial_meters": 1.40,
+        "lidar_sample_count": 31,
+        "lidar_accuracy": "absolute",
+        "lidar_quality": "high",
+        "lidar_calibrated": true
+      }
+    ]
+  }
+}
+```
+
+| 필드 | 설명 |
+| :--- | :--- |
+| `event_id` | 고정 지점 캡처 식별자. `distance_probe_sample`과 별개로 관리되며 상관관계 매칭은 클라이언트가 `-fixed` 접두 등으로 처리한다 |
+| `samples[].point_label` | `"중앙"` / `"전방 하단"` / `"발밑"` 등 화면 고정 지점 라벨 |
+| `samples[].x` / `y` | 화면 내 정규화 좌표(0~1) |
+| `samples[].lidar_meters` | LiDAR 실측 거리(m). 유효 depth 샘플이 없으면 `null` |
+| `samples[].axial_meters` | 축 방향 보정 거리(m). 선택 |
+| `samples[].lidar_accuracy` | `absolute`(LiDAR 실측) 또는 `relative`(시차 기반) |
+| `samples[].lidar_quality` | `high` 또는 `low` |
+| `samples[].lidar_calibrated` | 캘리브레이션 적용 여부 |
+
+서버(`server/api/ws_router.py`의 `_handle_fixed_point_probe_sample`)는 `FixedPointProbeReport` 스키마로 검증 후 `lidar_fixed_point_samples` 테이블에 저장한다. 응답 메시지는 없다(fire-and-forget). 줄자 대조가 객체 탐지 성공 여부에 좌우되지 않으므로, 근거리 캘리브레이션에 사용한다.
 
 ---
 

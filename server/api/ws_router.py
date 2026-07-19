@@ -17,11 +17,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from server.api.auth import verify_device
 from server.api.config import settings
+from server.api.dependencies import get_current_admin
 from server.api.heartbeat import HeartbeatManager
 from server.api.schemas import now_iso, now_ts
 from server.api.session_manager import manager
@@ -717,14 +718,30 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
 
 @router.websocket("/ws/console/live-feed")
-async def ws_console_live_feed(ws: WebSocket) -> None:
+async def ws_console_live_feed(
+    ws: WebSocket,
+    token: str | None = Query(None, alias="token"),
+) -> None:
     """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트.
 
     receive_text()만 쓰면 클라이언트의 binary/disconnect 프레임에서 예외로
     끊기거나, uvicorn 재기동 후 반쯤 열린(half-open) 소켓을 감지하기 어렵다.
     receive()로 모든 메시지 타입을 흡수하고 disconnect만 정리한다.
+
+    2026-07-19: connect_console 이전에 JWT 관리자 토큰을 검증한다.
+    SSE/REST와 동일하게 ?token= 쿼리를 사용(EventSource는 커스텀 헤더를
+    붙일 수 없으므로). 인증 실패 시 1008 정책 위반으로 즉시 종료한다.
     """
-    await manager.connect_console(ws)
+    await ws.accept()
+    if not token:
+        await ws.close(code=1008, reason="token required")
+        return
+    try:
+        await get_current_admin(token_query=token, token_header=None)
+    except HTTPException:
+        await ws.close(code=1008, reason="invalid token")
+        return
+    await manager.connect_console(ws, accept=False)
     try:
         while True:
             message = await ws.receive()

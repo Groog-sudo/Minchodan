@@ -3,7 +3,7 @@
 ###############################################################################
 # Minchodan Docker Build and Start - Linux
 # Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
-# 상세 명세: docs/deployment_guide.md
+# 상세 명세: docs/ops/deployment_guide.md
 ###############################################################################
 
 set -u

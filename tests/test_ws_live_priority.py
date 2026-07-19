@@ -13,6 +13,8 @@ import numpy as np
 import pytest
 import websockets
 
+pytestmark = pytest.mark.live_server
+
 from server.api.auth import issue_device_token
 
 if hasattr(sys.stdout, "reconfigure"):

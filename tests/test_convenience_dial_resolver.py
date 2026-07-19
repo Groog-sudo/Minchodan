@@ -1,9 +1,13 @@
 import sys
 
+import pytest
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from server.rag.convenience_dial_resolver import resolve_convenience_dial
+
+pytestmark = pytest.mark.ollama
 
 
 def test_resolve_organization_dial() -> None:
