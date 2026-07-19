@@ -11,7 +11,7 @@ description: |
 # 통합 테스트 환경 오케스트레이션 스킬 (iOS 실기기 - Docker - DB)
 
 > **작성일**: 2026-07-18
-> **버전**: v1.1.0 (2026-07-19: `docker compose` 실행 시 `--env-file .env` 명시 필수 항목 추가 - `-f docker/docker-compose.macos.yml`만 쓰면 Compose가 프로젝트 디렉토리를 `docker/`로 잡아 루트 `.env`(테일스케일 `DB_HOST` 포함)를 읽지 못하고 로컬 `mariadb`로 조용히 폴백되는 실측 결함 반영. §5-B 콘솔(운영 콘솔) 프론트 기동 단계 신설 - 기존에 누락되어 반복 재발. `docker compose config` 비밀값 노출 경고를 가드레일에 추가)
+> **버전**: v1.2.0 (2026-07-19: §5-B console 프론트 기동 단계를 compose 통합으로 재구성 - `console` 서비스가 `docker-compose.macos.yml`·`docker-compose.yml`에 추가되어 `docker compose up -d` 한 줄로 FastAPI·Redis·MariaDB·Console 4개 컨테이너가 함께 기동됨. `console/vite.config.ts`가 `VITE_PROXY_TARGET` 환경 변수 기반으로 프록시 타깃을 변경하도록 갱신. 별도 `npm run dev` 단계 제거 + 이전 v1.1.0: `--env-file .env` 명시 필수 항목 추가 - 루트 `.env` 미반영 시 로컬 mariadb 폴백 결함 반영. `docker compose config` 비밀값 노출 경고를 가드레일에 추가)
 > **설계 기준**: `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
 > **관련 스킬**: [`xcode-build-management`](../xcode-build-management/SKILL.md) (iOS 빌드 세부 절차 전담), 본 스킬은 그 위 계층(Docker+DB+로그/모니터링)까지 포함한 세션 오케스트레이션을 전담
 
@@ -202,21 +202,27 @@ cd client && npm run start -- --clear
 
 ### 5-B. 운영 콘솔(console) 프론트 기동
 
-> **자주 누락되는 단계입니다 — 세션마다 빠뜨리지 않습니다.** iOS 실기기·Docker·DB만 띄우고
-> `console/`(React 운영자 모니터링 콘솔, Vite dev server)을 기동하지 않으면, 탐지 로그·MCP
-> 모니터·관리자 로그인 확인 등 콘솔에서만 볼 수 있는 검증을 전혀 할 수 없습니다. 실기기 앱과
-> 별개로 매 세션 반드시 함께 켭니다.
+> **자주 누락되던 단계였으나 2026-07-19 compose 통합으로 자동화.** iOS 실기기·Docker·DB만
+> 띄우고 `console/`(React 운영자 모니터링 콘솔, Vite dev server)을 기동하지 않으면, 탐지 로그·MCP
+> 모니터·관리자 로그인 확인 등 콘솔에서만 볼 수 있는 검증을 전혀 할 수 없습니다. 2026-07-19부터
+> `console` 서비스가 `docker/docker-compose.macos.yml`·`docker/docker-compose.yml`에 추가되어
+> §1의 `docker compose up -d` 한 줄에 FastAPI·Redis·MariaDB·Console 4개 컨테이너가 함께 기동됩니다.
+> 별도 `npm run dev` 단계가 더 이상 필요 없습니다.
 
 ```bash
-cd console && npm install   # node_modules 없을 때만
-nohup npm run dev > "../$LOG_DIR/console_vite.log" 2>&1 &
+# §1 compose 실행만으로 console 컨테이너가 자동 기동됨. 별도 실행 불필요.
+# 기동 확인:
+curl -sf -o /dev/null -w "%{http_code}" http://localhost:5174/   # 200이면 정상
+docker compose -f docker/docker-compose.macos.yml logs -f console  # 로그 확인
 ```
 
-기본 포트는 `vite --host 0.0.0.0 --port 5174`(`console/package.json`)입니다. 기동 후
-`curl -sf -o /dev/null -w "%{http_code}" http://localhost:5174/`로 200을 확인합니다. 콘솔은
-FastAPI(`:8000`)를 Vite 프록시로 호출하므로, FastAPI 컨테이너를 재생성/재시작한 직후에는
-`console_vite.log`에 `ws proxy error`/`ECONNREFUSED`가 잠깐 찍힐 수 있습니다(재연결되면 정상,
-지속되면 FastAPI 헬스체크부터 재확인).
+기본 포트는 `${CONSOLE_PORT:-5174}:5174`(`docker-compose.*.yml`의 `console` 서비스). 콘솔 컨테이너는
+`VITE_PROXY_TARGET=http://fastapi:8000` 환경 변수로 FastAPI 컨테이너를 Vite 프록시 타깃으로 지정합니다
+(`console/vite.config.ts`가 `process.env.VITE_PROXY_TARGET`을 읽음, 기본값 `http://127.0.0.1:8000`).
+FastAPI 컨테이너를 재생성/재시작한 직후에는 `docker compose logs console`에 `ws proxy error`/`ECONNREFUSED`가
+잠깐 찍힐 수 있습니다(재연결되면 정상, 지속되면 FastAPI 헬스체크부터 재확인). 호스트에서 직접
+`cd console && npm run dev`를 실행하는 레거시 경로도 `VITE_PROXY_TARGET` 미설정 시 기본값이
+적용되므로 여전히 작동합니다.
 
 ### 6. 실기기 빌드-설치-실행
 

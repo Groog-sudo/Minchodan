@@ -101,6 +101,30 @@ services:
     networks:
       - minchodan-net
 
+  # 2026-07-19: 운영 콘솔(React + Vite) 컨테이너. integration-test-orchestrator
+  # 스킬 §5-B가 호스트에서 npm run dev 하던 단계를 compose 통합으로 대체. Vite dev
+  # 서버를 띄우고 FastAPI 컨테이너를 VITE_PROXY_TARGET으로 가리킨다. 소스는 볼륨
+  # 마운트해 HMR을 지원하고 node_modules는 익명 볼륨으로 격리해 호스트/컨테이너
+  # 간 의존성 충돌을 방지한다.
+  console:
+    build:
+      context: ../console
+      dockerfile: Dockerfile
+    image: minchodan-console:latest
+    container_name: minchodan-console
+    ports:
+      - "${CONSOLE_PORT:-5174}:5174"
+    volumes:
+      - ../console:/app
+      - /app/node_modules
+    environment:
+      - VITE_PROXY_TARGET=http://fastapi:8000
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+
 volumes:
   redis_data:
   mariadb_data:

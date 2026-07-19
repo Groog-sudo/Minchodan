@@ -89,6 +89,27 @@ services:
     networks:
       - minchodan-net
 
+  # 2026-07-19: 운영 콘솔(React + Vite) 컨테이너. docker-compose.macos.yml과 동일
+  # 구성. GPU 서버 환경에서도 콘솔을 동일하게 compose로 기동해 양 환경 정합성 유지.
+  console:
+    build:
+      context: ../console
+      dockerfile: Dockerfile
+    image: minchodan-console:latest
+    container_name: minchodan-console
+    ports:
+      - "${CONSOLE_PORT:-5174}:5174"
+    volumes:
+      - ../console:/app
+      - /app/node_modules
+    environment:
+      - VITE_PROXY_TARGET=http://fastapi:8000
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    networks:
+      - minchodan-net
+
 volumes:
   redis_data:
   mariadb_data:

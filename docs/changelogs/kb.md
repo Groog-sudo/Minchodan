@@ -3211,3 +3211,20 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`, `server/detection/consumer.py`, `console/src/components/LiveCameraFeed.tsx`, `docs/design/api_specification.md`
 - **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `npx tsc --noEmit`(console) 0 오류.
 - **비고**: 푸시 브랜치는 `kb`. 단말은 area_ratio 로컬 산출(추가 네트워크 비용 0), 콘솔은 서버가 이미 산출한 `effective_distance_zone`을 추가 필드로 송신(바이트 증가 ~20B/detection)해 부하 최소화.
+
+---
+
+### 2026-07-19 | 통합 | 운영 콘솔(React+Vite) Docker compose 통합 - §5-B 자동화
+
+- **배경**: 통합 테스트 스킬(`integration-test-orchestrator`)이 호스트에서 `cd console && npm run dev`를 매 세션 수동 실행하도록 §5-B를 두고 있었으나 누락 반복. 정합성 평가 결과 Console Vite는 표준 Node 웹앱이라 컨테이너화가 단순하고 정합성 충돌 0건이므로 compose에 통합. Metro/Expo·Ollama·Tailscale은 각각 Xcode 강결합·GPU/MPS 접근·커널 TUN 이슈로 호스트 실행을 유지(정합성 평가 근거).
+- **변경 내용**:
+  - **`console/Dockerfile` 신규**: `node:20-alpine` 기반 dev용 단일 스테이지. package.json 캐시 레이어 분리 후 소스 복사. `npm run dev`로 Vite dev 서버 기동. prod용 nginx 멀티스테이지는 향후 별도 추가.
+  - **`console/.dockerignore` 신규**: `node_modules`, `dist`, `.git`, `*.log`, `.vite` 제외.
+  - **`console/vite.config.ts` 프록시 환경 변수화**: `process.env.VITE_PROXY_TARGET` (기본값 `http://127.0.0.1:8000`)을 `/api`·`/ws`·`/navigation` 프록시 타깃으로 사용. 컨테이너에선 `http://fastapi:8000`, 호스트 실행 시 기본값 유지해 레거시 경로 영향 0.
+  - **`docker/docker-compose.macos.yml` `console` 서비스 추가**: 포트 `${CONSOLE_PORT:-5174}:5174`, 소스 볼륨 `../console:/app` + 익명 볼륨 `/app/node_modules`(의존성 격리), `VITE_PROXY_TARGET=http://fastapi:8000`, `depends_on: fastapi`. compose 한 줄로 FastAPI·Redis·MariaDB·Console 4개 컨테이너 동시 기동.
+  - **`docker/docker-compose.yml` 동일 추가**: GPU 환경도 동일 구성으로 양 compose 정합성 유지.
+  - **`docs/ops/deployment_guide.md` §2.1 갱신**: 컨테이너 매트릭스에 `console` 행 추가, 버전 v0.5.3 → v0.5.4.
+  - **`integration-test-orchestrator/SKILL.md` §5-B 재구성**: "매 세션 수동 실행" 지침을 "compose 통합으로 자동 기동"으로 변경. 별도 `npm run dev` 단계 제거, `docker compose logs console`으로 로그 확인. 버전 v1.1.0 → v1.2.0. `.agents/skills/`·`.claude/skills/` 양쪽 미러 동기화.
+- **관련 파일**: `console/Dockerfile`(신규), `console/.dockerignore`(신규), `console/vite.config.ts`, `docker/docker-compose.macos.yml`, `docker/docker-compose.yml`, `docs/ops/deployment_guide.md`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
+- **검증 결과**: `ruff check .` All checks passed. `npx tsc --noEmit`(console) 0 오류. `docker compose -f docker/docker-compose.macos.yml config` console 서비스 정상 인식(비밀값 필터 출력 확인).
+- **비고**: 푸시 브랜치는 `kb`. Metro·Ollama·Tailscale은 정합성 평가 근거(Xcode 강결합·GPU/MPS·커널 TUN)로 호스트 실행 유지. 통합 테스트 수동 단계가 4→2(Docker Desktop 실행 + compose up)로 감소.
