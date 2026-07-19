@@ -24,9 +24,16 @@ from server.detection.detection_pipeline import (
 from server.detection.detection_pipeline import (
     MID_RISK_CLASSES as PIPELINE_MID_RISK_CLASSES,
 )
+from server.detection.detection_pipeline import (
+    MID_RISK_SURFACE_CLASSES as PIPELINE_MID_RISK_SURFACE_CLASSES,
+)
 from server.detection.gates.reflex_gate import HIGH_RISK_CLASSES
 from server.orchestration.graph import run_orchestrator
-from server.orchestration.nodes.l1_classifier import MID_RISK_CLASSES, classify_risk
+from server.orchestration.nodes.l1_classifier import (
+    MID_RISK_CLASSES,
+    MID_RISK_SURFACE_CLASSES,
+    classify_risk,
+)
 from server.orchestration.nodes.l3_validator import l3_validator_node, validate_guidance
 
 # 실제 파인튜닝 완료된 Object Detection 29클래스 (docs/ops/model_class_validation_report.md 기준).
@@ -73,9 +80,10 @@ if sys.stdout.encoding != "utf-8":
 def test_l1_risk_classification():
     """
     TC-LG-003: L1 위험도 분류 검증.
-    2026-07-14 이후 객체 클래스는 mid가 아니며, 노면 이탈 확정 시에만 mid로 승격한다.
+    2026-07-14 이후 객체 클래스는 mid가 아니며,
+    2026-07-19부터는 노면 이탈 확정뿐 아니라 caution/roadway 노면도 mid로 분류한다.
     """
-    # 객체 단독 탐지는 low (인지 mid는 is_departing_confirmed 전용)
+    # 객체 단독 탐지는 low (인지 mid는 이탈·위험 노면)
     assert classify_risk(["wheelchair"]) == "low"
     assert classify_risk(["bollard", "person"]) == "low"
     assert classify_risk(["bicycle"]) == "low"
@@ -85,6 +93,14 @@ def test_l1_risk_classification():
     assert classify_risk(["traffic_light"]) == "low"
     assert classify_risk([]) == "low"
     assert classify_risk(None) == "low"
+
+    # 위험 노면은 mid (영문·한국어)
+    assert classify_risk([], ["caution"]) == "mid"
+    assert classify_risk([], ["roadway"]) == "mid"
+    assert classify_risk([], ["주의 노면"]) == "mid"
+    assert classify_risk([], ["차도"]) == "mid"
+    assert classify_risk([], ["sidewalk_normal"]) == "low"
+    assert classify_risk(["bicycle"], ["caution"]) == "mid"
 
 
 def test_l3_guidance_validation_rules():
@@ -252,6 +268,9 @@ class TestRiskClassifierConsistency:
 
     def test_l1_and_pipeline_mid_risk_classes_match(self):
         assert MID_RISK_CLASSES == PIPELINE_MID_RISK_CLASSES
+
+    def test_l1_and_pipeline_mid_risk_surface_classes_match(self):
+        assert MID_RISK_SURFACE_CLASSES == PIPELINE_MID_RISK_SURFACE_CLASSES
 
     def test_mid_risk_classes_are_real_detection_classes(self):
         unknown = MID_RISK_CLASSES - REAL_DETECTION_CLASSES

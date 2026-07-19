@@ -1050,6 +1050,20 @@ class TestSpeechWorthyFilter:
         consumer = DetectionConsumer()
         assert consumer._is_speech_worthy(None, None, "", "high", False) is True
 
+    def test_mid_risk_hint_always_worthy(self):
+        """파이프라인 risk_hint='mid'(caution/roadway)는 인지 TTS 대상이다."""
+        consumer = DetectionConsumer()
+        assert consumer._is_speech_worthy(None, None, "", "mid", False) is True
+        assert consumer._is_speech_worthy(None, None, "", "medium", False) is True
+
+    def test_significant_surface_worthy_even_if_low_hint(self):
+        """유의미 노면만 있어도 speech_worthy를 통과한다(객체 없음 포함)."""
+        consumer = DetectionConsumer()
+        assert (
+            consumer._is_speech_worthy(None, None, "", "low", False, has_significant_surface=True)
+            is True
+        )
+
     def test_far_static_not_worthy(self):
         consumer = DetectionConsumer()
         det = Detection(

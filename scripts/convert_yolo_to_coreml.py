@@ -61,16 +61,27 @@ def patch_raw_head(model: "YOLO") -> None:
     )
 
 
-def convert_model(model_name: str, imgsz: int, half: bool, nms: bool, raw_head: bool) -> str:
+def convert_model(
+    model_name: str,
+    imgsz: int,
+    half: bool,
+    nms: bool,
+    raw_head: bool,
+    weights: str | None = None,
+) -> str:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, ".."))
 
     # 서버·앱 공통 기준선: *260714.pt (없으면 <model_name>.pt 별칭으로 폴백)
+    # --weights 가 있으면 그 경로를 우선 사용 (예: segbest.pt).
     src_primary = os.path.join(
         project_root, "server", "models", "yolo26n", f"{model_name}260714.pt"
     )
     src_fallback = os.path.join(project_root, "server", "models", "yolo26n", f"{model_name}.pt")
-    src_path = src_primary if os.path.exists(src_primary) else src_fallback
+    if weights:
+        src_path = weights if os.path.isabs(weights) else os.path.join(project_root, weights)
+    else:
+        src_path = src_primary if os.path.exists(src_primary) else src_fallback
     dst_dir = os.path.join(project_root, "client", "assets", "models", "yolo26n", "ios")
     dst_path = os.path.join(dst_dir, f"{model_name}.mlpackage")
 
@@ -206,9 +217,16 @@ def main():
             "(ANE 완전 호환, top-k 선택은 Swift에서 수행 - 2026-07-11 opus 2순위)"
         ),
     )
+    parser.add_argument(
+        "--weights",
+        default=None,
+        help="원본 .pt 경로 직접 지정 (예: server/models/yolo26n/segbest.pt)",
+    )
     args = parser.parse_args()
 
-    mlpackage_path = convert_model(args.model, args.imgsz, args.half, args.nms, args.raw_head)
+    mlpackage_path = convert_model(
+        args.model, args.imgsz, args.half, args.nms, args.raw_head, weights=args.weights
+    )
     verify_model(mlpackage_path, args.model, expect_nms=args.nms and not args.raw_head)
     print("\n모든 변환 작업이 완료되었습니다.")
     print("다음 단계: Xcode에서 .mlpackage를 타겟 리소스로 추가 (빌드 시 .mlmodelc로 자동 컴파일)")

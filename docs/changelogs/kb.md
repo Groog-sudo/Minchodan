@@ -3408,3 +3408,51 @@
 - **관련 파일**: `console/src/components/RiskEventLog.tsx`, `docs/changelogs/kb.md`
 - **검증 결과**: 콘솔 `npx tsc --noEmit` 클린.
 - **비고**: SSE `state.risks`(최대 80건) 기준 클라이언트 페이지네이션.
+
+### 2026-07-19 | 6단계 | Medium caution/roadway 인지 멘트 복구
+
+- **배경**: 중거리 caution/roadway는 인지(Medium) TTS가 나가야 하는데 무발화.
+- **원인**:
+  1. `_is_speech_worthy`가 `risk_hint in ("high","medium")`만 허용 → 파이프라인 `"mid"` 불일치.
+  2. 노면만 있는 프레임은 `primary_det is None`으로 탈락.
+  3. `orch_input`에 surface 미전달 → L1 mid 승격·L2 노면 프롬프트 불가.
+- **변경 내용**:
+  - speech_worthy: `mid`/`medium`/`high` + `has_significant_surface` 예외.
+  - orch에 `surface_classes`/`surface_classes_ko` 전달, L1 `MID_RISK_SURFACE_CLASSES` mid 분류.
+  - L2: caution/roadway 노면 상태 줄 추가, 패스트 레인은 위험 노면 시 제외.
+  - `CLASS_TEXT`에 segmentation 4클래스 한국어 매핑.
+- **관련 파일**: `consumer.py`, `l1_classifier.py`, `l2_generator.py`, `fast_lane.py`, `state.py`, `risk_rules.py`, `tests/test_detection.py`, `tests/test_langgraph.py`, `tests/test_departure_hysteresis.py`
+- **검증 결과**: pytest SpeechWorthy/L1 surface/departure 관련 케이스.
+- **비고**: Far BBox 표시와 Near 반사는 기존 유지. Medium 노면만 인지 멘트 경로 복구.
+
+
+### 2026-07-19 | 3단계 | 서버 seg 가중치 segbest.pt 복구
+
+- **배경**: 실기기 차도 장면에서도 roadway 미탐. 서버가 `segmentation.pt`(스톡/비최적)를 로드 중이었고, `segbest.pt`는 과거 실사에서 roadway 재현 가능이 확인됨.
+- **변경 내용**: `.env`의 `YOLO26N_SEG`를 `server/models/yolo26n/segbest.pt`로 전환 후 FastAPI 재기동.
+- **관련 파일**: `.env`, `docs/changelogs/kb.md`
+- **검증 결과**: `docker compose ... --force-recreate` 후 `printenv YOLO26N_SEG=.../segbest.pt`, 로그 `YoloSegmentor 모델 로드 성공: .../segbest.pt` 확인. (`restart`만으로는 env_file이 갱신되지 않음)
+- **비고**: 온디바이스 CoreML 재변환은 별도 후속. 단말 roadway 미탐은 앱 재빌드 전까지 잔존 가능.
+
+
+### 2026-07-19 | 단말 | segbest CoreML 재변환 + 실기기 유선 재빌드
+
+- **배경**: 서버 `segbest.pt` 전환 후 roadway 인지 멘트는 복구됐으나 온디바이스 CoreML은 구 가중치로 roadway 미탐.
+- **변경 내용**:
+  - `scripts/convert_yolo_to_coreml.py`에 `--weights` 옵션 추가.
+  - `segbest.pt` → FP16 CoreML(`--no-nms`) 변환 후 `client/assets/.../segmentation.mlpackage` 및 `client/ios/segmentation.mlpackage` 동기화.
+  - `xcodebuild` Debug → 고태현 iPhone(UDID `00008120-0011705611F0201E`) 빌드·`devicectl` 설치·실행 (`com.minchodan.app.kb.dev`).
+- **관련 파일**: `scripts/convert_yolo_to_coreml.py`, `client/ios/segmentation.mlpackage`, `client/assets/models/yolo26n/ios/segmentation.mlpackage`, `docs/changelogs/kb.md`
+- **검증 결과**: BUILD SUCCEEDED, 번들 `segmentation.mlmodelc` storagePrecision=Float16, 출력 `[1,300,38]`+proto 마스크. CoreML 브릿지는 기존 `.cpuAndNeuralEngine` 유지(ANE 우선).
+- **비고**: 단말 Metro에서 `roadway` 출현 여부로 온디바이스 개선을 추가 확인한다.
+
+
+### 2026-07-19 | 단말 | object_detection CoreML 재변환 + 실기기 재빌드
+
+- **배경**: seg는 `segbest`로 서버·단말 정합을 맞췄으나 det는 구 CoreML 변환본이 남아 완전 동일하지 않음.
+- **변경 내용**:
+  - 서버와 동일 파일(`object_detection.pt`, `object_detection260714.pt`와 MD5 일치)을 FP16+NMS CoreML로 재변환.
+  - `client/assets/models/yolo26n/ios/object_detection.mlpackage` 갱신 후 실기기 Debug 빌드·설치·실행.
+- **관련 파일**: `client/assets/models/yolo26n/ios/object_detection.mlpackage`, `docs/changelogs/kb.md`
+- **검증 결과**: BUILD SUCCEEDED, 번들 det=`confidence`/`coordinates`(NMS), seg=`[1,300,38]`+proto, 둘 다 Float16. ANE 설정(`.cpuAndNeuralEngine`) 유지.
+- **비고**: 서버 det=`object_detection.pt`, seg=`segbest.pt`와 온디바이스 CoreML 소스가 각각 일치.

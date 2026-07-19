@@ -95,6 +95,8 @@ async def l2_generator_node(state: dict) -> dict:
     braille_direction = state.get("braille_direction", "")
     clock_direction = state.get("clock_direction", "")
     distance_class = state.get("distance", "")
+    surface_classes = state.get("surface_classes") or []
+    surface_classes_ko = state.get("surface_classes_ko") or []
 
     classes_str = ", ".join(detected_classes) if detected_classes else "장애물 없음"
     nav_str = f"[길안내 멘트]: {navigation_guidance}\n" if navigation_guidance else ""
@@ -105,6 +107,9 @@ async def l2_generator_node(state: dict) -> dict:
     # 노면 상태를 별도 줄로 명시한다. 점자블록 방향을 알면 "왼쪽/오른쪽으로"까지
     # 함께 안내할 수 있어(GUIDANCE_SYSTEM_PROMPT의 방향 키워드 규칙과도 자연히 맞음),
     # 모르면(점자블록이 화면에 없음) 방향 없이 이탈 사실만 전달하도록 문장을 나눈다.
+    #
+    # 2026-07-19: 이탈 확정이 없어도 caution/roadway(중거리 Medium)면 노면 멘트를
+    # 프롬프트에 넣어 인지 TTS가 "주의 노면/차도" 안내를 생성할 수 있게 한다.
     departure_str = ""
     if is_departing_confirmed:
         if braille_direction == "left":
@@ -117,6 +122,13 @@ async def l2_generator_node(state: dict) -> dict:
             )
         else:
             departure_str = "[노면 상태]: 보도를 벗어나 차도 방향입니다.\n"
+    elif "roadway" in surface_classes:
+        departure_str = "[노면 상태]: 전방에 차도가 보입니다. 보도로 되돌아가세요.\n"
+    elif "caution" in surface_classes:
+        departure_str = "[노면 상태]: 전방에 주의가 필요한 노면입니다. 천천히 진행하세요.\n"
+    elif surface_classes_ko:
+        surface_ko_str = ", ".join(surface_classes_ko)
+        departure_str = f"[노면 상태]: {surface_ko_str}\n"
 
     # 사용자 프롬프트 조립 (설계서 10.2절 프롬프트 및 내비게이션 멘트 융합)
     user_prompt = (

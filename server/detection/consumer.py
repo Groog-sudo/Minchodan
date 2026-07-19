@@ -236,6 +236,7 @@ class DetectionConsumer:
         distance_class: str,
         risk_hint: str,
         departure_confirmed: bool,
+        has_significant_surface: bool = False,
     ) -> bool:
         """T2-G (2026-07-18): 인지 발화 회랑/접근 필터.
 
@@ -249,11 +250,16 @@ class DetectionConsumer:
         # 답변: 2026-07-19 우선순위 재정의 - far는 탐지·화면 표시(BBox)는 계속하되 음성
         # 안내 대상에서 제외한다. near는 reflex_gate가 담당하고, medium부터 인지 TTS가
         # 개입한다. post_reflex avoidance(fast lane)는 risk_hint=high로 별도 허용된다.
+        #
+        # 2026-07-19: risk_hint는 파이프라인이 "mid"를 쓰는데 필터가 "medium"만 허용해
+        # caution/roadway 인지 멘트가 막히던 불일치를 해소. 유의미 노면도 안전 예외로 통과.
         """
-        # 안전 예외: 보도 이탈, 고위험/중위험, 저위험 내레이션 설정 시
+        # 안전 예외: 보도 이탈, 고위험/중위험, 유의미 노면, 저위험 내레이션 설정 시
         if departure_confirmed:
             return True
-        if risk_hint in ("high", "medium"):
+        if risk_hint in ("high", "mid", "medium"):
+            return True
+        if has_significant_surface:
             return True
         if GUIDE_LOW_RISK_NARRATION:
             return True
@@ -1144,6 +1150,7 @@ class DetectionConsumer:
             distance_class,
             result.risk_hint,
             departure_confirmed,
+            has_significant_surface=has_significant_surface,
         ):
             logger.debug(
                 f"[DetectionConsumer] 회랑/접근 필터 탈락 - 인지 가이드 무발화: "
@@ -1211,6 +1218,10 @@ class DetectionConsumer:
         rag_ms = (time.perf_counter() - rag_start) * 1000
 
         korean_classes = [class_name_to_ko(det.class_name) for det in result.detections]
+        # 인지 안내 문장용 노면 클래스(영문 원본 + 한국어). L1/L2가 caution/roadway를
+        # 장애물 목록과 별도로 참조할 수 있게 한다.
+        surface_classes = sorted({surf.class_name for surf in result.surface if surf.class_name})
+        surface_classes_ko = [class_name_to_ko(name) for name in surface_classes]
 
         orch_input = {
             "event": {
@@ -1224,8 +1235,18 @@ class DetectionConsumer:
                     }
                     for det in result.detections
                 ],
+                "surfaces": [
+                    {
+                        "class_name": surf.class_name,
+                        # SurfaceResult에는 confidence 필드가 없음(centroid/mask만).
+                        "centroid": list(surf.centroid) if surf.centroid else [],
+                    }
+                    for surf in result.surface
+                ],
             },
             "detected_classes": korean_classes,
+            "surface_classes": surface_classes,
+            "surface_classes_ko": surface_classes_ko,
             "positions": [det.direction or "" for det in result.detections],
             "clock_direction": clock_direction,
             "distance": distance_class,
@@ -1264,7 +1285,7 @@ class DetectionConsumer:
             rag_query = (
                 max(result.detections, key=lambda d: d.confidence).class_name
                 if result.detections
-                else "surface_departure"
+                else (surface_classes[0] if surface_classes else "surface_departure")
             )
             await self._broadcast_ai_pipeline_status(
                 llm_provider=LLMClientFactory.get_current_provider(),

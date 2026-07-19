@@ -87,6 +87,29 @@ async def test_l1_classifier_object_stays_low_without_departure():
 
 
 @pytest.mark.asyncio
+async def test_l1_classifier_mid_for_caution_surface():
+    """2026-07-19: caution/roadway 노면만으로도 L1 mid."""
+    state = {
+        "detected_classes": [],
+        "surface_classes": ["caution"],
+        "is_departing_confirmed": False,
+    }
+    result = await l1_classifier_node(state)
+    assert result["risk_level"] == "mid"
+
+
+@pytest.mark.asyncio
+async def test_l1_classifier_mid_for_roadway_surface():
+    state = {
+        "detected_classes": [],
+        "surface_classes": ["roadway"],
+        "is_departing_confirmed": False,
+    }
+    result = await l1_classifier_node(state)
+    assert result["risk_level"] == "mid"
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_generates_guidance_for_pure_surface_departure():
     """탐지 객체 없이(순수 보도 이탈) 히스테리시스가 확정된 이벤트도 안내 문장이 나와야 한다."""
     initial_state = {

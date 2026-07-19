@@ -946,6 +946,33 @@ async def ws_detect(
                 # 콘솔 중계는 이제 session_manager의 latest-only 큐로 분리되어 논블로킹이다.
                 await _send_detection_ack(ws, event_id, frame_id, decode_ms)
 
+                # 임시: data/seg_compare/.enable 파일이 있으면 cognitive JPEG를
+                # 최대 N장 덤프. 검은/빈 프레임(실측 7KB대)은 제외하고 실사만 저장.
+                dump_dir = Path(os.getenv("SEG_COMPARE_DIR", "/app/data/seg_compare"))
+                enable_flag = dump_dir / ".enable"
+                min_jpeg_bytes = int(os.getenv("SEG_COMPARE_MIN_BYTES", "20000") or "20000")
+                if (
+                    enable_flag.exists()
+                    and meta.get("stream") == "cognitive"
+                    and raw_bytes
+                    and len(raw_bytes) >= min_jpeg_bytes
+                    and raw_bytes[:3] == b"\xff\xd8\xff"
+                ):
+                    dump_left = int(os.getenv("SEG_COMPARE_DUMP", "40") or "40")
+                    try:
+                        dump_dir.mkdir(parents=True, exist_ok=True)
+                        existing = len(list(dump_dir.glob("*.jpg")))
+                        if existing < dump_left:
+                            out = dump_dir / f"{event_id}.jpg"
+                            out.write_bytes(raw_bytes)
+                            if existing + 1 >= dump_left:
+                                enable_flag.unlink(missing_ok=True)
+                                logger.info(
+                                    f"[SEG_COMPARE] dump complete: {dump_left} frames -> {dump_dir}"
+                                )
+                    except Exception as dump_err:
+                        logger.warning(f"[SEG_COMPARE] dump failed: {dump_err}")
+
                 # 콘솔 relay FPS 분리(A5): 설정 주기 이내면 relay 건너뛰기(최신 프레임만 유지 목적).
                 relay_now = time.perf_counter()
                 if relay_now - last_console_relay_ts >= console_relay_interval_s:

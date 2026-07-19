@@ -100,6 +100,11 @@ CLASS_TEXT = {
     "tree_trunk": "나무 줄기",
     "truck": "트럭",
     "wheelchair": "휠체어",
+    # segmentation 4클래스 (인지 안내 문장용)
+    "sidewalk_normal": "일반 보도",
+    "caution": "주의 노면",
+    "roadway": "차도",
+    "braille_normal": "점자블록",
 }
 
 # Phase 2 SSoT: 인지 경로(L2/fallback/guide) 한국어 객체명은 본 테이블만 사용한다.

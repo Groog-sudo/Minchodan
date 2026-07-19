@@ -21,6 +21,9 @@ class OrchState(TypedDict, total=False):
 
     event: dict
     detected_classes: list[str]
+    # 2026-07-19: caution/roadway 등 노면 클래스를 L1 mid 분류·L2 프롬프트에 전달.
+    surface_classes: list[str]
+    surface_classes_ko: list[str]
     risk_level: Literal["high", "mid", "low"]
     rag_context: str
     navigation_guidance: str
