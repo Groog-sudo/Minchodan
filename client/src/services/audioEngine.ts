@@ -5,6 +5,8 @@ import { File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
 import * as Speech from "expo-speech";
 
+import { GUIDE_PRIORITY, type GuidePriority } from "./guidePriority";
+
 /**
  * 시각장애인 긴급 회피용 입체 비프음 오디오 엔진.
  * docs/reflex_audio_specification.md 규격을 준수합니다.
@@ -58,14 +60,14 @@ class AudioEngine {
    */
   public isGuidePlaying = false;
   /**
-   * T3-C (2026-07-18): 인지/STT 음성 가이드 간 우선순위 조정자 상태.
-   * 0=idle, 1=인지 안내(cognitive), 2=STT 응답(stt). 반사 경로(비프/클립)는 별도
-   * 최상위 채널이므로 이 상태를 거치지 않는다(P3, 비협상 안전 원칙).
+   * 음성 안내 우선순위 조정자 상태 (2026-07-19 4단).
+   * 0=idle, 1=기타, 2=12시 MED, 3=12시 NEAR, 4=STT(길찾아줘/물어볼게).
+   * 반사 비프/클립은 별도 채널이되, STT 활성 중에는 억제한다.
    */
-  private activeGuidePriority: 0 | 1 | 2 = 0;
+  private activeGuidePriority: 0 | GuidePriority = 0;
   /**
-   * T3-C (2026-07-18): STT 상호작용(녹음~응답 종료) 활성 여부. 활성 중에는 인지
-   * 경로 가이드(priority=1)를 드롭하고 STT 응답(priority=2)만 허용한다.
+   * STT 상호작용(녹음~응답 종료) 활성 여부.
+   * 활성 중에는 위험 안내(NEAR 포함)·비프·반사 클립을 막아 질문/길찾기를 방해하지 않는다.
    */
   private sttActive = false;
   /** [TEMP DEBUG 2026-07-09] speakFallback 중복 호출 진단용 순번 카운터. */
@@ -209,6 +211,12 @@ class AudioEngine {
    * @param intervalMs 비프음 주기 (ms, 0은 연속 경고음)
    */
   public async playBeep(panning: number, intervalMs: number): Promise<void> {
+    // 길찾아줘/물어볼게 STT 구간: Near 비프도 억제(질문·목적지 발화 방해 금지).
+    if (this.sttActive) {
+      console.log("[AudioEngine] STT 상호작용 중 - 반사 비프 억제");
+      return;
+    }
+
     // 1. 널뛰기 방지 정지 대기열이 돌고 있다면, 새로운 재생 요청 유입 시 즉시 취소하여 재생 흐름 유지
     if (this.stopTimeout !== null) {
       clearTimeout(this.stopTimeout);
@@ -239,22 +247,25 @@ class AudioEngine {
     this.currentPanning = panning;
     this.activeBucket = bucket;
 
-    // 인지 가이드 음성과의 볼륨 우선순위 정책 (2026-07-09 추가):
-    // 실기기 청취 검증에서 가이드 자체는 끊기지 않지만(자연 종료까지 재생 완료 확인),
-    // 반사 비프가 풀볼륨으로 계속 겹쳐 울려 가이드 음성이 끊기는 것처럼 들리는 문제를
-    // 확인했다. HIGH_DANGER_INTERVAL_MS 이하(초접근/근접, 실제 충돌 임박)는 안전이
-    // 최우선이므로 가이드를 명시적으로 선점(stopGuideAudio)하고 풀볼륨 유지한다.
-    // 그보다 여유 있는 단계(중/원거리)는 가이드 음성이 재생 중이면 비프를 덕킹해
-    // 안내 문장이 들리도록 한다.
-    const isHighDanger = intervalMs <= HIGH_DANGER_INTERVAL_MS; // 0(연속음)도 여기 포함됨
+    // Near/고위험 비프(2순위)는 STT가 아닐 때만 MED/기타 가이드를 선점한다.
+    // STT(1순위) 재생 중에는 절대 stopGuideAudio 하지 않는다(위에서 early-return).
+    const isHighDanger = intervalMs <= HIGH_DANGER_INTERVAL_MS;
     const wasGuidePlaying = this.isGuidePlaying;
-    if (isHighDanger) {
-      if (wasGuidePlaying) this.stopGuideAudio();
+    const activePri = this.activeGuidePriority;
+    if (isHighDanger && wasGuidePlaying && activePri > 0 && activePri < GUIDE_PRIORITY.FRONT_NEAR) {
+      // Near 비프가 MED/기타 음성보다 우선. Near 음성(동급)은 덕킹만.
+      this.stopGuideAudio();
     }
-    const peakVolume = !isHighDanger && this.isGuidePlaying ? DUCKED_BEEP_VOLUME : 1.0;
-    // [TEMP DEBUG 2026-07-09] 덕킹/선점 정책 실동작 확인용 - 재현 확인 후 제거
+    const peakVolume =
+      !isHighDanger && this.isGuidePlaying
+        ? DUCKED_BEEP_VOLUME
+        : isHighDanger && this.isGuidePlaying && this.activeGuidePriority >= GUIDE_PRIORITY.FRONT_NEAR
+          ? DUCKED_BEEP_VOLUME
+          : 1.0;
     if (wasGuidePlaying) {
-      console.log(`[AudioEngine][DEBUG] 비프-가이드 우선순위 판정: intervalMs=${intervalMs}, isHighDanger=${isHighDanger}, action=${isHighDanger ? "가이드 선점(stopGuideAudio)" : `비프 덕킹(volume=${DUCKED_BEEP_VOLUME})`}`);
+      console.log(
+        `[AudioEngine][DEBUG] 비프-가이드 우선순위: intervalMs=${intervalMs}, isHighDanger=${isHighDanger}, activePri=${activePri}, peak=${peakVolume}`,
+      );
     }
 
     try {
@@ -280,7 +291,11 @@ class AudioEngine {
         this.beepTimer = setInterval(() => {
           if (this.activeBucket === bucket) {
             // 매 펄스마다 가이드 재생 상태가 바뀌었을 수 있어 그때그때 볼륨을 재계산한다.
-            const pulseVolume = !isHighDanger && this.isGuidePlaying ? DUCKED_BEEP_VOLUME : 1.0;
+            const pulseVolume =
+              this.isGuidePlaying &&
+              (this.activeGuidePriority >= GUIDE_PRIORITY.FRONT_NEAR || !isHighDanger)
+                ? DUCKED_BEEP_VOLUME
+                : 1.0;
             player.volume = pulseVolume; // 삐-
             setTimeout(() => {
               if (this.currentBeepInterval === intervalMs && this.activeBucket === bucket) {
@@ -337,18 +352,16 @@ class AudioEngine {
   }
 
   /**
-   * T3-C (2026-07-18): 현재 재생 중인 가이드 우선순위.
-   * 0=없음, 1=인지 경로, 2=STT 응답.
+   * 현재 재생 중인 가이드 우선순위. 0=없음.
    */
-  public getActiveGuidePriority(): 0 | 1 | 2 {
+  public getActiveGuidePriority(): 0 | GuidePriority {
     return this.activeGuidePriority;
   }
 
   /**
-   * 2026-07-19: STT 응답(priority=2) 재생 중에는 끊지 않고, 인지 가이드(priority<=1)만 선점.
-   * STT 오탐이 실패 안내를 재생하는 도중 다시 STT가 켜지며 1.9s에서 잘리던 실측 수정.
+   * maxPriority 이하만 중단. STT arm 시 Near 음성까지 선점(질문 방해 방지).
    */
-  public stopGuideAudioIfPriorityAtMost(maxPriority: 1 | 2): boolean {
+  public stopGuideAudioIfPriorityAtMost(maxPriority: GuidePriority): boolean {
     if (!this.isGuidePlaying) return false;
     if (this.activeGuidePriority > maxPriority) {
       console.log(
@@ -360,16 +373,21 @@ class AudioEngine {
     return true;
   }
 
+  /** STT(길찾아줘/물어볼게) 상호작용 중 여부. 비프/햅틱 게이트용. */
+  public isSttActive(): boolean {
+    return this.sttActive;
+  }
+
   /**
-   * T3-C (2026-07-18): STT 상호작용 구간을 활성화/비활성화한다. 활성화된 동안에는
-   * 인지 경로(priority=1) 안내를 드롭하여 STT 응답과의 충돌을 방지한다.
-   * STT 응답 오디오의 실제 종료 콜백에서 비활성화하는 것을 원칙으로 하며, 이 메서드는
-   * STT 녹음 시작/취소 시점에 호출한다.
+   * STT 상호작용 구간 활성화/비활성화.
+   * 활성 시 진행 중 Near 비프를 즉시 끄고, STT 미만 위험 안내는 canStartGuide에서 드롭.
    */
   public setSttActive(active: boolean): void {
     this.sttActive = active;
-    // 2026-07-19: 재생 중인 STT 안내(priority=2)의 우선순위를 여기서 지우면
-    // 초단시간 녹음 폐기 직후 인지 가이드가 끼어들어 끊긴다. 재생 중이 아닐 때만 리셋.
+    if (active) {
+      void this.stopBeep();
+    }
+    // 재생 중인 STT 답변 우선순위를 여기서 지우면 초단시간 폐기 직후 위험 안내가 끼어든다.
     if (!active && !this.isGuidePlaying) {
       this.activeGuidePriority = 0;
     }
@@ -377,22 +395,26 @@ class AudioEngine {
   }
 
   /**
-   * T3-C (2026-07-18): 가이드 음성 재생 우선순위 판정. STT 상호작용 중이거나
-   * 현재 재생 중인 가이드보다 우선순위가 낮으면 드롭한다.
+   * 가이드 음성 재생 우선순위 판정.
+   * STT 활성 중에는 STT 미만(Near 위험 안내 포함) 전부 드롭.
    */
-  private canStartGuide(priority: 1 | 2): boolean {
-    if (this.sttActive && priority <= 1) {
-      console.log(`[AudioEngine] STT 상호작용 중 - 인지 가이드 드롭(priority=${priority})`);
+  private canStartGuide(priority: GuidePriority): boolean {
+    if (this.sttActive && priority < GUIDE_PRIORITY.STT) {
+      console.log(
+        `[AudioEngine] STT 상호작용 중 - 위험/일반 안내 드롭(priority=${priority} < STT=${GUIDE_PRIORITY.STT})`,
+      );
       return false;
     }
     if (priority < this.activeGuidePriority) {
-      console.log(`[AudioEngine] 낮은 우선순위 가이드 드롭: incoming=${priority}, active=${this.activeGuidePriority}`);
+      console.log(
+        `[AudioEngine] 낮은 우선순위 가이드 드롭: incoming=${priority}, active=${this.activeGuidePriority}`,
+      );
       return false;
     }
     return true;
   }
 
-  private setGuidePriority(priority: 1 | 2): void {
+  private setGuidePriority(priority: GuidePriority): void {
     this.activeGuidePriority = priority;
   }
 
@@ -463,7 +485,7 @@ class AudioEngine {
    */
   public async playGuideAudioBytes(
     wavBytes: Uint8Array,
-    priority: 1 | 2 = 1,
+    priority: GuidePriority = GUIDE_PRIORITY.OTHER,
     onComplete?: () => void,
   ): Promise<void> {
     if (!wavBytes || wavBytes.length === 0) {
@@ -603,7 +625,7 @@ class AudioEngine {
    */
   public speakFallback(
     text: string,
-    priority: 1 | 2 = 1,
+    priority: GuidePriority = GUIDE_PRIORITY.OTHER,
     onComplete?: () => void,
   ): void {
     if (!text || !text.trim()) {
@@ -739,6 +761,11 @@ class AudioEngine {
    * 긴급은 핑퐁 비프만, 여유가 있을 때만 음성 클립/인지 TTS를 쓴다.
    */
   public async playReflexClip(clipPath: string): Promise<void> {
+    if (this.sttActive) {
+      console.log("[AudioEngine] STT 상호작용 중 - 반사 음성 클립 억제");
+      return;
+    }
+
     const basename = clipPath.split("/").pop() ?? "";
     const uri = await this.resolveReflexClipUri(basename);
     if (!uri) {
@@ -748,8 +775,14 @@ class AudioEngine {
 
     try {
       await this.ensureSession();
-      // 여유 단계 음성 클립이어도, 인지 가이드와 겹치면 안내가 뭉개지므로 선점한다.
-      if (this.isGuidePlaying) this.stopGuideAudio();
+      // STT보다 낮은 안내만 선점. STT 답변 재생 중에는 끊지 않음.
+      if (
+        this.isGuidePlaying &&
+        this.activeGuidePriority > 0 &&
+        this.activeGuidePriority < GUIDE_PRIORITY.STT
+      ) {
+        this.stopGuideAudio();
+      }
       const clipPlayer = createAudioPlayer(uri);
       clipPlayer.volume = 1.0;
       clipPlayer.addListener("playbackStatusUpdate", (status) => {

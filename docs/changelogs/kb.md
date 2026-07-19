@@ -3322,3 +3322,33 @@
 - **관련 파일**: `client/app.json`, `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `docs/changelogs/kb.md`
 - **검증 결과**: 설치 후 Metro에 CoreML 기동·Stream 캡처·SceneHysteresis 추론 로그 확인. `Native Module 미발견` 해소.
 - **비고**: `expo prebuild --clean` 재실행 금지. 표시명은 GILDANG(브랜딩), 번들/앱 경로는 Minchodan.
+
+---
+
+### 2026-07-19 | 7단계 | 음성 안내 우선순위 4단 적용
+
+- **배경**: 사용자 요구 - (1) 12시 NEAR (2) STT 답변 (3) 12시 MED (4) 그 외 순으로 선점.
+- **변경 내용**:
+  - `guidePriority.ts` 신설: `GUIDE_PRIORITY` 1~4 + `resolveGuidePriority(clock/distance/stt)`.
+  - `audioEngine`: 우선순위 타입 확장. STT 활성 중에는 STT 미만만 드롭(12시 NEAR는 통과).
+  - `useWebSocket`: guide JSON의 `clock_direction`/`distance_class`로 priority 계산 후 바이너리/폴백 TTS에 전달.
+  - `CameraView`: STT arm 시 `FRONT_MED` 이하만 선점. 정면 경로 장애물 로컬 TTS는 `FRONT_NEAR`.
+- **관련 파일**: `client/src/services/guidePriority.ts`, `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit`(client) 클린.
+- **비고**: 반사 비프/클립 채널은 기존과 분리 유지.
+
+
+---
+
+### 2026-07-19 | 7단계 | STT(길찾아줘/물어볼게) 최우선 + Near 비프/햅틱 2순위
+
+- **배경**: 사용자가 멈춰 질문/길찾기 할 때 Near 위험 안내·햅틱·비프가 끼어들면 발화가 방해됨. 1순위는 STT 상호작용, 2순위가 Near 햅틱/비프여야 함.
+- **변경 내용**:
+  - 우선순위 재배치: STT(4) > FRONT_NEAR(3) > FRONT_MED(2) > OTHER(1).
+  - STT 활성 중 `playBeep`/`playReflexClip`/위험 햅틱/`canStartGuide`(NEAR 포함) 전부 억제.
+  - STT arm·STT 응답 수신 시 진행 중 Near 비프·continuous 햅틱 즉시 정지.
+  - STT 자체 큐 햅틱만 `allowDuringStt`로 허용.
+  - Near 비프는 STT가 아닐 때 MED/기타 음성만 선점(Near 음성은 덕킹).
+- **관련 파일**: `guidePriority.ts`, `audioEngine.ts`, `hapticEngine.ts`, `CameraView.tsx`, `useWebSocket.ts`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit`(client) 클린.
+- **비고**: Metro 핫리로드로 반영.

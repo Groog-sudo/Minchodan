@@ -43,6 +43,7 @@ import {
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
+import { GUIDE_PRIORITY, STT_PREEMPT_MAX_PRIORITY } from "../services/guidePriority";
 import { pathObstacleDetector } from "../inference/pathObstacleDetector";
 import {
   loadServerTransport,
@@ -532,20 +533,20 @@ export function CameraView() {
   } = useSttRecorder(
     (audioB64) => {
       if (status !== "connected") {
-        void hapticEngine.trigger("double");
+        void hapticEngine.trigger("double", { allowDuringStt: true });
         setSttErrorInfo(`STT 실패[ws_disconnected]: websocket 상태=${status}`);
         audioEngine.speakFallback("서버 연결이 불안정해 음성 명령을 전송할 수 없습니다.");
         setCapturePaused(false);
         return;
       }
-      void hapticEngine.trigger("short");
+      void hapticEngine.trigger("short", { allowDuringStt: true });
       setSttErrorInfo("");
       send({ type: "stt_audio", audio_b64: audioB64 });
       // 전송 직후 캡처 재개(응답 재생은 setSttInteractionActive가 인지 경로만 뮤트).
       setCapturePaused(false);
     },
     (reason, detail) => {
-      void hapticEngine.trigger("double");
+      void hapticEngine.trigger("double", { allowDuringStt: true });
       setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
       setCapturePaused(false);
     },
@@ -577,7 +578,7 @@ export function CameraView() {
       clearTimeout(delayedSttStartTimerRef.current);
       delayedSttStartTimerRef.current = null;
     }
-    void hapticEngine.trigger("short");
+    void hapticEngine.trigger("short", { allowDuringStt: true });
     setSttErrorInfo("");
     // 2026-07-19: 탭/짧은 터치(탐지 시작·화면 탭 오탐)가 온보딩·인지 안내를 즉시
     // Speech.stop()으로 끊지 않도록, STT_ARM_DELAY_MS 이상 누른 뒤에만 선점·녹음.
@@ -586,9 +587,10 @@ export function CameraView() {
       delayedSttStartTimerRef.current = null;
       if (!sttPressActiveRef.current) return;
       sttArmedRef.current = true;
+      // 길찾아줘/물어볼게: Near 비프·햅틱·위험 음성 전부 억제/선점.
+      hapticEngine.stopContinuous();
       audioEngine.setSttActive(true);
-      // STT 실패/응답 안내(priority=2) 재생 중에는 stop하지 않는다.
-      audioEngine.stopGuideAudioIfPriorityAtMost(1);
+      audioEngine.stopGuideAudioIfPriorityAtMost(STT_PREEMPT_MAX_PRIORITY);
       void startSttRecording();
     }, STT_ARM_DELAY_MS);
   }, [startSttRecording, setCapturePaused]);
@@ -1206,7 +1208,7 @@ export function CameraView() {
             } else if (pathRes.bestTurn === "right") {
               guidanceText = "정면 장애물, 오른쪽 공간 넓음";
             }
-            audioEngine.speakFallback(guidanceText);
+            audioEngine.speakFallback(guidanceText, GUIDE_PRIORITY.FRONT_NEAR);
             console.log(
               `[LocalReflex][PathObstacle] 회피 가이드: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`,
             );
