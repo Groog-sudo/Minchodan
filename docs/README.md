@@ -243,7 +243,7 @@ docs/
 - **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다. 길안내 발화는 `realtime_gps` 수신 시점에 직접 평가하며(카메라 탐지와 분리, 2026-07-11), 경로 좌표는 `nav_route` 메시지로 단말 하단 T맵 지도 패널(운영자/데모용)에 전달됩니다.
 - **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
 - **팀 GPU 서버 최대 사양은 RTX 5090(Blackwell sm_120)**입니다. Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU 경로를 사용합니다.
-- **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.
+- **온디바이스 반사 추론**(iOS CoreML `client/ios/CoreMLInferenceBridge.swift`, Android TFLite `client/src/inference/tfliteDetector.ts`)은 이미 구현되어 실기기에 배포된 상태입니다. 다만 반사 경보가 서버 왕복 없이 완전히 온디바이스만으로 완결되는지는 아직 검증 전이며, 로컬 WiFi 서버 추론 경로도 계속 병행 유지됩니다.
 
 ---
 
@@ -260,3 +260,5 @@ docs/
 | RDB            | 비동기 SQLAlchemy  | MariaDB/PostgreSQL     |
 
 > **2026-07-10 확정 반영**: 위 표는 1주차 시점의 잠정 기본값이며 현재는 확정 상태입니다. **TTS**는 Kokoro/Coqui가 아닌 **Supertonic**(기본, Piper/pyttsx3 핫스왑)으로 구현됐고, **RDB**는 비동기 SQLAlchemy 계층 위에서 **MariaDB**로 확정됐습니다. 상세는 [`design/architecture.md`](design/architecture.md) §2·§5.7, [`design/backend_db_architecture.md`](design/backend_db_architecture.md)를 참조합니다.
+>
+> **2026-07-16 갱신**: **On-device 추론** 항목도 더 이상 "없음"이 아닙니다. iOS CoreML / Android TFLite 반사 추론 브릿지가 구현되어 실기기에 배포됐습니다(`AGENTS.md` §2, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/tfliteDetector.ts`). 다만 반사 경보의 완전 온디바이스 완결(서버 왕복 없는 종단)은 아직 검증되지 않았습니다.

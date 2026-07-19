@@ -37,11 +37,7 @@ class AlertSuppressor:
     - near(<=0.6m) 햅틱+비프: TTL 억제 제외, REFLEX_NEAR_HAPTIC_THROTTLE_S(500ms) 스로틀만
     """
 
-    DEFAULT_TTL = 60  # 기존 억제 기본 유효시간 60초 (레거시 should_suppress용)
-    DEFALUT_TTL = DEFAULT_TTL  # 기존 오타 상수 호환 유지
-
-    def __init__(self, ttl: int = DEFAULT_TTL):  # ttl은 DEFAULT_TTL로 기본값 설정
-        self.ttl = ttl
+    def __init__(self):
         # P0-1: device 단위 최소 쿨다운 추적 (non-near 클립/비프)
         self._last_device_alert_ts: dict[str, float] = {}
         # near 햅틱+비프 스로틀 추적 (TTL 억제 제외)
@@ -52,10 +48,6 @@ class AlertSuppressor:
         # alert_source == "object"인 반사에만 적용된다(head_level/surface는 episode 없이
         # 매 발동이 독립 이벤트). Near 이탈/track 소실 감지 시 reflex_clear 판정에 사용한다.
         self._active_near_track: dict[str, str] = {}
-
-    def _make_key(self, device_id: str, alert_id: str) -> str:
-        """suppress:{device_id}:{alert_id} - 레거시 (방향 제외 high_obstacle 고정)."""
-        return f"suppress:{device_id}:{alert_id}"
 
     def _make_reflex_key(
         self, device_id: str, alert_source: str, track_id: str | None, distance_band: str
@@ -232,26 +224,6 @@ class AlertSuppressor:
         key = self._make_reflex_key(device_id, alert_source, track_id, distance_band)
         ttl = REFLEX_SURFACE_SUPPRESS_TTL_S if alert_source == "surface" else REFLEX_SUPPRESS_TTL_S
         await self._setex(key, ttl)
-
-    async def should_suppress(self, device_id: str, alert_id: str) -> bool:
-        """[레거시] 해당 alert_id가 최근에 발행되었는지 확인.
-
-        Returns:
-            True  -> 억제해야 함 (이미 최근에 보냄)
-            False -> 발행해도 됨
-        """
-        key = self._make_key(device_id, alert_id)
-        return await self._key_exists(key)
-
-    async def should_supperss(self, device_id: str, alert_id: str) -> bool:
-        """기존 오타 메서드 호환용 래퍼."""
-        return await self.should_suppress(device_id, alert_id)
-
-    async def mark_as_sent(self, device_id: str, alert_id: str, ttl: int | None = None) -> None:
-        """[레거시] 경보를 보냈음을 표시 (TTL 동안 중복 방지)."""
-        key = self._make_key(device_id, alert_id)
-        ttl_seconds = ttl or self.ttl
-        await self._setex(key, ttl_seconds)
 
 
 # 싱글톤 인스턴트 (필요시)

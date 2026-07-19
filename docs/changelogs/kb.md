@@ -3531,3 +3531,15 @@
   - 실기기-Metro 연결 실패 원인 규명 및 수정: expo-dev-launcher가 NSUserDefaults에 남은 packagerScheme=https로 평문 Metro(8081)에 접속 시도해 실패하던 문제를 AppDelegate.swift에서 앱 시작 시 http로 고정해 해결, NSAllowsArbitraryLoads+NSAllowsLocalNetworking 동시 설정이 Tailscale CGNAT(100.64.0.0/10) 대역에 대해 ATS를 오히려 차단하던 문제를 NSAllowsLocalNetworking 제거로 해결(app.json/Info.plist). 안내 문장 어색함 원인 분석 후 RAG on/off 비교 테스트용 RAG_ENABLED 환경변수 토글 추가(server/detection/consumer.py, 기본값 true, 삭제 아닌 비활성화). Xcode DerivedData 등 로컬 빌드 산출물이 !client/ios/** 예외로 추적되던 .gitignore 결함 수정. LiveCameraFeed.tsx 렌더 중 ref mutation을 useLayoutEffect로 이동(React Doctor 지적), consumer.py SIM103 lint 위반 수정
 - **관련 파일**: `gitignore`, `client/App.tsx`, `client/app.json`, `client/ios/.gitignore`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`, `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/kb.md`, `docs/ops/environment_variables.md`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `server/detection/gates/surface_gate.py`, `server/tts/suppressor.py`, `tests/test_detection.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-20 | 문서·7단계 | 발표 대본 정합성 검사 후속: 온디바이스 문서 동기화 및 TTS 억제기 레거시 코드 정리
+
+- **배경**: 발표 대본 정합성 검사 보고서(Fable 5 작성)를 코드 대조로 재검증하는 과정에서, `docs/README.md`(온디바이스 추론 "없음/post-MVP")와 `AGENTS.md` §2(CoreML/TFLite 온디바이스 탐지 등재) 간 서술 상충과, `server/tts/suppressor.py`에 호출자가 전혀 없는 레거시 억제 로직(60초 TTL 방식)이 남아있는 것을 확인.
+- **변경 내용**:
+  - `docs/README.md`: "현재 문서 기준선" 항목을 CoreML(iOS)/TFLite(Android) 온디바이스 반사 추론이 이미 구현·실기기 배포된 상태로 갱신(단, 서버 왕복 없는 완전 온디바이스 완결은 미검증임을 명시). "1주차 미결정 7개" 표는 역사 기록으로 보존하고 기존 확정 반영 각주 패턴에 맞춰 On-device 항목 갱신 각주를 추가.
+  - `server/tts/suppressor.py`: 호출자 없는 레거시 `DEFAULT_TTL`/`DEFALUT_TTL` 상수, `__init__`의 `ttl` 파라미터/`self.ttl`, `_make_key()`, `should_suppress()`, `should_supperss()`(오타 메서드), `mark_as_sent()`를 삭제. 실제 사용 중인 재무장 정책(track_id+거리밴드 키, `REFLEX_SUPPRESS_TTL_S=5`)만 남김.
+- **관련 파일**: `docs/README.md`, `server/tts/suppressor.py`
+- **검증 결과**: `.venv/bin/ruff check` 통과, `.venv/bin/bandit -r server/tts/suppressor.py` 이상 없음, `.venv/bin/mypy server/tts/suppressor.py` 이상 없음(별도 파일 `korean_g2p.py`의 사전 존재 오류 1건은 본 변경과 무관). 리포 전체 grep으로 삭제 대상 심볼의 잔존 참조 없음 확인.
+- **비고**: `server/rag/fallback.py`(룰 기반 RAG 폴백 모듈, 실시간 파이프라인 미배선) 배선 여부는 별도 논의 필요 — 이번 작업 범위에서 제외.
