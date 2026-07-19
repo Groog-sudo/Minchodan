@@ -112,7 +112,7 @@ async def synthesize(text: str, voice: str, speed: float) -> bytes | None:
 
 def play_wav(path: Path) -> None:
     if sys.platform.startswith("win"):
-        os.startfile(str(path))  # noqa: S606
+        os.startfile(str(path))  # noqa: S606 # nosec B606
         print(f"[TTS] 재생 요청: {path}")
         return
     print(f"[TTS] --play는 Windows에서만 자동 재생합니다. 파일: {path}")
@@ -146,7 +146,7 @@ async def push_to_device(
     )
     print(f"[TTS] 모바일 푸시 요청: {url}")
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310
             raw = resp.read().decode("utf-8")
             print(f"[TTS] 응답 HTTP {resp.status}: {raw}")
             return 0

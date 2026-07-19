@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-24
 > **버전**: v0.6.9 (2026-07-18 정합성 검토로 발견된 결함 2건 수정 반영: TC-DET-019 테스트 mock에 last_pos 누락으로 실패하던 것을 수정, TC-TTS-009 서버 STT 억제가 응답 전송 직후 즉시 풀리던 gap을 예상 재생시간+마진 TTL로 정정 + 이전 v0.6.8: T1/T2/T3 신규 TC 등재 + 이전 v0.6.7: M1-M7 TC 등재)
-> **기준 문서**: `docs/architecture.md`, `docs/api_specification.md`, `docs/minchodan_design_note.md`, [`docs/course_codebase_guide.md`](course_codebase_guide.md), [`docs/code_quality_guide.md`](code_quality_guide.md)
+> **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/design/minchodan_design_note.md`, [`docs/dev-guides/course_codebase_guide.md`](dev-guides/course_codebase_guide.md), [`docs/ops/code_quality_guide.md`](ops/code_quality_guide.md)
 
 ---
 
@@ -235,7 +235,7 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 ### 5.9 공통 - 정적 분석 게이트 (코드 품질 검증)
 
-**기준 문서:** [`docs/code_quality_guide.md`](code_quality_guide.md)
+**기준 문서:** [`docs/ops/code_quality_guide.md`](ops/code_quality_guide.md)
 
 > **도입 상태**: 완료. 2026-06-27 도구 설치 및 설정 파일 작성 완료.
 
@@ -303,7 +303,7 @@ GPU, Ollama, Redis, 실제 카메라가 필요한 흐름은 통합 smoke로 분�
 
 ```powershell
 # 0. 정적 분석 게이트 (코드 품질 검증)
-# - 상세: docs/code_quality_guide.md 참조
+# - 상세: docs/ops/code_quality_guide.md 참조
 ruff format . ; ruff check . ; bandit -r server/ scripts/ ; mypy server/ ; jscpd ; pip-audit -r requirements.txt
 
 # 1. GPU 환경 검증
@@ -313,9 +313,9 @@ python scripts\verify_gpu.py
 python tests\test_ws_echo.py
 python tests\test_frame_decode.py
 python tests\test_detection.py
-python tests\test_rag_retrieval.py
+python tests\test_retriever.py
 python tests\test_langgraph.py
-python tests\test_tts_reflex.py
+python tests\test_reflex_and_nav.py
 python tests\test_mcp_gpu.py
 python tests\test_mcp_integration.py
 
@@ -332,7 +332,7 @@ python scripts\eval_hitrate.py
 
 ```bash
 # 0. 정적 분석 게이트 (코드 품질 검증)
-# - 상세: docs/code_quality_guide.md 참조
+# - 상세: docs/ops/code_quality_guide.md 참조
 ruff format . && ruff check . && bandit -r server/ scripts/ && mypy server/ && jscpd && pip-audit -r requirements.txt
 
 # 1. GPU 환경 검증
@@ -342,9 +342,9 @@ python scripts/verify_gpu.py
 python tests/test_ws_echo.py
 python tests/test_frame_decode.py
 python tests/test_detection.py
-python tests/test_rag_retrieval.py
+python tests/test_retriever.py
 python tests/test_langgraph.py
-python tests/test_tts_reflex.py
+python tests/test_reflex_and_nav.py
 python tests/test_mcp_gpu.py
 python tests/test_mcp_integration.py
 

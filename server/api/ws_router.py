@@ -17,11 +17,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from server.api.auth import verify_device
 from server.api.config import settings
+from server.api.dependencies import get_current_admin
 from server.api.heartbeat import HeartbeatManager
 from server.api.schemas import now_iso, now_ts
 from server.api.session_manager import manager
@@ -89,43 +90,12 @@ async def _route_detection_frame(
     logger.info(
         f"[WS] detection 수신 - event_id: {event_id}, frame_id: {frame_id}, decode_ms: {decode_ms:.2f}ms"
     )
-    print(
-        f"[DEBUG_WS] detection 수신 - event_id: {event_id}, frame_id: {frame_id}, decode_ms: {decode_ms:.2f}ms",
-        flush=True,
-    )
 
     if processed is not None:
         with contextlib.suppress(Exception):
             await splitter.route_frame(processed)
     else:
-        print(
-            f"[DEBUG_WS] 디코딩 실패! event_id={event_id}, base64길이={b64_len_for_log}",
-            flush=True,
-        )
-
-
-async def _finish_detection(
-    ws: WebSocket,
-    splitter,
-    processed,
-    event_id: str,
-    frame_id: int,
-    decode_ms: float,
-    b64_len_for_log: int = 0,
-) -> None:
-    """디코딩 결과를 스트림 스플리터로 라우팅하고 ack를 응답한다.
-
-    base64 경로(단일 JSON 메시지)와 바이너리 경로(메타 + 바이너리 프레임) 양쪽이
-    공유하는 후처리 로직 - route_frame + ack 응답 (guide 17.1 계층 분리 준수).
-
-    2026-07-17 정정: 메인 수신 루프는 현재 이 헬퍼를 호출하지 않고 인라인으로
-    처리한다. 인라인 패턴은 ack를 콘솔 중계보다 먼저 보내고(P0) route는
-    백그라운드 태스크로 분리한다(최신성 우선). 이 함수는 참조용 계약으로 남겨둔다.
-    """
-    await _send_detection_ack(ws, event_id, frame_id, decode_ms)
-    await _route_detection_frame(
-        splitter, processed, event_id, frame_id, decode_ms, b64_len_for_log
-    )
+        logger.warning(f"[WS] 디코딩 실패: event_id={event_id}, base64길이={b64_len_for_log}")
 
 
 async def _broadcast_session_status(
@@ -303,6 +273,20 @@ async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
         )
         if audio_bytes_out:
             await ws.send_bytes(audio_bytes_out)
+            # 2026-07-19: 관제 콘솔 미러링. STT 대기 안내도 단말과 동일하게 재생.
+            await manager.broadcast_json_to_consoles(
+                {
+                    "type": "console_guide_audio",
+                    "event_id": f"stt-wait-{device_id}-{now_ts()}",
+                    "device_id": device_id,
+                    "audio_codec": "wav",
+                    "duration_ms": duration_ms,
+                    "guidance_text": wait_text,
+                    "source": "stt-wait-notice",
+                    "ts": now_ts(),
+                }
+            )
+            await manager.broadcast_to_consoles(audio_bytes_out)
     logger.info(f"[WS] STT 대기 안내 전송: device_id={device_id}, text={wait_text!r}")
 
 
@@ -336,6 +320,20 @@ async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> 
         )
         if audio_bytes_out:
             await ws.send_bytes(audio_bytes_out)
+            # 2026-07-19: 관제 콘솔 미러링. 길안내 멘트도 단말과 동일하게 재생.
+            await manager.broadcast_json_to_consoles(
+                {
+                    "type": "console_guide_audio",
+                    "event_id": f"nav-{device_id}-{now_ts()}",
+                    "device_id": device_id,
+                    "audio_codec": "wav",
+                    "duration_ms": duration_ms,
+                    "guidance_text": text,
+                    "source": nav_event.get("type", "nav-guidance"),
+                    "ts": now_ts(),
+                }
+            )
+            await manager.broadcast_to_consoles(audio_bytes_out)
     logger.info(
         f"[WS] 길안내 전송: device_id={device_id}, text={text!r}, "
         f"type={nav_event.get('type')}, waypoint_idx={nav_event.get('active_waypoint_idx')}"
@@ -575,6 +573,20 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             )
             if audio_bytes_out:
                 await ws.send_bytes(audio_bytes_out)
+                # 2026-07-19: 관제 콘솔 미러링. STT 응답 안내도 단말과 동일하게 재생.
+                await manager.broadcast_json_to_consoles(
+                    {
+                        "type": "console_guide_audio",
+                        "event_id": stt_event_id,
+                        "device_id": device_id,
+                        "audio_codec": "wav",
+                        "duration_ms": duration_ms,
+                        "guidance_text": guidance_text,
+                        "source": bridge_result.get("source", "stt-bridge"),
+                        "ts": now_ts(),
+                    }
+                )
+                await manager.broadcast_to_consoles(audio_bytes_out)
 
         dial_action = bridge_result.get("dial_action")
         if isinstance(dial_action, dict):
@@ -717,14 +729,30 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
 
 @router.websocket("/ws/console/live-feed")
-async def ws_console_live_feed(ws: WebSocket) -> None:
+async def ws_console_live_feed(
+    ws: WebSocket,
+    token: str | None = Query(None, alias="token"),
+) -> None:
     """관제 콘솔의 실시간 프레임 스트리밍 수신용 웹소켓 엔드포인트.
 
     receive_text()만 쓰면 클라이언트의 binary/disconnect 프레임에서 예외로
     끊기거나, uvicorn 재기동 후 반쯤 열린(half-open) 소켓을 감지하기 어렵다.
     receive()로 모든 메시지 타입을 흡수하고 disconnect만 정리한다.
+
+    2026-07-19: connect_console 이전에 JWT 관리자 토큰을 검증한다.
+    SSE/REST와 동일하게 ?token= 쿼리를 사용(EventSource는 커스텀 헤더를
+    붙일 수 없으므로). 인증 실패 시 1008 정책 위반으로 즉시 종료한다.
     """
-    await manager.connect_console(ws)
+    await ws.accept()
+    if not token:
+        await ws.close(code=1008, reason="token required")
+        return
+    try:
+        await get_current_admin(token_query=token, token_header=None)
+    except HTTPException:
+        await ws.close(code=1008, reason="invalid token")
+        return
+    await manager.connect_console(ws, accept=False)
     try:
         while True:
             message = await ws.receive()
@@ -770,16 +798,13 @@ async def ws_detect(
             }
         )
         logger.info(f"[WS] welcome 송신 완료 - device_id: {device_id}")
-        print(f"[DEBUG_WS] welcome 송신 완료 - device_id: {device_id}", flush=True)
 
         raw_hello = await ws.receive_text()
         logger.info(f"[WS] hello 수신 - raw: {raw_hello}")
-        print(f"[DEBUG_WS] hello 수신 - raw: {raw_hello}", flush=True)
         hello_data = json.loads(raw_hello)
 
         if hello_data.get("type") != "hello":
             logger.warning(f"[WS] expected hello, but got: {hello_data.get('type')}")
-            print(f"[DEBUG_WS] expected hello, but got: {hello_data.get('type')}", flush=True)
             await ws.send_json(
                 {
                     "type": "error",
@@ -797,10 +822,6 @@ async def ws_detect(
             logger.warning(
                 f"[WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token_len: {len(token)}"
             )
-            print(
-                f"[DEBUG_WS] 디바이스 토큰 검증 실패 - device_id: {device_id}, token_len: {len(token)}",
-                flush=True,
-            )
             await ws.send_json(
                 {
                     "type": "error",
@@ -812,7 +833,6 @@ async def ws_detect(
             return
 
         logger.info(f"[WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}")
-        print(f"[DEBUG_WS] 토큰 검증 성공 - auth_ok 송신 - device_id: {device_id}", flush=True)
         # auth_ok 송신 "전"에 등록을 끝낸다: 클라이언트는 auth_ok를 받는 즉시 프레임을
         # 보내기 시작할 수 있어, 먼저 보내버리면 DetectionConsumer가 등록 완료 전에
         # 로그를 저장해 user_id/device_id가 NULL로 새는 레이스가 있었다(2026-07-12 실측 확인).

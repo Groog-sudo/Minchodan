@@ -11,7 +11,7 @@ description: |
 # 통합 테스트 환경 오케스트레이션 스킬 (iOS 실기기 - Docker - DB)
 
 > **작성일**: 2026-07-18
-> **버전**: v1.1.0 (2026-07-19: `docker compose` 실행 시 `--env-file .env` 명시 필수 항목 추가 - `-f docker/docker-compose.macos.yml`만 쓰면 Compose가 프로젝트 디렉토리를 `docker/`로 잡아 루트 `.env`(테일스케일 `DB_HOST` 포함)를 읽지 못하고 로컬 `mariadb`로 조용히 폴백되는 실측 결함 반영. §5-B 콘솔(운영 콘솔) 프론트 기동 단계 신설 - 기존에 누락되어 반복 재발. `docker compose config` 비밀값 노출 경고를 가드레일에 추가)
+> **버전**: v1.3.0 (2026-07-19: 외부 LTE/핫스팟 테스트 시나리오 보완 - §0 결정 항목에 Tailscale 경로 검증 필수 명시, §3-B "Tailscale 네트워크 사전 검증" 절차 신설(호스트↔단말 양방향 ping, EXPO_PUBLIC_TAILSCALE_HOST 일치 검증, FastAPI/Metro Tailscale IP 도달 검증), §5 Metro 백그라운드 실행 안정성 보완(nohup→setsid, localhost+Tailscale IP 이중 헬스체크) - 2026-07-19 실측 사례(Metro가 localhost만 바인딩해 단말이 번들을 받지 못해 흰 화면) 반영 + 이전 v1.2.0: §5-B console 프론트 기동 compose 통합)
 > **설계 기준**: `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
 > **관련 스킬**: [`xcode-build-management`](../xcode-build-management/SKILL.md) (iOS 빌드 세부 절차 전담), 본 스킬은 그 위 계층(Docker+DB+로그/모니터링)까지 포함한 세션 오케스트레이션을 전담
 
@@ -112,6 +112,13 @@ graph TD
 | 대상 단말 | 연결된 실기기 우선, 없으면 iOS 시뮬레이터 | `xcrun devicectl list devices` |
 | 네트워크 모드 | 실기기가 개발 PC와 같은 네트워크가 아니면 `client/.env`에 `EXPO_PUBLIC_NETWORK_MODE=tailscale` | `docs/ops/environment_variables.md` §2.11, §2.14 |
 
+> **외부 LTE/핫스팟 테스트 시나리오 (2026-07-19 보완)**: 단말이 개발 PC와 같은 LAN이 아닌
+> LTE/핫스팟/외부 WiFi에 연결된 경우, **반드시 `EXPO_PUBLIC_NETWORK_MODE=tailscale`** 로 설정합니다.
+> 이 모드에서는 단말이 호스트의 Tailscale IP(`EXPO_PUBLIC_TAILSCALE_HOST`)로 FastAPI(`:8000`)와
+> Metro(`:8081`)에 모두 접속합니다. **§3-B "Tailscale 네트워크 사전 검증"을 반드시 먼저 수행**해야
+> 단말이 번들을 받지 못해 흰 화면이 뜨는 실패를 사전에 차단합니다(2026-07-19 실측: Metro가
+> `localhost:8081`만 리스닝하고 Tailscale IP로 응답하지 않아 단말이 번들을 받지 못한 사례 반영).
+
 ### 1. Docker 스택 기동
 
 > **필수: `--env-file .env`를 항상 명시합니다.** `-f docker/<compose file>`만 지정하면 Docker
@@ -176,6 +183,51 @@ curl -sf "${OLLAMA_BASE_URL:-http://localhost:11434}/api/tags" | head -c 300
 docker compose exec fastapi sh -lc 'echo "OLLAMA_BASE_URL=$OLLAMA_BASE_URL"'
 ```
 
+### 3-B. Tailscale 네트워크 사전 검증 (외부 LTE/핫스팟 테스트 시 필수)
+
+> **2026-07-19 신설**: `EXPO_PUBLIC_NETWORK_MODE=tailscale` 일 때 단말이 호스트의 Tailscale IP로
+> FastAPI(`:8000`)와 Metro(`:8081`)에 모두 도달할 수 있는지 사전 검증합니다. 이 단계를 건너뛰면
+> 단말이 번들을 받지 못해 흰 화면이 뜨는 실패가 발생합니다(2026-07-19 실측 사례 반영).
+
+```bash
+# 1) 호스트 Tailscale IP 확인
+HOST_TS_IP="$(tailscale ip -4 | head -1)"
+echo "호스트 Tailscale IP: $HOST_TS_IP"
+
+# 2) client/.env의 EXPO_PUBLIC_TAILSCALE_HOST 가 호스트 Tailscale IP와 일치하는지
+TS_HOST_IN_ENV="$(grep '^EXPO_PUBLIC_TAILSCALE_HOST=' client/.env | cut -d= -f2)"
+[ "$TS_HOST_IN_ENV" = "$HOST_TS_IP" ] \
+  && echo "ENV 일치: $TS_HOST_IN_ENV" \
+  || echo "ENV 불일치: env=$TS_HOST_IN_ENV vs host=$HOST_TS_IP - client/.env 수정 필요"
+
+# 3) 단말이 Tailscale에 연결되어 있는지 (호스트 → 단말 ping)
+#    xcrun devicectl list devices 의 Identifier(CoreDevice) 와 tailscale status 의 단말 IP 를 대조
+tailscale status | grep -i iphone
+tailscale ping <단말_TAILSCALE_IP>   # pong 이면 단말 Tailscale 정상
+
+# 4) FastAPI 가 Tailscale IP 로 응답하는지 (0.0.0.0 바인딩 전제)
+curl -sf -o /dev/null -w "FastAPI $HOST_TS_IP:8000 → HTTP %{http_code}\n" \
+  --max-time 5 "http://$HOST_TS_IP:8000/"
+#    HTTP 200 이면 정상. 000 이면:
+#      - docker port minchodan-fastapi 가 0.0.0.0:8000 인지 확인 (127.0.0.1 이면 Tailscale 차단)
+#      - macOS 방화벽이 :8000 인바운드를 차단하는지 확인
+
+# 5) Metro 가 Tailscale IP 로 응답하는지 (§5 실행 후 재확인)
+curl -sf -o /dev/null -w "Metro $HOST_TS_IP:8081 → HTTP %{http_code}\n" \
+  --max-time 5 "http://$HOST_TS_IP:8081/"
+#    HTTP 200 이면 정상. 000 이면 Metro 가 0.0.0.0 으로 바인딩되지 않은 것 -
+#    `client/.env` 의 EXPO_PUBLIC_NETWORK_MODE=tailscale 일 때 Metro 가 자동으로
+#    0.0.0.0 을 바인딩해야 하지만, 안 될 경우 `npm run start -- --host 0.0.0.0` 명시.
+```
+
+| 검증 항목 | 정상 기준 | 실패 시 대응 |
+| :--- | :--- | :--- |
+| 호스트 Tailscale IP | `tailscale ip -4` 로 100.x.x.x 반환 | Tailscale 미실행 → `tailscale up` |
+| `EXPO_PUBLIC_TAILSCALE_HOST` 일치 | env 값 == 호스트 IP | `client/.env` 수정 |
+| 단말 Tailscale 연결 | `tailscale ping <단말 IP>` → pong | 단말 설정 → Tailscale 앱 켜기 |
+| FastAPI Tailscale 도달 | `http://<TS IP>:8000/` → 200 | `docker port` 확인(0.0.0.0), macOS 방화벽 |
+| Metro Tailscale 도달 | `http://<TS IP>:8081/` → 200 | `--host 0.0.0.0` 명시 또는 `EXPO_PUBLIC_NETWORK_MODE` 재확인 |
+
 ### 4. iOS 실기기 연결 확인
 
 ```bash
@@ -196,27 +248,61 @@ cd ios && pod install && cd ../..
 
 Metro는 빌드/실행 전에 별도 백그라운드 프로세스로 계속 떠 있어야 합니다.
 
+> **2026-07-19 보완 - Metro 백그라운드 실행 안정성**: 단순 `nohup ... &` 는 부모 셸 종료 시
+> SIGHUP 이 nohup 자식에게까지 전달되어 Metro 가 조용히 종료되는 사례가 반복됨(실측).
+> `setsid` 로 완전히 분리된 세션으로 실행하거나, 최소한 `disown` 을 함께 사용합니다.
+> 또한 `EXPO_PUBLIC_NETWORK_MODE=tailscale` 일 때 Metro 가 `0.0.0.0:8081` 에 바인딩되는지
+> 반드시 확인합니다 (단말이 Tailscale IP 로 번들을 받아가야 하므로).
+
 ```bash
-cd client && npm run start -- --clear
+# 안정적인 백그라운드 실행 (setsid 로 세션 분리)
+cd client && setsid bash -c 'exec npm run start -- --clear' > "../$LOG_DIR/metro.log" 2>&1 < /dev/null &
+disown 2>/dev/null || true
+
+# 또는 --host 0.0.0.0 을 명시해 Tailscale 인터페이스 바인딩 보장
+cd client && setsid bash -c 'exec npx expo start --clear --host 0.0.0.0' > "../$LOG_DIR/metro.log" 2>&1 < /dev/null &
+disown 2>/dev/null || true
 ```
+
+**Metro 헬스체크 (이중 경로 - localhost + Tailscale IP)**:
+
+```bash
+# localhost 경로 (호스트 자체 검증)
+curl -sf -o /dev/null -w "Metro localhost:8081 → HTTP %{http_code}\n" --max-time 5 http://localhost:8081/
+
+# Tailscale IP 경로 (단말이 실제로 접근하는 경로 - 반드시 200 이어야 함)
+HOST_TS_IP="$(tailscale ip -4 | head -1)"
+curl -sf -o /dev/null -w "Metro $HOST_TS_IP:8081 → HTTP %{http_code}\n" --max-time 5 "http://$HOST_TS_IP:8081/"
+```
+
+> **주의**: `localhost:8081` 이 200 이고 `<Tailscale IP>:8081` 이 000 이면 Metro 가
+> `127.0.0.1` 만 바인딩한 것입니다. 이 경우 단말이 번들을 받지 못해 앱이 흰 화면이 됩니다.
+> `--host 0.0.0.0` 을 명시하거나 `EXPO_PUBLIC_NETWORK_MODE=tailscale` 설정을 재확인합니다.
+> Metro 번들 빌드는 단말이 실제로 번들을 요청할 때 진행되므로, 첫 빌드는 1~2분 소요될 수 있습니다.
 
 ### 5-B. 운영 콘솔(console) 프론트 기동
 
-> **자주 누락되는 단계입니다 — 세션마다 빠뜨리지 않습니다.** iOS 실기기·Docker·DB만 띄우고
-> `console/`(React 운영자 모니터링 콘솔, Vite dev server)을 기동하지 않으면, 탐지 로그·MCP
-> 모니터·관리자 로그인 확인 등 콘솔에서만 볼 수 있는 검증을 전혀 할 수 없습니다. 실기기 앱과
-> 별개로 매 세션 반드시 함께 켭니다.
+> **자주 누락되던 단계였으나 2026-07-19 compose 통합으로 자동화.** iOS 실기기·Docker·DB만
+> 띄우고 `console/`(React 운영자 모니터링 콘솔, Vite dev server)을 기동하지 않으면, 탐지 로그·MCP
+> 모니터·관리자 로그인 확인 등 콘솔에서만 볼 수 있는 검증을 전혀 할 수 없습니다. 2026-07-19부터
+> `console` 서비스가 `docker/docker-compose.macos.yml`·`docker/docker-compose.yml`에 추가되어
+> §1의 `docker compose up -d` 한 줄에 FastAPI·Redis·MariaDB·Console 4개 컨테이너가 함께 기동됩니다.
+> 별도 `npm run dev` 단계가 더 이상 필요 없습니다.
 
 ```bash
-cd console && npm install   # node_modules 없을 때만
-nohup npm run dev > "../$LOG_DIR/console_vite.log" 2>&1 &
+# §1 compose 실행만으로 console 컨테이너가 자동 기동됨. 별도 실행 불필요.
+# 기동 확인:
+curl -sf -o /dev/null -w "%{http_code}" http://localhost:5174/   # 200이면 정상
+docker compose -f docker/docker-compose.macos.yml logs -f console  # 로그 확인
 ```
 
-기본 포트는 `vite --host 0.0.0.0 --port 5174`(`console/package.json`)입니다. 기동 후
-`curl -sf -o /dev/null -w "%{http_code}" http://localhost:5174/`로 200을 확인합니다. 콘솔은
-FastAPI(`:8000`)를 Vite 프록시로 호출하므로, FastAPI 컨테이너를 재생성/재시작한 직후에는
-`console_vite.log`에 `ws proxy error`/`ECONNREFUSED`가 잠깐 찍힐 수 있습니다(재연결되면 정상,
-지속되면 FastAPI 헬스체크부터 재확인).
+기본 포트는 `${CONSOLE_PORT:-5174}:5174`(`docker-compose.*.yml`의 `console` 서비스). 콘솔 컨테이너는
+`VITE_PROXY_TARGET=http://fastapi:8000` 환경 변수로 FastAPI 컨테이너를 Vite 프록시 타깃으로 지정합니다
+(`console/vite.config.ts`가 `process.env.VITE_PROXY_TARGET`을 읽음, 기본값 `http://127.0.0.1:8000`).
+FastAPI 컨테이너를 재생성/재시작한 직후에는 `docker compose logs console`에 `ws proxy error`/`ECONNREFUSED`가
+잠깐 찍힐 수 있습니다(재연결되면 정상, 지속되면 FastAPI 헬스체크부터 재확인). 호스트에서 직접
+`cd console && npm run dev`를 실행하는 레거시 경로도 `VITE_PROXY_TARGET` 미설정 시 기본값이
+적용되므로 여전히 작동합니다.
 
 ### 6. 실기기 빌드-설치-실행
 

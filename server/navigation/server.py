@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import math
 import os
 import sys
@@ -16,6 +17,8 @@ if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
 
+logger = logging.getLogger(__name__)
+
 # 현재 디렉터리를 path에 추가하여 로컬 모듈(navigation_filter, manager)을 안전하게 임포트
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -29,7 +32,7 @@ def load_env_file():
         env_path = os.path.join(curr, ".env")
         if os.path.exists(env_path):
             load_dotenv(env_path)
-            print(f"[INFO] Environment variables loaded from: {env_path}")
+            logger.info(f"Environment variables loaded from: {env_path}")
             return
         curr = os.path.dirname(curr)
     load_dotenv()
@@ -52,7 +55,7 @@ async def redis_stream_listener():
     실시간 장애물 탐지 이벤트를 비침습적으로 가로채고 NavigationManager에 공급합니다.
     """
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    print(f"[NAV REDIS] Connecting to Redis at {redis_url} for stream subscription...")
+    logger.info(f"[NAV REDIS] Connecting to Redis at {redis_url} for stream subscription...")
 
     r = None
     while True:
@@ -62,7 +65,7 @@ async def redis_stream_listener():
 
             stream_name = "risk.events"
             streams = {stream_name: "$"}
-            print(f"[NAV REDIS] Listening to stream '{stream_name}'...")
+            logger.info(f"[NAV REDIS] Listening to stream '{stream_name}'...")
 
             while True:
                 events = await r.xread(streams, count=10, block=1000)
@@ -78,7 +81,7 @@ async def redis_stream_listener():
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"[NAV REDIS] Error reading from stream: {e}. Retrying in 3 seconds...")
+            logger.error(f"[NAV REDIS] Error reading from stream: {e}. Retrying in 3 seconds...")
             r = None
             await asyncio.sleep(3.0)
 
@@ -110,7 +113,7 @@ def helper_search_poi(keyword):
         pass
 
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        print("[WARNING] TMAP API Key가 유효하지 않아 가상의 목적지를 반환합니다.")
+        logger.warning("[TMAP] API Key가 유효하지 않아 가상의 목적지를 반환합니다.")
         return {"name": f"{keyword} (가상)", "x": "126.8722", "y": "37.4590"}
 
     url = "https://apis.openapi.sk.com/tmap/pois"
@@ -136,7 +139,7 @@ def helper_search_poi(keyword):
                 }
         return None
     except Exception as e:
-        print(f"[ERROR] POI helper exception: {e}")
+        logger.error(f"[TMAP] POI helper exception: {e}")
         return None
 
 
@@ -158,7 +161,7 @@ def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float
     "가까운 지하철역이 어디야" 같은 근접 질의에 정확히 답할 수 있다.
     """
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        print("[WARNING] TMAP API Key가 유효하지 않아 가상의 인접 목적지를 반환합니다.")
+        logger.warning("[TMAP] API Key가 유효하지 않아 가상의 인접 목적지를 반환합니다.")
         return {
             "name": f"가장 가까운 {keyword} (가상)",
             "x": str(center_lon + 0.001),
@@ -209,14 +212,14 @@ def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float
             "distance_m": nearest_dist,
         }
     except Exception as e:
-        print(f"[ERROR] Nearest POI helper exception: {e}")
+        logger.error(f"[TMAP] Nearest POI helper exception: {e}")
         return None
 
 
 def helper_fetch_route(start_poi, end_poi):
     """TMAP 보행자 경로 API를 호출해 경로 GeoJSON을 가져옵니다."""
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        print("[WARNING] TMAP API Key가 유효하지 않아 가상의 경로를 반환합니다.")
+        logger.warning("[TMAP] API Key가 유효하지 않아 가상의 경로를 반환합니다.")
         return {
             "type": "FeatureCollection",
             "features": [
@@ -257,7 +260,7 @@ def helper_fetch_route(start_poi, end_poi):
             return response.json()
         return None
     except Exception as e:
-        print(f"[ERROR] Route fetch helper exception: {e}")
+        logger.error(f"[TMAP] Route fetch helper exception: {e}")
         return None
 
 
@@ -277,7 +280,7 @@ async def get_index():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("[SERVER] Navigation WebSocket connection accepted.")
+    logger.info("[SERVER] Navigation WebSocket connection accepted.")
 
     # 길찾기 세션 상태 변수
     session_route_data = None
@@ -293,7 +296,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if message.get("type") == "search_route":
                 start_keyword = message.get("start", "").strip()
                 end_keyword = message.get("end", "").strip()
-                print(f"[NAVIGATOR] Route requested: '{start_keyword}' -> '{end_keyword}'")
+                logger.info(f"[NAVIGATOR] Route requested: '{start_keyword}' -> '{end_keyword}'")
 
                 start_poi = helper_search_poi(start_keyword)
                 end_poi = helper_search_poi(end_keyword)
@@ -355,7 +358,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 nav_manager.update_gps(
                     device_id, float(start_poi["y"]), float(start_poi["x"]), None
                 )
-                print(
+                logger.info(
                     f"[NAVIGATOR] Route established! Waypoints: {len(session_waypoints)}, Coordinates: {len(route_coordinates)}"
                 )
 
@@ -389,7 +392,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         guidance_event = nav_manager.get_combined_guidance(device_id)
 
                         if guidance_event:
-                            print(f"[NAVIGATOR VOICE OUTPUT] => {guidance_event['text']}")
+                            logger.info(f"[NAVIGATOR VOICE OUTPUT] => {guidance_event['text']}")
 
                             # 알림 종류에 따른 프론트엔드 송출
                             await websocket.send_text(
@@ -405,19 +408,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                 )
                             )
                 except Exception as ex:
-                    print(f"[ERROR] GPS processing exception: {ex}")
+                    logger.error(f"[NAVIGATOR] GPS processing exception: {ex}")
 
     except WebSocketDisconnect:
-        print("[SERVER] Navigation client disconnected.")
+        logger.info("[SERVER] Navigation client disconnected.")
     except Exception as e:
-        print(f"[SERVER] Error in websocket loop: {e}")
+        logger.error(f"[SERVER] Error in websocket loop: {e}")
 
 
 if __name__ == "__main__":
     import uvicorn
 
     # 외부 접속 허용을 위해 0.0.0.0 바인딩, 포트는 8001
-    print("==========================================================")
-    print("   [VIP ASSISTANT AI] 길안내 전용 서버를 구동합니다 (포트: 8001)")
-    print("==========================================================")
+    logger.info("==========================================================")
+    logger.info("   [VIP ASSISTANT AI] 길안내 전용 서버를 구동합니다 (포트: 8001)")
+    logger.info("==========================================================")
     uvicorn.run("server:app", host="0.0.0.0", port=8001, reload=True)  # nosec B104

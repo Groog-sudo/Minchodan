@@ -3,7 +3,7 @@
 ###############################################################################
 # Minchodan Docker Build and Start - macOS
 # Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
-# 상세 명세: docs/deployment_guide.md
+# 상세 명세: docs/ops/deployment_guide.md
 #
 # 주의: macOS는 Apple Silicon(M1/M2/M3) 또는 Intel 칩셋을 사용합니다.
 # GPU 가속(Blackwell sm_120)은 지원되지 않으므로, 로컬 개발·테스트 용도로만

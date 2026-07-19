@@ -148,7 +148,7 @@ class MCPManager:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._consume_task
         if self._redis_client:
-            await self._redis_client.close()
+            await self._redis_client.aclose()
             logger.info("[MCP MANAGER] Redis connection closed.")
 
     async def publish_metric(self, event_type: str, payload: dict[str, Any]):
@@ -189,7 +189,7 @@ class MCPManager:
             await self.broadcast_event(event_type, payload)
         finally:
             if close_temp and client:
-                await client.close()
+                await client.aclose()
 
 
 # 싱글톤 인스턴스

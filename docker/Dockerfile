@@ -1,5 +1,5 @@
 # Minchodan FastAPI Server Dockerfile
-# 상세 명세: docs/deployment_guide.md 6절
+# 상세 명세: docs/ops/deployment_guide.md 6절
 
 FROM python:3.13-slim
 

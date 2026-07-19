@@ -3,7 +3,7 @@ setlocal
 
 rem Minchodan Docker Build and Start - Windows
 rem Redis + MariaDB + FastAPI 3컨테이너 구성 + host-local Ollama
-rem 상세 명세: docs/deployment_guide.md
+rem 상세 명세: docs/ops/deployment_guide.md
 
 cd /d "%~dp0\.."
 

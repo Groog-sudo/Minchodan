@@ -3140,3 +3140,105 @@
 - **비고**: 팀원은 clone/pull 후 반드시 본인 Tailscale IP로 Metro·서버 호스트를 덮어쓸 것.
 
 ---
+
+---
+
+### 2026-07-19 | 통합 | 정합성 검토 보고서 P1 결함 수정 및 CI pytest 게이트 추가
+
+- **배경**: `2026-07-18` kb=dev 통합 시점에 대한 외부 정합성 검토 보고서에서 P1 실행 경로/보안 결함 3건(R1~R3)과 문서/CI 드리프트 4건(C1, C4, C7, C8)을 지적.
+- **변경 내용**:
+  - **R3 콘솔 라이브 피드 인증**: `server/api/ws_router.py` `/ws/console/live-feed`에 `?token=` JWT 관리자 검증을 `connect_console` 이전에 추가. `server/api/session_manager.py` `connect_console()`에 `accept=False` 옵션 추가로 인증 후 등록만 수행.
+  - **R1 navigation lifespan 통합**: `server/main.py` lifespan에서 `server/navigation/server.py`의 `redis_stream_listener()`를 직접 `asyncio.create_task`로 기동 및 종료 시 cancel. Starlette 마운트 서브앱 lifespan 미전파 문제 회복.
+  - **R2 TMAP 비동기 격리**: `server/stt/stt_to_llm_bridge.py`의 `helper_search_poi`/`helper_fetch_route` 호출을 `asyncio.to_thread(...)`로 래핑해 이벤트 루프 블로킹 방지.
+  - **C3 Docker 시드 SQL**: `docker/docker-compose.yml`에서 존재하지 않는 `scripts/seed_dummy_data.sql` 마운트 제거. Docker가 동명 빈 디렉터리를 생성하던 문제 해소.
+  - **C1 API 명세 동기화**: `docs/design/api_specification.md`에 `detection_control` (§2.7) 및 `fixed_point_probe_sample` (§6.9) 절 신규 추가. 공통 `type` 필드 열거에도 두 타입 반영.
+  - **C4 스테일 문서 경로**: `docker/*`, `pyproject.toml`, `.pre-commit-config.yaml`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`의 `docs/deployment_guide.md`/`docs/code_quality_guide.md`/`docs/course_codebase_guide.md` 참조를 `docs/ops/`/`docs/dev-guides/` 실제 경로로 정정.
+  - **C7 CI pytest**: `.github/workflows/lint.yml`의 `push.branches`에 `dev` 추가. pytest 단계 신설. `tests/test_convenience_dial_resolver.py`, `tests/test_embedding_engine_factory.py`, `tests/test_ws_echo.py`, `tests/test_ws_live_priority.py`에 `ollama`/`live_server` 마커 추가 및 `pyproject.toml` 마커 등록으로 CI에서 외부 서비스 의존 테스트 제외.
+  - **C8 README 빠른 시작**: `README.md` 1단계 환경 변수 설정에 DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 필수 명시.
+  - **린트 정책 정합**: `pyproject.toml`에 `UP009`를 ignore 추가(`docs/dev-guides/course_codebase_guide.md` 3.1이 UTF-8 선언을 요구). `scripts/tts_read_text_experiment.py` 미사용 `noqa: S310` 제거 및 Bandit B310/B606 양쪽 호환 `# nosec` 주석 보강.
+  - **소모성 경고 제거**: `server/mcp/manager.py`의 deprecated `client.close()`를 `aclose()`로 교체.
+  - **pre-commit 차단 해소**: `scripts/run_test_100_samples.py`, `scripts/run_test_per_class.py`의 기존 `random.sample` 사용에 `# nosec B311` 추가로 Bandit pre-commit 통과.
+- **관련 파일**: `server/api/ws_router.py`, `server/api/session_manager.py`, `server/main.py`, `server/stt/stt_to_llm_bridge.py`, `server/mcp/manager.py`, `docker/docker-compose.yml`, `docker/Dockerfile`, `docker/docker-compose.macos.yml`, `docker/linux_docker_start.sh`, `docker/macos_docker_start.sh`, `docker/windows_docker_start.bat`, `docker/.dockerignore`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`, `README.md`, `.github/workflows/lint.yml`, `.pre-commit-config.yaml`, `pyproject.toml`, `scripts/tts_read_text_experiment.py`, `scripts/run_test_100_samples.py`, `scripts/run_test_per_class.py`, `tests/test_convenience_dial_resolver.py`, `tests/test_embedding_engine_factory.py`, `tests/test_ws_echo.py`, `tests/test_ws_live_priority.py`
+- **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 353 passed, 1 skipped, 11 deselected. `python -m compileall server scripts tests` 0 오류. 수정 모듈 import 정상.
+- **비고**: `auto-publish-work` 스크립트의 외부 의존성(ruff/react-doctor PATH) 문제로 수동 커밋/푸시. 푸시 브랜치는 `kb`.
+
+---
+
+### 2026-07-19 | 통합 | P3 정합성 잔여 결함 제거 및 추가 stale 정리
+
+- **배경**: 2026-07-18 정합성 검토 보고서의 P3 항목(R5~R7)과 추가로 발견한 문서/변수 stale를 후속 처리.
+- **변경 내용**:
+  - **R5 핫패스 print() 제거**: `server/api/ws_router.py`의 7개 `print()` 디버그 출력을 중복된 `logger` 호출로 정리(또는 제거). `server/navigation/server.py` 20개, `server/navigation/manager.py` 6개 `print()`를 `logger` 기반 로깅으로 교체하고 각 파일에 `logging.getLogger(__name__)` 도입.
+  - **R5 LOG_LEVEL 외부화**: `server/main.py` 루트 로거 레벨을 하드코딩된 `DEBUG`에서 `os.getenv("LOG_LEVEL", "INFO")`로 전환. `.env.example`에 `LOG_LEVEL=INFO` 추가. `docs/ops/environment_variables.md`에 §2.1 "일반 (서버 로깅)" 신규 추가 및 후속 섹션 번호 재조정.
+  - **R6 사장 코드 제거**: `server/navigation/tts_engine.py`(pyttsx3/winsound 기반, 프로덕션 미사용) 삭제. 이를 참조하던 `tests/test_reflex_and_nav.py`의 `test_tts_engine_safe_compilation` 테스트 제거. `server/api/ws_router.py`의 미사용 `_finish_detection()` 헬퍼 제거.
+  - **R7 STT 지연 임포트**: `server/stt/__init__.py`의 `SttToLlmBridge`를 최상단 즉시 임포트에서 `__getattr__` 지연 임포트로 전환. `import server.stt` 시 RAG/LangChain 스택이 끌려오지 않도록 개선하되, `from server.stt import SttToLlmBridge` 사용처는 그대로 동작.
+  - **추가 Slack 환경 변수 정합**: `.env.example`의 Slack 섹션을 "Bot Token 방식" 단일 설명에서 "Webhook 우선 + Bot Token 폴백"으로 정정하고 `SLACK_WEBHOOK_URL` 추가. `README.md` 환경 변수 표에 `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` 추가.
+  - **추가 react-native-tts 잔여 정정**: `docs/stage-guides/stage7_tts_design.md`와 `.agents/skills/tts-voice-streamer/SKILL.md`·`.claude/skills/tts-voice-streamer/SKILL.md`(미러)의 단말 TTS 백업 설명을 `react-native-tts`에서 `expo-speech`로 정정. `server/tts/tts_service.py` 주석 동기화. `stage7_tts_design.md` 헤더의 stale 경로도 `docs/design/`·`docs/dev-guides/` 실제 경로로 정정.
+- **관련 파일**: `server/api/ws_router.py`, `server/navigation/server.py`, `server/navigation/manager.py`, `server/main.py`, `server/stt/__init__.py`, `server/tts/tts_service.py`, `server/navigation/tts_engine.py`(삭제), `tests/test_reflex_and_nav.py`, `.env.example`, `README.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage7_tts_design.md`, `.agents/skills/tts-voice-streamer/SKILL.md`, `.claude/skills/tts-voice-streamer/SKILL.md`
+- **검증 결과**: `ruff check .` All checks passed. `ruff format .` 4 files reformatted. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `python -m compileall server scripts tests` 0 오류. 수정 모듈 import 정상.
+- **비고**: 푸시 브랜치는 `kb`.
+
+---
+
+### 2026-07-19 | 통합 | 관제 콘솔 단말 오디오 미러링 구현 (TTS/반사 비프/햅틱 시각화)
+
+- **배경**: 정합성 검토에서 클로드가 제시한 "단말 오디오를 웹 콘솔에 동일/유사하게 재생" 방안의 정합성을 검증한 뒤 착수. R3(콘솔 WS 인증)은 이미 선행 완료 상태이므로 오디오 미러링에 바로 착수.
+- **변경 내용**:
+  - **TTS 인지 음성 콘솔 미러링**: `server/detection/consumer.py` `_send_cognitive_guide`가 단말에 `guide` JSON + WAV 바이너리를 보낸 직후, 콘솔 WS에도 `console_guide_audio` JSON 예고 + 동일 WAV 바이너리를 브로드캐스트. `server/api/ws_router.py`의 `_send_stt_wait_notice`/`_send_nav_guidance`/STT 응답 안내 3개 경로와 `server/api/debug_router.py`의 `speak-to-device`에도 동일 패턴 적용.
+  - **반사 알림 콘솔 미러링**: `server/detection/consumer.py` `_send_reflex_alert`가 단말 전송 성공 후 동일 payload를 콘솔에도 브로드캐스트. 콘솔은 `clip` 필드 파일명으로 정적 자산을 재생.
+  - **반사 비프 정적 자산 복사**: `client/assets/sounds/reflex_clips/*.wav` 5종(head_level_warning, high_front, high_front-left, high_front-right, surface_caution)을 `console/public/reflex_clips/`에 동일 파일명으로 복사. 단말 번들과 동일 파일이므로 "동일"에 가장 근접한 재생.
+  - **콘솔 WS 프로토콜 상태 분기**: `console/src/api/useLiveFeed.ts`에 `pendingGuideAudioRef` 상태 머신 추가. 직전 `console_guide_audio` JSON을 보관하고 다음 ArrayBuffer를 오디오로 분류. 기존 image/jpeg 강제 해석은 그대로 유지하되 오디오 경로만 분리. 5초 가드레일 타임아웃으로 정체 방지.
+  - **ConsoleAudioMirror 컴포넌트 신규**: `console/src/components/ConsoleAudioMirror.tsx`에서 인지 가이드 `<audio>` 재생 + 반사 비프 `<audio>` 재생 + 햅틱 시각 펄스 인디케이터를 통합 렌더. 음소거 토글, 강도별 펄스 색상/크기 매핑, "시각 근사 표시 (진동은 청각 재현 불가)" 라벨 명시.
+  - **대시보드 위젯 추가**: `console/src/pages/DashboardPage.tsx`에 `audioMirror` 위젯 키 신규 등록, 기본 순서 맨 뒤에 배치.
+  - **잔여 print() 제거**: `server/tts/reflex_clip_sender.py`의 로딩 로그 `print()`를 `logger.info()`로 교체(R5 잔여).
+  - **API 명세 동기화**: `docs/design/api_specification.md`에 §4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 절 신설. 공통 `type` 필드 열거에 `console_guide_audio` 추가. v0.4.29 변경 이력 등재.
+- **관련 파일**: `server/detection/consumer.py`, `server/api/ws_router.py`, `server/api/debug_router.py`, `server/tts/reflex_clip_sender.py`, `console/src/api/useLiveFeed.ts`, `console/src/components/ConsoleAudioMirror.tsx`(신규), `console/src/pages/DashboardPage.tsx`, `console/public/reflex_clips/*.wav`(신규 5종), `docs/design/api_specification.md`
+- **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `npx tsc --noEmit`(console) 0 오류. `python -m compileall` 통과.
+- **비고**: 푸시 브랜치는 `kb`. 서버가 보내는 WAV는 단말과 동일 원본이므로 "동일"에 가장 근접하고, 반사 비프는 단말 번들과 동일 파일이므로 "동일", 햅틱은 청각 재현이 원천 불가해 시각 근사로만 대응(라벨 명시).
+
+---
+
+### 2026-07-19 | 통합 | Near/Medium/Far 거리 구역 시각 도식화 (단말 + 관제 콘솔)
+
+- **배경**: 시연/디버깅 시 거리 기반 우선순위(Near/Medium/Far)를 직관적으로 파악하기 위해 단말과 콘솔 양쪽에 거리 구역 경계선과 BBox 색상 도식화를 요구. 기존 단말 소실점 사다리꼴 ROI 오버레이는 거리 구역을 직접 표현하지 않으므로 3구역 경계선으로 교체.
+- **변경 내용**:
+  - **단말 ROIOverlay → DistanceZoneOverlay 교체**: `client/src/components/CameraView.tsx`의 기존 소실점 사다리꼴 `ROIOverlay`(렌더 요소 12개, 삼각함수 4회)를 `DistanceZoneOverlay`(렌더 요소 5개, 삼각함수 0회)로 교체. y=0.50(MED/FAR 경계, 주황)·y=0.75(NEAR/MED 경계, 빨강) 수평선 2개와 NEAR/MED/FAR 라벨 배지 3개만 렌더. 반사 후보 필터링 로직(`roiPolygon`/`pointInPolygon`)은 시각이 아닌 로직이므로 그대로 유지.
+  - **단말 BBox zone 색상/태그**: `BBoxOverlay`가 `getClassColor` 대신 `getZoneTag(area_ratio)`를 우선 사용. area_ratio >= 0.10 → NEAR(빨강), >= 0.03 → MED(주황), 미만 → FAR(파랑). 단, `HIGH_HAZARDS`/`caution`/`roadway`는 위험 종류가 거리보다 중요하므로 기존 강제 색상을 우선 적용. 라벨 텍스트 끝에 zone 태그(NEAR/MED/FAR) 추가.
+  - **서버 server_detection payload 확장**: `server/detection/consumer.py` `_send_server_detection`이 `detections[].effective_distance_zone` 필드를 추가로 송신. 서버 `distance_policy.py` SSOT 결과(`near`/`medium`/`far`)를 소문자로 그대로 전달. `segmentation` 결과는 빈 문자열.
+  - **콘솔 BBox zone 색상/태그**: `console/src/components/LiveCameraFeed.tsx`가 `effective_distance_zone`을 우선 사용해 BBox 색상을 결정(`getColorForZone`). zone 정보가 없으면 기존 `getColorForClass`로 폴백. 라벨에 zone 태그 추가.
+  - **콘솔 DistanceZoneOverlay**: 동일 파일에 `getZoneBoundaryStyle` 헬퍼로 회전 각도(0/90/180/270)별로 2개 경계선을 표시 영역에 정합. NEAR/MED/FAR 라벨 배지 3개 추가. BBox와 동일 좌표계 사용.
+  - **API 명세 동기화**: `docs/design/api_specification.md` §6.4 예시에 `effective_distance_zone` 필드 추가, 필드 표에 설명 등재. v0.4.30 변경 이력 등재.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `server/detection/consumer.py`, `console/src/components/LiveCameraFeed.tsx`, `docs/design/api_specification.md`
+- **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `npx tsc --noEmit`(console) 0 오류.
+- **비고**: 푸시 브랜치는 `kb`. 단말은 area_ratio 로컬 산출(추가 네트워크 비용 0), 콘솔은 서버가 이미 산출한 `effective_distance_zone`을 추가 필드로 송신(바이트 증가 ~20B/detection)해 부하 최소화.
+
+---
+
+### 2026-07-19 | 통합 | 운영 콘솔(React+Vite) Docker compose 통합 - §5-B 자동화
+
+- **배경**: 통합 테스트 스킬(`integration-test-orchestrator`)이 호스트에서 `cd console && npm run dev`를 매 세션 수동 실행하도록 §5-B를 두고 있었으나 누락 반복. 정합성 평가 결과 Console Vite는 표준 Node 웹앱이라 컨테이너화가 단순하고 정합성 충돌 0건이므로 compose에 통합. Metro/Expo·Ollama·Tailscale은 각각 Xcode 강결합·GPU/MPS 접근·커널 TUN 이슈로 호스트 실행을 유지(정합성 평가 근거).
+- **변경 내용**:
+  - **`console/Dockerfile` 신규**: `node:20-alpine` 기반 dev용 단일 스테이지. package.json 캐시 레이어 분리 후 소스 복사. `npm run dev`로 Vite dev 서버 기동. prod용 nginx 멀티스테이지는 향후 별도 추가.
+  - **`console/.dockerignore` 신규**: `node_modules`, `dist`, `.git`, `*.log`, `.vite` 제외.
+  - **`console/vite.config.ts` 프록시 환경 변수화**: `process.env.VITE_PROXY_TARGET` (기본값 `http://127.0.0.1:8000`)을 `/api`·`/ws`·`/navigation` 프록시 타깃으로 사용. 컨테이너에선 `http://fastapi:8000`, 호스트 실행 시 기본값 유지해 레거시 경로 영향 0.
+  - **`docker/docker-compose.macos.yml` `console` 서비스 추가**: 포트 `${CONSOLE_PORT:-5174}:5174`, 소스 볼륨 `../console:/app` + 익명 볼륨 `/app/node_modules`(의존성 격리), `VITE_PROXY_TARGET=http://fastapi:8000`, `depends_on: fastapi`. compose 한 줄로 FastAPI·Redis·MariaDB·Console 4개 컨테이너 동시 기동.
+  - **`docker/docker-compose.yml` 동일 추가**: GPU 환경도 동일 구성으로 양 compose 정합성 유지.
+  - **`docs/ops/deployment_guide.md` §2.1 갱신**: 컨테이너 매트릭스에 `console` 행 추가, 버전 v0.5.3 → v0.5.4.
+  - **`integration-test-orchestrator/SKILL.md` §5-B 재구성**: "매 세션 수동 실행" 지침을 "compose 통합으로 자동 기동"으로 변경. 별도 `npm run dev` 단계 제거, `docker compose logs console`으로 로그 확인. 버전 v1.1.0 → v1.2.0. `.agents/skills/`·`.claude/skills/` 양쪽 미러 동기화.
+- **관련 파일**: `console/Dockerfile`(신규), `console/.dockerignore`(신규), `console/vite.config.ts`, `docker/docker-compose.macos.yml`, `docker/docker-compose.yml`, `docs/ops/deployment_guide.md`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
+- **검증 결과**: `ruff check .` All checks passed. `npx tsc --noEmit`(console) 0 오류. `docker compose -f docker/docker-compose.macos.yml config` console 서비스 정상 인식(비밀값 필터 출력 확인).
+- **비고**: 푸시 브랜치는 `kb`. Metro·Ollama·Tailscale은 정합성 평가 근거(Xcode 강결합·GPU/MPS·커널 TUN)로 호스트 실행 유지. 통합 테스트 수동 단계가 4→2(Docker Desktop 실행 + compose up)로 감소.
+
+---
+
+### 2026-07-19 | 통합 | 통합 테스트 스킬 Tailscale 외부 테스트 시나리오 보완 (§0/§3-B/§5)
+
+- **배경**: 통합 테스트 스킬을 실제 실행한 결과 "Tailscale을 쓴다"는 사실만 명시되어 있고, "Tailscale 경로로 단말이 실제로 도달하는지 검증하는 절차"와 "Metro 번들이 Tailscale 경로로 단말에 전달되는지 확인하는 절차"가 누락되어 있음이 드러남. 실제 실행에서 Metro가 `localhost:8081`만 리스닝하고 Tailscale IP로 응답하지 않아 단말이 번들을 받지 못하는 사례가 발생(단말 흰 화면). 또한 `nohup ... &`로 실행한 Metro가 반복적으로 조용히 종료되는 현상 실측.
+- **변경 내용**:
+  - **§0 결정 항목 보완**: "외부 LTE/핫스팟 테스트 시나리오" 추가. 단말이 개발 PC와 같은 LAN이 아닐 때 `EXPO_PUBLIC_NETWORK_MODE=tailscale` 필수, §3-B 사전 검증을 먼저 수행해야 흰 화면 실패를 차단한다고 명시.
+  - **§3-B "Tailscale 네트워크 사전 검증" 신설**: 5단계 검증 절차(호스트 Tailscale IP 확인 → `EXPO_PUBLIC_TAILSCALE_HOST` 일치 검증 → 호스트→단말 ping → FastAPI Tailscale IP 도달 → Metro Tailscale IP 도달). 각 단계별 실패 시 대응 표 포함.
+  - **§5 Metro 백그라운드 실행 안정성 보완**: `nohup` 대신 `setsid`로 세션 분리 권장 + `disown` 함께 사용. `EXPO_PUBLIC_NETWORK_MODE=tailscale`일 때 `--host 0.0.0.0` 명시로 Tailscale 인터페이스 바인딩 보장. Metro 헬스체크를 localhost와 Tailscale IP 두 경로 모두에서 수행하는 "이중 경로" 검증 절차 추가. localhost만 200이고 Tailscale IP가 000이면 Metro가 127.0.0.1만 바인딩한 것으로 진단하는 가드레일 추가.
+  - **버전업**: v1.2.0 → v1.3.0. `.agents/skills/`·`.claude/skills/` 양쪽 미러 동기화.
+- **관련 파일**: `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
+- **검증 결과**: 미러 diff 0건(동일 내용). 스킬 내 링크/코드펜스 정합성 육안 확인.
+- **비고**: 푸시 브랜치는 `kb`. 이번 보완으로 외부 LTE/핫스팟 테스트 시 단말 흰 화면 실패를 사전에 차단하고, Metro 백그라운드 실행 안정성을 확보함.

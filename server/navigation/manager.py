@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import sys
 import time
 from typing import Any, Literal, Optional
@@ -6,6 +7,8 @@ from typing import Any, Literal, Optional
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
+
+logger = logging.getLogger(__name__)
 
 try:
     # server.navigation 패키지 경유(예: detection/consumer.py, stt_to_llm_bridge.py)로
@@ -97,14 +100,14 @@ class NavigationManager:
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
         except Exception as e:
-            print(f"[NavigationManager] Broadcast failed: {e}")
+            logger.error(f"[NavigationManager] Broadcast failed: {e}")
 
     def set_status(
         self, device_id: str, status: Literal["IDLE", "WAITING_FOR_DESTINATION", "NAVIGATING"]
     ) -> None:
         session = self._get_or_create_session(device_id)
         session.status = status
-        print(f"[NavigationManager] Status changed for '{device_id}' to: {status}")
+        logger.info(f"[NavigationManager] Status changed for '{device_id}' to: {status}")
         self._broadcast_nav_change(device_id, session)
 
     def get_status(self, device_id: str) -> str:
@@ -142,12 +145,12 @@ class NavigationManager:
             if session.status == "WAITING_FOR_DESTINATION":
                 session.status = "IDLE"
             session.awaiting_intent = False
-            print(
+            logger.info(
                 f"[NavigationManager] detection_enabled=False for '{device_id}' "
                 f"(cleared destination/intent wait, status={session.status})"
             )
         else:
-            print(f"[NavigationManager] detection_enabled=True for '{device_id}'")
+            logger.info(f"[NavigationManager] detection_enabled=True for '{device_id}'")
         self._broadcast_nav_change(device_id, session)
 
     def is_detection_enabled(self, device_id: str) -> bool:
@@ -161,7 +164,7 @@ class NavigationManager:
         session = self._get_or_create_session(device_id)
         session.waypoints = waypoints
         session.nav_filter = NavigationFilter()  # 필터 캐시 초기화
-        print(
+        logger.info(
             f"[NavigationManager] Route updated for device '{device_id}', waypoints={len(waypoints)}"
         )
 
@@ -186,7 +189,7 @@ class NavigationManager:
                 return
 
         session.pending_obstacles.append({"class_name": class_name, "ts": now})
-        print(
+        logger.info(
             f"[NavigationManager] Obstacle event cached: device='{device_id}', class='{class_name}'"
         )
 

@@ -66,12 +66,15 @@ class SessionManager:
             f"[Session] 연결: device_id={device_id}, 현재 접속: {len(self.active_connections)}명"
         )
 
-    async def connect_console(self, websocket: WebSocket) -> None:
+    async def connect_console(self, websocket: WebSocket, accept: bool = True) -> None:
         """새 관제 콘솔 연결 수락 및 등록.
 
         연결별 전용 송신 worker를 함께 띄운다(2026-07-17, 역압력 분리).
+        2026-07-19: accept=False 옵션 추가 - WebSocket 수락 전 인증을 먼저
+        수행한 뒤 등록만 하고 싶은 경우(connect_console 이전에 JWT 검증).
         """
-        await websocket.accept()
+        if accept:
+            await websocket.accept()
         self.console_connections.add(websocket)
         session = _ConsoleSession(ws=websocket)
         session.worker = asyncio.create_task(

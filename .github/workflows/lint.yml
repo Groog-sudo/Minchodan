@@ -4,7 +4,8 @@ on:
   pull_request:
     branches: [master, main, dev]
   push:
-    branches: [master, main]
+    # 2026-07-19: 브랜치 전략상 dev에 직접 push가 통합 경로이므로 CI가 돌아야 한다.
+    branches: [master, main, dev]
 
 permissions:
   contents: read
@@ -46,3 +47,8 @@ jobs:
 
       - name: pip-audit CVE Scan
         run: pip-audit -r requirements.txt
+
+      - name: pytest - Unit Tests
+        # 2026-07-19: pytest 단계 신설. Ollama/실행 서버가 필요한 통합 테스트는 마커로 제외.
+        # GPU/모델/네트워크 의존 테스트가 추가로 발견되면 동일하게 마커를 도입해 제외한다.
+        run: python -m pytest -m "not ollama and not live_server" -q

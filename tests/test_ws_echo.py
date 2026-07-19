@@ -9,6 +9,8 @@ import json
 import pytest
 import websockets
 
+pytestmark = pytest.mark.live_server
+
 SERVER_URL = "ws://localhost:8000/ws/detect"
 DEVICE_ID = "dev-001"
 TOKEN = "token-abc-001"  # noqa: S105 - MVP 테스트용 하드코딩 토큰

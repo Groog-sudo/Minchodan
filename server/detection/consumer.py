@@ -758,6 +758,8 @@ class DetectionConsumer:
         """YOLO 및 Segmentation 탐지 결과를 BBox 표시용으로 실시간 전송한다."""
         payload_detections = []
         for det in detections:
+            # 2026-07-19: 콘솔 BBox 색상 도식화를 위해 effective_distance_zone을
+            # payload에 포함. SSOT(distance_policy.py) 결과를 그대로 송신한다.
             payload_detections.append(
                 {
                     "model": "object_detection",
@@ -769,6 +771,7 @@ class DetectionConsumer:
                         "w": float(det.bbox.w),
                         "h": float(det.bbox.h),
                     },
+                    "effective_distance_zone": getattr(det, "effective_distance_zone", "") or "",
                 }
             )
 
@@ -928,6 +931,10 @@ class DetectionConsumer:
                     f"device_id={device_id}, alert_id={alert.alert_id}, websocket=disconnected"
                 )
                 return False
+            # 2026-07-19: 관제 콘솔 미러링. 반사 알림도 콘솔에서 단말과 동일/유사하게
+            # 재생·시각화하도록 payload를 그대로 브로드캐스트한다. 단말 전용 필드
+            # (track_id 등)가 섞여 있지만 콘솔은 사용하는 필드만 소비한다.
+            await manager.broadcast_json_to_consoles(payload)
             await Alert_suppressor.mark_reflex_sent(
                 device_id=device_id,
                 track_id=alert.track_id,
@@ -1322,6 +1329,21 @@ class DetectionConsumer:
             await manager.send_json(device_id, payload)
             if audio_bytes:
                 await manager.send_bytes(device_id, audio_bytes)
+                # 2026-07-19: 관제 콘솔에도 동일한 guide 오디오를 미러링한다.
+                # 콘솔은 단말과 달리 JSON 예고 없이 바이너리가 오면 image/jpeg로
+                # 오인하므로, 먼저 console_guide_audio JSON을 보낸 뒤 바이너리를
+                # 이어 보낸다(useLiveFeed.ts의 pendingGuideAudioRef 상태와 짝).
+                console_payload = {
+                    "type": "console_guide_audio",
+                    "event_id": result.event_id,
+                    "device_id": device_id,
+                    "audio_codec": "wav",
+                    "duration_ms": duration_ms,
+                    "guidance_text": guidance_text,
+                    "ts": payload["ts"],
+                }
+                await manager.broadcast_json_to_consoles(console_payload)
+                await manager.broadcast_to_consoles(audio_bytes)
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
             )

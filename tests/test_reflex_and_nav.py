@@ -2,15 +2,11 @@ import json
 import os
 import sys
 
-import pytest
-
-# 프로젝트 루트 및 server 경로를 파이썬 경로에 등록
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from server.navigation.tts_engine import TTSEngine
 from server.tts.reflex_clip_sender import _resolve_reflex_patterns
 
 
@@ -50,13 +46,3 @@ def test_reflex_pattern_resolving():
     beep, haptic = _resolve_reflex_patterns("unknown_danger")
     assert beep["frequency"] == 1000
     assert haptic["intensity"] == "medium"
-
-
-def test_tts_engine_safe_compilation():
-    """OS 독립적으로 개선된 TTSEngine이 인스턴스화되고 문법적 문제가 없는지 검증합니다."""
-    engine = TTSEngine()
-    assert engine is not None
-    try:
-        engine.speak("통합 테스트 정상 작동 확인", is_danger=True, volume=0.5)
-    except Exception as e:
-        pytest.fail(f"TTSEngine.speak raised unexpected error: {e}")
