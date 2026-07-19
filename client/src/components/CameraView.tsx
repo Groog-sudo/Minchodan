@@ -518,6 +518,12 @@ export function CameraView() {
   const sttPressActiveRef = useRef(false);
   const sttPressStartedAtRef = useRef(0);
   const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2026-07-19: 탭 오탐(탐지 시작·화면 탭, 실측 hold≈40ms)이 안내 Speech를 끊지 않도록
+  // 이 시간 이상 누른 뒤에만 선점·녹음. 서버 폐기 임계(MIN_STT_HOLD_MS=400)보다 짧게
+  // 두어 의도적 STT 총 누름 시간이 과도해지지 않게 한다.
+  const STT_ARM_DELAY_MS = 200;
+  // arm 완료 여부. arm 전 pressOut은 오디오를 건드리지 않는다.
+  const sttArmedRef = useRef(false);
   const {
     status: sttStatus,
     startRecording: startSttRecording,
@@ -562,6 +568,7 @@ export function CameraView() {
     }
     sttPressActiveRef.current = true;
     sttPressStartedAtRef.current = Date.now();
+    sttArmedRef.current = false;
     // setState useEffect보다 먼저 동기 차단해 CoreML/JPEG 디코드를 즉시 멈춘다.
     sttBusyRef.current = true;
     setCapturePaused(true);
@@ -571,24 +578,19 @@ export function CameraView() {
       delayedSttStartTimerRef.current = null;
     }
     void hapticEngine.trigger("short");
-    // T3-C (2026-07-18): STT 녹음 시작 시점부터 인지 경로 가이드를 드롭한다.
-    // STT 응답 수신 시 useWebSocket.ts가 다시 활성화하고, 종료 콜백/안전 상한
-    // 타이머에서 해제한다.
-    audioEngine.setSttActive(true);
     setSttErrorInfo("");
-    // 2026-07-19: STT 실패/응답 안내(priority=2) 재생 중에는 stop하지 않는다.
-    // 오탐 STT가 안내를 1.9s에서 자르던 실측 수정. 인지 가이드(priority<=1)만 선점.
-    const stoppedCognitive = audioEngine.stopGuideAudioIfPriorityAtMost(1);
-    if (stoppedCognitive) {
-      delayedSttStartTimerRef.current = setTimeout(() => {
-        delayedSttStartTimerRef.current = null;
-        if (sttPressActiveRef.current) {
-          void startSttRecording();
-        }
-      }, 80);
-    } else {
+    // 2026-07-19: 탭/짧은 터치(탐지 시작·화면 탭 오탐)가 온보딩·인지 안내를 즉시
+    // Speech.stop()으로 끊지 않도록, STT_ARM_DELAY_MS 이상 누른 뒤에만 선점·녹음.
+    // 실측: hold≈40ms STT로 "길댕아 저는…보행을"에서 온보딩이 onDone 처리됨.
+    delayedSttStartTimerRef.current = setTimeout(() => {
+      delayedSttStartTimerRef.current = null;
+      if (!sttPressActiveRef.current) return;
+      sttArmedRef.current = true;
+      audioEngine.setSttActive(true);
+      // STT 실패/응답 안내(priority=2) 재생 중에는 stop하지 않는다.
+      audioEngine.stopGuideAudioIfPriorityAtMost(1);
       void startSttRecording();
-    }
+    }, STT_ARM_DELAY_MS);
   }, [startSttRecording, setCapturePaused]);
 
   const onSttPressOut = useCallback(() => {
@@ -599,6 +601,13 @@ export function CameraView() {
       clearTimeout(delayedSttStartTimerRef.current);
       delayedSttStartTimerRef.current = null;
     }
+    // arm 전 해제: 안내를 끊지도, 녹음도 시작하지 않았으므로 캡처만 재개.
+    if (!sttArmedRef.current) {
+      sttBusyRef.current = false;
+      setCapturePaused(false);
+      return;
+    }
+    sttArmedRef.current = false;
     // 인지 가이드 뮤트는 STT 응답 수신 시 useWebSocket이 연장. 여기서 즉시 false로
     // 끄지 않는다(응답 전 인지 TTS가 끼어드는 문제 방지).
     void (async () => {
