@@ -758,6 +758,8 @@ class DetectionConsumer:
         """YOLO 및 Segmentation 탐지 결과를 BBox 표시용으로 실시간 전송한다."""
         payload_detections = []
         for det in detections:
+            # 2026-07-19: 콘솔 BBox 색상 도식화를 위해 effective_distance_zone을
+            # payload에 포함. SSOT(distance_policy.py) 결과를 그대로 송신한다.
             payload_detections.append(
                 {
                     "model": "object_detection",
@@ -769,6 +771,7 @@ class DetectionConsumer:
                         "w": float(det.bbox.w),
                         "h": float(det.bbox.h),
                     },
+                    "effective_distance_zone": getattr(det, "effective_distance_zone", "") or "",
                 }
             )
 

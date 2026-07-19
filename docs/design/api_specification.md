@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.29 (2026-07-19 §4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 단말 오디오(WAV)/반사 비프 클립을 관제 콘솔에 동일/유사 재생, 햅틱 시각 근사 + 이전 v0.4.28: §3.1 detection `device_id` 쿼리 폴백, §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정, §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 추가)
+> **버전**: v0.4.30 (2026-07-19 §6.4 `server_detection` `detections[].effective_distance_zone` 필드 추가 - 콘솔 BBox Near/Med/Far 색상 도식화 + 이전 v0.4.29: §4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 단말 오디오(WAV)/반사 비프 클립을 관제 콘솔에 동일/유사 재생, 햅틱 시각 근사 + 이전 v0.4.28: §3.1 detection `device_id` 쿼리 폴백, §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정, §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 추가)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -573,7 +573,8 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
         "y": 200,
         "w": 160,
         "h": 160
-      }
+      },
+      "effective_distance_zone": "near"
     },
     {
       "model": "segmentation",
@@ -594,6 +595,7 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 | 필드 | 설명 |
 | :--- | :--- |
 | `detections` | 모바일 화면 렌더링용 BBox 정보 배열. 노면 분할(`segmentation`) 결과의 centroid 좌표는 서버 단에서 80x80 크기의 가상 BBox로 변환하여 동일 포맷으로 전달 |
+| `detections[].effective_distance_zone` | **2026-07-19 추가**. `object_detection` 결과에 한해 서버 `distance_policy.py` SSOT가 산출한 거리 구역(`near`/`medium`/`far`)을 소문자로 송신. 콘솔 BBox 색상 도식화(빨강/주황/파랑)에 사용. `segmentation` 결과는 빈 문자열(`""`)로 송신 |
 
 > **비고 (2026-07-11) - 폴백 모드 BBox 표시**: WS 연속 3회 재연결 실패로 폴백 모드
 > (`status === "fallback"`)에 진입하면 `server_detection`이 수신되지 않는다. 이때 단말은
@@ -949,6 +951,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
 | **v0.4.28** | **2026-07-18** | **§3.1 detection `device_id` 쿼리 폴백. §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정(near=인지 TTS 비대상). §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 공통 필드 추가** |
 | **v0.4.29** | **2026-07-19** | **§4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 서버가 단말에 보내는 guide WAV와 동일 바이너리를 관제 콘솔 `/ws/console/live-feed`에도 브로드캐스트하고, 반사 비프 클립 5종을 `console/public/reflex_clips/`로 정적 복사해 단말과 동일 파일 재생. 햅틱은 청각 재현 불가하므로 시각 펄스로 근사 표현** |
+| **v0.4.30** | **2026-07-19** | **§6.4 `server_detection` `detections[].effective_distance_zone` 필드 추가(`object_detection`에 한해 `near`/`medium`/`far` 소문자 송신, `segmentation`은 빈 문자열). 콘솔 BBox를 거리 구역별 색상(빨강/주황/파랑)으로 도식화하고 Near/Med/Far 경계선 오버레이 추가. 단말 `CameraView.tsx` 기존 소실점 사다리꼴 ROI 오버레이를 3구역 경계선으로 교체** |
 | **v0.4.27** | **2026-07-17** | **§6.8 `distance_probe_sample` 신설 - LiDAR 실거리 검증 캡처(검증 전용, 반사/인지 경로 판단 미관여), `lidar_distance_validation_samples` DB 테이블 연동** |
 | **v0.4.24** | **2026-07-16** | **§6.7 `dial_action` STT 전화 연결 복원(convenience RAG·보호자 DB·긴급번호), §6.3 발화 표 추가** |
 | **v0.4.23** | **2026-07-16** | **§6.3 convenience_guidelines 한글 숫자 정규화·Chroma 재빌드(`build_convenience_db.py`) 절차 명시. §8.5 콘솔 서버 페이지네이션 UX(10건·번호창·점프) 보강** |

@@ -1373,8 +1373,10 @@ export function CameraView() {
           </View>
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
-        {/* 소실점 사다리꼴 보행 통로 (50% 선 아래, 탐지 활성 시) */}
-        {detectionEnabled && !depthMode && <ROIOverlay />}
+        {/* 2026-07-19: 기존 소실점 사다리꼴 ROI 오버레이를 제거하고 Near/Medium/Far
+            3구역 거리 경계선으로 교체. 시각적 도식화만 변경하고 반사 후보 필터링
+            로직(roiPolygon/pointInPolygon)은 그대로 유지한다. */}
+        {detectionEnabled && !depthMode && <DistanceZoneOverlay />}
         {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
         <BBoxOverlay detections={activeDetections} />
       </View>
@@ -1665,6 +1667,21 @@ function getClassColor(className: string): string {
   return `hsl(${hue}, 85%, 55%)`;
 }
 
+// 2026-07-19: Near/Medium/Far 거리 구역 기반 색상. 서버 distance_policy.py SSOT와
+// 동일한 area_ratio 경계(0.10/0.03)를 단말에서도 사용해 3자 정합을 맞춘다.
+// 단말은 Near 경계(0.10)만 SSOT와 수동 동기화해 왔으나, 도식화를 위해 Medium/Far
+// 경계(0.03)도 동일 값으로 로컬 사용한다(반사 라우팅은 여전히 Near-only).
+// CPU 비용: 사칙연산 2회 + 비교 2회 per detection (기존 getClassColor의 문자열
+// includes 체인보다 저렴).
+const ZONE_NEAR_AREA_RATIO = 0.10;
+const ZONE_MEDIUM_AREA_RATIO = 0.03;
+
+function getZoneTag(areaRatio: number): { color: string; tag: string } {
+  if (areaRatio >= ZONE_NEAR_AREA_RATIO) return { color: "#EF4444", tag: "NEAR" };
+  if (areaRatio >= ZONE_MEDIUM_AREA_RATIO) return { color: "#F59E0B", tag: "MED" };
+  return { color: "#3B82F6", tag: "FAR" };
+}
+
 /**
  * BBox 오버레이: 카메라 프리뷰 위에 탐지 박스를 그린다.
  * 박스 좌표는 640x640 기준이므로 화면 대비 비율로 변환.
@@ -1673,7 +1690,13 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {detections.map((d, i) => {
-        const color = getClassColor(d.className);
+        // 2026-07-19: 거리 구역 기반 색상. 기존 클래스 해시 색상 대신 Near/Med/Far
+        // 팔레트를 사용해 거리 직관성 확보. 단, HIGH_HAZARDS/caution/roadway는
+        // 기존 강제 색상을 우선 적용(위험 종류가 거리보다 중요).
+        const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
+        const zone = getZoneTag(areaRatio);
+        const hazardOverride = HIGH_HAZARDS.includes(d.className) || d.className === "caution" || d.className === "roadway";
+        const color = hazardOverride ? getClassColor(d.className) : zone.color;
         const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
         const topPct = (d.bbox.y / FRAME_SIZE) * 100;
         const widthPct = (d.bbox.w / FRAME_SIZE) * 100;
@@ -1713,7 +1736,7 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
               ]}
             >
               <Text style={styles.bboxText}>
-                {d.className} {distanceText} ({(d.confidence * 100).toFixed(0)}%)
+                {d.className} {distanceText} ({(d.confidence * 100).toFixed(0)}%) {zone.tag}
               </Text>
             </View>
           </Fragment>
@@ -1724,25 +1747,37 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 }
 
 /**
- * 소실점 기준 사다리꼴 보행 통로 ROI.
- * - 640x640(1:1) 정사각, 가로 50:50 중선(y=0.5)을 넘지 않음
- * - 하단 넓게 / 상단(중선) 좁게 수렴, 소실점=(0.5, 0.5)
- * - 원근 깊이 눈금(y=t^2)으로 거리감 표시
+ * 2026-07-19: Near/Medium/Far 3구역 거리 경계선 오버레이.
+ * 기존 소실점 사다리꼴 ROIOverlay를 교체. 단말 부하 감소:
+ * - 렌더 요소: 12개 → 5개 (경계선 2 + 라벨 3)
+ * - 삼각함수 연산: 4회 → 0회 (수평선만, 회전 없음)
+ *
+ * 구역 경계 y좌표는 area_ratio 임계(distance_policy SSOT)를 화면 원근에 매핑:
+ * - NEAR/MED 경계: y=0.75 (하단 25% = 근접 객체가 위치하는 발밑 영역)
+ * - MED/FAR 경계: y=0.50 (소실점 = 원거리 객체가 수렴하는 중앙)
+ * - FAR 상단 경계: 프레임 상단이 자연 경계 (추가 선 없음)
+ *
+ * 색상은 BBox zone 색상과 동일 팔레트로 시각적 일관성 유지.
  */
-function ROIOverlay() {
+function DistanceZoneOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
-  const [farLo, farHi] = PATH_ROI_FAR_BAND;
-  const yTopPct = PATH_ROI_FAR_Y_RATIO;
-  const yBotPct = 1.0;
-  const midY = PATH_ROI_MID_Y;
 
   const LINE_W = 2;
-  const COLOR = "rgba(249, 183, 0, 0.75)";
-  const GRID_COLOR = "rgba(249, 183, 0, 0.38)";
-  const DEPTH_STEPS = [0.22, 0.45, 0.7];
-
   const side = Math.min(size.width, size.height);
+
+  // 구역 경계 y 비율 (0~1, 프레임 상단 기준)
+  const NEAR_MED_BOUNDARY_Y = 0.75;
+  const MED_FAR_BOUNDARY_Y = 0.50;
+
+  // 구역 색상 (getZoneColor와 동일 팔레트)
+  const NEAR_COLOR = "#EF4444"; // 빨강
+  const MED_COLOR = "#F59E0B";  // 주황
+  const FAR_COLOR = "#3B82F6";  // 파랑
+
+  // 라벨 배지 스타일
+  const LABEL_PADDING_H = 6;
+  const LABEL_PADDING_V = 3;
+  const LABEL_FONT_SIZE = 10;
 
   return (
     <View
@@ -1752,123 +1787,78 @@ function ROIOverlay() {
     >
       {side > 0 && (
         <>
-          {/* 50:50 기준선 (상단 절반 침범 금지 경계) */}
+          {/* NEAR/MED 경계선 (y=75%) - 빨강 */}
           <View
             style={{
               position: "absolute",
               left: 0,
-              top: midY * side - LINE_W / 2,
+              top: NEAR_MED_BOUNDARY_Y * side - LINE_W / 2,
               width: side,
               height: LINE_W,
-              backgroundColor: "rgba(0, 210, 255, 0.7)",
+              backgroundColor: NEAR_COLOR,
+              opacity: 0.7,
             }}
           />
-          {/* 소실점 마커 */}
+          {/* MED/FAR 경계선 (y=50%) - 주황 */}
           <View
             style={{
               position: "absolute",
-              left: PATH_ROI_VANISH_X * side - 3,
-              top: PATH_ROI_VANISH_Y * side - 3,
-              width: 6,
-              height: 6,
+              left: 0,
+              top: MED_FAR_BOUNDARY_Y * side - LINE_W / 2,
+              width: side,
+              height: LINE_W,
+              backgroundColor: MED_COLOR,
+              opacity: 0.7,
+            }}
+          />
+          {/* NEAR 라벨 (하단 우측) */}
+          <View
+            style={{
+              position: "absolute",
+              right: 4,
+              top: NEAR_MED_BOUNDARY_Y * side + 4,
+              backgroundColor: NEAR_COLOR,
+              paddingHorizontal: LABEL_PADDING_H,
+              paddingVertical: LABEL_PADDING_V,
               borderRadius: 3,
-              backgroundColor: COLOR,
             }}
-          />
-          {/* 사다리꼴 상변 (중선) */}
+          >
+            <Text style={{ color: "#FFFFFF", fontSize: LABEL_FONT_SIZE, fontWeight: "bold" }}>
+              NEAR
+            </Text>
+          </View>
+          {/* MED 라벨 (중간 우측) */}
           <View
             style={{
               position: "absolute",
-              left: farLo * side,
-              top: yTopPct * side,
-              width: (farHi - farLo) * side,
-              height: LINE_W,
-              backgroundColor: COLOR,
+              right: 4,
+              top: MED_FAR_BOUNDARY_Y * side + 4,
+              backgroundColor: MED_COLOR,
+              paddingHorizontal: LABEL_PADDING_H,
+              paddingVertical: LABEL_PADDING_V,
+              borderRadius: 3,
             }}
-          />
-          {/* 하변 */}
+          >
+            <Text style={{ color: "#000000", fontSize: LABEL_FONT_SIZE, fontWeight: "bold" }}>
+              MED
+            </Text>
+          </View>
+          {/* FAR 라벨 (상단 우측) */}
           <View
             style={{
               position: "absolute",
-              left: nearLo * side,
-              top: yBotPct * side - LINE_W,
-              width: (nearHi - nearLo) * side,
-              height: LINE_W,
-              backgroundColor: COLOR,
+              right: 4,
+              top: 4,
+              backgroundColor: FAR_COLOR,
+              paddingHorizontal: LABEL_PADDING_H,
+              paddingVertical: LABEL_PADDING_V,
+              borderRadius: 3,
             }}
-          />
-          {/* 좌변 (소실점으로 수렴) */}
-          {(() => {
-            const x1 = farLo * side;
-            const y1 = yTopPct * side;
-            const x2 = nearLo * side;
-            const y2 = yBotPct * side;
-            const cx = (x1 + x2) / 2;
-            const cy = (y1 + y2) / 2;
-            const length = Math.hypot(x2 - x1, y2 - y1);
-            const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-            return (
-              <View
-                style={{
-                  position: "absolute",
-                  left: cx - length / 2,
-                  top: cy - LINE_W / 2,
-                  width: length,
-                  height: LINE_W,
-                  backgroundColor: COLOR,
-                  transform: [{ rotate: `${angle}deg` }],
-                }}
-              />
-            );
-          })()}
-          {/* 우변 */}
-          {(() => {
-            const x1 = farHi * side;
-            const y1 = yTopPct * side;
-            const x2 = nearHi * side;
-            const y2 = yBotPct * side;
-            const cx = (x1 + x2) / 2;
-            const cy = (y1 + y2) / 2;
-            const length = Math.hypot(x2 - x1, y2 - y1);
-            const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-            return (
-              <View
-                style={{
-                  position: "absolute",
-                  left: cx - length / 2,
-                  top: cy - LINE_W / 2,
-                  width: length,
-                  height: LINE_W,
-                  backgroundColor: COLOR,
-                  transform: [{ rotate: `${angle}deg` }],
-                }}
-              />
-            );
-          })()}
-          {/* 소실점 쪽 촘촘한 원근 깊이 눈금 */}
-          {DEPTH_STEPS.map((depth) => {
-            const perspective = depth * depth;
-            const topY = yTopPct * side;
-            const bottomY = yBotPct * side - LINE_W;
-            const left = (farLo + (nearLo - farLo) * perspective) * side;
-            const right = (farHi + (nearHi - farHi) * perspective) * side;
-            const top = topY + (bottomY - topY) * perspective;
-            if (top < midY * side - 1) return null;
-            return (
-              <View
-                key={depth}
-                style={{
-                  position: "absolute",
-                  left,
-                  top,
-                  width: right - left,
-                  height: LINE_W,
-                  borderRadius: LINE_W / 2,
-                  backgroundColor: GRID_COLOR,
-                }}
-              />
-            );
-          })}
+          >
+            <Text style={{ color: "#FFFFFF", fontSize: LABEL_FONT_SIZE, fontWeight: "bold" }}>
+              FAR
+            </Text>
+          </View>
         </>
       )}
     </View>

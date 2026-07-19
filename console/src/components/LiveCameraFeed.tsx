@@ -100,6 +100,54 @@ function getColorForClass(className: string): string {
   return "#8b5cf6"; // Purple
 }
 
+// 2026-07-19: Near/Medium/Far 거리 구역 색상. 서버 effective_distance_zone 값을
+// 그대로 사용해 3자 정합을 맞춘다. 단말 getZoneTag와 동일 팔레트.
+function getColorForZone(zone: string): string {
+  const z = (zone || "").toLowerCase();
+  if (z === "near") return "#EF4444";
+  if (z === "medium" || z === "med") return "#F59E0B";
+  if (z === "far") return "#3B82F6";
+  return ""; // 빈 문자열이면 zone 정보 없음 → 기존 클래스 색상 사용
+}
+
+function getZoneTag(zone: string): string {
+  const z = (zone || "").toLowerCase();
+  if (z === "near") return "NEAR";
+  if (z === "medium" || z === "med") return "MED";
+  if (z === "far") return "FAR";
+  return "";
+}
+
+// 2026-07-19: 거리 구역 경계선 스타일 계산. 소스 프레임(640x640) 기준 y 비율을
+// 받아 회전 각도에 맞춰 표시 영역의 left/top/width/height(%)를 반환한다.
+// BBox와 동일 좌표계를 사용해 회전 시에도 경계선이 이미지와 정합하다.
+function getZoneBoundaryStyle(
+  ySrcRatio: number,
+  rotateDeg: number,
+  color: string,
+): React.CSSProperties {
+  const angle = ((rotateDeg % 360) + 360) % 360;
+  const LINE_W = 2;
+  const base: React.CSSProperties = {
+    position: "absolute",
+    backgroundColor: color,
+    opacity: 0.7,
+    pointerEvents: "none" as const,
+  };
+  if (angle === 90) {
+    // 소스 가로선 → 표시 세로선. left=(1-y)%, top=0, height=100%
+    return { ...base, left: `${(1 - ySrcRatio) * 100}%`, top: 0, width: LINE_W, height: "100%" };
+  }
+  if (angle === 270) {
+    return { ...base, left: `${ySrcRatio * 100}%`, top: 0, width: LINE_W, height: "100%" };
+  }
+  if (angle === 180) {
+    return { ...base, left: 0, top: `${(1 - ySrcRatio) * 100}%`, width: "100%", height: LINE_W };
+  }
+  // 0° (기본)
+  return { ...base, left: 0, top: `${ySrcRatio * 100}%`, width: "100%", height: LINE_W };
+}
+
 export function LiveCameraFeed({
   imageUrl,
   latestDetections,
@@ -224,7 +272,11 @@ export function LiveCameraFeed({
                 if (!det.bbox) return null;
                 const { x, y, w, h } = det.bbox;
                 const displayBBox = getDisplayBBox({ x, y, w, h }, naturalSize, rotateDeg);
-                const color = getColorForClass(det.className);
+                // 2026-07-19: 서버가 보낸 effective_distance_zone이 있으면 zone 색상을
+                // 우선 적용. 없으면 기존 클래스 기반 색상으로 폴백.
+                const zoneColor = getColorForZone(det.effective_distance_zone);
+                const color = zoneColor || getColorForClass(det.className);
+                const zoneTag = getZoneTag(det.effective_distance_zone);
                 const isSeg = det.model === "segmentation";
                 const detKey =
                   det.track_id ??
@@ -261,10 +313,70 @@ export function LiveCameraFeed({
                     >
                       {det.className.toUpperCase()}{" "}
                       {isSeg ? "" : `(${(det.confidence * 100).toFixed(0)}%)`}
+                      {zoneTag ? ` ${zoneTag}` : ""}
                     </span>
                   </div>
                 );
               })}
+
+            {/* 2026-07-19: Near/Medium/Far 거리 구역 경계선 오버레이.
+                회전 각도에 맞춰 표시 영역에 2개의 경계선을 그린다.
+                y=0.50 (MED/FAR 경계), y=0.75 (NEAR/MED 경계).
+                CPU 비용: 회전 각도 변경 시에만 재계산 (useMemo 불필요, 렌더 2회). */}
+            {naturalSize && (
+              <>
+                <div style={getZoneBoundaryStyle(0.5, rotateDeg, "#F59E0B")} />
+                <div style={getZoneBoundaryStyle(0.75, rotateDeg, "#EF4444")} />
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 4,
+                    top: 4,
+                    backgroundColor: "#3B82F6",
+                    color: "#FFFFFF",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "2px 6px",
+                    borderRadius: 3,
+                    pointerEvents: "none",
+                  }}
+                >
+                  FAR
+                </div>
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 4,
+                    top: `${50 + 4}%`,
+                    backgroundColor: "#F59E0B",
+                    color: "#000000",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "2px 6px",
+                    borderRadius: 3,
+                    pointerEvents: "none",
+                  }}
+                >
+                  MED
+                </div>
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 4,
+                    top: `${75 + 4}%`,
+                    backgroundColor: "#EF4444",
+                    color: "#FFFFFF",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "2px 6px",
+                    borderRadius: 3,
+                    pointerEvents: "none",
+                  }}
+                >
+                  NEAR
+                </div>
+              </>
+            )}
 
             {/* Tactical GPS HUD Minimap Overlay */}
             {mapVisible && (

@@ -3195,3 +3195,19 @@
 - **관련 파일**: `server/detection/consumer.py`, `server/api/ws_router.py`, `server/api/debug_router.py`, `server/tts/reflex_clip_sender.py`, `console/src/api/useLiveFeed.ts`, `console/src/components/ConsoleAudioMirror.tsx`(신규), `console/src/pages/DashboardPage.tsx`, `console/public/reflex_clips/*.wav`(신규 5종), `docs/design/api_specification.md`
 - **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `npx tsc --noEmit`(console) 0 오류. `python -m compileall` 통과.
 - **비고**: 푸시 브랜치는 `kb`. 서버가 보내는 WAV는 단말과 동일 원본이므로 "동일"에 가장 근접하고, 반사 비프는 단말 번들과 동일 파일이므로 "동일", 햅틱은 청각 재현이 원천 불가해 시각 근사로만 대응(라벨 명시).
+
+---
+
+### 2026-07-19 | 통합 | Near/Medium/Far 거리 구역 시각 도식화 (단말 + 관제 콘솔)
+
+- **배경**: 시연/디버깅 시 거리 기반 우선순위(Near/Medium/Far)를 직관적으로 파악하기 위해 단말과 콘솔 양쪽에 거리 구역 경계선과 BBox 색상 도식화를 요구. 기존 단말 소실점 사다리꼴 ROI 오버레이는 거리 구역을 직접 표현하지 않으므로 3구역 경계선으로 교체.
+- **변경 내용**:
+  - **단말 ROIOverlay → DistanceZoneOverlay 교체**: `client/src/components/CameraView.tsx`의 기존 소실점 사다리꼴 `ROIOverlay`(렌더 요소 12개, 삼각함수 4회)를 `DistanceZoneOverlay`(렌더 요소 5개, 삼각함수 0회)로 교체. y=0.50(MED/FAR 경계, 주황)·y=0.75(NEAR/MED 경계, 빨강) 수평선 2개와 NEAR/MED/FAR 라벨 배지 3개만 렌더. 반사 후보 필터링 로직(`roiPolygon`/`pointInPolygon`)은 시각이 아닌 로직이므로 그대로 유지.
+  - **단말 BBox zone 색상/태그**: `BBoxOverlay`가 `getClassColor` 대신 `getZoneTag(area_ratio)`를 우선 사용. area_ratio >= 0.10 → NEAR(빨강), >= 0.03 → MED(주황), 미만 → FAR(파랑). 단, `HIGH_HAZARDS`/`caution`/`roadway`는 위험 종류가 거리보다 중요하므로 기존 강제 색상을 우선 적용. 라벨 텍스트 끝에 zone 태그(NEAR/MED/FAR) 추가.
+  - **서버 server_detection payload 확장**: `server/detection/consumer.py` `_send_server_detection`이 `detections[].effective_distance_zone` 필드를 추가로 송신. 서버 `distance_policy.py` SSOT 결과(`near`/`medium`/`far`)를 소문자로 그대로 전달. `segmentation` 결과는 빈 문자열.
+  - **콘솔 BBox zone 색상/태그**: `console/src/components/LiveCameraFeed.tsx`가 `effective_distance_zone`을 우선 사용해 BBox 색상을 결정(`getColorForZone`). zone 정보가 없으면 기존 `getColorForClass`로 폴백. 라벨에 zone 태그 추가.
+  - **콘솔 DistanceZoneOverlay**: 동일 파일에 `getZoneBoundaryStyle` 헬퍼로 회전 각도(0/90/180/270)별로 2개 경계선을 표시 영역에 정합. NEAR/MED/FAR 라벨 배지 3개 추가. BBox와 동일 좌표계 사용.
+  - **API 명세 동기화**: `docs/design/api_specification.md` §6.4 예시에 `effective_distance_zone` 필드 추가, 필드 표에 설명 등재. v0.4.30 변경 이력 등재.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `server/detection/consumer.py`, `console/src/components/LiveCameraFeed.tsx`, `docs/design/api_specification.md`
+- **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `npx tsc --noEmit`(console) 0 오류.
+- **비고**: 푸시 브랜치는 `kb`. 단말은 area_ratio 로컬 산출(추가 네트워크 비용 0), 콘솔은 서버가 이미 산출한 `effective_distance_zone`을 추가 필드로 송신(바이트 증가 ~20B/detection)해 부하 최소화.
