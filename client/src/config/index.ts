@@ -14,19 +14,20 @@ export type NetworkMode = "lan" | "tailscale";
 
 export const NETWORK_MODE = (process.env.EXPO_PUBLIC_NETWORK_MODE ?? "tailscale") as NetworkMode;
 export const SERVER_PORT = process.env.EXPO_PUBLIC_SERVER_PORT ?? "8000";
+export const WS_SCHEME = process.env.EXPO_PUBLIC_WS_SCHEME === "ws" ? "ws" : "wss";
 
 /** 평상시: PC 모바일 핫스팟(공기계→노트북). Windows 기본 게이트웨이. */
 export const WIFI_HOST =
   process.env.EXPO_PUBLIC_WIFI_HOST ??
   process.env.EXPO_PUBLIC_LAN_IP ??
-  "222.112.165.158";
+  "";
 
 /** 개발: USB + `adb reverse tcp:8000 tcp:8000` 일 때. */
 export const USB_HOST = process.env.EXPO_PUBLIC_USB_HOST ?? "127.0.0.1";
 
 export const TAILSCALE_HOST =
   process.env.EXPO_PUBLIC_TAILSCALE_HOST ??
-  "100.82.167.31";
+  "";
 
 /** 앱 기동 기본값: 평상시는 WiFi. USB는 토글로 전환. */
 export const DEFAULT_SERVER_TRANSPORT: ServerTransport =
@@ -34,10 +35,13 @@ export const DEFAULT_SERVER_TRANSPORT: ServerTransport =
 
 export function buildWsUrl(transport: ServerTransport = DEFAULT_SERVER_TRANSPORT): string {
   if (NETWORK_MODE === "tailscale") {
-    return `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
+    if (!TAILSCALE_HOST) throw new Error("EXPO_PUBLIC_TAILSCALE_HOST가 필요합니다.");
+    return `${WS_SCHEME}://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
   }
   const host = transport === "usb" ? USB_HOST : WIFI_HOST;
-  return `ws://${host}:${SERVER_PORT}/ws/detect`;
+  if (!host) throw new Error("클라이언트 서버 호스트 환경 변수가 필요합니다.");
+  const scheme = transport === "usb" && host === "127.0.0.1" ? "ws" : WS_SCHEME;
+  return `${scheme}://${host}:${SERVER_PORT}/ws/detect`;
 }
 
 /**
@@ -49,12 +53,12 @@ export function getWsUrlCandidates(
   transport: ServerTransport = DEFAULT_SERVER_TRANSPORT,
 ): string[] {
   if (NETWORK_MODE === "tailscale") {
-    return [`ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`];
+    return [buildWsUrl(transport)];
   }
 
   const primary = buildWsUrl(transport);
   const candidates = [primary];
-  const tailscaleUrl = `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
+  const tailscaleUrl = `${WS_SCHEME}://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
   if (
     TAILSCALE_HOST &&
     TAILSCALE_HOST !== "127.0.0.1" &&
@@ -68,8 +72,8 @@ export function getWsUrlCandidates(
 /** 하위 호환: 기본 수송(WiFi) 기준 URL. 런타임은 buildWsUrl + 토글 사용. */
 export const WS_URL = buildWsUrl(DEFAULT_SERVER_TRANSPORT);
 
-export const DEVICE_ID = process.env.EXPO_PUBLIC_DEVICE_ID ?? "dev-001";
-export const TOKEN = process.env.EXPO_PUBLIC_DEVICE_TOKEN ?? "token-abc-001";
+export const DEVICE_ID = process.env.EXPO_PUBLIC_DEVICE_ID ?? "";
+export const TOKEN = process.env.EXPO_PUBLIC_DEVICE_TOKEN ?? "";
 export const REFLEX_FPS = 8;
 export const COGNITIVE_FPS = 2;
 export const HEARTBEAT_INTERVAL = 5000;

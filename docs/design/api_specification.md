@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.31 (2026-07-19 §8.7 `/ws/console/live-feed` 관리자 JWT `?token=` 필수 명시 + 거리 구역 오버레이를 SVG 호(좌우 끝까지)로 갱신 - 이전 v0.4.30: §6.4 `effective_distance_zone` 필드 추가 - 이전 v0.4.29: §4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 이전 v0.4.28: §3.1 detection `device_id` 쿼리 폴백, §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정, §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 추가)
+> **버전**: v0.4.32 (2026-07-19 URL 토큰 제거·관리자 RBAC/부트스트랩·단말 JWT·WebSocket 인증 제한시간 반영)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -797,7 +797,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | 항목 | 값 |
 | :--- | :--- |
 | 엔드포인트 | `GET /api/v1/monitor/stream` |
-| 인증 | 관리자 JWT 필수 (`Depends(get_current_admin)`, `server/api/monitor.py`). EventSource는 `Authorization` 헤더를 못 붙이므로 `?token=` 쿼리 허용 |
+| 인증 | 관리자 JWT 필수 (`Depends(get_current_admin)`). 콘솔은 `fetch` 스트림과 `Authorization: Bearer ...` 헤더를 사용하며 URL 쿼리 토큰은 허용하지 않음 |
 | 서버 소비원 | Redis Stream `mcp:metrics` (`server/mcp/manager.py` MCPManager가 xread 후 리스너 큐로 브로드캐스트, `event_type` 누락 시 `system_status`로 폴백). `session_status`/`detection_event`/`llm_status` 등은 in-process `broadcast_event`로도 전달 |
 | 메시지 형식 | `data: {"event_type": "...", "payload": {...}, "timestamp": ...}\n\n` |
 | 응답 헤더 | `Content-Type: text/event-stream`, `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, `X-Accel-Buffering: no` (Docker Desktop 등 중간 프록시가 SSE 청크를 버퍼링해 SystemMetrics 행이 비는 문제 방지, 2026-07-15) |
@@ -843,7 +843,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | :--- | :--- |
 | 로그 목록 | `GET /api/v1/admin/detection-logs?limit=50&offset=0` (limit 1~200) |
 | 프레임 이미지 | `GET /api/v1/admin/event-frames/{event_id}` (JPEG 반환) |
-| 인증 | 관리자 JWT (`Depends(get_current_admin)`) — 목록은 `Authorization` 헤더, 이미지는 `<img>` 태그 제약상 `?token=` 쿼리 허용(SSE와 동일 우회) |
+| 인증 | 관리자 JWT (`Authorization` 헤더). 프레임 이미지는 콘솔이 인증 `fetch`로 받은 Blob URL을 `<img>`에 전달하며 URL 쿼리 토큰은 허용하지 않음 |
 | 라우터 | `server/api/detection_log_router.py` |
 
 **로그 응답 필드**: `log_id`, `event_id`, `user_id`, `device_id`, `detected_at`, `stream_type`, `detected_objects_json`, `tts_text`, `frame_path`, `false_positive`, `latency_json`, `pipeline_debug_json`, `created_at`, `event_source`, `stt_transcript_text`, `stt_audio_path`, `stt_audio_storage_status`, `stt_audio_format`, `stt_audio_size_bytes`, `stt_audio_duration_ms`, `stt_audio_sha256`, `stt_audio_error_code`, `stt_audio_consent_at`, `stt_audio_expires_at`, `writer_instance_id`
@@ -889,7 +889,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | :--- | :--- |
 | 회원 목록 | `GET /api/v1/admin/members?limit=20&offset=0` (limit 1~100) |
 | 회원 등록/전환 | `POST /api/v1/admin/members` |
-| 인증 | 관리자 JWT (`Depends(get_current_admin)`), 다른 admin API와 동일 수준(역할별 세분화 권한 체크는 없음) |
+| 인증 | 목록은 활성 관리자, 회원 등록·전환은 `operator` 또는 `super_admin` 역할 필요 |
 | 라우터 | `server/api/admin_member_router.py` |
 
 **목록 응답 필드**: `user_id`, `name`, `phone`, `disability_severity`, `birth_date`, `guardian_phone`, `address`, `status`, `devices`(`device_id`/`device_uuid`/`platform`/`is_active` 배열), `is_anonymous`(phone이 `anon:` 접두사면 true). `X-Total-Count` 응답 헤더로 전체 건수를 함께 내려준다(detection-logs와 동일 패턴).
@@ -913,9 +913,21 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | 항목 | 값 |
 | :--- | :--- |
 | 엔드포인트 | `WS /ws/console/live-feed` |
-| 인증 | 관리자 JWT 필수. SSE(§8.1)와 동일하게 `?token=` 쿼리 (`server/api/ws_router.py`). 토큰 없으면 `1008 token required`, 무효면 `1008 invalid token` |
-| 콘솔 클라이언트 | `console/src/api/useLiveFeed.ts`가 로그인 JWT를 `?token=`으로 붙여 연결(Vite `/ws` 프록시 경유) |
-| 장애 증상 | JWT 미부착 시 연결이 즉시 종료되어 대시보드 실시간 카메라 화면이 비어 보임 |
+| 인증 | 연결 직후 제한시간 안에 최초 JSON `{"type":"auth","token":"..."}` 전송. 서버가 DB 계정 상태·역할까지 검증한 뒤 `{"type":"auth_ok"}` 응답 |
+| 콘솔 클라이언트 | `console/src/api/useLiveFeed.ts`가 URL에 토큰을 넣지 않고 최초 WebSocket 메시지로 전송 |
+| Origin | 브라우저 `Origin`이 `CORS_ORIGINS`에 포함되지 않으면 `1008` 종료 |
+| 장애 증상 | JWT 미부착·만료·비활성 계정·허용되지 않은 Origin이면 등록 전 연결 종료 |
+
+### 8.8 관리자·단말 인증 REST (2026-07-19 보강)
+
+| 엔드포인트 | 권한·보호 정책 |
+| :--- | :--- |
+| `POST /api/v1/admin/bootstrap` | 관리자 테이블이 비었을 때만 `X-Admin-Bootstrap-Token`으로 최초 `super_admin` 1회 생성. IP별 10분 3회 제한 |
+| `POST /api/v1/admin/register` | 활성 `super_admin`만 추가 관리자 생성. 비밀번호 12~72자 및 문자 유형 3종 이상 |
+| `POST /api/v1/admin/login` | IP+사번별 5분 5회 제한. 활성 계정만 JWT 발급, 실패 여부는 감사 로그 기록 |
+| `POST /api/v1/admin/device-tokens/{device_id}` | `operator` 또는 `super_admin`이 만료 가능한 단말 전용 JWT 발급 |
+| JWT 공통 | `iss`·`aud`·`exp`·`iat`·`nbf`·`jti` 필수 검증. 토큰 역할은 현재 DB 역할과 일치해야 함 |
+| 정적 단말 토큰 | 기본 비활성. 개발 환경에서 `ALLOW_STATIC_DEVICE_TOKENS=true`와 32자 이상 토큰을 함께 설정한 경우만 허용 |
 
 ---
 
@@ -962,7 +974,8 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.19** | **2026-07-14** | **§3.1/§3.2 detection `is_outdoor` 필드 추가(온디바이스 씬 분류). 서버는 실내(`false`)일 때 보도 이탈·인지 TTS(`risk.events`) 억제** |
 | **v0.4.28** | **2026-07-18** | **§3.1 detection `device_id` 쿼리 폴백. §6.1 `distance_class`를 `effective_distance_zone` SSOT 우선으로 정정(near=인지 TTS 비대상). §8.5 `pipeline_debug_json`에 `route`/`effective_distance_zone`/`route_reason` 공통 필드 추가** |
 | **v0.4.29** | **2026-07-19** | **§4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 서버가 단말에 보내는 guide WAV와 동일 바이너리를 관제 콘솔 `/ws/console/live-feed`에도 브로드캐스트하고, 반사 비프 클립 5종을 `console/public/reflex_clips/`로 정적 복사해 단말과 동일 파일 재생. 햅틱은 청각 재현 불가하므로 시각 펄스로 근사 표현** |
-| **v0.4.31** | **2026-07-19** | **§8.7 `/ws/console/live-feed` 관리자 JWT `?token=` 필수 명시. 콘솔 `useLiveFeed(token)`이 SSE와 동일 방식으로 토큰을 붙여 연결. 단말/콘솔 거리 구역 오버레이를 좌·우 끝까지 이어지는 SVG 호(NEAR/MED) + 라벨로 갱신(측면 빗변 제거)** |
+| **v0.4.31** | **2026-07-19** | **§8.7 `/ws/console/live-feed` 관리자 JWT 인증을 최초 도입. v0.4.32에서 URL 전달 방식은 폐기됨. 단말/콘솔 거리 구역 오버레이를 좌·우 끝까지 이어지는 SVG 호(NEAR/MED) + 라벨로 갱신** |
+| **v0.4.32** | **2026-07-19** | **SSE·프레임·콘솔 WS의 URL 쿼리 토큰 제거. Authorization 헤더/WS 최초 auth 메시지로 전환하고 Origin 검증·인증 제한시간 추가. §8.8 최초 관리자 1회 부트스트랩, RBAC, 로그인 제한, 단말 JWT 발급 계약 신설** |
 | **v0.4.30** | **2026-07-19** | **§6.4 `server_detection` `detections[].effective_distance_zone` 필드 추가(`object_detection`에 한해 `near`/`medium`/`far` 소문자 송신, `segmentation`은 빈 문자열). 콘솔 BBox를 거리 구역별 색상(빨강/주황/파랑)으로 도식화하고 Near/Med/Far 경계선 오버레이 추가. 단말 `CameraView.tsx` 기존 소실점 사다리꼴 ROI 오버레이를 3구역 경계선으로 교체** |
 | **v0.4.27** | **2026-07-17** | **§6.8 `distance_probe_sample` 신설 - LiDAR 실거리 검증 캡처(검증 전용, 반사/인지 경로 판단 미관여), `lidar_distance_validation_samples` DB 테이블 연동** |
 | **v0.4.24** | **2026-07-16** | **§6.7 `dial_action` STT 전화 연결 복원(convenience RAG·보호자 DB·긴급번호), §6.3 발화 표 추가** |

@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.5.4 (2026-07-19 §2.1 컨테이너 매트릭스에 `console` 서비스 추가 - 운영 콘솔 Vite dev 서버를 compose 통합 기동 + 이전 v0.5.3: 2026-07-18 dg2/jy 브랜치 병합 정합성 정정 - docker-compose.yml MariaDB 호스트 포트 미노출 반영)
+> **버전**: v0.5.6 (2026-07-19 보안 보강 및 RTX 5090 최대 사양·3개 OS PyTorch 2.13 경로 정합화)
 > **설계 기준**: [`../design/architecture.md`](../design/architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`../dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -18,21 +18,21 @@
 
 ```mermaid
 graph TD
-    subgraph Host ["Host Machine (Blackwell GPU)"]
+    subgraph Host ["Host Machine (Ubuntu / Windows / macOS)"]
         subgraph Compose ["docker-compose.yml"]
             FastAPI["FastAPI Container<br/>(server/main:app)"]
             Redis["Redis Container<br/>(Streams + TTL)"]
             MariaDB["MariaDB Container<br/>(minchodan_db)"]
         end
         Ollama["Host Local Ollama<br/>(gemma4:e4b, nomic-embed)"]
-        GPU["CUDA 12.8 + cu128 PyTorch<br/>(sm_120 전제)"]
+        GPU["RTX 5090 최대<br/>Ubuntu/Windows: PyTorch 2.13 + cu130<br/>macOS: PyTorch 2.13 MPS/CPU"]
         Volumes["Volumes<br/>data/, server/models/"]
     end
 
     Client["React Native Client<br/>(WebSocket /ws/detect)"]
 
-    Client -->|"ws://host:8000"| FastAPI
-    FastAPI -->|"redis://redis:6379"| Redis
+    Client -->|"wss://MagicDNS via Tailscale Serve"| FastAPI
+    FastAPI -->|"redis://:password@redis:6379"| Redis
     FastAPI -->|"mysql+aiomysql://mariadb:3306"| MariaDB
     FastAPI -->|"COMPOSE_OLLAMA_BASE_URL"| Ollama
     FastAPI -.->|"GPU 접근"| GPU
@@ -43,10 +43,10 @@ graph TD
 
 | 컨테이너 | 이미지 | 포트 | 볼륨 마운트 | 역할 |
 | :--- | :--- | :--- | :--- | :--- |
-| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `${WS_PORT:-8000}:8000` | `./server:/app/server`, `./data:/app/data`, `./.env:/app/.env` | FastAPI + uvicorn, WebSocket `/ws/detect`, SSE `/api/v1/monitor/stream` |
-| **redis** | `redis:7-alpine` (공식) | `6379:6379` | `redis_data:/data` | Redis Streams(`risk.events`, `mcp:metrics`) + Track 컨텍스트 TTL(30초) |
+| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능, `.env` 읽기 전용 | 비루트 사용자 FastAPI + WebSocket/SSE. 외부 단말은 Tailscale Serve의 TLS 종단을 경유 |
+| **redis** | `redis:7-alpine` (공식) | `127.0.0.1:6379:6379` | `redis_data:/data` | `REDIS_PASSWORD` 필수, AOF 영속화, Redis Streams + 컨텍스트 TTL |
 | **mariadb** | `mariadb:11.4` (공식) | 미노출(주석 처리, 2026-07-17) | `mariadb_data:/var/lib/mysql`, `Minchodan DB.session.sql:/docker-entrypoint-initdb.d/01_minchodan_schema.sql` | 공유 GPU 서버 로컬 3306 포트 충돌 방지를 위해 호스트 포트 노출을 비활성화. 원격 DB(`DB_HOST`) 기본 연결 유지, 로컬 노출이 필요하면 `docker-compose.macos.yml` 사용 |
-| **console** | `minchodan-console:latest` (로컬 빌드, 2026-07-19 추가) | `${CONSOLE_PORT:-5174}:5174` | `./console:/app`, `/app/node_modules`(익명 볼륨) | 운영자 모니터링 콘솔(React + Vite dev 서버). `VITE_PROXY_TARGET=http://fastapi:8000` 환경 변수로 FastAPI 컨테이너를 프록시 타깃으로 지정. 호스트 실행 시 `VITE_PROXY_TARGET` 미설정 → 기본값 `http://127.0.0.1:8000` 유지 |
+| **console** | `minchodan-console:latest` (로컬 빌드) | `127.0.0.1:${CONSOLE_PORT:-5174}:5174` | `./console:/app`, `/app/node_modules` | 권한 제한 `node` 사용자로 Vite 콘솔 실행. 외부 공개가 필요하면 인증된 TLS 프록시를 별도로 사용 |
 
 > Ollama는 Compose 서비스가 아닙니다. 호스트에서 `ollama serve`로 실행하고, FastAPI 컨테이너는 `COMPOSE_OLLAMA_BASE_URL` 값을 통해 호스트 Ollama에 접속합니다.
 > WSL2/Linux처럼 `systemd`가 동작하지 않는 환경에서는 `docker/linux_docker_start.sh`가 `ollama serve`를 백그라운드 실행합니다. 기본은 `127.0.0.1:11434`이며, Docker 컨테이너 접근을 위해 전체 인터페이스 바인딩이 필요할 때만 `MINCHODAN_EXPOSE_OLLAMA=1`과 `OLLAMA_HOST=0.0.0.0:11434`를 명시합니다.
@@ -55,8 +55,8 @@ graph TD
 
 | 항목 | 지침 |
 | :--- | :--- |
-| **CUDA 요구사항** | CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제). 11.8/12.1 휠은 silent CPU 폴백 발생 |
-| **GPU 검증** | 배포 전 `python scripts/verify_gpu.py`로 `device_capability >= (12,0)` 및 GPU 1 step 연산 검증 |
+| **OS별 가속 기준** | 팀 최대 RTX 5090. Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130) 및 NVIDIA R580 이상, macOS는 PyTorch 2.13 MPS/CPU |
+| **가속 검증** | 배포 전 `python scripts/verify_gpu.py`로 Ubuntu·Windows의 CUDA 13과 GPU 연산 또는 macOS의 MPS/CPU 연산 검증 |
 | **컨테이너 GPU 전달** | `docker-compose.yml`의 `fastapi` 서비스에 `deploy.resources.reservations.devices`로 GPU 전달 |
 | **Ollama 실행 위치** | Ollama는 호스트 로컬 프로세스로 실행합니다. Docker 컨테이너에 모델 볼륨을 만들지 않습니다. |
 
@@ -255,24 +255,27 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 
 ### 7.3 네트워크
 
-모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유합니다. Redis는 `redis://redis:6379`를 사용하고, MariaDB는 루트 `.env`의 원격 `DB_HOST`를 기본 유지하되 로컬 Compose DB가 필요할 때만 `COMPOSE_DB_HOST=mariadb`로 전환합니다. Ollama는 컨테이너가 아니라 호스트 로컬 프로세스이므로 `COMPOSE_OLLAMA_BASE_URL`로 접속 주소를 별도 주입합니다.
+모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유합니다. Redis는 인증 URL을 사용하고, MariaDB는 루트 `.env`의 원격 `DB_HOST`를 기본 유지하되 로컬 Compose DB가 필요할 때만 `COMPOSE_DB_HOST=mariadb`로 전환합니다. 호스트 공개 포트는 루프백에만 바인딩하며, Tailscale 외부 단말은 Tailscale Serve의 HTTPS/WSS 역방향 프록시를 통해 접근합니다.
 
 > 주의: Compose는 FastAPI의 `REDIS_URL`과 `OLLAMA_BASE_URL`을 컨테이너·호스트 연결 기준으로 재설정합니다. DB는 공동 Raspberry Pi MariaDB 사용 시 루트 `.env` 값을 유지하고, 로컬 Compose DB가 필요한 경우에만 `COMPOSE_DB_HOST`, `COMPOSE_DB_PORT`, `COMPOSE_DB_NAME`, `COMPOSE_DB_USER`로 재정의합니다.
 >
 > | 변수 | 로컬 개발 | Docker Compose |
 > | :--- | :--- | :--- |
-> | `REDIS_URL` | `redis://localhost:6379` | `redis://redis:6379` |
+> | `REDIS_URL` | `redis://:${REDIS_PASSWORD}@localhost:6379` | `redis://:${REDIS_PASSWORD}@redis:6379` |
 > | `OLLAMA_BASE_URL` | `http://localhost:11434` | `${COMPOSE_OLLAMA_BASE_URL}` |
 > | `DB_HOST` | `.env`의 원격 또는 로컬 호스트 | `${COMPOSE_DB_HOST:-${DB_HOST:-mariadb}}` |
 > | `DB_PORT` | `.env`의 MariaDB 포트 | `${COMPOSE_DB_PORT:-3306}` |
 
 ### 7.4 보안 및 인증 전제
 
-`docker/docker-compose.yml`은 **로컬 개발 및 데모 환경**을 전제로 작성되었습니다. 프로덕션 배포로 사용할 경우 Redis와 MariaDB 인증을 반드시 강화하십시오.
-
-- **Redis**: compose 파일에서 `requirepass`를 설정하지 않고 6379 포트를 호스트에 노출합니다. 로컬 개발에서는 `redis://redis:6379`로 컨테이너 간 통신만 사용하며, 외부망에 노출하지 마십시오.
-- **MariaDB**: `COMPOSE_DB_PASSWORD`와 `COMPOSE_DB_ROOT_PASSWORD`에 기본값 폴백(`minchodan_password`, `minchodan_root_password`)이 있습니다. `.env`에서 반드시 강력한 비밀번호로 교체하고, `.env`는 `.gitignore`에 등록되어 있는지 확인하십시오.
-- **프로덕션 권장**: Redis에 `requirepass` 및 TLS 설정, MariaDB에 별도 관리 계정과 강력한 비밀번호, 네트워크 단계적 분리, 호스트 포트 바인딩 제한 등을 추가하십시오.
+| 통제 항목 | 적용 상태 |
+| :--- | :--- |
+| **비밀값 생성** | `python scripts/configure_security_secrets.py`가 JWT·Redis·Compose DB·개발 단말 토큰을 무작위 생성하고 `.env` 권한을 `600`으로 제한 |
+| **Redis** | `REDIS_PASSWORD` 없이는 Compose 구성이 실패하며 `requirepass`를 항상 적용 |
+| **MariaDB** | `COMPOSE_DB_PASSWORD`와 `COMPOSE_DB_ROOT_PASSWORD` 기본 폴백을 제거해 미설정 시 즉시 실패 |
+| **호스트 포트** | FastAPI·Redis·MariaDB·콘솔 포트를 `127.0.0.1`에만 바인딩 |
+| **컨테이너 권한** | FastAPI와 콘솔을 비루트 사용자로 실행하고 모든 서비스에 `no-new-privileges` 적용 |
+| **Tailscale 공개** | iOS ATS 전역 예외 없이 `wss`를 사용하도록 Tailscale Serve 또는 동등한 TLS 종단 필요 |
 
 ---
 
@@ -303,9 +306,9 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 
 # 기대 결과:
 # NAME                 STATUS         PORTS
-# minchodan-fastapi    Up             0.0.0.0:8000->8000/tcp
-# minchodan-redis      Up             0.0.0.0:6379->6379/tcp
-# minchodan-mariadb    Up             0.0.0.0:3306->3306/tcp
+# minchodan-fastapi    Up             127.0.0.1:8000->8000/tcp
+# minchodan-redis      Up             127.0.0.1:6379->6379/tcp
+# minchodan-mariadb    Up             127.0.0.1:3306->3306/tcp
 ```
 
 ### 9.2 엔드포인트 연결 확인
@@ -313,7 +316,7 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 | 엔드포인트 | 명령 | 기대 결과 |
 | :--- | :--- | :--- |
 | FastAPI | `curl http://localhost:8000/docs` | Swagger UI HTML |
-| Redis | `redis-cli ping` | `PONG` |
+| Redis | `REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping` | `PONG` |
 | MariaDB | `docker exec -it minchodan-mariadb sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -e "SELECT 1"'` | `1` |
 | Ollama | `curl http://localhost:11434/api/tags` | 모델 목록 JSON |
 
@@ -336,7 +339,7 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 | 증상 | 원인 | 해결 방법 |
 | :--- | :--- | :--- |
 | FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동, `127.0.0.1`로만 바인딩, 또는 `COMPOSE_OLLAMA_BASE_URL`이 현재 Docker 런타임과 맞지 않음 | Linux/WSL은 `bash docker/linux_docker_start.sh`로 자동 기동합니다. Docker 컨테이너 접근까지 필요하면 신뢰할 수 있는 로컬망에서만 `MINCHODAN_EXPOSE_OLLAMA=1`, `OLLAMA_HOST=0.0.0.0:11434`를 설정합니다. Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`로 설정 |
-| FastAPI 컨테이너가 Redis에 연결 불가 | `REDIS_URL`이 `localhost`로 설정됨 | `.env`에서 `REDIS_URL=redis://redis:6379`로 변경 |
+| FastAPI 컨테이너가 Redis에 연결 불가 | Redis 인증 URL 불일치 | `REDIS_PASSWORD`와 `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379`의 일치 여부 확인 |
 | FastAPI 컨테이너가 MariaDB에 연결 불가 | 기존 원격 `DB_HOST` 또는 선택적 `COMPOSE_DB_HOST`가 의도한 대상을 가리키지 않거나 MariaDB healthcheck 실패 | 원격 DB 유지 시 `.env`의 `DB_HOST`, 로컬 컨테이너 사용 시 `COMPOSE_DB_HOST=mariadb`, 공통으로 `DB_PORT=3306` 적용 여부를 확인 |
 | MariaDB 컨테이너가 시작되지 않음 | `COMPOSE_DB_PASSWORD` 또는 `COMPOSE_DB_ROOT_PASSWORD` 누락 | `.env` 값 확인 (2026-07-17부터 `docker-compose.yml`은 호스트 포트를 노출하지 않아 3306 충돌은 발생하지 않음. macOS 변형에서 포트 충돌 시 `DB_HOST_PORT`를 빈 포트로 변경) |
 | GPU 인식 실패 | NVIDIA Container Toolkit 미설치 | `nvidia-container-toolkit` 설치 후 Docker 데몬 재시작 |
@@ -358,4 +361,4 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 | Linux 시작 스크립트 | [`docker/linux_docker_start.sh`](../../docker/linux_docker_start.sh) | Linux용 빌드·시작 자동화 |
 | macOS 시작 스크립트 | [`docker/macos_docker_start.sh`](../../docker/macos_docker_start.sh) | macOS용 빌드·시작 자동화 |
 | 환경 변수 명세서 | [`environment_variables.md`](environment_variables.md) | 환경 변수 단일 명세 |
-| GPU 검증 스크립트 | [`scripts/verify_gpu.py`](../../scripts/verify_gpu.py) | sm_120 + CUDA 12.8 검증 |
+| GPU 검증 스크립트 | [`scripts/verify_gpu.py`](../../scripts/verify_gpu.py) | RTX 5090·CUDA 13.0 또는 macOS MPS/CPU 검증 |

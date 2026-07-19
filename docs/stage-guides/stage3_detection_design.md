@@ -1,7 +1,7 @@
 # Minchodan 3단계 탐지·분할·게이트 백엔드 설계서
 
 > **작성일**: 2026-07-14
-> **버전**: v0.3.1 (2026-07-14 29종 객체-반사 경로 일원화 설계 보강, PROXIMITY_THRESHOLD 및 MIN_HIT_COUNT 가드 제거, 새 모델 가중치(0714 버전) 교체 적용)
+> **버전**: v0.3.2 (2026-07-19 RTX 5090 최대 사양과 OS별 PyTorch 2.13 가속 경로 반영)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 3단계 (v1.1 듀얼헤드 + 이중 게이트)
 > **스킬 참조**: [`.agents/skills/yolo-obstacle-detection/SKILL.md`](../.agents/skills/yolo-obstacle-detection/SKILL.md)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md)
@@ -563,7 +563,7 @@ redis_bus.expire(f"ctx:{track_id}", 30)
 | Redis 7+ | 실행 필요 | Docker 구성으로 실행 (`docker/docker-compose.yml`) |
 | Python 3.13 | 필요 | requirements.txt 기준 |
 | `ultralytics>=8.3` | 필요 | requirements.txt 포함 |
-| GPU (Blackwell sm_120) | 권장 | Mock 사용 시 불필요, Yolo 사용 시 CUDA 12.8 + cu128 필수 |
+| GPU 가속 | 권장 | 팀 최대 RTX 5090. Ubuntu/Windows는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU. Mock 사용 시 불필요 |
 
 ### 12.3 환경 변수 (.env.example 수정)
 

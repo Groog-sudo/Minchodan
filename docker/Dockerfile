@@ -19,6 +19,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 런타임 프로세스와 모델 캐시 준비는 권한이 제한된 전용 사용자로 수행한다.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin minchodan \
+    && chown -R minchodan:minchodan /app
+ENV HOME=/home/minchodan
+USER minchodan
+
 # pygoruut 네이티브 바이너리(goruut, 약 96MB)를 빌드 타임에 미리 받아 이미지에 고정한다.
 # server/tts/tts_service.py의 _phonemize()가 Pygoruut(writeable_bin_dir="")로 호출하면
 # 라이브러리가 자체적으로 ~/.goruut(USER 미지정이므로 /root/.goruut)에 캐시하는데,

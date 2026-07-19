@@ -53,6 +53,10 @@ class AdminRepository:
         await self.session.refresh(admin)
         return admin
 
+    async def count(self) -> int:
+        result = await self.session.execute(select(func.count(AdminAccount.admin_id)))
+        return int(result.scalar_one())
+
 
 # 3. AuditRepository 클래스를 만드세요.
 # (힌트: AdminLoginAudit을 저장하는 create 메서드를 구현합니다)

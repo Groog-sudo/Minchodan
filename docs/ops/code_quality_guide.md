@@ -1,9 +1,9 @@
 # Minchodan 코드 품질 검증 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.3.1 (2026-07-15 pre-commit ruff v0.15.20·requirements-dev 0.15.x 핀으로 로컬/CI/pre-commit Ruff 버전 통일)
+> **버전**: v0.3.3 (2026-07-19 npm audit·ChromaDB 임베디드 모드 예외 및 PyTorch 2.13 보안 수정 반영)
 > **기준 문서**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 3.2(임포트 순서)·3.3(경로 처리)·17.2(방어적 코딩), [`docs/test_specification.md`](test_specification.md)
-> **적용 범위**: Python 서버 코드 (`server/`, `scripts/`, `tests/`). JS/TS(`client/`, `console/`)는 package.json 생성 시 본도 추가 예정.
+> **적용 범위**: Python 서버 코드(`server/`, `scripts/`, `tests/`)와 JS/TS 코드(`client/`, `console/`). JS/TS는 TypeScript 빌드와 `npm audit`을 함께 적용합니다.
 
 > **2026-07-15 Ruff 버전 통일**: `.pre-commit-config.yaml`의 `astral-sh/ruff-pre-commit` rev는 **v0.15.20**이며, `requirements-dev.txt`는 **`ruff>=0.15.0,<0.16.0`**으로 핀한다. 로컬 `pip install -r requirements-dev.txt`, pre-commit 훅, CI(`.github/workflows/lint.yml`)가 동일 0.15.x 계열을 사용하도록 맞춘다.
 
@@ -243,9 +243,16 @@ pip-audit -r requirements.txt -r requirements-dev.txt
 
 # 수정 가능한 취약점만 표시
 pip-audit -r requirements.txt --fix
+
+# 패치가 없는 ChromaDB CVE 한 건만 문서화된 예외로 두고 나머지는 실패 처리
+pip-audit -r requirements.txt --ignore-vuln CVE-2026-45829
+
+# React Native·운영 콘솔 의존성
+cd client && npm audit --audit-level=high
+cd console && npm audit --audit-level=high
 ```
 
-> **실행 주기**: pre-push 시 자동 실행 + 주 1회 수동 실행 권장. Ollama/ChromaDB 등 무거운 의존성의 CVE는 즉시 대응합니다.
+> **예외 근거**: `chromadb==1.5.9`의 `CVE-2026-45829`(OSV/PyPI 별칭 `PYSEC-2026-311`)는 수정 버전이 없으며 프로젝트는 Chroma HTTP 서버를 열지 않고 로컬 `PersistentClient`만 사용합니다. PyTorch는 Ubuntu x86_64/Windows amd64의 공식 `2.13.0+cu130`과 macOS의 `2.13.0`으로 올려 `PYSEC-2025-194` 예외를 제거했습니다. CI는 ChromaDB 식별자만 예외로 두고 나머지는 머지를 차단하며 수정 릴리스 공개 시 마지막 예외도 제거합니다.
 
 ---
 

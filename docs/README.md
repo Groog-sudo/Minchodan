@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
-> **작성일**: 2026-07-11
-> **버전**: v0.13.12 (2026-07-17 MariaDB·미디어 저장 API Tailscale 팀 연결 가이드 확장)
+> **작성일**: 2026-07-19
+> **버전**: v0.14.0 (2026-07-19 보안 문서 전용 인덱스와 전면 보안 강화·팀 반영 가이드 추가)
 
 ## 문서 목록
 
@@ -10,6 +10,7 @@
 | 설계 노트 (원본)     | [design/minchodan_design_note.md](design/minchodan_design_note.md)   | 7단계 골격, 11필드 표준 양식, 비전 v1.1 반영                      |
 | **코딩 패턴 기준**   | [dev-guides/course_codebase_guide.md](dev-guides/course_codebase_guide.md)   | **수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | **코드 품질 검증 가이드** | [ops/code_quality_guide.md](ops/code_quality_guide.md) | **Ruff+Bandit+mypy+jscpd+pip-audit 린트·보안·중복·CVE 검증 (코딩 전 필수 참조)** |
+| **보안 강화 및 팀 반영 가이드** | [security/security_hardening_and_team_adoption_guide.md](security/security_hardening_and_team_adoption_guide.md) | **인증·전송·컨테이너·의존성 보안 조치와 운영체제별 팀 적용·검증 절차** |
 | 에이전트 가이드      | [../AGENTS.md](../AGENTS.md)                           | 코딩·커뮤니케이션 규칙, 기술 스택, 디자인 시스템, 문서 인덱스     |
 | 시스템 아키텍처      | [design/architecture.md](design/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, 환경 변수, MCP 연동   |
 | API 명세서           | [design/api_specification.md](design/api_specification.md)           | WebSocket `/ws/detect` 계약, 이벤트 타입, 메시지 포맷             |
@@ -50,6 +51,7 @@ docs/
 ├── research/        # 분석 보고서 및 Post-MVP 검토
 ├── ops/             # 운영·개발 환경 설정 및 절차
 │   └── reports/     # 단발성 운영 보고서
+├── security/        # 보안 기준, 감사 결과 및 팀 반영 절차
 ├── db_tailscale_guide/ # 외부 공개용 가이드와 Git 제외 내부 연결 문서
 ├── dev-guides/      # 코딩 표준 및 개발 참고 자료
 │   ├── prompts/     # 1회성 에이전트 작업 프롬프트 아카이브
@@ -158,7 +160,18 @@ docs/
 
 ---
 
-## 6. dev-guides/ — 코딩 표준 및 참고 자료
+## 6. security/ — 보안 기준 및 팀 반영 가이드
+
+> 인증·인가, 비밀값, 네트워크, 모바일, 컨테이너, 공급망 보안의 현재 기준과 팀원별 적용 절차.
+
+| 문서 | 파일 | 설명 |
+| :--- | :--- | :--- |
+| 보안 문서 인덱스 | [README.md](security/README.md) | 보안 문서 작성 원칙, 독해 순서, 잔여 위험 요약 |
+| **보안 강화 및 팀 반영 가이드** | [security_hardening_and_team_adoption_guide.md](security/security_hardening_and_team_adoption_guide.md) | **수정 전 취약점, 예상 피해, 예방 조치, 운영체제·담당별 반영 절차, 검증·롤백·잔여 위험** |
+
+---
+
+## 7. dev-guides/ — 코딩 표준 및 참고 자료
 
 > 코딩 패턴·함수 시그니처 표준, 에이전트 프롬프트 아카이브, 설계서 예시, 통합 지침서.
 
@@ -172,7 +185,7 @@ docs/
 
 ---
 
-## 7. ops/reports/ — 단발성 운영 보고서
+## 8. ops/reports/ — 단발성 운영 보고서
 
 > 운영 규칙 그 자체가 아니라, 특정 통합 작업의 결과를 남기는 보고서 모음.
 
@@ -181,7 +194,7 @@ docs/
 
 ---
 
-## 8. changelogs/ — 팀원별 작업 변경 내역
+## 9. changelogs/ — 팀원별 작업 변경 내역
 
 | 문서 | 파일 | 설명 |
 | :--- | :--- | :--- |
@@ -197,20 +210,21 @@ docs/
 3. [`../AGENTS.md`](../AGENTS.md) - 코딩·커뮤니케이션 규칙
 4. [`dev-guides/course_codebase_guide.md`](dev-guides/course_codebase_guide.md) - **코딩 패턴·함수 시그니처 표준 (코딩 전 필수 참조)**
 5. [`ops/code_quality_guide.md`](ops/code_quality_guide.md) - **코드 품질 검증 파이프라인 (린트·보안·중복·CVE, 코딩 전 필수 참조)**
-6. [`design/architecture.md`](design/architecture.md) - 시스템 아키텍처 및 컴포넌트
-7. [`design/api_specification.md`](design/api_specification.md) - WebSocket API 계약
-8. [`ops/environment_variables.md`](ops/environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
-9. [`ops/deployment_guide.md`](ops/deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
-10. [`dev-guides/llm_collaboration_workflow.md`](dev-guides/llm_collaboration_workflow.md) - **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준**
-11. [`research/yolo_tts_mvp_next_steps.md`](research/yolo_tts_mvp_next_steps.md) - **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목**
-12. [`design/backend_db_architecture.md`](design/backend_db_architecture.md) - **백엔드 비동기 DB 및 3계층 아키텍처 설계 (코딩 전 필수 참조)**
-13. [`design/pipeline_stage_design.md`](design/pipeline_stage_design.md) - 파이프라인 단계 설계
-14. [`design/behavior_and_risk_insight.md`](design/behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
-15. [`stage-guides/stage2_capture_design.md`](stage-guides/stage2_capture_design.md) - 2단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-16. [`stage-guides/stage3_detection_design.md`](stage-guides/stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
-17. [`stage-guides/stage6_orchestration_design.md`](stage-guides/stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
-18. [`ops/test_specification.md`](ops/test_specification.md) - 검증 기준
-19. [`research/post_mvp_hybrid_roadmap.md`](research/post_mvp_hybrid_roadmap.md) - **Post-MVP 하이브리드 온디바이스 로드맵 (MVP 완성 후 착수)**
+6. [`security/security_hardening_and_team_adoption_guide.md`](security/security_hardening_and_team_adoption_guide.md) - **인증·전송·컨테이너·의존성 보안과 팀 반영 절차 (환경 구성·배포 전 필수 참조)**
+7. [`design/architecture.md`](design/architecture.md) - 시스템 아키텍처 및 컴포넌트
+8. [`design/api_specification.md`](design/api_specification.md) - WebSocket API 계약
+9. [`ops/environment_variables.md`](ops/environment_variables.md) - **환경 변수 단일 명세 (설정 전 필수 참조)**
+10. [`ops/deployment_guide.md`](ops/deployment_guide.md) - **Docker 배포 절차 (배포 전 필수 참조)**
+11. [`dev-guides/llm_collaboration_workflow.md`](dev-guides/llm_collaboration_workflow.md) - **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준**
+12. [`research/yolo_tts_mvp_next_steps.md`](research/yolo_tts_mvp_next_steps.md) - **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목**
+13. [`design/backend_db_architecture.md`](design/backend_db_architecture.md) - **백엔드 비동기 DB 및 3계층 아키텍처 설계 (코딩 전 필수 참조)**
+14. [`design/pipeline_stage_design.md`](design/pipeline_stage_design.md) - 파이프라인 단계 설계
+15. [`design/behavior_and_risk_insight.md`](design/behavior_and_risk_insight.md) - 보행이론 기반 시각장애인 행동 패턴 및 위험도 정의 인사이트 보고서
+16. [`stage-guides/stage2_capture_design.md`](stage-guides/stage2_capture_design.md) - 2단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+17. [`stage-guides/stage3_detection_design.md`](stage-guides/stage3_detection_design.md) - 3단계 백엔드 구현 설계 (코딩 에이전트 필수 참조)
+18. [`stage-guides/stage6_orchestration_design.md`](stage-guides/stage6_orchestration_design.md) - 6단계 종합 회피 가이드 생성 설계 (코딩 에이전트 필수 참조)
+19. [`ops/test_specification.md`](ops/test_specification.md) - 검증 기준
+20. [`research/post_mvp_hybrid_roadmap.md`](research/post_mvp_hybrid_roadmap.md) - **Post-MVP 하이브리드 온디바이스 로드맵 (MVP 완성 후 착수)**
 
 ---
 
@@ -228,7 +242,7 @@ docs/
 - **7단계 TTS는 Supertonic 기본**(`TTS_ENGINE=supertonic`)이며, Piper/pyttsx3는 핫스왑 폴백입니다.
 - **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다. 길안내 발화는 `realtime_gps` 수신 시점에 직접 평가하며(카메라 탐지와 분리, 2026-07-11), 경로 좌표는 `nav_route` 메시지로 단말 하단 T맵 지도 패널(운영자/데모용)에 전달됩니다.
 - **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
-- **학습 환경은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠**이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
+- **팀 GPU 서버 최대 사양은 RTX 5090(Blackwell sm_120)**입니다. Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU 경로를 사용합니다.
 - **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.
 
 ---

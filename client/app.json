@@ -20,7 +20,7 @@
         "NSMicrophoneUsageDescription": "음성 안내를 위해 마이크 접근이 필요합니다.",
         "NSLocationWhenInUseUsageDescription": "도보 경로 안내를 위해 위치 정보 접근이 필요합니다.",
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
+          "NSAllowsArbitraryLoads": false
         }
       }
     },
@@ -55,10 +55,7 @@
         "expo-dev-client",
         {
           "launchMode": "most-recent",
-          "skipOnboarding": true,
-          "ios": {
-            "defaultLaunchURL": "http://100.121.247.4:8081"
-          }
+          "skipOnboarding": true
         }
       ],
       [

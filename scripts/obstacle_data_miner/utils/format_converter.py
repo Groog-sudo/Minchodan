@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from config import CLASS_ALIASES, CLASS_TO_ID, SETTINGS
+from defusedxml import ElementTree as ET
 from PIL import Image
 
 
@@ -111,7 +111,7 @@ class FormatConverter:
                 self.convert_coco_file(json_path)
 
     def convert_voc_file(self, xml_path: Path) -> Path | None:
-        root = ET.parse(xml_path).getroot()  # noqa: S314
+        root = ET.parse(xml_path).getroot()
         filename = root.findtext("filename")
         size = root.find("size")
         if not filename or size is None:

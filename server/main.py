@@ -11,7 +11,7 @@ import sys
 from contextlib import asynccontextmanager, suppress
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
@@ -23,6 +23,11 @@ if sys.stdout.encoding != "utf-8":
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
+
+# 모든 로컬 모듈 import 전에 프로젝트 환경을 로드한다. 인증 상수가 import 시점에
+# 취약한 기본값으로 고정되는 순서 의존성을 차단한다.
+project_root = os.path.dirname(current_dir)
+load_dotenv(os.path.join(project_root, ".env"), override=False)
 
 from server.api.admin_member_router import router as admin_member_router
 from server.api.admin_router import router as admin_router
@@ -48,9 +53,6 @@ if not logging.getLogger().handlers:
     )
 
 logger = logging.getLogger(__name__)
-
-# Load environment configuration (guide 3.4)
-load_dotenv()
 
 
 @asynccontextmanager
@@ -188,7 +190,7 @@ openapi_tags = [
     {
         "name": "WebSocket Gateway",
         "description": (
-            "**WebSocket** `ws://{host}/ws/detect?device_id={id}` — "
+            "**WebSocket** `wss://{host}/ws/detect?device_id={id}` — "
             "단말(React Native) ↔ GPU 서버 간 실시간 양방향 통신 채널.\n\n"
             "WebSocket은 OAS 3.1 자동 렌더링 미지원이므로 Swagger UI에 개별 항목으로 표시되지 않습니다. "
             "전체 프로토콜 명세는 `docs/design/api_specification.md` 를 참조하십시오.\n\n"
@@ -219,6 +221,8 @@ openapi_tags = [
 ]
 
 # FastAPI App 인스턴스 생성
+is_production = os.getenv("APP_ENV", "development").strip().lower() == "production"
+
 app = FastAPI(
     title="Minchodan GPU Inference Server",
     description=(
@@ -231,6 +235,9 @@ app = FastAPI(
     version="v1.0.0",
     openapi_tags=openapi_tags,
     lifespan=lifespan,
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    openapi_url=None if is_production else "/openapi.json",
 )
 
 # CORS 미들웨어 추가: 운영자 콘솔(React) 연동용. 허용 출처는 settings.CORS_ORIGINS
@@ -244,14 +251,35 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Bootstrap-Token"],
     # X-Total-Count: 콘솔 Detection Guidance Log 페이지네이션이 전체 건수를 읽으려면
     # 브라우저 fetch()가 이 커스텀 헤더를 볼 수 있어야 한다(CORS 기본값은 표준
     # 헤더만 노출하고 커스텀 헤더는 명시적으로 허용해야 함, 2026-07-12).
     expose_headers=["X-Total-Count"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    interactive_dev_path = request.url.path.startswith(("/docs", "/redoc", "/navigation"))
+    if not interactive_dev_path:
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'none'; frame-ancestors 'none'",
+        )
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    if request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    if request.url.path.startswith("/api/v1/admin"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 
 # 모니터링 라우터 마운트
 app.include_router(monitor_router, prefix="/api/v1")
@@ -268,8 +296,9 @@ app.include_router(stt_router)
 # 개발용: 문자/안내문 TTS를 연결된 모바일로 푸시 (APP_ENV=production 시 404)
 app.include_router(debug_router)
 
-# 네비게이션 서브앱 마운트
-app.mount("/navigation", navigation_app)
+# 개발용 내비게이션 시뮬레이터는 명시적 허용 시에만 공격면에 포함한다.
+if os.getenv("ENABLE_NAVIGATION_SIMULATOR", "false").strip().lower() in {"1", "true", "yes"}:
+    app.mount("/navigation", navigation_app)
 
 
 @app.get("/")
@@ -294,7 +323,6 @@ async def health_check():
         "timestamp": asyncio.get_event_loop().time(),
         "runtime": {
             "detector_type": os.getenv("DETECTOR_TYPE", "mock"),
-            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             "chroma_collection": os.getenv("CHROMA_COLLECTION", "safety_guidelines"),
             "detection_consumer": consumer.get_runtime_status(),
         },

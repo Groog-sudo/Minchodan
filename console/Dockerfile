@@ -10,10 +10,13 @@ WORKDIR /app
 # package.json만 먼저 복사해 의존성 캐시 레이어 분리
 COPY package.json package-lock.json* ./
 
-RUN npm install
+RUN npm ci
 
 # 소스는 compose에서 볼륨 마운트하지만 이미지 단독 실행(예: CI)도 대비해 복사
 COPY . .
+
+RUN chown -R node:node /app
+USER node
 
 EXPOSE 5174
 

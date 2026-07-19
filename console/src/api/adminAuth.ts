@@ -1,4 +1,4 @@
-/** 콘솔 관리자 JWT localStorage 키 */
+/** 브라우저 탭을 닫으면 제거되는 콘솔 관리자 JWT sessionStorage 키 */
 export const ADMIN_TOKEN_KEY = "admin_token";
 
 const AUTH_EXPIRED_EVENT = "minchodan:admin-auth-expired";
@@ -23,10 +23,10 @@ export function isAdminTokenExpired(token: string): boolean {
 }
 
 export function readAdminToken(): string | null {
-  const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
   if (!token) return null;
   if (isAdminTokenExpired(token)) {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
     return null;
   }
   return token;
@@ -34,7 +34,7 @@ export function readAdminToken(): string | null {
 
 /** 만료/무효 토큰을 제거하고 App이 로그인 화면으로 돌아가게 알린다. */
 export function forceAdminRelogin(reason = "token_invalid"): void {
-  localStorage.removeItem(ADMIN_TOKEN_KEY);
+  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
   window.dispatchEvent(
     new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { reason } }),
   );

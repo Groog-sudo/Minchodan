@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.12 (2026-07-18 Near/Medium/Far 인지 발화 정합: near=반사 전담(인지 TTS 차단), T1-b 쿨다운 단축은 medium만, `effective_distance_zone` SSOT 우선 + 이전 v0.4.11: T3-C/T3-S/T2-G/T1-a/b 구현 반영 + 이전 v0.4.10: §6.7 `distance_probe_sample` 데이터 계약 추가 등)
+> **버전**: v0.4.13 (2026-07-19 RTX 5090 최대 사양과 Ubuntu·Windows·macOS별 PyTorch 2.13 가속 경로 반영)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -46,7 +46,7 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 ### 인프라
 
 - Docker (Redis + MariaDB + FastAPI 컨테이너. Ollama는 컨테이너가 아닌 호스트 로컬 실행 `OLLAMA_BASE_URL=http://host.docker.internal:11434`)
-- CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
+- 팀 GPU 서버 최대 사양 RTX 5090(Blackwell sm_120). Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU
 
 ---
 
@@ -460,7 +460,7 @@ sequenceDiagram
 
 ## 11. 학습 환경 전제 (v1.1 C3)
 
-3·4단계 모델 학습은 **RTX 5090 / 5070 Ti(Blackwell sm_120)** **CUDA 12.8 + cu128 PyTorch 휠 필수**입니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다. 학습 전 `scripts/verify_gpu.py`로 `device_capability ≥ (12,0)` 및 GPU 연산 1 step 검증합니다. TensorRT 엔진은 데모 머신에서 재빌드합니다(세대 간 전송 불가).
+3·4단계 모델 학습의 팀 GPU 서버 최대 사양은 **RTX 5090(Blackwell sm_120)**입니다. Ubuntu x86_64와 Windows amd64는 공식 **PyTorch 2.13 + CUDA 13.0(cu130)** 휠과 NVIDIA R580 이상 드라이버를 사용합니다. 이전 세대 NVIDIA GPU는 개발용으로 허용하되 Blackwell 최적화가 적용되지 않을 수 있습니다. macOS는 동일 PyTorch 2.13의 MPS/CPU 경로로 개발·기능 검증하며 CUDA 학습 서버로 간주하지 않습니다. 배포 전 `scripts/verify_gpu.py`로 실제 가속 연산을 검증하고, TensorRT 엔진은 배포 GPU에서 재빌드합니다(세대 간 전송 불가).
 
 ---
 
@@ -475,7 +475,7 @@ sequenceDiagram
 - `python -m pytest tests/test_langgraph.py -v` - 6단계: bollard 주입 20자/방향 포함 검증
 - `python -m pytest tests/test_tts_reflex.py -v` - 7단계: 반사 클립 선점 재생 검증
 - `python scripts/eval_hitrate.py` - 4단계: Top-5 hit-rate ≥ 0.6 평가
-- `python scripts/verify_gpu.py` - GPU: sm_120 + CUDA 12.8 검증
+- `python scripts/verify_gpu.py` - Ubuntu/Windows CUDA 13.0 또는 macOS MPS/CPU 실제 연산 검증
 
 상세 검증 기준은 [`docs/test_specification.md`](test_specification.md)를 참조합니다.
 

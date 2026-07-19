@@ -1,7 +1,7 @@
 # Minchodan 파이프라인 단계 설계
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.4 (2026-07-18 §5.3 Near/Medium/Far 발화 정책·거리 SSOT 정합 반영 + 이전 v0.3.3: §4 L6/L7 실측치 + 이전 v0.3.2: §5.2 FrameCaptureProvider)
+> **버전**: v0.3.5 (2026-07-19 RTX 5090 최대 사양과 3개 OS별 PyTorch 2.13 가속 경로 반영)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -161,7 +161,7 @@ graph LR
 
 ## 8. 학습 환경 전제 (v1.1 C3)
 
-3·4단계 모델 학습은 Blackwell sm_120 / CUDA 12.8 + cu128 PyTorch 휠이 필요합니다. 학습 전 `scripts/verify_gpu.py`로 `device_capability ≥ (12,0)`을 검증합니다. TensorRT 엔진은 데모 머신에서 재빌드합니다(세대 간 전송 불가).
+3·4단계 모델 학습의 팀 최대 사양은 RTX 5090(Blackwell sm_120)입니다. Ubuntu x86_64/Windows amd64 GPU 서버는 PyTorch 2.13 + CUDA 13.0(cu130)과 NVIDIA R580 이상 드라이버를 사용하고, macOS는 PyTorch 2.13 MPS/CPU로 개발·기능 검증합니다. 학습 전 `scripts/verify_gpu.py`로 실제 가속 연산을 검증합니다. TensorRT 엔진은 배포 GPU에서 재빌드합니다(세대 간 전송 불가).
 
 ---
 

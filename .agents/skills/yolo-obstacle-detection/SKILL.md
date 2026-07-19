@@ -45,7 +45,7 @@ description: |
 | 항목 | 요구사항 |
 |------|----------|
 | Python | 3.13 |
-| GPU | Blackwell sm_120 (RTX 5090/5070 Ti), CUDA 12.8 + cu128 PyTorch 휠 |
+| GPU | 팀 최대 RTX 5090(Blackwell sm_120). Ubuntu/Windows는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU |
 | 패키지 | `ultralytics>=8.3`, `opencv-python>=4.10`, `redis>=5.0`, `bytetracker` |
 | 모델 파일 | `server/models/yolo26n/object_detection.pt`, `server/models/yolo26n/segmentation.pt` |
 | Redis | 7 이상, Streams 지원 필수 |

@@ -1,12 +1,13 @@
 import argparse
 import json
 import sys
-import xml.etree.ElementTree as ET  # nosec B405
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from defusedxml import ElementTree as ET
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -126,7 +127,7 @@ def estimate_distance(bbox: list[float], width: int, height: int) -> tuple[str, 
 
 
 def parse_xml(xml_path: Path) -> tuple[list[str], list[ImageRecord]]:
-    tree = ET.parse(xml_path)  # nosec B314 # noqa: S314
+    tree = ET.parse(xml_path)
     root = tree.getroot()
 
     labels = [

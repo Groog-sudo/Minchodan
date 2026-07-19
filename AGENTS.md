@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.7 (2026-07-18 §8에 `integration-test-orchestrator` 스킬 신규 등재 - 실기기-Docker-DB 통합 테스트 오케스트레이션, `.agents/skills/`·`.claude/skills/` 미러 및 `.antigravity/rules.md`·`SKILLS.md` 교차 반영 완료 + 기존 v0.3.6 이력 유지: 다중 에이전트 규칙 자동 로드 통합 + CLAUDE.md v0.3.5 고유 내용 흡수: §2 스택 전환 근거 보강(Supertonic 3 교체 사유, faster-whisper-small 전환 사유, Frame Processor 전환 사유, AudioSessionBridge.swift 경로, NavMapPanel 좌표 표시), CLAUDE.md는 @AGENTS.md thin pointer로 단일 소스 통합, GEMINI.md symlink + .gemini/settings.json으로 Antigravity/Gemini CLI 진입점 추가, §10 다중 에이전트 진입점 섹션 신설 + 기존 v0.3.5 이력 유지: 2026-07-11 kb 브랜치 반영(STT/Navigation 등재, 지도 패널/AEC 반영) + 기존 v0.3.4 이력 유지: 2026-07-14 코드-문서 정합성 교차 검증(LLM 오케스트레이션 명세 정정, server/ 구조에 services/stt/navigation/mcp 4폴더 추가, models/ Git 추적 정책 정정) + 기존 v0.3.3 이력: §2 스택 명세화, Llava→Gemini VLM 캡셔닝, edge-tts 추가, react-native-tts → expo-speech 갱신)
+> **버전**: v0.3.8 (2026-07-19 RTX 5090 최대 사양과 Ubuntu·Windows·macOS 3개 OS 기준으로 PyTorch 2.13, CUDA 13.0/cu130, macOS MPS·CPU 경로 정합화 + 기존 v0.3.7 이력 유지: `integration-test-orchestrator` 스킬 신규 등재 및 다중 에이전트 규칙 자동 로드 통합)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 > **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
@@ -62,7 +62,7 @@
 ### 인프라
 
 - Container: Docker (Redis + MariaDB + FastAPI), Ollama는 호스트 로컬 프로세스
-- GPU: CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
+- GPU: 팀 최대 사양 RTX 5090(Blackwell sm_120). Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU
 
 ---
 

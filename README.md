@@ -6,7 +6,7 @@
 **Minchodan**은 시각장애인 보행 보조를 위한 스마트 가이드독 AI 플랫폼입니다. 스마트폰 카메라로 주변을 인식하고, GPU 서버에서 실시간으로 장애물·노면 상태를 탐지한 뒤, 음성과 햅틱으로 즉시 안내합니다. 안전 대응은 **반사 경로**(즉시 경보)와 **인지 경로**(상세 가이드) 두 갈래로 물리 분리하는 것이 핵심 원칙입니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.5 (2026-07-14 코드-문서 정합성 전면 교차 검증 기반 수정: `react-native-tts`→`expo-speech` 정정(미사용 의존성 잔존 기술), `data/reflex_clips/`→`client/assets/sounds/reflex_clips/` 경로 정정(단말 번들로 이동), `LLAVA_MODEL`(미사용 잔재) 행 제거, `TTS_ENGINE` 표에 `edge` 추가 + 이전 v0.2.4 이력 유지: 환경 변수 표 모순 정정, jy 브랜치 병합 Docker Compose Ollama 호스트 로컬 전환, TTS 엔진 Piper→Supertonic 교체, 반사 캡처 Frame Processor 전환)
+> **버전**: v0.2.7 (2026-07-19 전면 보안 강화 기준과 팀 반영 가이드 문서 연결)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
 
 ---
@@ -83,7 +83,7 @@
 ### 인프라
 
 - Docker (Redis + MariaDB + FastAPI 컨테이너 구성, Ollama는 호스트 로컬 프로세스로 실행)
-- CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
+- 팀 GPU 서버 최대 사양 RTX 5090(Blackwell sm_120): Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU
 
 ---
 
@@ -187,23 +187,23 @@ python -m pip install -r requirements.txt
 python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. GPU 환경 검증 (Blackwell sm_120 / CUDA 12.8)
+### 3. 가속 환경 검증 (RTX 5090 최대 / CUDA 13.0 / macOS MPS)
 
 #### Windows (PowerShell)
 
 ```powershell
 python scripts\verify_gpu.py
-# device_capability >= (12, 0) 및 GPU 1 step 연산 검증
+# CUDA 13.0, RTX 5090 sm_120 호환성 및 GPU 1 step 연산 검증
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
 python scripts/verify_gpu.py
-# device_capability >= (12, 0) 및 GPU 1 step 연산 검증
+# Ubuntu는 CUDA 13.0 GPU, macOS는 MPS/CPU 1 step 연산 검증
 ```
 
-> CUDA 12.8 + cu128 PyTorch 휠이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
+> Ubuntu x86_64와 Windows amd64 GPU 서버는 공식 `torch==2.13.0+cu130` 휠과 NVIDIA R580 이상 드라이버를 사용합니다. macOS는 CUDA가 아니라 같은 PyTorch 2.13의 MPS를 우선 사용하고, MPS가 없으면 CPU로 폴백합니다.
 
 ### 4. Docker 구성 (Redis + MariaDB + FastAPI + 호스트 로컬 Ollama)
 
@@ -313,6 +313,7 @@ python scripts/build_convenience_db.py
 | 설계 노트 (원본)     | [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                     |
 | **코딩 패턴 기준**   | [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md)   | **수업 전체 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                    |
+| **보안 강화 및 팀 반영 가이드** | [`docs/security/security_hardening_and_team_adoption_guide.md`](docs/security/security_hardening_and_team_adoption_guide.md) | **인증·전송·컨테이너·의존성 보안 조치와 팀 적용·검증 절차** |
 | 에이전트 가이드      | [`AGENTS.md`](AGENTS.md)                                           | 코딩·커뮤니케이션 규칙, 기술 스택, 문서 인덱스 |
 | 백엔드 DB 설계 원칙 | [`docs/design/backend_db_architecture.md`](docs/design/backend_db_architecture.md) | 백엔드 코어 비동기 SQLAlchemy 기반 3계층 아키텍처 및 에러 방어 로직 설계 |
 | 시스템 아키텍처      | [`docs/design/architecture.md`](docs/design/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동 |
@@ -358,7 +359,7 @@ python tests\test_retriever.py        # 5단계: kickboard 쿼리 < 50ms
 python tests\test_langgraph.py        # 6단계: bollard  20자/방향 포함
 python tests\test_reflex_and_nav.py   # 7단계: 반사 클립 선점 재생
 python scripts\eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
-python scripts\verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
+python scripts\verify_gpu.py          # Windows GPU: CUDA 13.0 + 실제 연산 검증
 ```
 
 ### macOS / Linux (bash 또는 zsh)
@@ -371,7 +372,7 @@ python tests/test_retriever.py        # 5단계: kickboard 쿼리 < 50ms
 python tests/test_langgraph.py        # 6단계: bollard  20자/방향 포함
 python tests/test_reflex_and_nav.py   # 7단계: 반사 클립 선점 재생
 python scripts/eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
-python scripts/verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
+python scripts/verify_gpu.py          # Ubuntu CUDA 13.0 또는 macOS MPS/CPU 검증
 ```
 
 상세 검증 기준은 [`docs/ops/test_specification.md`](docs/ops/test_specification.md)를 참조합니다.

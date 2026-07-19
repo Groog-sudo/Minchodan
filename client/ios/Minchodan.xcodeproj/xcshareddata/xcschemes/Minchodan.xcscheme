@@ -60,13 +60,6 @@
             ReferencedContainer = "container:Minchodan.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "METRO_BUNDLER_HOST"
-            value = "100.121.247.4:8081"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

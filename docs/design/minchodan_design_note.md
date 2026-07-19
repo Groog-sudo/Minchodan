@@ -1,10 +1,10 @@
 # minchodan 설계 노트 — 7단계 골격
 
 > **이 문서는?** 5인 MVP 팀의 7단계 파이프라인 표준 양식이다. 네 개의 초안을 통합했다 — **문서2(구현 상세)를 본문 백본**으로, **문서1**의 인터페이스·예외 계약, **문서3**의 선택 근거·분업·MVP 스코프, **문서4**의 완료 기준을 각 단계에 이식했다.
-> **전제:** 비전 설계서 **v1.1**(이중 경로 / Yolo 26N - Object Detection·Yolo 26N - Segmentation / cu128 / 클래스 분리)을 오버레이로 반영한다. 충돌 시 v1.1이 우선한다.
+> **전제:** 비전 설계서 **v1.1**(이중 경로 / Yolo 26N - Object Detection·Yolo 26N - Segmentation / 클래스 분리)을 오버레이로 반영하되, GPU 런타임은 보안 수정 기준인 PyTorch 2.13 + cu130으로 갱신한다. 충돌 시 현재 의존성 명세가 우선한다.
 > **작성일**: 2026-06-23
-> **수정일**: 2026-07-13 (4단계 RAG 빌더 기술 스택을 Llava에서 Gemini API로 정합화)
-> **버전**: v0.2.2
+> **수정일**: 2026-07-19 (RTX 5090 최대 사양과 Ubuntu·Windows·macOS별 PyTorch 2.13 가속 경로 정합화)
+> **버전**: v0.2.3
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
@@ -207,7 +207,7 @@
 
 ### C. 학습 환경 전제 (v1.1 C3)
 
-3·4단계 모델 학습은 **RTX 5090 / 5070 Ti(Blackwell sm_120)** **CUDA 12.8 + cu128 PyTorch 휠 필수**. 11.8/12.1 휠은 silent CPU 폴백. 학습 전 `verify_gpu.py`로 `device_capability ≥ (12,0)` 및 GPU 연산 1 step 검증. TensorRT 엔진은 데모 머신에서 재빌드(세대 간 전송 불가).
+3·4단계 모델 학습의 팀 GPU 서버 최대 사양은 **RTX 5090(Blackwell sm_120)**이다. Ubuntu x86_64/Windows amd64는 보안 수정본 **PyTorch 2.13 + CUDA 13.0(cu130)** 및 NVIDIA R580 이상 드라이버를 사용한다. 이전 세대 NVIDIA GPU는 개발용으로 허용하되 Blackwell 최적화가 제한될 수 있다. macOS는 PyTorch 2.13 MPS/CPU 경로로 개발·기능 검증하며 CUDA 학습 서버로 분류하지 않는다. 학습 전 `verify_gpu.py`로 실제 가속 연산을 검증하고 TensorRT 엔진은 배포 GPU에서 재빌드한다(세대 간 전송 불가).
 
 ### D. 출처 매핑
 

@@ -4,8 +4,9 @@ import os
 import random
 import shutil
 import sys
-import xml.etree.ElementTree as ET  # nosec B405
 from pathlib import Path
+
+from defusedxml import ElementTree as ET
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -53,7 +54,7 @@ def parse_args() -> argparse.Namespace:
 
 def process_xml(xml_path: Path) -> list[tuple[str, int, int, list[dict]]]:
     try:
-        tree = ET.parse(xml_path)  # nosec B314 # noqa: S314
+        tree = ET.parse(xml_path)
         root = tree.getroot()
     except Exception as exc:
         print(f"Error parsing XML {xml_path}: {exc}")

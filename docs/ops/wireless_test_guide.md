@@ -63,7 +63,7 @@ graph TD
 
 | 서비스 구분 | 로컬 포트 | Tailscale 주소 | 목적 및 사용처 |
 | :--- | :--- | :--- | :--- |
-| **FastAPI API/WebSocket** | `8000` | `http://[SERVER_TAILSCALE_IP_OR_MAGICDNS]:8000` | 실기기 카메라 프레임 전송 및 TTS 오디오 수신 채널 (`ws`) |
+| **FastAPI API/WebSocket** | `443` | `https://[SERVER_MAGICDNS_NAME]` | Tailscale Serve TLS 종단을 통한 실기기 카메라·TTS 채널 (`wss`) |
 | **Metro Bundler** | `8081` | `http://[DEVELOPMENT_PC_TAILSCALE_IP]:8081` | 개발 빌드가 무선으로 JS 번들을 가져오는 주소 |
 
 ---
@@ -73,9 +73,9 @@ graph TD
 단말(iPhone)이 켜진 후 서버와 체결되는 양방향 통신 규격 흐름은 다음과 같습니다.
 
 ### 4.1 핸드셰이크 및 검증 단계
-1. **WebSocket 연결 수립**: 단말이 `ws://[SERVER_TAILSCALE_IP_OR_MAGICDNS]:8000/ws/detect?device_id=dev-001` 경로로 소켓 연결을 요청하고 서버가 이를 승인(`accepted`)합니다.
+1. **WebSocket 연결 수립**: 단말이 `wss://[SERVER_MAGICDNS_NAME]/ws/detect?device_id=[DEVICE_ID]` 경로로 소켓 연결을 요청하고 서버가 이를 승인(`accepted`)합니다.
 2. **Welcome 송신**: 서버가 단말로 환영 메시지(`{"type": "welcome", "session_id": "dev-001"}`)를 보냅니다.
-3. **Hello 송신**: 단말이 서버로 디바이스 식별 토큰을 동봉하여 `hello` 패킷(`{"type": "hello", "token": "token-abc-001"}`)을 응답합니다.
+3. **Hello 송신**: 단말이 서버로 디바이스 JWT를 동봉하여 `hello` 패킷(`{"type": "hello", "token": "[DEVICE_JWT]"}`)을 응답합니다.
 4. **인증 통과**: 서버가 토큰 무결성을 대조 및 검증한 뒤, `auth_ok` 패킷을 전송하고 Redis 메시지 버스를 바인딩하여 메인 루프에 진입합니다.
 
 ### 4.2 실시간 추론 스트리밍 단계
@@ -108,7 +108,7 @@ graph TD
 
 ### 5.4 Tailscale Metro가 다른 PC / Finding Dev Servers에 붙는 경우
 - **현상**: iOS Debug 앱이 Metro를 못 찾거나, 본인 Mac이 아닌 다른 팀원 호스트로 붙는다.
-- **원인**: 저장소 기본값(`100.121.247.4:8081`)은 Tailscale Metro **팀 공유 표준(예시 폴백)** 이며, 각 개발자 PC의 Tailscale IP와 다를 수 있다.
+- **원인**: 로컬 `METRO_BUNDLER_HOST`가 없거나 현재 개발 PC의 MagicDNS/주소와 다를 수 있다.
 - **해결**: **개발 PC IP는 각자 덮어쓰기**. `METRO_BUNDLER_HOST`·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`·`client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST`를 `tailscale ip -4` 결과로 교체한다. 상세 표는 [`environment_variables.md`](environment_variables.md) §2.11.
 
 ### 5.3 이미지 대용량으로 인한 무선 네트워크 병목 및 소켓 끊김 현상

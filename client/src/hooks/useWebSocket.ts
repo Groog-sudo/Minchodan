@@ -16,8 +16,6 @@ import {
   NETWORK_BENCHMARK_PAYLOAD_BYTES,
   RECONNECT_DELAY,
   RECONNECT_DELAY_MAX,
-  SERVER_PORT,
-  TAILSCALE_HOST,
   TOKEN,
   WS_URL,
   getWsUrlCandidates,
@@ -39,14 +37,6 @@ function expandWsUrlCandidates(primaryBase: string): string[] {
     if (!merged.includes(normalized)) {
       merged.push(normalized);
     }
-  }
-  const tailscaleUrl = `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
-  if (
-    TAILSCALE_HOST &&
-    TAILSCALE_HOST !== "127.0.0.1" &&
-    !merged.includes(tailscaleUrl)
-  ) {
-    merged.push(tailscaleUrl);
   }
   return merged;
 }
@@ -218,6 +208,11 @@ export function useWebSocket(
   }, []);
 
   const connect = useCallback(() => {
+    if (!deviceId || !token) {
+      console.warn("[WS] 단말 식별자 또는 인증 토큰이 없어 연결을 중단합니다.");
+      setStatus("fallback");
+      return;
+    }
     const currentState = wsRef.current?.readyState;
     if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) return;
 

@@ -22,6 +22,10 @@ from server.db.repositories import AdminRepository, AuditRepository
 from server.db.schemas import AdminAccountCreate, AdminAccountResponse, TokenResponse
 from server.db.security import create_access_token, get_password_hash, verify_password
 
+_DUMMY_PASSWORD_HASH = (  # 존재하지 않는 계정의 타이밍 균일화용 공개 더미 해시
+    "$2b$12$joHT20p9pff7SwoLTjx.guvqOp7PH2HqqZ7bzGA/ebKTdBzBdONXu"  # noqa: S105  # nosec B105
+)
+
 # 2. AdminService 클래스를 만드세요.
 # (힌트: __init__ 에서 session을 받고, admin_repo와 audit_repo 인스턴스를 생성합니다)
 # 여기에 작성:
@@ -54,6 +58,7 @@ class AdminService:
             name=admin_data.name,
             password_hash=get_password_hash(admin_data.password),
             role=admin_data.role,
+            status=admin_data.status,
         )
 
         created = await self.admin_repo.create(new_admin)
@@ -75,22 +80,29 @@ class AdminService:
         # 조합이든 무조건 통과시켜 유효한 JWT를 발급하는 우회가 남아있었다(프론트 UI 테스트용
         # 임시 코드가 그대로 병합됨). 위 힌트 주석에 이미 명시된 대로 실제 DB 검증 경로로 정정한다.
         admin = await self.admin_repo.get_by_employee_no(employee_no)
-        is_valid = admin is not None and verify_password(password, admin.password_hash)
+        password_hash = admin.password_hash if admin is not None else _DUMMY_PASSWORD_HASH
+        password_matches = verify_password(password, password_hash)
+        credentials_valid = admin is not None and password_matches
+        login_success = credentials_valid and admin.status is AdminAccountStatus.ACTIVE
 
         # 성공/실패 여부와 무관하게 시도 자체를 감사 로그에 남긴다(이상 행동 추적용).
-        await self.audit_repo.create(AdminLoginAudit(employee_no=employee_no, success=is_valid))
+        await self.audit_repo.create(
+            AdminLoginAudit(employee_no=employee_no, success=login_success)
+        )
 
-        if not is_valid:
+        if admin is None or not password_matches:
             # 존재하지 않는 사번과 비밀번호 불일치를 동일한 메시지로 응답해
             # 유효한 사번을 유추하는 공격(user enumeration)을 방지한다.
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
             )
 
-        if admin.status in (AdminAccountStatus.LOCKED, AdminAccountStatus.DELETED):
+        if not login_success:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Account is locked or deleted"
+                status_code=status.HTTP_403_FORBIDDEN, detail="Account is not active"
             )
 
-        access_token = create_access_token(data={"sub": employee_no, "role": admin.role.value})
+        access_token = create_access_token(
+            data={"sub": employee_no, "role": admin.role.value, "type": "admin"}
+        )
         return TokenResponse(access_token=access_token)
