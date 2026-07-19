@@ -25,6 +25,12 @@ import { setVoiceProcessing } from "../services/audioSessionBridge";
 // (필요 시 true로 되돌리되, record() 직후 세션 재적용은 하지 않는다.)
 const STT_START_CUE_WITH_AEC = false;
 
+// 2026-07-19: 초단시간/탭 오탐 녹음은 서버로 보내지 않는다.
+// 실측 hold=0.02~0.18s → "음성이 인식되지 않았어요" 연속 재생 → 안내 끊김 루프.
+const MIN_STT_HOLD_MS = 400;
+// iOS 16kHz mono PCM16: 0.35s ≈ 11200 bytes payload (WAV 헤더 제외 근사).
+const MIN_STT_CAPTURED_SEC_IOS = 0.35;
+
 // 16kHz PCM: Whisper 입력에 가깝고, 44.1kHz 대비 전송/인코딩 부담이 작다.
 const STT_RECORDING_OPTIONS: RecordingOptions = {
   extension: Platform.OS === "ios" ? ".wav" : ".m4a",
@@ -186,8 +192,9 @@ export function useSttRecorder(
       });
       const holdMs =
         recordStartTsRef.current > 0 ? Date.now() - recordStartTsRef.current : 0;
+      let capturedSec = 0;
       if (Platform.OS === "ios") {
-        const capturedSec = Math.max(0, (audioB64.length * 0.75 - 44) / (16000 * 2));
+        capturedSec = Math.max(0, (audioB64.length * 0.75 - 44) / (16000 * 2));
         console.log(
           `[STT] 녹음 완료(iOS PCM 16k): hold=${(holdMs / 1000).toFixed(2)}s, captured=${capturedSec.toFixed(2)}s, b64_len=${audioB64.length}`,
         );
@@ -196,6 +203,17 @@ export function useSttRecorder(
           `[STT] 녹음 완료(${Platform.OS}): hold=${(holdMs / 1000).toFixed(2)}s, b64_len=${audioB64.length}`,
         );
       }
+
+      // 2026-07-19: 초단시간 녹음은 서버 전송 생략(실패 안내 TTS 루프·끊김 방지).
+      // STT 활성 플래그는 응답이 없으므로 여기서 해제한다.
+      if (holdMs < MIN_STT_HOLD_MS || (Platform.OS === "ios" && capturedSec < MIN_STT_CAPTURED_SEC_IOS)) {
+        console.log(
+          `[STT] 초단시간 녹음 폐기(서버 미전송): hold=${holdMs}ms, captured=${capturedSec.toFixed(2)}s`,
+        );
+        audioEngine.setSttActive(false);
+        return;
+      }
+
       onAudioReady(audioB64);
       // 다음 누름을 빠르게 하기 위해 백그라운드 warm-prepare
       void warmPrepare();

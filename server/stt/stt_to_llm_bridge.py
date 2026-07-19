@@ -114,6 +114,12 @@ def _is_gildaeng_wake(text: str) -> bool:
 ECHO_MEMORY_TTL_SEC = 10.0
 ECHO_SIMILARITY_THRESHOLD = 0.6
 
+# 2026-07-19: 빈 전사/실패 안내 중복 발화 쿨다운(초).
+# 연속 오탐마다 "음성이 인식되지 않았어요"가 나와 재생 중 안내를 자르는 루프 방지.
+STT_EMPTY_NOTICE_COOLDOWN_SEC = 5.0
+STT_EMPTY_NOTICE_TEXT = "음성이 인식되지 않았어요. 다시 말씀해 주세요."
+STT_EMPTY_SUPPRESSED_SOURCE = "stt-bridge-empty-suppressed"
+
 
 def _is_self_echo(transcript: str, recent_guidance: str) -> bool:
     """전사 결과가 앱이 방금 재생한 안내문과 유사한지 판정한다.
@@ -208,12 +214,46 @@ class SttToLlmBridge:
     # 2026-07-11: device_id별 최근 전송 안내문 캐시 (자기-에코 감지용).
     # {device_id: (guidance_text, timestamp_monotonic)}
     _recent_guidance: ClassVar[dict[str, tuple[str, float]]] = {}
+    # 2026-07-19: device_id별 빈 전사 안내 마지막 발화 시각
+    _last_empty_notice_ts: ClassVar[dict[str, float]] = {}
 
     @classmethod
     def _record_guidance(cls, device_id: str, guidance_text: str) -> None:
         """클라이언트에 전송할 안내문을 에코 감지용 메모리에 기록한다."""
         if guidance_text:
             cls._recent_guidance[device_id] = (guidance_text, time.monotonic())
+
+    @classmethod
+    def _should_suppress_empty_notice(cls, device_id: str) -> bool:
+        """동일 device의 빈 전사 안내가 쿨다운 내면 True(발화 억제)."""
+        last_ts = cls._last_empty_notice_ts.get(device_id)
+        if last_ts is None:
+            return False
+        return (time.monotonic() - last_ts) < STT_EMPTY_NOTICE_COOLDOWN_SEC
+
+    @classmethod
+    def _mark_empty_notice(cls, device_id: str) -> None:
+        cls._last_empty_notice_ts[device_id] = time.monotonic()
+
+    @classmethod
+    def _empty_input_response(cls, device_id: str) -> dict:
+        """빈 전사 응답. 쿨다운 내면 무음 억제(클라이언트 미전송용 빈 guidance)."""
+        if cls._should_suppress_empty_notice(device_id):
+            print(
+                f"[STT BRIDGE] 빈 전사 안내 쿨다운 억제: device_id={device_id}, "
+                f"cooldown={STT_EMPTY_NOTICE_COOLDOWN_SEC}s"
+            )
+            return {
+                "guidance_text": "",
+                "used_fallback_llm": True,
+                "source": STT_EMPTY_SUPPRESSED_SOURCE,
+            }
+        cls._mark_empty_notice(device_id)
+        return {
+            "guidance_text": STT_EMPTY_NOTICE_TEXT,
+            "used_fallback_llm": True,
+            "source": "stt-bridge-empty",
+        }
 
     @classmethod
     def _check_self_echo(cls, device_id: str, transcript: str) -> bool:
@@ -354,12 +394,9 @@ class SttToLlmBridge:
         normalized_text = self._normalize_stt_text(stt_result.text)
 
         # [하드 코딩 부분 - 핵심] 입력 없음은 안전 우선 안내로 즉시 종료한다.
+        # 2026-07-19: 연속 오탐 시 동일 안내 쿨다운 억제.
         if not normalized_text:
-            return {
-                "guidance_text": "음성이 인식되지 않았어요. 다시 말씀해 주세요.",
-                "used_fallback_llm": True,
-                "source": "stt-bridge-empty",
-            }
+            return self._empty_input_response(device_id)
 
         # 2026-07-11 추가: 자기-에코 감지. TTS 안내문이 재생되는 도중 사용자가 녹음
         # 버튼을 누르면 스피커 소리가 마이크로 다시 들어가 전사된다(음향 블리드). 이

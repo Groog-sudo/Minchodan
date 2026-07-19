@@ -110,12 +110,21 @@ def test_build_orch_input_success() -> None:
 @pytest.mark.asyncio
 async def test_invoke_existing_llm_empty_fallback() -> None:
     bridge = SttToLlmBridge()
+    # 쿨다운 상태 초기화 (다른 테스트 오염 방지)
+    SttToLlmBridge._last_empty_notice_ts.pop("test-device", None)
     result = _make_stt_result("", has_input=False)
 
     response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "stt-bridge-empty"
     assert response["used_fallback_llm"] is True
+    assert "인식되지" in response["guidance_text"]
+
+    # 쿨다운 내 재호출은 무음 억제
+    suppressed = await bridge.invoke_existing_llm(result, "test-device")
+    assert suppressed["source"] == "stt-bridge-empty-suppressed"
+    assert suppressed["guidance_text"] == ""
+    SttToLlmBridge._last_empty_notice_ts.pop("test-device", None)
 
 
 @pytest.mark.asyncio

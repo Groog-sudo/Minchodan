@@ -337,6 +337,30 @@ class AudioEngine {
   }
 
   /**
+   * T3-C (2026-07-18): 현재 재생 중인 가이드 우선순위.
+   * 0=없음, 1=인지 경로, 2=STT 응답.
+   */
+  public getActiveGuidePriority(): 0 | 1 | 2 {
+    return this.activeGuidePriority;
+  }
+
+  /**
+   * 2026-07-19: STT 응답(priority=2) 재생 중에는 끊지 않고, 인지 가이드(priority<=1)만 선점.
+   * STT 오탐이 실패 안내를 재생하는 도중 다시 STT가 켜지며 1.9s에서 잘리던 실측 수정.
+   */
+  public stopGuideAudioIfPriorityAtMost(maxPriority: 1 | 2): boolean {
+    if (!this.isGuidePlaying) return false;
+    if (this.activeGuidePriority > maxPriority) {
+      console.log(
+        `[AudioEngine] stopGuideAudio 생략: activePriority=${this.activeGuidePriority} > max=${maxPriority}`,
+      );
+      return false;
+    }
+    this.stopGuideAudio();
+    return true;
+  }
+
+  /**
    * T3-C (2026-07-18): STT 상호작용 구간을 활성화/비활성화한다. 활성화된 동안에는
    * 인지 경로(priority=1) 안내를 드롭하여 STT 응답과의 충돌을 방지한다.
    * STT 응답 오디오의 실제 종료 콜백에서 비활성화하는 것을 원칙으로 하며, 이 메서드는
@@ -344,7 +368,9 @@ class AudioEngine {
    */
   public setSttActive(active: boolean): void {
     this.sttActive = active;
-    if (!active) {
+    // 2026-07-19: 재생 중인 STT 안내(priority=2)의 우선순위를 여기서 지우면
+    // 초단시간 녹음 폐기 직후 인지 가이드가 끼어들어 끊긴다. 재생 중이 아닐 때만 리셋.
+    if (!active && !this.isGuidePlaying) {
       this.activeGuidePriority = 0;
     }
     console.log(`[AudioEngine] STT 상호작용 ${active ? "활성화" : "비활성화"}`);

@@ -576,8 +576,10 @@ export function CameraView() {
     // 타이머에서 해제한다.
     audioEngine.setSttActive(true);
     setSttErrorInfo("");
-    if (audioEngine.isGuidePlaying) {
-      audioEngine.stopGuideAudio();
+    // 2026-07-19: STT 실패/응답 안내(priority=2) 재생 중에는 stop하지 않는다.
+    // 오탐 STT가 안내를 1.9s에서 자르던 실측 수정. 인지 가이드(priority<=1)만 선점.
+    const stoppedCognitive = audioEngine.stopGuideAudioIfPriorityAtMost(1);
+    if (stoppedCognitive) {
       delayedSttStartTimerRef.current = setTimeout(() => {
         delayedSttStartTimerRef.current = null;
         if (sttPressActiveRef.current) {

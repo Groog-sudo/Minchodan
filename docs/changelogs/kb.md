@@ -3256,3 +3256,18 @@
 - **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/src/components/CameraView.tsx`, `console/src/api/useLiveFeed.ts`, `console/src/App.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/design/api_specification.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 실기기에서 호+라벨 표시 확인. live-feed에 JWT 부착 시 JPEG/`server_detection` 수신 확인. `npx tsc --noEmit`(console) 통과. `expo prebuild --clean`으로 생긴 네이티브 브릿지/CoreML 삭제는 커밋 전 `git checkout`으로 복구(의도 변경 아님).
 - **비고**: 푸시 브랜치 `kb`. 안내 음성 끊김은 STT 시작 시 `stopGuideAudio`·오탐 실패 안내 중복이 주원인으로 로그 진단 완료(이번 커밋 범위 외, 후속 수정 예정).
+
+---
+
+### 2026-07-19 | 7단계 | 안내 음성 끊김 수정 - STT 선점/오탐 루프 차단
+
+- **배경**: 실기기·Metro 로그에서 `stopGuideAudio … currentTime=1.90s / duration=5.01s (조기 중단 의심!)`과 `hold=0.02~0.18s` 초단시간 녹음 후 `"음성이 인식되지 않았어요"` 연속 재생이 관측됨. STT 시작이 재생 중 안내를 강제 중단하고, 탭 오탐이 실패 안내 TTS를 반복해 끊김처럼 들림.
+- **변경 내용**:
+  - **단말**: `stopGuideAudioIfPriorityAtMost(1)` - STT 응답(priority=2) 재생 중에는 끊지 않음. `CameraView` STT press-in에 적용.
+  - **단말**: `useSttRecorder`에서 hold < 400ms 또는 iOS captured < 0.35s면 서버 미전송(조용히 폐기) + `setSttActive(false)`.
+  - **단말**: `setSttActive(false)`가 재생 중 가이드 우선순위를 지우지 않도록 수정.
+  - **서버**: `MIN_STT_AUDIO_BYTES` 4096→11200. 길이 부족/0바이트는 TTS 없이 조용히 폐기.
+  - **서버**: 빈 전사 안내 5초 쿨다운(`stt-bridge-empty-suppressed`). ws_router는 억제/빈 guidance를 클라이언트 미전송.
+- **관련 파일**: `client/src/services/audioEngine.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useSttRecorder.ts`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_ws_router_stt.py`, `tests/test_stt_to_llm_bridge_template.py`
+- **검증 결과**: `ruff check` 통과. `pytest tests/test_stt_to_llm_bridge_template.py::test_invoke_existing_llm_empty_fallback tests/test_ws_router_stt.py` 11 passed. FastAPI 재기동·앱 재실행.
+- **비고**: 푸시 브랜치 `kb`→`dev` ff 병합.

@@ -52,7 +52,7 @@ if sys.stdout.encoding != "utf-8":
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-MIN_STT_AUDIO_BYTES = 4096
+MIN_STT_AUDIO_BYTES = 11200  # 2026-07-19: ~0.35s @16kHz mono PCM16 (이전 4096은 탭 오탐 통과)
 
 
 async def _send_detection_ack(
@@ -405,25 +405,12 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
     if len(audio_bytes) < MIN_STT_AUDIO_BYTES:
         logger.warning(
-            f"[WS] stt_audio 길이 부족 - 전사 생략: device_id={device_id}, "
+            f"[WS] stt_audio 길이 부족 - 전사/안내 생략(조용히 폐기): device_id={device_id}, "
             f"bytes={len(audio_bytes)}, min={MIN_STT_AUDIO_BYTES}"
         )
-        too_short_text = "음성이 너무 짧습니다. 버튼을 누른 채로 다시 말씀해 주세요."
-        with contextlib.suppress(Exception):
-            await ws.send_json(
-                {
-                    "type": "guide",
-                    "event_id": f"stt-short-{device_id}-{now_ts()}",
-                    "risk_level": "low",
-                    "guidance_text": too_short_text,
-                    "audio_codec": "wav",
-                    "duration_ms": 0,
-                    "transport": "none",
-                    "source": "stt-audio-too-short",
-                    "ts": now_ts(),
-                }
-            )
-        return _estimate_stt_hold_seconds(too_short_text)
+        # 2026-07-19: "너무 짧습니다" TTS를 보내지 않는다.
+        # 탭 오탐마다 안내가 나와 재생 중 안내를 자르는 루프를 막는다.
+        return 0.0
 
     saved_path: Path | None = None
     try:
@@ -435,23 +422,8 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
 
         # 0바이트 오디오 즉시 차단 - Whisper 예외 전에 안내 반환
         if len(audio_bytes) == 0:
-            logger.warning(f"[WS] STT 오디오 0바이트: device_id={device_id}")
-            empty_audio_text = "음성이 녹음되지 않았습니다. 다시 시도해 주세요."
-            with contextlib.suppress(Exception):
-                await ws.send_json(
-                    {
-                        "type": "guide",
-                        "event_id": f"stt-empty-{device_id}-{now_ts()}",
-                        "risk_level": "low",
-                        "guidance_text": empty_audio_text,
-                        "audio_codec": "wav",
-                        "duration_ms": 0,
-                        "transport": "none",
-                        "source": "stt-empty-audio",
-                        "ts": now_ts(),
-                    }
-                )
-            return _estimate_stt_hold_seconds(empty_audio_text)
+            logger.warning(f"[WS] STT 오디오 0바이트: device_id={device_id} - 조용히 폐기")
+            return 0.0
 
         with tempfile.NamedTemporaryFile(suffix=audio_suffix, delete=False) as temp_wav:
             temp_wav.write(audio_bytes)
@@ -517,6 +489,14 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                     )
             except Exception as e:
                 logger.error(f"[WS] stt_echo DB 로그 저장 실패: device_id={device_id}, {e}")
+            return 0.0
+
+        # 2026-07-19: 빈 전사 안내 쿨다운 억제 / 빈 guidance는 클라이언트 미전송
+        if bridge_source == "stt-bridge-empty-suppressed" or not guidance_text:
+            logger.info(
+                f"[WS] STT 응답 스킵: device_id={device_id}, source={bridge_source}, "
+                f"guidance_len={len(guidance_text)}"
+            )
             return 0.0
 
         logger.info(

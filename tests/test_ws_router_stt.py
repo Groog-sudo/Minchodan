@@ -36,10 +36,10 @@ class _FakeWebSocket:
 
 
 def _fake_wav_b64() -> str:
-    # jh 병합(2026-07-13)으로 추가된 MIN_STT_AUDIO_BYTES(4096) 가드를 통과시키기 위해
+    # MIN_STT_AUDIO_BYTES(11200, 2026-07-19) 가드를 통과시키기 위해
     # 원래의 16바이트 더미보다 넉넉하게 패딩한다(이 테스트의 검증 대상은 길이 가드가
     # 아니라 그 이후의 전사/가이드 생성 흐름이므로 최소 길이만 만족시키면 된다).
-    return base64.b64encode(b"RIFF....WAVEfmt " + b"\x00" * 4096).decode("utf-8")
+    return base64.b64encode(b"RIFF....WAVEfmt " + b"\x00" * 12000).decode("utf-8")
 
 
 @pytest.mark.asyncio
