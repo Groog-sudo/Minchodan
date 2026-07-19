@@ -45,6 +45,8 @@ class SessionManager:
         # T3-S (2026-07-18): 디바이스별 STT 상호작용 활성 상태. consumer가 인지 가이드
         # 발행을 억제할 때 참조한다. 값은 monotonic 시간 기준 만료 시각.
         self._stt_activity: dict[str, float] = {}
+        # guide 오디오 미러 송신 태스크 참조 유지(RUF006: dangling create_task 방지).
+        self._guide_audio_tasks: set[asyncio.Task[None]] = set()
 
     async def connect(self, device_id: str, websocket: WebSocket) -> None:
         """새 연결 수락 및 등록.
@@ -156,6 +158,40 @@ class SessionManager:
         2026-07-17: 직렬 await 대신 콘솔별 latest-only 큐에 인큐한다.
         """
         self._enqueue_console("json", data)
+
+    async def broadcast_guide_audio_to_consoles(
+        self,
+        meta: dict,
+        audio_bytes: bytes,
+    ) -> None:
+        """인지 가이드 오디오를 콘솔에 JSON+WAV 쌍으로 전달한다.
+
+        latest-only 큐(maxsize=1)를 쓰면 JSON 직후 WAV를 넣을 때 앞선 JSON이
+        드롭되어 콘솔이 영원히 '대기 중'에 머문다(2026-07-19 실측).
+        이 경로만 큐를 우회해 쌍을 원자적으로 보낸다. 느린 콘솔은 태스크로 분리.
+        """
+        if not self.console_connections:
+            return
+
+        async def _send_pair(ws: WebSocket) -> None:
+            try:
+                if ws.application_state != WebSocketState.CONNECTED:
+                    self.disconnect_console(ws)
+                    return
+                await ws.send_json(meta)
+                if audio_bytes:
+                    await ws.send_bytes(audio_bytes)
+            except Exception as e:
+                logger.error(f"[Session] 콘솔 guide 오디오 송신 예외: {e}")
+                self.disconnect_console(ws)
+
+        for ws in list(self.console_connections):
+            task = asyncio.create_task(
+                _send_pair(ws),
+                name=f"console-guide-audio-{id(ws)}",
+            )
+            self._guide_audio_tasks.add(task)
+            task.add_done_callback(self._guide_audio_tasks.discard)
 
     def disconnect(self, device_id: str, websocket: WebSocket | None = None) -> None:
         """연결 해제 및 등록 삭제."""

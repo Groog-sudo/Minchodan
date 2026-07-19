@@ -3365,3 +3365,46 @@
 - **관련 파일**: `client/src/services/audioEngine.ts`, `server/capture/stream_splitter.py`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx tsc --noEmit`(client) 클린.
 - **비고**: Metro 핫리로드로 단말 반영.
+
+---
+
+### 2026-07-19 | 콘솔 | 단말 오디오 미러 무음 수정
+
+- **배경**: 콘솔 웹에서 단말과 동일한 안내 음성이 전혀 들리지 않음.
+- **원인**:
+  1. `useLiveFeed`가 `binaryType=blob`인데 guide WAV는 `ArrayBuffer` 분기만 처리 → WAV가 JPEG로 오인.
+  2. 반사 clip 경로 `reflex_clips/xxx.wav`를 `/reflex_clips/`에 또 붙여 404.
+  3. 브라우저 자동재생 정책으로 `audio.play()` 차단.
+- **변경 내용**:
+  - Blob/ArrayBuffer 모두 RIFF 헤더로 guide WAV 판별 후 Blob URL 생성.
+  - clip basename으로 `public/reflex_clips/` 매핑.
+  - "오디오 활성화" 버튼으로 자동재생 unlock.
+- **관련 파일**: `console/src/api/useLiveFeed.ts`, `console/src/components/ConsoleAudioMirror.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npx tsc --noEmit` 클린.
+- **비고**: 대시보드에서 "오디오 활성화" 클릭 후 단말 안내 시 미러 재생 확인.
+
+---
+
+### 2026-07-19 | 콘솔 | 인지 가이드 미러 복구 + 활성/비활성 토글
+
+- **배경**: 인지 가이드는 계속 "대기 중", 반사 알림만 정상. 미러 on/off 필요.
+- **원인**: 콘솔 송신 큐 `maxsize=1`이 guide JSON 직후 WAV를 넣을 때 JSON을 드롭.
+- **변경 내용**:
+  - `broadcast_guide_audio_to_consoles`: JSON+WAV 쌍을 latest-only 큐 우회로 원자 전송.
+  - `useLiveFeed`: `console_guide_audio` JSON 수신 즉시 텍스트 표시.
+  - `ConsoleAudioMirror`: 인지/반사 각각 활성·비활성 토글(localStorage 유지).
+- **관련 파일**: `server/api/session_manager.py`, `consumer.py`, `ws_router.py`, `debug_router.py`, `console/src/api/useLiveFeed.ts`, `ConsoleAudioMirror.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npx tsc --noEmit` 클린.
+- **비고**: 서버 재시작 후 콘솔에서 "오디오 활성화" + 인지/반사 토글 확인.
+
+---
+
+### 2026-07-19 | 콘솔 | RiskEventLog 상세 출력 박스·페이지네이션 정렬
+
+- **배경**: Detection Guidance Log와 달리 RiskEventLog는 전체 목록만 보여 가독성·탐색이 떨어짐.
+- **변경 내용**:
+  - 페이지당 10건, ←/번호/.../→ 페이지네이션(Guidance Log와 동일 CSS).
+  - 행 클릭 시 `frame-detail` 출력 박스로 위험도·객체·안내문 등 상세 표시.
+- **관련 파일**: `console/src/components/RiskEventLog.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npx tsc --noEmit` 클린.
+- **비고**: SSE `state.risks`(최대 80건) 기준 클라이언트 페이지네이션.

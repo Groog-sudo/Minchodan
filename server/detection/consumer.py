@@ -1342,8 +1342,11 @@ class DetectionConsumer:
                     "guidance_text": guidance_text,
                     "ts": payload["ts"],
                 }
-                await manager.broadcast_json_to_consoles(console_payload)
-                await manager.broadcast_to_consoles(audio_bytes)
+                # maxsize=1 latest-only 큐를 우회해 JSON+WAV 쌍이 깨지지 않게 전송.
+                await manager.broadcast_guide_audio_to_consoles(
+                    console_payload,
+                    audio_bytes,
+                )
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
             )

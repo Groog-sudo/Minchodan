@@ -274,7 +274,7 @@ async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
         if audio_bytes_out:
             await ws.send_bytes(audio_bytes_out)
             # 2026-07-19: 관제 콘솔 미러링. STT 대기 안내도 단말과 동일하게 재생.
-            await manager.broadcast_json_to_consoles(
+            await manager.broadcast_guide_audio_to_consoles(
                 {
                     "type": "console_guide_audio",
                     "event_id": f"stt-wait-{device_id}-{now_ts()}",
@@ -284,9 +284,9 @@ async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
                     "guidance_text": wait_text,
                     "source": "stt-wait-notice",
                     "ts": now_ts(),
-                }
+                },
+                audio_bytes_out,
             )
-            await manager.broadcast_to_consoles(audio_bytes_out)
     logger.info(f"[WS] STT 대기 안내 전송: device_id={device_id}, text={wait_text!r}")
 
 
@@ -321,7 +321,7 @@ async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> 
         if audio_bytes_out:
             await ws.send_bytes(audio_bytes_out)
             # 2026-07-19: 관제 콘솔 미러링. 길안내 멘트도 단말과 동일하게 재생.
-            await manager.broadcast_json_to_consoles(
+            await manager.broadcast_guide_audio_to_consoles(
                 {
                     "type": "console_guide_audio",
                     "event_id": f"nav-{device_id}-{now_ts()}",
@@ -331,9 +331,9 @@ async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> 
                     "guidance_text": text,
                     "source": nav_event.get("type", "nav-guidance"),
                     "ts": now_ts(),
-                }
+                },
+                audio_bytes_out,
             )
-            await manager.broadcast_to_consoles(audio_bytes_out)
     logger.info(
         f"[WS] 길안내 전송: device_id={device_id}, text={text!r}, "
         f"type={nav_event.get('type')}, waypoint_idx={nav_event.get('active_waypoint_idx')}"
@@ -554,7 +554,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             if audio_bytes_out:
                 await ws.send_bytes(audio_bytes_out)
                 # 2026-07-19: 관제 콘솔 미러링. STT 응답 안내도 단말과 동일하게 재생.
-                await manager.broadcast_json_to_consoles(
+                await manager.broadcast_guide_audio_to_consoles(
                     {
                         "type": "console_guide_audio",
                         "event_id": stt_event_id,
@@ -564,9 +564,9 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                         "guidance_text": guidance_text,
                         "source": bridge_result.get("source", "stt-bridge"),
                         "ts": now_ts(),
-                    }
+                    },
+                    audio_bytes_out,
                 )
-                await manager.broadcast_to_consoles(audio_bytes_out)
 
         dial_action = bridge_result.get("dial_action")
         if isinstance(dial_action, dict):
