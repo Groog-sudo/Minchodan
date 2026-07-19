@@ -10,7 +10,7 @@ description: |
 # TTS Voice Streamer (7단계: 음성 안내 출력, 이중 채널)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.0 (2026-07-09 실기기 TTS 절단 근본 원인 규명에 따른 전면 정정: 인지 TTS 엔진 Piper→Supertonic 교체, `audio_mp3_b64`→WS 바이너리 프레임 전환, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어 도입)
+> **버전**: v0.4.1 (2026-07-19 단말 TTS 백업 `react-native-tts`→`expo-speech` 정정 + 이전 v0.4.0 이력 유지: 2026-07-09 실기기 TTS 절단 근본 원인 규명에 따른 전면 정정: 인지 TTS 엔진 Piper→Supertonic 교체, `audio_mp3_b64`→WS 바이너리 프레임 전환, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어 도입)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
 > **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 8, 16, 17.2
 
@@ -67,7 +67,7 @@ description: |
 | 서버 프레임워크 | FastAPI + Uvicorn | WebSocket |
 | 메시지 버스 | Redis SETEX | 중복 억제 (60초) |
 | 모바일 오디오 | **expo-audio** (`createAudioPlayer`) | 인지 음성·반사 비프 재생 (Web Audio API 아님) |
-| 모바일 TTS 백업 | react-native-tts | 서버 TTS 실패 시 우회 |
+| 모바일 TTS 백업 | expo-speech | 서버 TTS 실패 시 우회 |
 | 접근성 | AccessibilityInfo | VoiceOver/TalkBack |
 | 햅틱 | expo-haptics | 위험도 기반 진동 |
 

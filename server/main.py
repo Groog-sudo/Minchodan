@@ -39,8 +39,11 @@ from server.navigation.server import app as navigation_app
 from server.navigation.server import redis_stream_listener
 
 if not logging.getLogger().handlers:
+    # 2026-07-19: LOG_LEVEL 환경 변수로 외부화. 기본 INFO(운영 시 DEBUG 폭주 방지).
+    log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=log_level,
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
 

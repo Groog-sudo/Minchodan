@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-19
-> **버전**: v0.4.24 (2026-07-18 §2.11/§2.14 Tailscale Metro를 팀 공유 표준으로 유지하되 **개발 PC IP는 각자 덮어쓰기** 운영 규칙 명시 + 이전 v0.4.23: `METRO_BUNDLER_HOST` 등재 + 이전 v0.4.22: `YOLO_AUTOINSTALL`)
+> **버전**: v0.4.25 (2026-07-19 §2.1 `LOG_LEVEL` 신규 등재 + 서버 로깅 레벨 외부화 + 이전 v0.4.24: §2.11/§2.14 Tailscale Metro를 팀 공유 표준으로 유지하되 **개발 PC IP는 각자 덮어쓰기** 운영 규칙 명시 + 이전 v0.4.23: `METRO_BUNDLER_HOST` 등재 + 이전 v0.4.22: `YOLO_AUTOINSTALL`)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -17,7 +17,13 @@
 
 ## 2. 환경 변수 전체 매트릭스
 
-### 2.1 LLM / Ollama (6단계 오케스트레이션)
+### 2.1 일반 (서버 로깅)
+
+| 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`LOG_LEVEL`** | string | 선택 | `INFO` | **2026-07-19 신규.** 서버 루트 로거 레벨 (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `DEBUG`는 개발 시 상세 추적용, 운영 시 `INFO` 권장(로그 폭주 및 민감정보 노출 방지) | `server/main.py` |
+
+### 2.2 LLM / Ollama (6단계 오케스트레이션)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -31,20 +37,20 @@
 | **`EMBEDDING_MODEL`** | string | 필수 | `nomic-embed-text` | 임베딩 모델 (768차원) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`OPENAI_API_KEY`** | string | 선택 | (미설정) | OpenAI 핫스왑 시 필요. 미설정 시 OpenAI 클라이언트 초기화에서 `ValueError` 발생 후 Ollama로 폴백 | [`architecture.md`](architecture.md) 13.4절 |
 
-### 2.2 Vector DB (ChromaDB) (4·5단계 RAG)
+### 2.3 Vector DB (ChromaDB) (4·5단계 RAG)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`CHROMA_PATH`** | path | 필수(설계상) | `data/chroma_db` | ChromaDB persist 디렉토리 (로컬 파일 기반). **2026-07-08 정정**: `server/rag/retriever.py`의 `get_default_retriever()`가 `os.getenv("CHROMA_PATH", "data/chroma_db")`로 읽어 실시간 인지 가이드 파이프라인에 실제 연결됨(이전에는 미소비 상태였음) | [`architecture.md`](architecture.md) 2절 |
 | **`CHROMA_COLLECTION`** | string | 필수(설계상) | `safety_guidelines` | ChromaDB 컬렉션명 (보행 수칙 지식베이스). **2026-07-08 정정**: 기존 `.env`/`.env.example` 기본값(`bidding_kb`/`minchodan_kb`)이 실제 저장된 컬렉션명과 달라 RAG 검색이 항상 미적중이었음. 실제 데이터가 적재된 컬렉션명(`safety_guidelines`)으로 정정하고 `get_default_retriever()`에서 소비하도록 연결 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.5절 |
 
-### 2.3 Redis (이벤트 버스·MCP 메트릭)
+### 2.4 Redis (이벤트 버스·MCP 메트릭)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`REDIS_URL`** | string | 필수 | `redis://localhost:6379` | Redis 연결 URL. Streams(`risk.events`, `mcp:metrics`) 및 컨텍스트 TTL(30초)에 사용 | [`architecture.md`](architecture.md) 2절·13.3절 |
 
-### 2.4 WebSocket 서버 (1단계 통신망)
+### 2.5 WebSocket 서버 (1단계 통신망)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -58,7 +64,7 @@
 | **`APP_ENV`** | string | 선택 | `development` | 배포 환경 구분(`development`/`production`). **2026-07-11 신설**: `production`이면 (1) `JWT_SECRET_KEY` 필수(기동 거부), (2) `DEVICE_STATIC_TOKENS` 미설정 시 정적 디바이스 토큰 경로 비활성화(JWT만 인정) | `server/db/security.py`, `server/api/auth.py` |
 | **`DEVICE_STATIC_TOKENS`** | string | 선택 | (개발 기본 2식) | 정적 디바이스 토큰 목록, `device_id:token` 쉼표 구분(예: `dev-001:token-abc-001,dev-002:token-abc-002`). **2026-07-11 신설**: 코드 하드코딩 딕셔너리를 환경 변수로 분리. 미설정 시 개발 환경은 개발 기본값 폴백(경고 로그), 운영 환경은 빈 목록 | `server/api/auth.py` |
 
-### 2.5 탐지 설정 (3단계 Detection)
+### 2.6 탐지 설정 (3단계 Detection)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -86,7 +92,7 @@
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO_AUTOINSTALL`** | bool | 선택 | `False` | **2026-07-19 신규.** ultralytics 자체 환경변수(`YOLO_AUTOINSTALL`, Minchodan 접두사 아님). 모델 로드/추론마다 체크포인트 내장 requirements를 현재 설치본과 비교해 불일치 시 런타임 `pip install`을 시도하는 AutoUpdate 기능을 제어. `True`(ultralytics 기본값)면 방금 갱신된 패키지와 이미 임포트된 모듈이 어긋나 `'Conv' object has no attribute 'bn'` 추론 오류가 재발한다(실측 확인). `docker/Dockerfile`에 `ENV`로 기본값 고정, `docker-compose*.yml`에도 명시 | `docker/Dockerfile`, `docker/docker-compose*.yml` |
 
-### 2.6 TTS (7단계 음성 출력)
+### 2.7 TTS (7단계 음성 출력)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -104,7 +110,7 @@
 
 > **TTS 엔진 선택 이력**: piper → **supertonic(최종 선정, 2026-07-09 코드 반영 완료)**. 현재 코드 런타임(`get_tts_service()`)은 `supertonic`(기본)·`piper`·`pyttsx3` 3종 모두 구현되어 있으며, 미지원 값 입력 시 경고 로그 후 `supertonic`으로 강제 폴백합니다.
 
-### 2.7 데이터 경로 (4단계 RAG 빌드·7단계 반사 클립)
+### 2.8 데이터 경로 (4단계 RAG 빌드·7단계 반사 클립)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -123,7 +129,7 @@
 | **`IMAGE_UPLOAD_MAX_RETRIES`** | int | 선택 | `1` | 중앙 저장 API 업로드 재시도 횟수. 5xx/네트워크/타임아웃 계열만 짧게 재시도합니다. 구 명칭 `EVENT_FRAME_UPLOAD_RETRIES`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
 | **`WRITER_INSTANCE_ID`** | string | 선택 | `HOSTNAME` 폴백 | 다중 FastAPI writer 식별자. `detection_guidance_logs.writer_instance_id`에 저장되어 어떤 서버가 로그를 썼는지 추적합니다 | `server/services/detection_guidance_log_service.py` |
 
-### 2.8 Slack Integration (공통 경보)
+### 2.9 Slack Integration (공통 경보)
 
 Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 방식을 사용합니다.
 
@@ -137,7 +143,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 > **2026-07-14 정정**: 이전 명세(v0.4.17)는 "2026-07-07 재정정: `SLACK_WEBHOOK_URL`은 코드 어디에도 쓰이지 않는 미사용 변수"라고 단언했으나, **코드 재검증 결과 부정확**함이 확인됨. `server/mcp/slack_notifier.py:49`에서 `os.getenv("SLACK_WEBHOOK_URL")`로 로드하며 L59에서 **최우선 분기**로 활성 사용 중. 두 인증 방식(Webhook/Bot Token)은 `scripts/slack_publisher.py`(Bot Token 전용)와 `server/mcp/slack_notifier.py`(Webhook 우선/Bot Token 폴백)로 구현체가 분리되어 있으며, 본 명세서는 두 구현체 모두를 코드 기준으로 반영함.
 
-### 2.9 LangSmith Trace (선택적 관측)
+### 2.10 LangSmith Trace (선택적 관측)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -146,7 +152,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 > **선택적 명세**: LangSmith Trace MCP는 `architecture.md` 13.4절에서 "선택적으로 기입"으로 명시되어 있으며, 미설정 시 6단계 LangGraph 동작에는 영향을 주지 않습니다.
 
-### 2.10 GPU 모니터링 Mock (개발·테스트 전용)
+### 2.11 GPU 모니터링 Mock (개발·테스트 전용)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -155,7 +161,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 > **개발 전용**: 이 변수들은 CUDA GPU가 감지되지 않은 개발·CI 환경에서 `GPUMonitorMCP`의 Mock 폴백 동작을 제어합니다. 프로덕션 환경에서는 무시됩니다.
 
-### 2.11 외부망 연결 (Tailscale, 야외 도로 테스트용)
+### 2.12 외부망 연결 (Tailscale, 야외 도로 테스트용)
 
 **2026-07-13 변경**: ngrok 프록시(클라우드 경유 지연)를 Tailscale P2P VPN으로 전면 교체. `NGROK_AUTHTOKEN` 변수 및 `docker-compose.yml`/`docker-compose.macos.yml`의 `ngrok` 서비스를 완전히 제거했다(서버 인프라 결정 - kb). 클라이언트 접속 방식은 처음엔 기존 `lan` 모드(`EXPO_PUBLIC_LAN_IP`)를 재사용해 구현했으나, jy 브랜치 병합 시 §2.14의 전용 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다(jy가 같은 세션에서 독립적으로 구현, `network_probe` RTT 계측과도 통합됨). 실기기는 `client/.env`에 `EXPO_PUBLIC_NETWORK_MODE=tailscale`, `EXPO_PUBLIC_TAILSCALE_HOST=<개발 PC의 Tailscale IP 또는 MagicDNS 이름>`을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다(서버 측 환경변수는 불요 - Tailscale 자체가 OS 레벨 네트워크 인터페이스). 클라이언트 쪽 `NETWORK_MODE=ngrok` 분기와 `@expo/ngrok` 의존성은 폴백으로 코드에 보존되어 있으나, ngrok 도커 인프라 자체는 없으므로 실제로 그 경로를 쓰려면 컨테이너를 별도로 다시 구성해야 한다. 상세: [`docs/changelogs/kb.md`](../changelogs/kb.md), [`docs/changelogs/jy.md`](../changelogs/jy.md) 2026-07-13 항목.
 
@@ -171,7 +177,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 >
 > Tailscale IP 확인: macOS에서 `tailscale ip -4`. MagicDNS 이름을 쓸 수 있으면 IP 대신 호스트명도 가능하다.
 
-### 2.12 데이터베이스 (MariaDB)
+### 2.13 데이터베이스 (MariaDB)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -188,13 +194,13 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`COMPOSE_DB_HOST`** | string | 선택 | (`DB_HOST`, 미설정 시 `mariadb`) | FastAPI 컨테이너의 DB 호스트만 명시적으로 재정의합니다. 미설정 시 기존 원격 `DB_HOST`를 유지합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 | **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI의 실제 DB 대상은 `COMPOSE_DB_HOST` 또는 `DB_HOST`가 결정합니다. **2026-07-18 정정**: 공유 GPU 서버의 로컬 3306 포트 충돌을 피하기 위해 `docker/docker-compose.yml`의 `mariadb` 서비스 `ports` 노출을 주석 처리함(원격 DB 기본 연결 유지) — 이 변수는 현재 `docker-compose.macos.yml`에만 적용됨. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml) |
 
-### 2.13 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
+### 2.14 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0). **2026-07-18 정정**: 프로토타입 `pedestrian_navigation.py`가 삭제되어 TMAP 연동은 `server/navigation/server.py`에서 담당 | `server/navigation/server.py:38`, `server/api/ws_router.py` |
 
-### 2.14 클라이언트·콘솔 공개 변수 (빌드 시 인라인, 2026-07-11 신설)
+### 2.15 클라이언트·콘솔 공개 변수 (빌드 시 인라인, 2026-07-11 신설)
 
 > **주의**: `EXPO_PUBLIC_*`(단말 앱)과 `VITE_*`(운영 콘솔)는 빌드 산출물에 **평문 포함**되는 공개 변수입니다. 비밀키를 넣지 않습니다. 서버 `.env`가 아니라 각 앱 디렉토리의 환경 파일(`client/.env`, `console/.env`)에서 관리합니다.
 
@@ -219,7 +225,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`VITE_NAV_MAP_URL`** | string | 선택 | `http://localhost:8000/navigation/?embed=true` | 관제 지도 iframe 주소(2026-07-11 신설) | `console/src/components/OperatorLiveMap.tsx` |
 | **`VITE_API_BASE_URL`** | string | 선택 | `http://localhost:8000` | 콘솔 REST API 기본 주소(2026-07-12 신설). 사후 이력 로그 조회·이벤트 프레임 이미지 서빙에 사용 | `console/src/api/useDetectionLogs.ts`, api_specification §8.5 |
 
-### 2.15 코드 실사용 미등재 변수 (2026-07-14 일괄 명세)
+### 2.16 코드 실사용 미등재 변수 (2026-07-14 일괄 명세)
 
 > **2026-07-14 정합성 검토**: 코드(`os.getenv`)에서 활성 사용 중이나 기존 명세(§2.1~2.14)에 누락되어 있던 변수들을 일괄 등재합니다. 대부분은 고급 튜닝·내부 분기용 선택 변수이므로 기본값 미설정 시 안전 폴백합니다.
 

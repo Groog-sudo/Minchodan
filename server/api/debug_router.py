@@ -35,9 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/debug", tags=["Debug"])
 
 # [하드 코딩 부분 - 핵심] 문자 TTS 실험 기본 문구(앱 DEBUG 패널과 동일 계약).
-_DEFAULT_SMS_TEXT = (
-    "새 문자가 도착했습니다. 엄마에게서. 오늘 저녁 몇 시에 오실 건가요?"
-)
+_DEFAULT_SMS_TEXT = "새 문자가 도착했습니다. 엄마에게서. 오늘 저녁 몇 시에 오실 건가요?"
 
 
 class SpeakToDeviceRequest(BaseModel):
@@ -87,9 +85,7 @@ async def speak_to_device(body: SpeakToDeviceRequest) -> dict:
 
     # [바이브 코딩 부분] RealtimeTTS 합성 → guide JSON + WAV bytes 송신.
     tts = RealtimeTTS()
-    b64_audio, duration_ms = await tts.synthesize(
-        text=text, voice=body.voice, speed=body.speed
-    )
+    b64_audio, duration_ms = await tts.synthesize(text=text, voice=body.voice, speed=body.speed)
     audio_bytes = base64.b64decode(b64_audio) if b64_audio else b""
     # [하드 코딩 부분 - 핵심] event_id 접두사 debug-sms- (stt- 가 아니라 인지 priority=1).
     event_id = f"debug-sms-{int(time.time() * 1000)}"

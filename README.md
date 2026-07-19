@@ -282,7 +282,9 @@ python scripts/build_convenience_db.py
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
 | `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
-| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
+| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행, 우선) | (미설정)                 |
+| `SLACK_BOT_TOKEN`   | Slack Web API Bot Token (폴백)            | (미설정)                 |
+| `SLACK_CHANNEL_ID`  | Slack Bot Token 발송 대상 채널 ID        | (코드 내 폴백값)         |
 
 전체 목록은 [`.env.example`](.env.example) 및 [`docs/ops/environment_variables.md`](docs/ops/environment_variables.md)를 참조합니다.
 

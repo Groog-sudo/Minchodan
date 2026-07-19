@@ -3161,3 +3161,19 @@
 - **관련 파일**: `server/api/ws_router.py`, `server/api/session_manager.py`, `server/main.py`, `server/stt/stt_to_llm_bridge.py`, `server/mcp/manager.py`, `docker/docker-compose.yml`, `docker/Dockerfile`, `docker/docker-compose.macos.yml`, `docker/linux_docker_start.sh`, `docker/macos_docker_start.sh`, `docker/windows_docker_start.bat`, `docker/.dockerignore`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/ops/test_specification.md`, `README.md`, `.github/workflows/lint.yml`, `.pre-commit-config.yaml`, `pyproject.toml`, `scripts/tts_read_text_experiment.py`, `scripts/run_test_100_samples.py`, `scripts/run_test_per_class.py`, `tests/test_convenience_dial_resolver.py`, `tests/test_embedding_engine_factory.py`, `tests/test_ws_echo.py`, `tests/test_ws_live_priority.py`
 - **검증 결과**: `ruff check .` All checks passed. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 353 passed, 1 skipped, 11 deselected. `python -m compileall server scripts tests` 0 오류. 수정 모듈 import 정상.
 - **비고**: `auto-publish-work` 스크립트의 외부 의존성(ruff/react-doctor PATH) 문제로 수동 커밋/푸시. 푸시 브랜치는 `kb`.
+
+---
+
+### 2026-07-19 | 통합 | P3 정합성 잔여 결함 제거 및 추가 stale 정리
+
+- **배경**: 2026-07-18 정합성 검토 보고서의 P3 항목(R5~R7)과 추가로 발견한 문서/변수 stale를 후속 처리.
+- **변경 내용**:
+  - **R5 핫패스 print() 제거**: `server/api/ws_router.py`의 7개 `print()` 디버그 출력을 중복된 `logger` 호출로 정리(또는 제거). `server/navigation/server.py` 20개, `server/navigation/manager.py` 6개 `print()`를 `logger` 기반 로깅으로 교체하고 각 파일에 `logging.getLogger(__name__)` 도입.
+  - **R5 LOG_LEVEL 외부화**: `server/main.py` 루트 로거 레벨을 하드코딩된 `DEBUG`에서 `os.getenv("LOG_LEVEL", "INFO")`로 전환. `.env.example`에 `LOG_LEVEL=INFO` 추가. `docs/ops/environment_variables.md`에 §2.1 "일반 (서버 로깅)" 신규 추가 및 후속 섹션 번호 재조정.
+  - **R6 사장 코드 제거**: `server/navigation/tts_engine.py`(pyttsx3/winsound 기반, 프로덕션 미사용) 삭제. 이를 참조하던 `tests/test_reflex_and_nav.py`의 `test_tts_engine_safe_compilation` 테스트 제거. `server/api/ws_router.py`의 미사용 `_finish_detection()` 헬퍼 제거.
+  - **R7 STT 지연 임포트**: `server/stt/__init__.py`의 `SttToLlmBridge`를 최상단 즉시 임포트에서 `__getattr__` 지연 임포트로 전환. `import server.stt` 시 RAG/LangChain 스택이 끌려오지 않도록 개선하되, `from server.stt import SttToLlmBridge` 사용처는 그대로 동작.
+  - **추가 Slack 환경 변수 정합**: `.env.example`의 Slack 섹션을 "Bot Token 방식" 단일 설명에서 "Webhook 우선 + Bot Token 폴백"으로 정정하고 `SLACK_WEBHOOK_URL` 추가. `README.md` 환경 변수 표에 `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` 추가.
+  - **추가 react-native-tts 잔여 정정**: `docs/stage-guides/stage7_tts_design.md`와 `.agents/skills/tts-voice-streamer/SKILL.md`·`.claude/skills/tts-voice-streamer/SKILL.md`(미러)의 단말 TTS 백업 설명을 `react-native-tts`에서 `expo-speech`로 정정. `server/tts/tts_service.py` 주석 동기화. `stage7_tts_design.md` 헤더의 stale 경로도 `docs/design/`·`docs/dev-guides/` 실제 경로로 정정.
+- **관련 파일**: `server/api/ws_router.py`, `server/navigation/server.py`, `server/navigation/manager.py`, `server/main.py`, `server/stt/__init__.py`, `server/tts/tts_service.py`, `server/navigation/tts_engine.py`(삭제), `tests/test_reflex_and_nav.py`, `.env.example`, `README.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage7_tts_design.md`, `.agents/skills/tts-voice-streamer/SKILL.md`, `.claude/skills/tts-voice-streamer/SKILL.md`
+- **검증 결과**: `ruff check .` All checks passed. `ruff format .` 4 files reformatted. `bandit -c pyproject.toml -r server/ scripts/` No issues identified. `pytest -m "not ollama and not live_server" -q` 352 passed, 1 skipped, 11 deselected. `python -m compileall server scripts tests` 0 오류. 수정 모듈 import 정상.
+- **비고**: 푸시 브랜치는 `kb`.
