@@ -118,36 +118,6 @@ function getZoneTag(zone: string): string {
   return "";
 }
 
-// 2026-07-19: 거리 구역 경계선 스타일 계산. 소스 프레임(640x640) 기준 y 비율을
-// 받아 회전 각도에 맞춰 표시 영역의 left/top/width/height(%)를 반환한다.
-// BBox와 동일 좌표계를 사용해 회전 시에도 경계선이 이미지와 정합하다.
-function getZoneBoundaryStyle(
-  ySrcRatio: number,
-  rotateDeg: number,
-  color: string,
-): React.CSSProperties {
-  const angle = ((rotateDeg % 360) + 360) % 360;
-  const LINE_W = 2;
-  const base: React.CSSProperties = {
-    position: "absolute",
-    backgroundColor: color,
-    opacity: 0.7,
-    pointerEvents: "none" as const,
-  };
-  if (angle === 90) {
-    // 소스 가로선 → 표시 세로선. left=(1-y)%, top=0, height=100%
-    return { ...base, left: `${(1 - ySrcRatio) * 100}%`, top: 0, width: LINE_W, height: "100%" };
-  }
-  if (angle === 270) {
-    return { ...base, left: `${ySrcRatio * 100}%`, top: 0, width: LINE_W, height: "100%" };
-  }
-  if (angle === 180) {
-    return { ...base, left: 0, top: `${(1 - ySrcRatio) * 100}%`, width: "100%", height: LINE_W };
-  }
-  // 0° (기본)
-  return { ...base, left: 0, top: `${ySrcRatio * 100}%`, width: "100%", height: LINE_W };
-}
-
 export function LiveCameraFeed({
   imageUrl,
   latestDetections,
@@ -319,63 +289,48 @@ export function LiveCameraFeed({
                 );
               })}
 
-            {/* 2026-07-19: Near/Medium/Far 거리 구역 경계선 오버레이.
-                회전 각도에 맞춰 표시 영역에 2개의 경계선을 그린다.
-                y=0.50 (MED/FAR 경계), y=0.75 (NEAR/MED 경계).
-                CPU 비용: 회전 각도 변경 시에만 재계산 (useMemo 불필요, 렌더 2회). */}
+            {/* 2026-07-19: Near/Medium/Far 거리 구역 호 오버레이 (SVG).
+                호 끝점을 좌·우 화면 가장자리(x=0, x=W)에 고정. 측면선은 제거. */}
             {naturalSize && (
-              <>
-                <div style={getZoneBoundaryStyle(0.5, rotateDeg, "#F59E0B")} />
-                <div style={getZoneBoundaryStyle(0.75, rotateDeg, "#EF4444")} />
-                <div
-                  style={{
-                    position: "absolute",
-                    right: 4,
-                    top: 4,
-                    backgroundColor: "#3B82F6",
-                    color: "#FFFFFF",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    padding: "2px 6px",
-                    borderRadius: 3,
-                    pointerEvents: "none",
-                  }}
-                >
-                  FAR
-                </div>
-                <div
-                  style={{
-                    position: "absolute",
-                    right: 4,
-                    top: `${50 + 4}%`,
-                    backgroundColor: "#F59E0B",
-                    color: "#000000",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    padding: "2px 6px",
-                    borderRadius: 3,
-                    pointerEvents: "none",
-                  }}
-                >
-                  MED
-                </div>
-                <div
-                  style={{
-                    position: "absolute",
-                    right: 4,
-                    top: `${75 + 4}%`,
-                    backgroundColor: "#EF4444",
-                    color: "#FFFFFF",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    padding: "2px 6px",
-                    borderRadius: 3,
-                    pointerEvents: "none",
-                  }}
-                >
-                  NEAR
-                </div>
-              </>
+              <svg
+                width="100%"
+                height="100%"
+                viewBox={`0 0 ${naturalSize.w} ${naturalSize.h}`}
+                preserveAspectRatio="none"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  pointerEvents: "none",
+                  transform: `rotate(${rotateDeg}deg)`,
+                  transformOrigin: "center",
+                }}
+              >
+                {(() => {
+                  const W = naturalSize.w;
+                  const H = naturalSize.h;
+                  const apexX = W / 2;
+                  const apexY = H * 0.22;
+                  const edgeArc = (edgeYRatio: number) => {
+                    const edgeY = H * edgeYRatio;
+                    const r = Math.sqrt(apexX ** 2 + (edgeY - apexY) ** 2);
+                    return {
+                      d: `M 0 ${edgeY} A ${r} ${r} 0 0 1 ${W} ${edgeY}`,
+                      edgeY,
+                    };
+                  };
+                  const nearArc = edgeArc(0.78);
+                  const medArc = edgeArc(0.52);
+                  return (
+                    <>
+                      <path d={nearArc.d} fill="none" stroke="#EF4444" strokeWidth={2} strokeOpacity={0.75} />
+                      <path d={medArc.d} fill="none" stroke="#F59E0B" strokeWidth={2} strokeOpacity={0.75} />
+                      <text x={W - 44} y={nearArc.edgeY - 6} fill="#EF4444" fontSize={11} fontWeight="bold">NEAR</text>
+                      <text x={W - 40} y={medArc.edgeY - 6} fill="#F59E0B" fontSize={11} fontWeight="bold">MED</text>
+                      <text x={apexX + 8} y={apexY - 4} fill="#3B82F6" fontSize={11} fontWeight="bold">FAR</text>
+                    </>
+                  );
+                })()}
+              </svg>
             )}
 
             {/* Tactical GPS HUD Minimap Overlay */}

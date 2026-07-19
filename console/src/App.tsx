@@ -93,7 +93,7 @@ export default function App() {
   const { state, streamUrl, injectDemoEvents } = useMonitorStream(token);
   // 대시보드/회원관리 두 화면이 같은 실시간 연결(SSE+WS)을 공유하도록 App 최상단에서
   // 1번만 구독한다(페이지 전환마다 재연결되지 않게).
-  const liveFeed = useLiveFeed();
+  const liveFeed = useLiveFeed(token);
   const isDemoMode =
     import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_DATA === "true";
 

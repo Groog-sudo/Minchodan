@@ -3242,3 +3242,55 @@
 - **관련 파일**: `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
 - **검증 결과**: 미러 diff 0건(동일 내용). 스킬 내 링크/코드펜스 정합성 육안 확인.
 - **비고**: 푸시 브랜치는 `kb`. 이번 보완으로 외부 LTE/핫스팟 테스트 시 단말 흰 화면 실패를 사전에 차단하고, Metro 백그라운드 실행 안정성을 확보함.
+
+---
+
+### 2026-07-19 | 2·7단계 | 거리 구역 SVG 호 도식화 + 콘솔 live-feed JWT 연결 수정
+
+- **배경**: Near/Medium/Far 직선 경계선이 원근을 전달하지 못해 SVG 호로 교체. 호 끝점이 화면 중앙에만 그려지던 기하학 오류를 좌·우 가장자리까지 연결하도록 수정하고, FAR처럼 보이던 파란 측면 빗변은 제거. 동시에 관제 콘솔 실시간 화면이 비는 원인을 추적한 결과 `/ws/console/live-feed`가 관리자 JWT를 요구하는데 `useLiveFeed`가 토큰을 붙이지 않아 `1008 token required`로 즉시 종료되고 있었음.
+- **변경 내용**:
+  - **단말**: `react-native-svg` 추가. `CameraView.tsx` `DistanceZoneOverlay`를 SVG Path 호(NEAR y≈78%, MED y≈52%, 끝점 x=0/W) + 라벨로 교체. 측면선 제거.
+  - **콘솔**: `LiveCameraFeed.tsx` 동일 기하학의 인라인 SVG 호. 미사용 `getZoneBoundaryStyle` 제거.
+  - **콘솔 WS 인증**: `useLiveFeed(token)` + `App.tsx`에서 로그인 JWT를 `?token=`으로 전달(SSE와 동일).
+  - **API 명세**: `docs/design/api_specification.md` §8.7·v0.4.31에 live-feed JWT 계약 등재.
+- **관련 파일**: `client/package.json`, `client/package-lock.json`, `client/src/components/CameraView.tsx`, `console/src/api/useLiveFeed.ts`, `console/src/App.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/design/api_specification.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 실기기에서 호+라벨 표시 확인. live-feed에 JWT 부착 시 JPEG/`server_detection` 수신 확인. `npx tsc --noEmit`(console) 통과. `expo prebuild --clean`으로 생긴 네이티브 브릿지/CoreML 삭제는 커밋 전 `git checkout`으로 복구(의도 변경 아님).
+- **비고**: 푸시 브랜치 `kb`. 안내 음성 끊김은 STT 시작 시 `stopGuideAudio`·오탐 실패 안내 중복이 주원인으로 로그 진단 완료(이번 커밋 범위 외, 후속 수정 예정).
+
+---
+
+### 2026-07-19 | 7단계 | 안내 음성 끊김 수정 - STT 선점/오탐 루프 차단
+
+- **배경**: 실기기·Metro 로그에서 `stopGuideAudio … currentTime=1.90s / duration=5.01s (조기 중단 의심!)`과 `hold=0.02~0.18s` 초단시간 녹음 후 `"음성이 인식되지 않았어요"` 연속 재생이 관측됨. STT 시작이 재생 중 안내를 강제 중단하고, 탭 오탐이 실패 안내 TTS를 반복해 끊김처럼 들림.
+- **변경 내용**:
+  - **단말**: `stopGuideAudioIfPriorityAtMost(1)` - STT 응답(priority=2) 재생 중에는 끊지 않음. `CameraView` STT press-in에 적용.
+  - **단말**: `useSttRecorder`에서 hold < 400ms 또는 iOS captured < 0.35s면 서버 미전송(조용히 폐기) + `setSttActive(false)`.
+  - **단말**: `setSttActive(false)`가 재생 중 가이드 우선순위를 지우지 않도록 수정.
+  - **서버**: `MIN_STT_AUDIO_BYTES` 4096→11200. 길이 부족/0바이트는 TTS 없이 조용히 폐기.
+  - **서버**: 빈 전사 안내 5초 쿨다운(`stt-bridge-empty-suppressed`). ws_router는 억제/빈 guidance를 클라이언트 미전송.
+- **관련 파일**: `client/src/services/audioEngine.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useSttRecorder.ts`, `server/api/ws_router.py`, `server/stt/stt_to_llm_bridge.py`, `tests/test_ws_router_stt.py`, `tests/test_stt_to_llm_bridge_template.py`
+- **검증 결과**: `ruff check` 통과. `pytest tests/test_stt_to_llm_bridge_template.py::test_invoke_existing_llm_empty_fallback tests/test_ws_router_stt.py` 11 passed. FastAPI 재기동·앱 재실행.
+- **비고**: 푸시 브랜치 `kb`→`dev` ff 병합.
+
+---
+
+### 2026-07-19 | 도구 | client/.npmrc allow-scripts 추가 (npm 11 설치 가드)
+
+- **배경**: npm 11 환경에서 `npx expo install`/`npm install`이 `EALLOWSCRIPTS`로 실패해 `react-native-svg` 설치가 막힘. project-scoped installs는 CLI `--allow-scripts`가 거부되고 `.npmrc` 또는 package.json `allowScripts`가 필요함.
+- **변경 내용**: `client/.npmrc`에 `allow-scripts=true` 추가(비밀값 없음).
+- **관련 파일**: `client/.npmrc`, `docs/changelogs/kb.md`
+- **검증 결과**: 민감 정보 없음 확인. `kb`/`dev` 동기화 상태 확인.
+- **비고**: 푸시 브랜치 `kb`→`dev`.
+
+---
+
+### 2026-07-19 | 도구 | Git 추적 정리 (det_best mlpackage 해제 + RNSVG Pod 동기화)
+
+- **배경**: AGENTS.md 정책상 커스텀 파인튜닝 가중치(`det_best_*`)는 git-ignore인데 `server/models/yolo26n/det_best_20260705.mlpackage`(~9MB)가 추적 중이었다. 또한 `react-native-svg` 추가 후 Minchodan 트리 복원으로 `Podfile.lock`에 RNSVG가 빠져 있었다.
+- **변경 내용**:
+  - `det_best_20260705.mlpackage`를 `git rm --cached`로 추적 해제(로컬 파일 유지).
+  - `.gitignore`에 `server/models/yolo26n/det_best_*/`·`det_best_*` 규칙 추가.
+  - `pod install`로 `Podfile.lock`/`project.pbxproj`에 RNSVG 번들 반영.
+- **관련 파일**: `.gitignore`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `docs/changelogs/kb.md`
+- **검증 결과**: `git check-ignore`로 det_best mlpackage 무시 확인. `Podfile.lock` RNSVG 6건 매칭. 디스크상 mlpackage 유지.
+- **비고**: CoreML 이중 사본(`assets/.../segmentation.mlpackage` ↔ `ios/segmentation.mlpackage`, 동일 checksum)은 Xcode가 ios 경로를 참조하므로 유지. 히스토리 대용량 blob(yolov8n 등) 제거는 filter-repo 범위라 이번 정리에서 제외.
