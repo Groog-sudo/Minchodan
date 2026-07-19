@@ -64,11 +64,10 @@ Viewed .env:1-68
    - 최종 완료 후 웹 브라우저에서 `http://localhost:8000/docs` 주소로 접속해 FastAPI API 문서(Swagger)가 뜨는지 확인합니다.
 
 3. **Ollama 모델 다운로드**:
-   - PC 자체에는 Ollama를 설치하지 않고, 방금 켜진 Docker 내의 Ollama 컨테이너 안으로 AI 모델들을 불러옵니다.
+   - PC 호스트의 Ollama에 LLM과 임베딩 모델을 준비합니다. 이미지 캡셔닝은 Gemini 경로이므로 `llava`는 필요하지 않습니다.
      ```bash
-     docker exec -it minchodan-ollama ollama pull gemma4:e4b
-     docker exec -it minchodan-ollama ollama pull llava
-     docker exec -it minchodan-ollama ollama pull nomic-embed-text
+     ollama pull gemma4:e4b
+     ollama pull nomic-embed-text
      ```
 
 4. **RAG 의미 검색 데이터베이스(ChromaDB) 구축**:
@@ -89,11 +88,12 @@ Viewed .env:1-68
      ```
 
 2. **모바일 환경변수 설정**:
-   - `client/.env`에 서버 Tailscale IP 또는 MagicDNS 이름을 입력합니다.
+   - `client/.env`에 Tailscale Serve 인증서와 일치하는 서버 MagicDNS 이름을 입력합니다.
      ```ini
      EXPO_PUBLIC_NETWORK_MODE=tailscale
-     EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
-     EXPO_PUBLIC_SERVER_PORT=8000
+     EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+     EXPO_PUBLIC_SERVER_PORT=443
+     EXPO_PUBLIC_WS_SCHEME=wss
      ```
 
 ---

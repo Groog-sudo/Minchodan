@@ -16,7 +16,6 @@ services:
       - ../data:/app/data
       - ../scripts:/app/scripts:ro
       - ../tests:/app/tests:ro
-      - ../.env:/app/.env:ro
       - ../requirements.txt:/app/requirements.txt:ro
     env_file:
       - ../.env
@@ -136,6 +135,8 @@ services:
       - /app/node_modules
     environment:
       - VITE_PROXY_TARGET=http://fastapi:8000
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
     depends_on:
       - fastapi
     restart: unless-stopped

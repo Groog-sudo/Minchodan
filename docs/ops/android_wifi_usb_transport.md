@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-13
-> **버전**: v1.1.0
+> **버전**: v1.1.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
 > **설명**: iOS/Android 실기기 서버 접속을 WiFi(평상시), USB(개발), Tailscale(외부망) 모드로 병행하는 현재 운영 상황 및 절차
 
 # 모바일 WiFi / USB / Tailscale 접속 (평상시 vs 개발 vs 외부망)
@@ -25,7 +25,7 @@
 | :--- | :--- | :--- | :--- |
 | **WiFi** (기본) | `연결: WiFi` | `ws://{WIFI_HOST}:8000/ws/detect` | 평상시·시연·선 없이 사용 |
 | **USB** | `연결: USB` | `ws://127.0.0.1:8000/ws/detect` | 기능 추가·수정·Metro 핫리로드 |
-| **Tailscale** | `연결: Tailscale` | `ws://{TAILSCALE_HOST}:8000/ws/detect` | iOS/Android 실기기 외부망 속도 측정 |
+| **Tailscale** | `연결: Tailscale` | `wss://{MAGICDNS_HOST}:443/ws/detect` | iOS/Android 실기기 외부망 속도 측정 |
 
 - 기본값: **WiFi**
 - 선택값은 `expo-file-system`으로 단말에 저장되어 앱 재시작 후에도 유지된다.
@@ -74,14 +74,15 @@ iOS 실기기를 LTE/5G 등 외부망에서 테스트할 때 사용한다.
 
 ```ini
 EXPO_PUBLIC_NETWORK_MODE=tailscale
-EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
-EXPO_PUBLIC_SERVER_PORT=8000
+EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+EXPO_PUBLIC_SERVER_PORT=443
+EXPO_PUBLIC_WS_SCHEME=wss
 EXPO_PUBLIC_NETWORK_BENCHMARK=true
 ```
 
 1. 서버 PC와 iPhone 모두 Tailscale 앱을 켜고 같은 tailnet에 로그인한다.
-2. 서버 PC에서 FastAPI(`:8000`)를 `0.0.0.0` 바인드로 기동한다.
-3. iPhone Safari에서 `http://[SERVER_TAILSCALE_IP_OR_MAGICDNS]:8000/health`가 열리는지 먼저 확인한다.
+2. 서버 PC에서 FastAPI를 `127.0.0.1:8000`으로 기동하고 `tailscale serve --bg http://127.0.0.1:8000`을 적용한다.
+3. iPhone Safari에서 `https://[SERVER_MAGICDNS_NAME]/health`가 열리는지 먼저 확인한다.
 4. iOS 앱을 재빌드 또는 Metro 캐시 초기화 후 실행한다.
 5. 앱 화면 디버그 줄에서 **`연결: Tailscale`**, **`망RTT: ...ms`** 가 표시되는지 확인한다.
 
@@ -110,8 +111,8 @@ adb reverse --list
 | `EXPO_PUBLIC_WIFI_HOST` | `192.168.137.1` | WiFi 모드 PC 호스트 |
 | `EXPO_PUBLIC_LAN_IP` | (WIFI_HOST 폴백) | 구 명칭. 있으면면 WIFI_HOST로도 사용 |
 | `EXPO_PUBLIC_USB_HOST` | `127.0.0.1` | USB + adb reverse 호스트 |
-| `EXPO_PUBLIC_TAILSCALE_HOST` | (WIFI_HOST 폴백) | Tailscale 외부망 서버 호스트 |
-| `EXPO_PUBLIC_SERVER_PORT` | `8000` | FastAPI/WebSocket 포트 |
+| `EXPO_PUBLIC_TAILSCALE_HOST` | 없음 | Tailscale Serve 인증서와 일치하는 서버 MagicDNS 이름 |
+| `EXPO_PUBLIC_SERVER_PORT` | `8000` | 로컬 직접 연결 기본 포트. Tailscale Serve WSS는 `443` 사용 |
 | `EXPO_PUBLIC_DEFAULT_TRANSPORT` | `wifi` | 최초 기동 기본 모드 (`wifi` \| `usb`) |
 | `EXPO_PUBLIC_NETWORK_MODE` | `tailscale` | `lan` 또는 `tailscale`. `tailscale`이면 WiFi/USB 토글보다 외부망 주소 우선 |
 | `EXPO_PUBLIC_NETWORK_BENCHMARK` | `false` | `true`이면 앱에서 `network_probe` RTT 표시 |

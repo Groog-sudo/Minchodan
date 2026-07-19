@@ -1,7 +1,7 @@
 # 안드로이드 스마트폰 연동 실행 가이드
 
 > **작성일**: 2026-07-09
-> **버전**: v2.0.0
+> **버전**: v2.0.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
 > **대상**: Minchodan 프로젝트 Android 실기기 테스트 담당자 (입문자 기준)
 > **목적**: iOS 스마트폰과 PC 연동 구동 방식과 동일하게 Android 스마트폰과 PC를 연동하여 Minchodan 프로그램을 실행하기
 
@@ -59,11 +59,10 @@ DATABASE_URL=sqlite+aiosqlite:///./data/minchodan_temp.db
    - 하드웨어 선택 프롬프트가 뜨면 **`2`** (CPU Only Mode) 입력 후 엔터
    - 완료 후 브라우저에서 `http://localhost:8000/docs` 접속하여 Swagger 화면 확인
 
-3. **Ollama AI 모델 컨테이너 내부 다운로드**:
+3. **호스트 Ollama 모델 다운로드**:
    ```bash
-   docker exec -it minchodan-ollama ollama pull gemma4:e4b
-   docker exec -it minchodan-ollama ollama pull llava
-   docker exec -it minchodan-ollama ollama pull nomic-embed-text
+   ollama pull gemma4:e4b
+   ollama pull nomic-embed-text
    ```
 
 4. **RAG 데이터베이스(ChromaDB) 빌드** (venv 활성화 상태에서):
@@ -94,8 +93,9 @@ tailscale ip -4
 
 ```ini
 EXPO_PUBLIC_NETWORK_MODE=tailscale
-EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
-EXPO_PUBLIC_SERVER_PORT=8000
+EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+EXPO_PUBLIC_SERVER_PORT=443
+EXPO_PUBLIC_WS_SCHEME=wss
 ```
 
 ---

@@ -1,7 +1,7 @@
 # 온디바이스 추론 엔진 플랫폼 격리 하이브리드 설계서
 
 > **작성일**: 2026-07-04
-> **버전**: v1.0.0 (CoreML 완전 가속 이식 및 Xcode 컴파일 타겟 등록 완료)
+> **버전**: v1.0.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
 > **설계 기준**: [`docs/research/post_mvp_hybrid_roadmap.md`](../research/post_mvp_hybrid_roadmap.md) §2·§4 (하이브리드 아키텍처 청사진), [`docs/research/post_mvp_ondevice_feasibility.md`](../research/post_mvp_ondevice_feasibility.md) §3·§4 (CoreML 익스포트 이슈 및 우회 전략)
 > **정합 문서**: [`docs/mobile/mobile_ios_implementation_plan.md`](mobile_ios_implementation_plan.md), [`docs/mobile/mobile_android_implementation_plan.md`](mobile_android_implementation_plan.md)
 > **스킬 참조**: [`.agents/skills/yolo-obstacle-detection/SKILL.md`](../.agents/skills/yolo-obstacle-detection/SKILL.md), [`.agents/skills/camera-frame-capture/SKILL.md`](../.agents/skills/camera-frame-capture/SKILL.md)
@@ -494,18 +494,20 @@ client/src/
      tailscale status
      ```
 2. **서버 주소 확인 및 클라이언트 설정**
-   * 개발 PC의 Tailscale IPv4 또는 MagicDNS 이름을 확인합니다.
+   * FastAPI용 MagicDNS 이름과 Metro용 Tailscale IPv4를 각각 확인합니다.
      ```bash
+     tailscale status --json | jq -r '.Self.DNSName'
      tailscale ip -4
      ```
    * `client/.env`에 다음 공개 환경변수를 설정합니다.
      ```ini
      EXPO_PUBLIC_NETWORK_MODE=tailscale
-     EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
-     EXPO_PUBLIC_SERVER_PORT=8000
+     EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+     EXPO_PUBLIC_SERVER_PORT=443
+     EXPO_PUBLIC_WS_SCHEME=wss
      ```
 3. **연결 검증**
-   * FastAPI를 `0.0.0.0:8000`으로 기동하고, 실기기 브라우저에서 `http://[SERVER_TAILSCALE_IP_OR_MAGICDNS]:8000/health`를 확인합니다.
+   * FastAPI를 `127.0.0.1:8000`으로 기동하고 Tailscale Serve를 적용한 뒤, 실기기 브라우저에서 `https://[SERVER_MAGICDNS_NAME]/health`를 확인합니다.
 
 ### 12.2 iOS CoreML 직접 가속(.mlpackage) 셋업 절차
 

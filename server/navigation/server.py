@@ -55,7 +55,7 @@ async def redis_stream_listener():
     실시간 장애물 탐지 이벤트를 비침습적으로 가로채고 NavigationManager에 공급합니다.
     """
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    logger.info(f"[NAV REDIS] Connecting to Redis at {redis_url} for stream subscription...")
+    logger.info("[NAV REDIS] Connecting to configured Redis stream subscription...")
 
     r = None
     while True:
