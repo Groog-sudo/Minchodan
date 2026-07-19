@@ -1,8 +1,10 @@
+# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+from server.detection.direction import FRONT_BAND
 from server.detection.schemas import ReflexAlert, SurfaceResult
 
 # =========================================================================
@@ -35,18 +37,31 @@ P0_SURFACE_CLASSES = {
 def surface_gate(
     surface_result: SurfaceResult,
     frame_height: float,
+    frame_width: float = 0.0,
 ) -> ReflexAlert | None:
-    """P0 노면 클래스가 프레임 하단에 검출되면 alert_id를 반환한다."""
+    """P0 노면이 Near(하단) + 12시 회랑에 있을 때만 반사 경보를 반환한다."""
     # 💡 [면접 대비 주석]
     # segmentation은 프레임 전체 영역을 보지만, 모든 위치의 위험을 즉시 경보로 보내면 과경보가 된다.
     # 그래서 centroid가 화면 하단 60% 아래에 들어온 경우만 "사용자 진행 경로에 바로 닿은 위험"으로 보고
     # 반사 경로를 발동시켰다. 위쪽에 멀리 보이는 caution은 cognitive 경로에서 설명하게 두는 구조다.
+    #
+    # 2026-07-19: 좌우 측면 노면까지 비프/햅틱이 울리면 진행 방향과 무관한 과경보가 된다.
+    # Near FRONT_BAND(0.20~0.80) 안(12시 회랑) centroid만 통과시킨다.
     if surface_result.class_name not in P0_SURFACE_CLASSES:
+        return None
+
+    if not surface_result.centroid or len(surface_result.centroid) < 2:
         return None
 
     centroid_y = surface_result.centroid[1]
     if centroid_y <= frame_height * 0.6:
         return None
+
+    if frame_width > 0:
+        front_lo, front_hi = FRONT_BAND["near"]
+        cx_n = float(surface_result.centroid[0]) / frame_width
+        if cx_n < front_lo or cx_n > front_hi:
+            return None
 
     alert_id = f"surface_{surface_result.class_name}"
     return ReflexAlert(

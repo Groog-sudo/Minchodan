@@ -20,8 +20,7 @@
         "NSMicrophoneUsageDescription": "음성 안내를 위해 마이크 접근이 필요합니다.",
         "NSLocationWhenInUseUsageDescription": "도보 경로 안내를 위해 위치 정보 접근이 필요합니다.",
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": false,
-          "NSAllowsLocalNetworking": true
+          "NSAllowsArbitraryLoads": true
         }
       }
     },

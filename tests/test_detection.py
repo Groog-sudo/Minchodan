@@ -202,18 +202,24 @@ class TestGates:
     def test_surface_gate_p0(self):
         """실제 4클래스 Segmentation 모델 기준 (2026-07-07 정정, caution=stairs/manhole/grating 통합 클래스)."""
         surf = SurfaceResult(class_name="caution", centroid=[320.0, 400.0])
-        alert = surface_gate(surf, 480.0)
+        alert = surface_gate(surf, 480.0, 640.0)
         assert alert is not None
         assert alert.alert_id == "surface_caution"
 
     def test_surface_gate_non_p0_class_returns_none(self):
         surf = SurfaceResult(class_name="sidewalk_normal", centroid=[320.0, 400.0])
-        alert = surface_gate(surf, 480.0)
+        alert = surface_gate(surf, 480.0, 640.0)
         assert alert is None
 
     def test_surface_gate_top_position_returns_none(self):
         surf = SurfaceResult(class_name="caution", centroid=[320.0, 100.0])
-        alert = surface_gate(surf, 480.0)
+        alert = surface_gate(surf, 480.0, 640.0)
+        assert alert is None
+
+    def test_surface_gate_side_corridor_returns_none(self):
+        """Near 하단이어도 12시 회랑 밖이면 반사 경보 없음."""
+        surf = SurfaceResult(class_name="caution", centroid=[40.0, 400.0])
+        alert = surface_gate(surf, 480.0, 640.0)
         assert alert is None
 
     def test_reflex_gate_small_bottom_near_emits(self):
@@ -889,6 +895,30 @@ class TestUtteranceValueGate:
         consumer._last_guide_ts["dev1"] = _time.monotonic()  # 방금 전송
         assert consumer._has_utterance_value("dev1", r, False) is False
 
+    def test_signature_ignores_sidewalk_flicker(self):
+        """sidewalk_normal 추가는 서명에 영향 없음(거친 노면 키)."""
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r1 = self._make_result(surfaces=["caution"])
+        r2 = self._make_result(surfaces=["caution", "sidewalk_normal"])
+        assert consumer._compute_cognitive_signature(
+            r1, False
+        ) == consumer._compute_cognitive_signature(r2, False)
+
+    def test_surface_only_same_signature_defers_to_episode(self):
+        """노면-only 동일 서명은 utterance가 True(에피소드 게이트가 1회 억제)."""
+        import time as _time
+
+        import server.detection.consumer as consumer_module
+
+        consumer = consumer_module.DetectionConsumer()
+        r = self._make_result(surfaces=["caution"])
+        sig = consumer._compute_cognitive_signature(r, False)
+        consumer._last_guide_signature["dev1"] = sig
+        consumer._last_guide_ts["dev1"] = _time.monotonic() - 31.0
+        assert consumer._has_utterance_value("dev1", r, False) is True
+
     def test_same_signature_after_cooldown_has_value(self):
         """동일 서명이어도 쿨다운 경과 시 발화 가치 True (주기적 갱신)."""
         import time as _time
@@ -954,14 +984,14 @@ class TestLatencyAlertAndStairDown:
     def test_surface_gate_stair_down_5class(self):
         """P2-1(c): 5클래스 모델 stair_down 클래스가 surface_gate 즉시 경보 대상."""
         surf = SurfaceResult(class_name="stair_down", centroid=[320.0, 400.0])
-        alert = surface_gate(surf, 480.0)
+        alert = surface_gate(surf, 480.0, 640.0)
         assert alert is not None
         assert alert.alert_id == "surface_stair_down"
 
     def test_surface_gate_manhole_5class(self):
         """P2-1(c): 5클래스 모델 manhole 클래스가 surface_gate 즉시 경보 대상."""
         surf = SurfaceResult(class_name="manhole", centroid=[320.0, 400.0])
-        alert = surface_gate(surf, 480.0)
+        alert = surface_gate(surf, 480.0, 640.0)
         assert alert is not None
         assert alert.alert_id == "surface_manhole"
 
@@ -1050,18 +1080,76 @@ class TestSpeechWorthyFilter:
         consumer = DetectionConsumer()
         assert consumer._is_speech_worthy(None, None, "", "high", False) is True
 
-    def test_mid_risk_hint_always_worthy(self):
-        """파이프라인 risk_hint='mid'(caution/roadway)는 인지 TTS 대상이다."""
+    def test_mid_risk_hint_alone_not_worthy(self):
+        """mid 힌트만으로는 통과하지 않는다(노면 구역/객체 회랑으로 재평가)."""
         consumer = DetectionConsumer()
-        assert consumer._is_speech_worthy(None, None, "", "mid", False) is True
-        assert consumer._is_speech_worthy(None, None, "", "medium", False) is True
+        assert consumer._is_speech_worthy(None, None, "", "mid", False) is False
+        assert consumer._is_speech_worthy(None, None, "", "medium", False) is False
 
-    def test_significant_surface_worthy_even_if_low_hint(self):
-        """유의미 노면만 있어도 speech_worthy를 통과한다(객체 없음 포함)."""
+    def test_significant_surface_medium_worthy(self):
+        """Medium 노면 + 12시 회랑이면 speech_worthy 통과."""
         consumer = DetectionConsumer()
         assert (
-            consumer._is_speech_worthy(None, None, "", "low", False, has_significant_surface=True)
+            consumer._is_speech_worthy(
+                None,
+                None,
+                "",
+                "low",
+                False,
+                has_significant_surface=True,
+                surface_zone="medium",
+                surface_in_front=True,
+            )
             is True
+        )
+
+    def test_significant_surface_medium_side_not_worthy(self):
+        """Medium이어도 12시 밖이면 인지 TTS 제외."""
+        consumer = DetectionConsumer()
+        assert (
+            consumer._is_speech_worthy(
+                None,
+                None,
+                "",
+                "low",
+                False,
+                has_significant_surface=True,
+                surface_zone="medium",
+                surface_in_front=False,
+            )
+            is False
+        )
+
+    def test_significant_surface_near_not_worthy(self):
+        """Near 노면은 반사 전담 - 인지 TTS 제외."""
+        consumer = DetectionConsumer()
+        assert (
+            consumer._is_speech_worthy(
+                None,
+                None,
+                "",
+                "mid",
+                False,
+                has_significant_surface=True,
+                surface_zone="near",
+            )
+            is False
+        )
+
+    def test_significant_surface_far_not_worthy(self):
+        """Far 노면은 화면만 - 인지 TTS 제외."""
+        consumer = DetectionConsumer()
+        assert (
+            consumer._is_speech_worthy(
+                None,
+                None,
+                "",
+                "mid",
+                False,
+                has_significant_surface=True,
+                surface_zone="far",
+            )
+            is False
         )
 
     def test_far_static_not_worthy(self):
@@ -1090,7 +1178,8 @@ class TestSpeechWorthyFilter:
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         assert consumer._is_speech_worthy(det, frame, "medium", "low", False) is False
 
-    def test_approaching_side_worthy(self):
+    def test_approaching_side_not_worthy(self):
+        """측면 approaching도 12시 회랑 밖이면 인지 TTS 제외."""
         consumer = DetectionConsumer()
         det = Detection(
             class_name="bicycle",
@@ -1101,7 +1190,7 @@ class TestSpeechWorthyFilter:
             hit_count=4,
         )
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        assert consumer._is_speech_worthy(det, frame, "medium", "low", False) is True
+        assert consumer._is_speech_worthy(det, frame, "medium", "low", False) is False
 
     def test_far_approaching_not_worthy(self):
         """2026-07-19: far는 접근 중이어도 무발화 - medium 진입 시에만 발화 대상이 된다."""
@@ -1145,6 +1234,62 @@ class TestSpeechWorthyFilter:
         )
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         assert consumer._resolve_distance_class(det, frame) == "medium"
+
+    def test_resolve_surface_zone_bands(self):
+        """centroid_y 비율로 near/medium/far를 나눈다."""
+        consumer = DetectionConsumer()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        near = [SurfaceResult(class_name="caution", centroid=[320.0, 400.0])]  # ~0.83
+        medium = [SurfaceResult(class_name="roadway", centroid=[320.0, 240.0])]  # 0.5
+        far = [SurfaceResult(class_name="caution", centroid=[320.0, 100.0])]  # ~0.21
+        assert consumer._resolve_surface_zone(near, frame) == "near"
+        assert consumer._resolve_surface_zone(medium, frame) == "medium"
+        assert consumer._resolve_surface_zone(far, frame) == "far"
+
+    def test_surface_episode_enter_continue_leave(self):
+        """노면 에피소드: enter → pending/commit continue → Far 이탈 후 재진입 enter."""
+        consumer = DetectionConsumer()
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium") == "enter"
+        )
+        # pending만 걸면 전송 전에도 continue (중복 합성 방지)
+        consumer._begin_surface_cognitive_pending("dev1", "surface_hazard")
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium")
+            == "continue"
+        )
+        # 전송 실패 시 pending 해제 → 다시 enter
+        consumer._clear_surface_cognitive_pending("dev1")
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium") == "enter"
+        )
+        consumer._commit_surface_cognitive_episode("dev1", "surface_hazard")
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium")
+            == "continue"
+        )
+        # Far는 이탈로 취급 (히스테리시스)
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "far") == "continue"
+        )
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "far") == "continue"
+        )
+        assert consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "far") == "idle"
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium") == "enter"
+        )
+
+    def test_hazard_episode_key_unifies_caution_roadway(self):
+        """caution/roadway는 동일 surface_hazard 에피소드 키."""
+        caution = [SurfaceResult(class_name="caution", centroid=[320.0, 240.0])]
+        both = [
+            SurfaceResult(class_name="caution", centroid=[320.0, 240.0]),
+            SurfaceResult(class_name="roadway", centroid=[320.0, 250.0]),
+        ]
+        assert DetectionConsumer._hazard_surface_episode_key(caution) == "surface_hazard"
+        assert DetectionConsumer._hazard_surface_episode_key(both) == "surface_hazard"
+        assert DetectionConsumer._hazard_surface_key(both) == "caution,roadway"
 
 
 class TestApproachingCooldownShortcut:

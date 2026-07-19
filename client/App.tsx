@@ -20,6 +20,10 @@ LogBox.ignoreLogs([
 
 // CameraView가 아직 별도의 "준비 완료" 콜백을 제공하지 않아 고정 시간으로 처리한다.
 const MIN_LOADING_DURATION_MS = 1800;
+// Metro/HMR 재연결로 App이 반복 마운트돼도 로딩 타이머가 리셋되지 않게 모듈 스코프로 고정.
+// (재연결마다 1.8s가 다시 시작되면 Loading 화면에 영구 고착될 수 있다.)
+let loadingEpochMs = 0;
+let loadingCompleted = false;
 
 // 앱 시작 시 1회 재생하는 온보딩 안내 문구. 문구 확정은 담당자 영역(SKILLS.md 협업 규칙)이며,
 // 실제 STT 트리거 흐름(길댕아 wake-word -> 길찾아줘/물어볼게, server/stt/stt_to_llm_bridge.py)과
@@ -33,7 +37,7 @@ export default function App() {
   // 재생되지 않도록 막는다(카메라/반사 구동을 지연시키지 않기 위해 짧게 1회만 재생).
   const onboardingPlayedRef = useRef(false);
   const splashHiddenRef = useRef(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!loadingCompleted);
 
   useLayoutEffect(() => {
     if (splashHiddenRef.current) {
@@ -44,7 +48,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), MIN_LOADING_DURATION_MS);
+    if (loadingCompleted) {
+      setIsLoading(false);
+      return;
+    }
+    if (!loadingEpochMs) {
+      loadingEpochMs = Date.now();
+    }
+    const remainingMs = Math.max(0, MIN_LOADING_DURATION_MS - (Date.now() - loadingEpochMs));
+    const timer = setTimeout(() => {
+      loadingCompleted = true;
+      setIsLoading(false);
+    }, remainingMs);
     return () => clearTimeout(timer);
   }, []);
 

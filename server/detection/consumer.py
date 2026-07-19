@@ -28,6 +28,7 @@ from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.direction import (
+    FRONT_BAND,
     estimate_clock_direction,
     estimate_direction,
     estimate_distance,
@@ -79,6 +80,22 @@ COGNITIVE_LATENCY_ALERT_MS = float(os.getenv("COGNITIVE_LATENCY_ALERT_MS", "3000
 # false이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 내레이션을 억제한다.
 GUIDE_LOW_RISK_NARRATION = os.getenv("GUIDE_LOW_RISK_NARRATION", "false").lower() == "true"
 
+# 2026-07-19: RAG 검색 on/off 스위치. false면 검색을 건너뛰고 L2가 순수 LLM 생성만 수행한다
+# (안내 문장 어색함이 RAG 문구 압축 충돌 때문인지 비교 테스트하기 위함, 삭제가 아닌 비활성화).
+RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
+
+# 2026-07-19: 노면(caution/roadway) 인지 TTS 거리 구역.
+# surface_gate Near 임계(centroid_y > 0.6H)와 정렬. Medium만 인지 TTS, Near=반사만, Far=화면만.
+SURFACE_ZONE_NEAR_Y_RATIO = float(os.getenv("SURFACE_ZONE_NEAR_Y_RATIO", "0.6"))
+SURFACE_ZONE_MEDIUM_Y_RATIO = float(os.getenv("SURFACE_ZONE_MEDIUM_Y_RATIO", "0.35"))
+# 인지 TTS/서명에 쓰는 노면 위험 클래스(세그 마스크 흔들림 억제용 거친 키).
+SPEECH_SURFACE_HAZARD_CLASSES = frozenset({"caution", "roadway"})
+# 인지 경로 early-exit 방지용(점자블록 포함).
+SIGNIFICANT_SURFACE_CLASSES = frozenset({"caution", "roadway", "braille_normal"})
+# 노면 위험 이탈 확정에 필요한 연속 인지 프레임 수.
+# 1프레임 깜빡임으로 에피소드가 리셋되면 Medium TTS가 반복되므로 히스테리시스를 둔다.
+SURFACE_HAZARD_ABSENT_STREAK = int(os.getenv("SURFACE_HAZARD_ABSENT_STREAK", "3"))
+
 
 class DetectionConsumer:
     """이중 큐(반사/인지)에서 프레임을 소비하고 DetectionPipeline을 실행.
@@ -115,6 +132,13 @@ class DetectionConsumer:
         self._last_guide_signature: dict[str, str] = {}
         # P2-1(b) (2026-07-17): device_id별 surface_caution 연속 프레임 카운터 (히스테리시스).
         self._surface_caution_streak: dict[str, int] = {}
+        # 2026-07-19: device_id별 노면 인지 에피소드 키("surface_hazard").
+        # 시야에 있는 동안 enter 1회만 안내, 이탈·재진입 시에만 재안내.
+        self._surface_cognitive_episode: dict[str, str | None] = {}
+        # TTS/오케스트레이션 진행 중 중복 enter 방지(전송 전 커밋 금지).
+        self._surface_cognitive_pending: dict[str, str | None] = {}
+        # 노면 위험 미검출 연속 프레임(이탈 히스테리시스).
+        self._surface_hazard_absent_streak: dict[str, int] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
         # 2026-07-13 추가: device_id별 보도 이탈(is_departing) 연속 프레임 카운터.
@@ -192,6 +216,146 @@ class DetectionConsumer:
         return base_gap
 
     @staticmethod
+    def _hazard_surface_key(surfaces: list) -> str:
+        """서명용: caution|roadway 정렬 결합. sidewalk/braille 흔들림은 제외."""
+        return ",".join(
+            sorted(
+                {
+                    s.class_name
+                    for s in surfaces
+                    if getattr(s, "class_name", "") in SPEECH_SURFACE_HAZARD_CLASSES
+                }
+            )
+        )
+
+    @staticmethod
+    def _hazard_surface_episode_key(surfaces: list) -> str:
+        """에피소드용: caution/roadway를 단일 키로 묶는다.
+
+        세그가 caution↔roadway로 깜빡이면 클래스 변경 enter가 연속 발화된다.
+        실외 검증(2026-07-19)에서 이 패턴이 TTS 반복의 주원인으로 확인되어,
+        위험 노면은 종류와 무관하게 하나의 에피소드(`surface_hazard`)로 취급한다.
+        이탈(히스테리시스) 후 재진입 시에만 다시 안내한다.
+        """
+        for s in surfaces:
+            if getattr(s, "class_name", "") in SPEECH_SURFACE_HAZARD_CLASSES:
+                return "surface_hazard"
+        return ""
+
+    @staticmethod
+    def _is_front_corridor_x(x: float, frame_width: float, distance_class: str = "medium") -> bool:
+        """정규화 x가 거리별 FRONT_BAND(12시 회랑) 안인지 판정."""
+        if frame_width <= 0:
+            return True
+        front_lo, front_hi = FRONT_BAND.get(distance_class, (0.30, 0.70))
+        xn = float(x) / frame_width
+        return front_lo <= xn <= front_hi
+
+    @staticmethod
+    def _surface_hazard_in_front(surfaces: list, frame: np.ndarray | None, zone: str) -> bool:
+        """위험 노면 centroid가 해당 구역 FRONT_BAND(12시) 안에 하나라도 있으면 True."""
+        if frame is None or not surfaces:
+            return False
+        w = int(frame.shape[1]) if frame.ndim >= 2 else 0
+        if w <= 0:
+            return False
+        band = "near" if zone == "near" else "medium" if zone == "medium" else "far"
+        for s in surfaces:
+            if getattr(s, "class_name", "") not in SPEECH_SURFACE_HAZARD_CLASSES:
+                continue
+            centroid = getattr(s, "centroid", None)
+            if not centroid or len(centroid) < 2:
+                continue
+            if DetectionConsumer._is_front_corridor_x(float(centroid[0]), w, band):
+                return True
+        return False
+
+    @staticmethod
+    def _resolve_surface_zone(surfaces: list, frame: np.ndarray | None) -> str:
+        """노면 위험(caution/roadway)의 최근접(최대 centroid_y)으로 near/medium/far.
+
+        surface_gate Near(y>0.6H)와 동일 기준. Medium(0.35~0.6)만 인지 TTS 대상.
+        2026-07-19: 12시 회랑(FRONT_BAND) 안의 위험 노면만 구역 산출에 사용한다.
+        """
+        if frame is None or not surfaces:
+            return ""
+        h = int(frame.shape[0])
+        w = int(frame.shape[1]) if frame.ndim >= 2 else 0
+        if h <= 0:
+            return ""
+        hazards = []
+        for s in surfaces:
+            if getattr(s, "class_name", "") not in SPEECH_SURFACE_HAZARD_CLASSES:
+                continue
+            centroid = getattr(s, "centroid", None)
+            if not centroid or len(centroid) < 2:
+                continue
+            # 구역 산출 전 1차: medium band로 12시 여부 확인(측면 노면 제외).
+            # near/medium 최종 band는 y로 zone이 정해진 뒤 speech/gate에서 재확인.
+            if w > 0 and not DetectionConsumer._is_front_corridor_x(
+                float(centroid[0]), w, "medium"
+            ):
+                continue
+            hazards.append(s)
+        if not hazards:
+            return ""
+        max_y_ratio = max(float(s.centroid[1]) for s in hazards) / h
+        if max_y_ratio > SURFACE_ZONE_NEAR_Y_RATIO:
+            return "near"
+        if max_y_ratio > SURFACE_ZONE_MEDIUM_Y_RATIO:
+            return "medium"
+        return "far"
+
+    def _sync_surface_cognitive_episode(
+        self, device_id: str, hazard_key: str, surface_zone: str = ""
+    ) -> str:
+        """노면 인지 에피소드 상태. 'enter' | 'continue' | 'idle' 반환.
+
+        - Far(또는 위험 노면 소실)가 SURFACE_HAZARD_ABSENT_STREAK 연속이면 리셋.
+        - 이미 안내 완료(episode) 또는 합성 중(pending)이면 continue.
+        - enter는 커밋하지 않음. 실제 guide 전송 성공 시에만
+          `_commit_surface_cognitive_episode`로 확정한다.
+        """
+        # Far는 "시야에서 멀어짐"으로 보고 이탈 카운트에 포함한다.
+        active_key = "" if surface_zone == "far" else hazard_key
+        if not active_key:
+            streak = self._surface_hazard_absent_streak.get(device_id, 0) + 1
+            self._surface_hazard_absent_streak[device_id] = streak
+            if streak < SURFACE_HAZARD_ABSENT_STREAK:
+                if self._surface_cognitive_episode.get(
+                    device_id
+                ) or self._surface_cognitive_pending.get(device_id):
+                    return "continue"
+                return "idle"
+            self._surface_cognitive_episode[device_id] = None
+            self._surface_cognitive_pending[device_id] = None
+            return "idle"
+
+        self._surface_hazard_absent_streak[device_id] = 0
+        if (
+            self._surface_cognitive_episode.get(device_id) == active_key
+            or self._surface_cognitive_pending.get(device_id) == active_key
+        ):
+            return "continue"
+        return "enter"
+
+    def _begin_surface_cognitive_pending(self, device_id: str, hazard_key: str) -> None:
+        """노면 인지 TTS 합성을 시작할 때 pending을 걸어 중복 enter를 막는다."""
+        if hazard_key:
+            self._surface_cognitive_pending[device_id] = hazard_key
+
+    def _clear_surface_cognitive_pending(self, device_id: str) -> None:
+        """합성 실패/중도 반환 시 pending을 풀어 다음 프레임에서 재시도 가능하게 한다."""
+        self._surface_cognitive_pending[device_id] = None
+
+    def _commit_surface_cognitive_episode(self, device_id: str, hazard_key: str) -> None:
+        """노면 인지 안내 전송 성공 후 에피소드를 확정한다."""
+        if hazard_key:
+            self._surface_cognitive_episode[device_id] = hazard_key
+            self._surface_hazard_absent_streak[device_id] = 0
+        self._surface_cognitive_pending[device_id] = None
+
+    @staticmethod
     def _compute_cognitive_signature(result: DetectionResult, departure_confirmed: bool) -> str:
         """P1-2: 인지 가이드 상황 서명(객체+표면+이탈) 산출.
 
@@ -200,9 +364,12 @@ class DetectionConsumer:
         # 서명 = 정렬된 객체 클래스 목록 + 정렬된 표면 클래스 목록 + 이탈 여부.
         # 동일 서명이면 같은 상황으로 간주해 쿨다운 내 TTS 합성을 생략해 CPU/중복 안내를 줄인다.
         # 객체/표면이 하나라도 바뀌면 서명이 달라져 즉시 발화한다.
+        #
+        # 2026-07-19: 노면 서명은 caution|roadway만 사용. sidewalk_normal/braille 마스크
+        # 흔들림으로 쿨다운이 리셋되지 않게 거친 키로 고정한다.
         """
         objects_key = ",".join(sorted({d.class_name for d in result.detections}))
-        surface_key = ",".join(sorted({s.class_name for s in result.surface}))
+        surface_key = DetectionConsumer._hazard_surface_key(result.surface)
         departure_key = "departure" if departure_confirmed else ""
         return f"obj:{objects_key}|surf:{surface_key}|dep:{departure_key}"
 
@@ -215,6 +382,7 @@ class DetectionConsumer:
             1. 보도 이탈 확정 (departure_confirmed) - 안전상 항상 가치.
             2. 상황 서명 변화 (새 객체/표면 변화) - 직전과 다른 상황.
             3. 직전 안내로부터 COGNITIVE_UTTERANCE_COOLDOWN_S 경과 - 동일 상황도 주기적 갱신.
+               단, 노면만(객체 없음)인 동일 에피소드는 주기 갱신 금지(이탈 후 재진입만).
         위 모두 거짓이면 동일 상황 반복이므로 TTS 합성 생략.
         """
         if departure_confirmed:
@@ -223,7 +391,11 @@ class DetectionConsumer:
         prev_sig = self._last_guide_signature.get(device_id)
         if prev_sig != current_sig:
             return True
-        # 동일 서명이면 쿨다운 경과 여부가 발화 가치를 결정
+        # 노면-only: 에피소드 게이트(enter 1회)가 재안내를 담당한다.
+        # 서명 동일로 막으면 이탈 후 재진입(enter)에서도 TTS가 영구 억제된다.
+        hazard_key = self._hazard_surface_key(result.surface)
+        if hazard_key and not result.detections:
+            return True
         return (
             time.monotonic() - self._last_guide_ts.get(device_id, 0.0)
             >= COGNITIVE_UTTERANCE_COOLDOWN_S
@@ -237,13 +409,15 @@ class DetectionConsumer:
         risk_hint: str,
         departure_confirmed: bool,
         has_significant_surface: bool = False,
+        surface_zone: str = "",
+        surface_in_front: bool = False,
     ) -> bool:
         """T2-G (2026-07-18): 인지 발화 회랑/접근 필터.
 
         발화 가치 게이트(_has_utterance_value) 앞단에서 "처음부터 발화할 가치가 있는가"를
         먼저 판정한다. 측면·원거리 객체는 흰지팡이·주변 소리로 인지 가능하므로 음성 안내
-        가치가 낮다. 반면 12시 회랑 접근 medium, 보도 이탈, 노면 위험은 절대 침묵하지
-        않는다. near는 반사(햅틱+비프) 전담이므로 인지 TTS 대상에서 제외한다.
+        가치가 낮다. 반면 12시 회랑 medium, 보도 이탈, Medium 노면 위험은 절대 침묵하지
+        않는다. near(객체·노면)는 반사(햅틱+비프) 전담이므로 인지 TTS 대상에서 제외한다.
 
         # [면접 대비 주석]
         # 질문: near=반사(햅틱+비프), medium=인지 안내라면 far는 왜 완전히 무발화인가요?
@@ -251,18 +425,24 @@ class DetectionConsumer:
         # 안내 대상에서 제외한다. near는 reflex_gate가 담당하고, medium부터 인지 TTS가
         # 개입한다. post_reflex avoidance(fast lane)는 risk_hint=high로 별도 허용된다.
         #
-        # 2026-07-19: risk_hint는 파이프라인이 "mid"를 쓰는데 필터가 "medium"만 허용해
-        # caution/roadway 인지 멘트가 막히던 불일치를 해소. 유의미 노면도 안전 예외로 통과.
+        # 2026-07-19: has_significant_surface/mid 무조건 통과를 제거. 노면은
+        # Near=반사만 / Medium=인지 1회 / Far=화면만.
+        # 2026-07-19: Near 햅틱·Medium 인지는 12시 회랑(FRONT_BAND) 탐지만 허용.
         """
-        # 안전 예외: 보도 이탈, 고위험/중위험, 유의미 노면, 저위험 내레이션 설정 시
         if departure_confirmed:
             return True
-        if risk_hint in ("high", "mid", "medium"):
-            return True
-        if has_significant_surface:
+        # post_reflex avoidance 등 고위험만 무조건 통과(mid는 구역 필터로 재평가).
+        if risk_hint == "high":
             return True
         if GUIDE_LOW_RISK_NARRATION:
             return True
+
+        # 노면 구역 정책: 객체 없이 노면만 있으면 zone + 12시 회랑으로 판정.
+        if has_significant_surface and primary_det is None:
+            if surface_zone == "medium":
+                return bool(surface_in_front)
+            # 구역 미산출(점자블록만 등): 인지 허용(에피소드/서명이 중복 억제). near/far는 억제.
+            return surface_zone not in ("near", "far")
 
         if primary_det is None or frame is None:
             return False
@@ -278,10 +458,10 @@ class DetectionConsumer:
         if distance_class == "far":
             return False
 
-        # 12시 회랑 밖 정적 객체는 무발화
+        # 12시 회랑 밖은 무발화 (측면 approaching도 인지 TTS 제외).
         _h, w = frame.shape[:2]
         spatial_dir = estimate_direction(primary_det.bbox, w, distance_class)
-        return spatial_dir == "front" or primary_det.direction == "approaching"
+        return spatial_dir == "front"
 
     def get_runtime_status(self) -> dict[str, str | float | int | None]:
         """최근 DetectionConsumer 처리 상태를 반환한다."""
@@ -610,19 +790,28 @@ class DetectionConsumer:
             # 800ms 후 인지 가이드를 예약해, 억제된 반사에도 불필요한 RAG/LLM/TTS 부하가
             # 발생했다(C-05).
             if sent_ok:
-                delayed_guide_task = asyncio.create_task(
-                    self._trigger_delayed_cognitive_guide(
-                        device_id=processed.device_id,
-                        alert=result,
-                        detections=detections,
-                        surfaces=surfaces,
-                        frame=frame,
-                        decode_ms=processed.processing_time_ms,
-                        pipeline_start=pipeline_start,
+                # 2026-07-19: Near 노면 반사(비프/햅틱)만. 같은 노면에 인지 TTS를 연쇄하지 않음.
+                if getattr(result, "alert_source", "") == "surface" or str(
+                    result.alert_id
+                ).startswith("surface_"):
+                    logger.debug(
+                        f"[DetectionConsumer] 노면 반사만 - 후속 인지 TTS 생략: "
+                        f"device_id={processed.device_id}, alert_id={result.alert_id}"
                     )
-                )
-                self._delayed_guide_tasks.add(delayed_guide_task)
-                delayed_guide_task.add_done_callback(self._delayed_guide_tasks.discard)
+                else:
+                    delayed_guide_task = asyncio.create_task(
+                        self._trigger_delayed_cognitive_guide(
+                            device_id=processed.device_id,
+                            alert=result,
+                            detections=detections,
+                            surfaces=surfaces,
+                            frame=frame,
+                            decode_ms=processed.processing_time_ms,
+                            pipeline_start=pipeline_start,
+                        )
+                    )
+                    self._delayed_guide_tasks.add(delayed_guide_task)
+                    delayed_guide_task.add_done_callback(self._delayed_guide_tasks.discard)
         elif isinstance(result, DetectionResult):
             self._last_status.update(
                 {
@@ -1118,14 +1307,18 @@ class DetectionConsumer:
 
         # 💡 [면접 대비 주석]
         # Q. 노면(surface) 정보가 감지되었을 때도 가이드를 생성하는 기준은 무엇인가요?
-        # A. 객체 탐지가 없어도 '주의 노면(caution)', '차도(roadway)', '점자블록(braille_normal)' 같은
-        #    시각장애인 보행에 유의미한 노면 정보가 감지되었거나, 보도 이탈이 확정된 경우에는
-        #    얼리 엑싯하지 않고 LangGraph 오케스트레이션(L1/L2/L3)으로 보내 정밀 가이드를 제공합니다.
+        # A. 객체 탐지가 없어도 caution/roadway/braille_normal이 있으면 early-exit하지 않는다.
+        #    단 2026-07-19부터 인지 TTS는 Medium 노면 에피소드 enter 1회만 허용하고,
+        #    Near는 반사만, Far는 화면만이다.
         has_significant_surface = any(
-            surf.class_name in ("caution", "roadway", "braille_normal") for surf in result.surface
+            surf.class_name in SIGNIFICANT_SURFACE_CLASSES for surf in result.surface
         )
         if not result.detections and not departure_confirmed and not has_significant_surface:
             return
+
+        episode_key = self._hazard_surface_episode_key(result.surface)
+        surface_zone = self._resolve_surface_zone(result.surface, frame)
+        surface_episode = self._sync_surface_cognitive_episode(device_id, episode_key, surface_zone)
 
         # T3-S (2026-07-18): 서버 차원에서 STT 상호작용 중이면 인지 가이드 발행을 억제한다.
         # 반사 경로는 이 게이트를 거치지 않는다(비협상). 클라이언트 audioEngine 우선순위
@@ -1139,11 +1332,14 @@ class DetectionConsumer:
 
         # T2-G (2026-07-18): 회랑/접근 필터. 발화 가치 게이트 앞단에서 "처음부터 발화할
         # 가치가 있는가"를 먼저 판정한다. 안전 예외(보도 이탈, 고위험, 접근 객체,
-        # 유의미 노면)는 통과시키고 측면·원거리·정적 저위험만 무발화한다.
+        # Medium 노면)는 통과시키고 측면·원거리·정적 저위험만 무발화한다.
         primary_det = (
             max(result.detections, key=lambda d: d.confidence) if result.detections else None
         )
         distance_class = self._resolve_distance_class(primary_det, frame)
+        surface_in_front = self._surface_hazard_in_front(
+            result.surface, frame, surface_zone or "medium"
+        )
         if not self._is_speech_worthy(
             primary_det,
             frame,
@@ -1151,12 +1347,39 @@ class DetectionConsumer:
             result.risk_hint,
             departure_confirmed,
             has_significant_surface=has_significant_surface,
+            surface_zone=surface_zone,
+            surface_in_front=surface_in_front,
         ):
             logger.debug(
                 f"[DetectionConsumer] 회랑/접근 필터 탈락 - 인지 가이드 무발화: "
-                f"device_id={device_id}, risk_hint={result.risk_hint}, distance={distance_class}"
+                f"device_id={device_id}, risk_hint={result.risk_hint}, "
+                f"distance={distance_class}, surface_zone={surface_zone}, "
+                f"surface_in_front={surface_in_front}"
             )
             return
+
+        # 노면-only: Medium 에피소드 enter 때만 인지 TTS. continue면 재안내 금지.
+        # 전송 성공 전에 episode를 커밋하면(이전 버그) TTS 실패 후에도 continue로 잠겨
+        # Medium 안내가 영구히 나오지 않는다. pending만 걸고 성공 시 commit한다.
+        surface_pending_open = False
+        if not result.detections and episode_key:
+            if surface_zone != "medium" or surface_episode != "enter":
+                logger.info(
+                    f"[DetectionConsumer] 노면 인지 에피소드 억제: device_id={device_id}, "
+                    f"zone={surface_zone}, episode={surface_episode}, key={episode_key}"
+                )
+                return
+            self._begin_surface_cognitive_pending(device_id, episode_key)
+            surface_pending_open = True
+            logger.info(
+                f"[DetectionConsumer] 노면 인지 에피소드 enter: device_id={device_id}, "
+                f"zone={surface_zone}, key={episode_key}"
+            )
+
+        def _abort_surface_pending() -> None:
+            """노면 Medium enter 후 전송 실패/조기반환 시 pending을 풀어 재시도 가능하게 한다."""
+            if surface_pending_open:
+                self._clear_surface_cognitive_pending(device_id)
 
         # P1-2 (2026-07-17): 발화 가치(Utterance Value) 게이트.
         # 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S 동안
@@ -1168,6 +1391,7 @@ class DetectionConsumer:
                 f"[DetectionConsumer] 인지 가이드 발화 가치 없음(동일 상황 반복) - "
                 f"TTS 합성 생략: device_id={device_id}"
             )
+            _abort_surface_pending()
             return
 
         # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이
@@ -1179,6 +1403,7 @@ class DetectionConsumer:
             logger.debug(
                 f"[DetectionConsumer] 인지 가이드 쿨다운 중 - 전송 생략: device_id={device_id}"
             )
+            _abort_surface_pending()
             return
 
         # NavigationManager에서 융합 길안내 멘트 조회
@@ -1200,16 +1425,17 @@ class DetectionConsumer:
         object_ko = ""
         rag_start = time.perf_counter()
         try:
-            retriever = get_default_retriever()
             if primary_det is not None:
-                if retriever is not None:
-                    rag_context = await asyncio.to_thread(
-                        retriever.search_guidance,
-                        {
-                            "class_name": primary_det.class_name,
-                            "confidence": primary_det.confidence,
-                        },
-                    )
+                if RAG_ENABLED:
+                    retriever = get_default_retriever()
+                    if retriever is not None:
+                        rag_context = await asyncio.to_thread(
+                            retriever.search_guidance,
+                            {
+                                "class_name": primary_det.class_name,
+                                "confidence": primary_det.confidence,
+                            },
+                        )
                 if frame is not None:
                     clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
                 object_ko = class_name_to_ko(primary_det.class_name)
@@ -1280,6 +1506,7 @@ class DetectionConsumer:
                 logger.warning(
                     f"[DetectionConsumer] guidance_text 없음: event_id={result.event_id}"
                 )
+                _abort_surface_pending()
                 return
 
             rag_query = (
@@ -1319,6 +1546,7 @@ class DetectionConsumer:
                     f"[DetectionConsumer] 인지 가이드 전송 직전 쿨다운 재검사 - 생략: "
                     f"device_id={device_id}, event_id={result.event_id}"
                 )
+                _abort_surface_pending()
                 return
             self._last_guide_ts[device_id] = send_now
             self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
@@ -1368,6 +1596,9 @@ class DetectionConsumer:
                     console_payload,
                     audio_bytes,
                 )
+            # 노면 인지 에피소드 커밋(단말 전송 성공 시에만). Medium enter 재안내 방지.
+            if episode_key and surface_zone == "medium":
+                self._commit_surface_cognitive_episode(device_id, episode_key)
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
             )
@@ -1474,6 +1705,7 @@ class DetectionConsumer:
                 pipeline_debug=cognitive_debug,
             )
         except Exception as e:
+            _abort_surface_pending()
             logger.error(
                 f"[DetectionConsumer] guide 생성/전송 실패: device_id={device_id}, event_id={result.event_id}, {e}"
             )

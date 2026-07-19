@@ -12,7 +12,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Dimensions, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
-import Svg, { Path, Text as SvgText } from "react-native-svg";
+import Svg, { Line, Path, Text as SvgText } from "react-native-svg";
 
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
@@ -1150,13 +1150,17 @@ export function CameraView() {
       const urgentDetections = baseCandidates.filter((d) =>
         isProximityUrgent(d.bbox, d.className),
       );
+      // 2026-07-19: Near 햅틱/비프는 12시 회랑(front) 탐지만. 측면은 BBox만 표시.
+      const frontUrgentDetections = urgentDetections.filter(
+        (d) => estimateDirection(d.bbox, FRAME_SIZE) === "front",
+      );
       // 2026-07-18 거리 정책 SSOT: Near 전용 반사 원칙에 따라 로컬 반사 후보를
       // urgentDetections(Near, isProximityUrgent 통과)로만 한정한다. 이전에는 근접
       // 후보가 없으면 실외 신호가 있는 중·원거리 객체까지 로컬 반사 후보로 승격했으나
       // (outdoorScopedDetections), 이는 서버 Near 전용 반사 정책과 정면 충돌해 제거했다.
       // Medium/Far는 서버 인지 경로(guide TTS)가 전담하며, 서버 연결이 끊긴 동안에는
       // 무출력이 정책상 올바른 동작이다(§12.1 "A. 오프라인 Near만 출력").
-      const reflexDetections = urgentDetections;
+      const reflexDetections = frontUrgentDetections;
 
       // 2. 단일 프레임 오탐 방지를 위한 연속 4프레임 안정화 필터 적용
       if (reflexDetections.length > 0) {
@@ -1816,26 +1820,19 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 }
 
 /**
- * 2026-07-19: Near/Medium/Far 3구역 거리 경계선 오버레이 (SVG 부채꼴).
- * 소실점(apex)에서 하단 좌·우 모서리로 퍼지는 부채꼴.
- *
- * 기하학 (좌우 끝까지 연결):
- * - 호 끝점: 좌·우 화면 가장자리(x=0, x=W)에 고정
- *   예) NEAR 호 = (0, H*0.78) ↔ (W, H*0.78) 를 apex 중심 원호로 연결
- * - 측면선(소실점→하단 모서리)은 시각적으로 FAR 삼각형처럼 보여 혼동을 주므로 제거
- * - 이전 구현은 레이 위 짧은 반경만 써서 호가 화면 중앙에만 그려지는 문제가 있었음
- *
- * 색상은 BBox zone 색상과 동일 팔레트.
+ * 콘솔 LiveCameraFeed와 동일 기하:
+ * Near/Med 부채꼴 호 + 12시 중심선 (react-native-svg).
+ * 네이티브 RNSVG가 링크된 Debug 빌드에서만 정상 표시된다.
  */
 function DistanceZoneOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
-
   const W = size.width;
   const H = size.height;
 
   const NEAR_COLOR = "#EF4444";
   const MED_COLOR = "#F59E0B";
   const FAR_COLOR = "#3B82F6";
+  const CLOCK12_COLOR = "#22D3EE";
   const STROKE_W = 2;
   const STROKE_OPACITY = 0.75;
 
@@ -1849,23 +1846,20 @@ function DistanceZoneOverlay() {
     );
   }
 
-  // 소실점: 화면 중앙, 상단 22% (부채꼴이 아래로 더 넓게 퍼지도록)
   const apexX = W / 2;
   const apexY = H * 0.22;
 
-  // 좌·우 가장자리에 끝점을 두고, apex 중심 원호로 연결 (화면 끝까지 연결)
   const edgeArc = (edgeYRatio: number) => {
     const edgeY = H * edgeYRatio;
     const r = Math.sqrt(apexX ** 2 + (edgeY - apexY) ** 2);
-    const left = { x: 0, y: edgeY };
-    const right = { x: W, y: edgeY };
-    // y 하향 좌표계에서 좌→우, 아래로 볼록한 호: sweep=1
-    const d = `M ${left.x} ${left.y} A ${r} ${r} 0 0 1 ${right.x} ${right.y}`;
-    return { d, r, left, right, edgeY };
+    return {
+      d: `M 0 ${edgeY} A ${r} ${r} 0 0 1 ${W} ${edgeY}`,
+      edgeY,
+    };
   };
 
-  const nearArc = edgeArc(0.78); // NEAR/MED
-  const medArc = edgeArc(0.52);  // MED/FAR
+  const nearArc = edgeArc(0.78);
+  const medArc = edgeArc(0.52);
 
   return (
     <View
@@ -1874,7 +1868,6 @@ function DistanceZoneOverlay() {
       onLayout={(e) => setSize(e.nativeEvent.layout)}
     >
       <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
-        {/* NEAR/MED 호 (좌우 끝 → 끝) */}
         <Path
           d={nearArc.d}
           fill="none"
@@ -1882,13 +1875,21 @@ function DistanceZoneOverlay() {
           strokeWidth={STROKE_W}
           strokeOpacity={STROKE_OPACITY}
         />
-        {/* MED/FAR 호 (좌우 끝 → 끝) */}
         <Path
           d={medArc.d}
           fill="none"
           stroke={MED_COLOR}
           strokeWidth={STROKE_W}
           strokeOpacity={STROKE_OPACITY}
+        />
+        <Line
+          x1={apexX}
+          y1={apexY}
+          x2={apexX}
+          y2={H}
+          stroke={CLOCK12_COLOR}
+          strokeWidth={3}
+          strokeOpacity={0.95}
         />
         <SvgText x={W - 44} y={nearArc.edgeY - 6} fill={NEAR_COLOR} fontSize={11} fontWeight="bold">
           NEAR
@@ -1898,6 +1899,9 @@ function DistanceZoneOverlay() {
         </SvgText>
         <SvgText x={apexX + 8} y={apexY - 4} fill={FAR_COLOR} fontSize={11} fontWeight="bold">
           FAR
+        </SvgText>
+        <SvgText x={apexX + 8} y={H * 0.38} fill={CLOCK12_COLOR} fontSize={11} fontWeight="bold">
+          12시
         </SvgText>
       </Svg>
     </View>

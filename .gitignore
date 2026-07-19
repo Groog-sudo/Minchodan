@@ -186,6 +186,19 @@ tmp/
 !client/ios/**
 !client/android/**
 
+# 2026-07-19: !client/ios/** 예외가 Xcode DerivedData/로컬 빌드 산출물까지
+# 미추적으로 끌어올려 Cursor/git status에 수천~수만 파일이 잡힘.
+# Release/Debug 로컬 빌드 산출물은 절대 추적하지 않는다.
+client/ios/build/
+client/ios/build-release/
+client/ios/**/DerivedData/
+client/ios/**/CompilationCache.noindex/
+client/ios/**/ModuleCache.noindex/
+client/ios/**/SDKStatCaches.noindex/
+client/ios/**/Index.noindex/
+client/ios/**/Logs/
+client/ios/**/*.xcuserstate
+
 # 2026-07-19: 관제 콘솔 단말 오디오 미러용 반사 비프 클립 정적 자산.
 # client/assets/sounds/reflex_clips/와 동일 파일 5종을 복사해 둔 것으로,
 # 단말 번들과 동일 파일이므로 "동일"에 가장 근접한 재생을 위해 추적한다.

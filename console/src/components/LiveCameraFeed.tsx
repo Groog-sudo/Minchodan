@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "./LiveCameraFeed.css";
 import { resolveServiceUrl } from "../config/network";
 
@@ -132,8 +132,11 @@ export function LiveCameraFeed({
   const [mapVisible, setMapVisible] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // iframe onLoad 콜백(마운트 시 1회)이 항상 최신 lastGps를 읽도록 ref로 미러링한다.
+  // 렌더 순수성을 지키기 위해 mutation은 useLayoutEffect 안에서 수행한다(React Doctor 지적 반영).
   const lastGpsRef = useRef(lastGps);
-  lastGpsRef.current = lastGps;
+  useLayoutEffect(() => {
+    lastGpsRef.current = lastGps;
+  }, [lastGps]);
 
   // platform에 따른 동적 회전 각도 결정 (Android는 기본 90도, iOS 및 기타는 0도)
   const defaultRotate = platform === "android" ? 90 : 0;
@@ -324,9 +327,20 @@ export function LiveCameraFeed({
                     <>
                       <path d={nearArc.d} fill="none" stroke="#EF4444" strokeWidth={2} strokeOpacity={0.75} />
                       <path d={medArc.d} fill="none" stroke="#F59E0B" strokeWidth={2} strokeOpacity={0.75} />
+                      {/* 12시 방향 중심선 (Near/Med 호 유지, cyan 추가) */}
+                      <line
+                        x1={apexX}
+                        y1={apexY}
+                        x2={apexX}
+                        y2={H}
+                        stroke="#22D3EE"
+                        strokeWidth={3}
+                        strokeOpacity={0.95}
+                      />
                       <text x={W - 44} y={nearArc.edgeY - 6} fill="#EF4444" fontSize={11} fontWeight="bold">NEAR</text>
                       <text x={W - 40} y={medArc.edgeY - 6} fill="#F59E0B" fontSize={11} fontWeight="bold">MED</text>
                       <text x={apexX + 8} y={apexY - 4} fill="#3B82F6" fontSize={11} fontWeight="bold">FAR</text>
+                      <text x={apexX + 8} y={H * 0.38} fill="#22D3EE" fontSize={11} fontWeight="bold">12시</text>
                     </>
                   );
                 })()}

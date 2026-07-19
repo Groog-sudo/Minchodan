@@ -3484,3 +3484,50 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/ios/CoreMLInferenceBridge.swift`, `client/assets/.../object_detection.mlpackage`, `client/ios/Minchodan/Info.plist`, `client/app.json`, `client/.env.example`, `server/main.py`, `docs/ops/environment_variables.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `/navigation/?embed=true` 200, Vite 프록시 200. 단말 Metro 리로드로 오버레이 계약 반영. `ruff check server/main.py` 통과, `pytest tests/test_security_hardening.py` 5 passed.
 - **비고**: 루프백 바인딩 환경의 실기기 접속은 Tailscale Serve(`https://<magicdns>/`) 전제.
+
+### 2026-07-19 | 3단계 | 노면 Near/Medium/Far + 인지 에피소드 억제
+
+- **배경**: caution/roadway가 시야에 있는 동안 `has_significant_surface`/`risk_hint=mid` 무조건 통과로 인지 TTS가 반복되고, Near 반사 비프와 TTS가 동시에 울려 과처리됨.
+- **변경 내용**:
+  - 노면 거리 구역(centroid_y): Near(>0.6H)=반사만 / Medium=인지 TTS / Far=화면만. `_is_speech_worthy`에서 무조건 통과 제거.
+  - 노면 인지 에피소드: 같은 caution|roadway 키가 시야에 있는 동안 enter 1회만 안내, 이탈·클래스 변경 시에만 재안내.
+  - 인지 서명 거칠게: `caution|roadway`만 키로 사용(sidewalk/braille 흔들림으로 쿨다운 리셋 방지). 노면-only는 주기 갱신 금지.
+  - Near 노면 반사 후 `_trigger_delayed_cognitive_guide` 생략(비프+TTS 동시 반복 금지).
+- **관련 파일**: `server/detection/consumer.py`, `tests/test_detection.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `.venv/bin/python -m pytest tests/test_detection.py::TestSpeechWorthyFilter tests/test_detection.py::TestUtteranceValueGate` → **24 passed**
+- **비고**: 서버(DetectionConsumer) 재기동 후 실기기에서 Medium 진입 1회 TTS / Near 반사만 확인 권장.
+
+### 2026-07-19 | 3단계 | Medium 노면 안내 무음 버그 수정
+
+- **배경**: 실외 로그에서 Medium이 `episode=continue`만 반복되고 guide TTS가 나오지 않음. enter 시점에 episode를 선커밋해 TTS 실패 후에도 잠김 + 노면-only 동일 서명을 utterance가 막아 이탈 후 재진입도 무음.
+- **변경 내용**:
+  - 노면 인지: enter 시 `pending`만 걸고, 단말 guide 전송 성공 후에만 `_commit_surface_cognitive_episode`. 실패/조기반환 시 pending 해제해 재시도.
+  - Far 구역을 에피소드 이탈로 취급. caution/roadway는 단일 `surface_hazard` 키.
+  - `_has_utterance_value`: 노면-only는 서명 동일로 막지 않음(에피소드 게이트가 1회 담당).
+- **관련 파일**: `server/detection/consumer.py`, `tests/test_detection.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `.venv/bin/python -m pytest tests/test_detection.py -k 'Surface or utterance or speech_worthy or Approaching or hazard'` → **32 passed**. `minchodan-fastapi` 재기동 완료.
+- **비고**: Medium 진입 시 로그에 `노면 인지 에피소드 enter` → `guide 전송` 1회, 이후 `continue` 확인.
+
+
+### 2026-07-19 | 3단계·단말 | 12시 회랑 경보 + 오버레이 중심선
+
+- **배경**: Near 햅틱/비프와 Medium 인지 안내가 측면 탐지에도 울려 과경보. 거리선(Near/Med)과 구분되는 12시 시각 가이드가 필요.
+- **변경 내용**:
+  - `DistanceZoneOverlay`: 기존 Near/Med 호 유지, cyan 12시 세로선(소실점→하단) + 라벨 추가.
+  - `surface_gate`: Near FRONT_BAND(0.20~0.80) 밖 노면은 반사 제외. 파이프라인에 frame_width 전달.
+  - 인지: Medium 노면/객체는 12시 회랑(`FRONT_BAND`)만 speech_worthy. 측면 approaching 인지 TTS 제거.
+  - 온디바이스 로컬 반사: `estimateDirection===front` 후보만 햅틱/비프.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `server/detection/gates/surface_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/consumer.py`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py` → **79 passed**. FastAPI 재기동.
+- **비고**: Metro 리로드로 단말 오버레이 확인. 측면 탐지는 BBox만, 12시 선 위의 Near/Med만 음성·햅틱.
+
+
+---
+
+### 2026-07-19 | 3단계 | metro_https_ats_fix_rag_toggle
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 실기기-Metro 연결 실패 원인 규명 및 수정: expo-dev-launcher가 NSUserDefaults에 남은 packagerScheme=https로 평문 Metro(8081)에 접속 시도해 실패하던 문제를 AppDelegate.swift에서 앱 시작 시 http로 고정해 해결, NSAllowsArbitraryLoads+NSAllowsLocalNetworking 동시 설정이 Tailscale CGNAT(100.64.0.0/10) 대역에 대해 ATS를 오히려 차단하던 문제를 NSAllowsLocalNetworking 제거로 해결(app.json/Info.plist). 안내 문장 어색함 원인 분석 후 RAG on/off 비교 테스트용 RAG_ENABLED 환경변수 토글 추가(server/detection/consumer.py, 기본값 true, 삭제 아닌 비활성화). Xcode DerivedData 등 로컬 빌드 산출물이 !client/ios/** 예외로 추적되던 .gitignore 결함 수정. LiveCameraFeed.tsx 렌더 중 ref mutation을 useLayoutEffect로 이동(React Doctor 지적), consumer.py SIM103 lint 위반 수정
+- **관련 파일**: `gitignore`, `client/App.tsx`, `client/app.json`, `client/ios/.gitignore`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`, `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/kb.md`, `docs/ops/environment_variables.md`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `server/detection/gates/surface_gate.py`, `server/tts/suppressor.py`, `tests/test_detection.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
