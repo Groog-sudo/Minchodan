@@ -3294,3 +3294,31 @@
 - **관련 파일**: `.gitignore`, `client/ios/Podfile.lock`, `client/ios/Minchodan.xcodeproj/project.pbxproj`, `docs/changelogs/kb.md`
 - **검증 결과**: `git check-ignore`로 det_best mlpackage 무시 확인. `Podfile.lock` RNSVG 6건 매칭. 디스크상 mlpackage 유지.
 - **비고**: CoreML 이중 사본(`assets/.../segmentation.mlpackage` ↔ `ios/segmentation.mlpackage`, 동일 checksum)은 Xcode가 ios 경로를 참조하므로 유지. 히스토리 대용량 blob(yolov8n 등) 제거는 filter-repo 범위라 이번 정리에서 제외.
+
+---
+
+### 2026-07-19 | 2·7단계 | 탐지 시작 시 안내 음성 끊김 수정
+
+- **배경**: 실기기에서 탐지/화면 전송을 누르면 온보딩·인지 안내가 중간에서 끊김. Metro 로그 실측: 온보딩 TTS 중 hold≈40ms STT 오탐이 `stopGuideAudio`/`Speech.stop`을 즉시 호출해 `onDone` 처리. 또한 Mid 비프(interval=250)가 HIGH_DANGER(250)에 걸려 가이드를 선점.
+- **변경 내용**:
+  - `CameraView`: STT arm 지연 200ms — 그 전에 손을 떼면 안내 선점·녹음 시작 없음.
+  - `audioEngine`: HIGH_DANGER 문턱 250→100(긴급 beep-only와 정합). Mid는 덕킹만.
+  - `useSttRecorder`: `MIN_STT_HOLD_MS` export(서버 폐기 임계는 400ms 유지).
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `docs/changelogs/kb.md`
+- **검증 결과**: 코드 경로 로그 대조(오탐 hold 40ms vs arm 200ms). Metro 핫리로드로 JS만 반영(네이티브 재빌드 불필요).
+- **비고**: 의도적 STT는 약 200ms 누른 뒤 녹음 시작.
+
+
+---
+
+### 2026-07-19 | 도구·3단계 | 어제 Git 기준 온디바이스 CoreML 복원
+
+- **배경**: `expo prebuild --clean`으로 브릿지 없는 GILDANG 바이너리가 실기기에 남아 `CoreMLInferenceBridge Native Module 미발견` → TFLite 폴백 → takePhoto `float32len=0`으로 온디바이스 탐지 불가. 7/18 말 `02aab79` 깃 트리에는 CoreML/Reflex/mlmodelc가 온전했음.
+- **변경 내용**:
+  - `Minchodan.xcworkspace` Debug 재빌드·실기기 설치(브릿지 포함). 로그: `det=CoreML(CPU)/seg=CoreML(CPU)`, `supportsStream=true`.
+  - `app.json`: 어제 브랜딩명 GILDANG 유지, `react-native-fast-tflite`에 `enableCoreMLDelegate: true` 명시.
+  - `useCamera`: takePhoto 폴백 시 TFLite용 float32를 base64에서 복원(플러그인 없는 바이너리 방어).
+  - 선행 STT arm/HIGH_DANGER 수정은 유지.
+- **관련 파일**: `client/app.json`, `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `docs/changelogs/kb.md`
+- **검증 결과**: 설치 후 Metro에 CoreML 기동·Stream 캡처·SceneHysteresis 추론 로그 확인. `Native Module 미발견` 해소.
+- **비고**: `expo prebuild --clean` 재실행 금지. 표시명은 GILDANG(브랜딩), 번들/앱 경로는 Minchodan.

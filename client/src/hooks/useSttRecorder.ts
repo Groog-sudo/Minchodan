@@ -27,7 +27,8 @@ const STT_START_CUE_WITH_AEC = false;
 
 // 2026-07-19: 초단시간/탭 오탐 녹음은 서버로 보내지 않는다.
 // 실측 hold=0.02~0.18s → "음성이 인식되지 않았어요" 연속 재생 → 안내 끊김 루프.
-const MIN_STT_HOLD_MS = 400;
+// CameraView STT arm(안내 선점·녹음 시작) 지연과 동일 값을 쓴다.
+export const MIN_STT_HOLD_MS = 400;
 // iOS 16kHz mono PCM16: 0.35s ≈ 11200 bytes payload (WAV 헤더 제외 근사).
 const MIN_STT_CAPTURED_SEC_IOS = 0.35;
 

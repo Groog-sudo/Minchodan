@@ -67,7 +67,12 @@
           "enableFrameProcessors": true
         }
       ],
-      "react-native-fast-tflite",
+      [
+        "react-native-fast-tflite",
+        {
+          "enableCoreMLDelegate": true
+        }
+      ],
       "expo-splash-screen",
       "expo-audio",
       "expo-location",

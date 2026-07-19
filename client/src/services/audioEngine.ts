@@ -17,10 +17,10 @@ import * as Speech from "expo-speech";
 // 입체음향을 구현한다(docs/design/reflex_audio_specification.md §4 후속 과제 해소).
 const PAN_BUCKETS: readonly number[] = [-1.0, -0.5, 0.0, 0.5, 1.0];
 
-// 반사 비프-인지 가이드 음량 우선순위 정책 (2026-07-09 추가).
-// CameraView.tsx 4단계(0/200/600/1200ms)와 server/detection/gates/reflex_gate.py
-// 4단계(0/100/250/500ms) 양쪽 모두, 이 문턱값 이하가 "초접근/근접"(1~2단계)에 해당한다.
-const HIGH_DANGER_INTERVAL_MS = 250;
+// 반사 비프-인지 가이드 음량 우선순위 정책 (2026-07-09 추가, 2026-07-19 정정).
+// useWebSocket 긴급 채널(interval<=100, beep-only)과 맞춘다. 이전 250ms는 Mid
+// 단계(250ms) 비프까지 가이드를 선점해 탐지 시작 직후 안내가 끊기던 원인이었다.
+const HIGH_DANGER_INTERVAL_MS = 100;
 // 가이드 재생 중 저위험(3~4단계) 비프의 덕킹 볼륨. 0으로 완전히 죽이지 않고
 // 존재감만 남겨, 방향성 안내 자체는 계속 인지할 수 있게 한다.
 const DUCKED_BEEP_VOLUME = 0.25;

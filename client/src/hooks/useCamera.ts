@@ -279,6 +279,15 @@ export function useCamera(
         // 단일 프레임 캡처 (하드웨어 호출 1회로 통일)
         const frame = await captureFrame("reflex");
         if (frame && onFrameRef.current) {
+          // Reflex 플러그인 없는 바이너리(takePhoto 폴백)는 float32를 비워 둔다.
+          // TFLite 폴백(requiresFloat32=true)이면 base64에서 즉시 복원해 온디바이스 탐지를 살린다.
+          if (
+            requiresFloat32Ref.current &&
+            frame.float32.length === 0 &&
+            frame.base64
+          ) {
+            frame.float32 = decodeBase64JpegToHwc(frame.base64);
+          }
           // 반사 경로로 즉시 전달
           onFrameRef.current(frame);
 
