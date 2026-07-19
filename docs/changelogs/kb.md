@@ -3352,3 +3352,16 @@
 - **관련 파일**: `guidePriority.ts`, `audioEngine.ts`, `hapticEngine.ts`, `CameraView.tsx`, `useWebSocket.ts`, `docs/changelogs/kb.md`
 - **검증 결과**: `npx tsc --noEmit`(client) 클린.
 - **비고**: Metro 핫리로드로 반영.
+
+---
+
+### 2026-07-19 | 7단계 | Near/음성 안내 대기열 상한 6 + 최신만 재생
+
+- **배경**: Near·인지 음성 안내가 재생보다 빨리 쌓이면 오래된 안내가 줄줄이 나와 현재 장면과 어긋남.
+- **변경 내용**:
+  - `audioEngine`: 재생 중 동일 우선순위 안내는 대기열 적재(최대 6, 초과 시 오래된 것 drop). 종료 시 최신 1건만 재생하고 나머지 폐기. 상위 우선순위는 즉시 선점.
+  - STT 활성/`stopGuideAudio` 시 대기열 정리. `guideEpoch`로 선점 콜백의 오배수 방지.
+  - 서버 `COGNITIVE_QUEUE_MAXSIZE` 기본값 4→6(오래된 프레임 drop-oldest 유지).
+- **관련 파일**: `client/src/services/audioEngine.ts`, `server/capture/stream_splitter.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit`(client) 클린.
+- **비고**: Metro 핫리로드로 단말 반영.
