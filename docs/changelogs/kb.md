@@ -3228,3 +3228,17 @@
 - **관련 파일**: `console/Dockerfile`(신규), `console/.dockerignore`(신규), `console/vite.config.ts`, `docker/docker-compose.macos.yml`, `docker/docker-compose.yml`, `docs/ops/deployment_guide.md`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
 - **검증 결과**: `ruff check .` All checks passed. `npx tsc --noEmit`(console) 0 오류. `docker compose -f docker/docker-compose.macos.yml config` console 서비스 정상 인식(비밀값 필터 출력 확인).
 - **비고**: 푸시 브랜치는 `kb`. Metro·Ollama·Tailscale은 정합성 평가 근거(Xcode 강결합·GPU/MPS·커널 TUN)로 호스트 실행 유지. 통합 테스트 수동 단계가 4→2(Docker Desktop 실행 + compose up)로 감소.
+
+---
+
+### 2026-07-19 | 통합 | 통합 테스트 스킬 Tailscale 외부 테스트 시나리오 보완 (§0/§3-B/§5)
+
+- **배경**: 통합 테스트 스킬을 실제 실행한 결과 "Tailscale을 쓴다"는 사실만 명시되어 있고, "Tailscale 경로로 단말이 실제로 도달하는지 검증하는 절차"와 "Metro 번들이 Tailscale 경로로 단말에 전달되는지 확인하는 절차"가 누락되어 있음이 드러남. 실제 실행에서 Metro가 `localhost:8081`만 리스닝하고 Tailscale IP로 응답하지 않아 단말이 번들을 받지 못하는 사례가 발생(단말 흰 화면). 또한 `nohup ... &`로 실행한 Metro가 반복적으로 조용히 종료되는 현상 실측.
+- **변경 내용**:
+  - **§0 결정 항목 보완**: "외부 LTE/핫스팟 테스트 시나리오" 추가. 단말이 개발 PC와 같은 LAN이 아닐 때 `EXPO_PUBLIC_NETWORK_MODE=tailscale` 필수, §3-B 사전 검증을 먼저 수행해야 흰 화면 실패를 차단한다고 명시.
+  - **§3-B "Tailscale 네트워크 사전 검증" 신설**: 5단계 검증 절차(호스트 Tailscale IP 확인 → `EXPO_PUBLIC_TAILSCALE_HOST` 일치 검증 → 호스트→단말 ping → FastAPI Tailscale IP 도달 → Metro Tailscale IP 도달). 각 단계별 실패 시 대응 표 포함.
+  - **§5 Metro 백그라운드 실행 안정성 보완**: `nohup` 대신 `setsid`로 세션 분리 권장 + `disown` 함께 사용. `EXPO_PUBLIC_NETWORK_MODE=tailscale`일 때 `--host 0.0.0.0` 명시로 Tailscale 인터페이스 바인딩 보장. Metro 헬스체크를 localhost와 Tailscale IP 두 경로 모두에서 수행하는 "이중 경로" 검증 절차 추가. localhost만 200이고 Tailscale IP가 000이면 Metro가 127.0.0.1만 바인딩한 것으로 진단하는 가드레일 추가.
+  - **버전업**: v1.2.0 → v1.3.0. `.agents/skills/`·`.claude/skills/` 양쪽 미러 동기화.
+- **관련 파일**: `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
+- **검증 결과**: 미러 diff 0건(동일 내용). 스킬 내 링크/코드펜스 정합성 육안 확인.
+- **비고**: 푸시 브랜치는 `kb`. 이번 보완으로 외부 LTE/핫스팟 테스트 시 단말 흰 화면 실패를 사전에 차단하고, Metro 백그라운드 실행 안정성을 확보함.
