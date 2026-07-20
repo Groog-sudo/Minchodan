@@ -23,9 +23,11 @@ REFLEX_NEAR_HAPTIC_THROTTLE_S = float(os.getenv("REFLEX_NEAR_HAPTIC_THROTTLE_S",
 # 반응성을 유지하되, 동일 track_id 재발동에는 더 긴 최소 간격을 추가로 요구한다.
 REFLEX_NEAR_TRACK_MIN_GAP_S = float(os.getenv("REFLEX_NEAR_TRACK_MIN_GAP_S", "1.2"))
 # 2026-07-19: 노면(surface) 반사는 세그 흔들림으로 매초 재발화하기 쉬워 TTL/갭을 길게 둔다.
-# 2026-07-20: 필드 DB 분석 결과 5분간 8회(평균 35초 간격) 반복되어 체감 과다 - 기본값 상향.
-REFLEX_SURFACE_SUPPRESS_TTL_S = int(os.getenv("REFLEX_SURFACE_SUPPRESS_TTL_S", "30"))
-REFLEX_SURFACE_MIN_GAP_S = float(os.getenv("REFLEX_SURFACE_MIN_GAP_S", "15.0"))
+# 2026-07-20 1차: 필드 DB 분석 결과 5분간 8회(평균 35초 간격) 반복되어 체감 과다 - 15->30s 상향.
+# 2026-07-20 2차: 1차 상향 후 재검증(외실 재테스트)해도 같은 캐션 구간을 계속 걸으면
+# 여전히 자주 울린다는 필드 피드백 반영 - 30->60s/15.0->45.0s 추가 상향.
+REFLEX_SURFACE_SUPPRESS_TTL_S = int(os.getenv("REFLEX_SURFACE_SUPPRESS_TTL_S", "60"))
+REFLEX_SURFACE_MIN_GAP_S = float(os.getenv("REFLEX_SURFACE_MIN_GAP_S", "45.0"))
 
 
 class AlertSuppressor:
