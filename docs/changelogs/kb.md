@@ -3548,23 +3548,14 @@
 
 ### 2026-07-20 | 5~6단계 | Medium 인지 짧은 힌트 Dict 전환 (GUIDANCE_CONTEXT_MODE)
 
-- **커밋**: (미커밋)
+- **커밋**: `dc8f020`
 - **배경**: Medium 안내가 RAG on이면 완성문 압축으로 어색하고, RAG off면 힌트 부재로 단조로워지며, 임베딩+Chroma 왕복은 사실상 라벨 매칭인데도 rag_ms를 소모한다. 계획서 검증 후 인메모리 짧은 힌트로 교체.
 - **변경 내용**:
   - `server/rag/guidance_hints.py` 신규: 29+노면 클래스별 2힌트, 길이/방향금지어 검증, seed 결정적 선택.
   - `server/detection/consumer.py`: `GUIDANCE_CONTEXT_MODE=hints|rag` (기본 hints). hints면 retriever 미호출.
   - `server/orchestration/nodes/l2_generator.py`: `[회피 힌트]` 주입 및 방향은 [탐지 방향]만 사용 규칙 추가.
-  - `tests/test_guidance_hints.py` 신규. `docs/ops/medium_guidance_hint_dict_implementation_plan.md`, `docs/README.md`, `environment_variables.md` v0.4.27, `.env.example` 반영.
-- **관련 파일**: `server/rag/guidance_hints.py`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`, `tests/test_guidance_hints.py`, `docs/ops/medium_guidance_hint_dict_implementation_plan.md`, `docs/ops/environment_variables.md`, `docs/README.md`, `.env.example`
-- **검증 결과**: `pytest tests/test_guidance_hints.py` 6 passed. `ruff check` 대상 파일 통과.
+  - `tests/test_guidance_hints.py` 신규. 계획서·`docs/README.md`·`environment_variables.md` v0.4.27·`.env.example`·`stage6_orchestration_design.md` 동기화.
+  - Docker: console `node_modules` named volume, macos compose FastAPI `0.0.0.0` 바인딩.
+- **관련 파일**: `server/rag/guidance_hints.py`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`, `tests/test_guidance_hints.py`, `docs/ops/medium_guidance_hint_dict_implementation_plan.md`, `docs/ops/environment_variables.md`, `docs/README.md`, `docs/stage-guides/stage6_orchestration_design.md`, `.env.example`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`
+- **검증 결과**: `pytest tests/test_guidance_hints.py` + `tests/test_langgraph.py` 통과. 이중 경로·react-doctor·자동 발행 통과.
 - **비고**: Chroma/편의 RAG는 유지. 실기기 A/B(S5)는 후속. 롤백은 `GUIDANCE_CONTEXT_MODE=rag`.
-
----
-
-### 2026-07-20 | 6단계 | medium_guidance_hints
-
-- **커밋**: `(자동 커밋 완료)`
-- **변경 내용**:
-  - Medium 인지 경로를 인메모리 짧은 회피 힌트(GUIDANCE_CONTEXT_MODE=hints)로 전환하고 Chroma RAG는 rag 모드로 롤백 가능하게 함. console node_modules named volume·FastAPI 0.0.0.0 바인딩 보완, 계획서·env·stage6 문서 동기화.
-- **관련 파일**: `env.example`, `docker/docker-compose.macos.yml`, `docker/docker-compose.yml`, `docs/README.md`, `docs/changelogs/kb.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage6_orchestration_design.md`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`, `docs/ops/medium_guidance_hint_dict_implementation_plan.md`, `server/rag/guidance_hints.py`, `tests/test_guidance_hints.py`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
