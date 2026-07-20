@@ -149,8 +149,9 @@ def resolve_frame_path(frame_path: str | None) -> Path | None:
 def cleanup_expired_frames(retention_days: int | None = None) -> int:
     """보존 기간을 초과한 날짜 폴더를 삭제하고 삭제한 폴더 수를 반환합니다.
 
-    서버 기동 시 1회 호출합니다. YYYYMMDD 형식 폴더만 대상으로 하며,
-    형식이 다른 항목은 안전을 위해 건드리지 않습니다.
+    2026-07-20: 서버 기동 시 1회 + EVENT_FRAME_CLEANUP_INTERVAL_S 주기로 반복
+    호출합니다(`server/main.py`). YYYYMMDD 형식 폴더만 대상으로 하며, 형식이
+    다른 항목은 안전을 위해 건드리지 않습니다.
     """
     days = RETENTION_DAYS if retention_days is None else retention_days
     if days <= 0 or not EVENT_FRAMES_DIR.is_dir():
