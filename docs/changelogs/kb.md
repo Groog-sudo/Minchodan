@@ -3739,3 +3739,19 @@
 - **관련 파일**: `server/detection/direction.py`, `gates/reflex_gate.py`, `gates/surface_gate.py`, `detection_pipeline.py`, `consumer.py`, `risk_rules.py`, docs, tests
 - **검증 결과**: Docker `pytest tests/test_detection.py tests/test_distance_priority_integration.py` → **98 passed**. Ruff OK.
 - **커밋**: `5eca38f`
+
+---
+
+### 2026-07-20 | 3단계 | DB 로그 분석 기반 반사 억제 재조정(노면 과다·near 햅틱 따닥거림)
+
+- **배경**: 실기기 통합테스트 중 사용자가 "안내메세지가 너무 적고, 노면 안내가 과다해 정보 불균형이 있으며, 메시지·햅틱 싱크가 안 맞는다"고 피드백. `detection_guidance_logs` 원격 DB를 직접 조회해 검증:
+  - 최근 6시간 reflex(무음성) 184건 vs cognitive(음성) 99건 - near가 medium보다 약 2배 많아 체감상 안내가 적음.
+  - `surface_caution.wav` 반사 클립이 같은 구간에서 5분간 8회(평균 35초 간격) 반복 - 개별 억제값은 통과하지만 누적 빈도가 과다.
+  - 같은 track_id(T-0008)가 0.54초·0.72초 간격으로 near 햅틱을 연속 재발동(500ms 스로틀만 적용되고 track 단위 최소 간격이 없었음) - 음성 없는 near 구간에서 햅틱만 빠르게 반복되어 "싱크 안 맞음"으로 체감.
+  - near=즉시 촉각/medium=상세 음성이라는 이중 경로 원칙 자체는 유지하기로 결정(설계 비협상 원칙과 부합).
+- **변경 내용**:
+  - `server/tts/suppressor.py`: `REFLEX_NEAR_TRACK_MIN_GAP_S`(기본 1.2초) 신규 - near에서 동일 track_id 재발동에만 추가 최소 간격 적용(다른 물체는 기존 500ms 스로틀만 유지해 반응성 보존).
+  - `REFLEX_SURFACE_SUPPRESS_TTL_S` 15→30초, `REFLEX_SURFACE_MIN_GAP_S` 8.0→15.0초 상향(노면 반복 경보 빈도 완화).
+- **관련 파일**: `server/tts/suppressor.py`, `.env.example`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, `tests/test_suppressor_rearm.py`
+- **검증 결과**: `pytest tests/test_suppressor_rearm.py` → **15 passed**(신규 3건 포함). `pytest tests/` 전체 435 passed(기존에도 실패하던 WS/임베딩 통합 테스트 7건은 무관, `git stash`로 무변경 상태에서도 동일 실패 확인). Ruff OK, mypy 무관.
+- **비고**: STT 응답 무반응 별도 이슈는 faster-whisper-small 모델(`model.bin`) 프리로드 다운로드가 컨테이너 기동 중 정체된 것이 원인으로 확인·재다운로드 후 해소(코드 변경 없음, 인프라 이슈).

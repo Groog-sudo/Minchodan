@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.6 (2026-07-20 §2.1 안내용 12시 회랑 `SPEECH_FRONT_BAND`/`is_speech_front` 분리 - 음성·햅틱만 진행축. 기존 v1.3.5: §5.2 STT 중 Near 비프·햅틱 병행. 기존 v1.3.4: STT 안전 상한. 기존 v1.3.3: alert_id `high_obstacle`)
+> **버전**: v1.3.7 (2026-07-20 §6.3 필드 DB 분석 기반 반사 억제 재조정: 동일 track_id near 재발동 최소 간격 `REFLEX_NEAR_TRACK_MIN_GAP_S=1.2`초 신규, 노면 억제 TTL/최소 간격 상향(15→30s / 8.0→15.0s). 기존 v1.3.6: §2.1 안내용 12시 회랑 `SPEECH_FRONT_BAND`/`is_speech_front` 분리. 기존 v1.3.5: §5.2 STT 중 Near 비프·햅틱 병행. 기존 v1.3.4: STT 안전 상한. 기존 v1.3.3: alert_id `high_obstacle`)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -179,9 +179,10 @@ graph TD
 
 | 밴드 | 거리 | 억제 정책 |
 | :--- | :--- | :--- |
-| `near` | <=0.6m | TTL 억제 **제외**, `REFLEX_NEAR_HAPTIC_THROTTLE_S=0.5`초 스로틀만 (충돌 임박 촉각 신호 반복 안전 이득) |
+| `near` | <=0.6m | TTL 억제 **제외**, `REFLEX_NEAR_HAPTIC_THROTTLE_S=0.5`초 스로틀 + **2026-07-20 신규**: 동일 track_id는 `REFLEX_NEAR_TRACK_MIN_GAP_S=1.2`초 추가 최소 간격(다른 물체는 500ms 스로틀만 적용해 반응성 유지) |
 | `medium` | <=1.5m | 동일 키 5s TTL + device 단위 `REFLEX_MIN_GAP_S=1.5`초 쿨다운 + 밴드 악화 재발화 |
 | `far` | >1.5m | (reflex_gate 범위 밖, 발생 안 함) |
+| `surface`(노면) | - | 동일 키 `REFLEX_SURFACE_SUPPRESS_TTL_S=30`초(2026-07-20 상향, 기존 15) + device 단위 `REFLEX_SURFACE_MIN_GAP_S=15.0`초 쿨다운(2026-07-20 상향, 기존 8.0) - 필드 DB 분석 결과 같은 노면 구간에서 5분간 8회(평균 35초 간격) 반복돼 체감 과다 확인 후 상향 |
 
 ### 6.4 should_rearm 판정
 

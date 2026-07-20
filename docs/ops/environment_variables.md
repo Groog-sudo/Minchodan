@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-20
-> **버전**: v0.4.29 (2026-07-20 코드-문서 정합: 누락 변수 13종 일괄 등재(EMBEDDING_PROVIDER·STT_*·CONSOLE_*·WS_BIND_HOST·반사/노면 튜닝·인증 만료·SEG_COMPARE 디버그), EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시. 기존 v0.4.28 이력 유지)
+> **버전**: v0.4.30 (2026-07-20 필드 DB 분석 기반 반사 억제 재조정: REFLEX_NEAR_TRACK_MIN_GAP_S 신규(동일 track_id near 재발동 간격), REFLEX_SURFACE_SUPPRESS_TTL_S 15→30·REFLEX_SURFACE_MIN_GAP_S 8.0→15.0 상향. 기존 v0.4.29 이력 유지: 코드-문서 정합 누락 변수 13종 일괄 등재, EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -97,6 +97,7 @@
 | **`REFLEX_SUPPRESS_TTL_S`** | int | 선택 | `5` | **2026-07-17 신규 (P0-1).** 동일 track_id+distance_band 조합의 반사 억제 TTL(초). 보행 속도(1m/s) 기준 5초면 동일 객체 반복 스팸 방지 충분 | `server/tts/suppressor.py` |
 | **`REFLEX_MIN_GAP_S`** | float | 선택 | `1.5` | **2026-07-17 신규 (P0-1).** 서로 다른 객체 경보의 최소 간격(초, device 단위). 알림 폭탄 방지 | `server/tts/suppressor.py` |
 | **`REFLEX_NEAR_HAPTIC_THROTTLE_S`** | float | 선택 | `0.5` | **2026-07-17 신규 (P0-1).** near(<=0.6m) 햅틱+비프 스로틀 간격(초). 충돌 임박 촉각 신호는 TTL 억제 제외, 스로틀만 적용 | `server/tts/suppressor.py` |
+| **`REFLEX_NEAR_TRACK_MIN_GAP_S`** | float | 선택 | `1.2` | **2026-07-20 신규.** near에서 동일 track_id 재발동 최소 간격(초). 필드 DB 분석 결과 같은 물체가 500ms 스로틀만으로 0.5~1초 간격 재발동해 햅틱이 따닥거리는 사례 확인, 동일 track_id에만 추가 간격을 요구(다른 물체는 기존 500ms만 적용해 반응성 유지) | `server/tts/suppressor.py` |
 | **`APPROACH_LOST_WINDOW_S`** | float | 선택 | `1.0` | **2026-07-17 신규 (P0-3).** Approach-Lost 윈도우(초). 동일 track_id가 이 시간 이내 재탐지되고 직전 hit_count가 MIN 이상이면 reacquired=True로 즉시 재발화 | `server/detection/bytetrack_tracker.py` |
 | **`APPROACH_LOST_MIN_PREV_HIT`** | int | 선택 | `3` | **2026-07-17 신규 (P0-3).** Approach-Lot 판정에 필요한 직전 hit_count 하한 (reflex_gate MIN_HIT_COUNT와 SSOT) | `server/detection/bytetrack_tracker.py` |
 | **`COGNITIVE_UTTERANCE_COOLDOWN_S`** | float | 선택 | `30.0` | **2026-07-17 신규 (P1-2).** 인지 가이드 발화 가치 게이트의 동일 상황 쿨다운(초). 동일 객체+표면 서명이면 이 시간 동안 TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시 발화 | `server/detection/consumer.py` |
@@ -106,8 +107,8 @@
 | **`GUIDE_LOW_RISK_NARRATION`** | bool | 선택 | `false` | **2026-07-18 신규 (T2-G).** `true`이면 저위험(low) 순수 내레이션을 발화한다. `false`이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 안내를 억제해 청각 피로를 줄인다. 보도 이탈, 고위험, 접근 객체, 유의미 노면은 예외로 항상 발화 | `server/detection/consumer.py` |
 | **`RAG_ENABLED`** | bool | 선택 | `true` | **2026-07-19 신규.** `GUIDANCE_CONTEXT_MODE=rag`일 때만 의미 있음. `false`면 Chroma 검색을 건너뛰고 `rag_context`를 "관련 수칙 없음"으로 둔다. `hints` 모드에서는 무시 | `server/detection/consumer.py` |
 | **`GUIDANCE_CONTEXT_MODE`** | string | 선택 | `hints` | **2026-07-20 신규.** Medium 인지 경로 컨텍스트 소스. `hints`(기본)=인메모리 짧은 회피 힌트(`server/rag/guidance_hints.py`, rag_ms≈0). `rag`=기존 Chroma `search_guidance` 롤백/A/B. 잘못된 값은 `hints`로 폴백 | `server/detection/consumer.py`, [`medium_guidance_hint_dict_implementation_plan.md`](medium_guidance_hint_dict_implementation_plan.md) |
-| **`REFLEX_SURFACE_SUPPRESS_TTL_S`** | int | 선택 | `15` | **2026-07-19 신규.** 노면(surface) 반사 경보 전용 억제 TTL(초). 세그먼트 흔들림으로 매초 재발화하기 쉬워 일반 반사(5s)보다 길게 설정 | `server/tts/suppressor.py:22` |
-| **`REFLEX_SURFACE_MIN_GAP_S`** | float | 선택 | `8.0` | **2026-07-19 신규.** 노면 surface 경보 발화 간 최소 간격(초, device 단위) | `server/tts/suppressor.py:23` |
+| **`REFLEX_SURFACE_SUPPRESS_TTL_S`** | int | 선택 | `30` | **2026-07-19 신규, 2026-07-20 상향(15→30).** 노면(surface) 반사 경보 전용 억제 TTL(초). 세그먼트 흔들림으로 매초 재발화하기 쉬워 일반 반사(5s)보다 길게 설정. 필드 DB 분석 결과 같은 노면 구간에서 5분간 8회(평균 35초 간격) 반복돼 체감 과다 확인 후 상향 | `server/tts/suppressor.py:22` |
+| **`REFLEX_SURFACE_MIN_GAP_S`** | float | 선택 | `15.0` | **2026-07-19 신규, 2026-07-20 상향(8.0→15.0).** 노면 surface 경보 발화 간 최소 간격(초, device 단위) | `server/tts/suppressor.py:23` |
 | **`SURFACE_HAZARD_ABSENT_STREAK`** | int | 선택 | `5` | 노면 위험 소실 히스테리시스. 연속 N 프레임 미탐지 시에만 위험 해제로 판정해 세그먼트 깜빡임 오탐 완화. **2026-07-20**: 기본 3→5 (far flicker 재enter 완화) | `server/detection/consumer.py` |
 | **`SURFACE_REENTER_COOLDOWN_S`** | float | 선택 | `20.0` | **2026-07-20 신규.** 노면 인지(surface_hazard) 이탈 후 재진입 enter 최소 간격(초). 쿨다운 안이면 enter를 continue로 강등 | `server/detection/consumer.py` |
 | **`BRAILLE_REENTER_COOLDOWN_S`** | float | 선택 | `45.0` | **2026-07-20 신규.** 점자블록-only 인지 재진입 쿨다운(초). 위험 노면보다 길게 잡아 잔소리 완화 | `server/detection/consumer.py` |
