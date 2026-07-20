@@ -3755,3 +3755,15 @@
 - **관련 파일**: `server/tts/suppressor.py`, `.env.example`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, `tests/test_suppressor_rearm.py`
 - **검증 결과**: `pytest tests/test_suppressor_rearm.py` → **15 passed**(신규 3건 포함). `pytest tests/` 전체 435 passed(기존에도 실패하던 WS/임베딩 통합 테스트 7건은 무관, `git stash`로 무변경 상태에서도 동일 실패 확인). Ruff OK, mypy 무관.
 - **비고**: STT 응답 무반응 별도 이슈는 faster-whisper-small 모델(`model.bin`) 프리로드 다운로드가 컨테이너 기동 중 정체된 것이 원인으로 확인·재다운로드 후 해소(코드 변경 없음, 인프라 이슈).
+
+---
+
+### 2026-07-20 | 인프라 | huggingface 모델 캐시 영속 볼륨 추가(STT 무한 대기 재발 방지)
+
+- **배경**: 위 항목에서 STT 무응답을 재다운로드로 임시 해소했으나, `hf_cache`가 컨테이너 쓰기 계층에만 존재해 컨테이너 재생성(코드 변경 후 `--build`)마다 faster-whisper-small(~480MB)을 처음부터 다시 받아야 했다. 재빌드 직후 실기기 테스트에서 동일 증상이 즉시 재현되어, 근본 원인(캐시 미영속화)을 인프라 레벨에서 수정.
+- **변경 내용**:
+  - `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`: fastapi 서비스에 `hf_cache:/home/minchodan/.cache/huggingface` 명명 볼륨 추가(두 변형 모두).
+  - `docs/ops/deployment_guide.md`: §2.1 서비스 표·§7.2 볼륨 정의에 `hf_cache` 반영.
+- **관련 파일**: `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docs/ops/deployment_guide.md`
+- **검증 결과**: 컨테이너 재생성 후 `docker exec`로 faster-whisper-small 로드 재수행, 볼륨에 모델 저장 확인. YAML 구문 검증(`yaml.safe_load`) 통과.
+- **비고**: 다음 컨테이너 재생성부터는 재다운로드 없이 캐시를 재사용하므로 이 클래스의 STT 무한 대기가 재발하지 않는다.
