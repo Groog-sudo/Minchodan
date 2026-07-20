@@ -34,6 +34,7 @@ from server.detection.direction import (
     is_speech_front,
     is_speech_front_x,
 )
+from server.detection.distance_policy import select_primary_detection
 from server.detection.risk_rules import class_name_to_ko
 from server.detection.schemas import BBox, Detection, DetectionResult, ReflexAlert, ReflexClear
 from server.orchestration import run_orchestrator
@@ -1509,9 +1510,12 @@ class DetectionConsumer:
         # T2-G (2026-07-18): 회랑/접근 필터. 발화 가치 게이트 앞단에서 "처음부터 발화할
         # 가치가 있는가"를 먼저 판정한다. 안전 예외(보도 이탈, 고위험, 접근 객체,
         # Medium 노면)는 통과시키고 측면·원거리·정적 저위험만 무발화한다.
-        primary_det = (
-            max(result.detections, key=lambda d: d.confidence) if result.detections else None
-        )
+        # 2026-07-20: confidence 최댓값이 아니라 거리 구역/실측 거리/12시 회랑 근접도
+        # 기준의 주위험 객체 선정으로 전환(select_primary_detection). 자동차·사람·트럭이
+        # 매 프레임 함께 잡히는 도로 환경에서 confidence 흔들림으로 "이번 프레임의 대표"가
+        # 바뀌어 정면 위험 객체가 간헐적으로 안내 대상에서 빠지는 문제를 실기기 로그로 확인.
+        frame_width = float(frame.shape[1]) if frame is not None else 0.0
+        primary_det = select_primary_detection(result.detections, frame_width)
         distance_class = self._resolve_distance_class(primary_det, frame)
         surface_in_front = self._surface_hazard_in_front(
             result.surface, frame, surface_zone or "medium"
@@ -1745,8 +1749,8 @@ class DetectionConsumer:
                 return
 
             rag_query = (
-                max(result.detections, key=lambda d: d.confidence).class_name
-                if result.detections
+                primary_det.class_name
+                if primary_det is not None
                 else (surface_classes[0] if surface_classes else "surface_departure")
             )
             await self._broadcast_ai_pipeline_status(
@@ -1899,23 +1903,15 @@ class DetectionConsumer:
             await self._broadcast_latency_event(result.event_id, "cognitive", latency_stages)
             cognitive_risk = orch_result.get("risk_level") or result.risk_hint
             cognitive_class = (
-                max(result.detections, key=lambda d: d.confidence).class_name
-                if result.detections
-                else (object_ko or "surface")
+                primary_det.class_name if primary_det is not None else (object_ko or "surface")
             )
             cognitive_confidence = (
-                float(max(result.detections, key=lambda d: d.confidence).confidence)
-                if result.detections
-                else None
+                float(primary_det.confidence) if primary_det is not None else None
             )
             cognitive_direction = (
                 orch_result.get("clock_direction")
                 or clock_direction
-                or (
-                    max(result.detections, key=lambda d: d.confidence).direction
-                    if result.detections
-                    else None
-                )
+                or (primary_det.direction if primary_det is not None else None)
             )
             await self._broadcast_risk_event(
                 event_id=result.event_id,

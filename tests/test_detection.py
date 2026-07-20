@@ -1499,3 +1499,52 @@ class TestSttActiveCognitiveSuppression:
         mgr.set_stt_active("dev1", True, 0.01)
         time.sleep(0.02)
         assert mgr.is_stt_active("dev1") is False
+
+
+class TestEvaluateReflexMultiCandidatePriority:
+    """2026-07-20: 프레임당 반사 알림 1건 상한은 유지하되, "리스트 순서상 첫 통과"가
+    아니라 게이트를 통과한 모든 후보 중 가장 위험한(가까운) 1건을 고르도록 수정.
+    실기기 로그(다중 객체 프레임에서 진짜 근접 위험이 리스트 뒤쪽에 있으면 스킵되는
+    문제) 회귀 방지."""
+
+    def test_closer_candidate_wins_even_when_listed_second(self):
+        # 둘 다 near 게이트를 통과하지만 bigger_bbox가 area_ratio가 커서(=더 가까워서)
+        # heuristic_distance_m이 더 작다. farther를 리스트 앞쪽에 둬서 기존 버그(첫
+        # 통과 항목 반환)라면 farther가 뽑혔을 상황을 재현한다.
+        farther_bbox = BBox(x=210.0, y=280.0, w=220.0, h=160.0)
+        farther = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=farther_bbox,
+            hit_count=3,
+            track_id="T-FAR",
+            **_policy_fields(farther_bbox),
+        )
+        closer_bbox = BBox(x=190.0, y=260.0, w=260.0, h=190.0)
+        closer = Detection(
+            class_name="car",
+            confidence=0.6,
+            bbox=closer_bbox,
+            hit_count=3,
+            track_id="T-CLOSE",
+            **_policy_fields(closer_bbox),
+        )
+        # sanity: 둘 다 개별적으로는 게이트를 통과해야 이 테스트가 의미가 있다.
+        assert reflex_gate(farther, 480.0, 640.0) is not None
+        assert reflex_gate(closer, 480.0, 640.0) is not None
+        assert farther.heuristic_distance_m > closer.heuristic_distance_m
+
+        alert = DetectionPipeline._evaluate_reflex([farther, closer], 480.0, 640.0)
+        assert alert is not None
+        assert alert.track_id == "T-CLOSE"
+
+    def test_no_candidates_returns_none(self):
+        far_bbox = BBox(x=0.0, y=0.0, w=5.0, h=5.0)
+        far_det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=far_bbox,
+            hit_count=3,
+            **_policy_fields(far_bbox),
+        )
+        assert DetectionPipeline._evaluate_reflex([far_det], 480.0, 640.0) is None

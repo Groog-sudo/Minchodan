@@ -3782,3 +3782,18 @@
   - `server/tts/suppressor.py`: `REFLEX_SURFACE_SUPPRESS_TTL_S` 30→60초, `REFLEX_SURFACE_MIN_GAP_S` 15.0→45.0초 2차 상향.
 - **관련 파일**: `server/orchestration/nodes/fast_lane.py`, `scripts/build_guide_clips.py`, `server/tts/suppressor.py`, `.env.example`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, `docs/stage-guides/stage6_orchestration_design.md`, `tests/test_fast_lane.py`
 - **검증 결과**: `pytest tests/` 전체 443 passed(신규 8건 포함, 기존 무관 실패 7건 동일 유지). `python scripts/build_guide_clips.py --dry-run` 324건 확인, 실제 빌드 324/324 성공. Ruff/mypy OK(무관 1건 제외).
+
+---
+
+### 2026-07-20 | 3단계 | 다중 객체 프레임에서 정면 위험 간헐적 무발화·무반응 - 주위험 객체 선정 방식 교체
+
+- **배경**: 실외 재테스트에서 "medium+12시 car 안내 없음", "near+12시 객체 햅틱 무반응" 재보고. DB 로그로 확인: 11:36~11:42 사이 car가 초당 3~5회 연속 탐지(person/truck과 동시 다발)되는데도 6분 넘게 인지 안내 0건·반사 4건뿐이었음. 코드 추적 결과 두 경로 모두 "프레임당 객체 하나만 대표로 뽑는" 설계가 원인으로 확인:
+  - 인지: `consumer.py`의 `primary_det = max(result.detections, key=lambda d: d.confidence)` - confidence는 "정면 위협도"와 무관한데, 다중 객체가 매 프레임 함께 잡히면 confidence 요동으로 "이번 프레임의 대표"가 계속 바뀌어 정면 차량이 confidence 경쟁에서 밀리면 무발화.
+  - 반사: `detection_pipeline.py`의 `_evaluate_reflex()`가 `detections` 리스트 순서상 첫 통과 항목을 즉시 반환 - YOLO 출력 순서는 confidence/거리 정렬을 보장하지 않아 실제 근접 위험이 뒤쪽에 있으면 스킵 가능.
+- **변경 내용**:
+  - `server/detection/distance_policy.py`: `select_primary_detection()` 신규 - 우선순위 (1) 거리 구역(near>medium>far) (2) 동일 구역 내 실측 거리 오름차순 (3) 12시 회랑 중심 근접도 (4) confidence(최종 tie-break).
+  - `server/detection/consumer.py`: `_send_cognitive_guide`의 `primary_det` 선정을 `select_primary_detection()`으로 교체하고, 같은 메서드 내 중복 재계산되던 3곳(rag_query, cognitive_class/confidence/direction)도 동일 `primary_det`를 재사용하도록 정리(기존에는 필터가 본 객체와 실제 안내에 쓰인 객체가 다를 수 있었음).
+  - `server/detection/detection_pipeline.py`: `_evaluate_reflex()`를 "첫 통과 항목 즉시 반환"에서 "게이트 통과한 모든 후보를 모은 뒤 거리 구역>실측 거리 기준 최우선 1건 반환"으로 변경. 프레임당 1건 상한(안전 설계 의도)은 유지, 대표 선정 기준만 교체.
+- **관련 파일**: `server/detection/distance_policy.py`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `tests/test_distance_policy.py`, `tests/test_detection.py`, `docs/research/field_test_round2_improvement_plan.md`
+- **검증 결과**: `pytest tests/` 전체 452 passed(신규 9건 포함, 기존 무관 실패 7건 동일 유지). Ruff/mypy OK(무관 기존 오류 제외, stash 비교로 신규 오류 없음 확인).
+- **비고**: 반사 경로는 결정론적 게이트 로직(LLM/RAG 미경유)을 그대로 유지 - "누가 프레임당 1건의 대표가 되는가"만 개선했다.
