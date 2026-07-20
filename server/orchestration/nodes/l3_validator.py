@@ -15,7 +15,7 @@ if sys.stdout.encoding != "utf-8":
 
 MAX_LEN = 20
 MAX_RETRY = 1
-FALLBACK_MESSAGE = "전방 주의, 천천히 멈추세요"
+FALLBACK_MESSAGE = "전방 주의하세요"
 
 # 2026-07-13: L2가 "좌측/우측" 대신 "N시 방향"(9시~3시) 형식을 쓰도록 바뀌어
 # 방향 키워드 검사에도 시계 방향 패턴을 추가한다(안 넣으면 정상 문장이 전부

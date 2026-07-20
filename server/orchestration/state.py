@@ -35,6 +35,9 @@ class OrchState(TypedDict, total=False):
     # 2026-07-13 추가: 주 탐지 객체의 실제 화면 위치를 12시(정면) 기준 9시~3시 시계
     # 방향으로 환산한 값("2시" 등). L2가 "좌측/우측" 대신 이 값을 문장에 반영한다.
     clock_direction: str
+    # 2026-07-20: 전방(12시) 장애물일 때 우회 제안 시각("10시"|"2시").
+    # 패스트 레인 "전방 볼라드, 2시로 우회하세요" 패턴용.
+    avoid_clock_direction: str
     # 2026-07-16 Phase 2: 인지 경로 구조화 필드 (guide WS / 패스트 레인 캐시 키용).
     # near/medium/far — 반사 경로의 미터 단위 distance와 별개.
     distance: str

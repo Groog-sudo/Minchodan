@@ -254,8 +254,8 @@ async def test_langgraph_api_error_fallback():
         # 실행 (오케스트레이터가 충돌하지 않고 fallback 텍스트를 반환하는지 검증)
         result = await run_orchestrator(initial_state)
 
-        assert result["guidance_text"] == "전방 주의, 천천히 멈추세요"
-        assert result["direction"] == "정지"
+        assert result["guidance_text"] == "전방 주의하세요"
+        assert result["direction"] == "직진"
         assert result["used_static_fallback"] is True
         assert result["verified"] is True
         assert "total_latency_ms" in result

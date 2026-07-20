@@ -3630,3 +3630,13 @@
 - **관련 파일**: `docs/design/reflex_audio_specification.md`
 - **검증 결과**: 문서만 수정(코드 변경 없음). 목차·인접 절(§5.1, §5.3) 번호·앵커 정합 확인.
 - **비고**: HEURISTIC 문서의 `HIGH_DANGER_INTERVAL_MS`(250ms→100ms, 2026-07-19 정정) 관련 서술도 별도로 stale하나 이번 작업 범위 밖으로 남겨둠.
+
+---
+
+### 2026-07-20 | 6단계 | medium_fast_lane_guidance_templates
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Medium/Near 인지 패스트 레인 안내를 N시 방향 객체 주의하세요 및 전방 객체 N시로 우회하세요 패턴으로 통일하고, avoid_clock_direction과 노면-only 힌트 주입·Fallback 동일 템플릿·stage6 설계서 v0.2.2를 반영한다.
+- **관련 파일**: `ocs/stage-guides/stage6_orchestration_design.md`, `server/detection/consumer.py`, `server/detection/direction.py`, `server/orchestration/nodes/fallback_node.py`, `server/orchestration/nodes/fast_lane.py`, `server/orchestration/nodes/l3_validator.py`, `server/orchestration/state.py`, `tests/test_fast_lane.py`, `tests/test_langgraph.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

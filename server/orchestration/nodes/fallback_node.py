@@ -16,8 +16,10 @@ import asyncio
 
 from server.detection.risk_rules import class_name_to_ko
 from server.mcp.slack_notifier import slack_notifier
+from server.orchestration.nodes.fast_lane import build_fast_lane_guidance
+from server.orchestration.nodes.l2_generator import extract_direction
 
-FALLBACK_MESSAGE = "전방 주의, 천천히 멈추세요"
+FALLBACK_MESSAGE = "전방 주의하세요"
 
 _background_tasks = set()
 
@@ -42,20 +44,28 @@ async def fallback_node(state: dict) -> dict:
     task.add_done_callback(_background_tasks.discard)
 
     detected_classes = state.get("detected_classes", [])
-    clock_direction = state.get("clock_direction", "")
+    clock_direction = (state.get("clock_direction") or "").strip() or "12시"
+    object_ko = (state.get("object_ko") or "").strip()
+    distance = (state.get("distance") or "").strip() or "medium"
+    avoid_clock = (state.get("avoid_clock_direction") or "").strip() or None
 
-    # [2026-07-14] 장애물이 탐지되었을 때는 정적 정지 명령 대신 동적 설명+방향 멘트로 폴백
-    if detected_classes:
+    # 패스트 레인과 동일 패턴으로 폴백 (정지 멘트 대신 방향+객체 주의/우회).
+    if object_ko:
+        fallback_msg = build_fast_lane_guidance(
+            clock_direction, object_ko, distance, avoid_clock=avoid_clock
+        )
+    elif detected_classes:
         primary_obj = detected_classes[0]
         kor_name = class_name_to_ko(primary_obj)
-        dir_str = f"{clock_direction} 방향" if clock_direction else "전방"
-        fallback_msg = f"{dir_str} {kor_name} 주의하세요"
+        fallback_msg = build_fast_lane_guidance(
+            clock_direction, kor_name, distance, avoid_clock=avoid_clock
+        )
     else:
         fallback_msg = FALLBACK_MESSAGE
 
     return {
         "guidance_text": fallback_msg,
-        "direction": "우회" if clock_direction else "정지",
+        "direction": extract_direction(fallback_msg) or "전방",
         "used_static_fallback": True,
         "verified": True,
     }

@@ -46,6 +46,18 @@ def test_build_fast_lane_guidance_near():
     assert len(text) <= 20
 
 
+def test_build_fast_lane_guidance_medium_matches_near_pattern():
+    text = build_fast_lane_guidance("10시", "전동 킥보드", "medium")
+    assert text == "10시 방향 전동 킥보드 주의하세요"
+    assert "확인하세요" not in text
+
+
+def test_build_fast_lane_guidance_front_12_oclock_with_avoid():
+    text = build_fast_lane_guidance("12시", "볼라드", "medium", avoid_clock="2시")
+    assert text == "전방 볼라드, 2시로 우회하세요"
+    assert len(text) <= 20
+
+
 def test_build_fast_lane_guidance_front_12_oclock():
     text = build_fast_lane_guidance("12시", "볼라드", "near")
     assert text == "전방 볼라드 주의하세요"

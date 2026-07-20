@@ -1,7 +1,7 @@
 # 6단계 설계서 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 > **작성일**: 2026-06-26
-> **버전**: v0.2.1 (2026-07-20 Medium 인지 기본 컨텍스트를 인메모리 `[회피 힌트]`로 전환, Chroma RAG는 `GUIDANCE_CONTEXT_MODE=rag` 롤백)
+> **버전**: v0.2.2 (2026-07-20 패스트 레인 안내 템플릿을 `N시 방향 {객체} 주의하세요` / `전방 {객체}, N시로 우회하세요`로 통일, `avoid_clock_direction` 추가)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 6단계, [`docs/architecture.md`](architecture.md) 5.6절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 11, 12, 14, 17.2
 > **스킬 참조**: [`.agents/skills/llm-guidance-orchestrator/SKILL.md`](../.agents/skills/llm-guidance-orchestrator/SKILL.md)
@@ -118,15 +118,25 @@ server/orchestration/
 | `detected_classes` | `List[str]` | 3단계 파싱 | 탐지된 클래스명 목록 |
 | `risk_level` | `Literal["high","mid","low"]` | L1 출력 | 위험도 분류 결과 |
 | `rag_context` | `str` | 인지 컨텍스트 | 기본(`GUIDANCE_CONTEXT_MODE=hints`): 클래스별 짧은 회피 힌트. `rag` 모드: 5단계 Chroma `search_guidance` 결과. 공란 시 L2는 기본 힌트/폴백 |
+| `clock_direction` | `str` | 3단계 bbox | 탐지 위치 시계 방향 (`"10시"`/`"12시"` 등) |
+| `avoid_clock_direction` | `str` | 3단계 bbox | 전방(12시)일 때 우회 제안 시각 (`"10시"`/`"2시"`). 패스트 레인 `전방 {객체}, N시로 우회하세요`용 |
+| `distance` | `str` | 3단계 | `near`/`medium`/`far` |
+| `object_ko` | `str` | 3단계 | 주 탐지 객체 한국어명 (`CLASS_TEXT`) |
 | `positions` | `List[str]` | 3단계 파싱 | 객체 위치 방향(선택) |
-| `guidance_text` | `str` | L2 출력 | 생성된 가이드 문장 |
+| `guidance_text` | `str` | L2/패스트 레인 출력 | 생성된 가이드 문장 |
 | `direction` | `Literal["좌","우","직진","정지",""]` | L2 추출 | 방향 키워드 |
 | `verified` | `bool` | L3 출력 | 검증 통과 여부 |
 | `retry_count` | `int` | L3 출력 | 재시도 횟수 (최대 1) |
 | `validation_errors` | `List[str]` | L3 출력 | 검증 오류 메시지 |
 | `used_fallback_llm` | `bool` | L2 출력 | gpt-4o-mini 사용 여부 |
 | `used_static_fallback` | `bool` | Fallback 출력 | 고정 문장 사용 여부 |
+| `used_fast_lane` | `bool` | 패스트 레인 | LLM 생략 템플릿 경로 사용 여부 |
 | `total_latency_ms` | `float` | graph 출력 | 총 지연 시간 |
+
+> **2026-07-20 패스트 레인 템플릿**: 단일 객체(+노면-only Medium)는 L2 대신 `fast_lane.py`가 결정론 문장을 낸다.
+> - 측면: `"10시 방향 전동 킥보드 주의하세요"`
+> - 전방: `"전방 볼라드, 2시로 우회하세요"` (`avoid_clock_direction` 필요)
+> Medium도 `"확인하세요"`가 아니라 `"주의하세요"`로 통일한다. Fallback도 동일 템플릿을 재사용한다.
 
 > **코딩 패턴**: TypedDict는 `total=False`로 선언하여 모든 필드를 선택적으로 취급합니다 (guide 14 패턴). 이는 LangGraph 노드가 부분 상태만 반환해도 병합 오류가 발생하지 않도록 보장합니다.
 

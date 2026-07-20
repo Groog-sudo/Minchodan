@@ -29,6 +29,7 @@ from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.direction import (
     FRONT_BAND,
+    estimate_avoid_clock_direction,
     estimate_clock_direction,
     estimate_direction,
     estimate_distance,
@@ -1441,6 +1442,7 @@ class DetectionConsumer:
         # T2-G: 위 회랑/접근 필터에서 이미 primary_det/distance_class를 계산했으므로 재사용.
         rag_context = ""
         clock_direction = ""
+        avoid_clock_direction = ""
         object_ko = ""
         rag_start = time.perf_counter()
         try:
@@ -1462,7 +1464,30 @@ class DetectionConsumer:
                         )
                 if frame is not None:
                     clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
+                    # 전방(12시)일 때만 우회 시각을 채워 패스트 레인 "전방 X, N시로 우회"에 쓴다.
+                    if clock_direction == "12시":
+                        avoid_clock_direction = estimate_avoid_clock_direction(
+                            primary_det.bbox, frame.shape[1]
+                        )
                 object_ko = class_name_to_ko(primary_det.class_name)
+            elif has_significant_surface:
+                # 노면-only Medium: 객체 힌트 대신 caution/roadway 힌트·전방 방향을 채운다.
+                surface_key = next(
+                    (
+                        s.class_name
+                        for s in result.surface
+                        if s.class_name in ("caution", "roadway")
+                    ),
+                    "",
+                )
+                if surface_key and GUIDANCE_CONTEXT_MODE == "hints":
+                    rag_context = select_guidance_hint(surface_key, seed=result.event_id)
+                if surface_key:
+                    object_ko = class_name_to_ko(surface_key)
+                    clock_direction = clock_direction or "12시"
+                    avoid_clock_direction = avoid_clock_direction or "2시"
+                    if not distance_class:
+                        distance_class = surface_zone or "medium"
         except Exception as e:
             logger.error(f"[DetectionConsumer] 인지 컨텍스트 조회 실패: {e}")
         rag_ms = (time.perf_counter() - rag_start) * 1000
@@ -1499,6 +1524,7 @@ class DetectionConsumer:
             "surface_classes_ko": surface_classes_ko,
             "positions": [det.direction or "" for det in result.detections],
             "clock_direction": clock_direction,
+            "avoid_clock_direction": avoid_clock_direction,
             "distance": distance_class,
             "object_ko": object_ko,
             "risk_level": result.risk_hint,
