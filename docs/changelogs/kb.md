@@ -3809,3 +3809,14 @@
   - `server/services/event_frame_store.py`: `cleanup_expired_frames()` 독스트링을 주기 실행 반영으로 정정.
 - **관련 파일**: `server/bus/redis_client.py`, `server/main.py`, `server/services/event_frame_store.py`, `.env.example`, `docs/ops/environment_variables.md`, `tests/test_redis_client.py`(신규)
 - **검증 결과**: `pytest tests/` 전체 455 passed(신규 3건 포함, 기존 무관 실패 7건 동일 유지). Ruff/Bandit OK. 운영 중인 Redis에서 `XTRIM risk.events MAXLEN 5000` 즉시 적용해 236,529→5,000건으로 축소 확인.
+
+---
+
+### 2026-07-20 | 3단계 | CPU 경합 완화 - YOLO 추론 전용 스레드풀 분리
+
+- **배경**: 위 데이터 정리 수정 후에도 "CPU 부하 원인도 같이 봐달라"는 요청. 실기기 활발한 테스트 중 FastAPI 컨테이너 CPU 329%(유휴 시 0.46%) 확인 후 코드 추적. `OMP_NUM_THREADS=4` 등은 `docker-compose.macos.yml`에 이미 적용돼 있어(과거 800~1300% 실측 후 완화 이력) 근본 원인은 아니었음. 실제 원인은 `asyncio.to_thread()`로 위임되는 YOLO 탐지/분할 추론이 파이썬 **기본 ThreadPoolExecutor(워커 18개)를 TTS 합성·STT·RAG 검색·이벤트 프레임 저장과 통째로 공유**하는 구조 - 반사(8~10fps)·인지(1~2fps) 두 스트림이 별도 Task로 동시에 추론을 제출하는데, TTS 합성(1.4~2.6초) 같은 느린 작업이 같은 풀 큐에 몰리면 그 뒤 추론이 대기하며 체감 지연이 세션이 길어질수록 누적될 수 있는 구조였음.
+- **변경 내용**:
+  - `server/detection/detection_pipeline.py`: 모듈 레벨 전용 `ThreadPoolExecutor`(`_inference_executor`, `YOLO_INFERENCE_WORKERS` 기본 3) 신설. `detector.predict`/`segmentor.predict` 위임을 `asyncio.to_thread()`에서 `loop.run_in_executor(_inference_executor, ...)`로 교체해 다른 서브시스템과 워커를 공유하지 않도록 분리.
+- **관련 파일**: `server/detection/detection_pipeline.py`, `.env.example`, `docs/ops/environment_variables.md`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/` 전체 456 passed(신규 1건 - 추론이 `yolo-inference` 스레드에서 실행됨을 스레드명으로 검증, 기존 무관 실패 7건 동일 유지). Ruff/mypy/Bandit OK.
+- **비고**: 프레임 내부(det→seg)는 기존대로 순차 실행 유지. 워커 수(3)는 반사·인지 두 스트림의 동시 제출량만 고려해 소수로 제한(OMP_NUM_THREADS=4와 곱해도 14코어 호스트를 과도하게 넘지 않도록).

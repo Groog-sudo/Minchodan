@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-20
-> **버전**: v0.4.32 (2026-07-20 실기기 장시간 테스트 기반 데이터 정리 결함 수정: REDIS_STREAM_MAXLEN 신규(risk.events 무제한 누적 트리밍), EVENT_FRAME_CLEANUP_INTERVAL_S 신규(기동 시 1회→주기 정리 전환). 기존 v0.4.31 이력 유지: 실외 재테스트 기반 2차 반사 억제 재조정. 기존 v0.4.30 이력 유지: REFLEX_NEAR_TRACK_MIN_GAP_S 신규, jy 병합. 기존 v0.4.29 이력 유지: 코드-문서 정합 누락 변수 13종 일괄 등재, EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시)
+> **버전**: v0.4.33 (2026-07-20 YOLO 추론 전용 스레드풀 분리: YOLO_INFERENCE_WORKERS 신규(기본 asyncio 스레드풀을 TTS/STT/RAG/파일 저장과 공유하지 않도록 분리, CPU 경합 완화). 기존 v0.4.32 이력 유지: 실기기 장시간 테스트 기반 데이터 정리 결함 수정(REDIS_STREAM_MAXLEN·EVENT_FRAME_CLEANUP_INTERVAL_S 신규). 기존 v0.4.31 이력 유지: 실외 재테스트 기반 2차 반사 억제 재조정. 기존 v0.4.30 이력 유지: REFLEX_NEAR_TRACK_MIN_GAP_S 신규, jy 병합. 기존 v0.4.29 이력 유지: 코드-문서 정합 누락 변수 13종 일괄 등재, EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -91,6 +91,7 @@
 | **`FRAME_SIZE`** | int | 필수 | `640` | 프레임 리사이즈 크기 (정방형) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
+| **`YOLO_INFERENCE_WORKERS`** | int | 선택 | `3` | **2026-07-20 신규.** YOLO 탐지/분할 추론 전용 `ThreadPoolExecutor` 워커 수. 기존에는 `asyncio.to_thread()`가 기본 스레드풀(워커 18개)을 TTS/STT/RAG/이벤트 프레임 저장과 공유해, 느린 TTS 합성 뒤에 추론이 큐잉되며 CPU 경합·체감 지연이 누적되던 문제를 실기기 장시간 테스트로 확인 후 분리 | `server/detection/detection_pipeline.py` |
 | **`REFLEX_QUEUE_MAXSIZE`** | int | 선택 | `2` | **2026-07-17 신규 (P0-2).** 반사 asyncio.Queue 최대 깊이. latest-frame-wins로 얕게 잡아 큐 적체로 인한 지연 드리프트 방지. 큐 가득 시 oldest drop | `server/capture/stream_splitter.py` |
 | **`COGNITIVE_QUEUE_MAXSIZE`** | int | 선택 | `4` | **2026-07-17 신규 (P0-2).** 인지 asyncio.Queue 최대 깊이. 1~2fps 특성상 소량 버퍼면 충분 | `server/capture/stream_splitter.py` |
 | **`REFLEX_MAX_AGE_S`** | float | 선택 | `0.4` | **2026-07-17 신규 (P0-2).** 반사 프레임 신선도 임계(초). 소비 시각 기준 프레임 ts가 이 값을 초과하면 추론 없이 드롭. ts=0(클라이언트 미전송)이면 검사 건너뜀 | `server/detection/consumer.py` |

@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import ClassVar
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -28,6 +30,18 @@ from server.detection.surface_departure import (
 logger = logging.getLogger(__name__)
 
 RISK_LEVELS = {"high", "mid", "low"}
+
+# 2026-07-20: YOLO 추론 전용 스레드풀. 기존에는 asyncio.to_thread()가 파이썬 기본
+# ThreadPoolExecutor(워커 min(32, cpu_count+4)=18)를 TTS 합성·STT·RAG 검색·이벤트
+# 프레임 저장 등과 통째로 공유해, 느린 TTS 합성(1.4~2.6초) 뒤에 탐지 추론이 큐잉되며
+# 체감 지연이 누적되는 경합이 실기기 장시간 테스트에서 확인됨. 반사(8~10fps)·인지
+# (1~2fps) 두 스트림이 각자 별도 asyncio Task로 동시에 추론을 제출하므로, 워커 수는
+# 그 정도 동시성만 감당하면 충분하다(OMP_NUM_THREADS=4와 곱해도 14코어 호스트를
+# 크게 넘지 않도록 소수로 제한).
+YOLO_INFERENCE_WORKERS = int(os.getenv("YOLO_INFERENCE_WORKERS", "3"))
+_inference_executor = ThreadPoolExecutor(
+    max_workers=YOLO_INFERENCE_WORKERS, thread_name_prefix="yolo-inference"
+)
 
 # =========================================================================
 # 👨‍💻 HARD CODE 영역 시작: 인지 경로 mid risk 객체·노면·머리높이 격상 분리 👨‍💻
@@ -120,17 +134,25 @@ class DetectionPipeline:
 
         height, width = frame.shape[:2]
 
-        # to_thread로 워커 스레드에 위임: predict()는 동기 블로킹 호출이라 그대로 await하면
-        # 추론 중(150~300ms) WS 수신 루프/하트비트/Redis 통신까지 이벤트 루프 전체가 멈춘다
-        # (2026-07-10 실기기 테스트에서 반사 큐 드랍 + Redis xadd 타임아웃으로 실측 확인).
+        # 전용 추론 스레드풀(_inference_executor)로 위임: predict()는 동기 블로킹
+        # 호출이라 그대로 await하면 추론 중(150~300ms) WS 수신 루프/하트비트/Redis
+        # 통신까지 이벤트 루프 전체가 멈춘다(2026-07-10 실기기 테스트에서 반사 큐
+        # 드랍 + Redis xadd 타임아웃으로 실측 확인). 2026-07-20: 기본 asyncio
+        # ThreadPoolExecutor 대신 전용 풀을 써서 TTS/STT/RAG/파일 저장과 워커를
+        # 공유하지 않도록 분리(경합으로 인한 체감 지연 누적 완화).
+        loop = asyncio.get_running_loop()
         try:
-            detections = await asyncio.to_thread(self.detector.predict, frame)
+            detections = await loop.run_in_executor(
+                _inference_executor, self.detector.predict, frame
+            )
         except Exception as e:
             logger.error(f"[Pipeline] Detector 추론 실패: {e}")
             detections = []
 
         try:
-            surfaces = await asyncio.to_thread(self.segmentor.predict, frame)
+            surfaces = await loop.run_in_executor(
+                _inference_executor, self.segmentor.predict, frame
+            )
         except Exception as e:
             logger.error(f"[Pipeline] Segmentor 추론 실패: {e}")
             surfaces = []

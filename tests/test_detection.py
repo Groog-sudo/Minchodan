@@ -451,6 +451,34 @@ class TestPipeline:
         assert result.risk_hint == "none"
         assert result.inference_ms >= 0
 
+    @pytest.mark.asyncio
+    async def test_pipeline_uses_dedicated_inference_executor(self, frame, mock_redis_bus):
+        """2026-07-20: det/seg 추론이 기본 asyncio 스레드풀이 아니라 detection_pipeline
+        전용 _inference_executor로 제출되는지 검증 - TTS/STT/RAG/파일 저장과의 스레드풀
+        경합으로 인한 지연 누적을 막기 위한 분리 회귀 방지."""
+        import threading
+
+        from server.detection import detection_pipeline as dp_module
+
+        seen_threads: list[str] = []
+
+        class RecordingDetector(StubDetector):
+            def predict(self, frame):
+                seen_threads.append(threading.current_thread().name)
+                return super().predict(frame)
+
+        pipeline = DetectionPipeline(
+            detector=RecordingDetector(detections=[]),
+            segmentor=StubSegmentor(surfaces=[]),
+            tracker=ByteTrackTracker(),
+            producer=RiskEventProducer(bus=mock_redis_bus),
+            redis_bus=mock_redis_bus,
+        )
+        await pipeline.run(frame, "test", "evt-executor", "dev-1")
+        assert len(seen_threads) == 1
+        assert seen_threads[0].startswith("yolo-inference")
+        assert dp_module._inference_executor._max_workers == dp_module.YOLO_INFERENCE_WORKERS
+
 
 class TestPipelineRobustness:
     @pytest.mark.asyncio
