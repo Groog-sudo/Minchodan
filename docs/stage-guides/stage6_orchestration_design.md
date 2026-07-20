@@ -1,7 +1,7 @@
 # 6단계 설계서 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 > **작성일**: 2026-06-26
-> **버전**: v0.2.0 (2026-07-07 LLM 클라이언트를 실제 구현체(SimpleOllamaClient/SimpleOpenAIClient, LangChain ChatOllama/ChatOpenAI 미경유)로 정정, 핫스왑 트리거를 GPU 부하 기준으로 정정)
+> **버전**: v0.2.1 (2026-07-20 Medium 인지 기본 컨텍스트를 인메모리 `[회피 힌트]`로 전환, Chroma RAG는 `GUIDANCE_CONTEXT_MODE=rag` 롤백)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 6단계, [`docs/architecture.md`](architecture.md) 5.6절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 11, 12, 14, 17.2
 > **스킬 참조**: [`.agents/skills/llm-guidance-orchestrator/SKILL.md`](../.agents/skills/llm-guidance-orchestrator/SKILL.md)
@@ -10,7 +10,7 @@
 
 ## 1. 개요 및 핵심 가치
 
-**6단계**는 3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, 로컬 **gemma4-e4b 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성하는 단계입니다.
+**6단계**는 3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 인지 컨텍스트(기본: 인메모리 짧은 회피 힌트, 선택: 5단계 Chroma RAG)를 종합하여, 로컬 **gemma4-e4b 모델**(또는 핫스왑 LLM)로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성하는 단계입니다.
 
 | 핵심 가치 | 설명 |
 | --------- | ---- |
@@ -117,7 +117,7 @@ server/orchestration/
 | `event` | `dict` | 3단계 Redis Streams | RiskEvent 원본 payload |
 | `detected_classes` | `List[str]` | 3단계 파싱 | 탐지된 클래스명 목록 |
 | `risk_level` | `Literal["high","mid","low"]` | L1 출력 | 위험도 분류 결과 |
-| `rag_context` | `str` | 5단계 RAG | 검색된 행동 수칙 결합 텍스트 |
+| `rag_context` | `str` | 인지 컨텍스트 | 기본(`GUIDANCE_CONTEXT_MODE=hints`): 클래스별 짧은 회피 힌트. `rag` 모드: 5단계 Chroma `search_guidance` 결과. 공란 시 L2는 기본 힌트/폴백 |
 | `positions` | `List[str]` | 3단계 파싱 | 객체 위치 방향(선택) |
 | `guidance_text` | `str` | L2 출력 | 생성된 가이드 문장 |
 | `direction` | `Literal["좌","우","직진","정지",""]` | L2 추출 | 방향 키워드 |
@@ -405,12 +405,14 @@ def get_orchestrator():
 
 ```
 [탐지 장애물]: {detected_classes}
+[탐지 방향]: {clock_direction} 방향
 [위험도]: {risk_level}
-[안전 수칙]:
-{rag_context}
+[회피 힌트]: {rag_context}
 
 위 정보를 바탕으로 20자 이내 한국어 1문장 회피 안내를 작성하세요.
 ```
+
+> **2026-07-20**: 기본 경로는 완성 문장 RAG가 아니라 `server/rag/guidance_hints.py`의 짧은 행동 조각을 `[회피 힌트]`로 주입한다. 방향은 `[탐지 방향]`만 사용한다. 상세: [`docs/ops/medium_guidance_hint_dict_implementation_plan.md`](../ops/medium_guidance_hint_dict_implementation_plan.md).
 
 > **temperature 전략**: `temperature=0.3`으로 일관성과 안전성을 우선합니다 (guide 11.2 temperature 전략 - 요약/설명문 0.7보다 낮춰 안전 가이드의 일관성 확보). MVP 스코프는 설계 노트 6단계 MVP 스코프(`temperature 0.2~0.3`)를 준수합니다.
 

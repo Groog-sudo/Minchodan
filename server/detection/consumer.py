@@ -37,6 +37,7 @@ from server.detection.risk_rules import class_name_to_ko
 from server.detection.schemas import Detection, DetectionResult, ReflexAlert, ReflexClear
 from server.orchestration import run_orchestrator
 from server.orchestration.llm_client_factory import LLMClientFactory
+from server.rag.guidance_hints import select_guidance_hint
 from server.rag.retriever import get_default_retriever
 from server.services.detection_guidance_log_service import persist_detection_guidance_log
 from server.services.device_registry_service import get_cached_device_ids
@@ -80,9 +81,17 @@ COGNITIVE_LATENCY_ALERT_MS = float(os.getenv("COGNITIVE_LATENCY_ALERT_MS", "3000
 # false이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 내레이션을 억제한다.
 GUIDE_LOW_RISK_NARRATION = os.getenv("GUIDE_LOW_RISK_NARRATION", "false").lower() == "true"
 
-# 2026-07-19: RAG 검색 on/off 스위치. false면 검색을 건너뛰고 L2가 순수 LLM 생성만 수행한다
-# (안내 문장 어색함이 RAG 문구 압축 충돌 때문인지 비교 테스트하기 위함, 삭제가 아닌 비활성화).
+# 2026-07-19: RAG 검색 on/off 스위치. GUIDANCE_CONTEXT_MODE=rag 일 때만 사용.
+# false면 검색을 건너뛰고 L2가 순수 LLM 생성만 수행한다(비교 테스트용).
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
+
+# 2026-07-20: Medium 인지 컨텍스트 소스.
+# hints(기본)=인메모리 짧은 회피 힌트, rag=기존 Chroma 벡터검색(롤백/A/B).
+# 계획서: docs/ops/medium_guidance_hint_dict_implementation_plan.md
+_GUIDANCE_CONTEXT_MODE_RAW = os.getenv("GUIDANCE_CONTEXT_MODE", "hints").strip().lower()
+GUIDANCE_CONTEXT_MODE = (
+    _GUIDANCE_CONTEXT_MODE_RAW if _GUIDANCE_CONTEXT_MODE_RAW in ("hints", "rag") else "hints"
+)
 
 # 2026-07-19: 노면(caution/roadway) 인지 TTS 거리 구역.
 # surface_gate Near 임계(centroid_y > 0.6H)와 정렬. Medium만 인지 TTS, Near=반사만, Far=화면만.
@@ -1417,8 +1426,8 @@ class DetectionConsumer:
         except Exception as e:
             logger.error(f"[DetectionConsumer] NavigationManager 조회 실패: {e}")
 
-        # RAG 검색: 가장 신뢰도 높은 탐지 사물 기준으로 안전 수칙 조회 (실패 시 빈 문자열, fallback 미경유 유지)
-        # detections가 비어 있는(순수 보도 이탈) 이벤트는 조회할 사물이 없으므로 건너뛴다.
+        # 인지 컨텍스트: 기본은 인메모리 짧은 힌트(GUIDANCE_CONTEXT_MODE=hints).
+        # rag 모드는 기존 Chroma 검색(롤백). detections가 비면 조회 생략.
         # T2-G: 위 회랑/접근 필터에서 이미 primary_det/distance_class를 계산했으므로 재사용.
         rag_context = ""
         clock_direction = ""
@@ -1426,7 +1435,12 @@ class DetectionConsumer:
         rag_start = time.perf_counter()
         try:
             if primary_det is not None:
-                if RAG_ENABLED:
+                if GUIDANCE_CONTEXT_MODE == "hints":
+                    rag_context = select_guidance_hint(
+                        primary_det.class_name,
+                        seed=getattr(primary_det, "track_id", None) or result.event_id,
+                    )
+                elif RAG_ENABLED:
                     retriever = get_default_retriever()
                     if retriever is not None:
                         rag_context = await asyncio.to_thread(
@@ -1440,7 +1454,7 @@ class DetectionConsumer:
                     clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
                 object_ko = class_name_to_ko(primary_det.class_name)
         except Exception as e:
-            logger.error(f"[DetectionConsumer] RAG 검색 실패: {e}")
+            logger.error(f"[DetectionConsumer] 인지 컨텍스트 조회 실패: {e}")
         rag_ms = (time.perf_counter() - rag_start) * 1000
 
         korean_classes = [class_name_to_ko(det.class_name) for det in result.detections]
