@@ -3562,10 +3562,15 @@
 
 ---
 
-### 2026-07-20 | 6단계 | console_gps_hud_bbox_overlay
+### 2026-07-20 | 1·3·콘솔 | console_gps_hud_bbox_overlay
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `2accf80`
+- **배경**: Detection Guidance Log 썸네일에 박스가 없고, 콘솔 GPS HUD가 "앱 GPS 대기"에 고착.
 - **변경 내용**:
-  - Detection Guidance Log 목록 썸네일 bbox 오버레이·반사/노면 로그 bbox 저장, realtime_gps를 WS connected 후 즉시 전송해 콘솔 GPS HUD 고착 해소, architecture/api/pipeline 문서 동기화.
-- **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/hooks/useLocation.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LiveCameraFeed.css`, `console/src/components/LiveCameraFeed.tsx`, `console/src/styles.css`, `docs/README.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/design/pipeline_stage_design.md`, `server/api/ws_router.py`, `server/detection/consumer.py`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+  - 콘솔: 목록 썸네일에도 bbox 오버레이, `pipeline_debug` 폴백. HUD 헤더에 수신 좌표 표시.
+  - 서버: 반사·노면-only 로그에 bbox 저장. `realtime_gps` 콘솔 브로드캐스트 유지, 수신 로그 스로틀.
+  - 단말: WS `connected` 후 GPS 전송 + 즉시 `getCurrentPosition`, `distanceInterval=0`.
+  - 문서: `architecture.md`/`api_specification.md` v0.4.33/`pipeline_stage_design.md`/`docs/README.md` 동기화.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useLocation.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/styles.css`, `server/api/ws_router.py`, `server/detection/consumer.py`, `docs/design/*`
+- **검증 결과**: 이중 경로·react-doctor·`test_langgraph` 통과. FastAPI recreate 후 `dev-001` welcome 확인.
+- **비고**: 단말 Metro 리로드 후 HUD 헤더 좌표·서버 `[WS] realtime_gps 수신` 로그로 확인.
