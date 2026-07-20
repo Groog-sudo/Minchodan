@@ -3738,4 +3738,4 @@
   - `risk_rules`: `center`→화면 중앙, `unknown`→방향 미상, 안내 hint에서 제외.
 - **관련 파일**: `server/detection/direction.py`, `gates/reflex_gate.py`, `gates/surface_gate.py`, `detection_pipeline.py`, `consumer.py`, `risk_rules.py`, docs, tests
 - **검증 결과**: Docker `pytest tests/test_detection.py tests/test_distance_priority_integration.py` → **98 passed**. Ruff OK.
-- **비고**: 커밋 해시는 커밋 후 기입.
+- **커밋**: `5eca38f`
