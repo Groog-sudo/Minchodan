@@ -3579,7 +3579,7 @@
 
 ### 2026-07-20 | ops | Metro 에이전트 셸 독립 detach
 
-- **커밋**: (미커밋)
+- **커밋**: `a904d75`
 - **배경**: `metro_tailscale.sh`의 `nohup`+`disown` 기동이 Cursor 에이전트 짧은 셸 종료 시 회수되어 Dev Client가 서버를 못 찾는 문제가 반복됨.
 - **변경 내용**:
   - `scripts/metro_tailscale.sh` start를 Python double-fork + `os.setsid()` orphan 기동으로 교체. session root가 `launchd`(ppid=1).
@@ -3630,13 +3630,3 @@
 - **관련 파일**: `docs/design/reflex_audio_specification.md`
 - **검증 결과**: 문서만 수정(코드 변경 없음). 목차·인접 절(§5.1, §5.3) 번호·앵커 정합 확인.
 - **비고**: HEURISTIC 문서의 `HIGH_DANGER_INTERVAL_MS`(250ms→100ms, 2026-07-19 정정) 관련 서술도 별도로 stale하나 이번 작업 범위 밖으로 남겨둠.
-
----
-
-### 2026-07-20 | 7단계 | metro_agent_shell_detach
-
-- **커밋**: `(자동 커밋 완료)`
-- **변경 내용**:
-  - Metro를 Python double-fork+setsid로 에이전트 셸과 분리해 Cursor 세션 종료 후에도 유지하고, status에 detach ancestry를 표시하며 integration-test-orchestrator 스킬을 v1.3.1로 동기화한다.
-- **관련 파일**: `agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`, `docs/changelogs/kb.md`, `scripts/metro_tailscale.sh`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
