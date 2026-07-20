@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.33 (2026-07-20 realtime_gps→콘솔 HUD 브로드캐스트·Detection Guidance Log bbox 오버레이 계약 보강)
+> **버전**: v0.4.34 (2026-07-20 §6.3 STT 목적지 파서 위치기반 교체, POI 확인 대기 상태(`WAITING_FOR_POI_CONFIRMATION`) 신설, TMAP 키 누락 fail-closed 전환 반영. 기존 v0.4.33 이력 유지: realtime_gps→콘솔 HUD 브로드캐스트·Detection Guidance Log bbox 오버레이 계약 보강)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -462,6 +462,8 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 | :--- | :--- | :--- |
 | `길댕아` (또는 유사 발음) | 2단계 진입 대기 상태로 전환, "길 찾아드릴까요, 질문 받을까요?" 응답 | 정확 문자열 매칭이 아니라 **편집거리(Levenshtein) ≤1 퍼지 매칭**("길댕"과 비교) - "길대가"/"결댕아"/"길땡아" 등 STT 오인식 변형까지 흡수 |
 | `길찾아줘` (대기 중) | 목적지 대기 상태(`WAITING_FOR_DESTINATION`)로 전환 | 이어지는 발화를 목적지명으로 파싱해 TMAP POI 검색 + 경로 계산 수행 |
+| 목적지 발화(대기 중, 예: `서울역으로 설정`) | `_parse_destination_text()`가 접두("목적지는")·접미(조사+명령 어미)만 위치기반으로 제거해 검색어 생성 → `helper_resolve_destination_poi()`가 후보 5개 이상을 정확명일치→현재 위치 거리 순으로 점수화 | 2026-07-20 정정: 이전 전역 `replace("로","")`가 "구로역"→"구역"처럼 장소명 내부 글자를 삭제하던 결함, `count=1`/`pois[0]` 고정으로 현재 위치와 무관한 첫 결과를 확정하던 결함을 수정(§ 아래 참조) |
+| `1번`/`2번`/`3번` (동명 POI 확인 대기 중, `WAITING_FOR_POI_CONFIRMATION`) | 상위 후보 중 순번 선택으로 경로 확정 | 2026-07-20 신설: 동명 후보 간 거리 우위가 불분명하면(`ambiguous=True`) 자동 확정 대신 "같은 이름의 장소가 N곳 있어요..." 확인 질문을 먼저 반환. 인식 실패 시 재입력 유도(추측하지 않음) |
 | `물어볼게` (대기 중) | 자유 질의응답 대기 상태로 전환 | 이어지는 발화를 장애물 회피 오케스트레이터가 아닌 순수 LLM 대화로 처리(§ 아래 참조) |
 | `네비게이션 켜줘` / `질문할게` 등 | 위 2단계 웨이크워드 없이 바로 진입하는 기존 단일 트리거(하위 호환 유지) | "네비게이션"/"내비게이션" 표기는 매칭 전 정규화 |
 | 자유 질의(대기 상태에서) | "가까운/근처/주변" + 장소 유형(지하철역·편의점·화장실 등)이 감지되면 TMAP 실거리 검색(`helper_search_nearest_poi`, Haversine 거리순)으로 사실 기반 답변. 그 외는 LLM 자유 대화 / 생활지원 convenience RAG | 위치 사실을 LLM에 맡기지 않고 실제 API 조회 결과로만 답해 환각을 방지. 생활지원 질의는 jh `convenience_rag` 분기 |
@@ -487,6 +489,24 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > 않는다(`ws_router._process_stt_audio`에서 스킵). 클라이언트(`CameraView.tsx`)는 TTS
 > 재생 중 녹음 시작 시 `stopGuideAudio()` 후 150ms 대기해 스피커 잔향이 멈춘 뒤 마이크를
 > 활성화하는 이중 방어를 적용한다.
+
+> **비고 (2026-07-20) - 목적지 파서·POI 확인·fail-closed**: GPT 작성 회귀 분석 보고서
+> (`stt_navigation_destination_accuracy_regression_analysis.md`) P0 6건을 코드 실행·git
+> diff 대조로 재검증 후 수정. (1) 목적지 파서: 전역 `replace("로","")`가 "구로역"→"구역"
+> 처럼 장소명 내부 글자를 삭제하던 결함을 접두("목적지는")·접미(조사+명령 어미) 위치기반
+> 제거로 교체(`_parse_destination_text`, 단독 "로"/"으로"는 "테헤란로" 등 보호를 위해
+> 의도적으로 미제거). (2) `WAITING_FOR_DESTINATION` 중 fuzzy wake("길댕"과 편집거리 1
+> 이하)가 "길동역"/"길음역"/"길상사" 같은 정상 목적지까지 재질문으로 가로채던 결함을
+> 정확 일치(`_is_exact_gildaeng_reconfirm`)로 좁혀 수정. "까지"+이동 표현이 있으면
+> 질문 힌트 단어("어떻게")가 있어도 목적지 의도를 우선한다(`_has_explicit_destination_intent`).
+> (3) `helper_search_poi(count=1, pois[0] 고정)` 대신 `helper_resolve_destination_poi`가
+> 후보 5개 이상을 정확명일치→현재 위치 거리 순으로 점수화. 동명 후보 간 거리 우위가
+> 불분명하면 자동 확정 대신 `WAITING_FOR_POI_CONFIRMATION`으로 전환해 음성 확인을 받는다
+> (위 명령 어휘 표 참조). 성공 안내도 사용자 검색어 대신 실제 선택된 POI 이름을 읽는다.
+> (4) TMAP 키 누락/플레이스홀더 시 고정 가상 좌표(126.8722/37.4590 등)로 성공 처리하던
+> `helper_search_poi`/`helper_search_nearest_poi`/`helper_fetch_route`를 fail-closed(`None`)로
+> 전환 - [`environment_variables.md`](../ops/environment_variables.md) §2.14 `TMAP_APP_KEY`에
+> 이미 명시된 "키 미설정 시 기능 비활성화" 정책과 정합.
 
 > **비고 (2026-07-11) - 인텐트 대기 상태 체크 순서**: `awaiting_intent` 대기 상태에서
 > 발화 분기 우선순위를 `nav intent -> question intent -> wake 재호출 -> else(재질문)`로
@@ -982,6 +1002,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.29** | **2026-07-19** | **§4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 서버가 단말에 보내는 guide WAV와 동일 바이너리를 관제 콘솔 `/ws/console/live-feed`에도 브로드캐스트하고, 반사 비프 클립 5종을 `console/public/reflex_clips/`로 정적 복사해 단말과 동일 파일 재생. 햅틱은 청각 재현 불가하므로 시각 펄스로 근사 표현** |
 | **v0.4.31** | **2026-07-19** | **§8.7 `/ws/console/live-feed` 관리자 JWT 인증을 최초 도입. v0.4.32에서 URL 전달 방식은 폐기됨. 단말/콘솔 거리 구역 오버레이를 좌·우 끝까지 이어지는 SVG 호(NEAR/MED) + 라벨로 갱신** |
 | **v0.4.32** | **2026-07-19** | **SSE·프레임·콘솔 WS의 URL 쿼리 토큰 제거. Authorization 헤더/WS 최초 auth 메시지로 전환하고 Origin 검증·인증 제한시간 추가. §8.8 최초 관리자 1회 부트스트랩, RBAC, 로그인 제한, 단말 JWT 발급 계약 신설** |
+| **v0.4.34** | **2026-07-20** | **§6.3 STT 목적지 파서를 위치기반 조사/명령어미 제거로 교체(전역 replace 결함 수정), WAITING_FOR_POI_CONFIRMATION 상태·명령 어휘 신설(동명 POI 음성 확인), TMAP 키 누락 시 helper_search_poi/helper_search_nearest_poi/helper_fetch_route fail-closed 전환** |
 | **v0.4.33** | **2026-07-20** | **§6.5 realtime_gps→콘솔 HUD 브로드캐스트·단말 connected 후 즉시 GPS 전송 계약. §8.5 Detection Guidance Log 목록 썸네일 bbox 오버레이·반사/노면-only bbox 저장·pipeline_debug 폴백** |
 | **v0.4.30** | **2026-07-19** | **§6.4 `server_detection` `detections[].effective_distance_zone` 필드 추가(`object_detection`에 한해 `near`/`medium`/`far` 소문자 송신, `segmentation`은 빈 문자열). 콘솔 BBox를 거리 구역별 색상(빨강/주황/파랑)으로 도식화하고 Near/Med/Far 경계선 오버레이 추가. 단말 `CameraView.tsx` 기존 소실점 사다리꼴 ROI 오버레이를 3구역 경계선으로 교체** |
 | **v0.4.27** | **2026-07-17** | **§6.8 `distance_probe_sample` 신설 - LiDAR 실거리 검증 캡처(검증 전용, 반사/인지 경로 판단 미관여), `lidar_distance_validation_samples` DB 테이블 연동** |

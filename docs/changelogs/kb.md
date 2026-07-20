@@ -3669,3 +3669,14 @@
 - **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `server/navigation/server.py`, `server/navigation/manager.py`, `tests/test_stt_to_llm_bridge_template.py`, `tests/test_navigation_server_poi_resolver.py`
 - **검증 결과**: `pytest tests/test_stt_to_llm_bridge_template.py tests/test_ws_router_stt.py tests/test_stt_config_policy.py tests/test_stt_service_template.py tests/test_stt_wait_notice.py tests/test_navigation_server_poi_resolver.py` → **60 passed**. `ruff check` 이상 없음. `bandit`/`mypy` 기존 무관 오류만 잔존(신규 없음).
 - **비고**: P1(녹음 UX 200ms arm, 절단 검사 복원, GPS 전송 큐잉, LineString 지도 전달, facilityType 타입 정합)·P2(관측성 로그)는 이번 범위 밖. 실기기 오디오 절단·AEC 순서는 정적 분석만으로 확정 불가해 별도 실기기 검증 필요(보고서 자체도 명시).
+
+---
+
+### 2026-07-20 | 문서 | STT/네비게이션 P0 수정 문서 동기화 (auto-publish-work Step 2 후속)
+
+- **배경**: 직전 P0 6건 커밋 시 `auto-publish-work` 스킬 Step 2(문서 교차 검증)를 다시 건너뛴 것을 사용자가 지적. `docs/design/api_specification.md` §6.3 명령 어휘 표와 `docs/stage-guides/stage_stt_integration_guide.md` §5·§6이 새 목적지 파서·POI 확인 플로우·fail-closed 정책을 반영하지 못해 stale해진 것을 확인하고 정정.
+- **변경 내용**:
+  - `docs/design/api_specification.md`: §6.3 명령 어휘 표에 목적지 발화(위치기반 파서+POI resolver) 행 갱신, `1번`/`2번`/`3번`(`WAITING_FOR_POI_CONFIRMATION`) 행 신설. 2026-07-20 비고 블록 추가(파서·wake 우선순위·POI 확인·fail-closed 4건 요약, `environment_variables.md` §2.14 교차 참조). 버전 헤더·이력 표 v0.4.33 → v0.4.34.
+  - `docs/stage-guides/stage_stt_integration_guide.md`: §5 가드레일에 "목적지 대기 우선순위"·"목적지 파서 위치기반 stripping"·"POI 확인" 3행 신설. §6 테스트 체크리스트에 TC-STT-012~015(장소명 보존·wake 오탐 방지·동명 POI 확인·키 누락 fail-closed) 추가, 대응 pytest 테스트명 명시. 버전 헤더 v0.2.4 → v0.2.5.
+- **관련 파일**: `docs/design/api_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`
+- **검증 결과**: 문서만 수정(코드 변경 없음). 표·비고 블록 마크다운 파싱 확인(`grep -c "^|"`), 버전 헤더-이력 표 정합 확인.

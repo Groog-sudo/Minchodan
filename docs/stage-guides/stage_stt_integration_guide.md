@@ -1,7 +1,7 @@
 # Minchodan STT 음성명령 연동 가이드
 
 > **작성일**: 2026-07-10
-> **버전**: v0.2.4 (2026-07-11 §6 테스트 체크리스트에 AEC 실기기 검증 항목 TC-STT-010/011 추가 + 이전 v0.2.3 이력 유지: STT 녹음 구간 AEC 도입 - iOS voiceChat 세션 전환(`AudioSessionBridge`), AEC 확인 시 시작 신호음 복원 + 이전 v0.2.2 이력 유지: STT 응답 지연 개선 3건 반영 - 기본 모델 `faster-whisper-small` 전환, 서버 기동 시 모델 프리로드, TTS 합성 결과 캐시 + 이전 v0.2.1 이력 유지: 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
+> **버전**: v0.2.5 (2026-07-20 §5 가드레일에 목적지 대기 우선순위·목적지 파서 위치기반 stripping·POI 확인 3건 추가, §6 TC-STT-012~015 신설 - 회귀 분석 보고서 P0 6건 수정 반영 + 이전 v0.2.4 이력 유지: §6 테스트 체크리스트에 AEC 실기기 검증 항목 TC-STT-010/011 추가 + 이전 v0.2.3 이력 유지: STT 녹음 구간 AEC 도입 - iOS voiceChat 세션 전환(`AudioSessionBridge`), AEC 확인 시 시작 신호음 복원 + 이전 v0.2.2 이력 유지: STT 응답 지연 개선 3건 반영 - 기본 모델 `faster-whisper-small` 전환, 서버 기동 시 모델 프리로드, TTS 합성 결과 캐시 + 이전 v0.2.1 이력 유지: 바이너리 응답 계약·민감정보 비보존·플랫폼별 녹음 검증 반영)
 > **범위**: 7단계 골격 외 입력 경로(STT) 운영 가이드
 > **관련 코드**: `server/api/ws_router.py`, `server/stt/stt_service.py`, `server/stt/stt_to_llm_bridge.py`
 
@@ -102,6 +102,9 @@ flowchart TD
 | **자기-에코 감지** | TTS 안내문이 마이크로 재녹음된 경우 전사 결과와 최근 안내문(`_recent_guidance`, TTL 10초)을 비교해 에코로 판정, 응답 스킵(`source=stt-echo-detected`). 클라이언트는 TTS 재생 중 녹음 시 `stopGuideAudio()` 후 150ms 대기 (서버+클라이언트 이중 방어) |
 | **AEC(에코 캔슬레이션)** | 2026-07-11 도입: STT 녹음 구간에서 iOS 세션을 `voiceChat` 모드로 전환(`client/ios/AudioSessionBridge.swift`, `client/src/services/audioSessionBridge.ts`)해 스피커 출력(반사 비프 등)의 마이크 유입을 하드웨어 수준에서 상쇄. `.defaultToSpeaker`로 스피커 라우팅 유지, 녹음 종료 시 이전 세션으로 복구. AEC 활성이 세션 조회로 확인된 경우에만 녹음 시작 신호음 재생(`STT_START_CUE_WITH_AEC` 플래그, 회귀 시 플래그만 롤백). Android는 no-op(후속: AcousticEchoCanceler) |
 | **인텐트 우선순위** | `awaiting_intent` 대기 상태에서 `nav intent -> question intent -> wake 재호출 -> else(재질문)` 순서로 분기. wake 재호출이 인텐트 매칭보다 우선하면 "길댕아 길찾아줘"가 wake로만 처리되는 문제 방지 |
+| **목적지 대기 우선순위(2026-07-20)** | `WAITING_FOR_DESTINATION`에서는 목적지 처리를 fuzzy wake·질문 휴리스틱보다 우선한다. "길댕"과 편집거리 1 이하인 정상 목적지("길동역"/"길음역"/"길상사")가 wake로 오인되지 않도록 재확인은 정확 일치(`_is_exact_gildaeng_reconfirm`)로만 인정하고, "까지"+이동 표현이 있으면 질문 힌트 단어가 있어도 목적지 의도를 우선한다 |
+| **목적지 파서 위치기반 stripping(2026-07-20)** | 전역 `replace("로","")`가 "구로역"→"구역"처럼 장소명 내부 글자를 삭제하던 결함을 접두("목적지는")·접미(조사+명령 어미) 위치기반 제거로 교체(`_parse_destination_text`). 단독 "로"/"으로"는 "테헤란로" 등 장소명 자체가 "로"로 끝나는 경우를 보호하기 위해 의도적으로 미제거 |
+| **POI 확인(2026-07-20)** | `helper_resolve_destination_poi`가 후보 5개 이상을 정확명일치→현재 위치 거리 순으로 점수화. 동명 후보 간 거리 우위가 불분명하면 자동 확정 대신 `WAITING_FOR_POI_CONFIRMATION`으로 전환해 순번 선택 음성 확인을 받는다 |
 
 ---
 
@@ -120,6 +123,10 @@ flowchart TD
 | TC-STT-009 | 지연 녹음 취소 | 150ms 잔향 대기 중 손을 떼면 예약 녹음을 취소하고 STT 뮤트를 해제 |
 | TC-STT-010 | AEC 세션 유지 (실기기) | 녹음 시작 후 `[STT][AEC]` 로그에서 `mode=voiceChat`, `aec=true` 유지 확인 (expo-audio가 세션을 덮으면 경고 로그 + 시작 신호음 생략) |
 | TC-STT-011 | 시작 신호음 비오염 (실기기) | AEC 활성 상태에서 시작 신호음 재생 후에도 전사에 신호음이 섞이지 않고 캡처 절단 가드(`capture_truncated`)가 발동하지 않음 |
+| TC-STT-012 | 목적지 파서 장소명 보존 | "구로역으로 설정"/"가로수길로 가줘"/"압구정로데오역까지 안내해줘" 등이 장소명 내부 문자 손실 없이 TMAP 검색어로 전달됨(`tests/test_stt_to_llm_bridge_template.py::test_destination_parser_preserves_place_name`) |
+| TC-STT-013 | 목적지 대기 중 wake 오탐 방지 | `WAITING_FOR_DESTINATION`에서 "길동역"/"길음역"/"길상사"가 재질문(`navigation-destination-reprompt`)이 아니라 POI 검색으로 진행됨(`test_gildaeng_fuzzy_wake_does_not_intercept_real_destination`) |
+| TC-STT-014 | 동명 POI 확인 플로우 | 동명 후보가 모호하면 `navigation-poi-confirm-needed`로 확인 질문 반환 → "2번" 발화로 해당 후보 경로 확정, 성공 안내는 실제 선택 POI 이름을 포함(`test_ambiguous_poi_triggers_confirmation_instead_of_auto_pick`, `test_poi_confirmation_selection_completes_route`) |
+| TC-STT-015 | TMAP 키 누락 fail-closed | 키가 없거나 플레이스홀더일 때 `helper_search_poi`/`helper_search_nearest_poi`/`helper_fetch_route`/`helper_resolve_destination_poi`가 가상 좌표 대신 `None`을 반환(`tests/test_navigation_server_poi_resolver.py`) |
 
 ---
 
