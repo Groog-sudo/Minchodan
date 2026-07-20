@@ -41,7 +41,8 @@ class HapticEngine {
     pattern: string,
     opts?: { allowDuringStt?: boolean },
   ): Promise<void> {
-    // 1순위 STT 구간: Near 위험 햅틱 억제. STT 자체 큐만 allowDuringStt로 통과.
+    // 1순위 STT 구간: 인지 안내용 햅틱만 기본 억제.
+    // 반사 Near 햅틱은 호출측이 allowDuringStt:true 로 통과(2026-07-20).
     if (!opts?.allowDuringStt && audioEngine.isSttActive()) {
       console.log(`[HapticEngine] STT 상호작용 중 - 위험 햅틱 억제: ${pattern}`);
       return;

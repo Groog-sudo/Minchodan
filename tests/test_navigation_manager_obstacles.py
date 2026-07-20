@@ -92,10 +92,27 @@ def test_same_class_can_reannounce_after_suppress_window_expires():
     device_id = "test-suppress-expiry"
     session = manager._get_or_create_session(device_id)
 
-    session.last_announced_class = "roadway"
+    session.last_announced_class = "surface_hazard"  # caution/roadway 그룹 키
     session.last_announced_class_ts = time.time() - 31.0  # OBSTACLE_REPEAT_SUPPRESS_S(30s) 초과
     session.last_announced_obstacle_time = 0.0
     session.pending_obstacles.append({"class_name": "roadway", "ts": time.time()})
 
     text = manager._pop_obstacle_text(session)
     assert text == "전방에 차도 주의하세요."
+
+
+def test_caution_roadway_share_surface_hazard_suppress_key():
+    """caution 안내 후 roadway는 같은 surface_hazard 그룹으로 억제된다."""
+    manager = _new_manager()
+    device_id = "test-surface-group"
+    session = manager._get_or_create_session(device_id)
+
+    manager.add_obstacle_event(device_id, "caution")
+    session.last_announced_obstacle_time = 0.0
+    first = manager._pop_obstacle_text(session)
+    assert first == "전방에 주의 노면 주의하세요."
+
+    manager.add_obstacle_event(device_id, "roadway")
+    session.last_announced_obstacle_time = 0.0
+    second = manager._pop_obstacle_text(session)
+    assert second == ""

@@ -108,7 +108,11 @@
 | **`GUIDANCE_CONTEXT_MODE`** | string | 선택 | `hints` | **2026-07-20 신규.** Medium 인지 경로 컨텍스트 소스. `hints`(기본)=인메모리 짧은 회피 힌트(`server/rag/guidance_hints.py`, rag_ms≈0). `rag`=기존 Chroma `search_guidance` 롤백/A/B. 잘못된 값은 `hints`로 폴백 | `server/detection/consumer.py`, [`medium_guidance_hint_dict_implementation_plan.md`](medium_guidance_hint_dict_implementation_plan.md) |
 | **`REFLEX_SURFACE_SUPPRESS_TTL_S`** | int | 선택 | `15` | **2026-07-19 신규.** 노면(surface) 반사 경보 전용 억제 TTL(초). 세그먼트 흔들림으로 매초 재발화하기 쉬워 일반 반사(5s)보다 길게 설정 | `server/tts/suppressor.py:22` |
 | **`REFLEX_SURFACE_MIN_GAP_S`** | float | 선택 | `8.0` | **2026-07-19 신규.** 노면 surface 경보 발화 간 최소 간격(초, device 단위) | `server/tts/suppressor.py:23` |
-| **`SURFACE_HAZARD_ABSENT_STREAK`** | int | 선택 | `3` | 노면 위험 소실 히스테리시스. 연속 N 프레임 미탐지 시에만 위험 해제로 판정해 세그먼트 깜빡임 오탐 완화 | `server/detection/consumer.py:107` |
+| **`SURFACE_HAZARD_ABSENT_STREAK`** | int | 선택 | `5` | 노면 위험 소실 히스테리시스. 연속 N 프레임 미탐지 시에만 위험 해제로 판정해 세그먼트 깜빡임 오탐 완화. **2026-07-20**: 기본 3→5 (far flicker 재enter 완화) | `server/detection/consumer.py` |
+| **`SURFACE_REENTER_COOLDOWN_S`** | float | 선택 | `20.0` | **2026-07-20 신규.** 노면 인지(surface_hazard) 이탈 후 재진입 enter 최소 간격(초). 쿨다운 안이면 enter를 continue로 강등 | `server/detection/consumer.py` |
+| **`BRAILLE_REENTER_COOLDOWN_S`** | float | 선택 | `45.0` | **2026-07-20 신규.** 점자블록-only 인지 재진입 쿨다운(초). 위험 노면보다 길게 잡아 잔소리 완화 | `server/detection/consumer.py` |
+| **`BRAILLE_ABSENT_STREAK`** | int | 선택 | `5` | **2026-07-20 신규.** 점자블록 인지 에피소드 이탈 히스테리시스 프레임 수 | `server/detection/consumer.py` |
+| **`NEAR_CLEAR_HOLD_OFF_S`** | float | 선택 | `0.4` | **2026-07-20 신규.** Near episode `reflex_clear` 전 hold-off(초). near↔medium 경계 진동으로 비프가 끊기는 채터 완화 | `server/detection/consumer.py` |
 | **`SURFACE_ZONE_NEAR_Y_RATIO`** | float | 선택 | `0.6` | 노면 Y좌표 기반 near 거리 구역 비율. centroid_y > frame_height*이 값이면 near로 판정 | `server/detection/consumer.py:99` |
 | **`SURFACE_ZONE_MEDIUM_Y_RATIO`** | float | 선택 | `0.35` | 노면 Y좌표 기반 medium 거리 구역 비율 | `server/detection/consumer.py:100` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |

@@ -250,11 +250,8 @@ class AudioEngine {
    * @param intervalMs 비프음 주기 (ms, 0은 연속 경고음)
    */
   public async playBeep(panning: number, intervalMs: number): Promise<void> {
-    // 길찾아줘/물어볼게 STT 구간: Near 비프도 억제(질문·목적지 발화 방해 금지).
-    if (this.sttActive) {
-      console.log("[AudioEngine] STT 상호작용 중 - 반사 비프 억제");
-      return;
-    }
+    // 2026-07-20: STT 중에도 Near 반사 비프는 유지한다(질문 음성은 인지 guide만
+    // STT 우선). 이전에는 sttActive면 비프를 막아 길찾기 대화 중 Near가 조용히 죽었다.
 
     // 1. 널뛰기 방지 정지 대기열이 돌고 있다면, 새로운 재생 요청 유입 시 즉시 취소하여 재생 흐름 유지
     if (this.stopTimeout !== null) {
@@ -419,7 +416,9 @@ class AudioEngine {
 
   /**
    * STT 상호작용 구간 활성화/비활성화.
-   * 활성 시 진행 중 Near 비프를 즉시 끄고, STT 미만 위험 안내는 canStartGuide에서 드롭.
+   * 활성 시 STT 미만 위험/일반 안내는 canStartGuide에서 드롭한다.
+   * 2026-07-20: Near 반사 비프/햅틱은 끄지 않는다(필드 테스트 - 길찾기 중 Near 침묵 방지).
+   * 반사 음성 클립(playReflexClip)만 STT 중 억제해 질문 답변과 말이 겹치지 않게 한다.
    *
    * 호출 지점(CameraView.tsx 녹음 시작, useWebSocket.ts 응답 수신 전후)과 무관하게
    * STT_SAFETY_TIMEOUT_MS 안전 상한을 여기서 일괄 건다(2026-07-20). 이전에는 녹음
@@ -433,8 +432,7 @@ class AudioEngine {
       this.sttSafetyTimer = null;
     }
     if (active) {
-      void this.stopBeep();
-      // STT 시작 시 대기 중인 위험/일반 안내는 전부 폐기(질문 방해 방지).
+      // Near 비프는 유지. 대기 중인 인지/기타 안내만 폐기(질문 방해 방지).
       this.discardPendingGuidesBelow(GUIDE_PRIORITY.STT);
       this.sttSafetyTimer = setTimeout(() => {
         console.log("[AudioEngine] STT 안전 상한 타이머 - 상태 강제 해제");
@@ -450,7 +448,8 @@ class AudioEngine {
 
   /**
    * 가이드 음성 재생 우선순위 판정.
-   * STT 활성 중에는 STT 미만(Near 위험 안내 포함) 전부 드롭(질문 방해 금지, 유지).
+   * STT 활성 중에는 STT 미만 인지/일반 안내만 드롭한다(질문 방해 금지).
+   * Near 반사 비프·햅틱은 playBeep/haptic 경로에서 STT와 병행(2026-07-20).
    * 재생 중인 항목보다 낮은 우선순위도 더 이상 즉시 드롭하지 않고 대기열 적재
    * 후보로 넘긴다 - 큐가 우선순위 혼합을 담아야 위험도 기반 폐기(evictLowestPriority)가
    * 의미를 가진다. 상위/동일/하위 판정은 enqueueGuide가 담당한다.

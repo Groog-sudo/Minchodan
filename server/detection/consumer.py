@@ -104,7 +104,17 @@ SPEECH_SURFACE_HAZARD_CLASSES = frozenset({"caution", "roadway"})
 SIGNIFICANT_SURFACE_CLASSES = frozenset({"caution", "roadway", "braille_normal"})
 # 노면 위험 이탈 확정에 필요한 연속 인지 프레임 수.
 # 1프레임 깜빡임으로 에피소드가 리셋되면 Medium TTS가 반복되므로 히스테리시스를 둔다.
-SURFACE_HAZARD_ABSENT_STREAK = int(os.getenv("SURFACE_HAZARD_ABSENT_STREAK", "3"))
+# 2026-07-20: 필드 DB 분석 후 기본 3→5 (far flicker 재enter 완화).
+SURFACE_HAZARD_ABSENT_STREAK = int(os.getenv("SURFACE_HAZARD_ABSENT_STREAK", "5"))
+# 노면 인지 재진입(이탈 후 enter) 최소 간격. far 깜빡임으로 에피소드가 풀려도
+# 이 시간 안에는 동일 surface_hazard를 다시 말하지 않는다.
+SURFACE_REENTER_COOLDOWN_S = float(os.getenv("SURFACE_REENTER_COOLDOWN_S", "20.0"))
+# 점자블록 전용 인지 에피소드(위험 노면과 분리, 더 긴 재진입 쿨다운).
+BRAILLE_EPISODE_KEY = "braille_normal"
+BRAILLE_REENTER_COOLDOWN_S = float(os.getenv("BRAILLE_REENTER_COOLDOWN_S", "45.0"))
+BRAILLE_ABSENT_STREAK = int(os.getenv("BRAILLE_ABSENT_STREAK", "5"))
+# Near episode clear 채터 완화: near 이탈 직후 즉시 reflex_clear하지 않고 hold-off.
+NEAR_CLEAR_HOLD_OFF_S = float(os.getenv("NEAR_CLEAR_HOLD_OFF_S", "0.4"))
 
 
 class DetectionConsumer:
@@ -149,6 +159,16 @@ class DetectionConsumer:
         self._surface_cognitive_pending: dict[str, str | None] = {}
         # 노면 위험 미검출 연속 프레임(이탈 히스테리시스).
         self._surface_hazard_absent_streak: dict[str, int] = {}
+        # 노면/점자 인지 마지막 커밋 시각(재진입 쿨다운용, monotonic).
+        self._surface_cognitive_last_commit_ts: dict[str, float] = {}
+        self._braille_cognitive_episode: dict[str, str | None] = {}
+        self._braille_cognitive_pending: dict[str, str | None] = {}
+        self._braille_absent_streak: dict[str, int] = {}
+        self._braille_cognitive_last_commit_ts: dict[str, float] = {}
+        # Near clear hold-off: device_id → near 이탈 최초 감지 monotonic.
+        self._near_clear_pending_since: dict[str, float] = {}
+        # 관측용: 직전 노면/점자 에피소드 메타(pipeline_debug 주입).
+        self._last_surface_obs: dict[str, dict[str, str]] = {}
         self._min_guide_cooldown_sec: float = 8.0
         self._guide_cooldown_margin_sec: float = 1.5
         # 2026-07-13 추가: device_id별 보도 이탈(is_departing) 연속 프레임 카운터.
@@ -325,6 +345,8 @@ class DetectionConsumer:
         - 이미 안내 완료(episode) 또는 합성 중(pending)이면 continue.
         - enter는 커밋하지 않음. 실제 guide 전송 성공 시에만
           `_commit_surface_cognitive_episode`로 확정한다.
+        - 2026-07-20: 리셋 직후 SURFACE_REENTER_COOLDOWN_S 안에는 enter를
+          continue로 강등해 far flicker 재안내를 막는다.
         """
         # Far는 "시야에서 멀어짐"으로 보고 이탈 카운트에 포함한다.
         active_key = "" if surface_zone == "far" else hazard_key
@@ -335,10 +357,25 @@ class DetectionConsumer:
                 if self._surface_cognitive_episode.get(
                     device_id
                 ) or self._surface_cognitive_pending.get(device_id):
+                    self._last_surface_obs[device_id] = {
+                        "surface_episode": "continue",
+                        "surface_zone": surface_zone or "far",
+                        "reset_reason": "absent_hysteresis",
+                    }
                     return "continue"
+                self._last_surface_obs[device_id] = {
+                    "surface_episode": "idle",
+                    "surface_zone": surface_zone or "far",
+                    "reset_reason": "absent_hysteresis",
+                }
                 return "idle"
             self._surface_cognitive_episode[device_id] = None
             self._surface_cognitive_pending[device_id] = None
+            self._last_surface_obs[device_id] = {
+                "surface_episode": "idle",
+                "surface_zone": surface_zone or "far",
+                "reset_reason": "far_or_absent_reset",
+            }
             return "idle"
 
         self._surface_hazard_absent_streak[device_id] = 0
@@ -346,7 +383,27 @@ class DetectionConsumer:
             self._surface_cognitive_episode.get(device_id) == active_key
             or self._surface_cognitive_pending.get(device_id) == active_key
         ):
+            self._last_surface_obs[device_id] = {
+                "surface_episode": "continue",
+                "surface_zone": surface_zone or "",
+                "reset_reason": "",
+            }
             return "continue"
+
+        last_commit = self._surface_cognitive_last_commit_ts.get(device_id, 0.0)
+        if last_commit and (time.monotonic() - last_commit) < SURFACE_REENTER_COOLDOWN_S:
+            self._last_surface_obs[device_id] = {
+                "surface_episode": "continue",
+                "surface_zone": surface_zone or "",
+                "reset_reason": "reenter_cooldown",
+            }
+            return "continue"
+
+        self._last_surface_obs[device_id] = {
+            "surface_episode": "enter",
+            "surface_zone": surface_zone or "",
+            "reset_reason": "",
+        }
         return "enter"
 
     def _begin_surface_cognitive_pending(self, device_id: str, hazard_key: str) -> None:
@@ -363,7 +420,68 @@ class DetectionConsumer:
         if hazard_key:
             self._surface_cognitive_episode[device_id] = hazard_key
             self._surface_hazard_absent_streak[device_id] = 0
+            self._surface_cognitive_last_commit_ts[device_id] = time.monotonic()
         self._surface_cognitive_pending[device_id] = None
+
+    @staticmethod
+    def _braille_only_episode_key(surfaces: list) -> str:
+        """caution/roadway 없이 braille_normal만 있으면 점자 에피소드 키."""
+        has_braille = False
+        for s in surfaces:
+            name = getattr(s, "class_name", "")
+            if name in SPEECH_SURFACE_HAZARD_CLASSES:
+                return ""
+            if name == "braille_normal":
+                has_braille = True
+        return BRAILLE_EPISODE_KEY if has_braille else ""
+
+    def _sync_braille_cognitive_episode(self, device_id: str, braille_key: str) -> str:
+        """점자블록 인지 에피소드. surface_hazard와 분리, 재진입 쿨다운이 더 길다."""
+        if not braille_key:
+            streak = self._braille_absent_streak.get(device_id, 0) + 1
+            self._braille_absent_streak[device_id] = streak
+            if streak < BRAILLE_ABSENT_STREAK:
+                if self._braille_cognitive_episode.get(
+                    device_id
+                ) or self._braille_cognitive_pending.get(device_id):
+                    return "continue"
+                return "idle"
+            self._braille_cognitive_episode[device_id] = None
+            self._braille_cognitive_pending[device_id] = None
+            return "idle"
+
+        self._braille_absent_streak[device_id] = 0
+        if (
+            self._braille_cognitive_episode.get(device_id) == braille_key
+            or self._braille_cognitive_pending.get(device_id) == braille_key
+        ):
+            return "continue"
+
+        last_commit = self._braille_cognitive_last_commit_ts.get(device_id, 0.0)
+        if last_commit and (time.monotonic() - last_commit) < BRAILLE_REENTER_COOLDOWN_S:
+            obs = self._last_surface_obs.get(device_id, {})
+            obs = {
+                **obs,
+                "surface_episode": "continue",
+                "reset_reason": "braille_reenter_cooldown",
+            }
+            self._last_surface_obs[device_id] = obs
+            return "continue"
+        return "enter"
+
+    def _begin_braille_cognitive_pending(self, device_id: str, braille_key: str) -> None:
+        if braille_key:
+            self._braille_cognitive_pending[device_id] = braille_key
+
+    def _clear_braille_cognitive_pending(self, device_id: str) -> None:
+        self._braille_cognitive_pending[device_id] = None
+
+    def _commit_braille_cognitive_episode(self, device_id: str, braille_key: str) -> None:
+        if braille_key:
+            self._braille_cognitive_episode[device_id] = braille_key
+            self._braille_absent_streak[device_id] = 0
+            self._braille_cognitive_last_commit_ts[device_id] = time.monotonic()
+        self._braille_cognitive_pending[device_id] = None
 
     @staticmethod
     def _compute_cognitive_signature(result: DetectionResult, departure_confirmed: bool) -> str:
@@ -448,11 +566,17 @@ class DetectionConsumer:
             return True
 
         # 노면 구역 정책: 객체 없이 노면만 있으면 zone + 12시 회랑으로 판정.
+        # Near 노면=반사 전담 / Medium=인지 / Far·측면=무발화.
+        # 점자만 있는 경우(zone 미산출)는 에피소드 게이트가 중복을 막는다.
         if has_significant_surface and primary_det is None:
+            if surface_zone == "near":
+                return False
+            if surface_zone == "far":
+                return False
             if surface_zone == "medium":
                 return bool(surface_in_front)
-            # 구역 미산출(점자블록만 등): 인지 허용(에피소드/서명이 중복 억제). near/far는 억제.
-            return surface_zone not in ("near", "far")
+            # zone 미산출(점자블록만 등): 인지 허용(에피소드/쿨다운이 중복 억제).
+            return True
 
         if primary_det is None or frame is None:
             return False
@@ -1020,9 +1144,13 @@ class DetectionConsumer:
         종료된다(프레임마다 반복되는 독립 이벤트가 아니다). 이 메서드는 reflex 스트림의
         모든 프레임(반사가 발동하지 않은 프레임 포함)에서 호출되어, 활성 track이 더 이상
         near 구역에 없으면 즉시 clear를 내보낸다.
+
+        2026-07-20: near↔medium 경계 진동으로 clear/enter가 잦아 비프가 끊기는 채터를
+        막기 위해 NEAR_CLEAR_HOLD_OFF_S 동안 연속 이탈이 확인된 뒤에만 clear한다.
         """
         active_track = Alert_suppressor.peek_active_near_track(device_id)
         if active_track is None:
+            self._near_clear_pending_since.pop(device_id, None)
             return
         near_track_ids = {
             (det.track_id or "unknown")
@@ -1030,7 +1158,18 @@ class DetectionConsumer:
             if det.effective_distance_zone == "near"
         }
         if active_track in near_track_ids:
+            self._near_clear_pending_since.pop(device_id, None)
             return
+
+        now = time.monotonic()
+        pending_since = self._near_clear_pending_since.get(device_id)
+        if pending_since is None:
+            self._near_clear_pending_since[device_id] = now
+            return
+        if (now - pending_since) < NEAR_CLEAR_HOLD_OFF_S:
+            return
+
+        self._near_clear_pending_since.pop(device_id, None)
         Alert_suppressor.end_near_episode(device_id)
         await self._send_reflex_clear(device_id, active_track, reason="zone_exit")
 
@@ -1237,6 +1376,10 @@ class DetectionConsumer:
                         if reflex_primary
                         else "zone_near"
                     ),
+                    observability={
+                        "reflex_suppressed_by": "",
+                        **({"surface_zone": "near"} if alert.alert_source == "surface" else {}),
+                    },
                 ),
             )
             return True
@@ -1341,11 +1484,24 @@ class DetectionConsumer:
         episode_key = self._hazard_surface_episode_key(result.surface)
         surface_zone = self._resolve_surface_zone(result.surface, frame)
         surface_episode = self._sync_surface_cognitive_episode(device_id, episode_key, surface_zone)
+        braille_key = self._braille_only_episode_key(result.surface)
+        braille_episode = (
+            self._sync_braille_cognitive_episode(device_id, braille_key) if braille_key else "idle"
+        )
+
+        # P1-4 (2026-07-20): Near 노면은 반사(surface_caution) 전담. 인지 TTS 금지.
+        if episode_key and surface_zone == "near" and not result.detections:
+            logger.info(
+                f"[DetectionConsumer] Near 노면 인지 억제(반사 전담): device_id={device_id}"
+            )
+            return
 
         # T3-S (2026-07-18): 서버 차원에서 STT 상호작용 중이면 인지 가이드 발행을 억제한다.
         # 반사 경로는 이 게이트를 거치지 않는다(비협상). 클라이언트 audioEngine 우선순위
         # 조정자가 1차 방어선이며, 서버 억제는 연산 낭비 제거용 이중 방어.
         if manager.is_stt_active(device_id):
+            obs = self._last_surface_obs.get(device_id, {})
+            self._last_surface_obs[device_id] = {**obs, "stt_gate_blocked": "cognitive"}
             logger.debug(
                 f"[DetectionConsumer] STT 상호작용 중 - 인지 가이드 발행 억제: "
                 f"device_id={device_id}"
@@ -1384,6 +1540,7 @@ class DetectionConsumer:
         # 전송 성공 전에 episode를 커밋하면(이전 버그) TTS 실패 후에도 continue로 잠겨
         # Medium 안내가 영구히 나오지 않는다. pending만 걸고 성공 시 commit한다.
         surface_pending_open = False
+        braille_pending_open = False
         if not result.detections and episode_key:
             if surface_zone != "medium" or surface_episode != "enter":
                 logger.info(
@@ -1397,11 +1554,26 @@ class DetectionConsumer:
                 f"[DetectionConsumer] 노면 인지 에피소드 enter: device_id={device_id}, "
                 f"zone={surface_zone}, key={episode_key}"
             )
+        elif not result.detections and braille_key:
+            if braille_episode != "enter":
+                logger.info(
+                    f"[DetectionConsumer] 점자 인지 에피소드 억제: device_id={device_id}, "
+                    f"episode={braille_episode}, key={braille_key}"
+                )
+                return
+            self._begin_braille_cognitive_pending(device_id, braille_key)
+            braille_pending_open = True
+            logger.info(
+                f"[DetectionConsumer] 점자 인지 에피소드 enter: device_id={device_id}, "
+                f"key={braille_key}"
+            )
 
         def _abort_surface_pending() -> None:
-            """노면 Medium enter 후 전송 실패/조기반환 시 pending을 풀어 재시도 가능하게 한다."""
+            """노면/점자 Medium enter 후 전송 실패/조기반환 시 pending을 풀어 재시도 가능하게 한다."""
             if surface_pending_open:
                 self._clear_surface_cognitive_pending(device_id)
+            if braille_pending_open:
+                self._clear_braille_cognitive_pending(device_id)
 
         # P1-2 (2026-07-17): 발화 가치(Utterance Value) 게이트.
         # 동일 상황(객체+표면 서명 동일) 반복 안내는 COGNITIVE_UTTERANCE_COOLDOWN_S 동안
@@ -1660,9 +1832,11 @@ class DetectionConsumer:
                     console_payload,
                     audio_bytes,
                 )
-            # 노면 인지 에피소드 커밋(단말 전송 성공 시에만). Medium enter 재안내 방지.
+            # 노면/점자 인지 에피소드 커밋(단말 전송 성공 시에만). Medium enter 재안내 방지.
             if episode_key and surface_zone == "medium":
                 self._commit_surface_cognitive_episode(device_id, episode_key)
+            if braille_key and braille_pending_open:
+                self._commit_braille_cognitive_episode(device_id, braille_key)
             logger.info(
                 f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
             )
@@ -1778,6 +1952,7 @@ class DetectionConsumer:
                     else distance_class
                 ),
                 route_reason=getattr(primary_det, "route_reason", "") if primary_det else "",
+                observability=self._last_surface_obs.get(device_id),
             )
             self._schedule_log_persist(
                 event_id=result.event_id,

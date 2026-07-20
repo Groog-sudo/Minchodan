@@ -132,6 +132,7 @@ def build_reflex_pipeline_debug(
     route: str = "reflex",
     effective_distance_zone: str = "near",
     route_reason: str = "",
+    observability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     debug: dict[str, Any] = {
         "path": "reflex",
@@ -156,6 +157,17 @@ def build_reflex_pipeline_debug(
         debug["inference_ms"] = round(float(inference_ms), 1)
     if detections:
         debug["detections_summary"] = [_compact_detection(det) for det in detections[:8]]
+    if observability:
+        for key in (
+            "surface_episode",
+            "surface_zone",
+            "reset_reason",
+            "stt_gate_blocked",
+            "reflex_suppressed_by",
+        ):
+            val = observability.get(key)
+            if val:
+                debug[key] = val
     return debug
 
 
@@ -181,6 +193,7 @@ def build_cognitive_pipeline_debug(
     route: str = "cognitive",
     effective_distance_zone: str = "",
     route_reason: str = "",
+    observability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     generation_mode = _resolve_cognitive_generation_mode(orch_result)
     used_fast_lane = bool(orch_result.get("used_fast_lane"))
@@ -214,6 +227,17 @@ def build_cognitive_pipeline_debug(
     }
     if route_reason:
         debug["route_reason"] = route_reason
+    if observability:
+        for key in (
+            "surface_episode",
+            "surface_zone",
+            "reset_reason",
+            "stt_gate_blocked",
+            "reflex_suppressed_by",
+        ):
+            val = observability.get(key)
+            if val:
+                debug[key] = val
     if inference_ms is not None:
         debug["inference_ms"] = round(float(inference_ms), 1)
     if detected_classes_ko:
