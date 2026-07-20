@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 class YoloDetector(DetectorInterface):
     """Yolo 26N - Object Detection 래퍼."""
 
+    @staticmethod
+    def _track_fallback_to_predict(exc: Exception) -> bool:
+        """track() 실패 시 predict()로 재시도할지 판정한다."""
+        msg = str(exc).lower()
+        return "lap" in msg or "has no attribute 'bn'" in msg
+
     def __init__(
         self,
         weights_path: str,
@@ -66,11 +72,20 @@ class YoloDetector(DetectorInterface):
                 logger.warning("[YoloDetector] CUDA OOM, CPU로 폴백")
                 self.device = "cpu"
                 return self.predict(frame)
-            logger.error(f"[YoloDetector] 추론 오류: {e}")
-            return []
+            if self._track_fallback_to_predict(e):
+                logger.warning("[YoloDetector] track() 실패, predict()로 폴백: %s", e)
+                results = self.model.predict(
+                    source=frame,
+                    conf=self.conf,
+                    device=self.device,
+                    verbose=False,
+                )
+            else:
+                logger.error(f"[YoloDetector] 추론 오류: {e}")
+                return []
         except Exception as e:
-            if "lap" in str(e).lower():
-                logger.warning("[YoloDetector] ByteTrack 의존성 없음, predict()로 폴백")
+            if self._track_fallback_to_predict(e):
+                logger.warning("[YoloDetector] track() 실패, predict()로 폴백: %s", e)
                 results = self.model.predict(
                     source=frame,
                     conf=self.conf,

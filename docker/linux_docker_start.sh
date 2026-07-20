@@ -3,7 +3,7 @@
 ###############################################################################
 # Minchodan Docker Build and Start - Linux
 # Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
-# 상세 명세: docs/deployment_guide.md
+# 상세 명세: docs/ops/deployment_guide.md
 ###############################################################################
 
 set -u
@@ -324,6 +324,10 @@ if [[ "${MINCHODAN_EXPOSE_OLLAMA:-0}" != "1" ]]; then
   echo "[NOTE] Ollama is bound to loopback by default."
   echo "       If FastAPI inside Docker cannot reach it, set MINCHODAN_EXPOSE_OLLAMA=1"
   echo "       and OLLAMA_HOST=0.0.0.0:11434 only on a trusted local network."
+else
+  echo
+  echo "[SECURITY] Allow only the fixed Compose subnet to reach host Ollama:"
+  echo "  sudo ufw allow from 172.18.0.0/16 to 172.18.0.1 port 11434 proto tcp"
 fi
 echo
 echo "Ollama log:"

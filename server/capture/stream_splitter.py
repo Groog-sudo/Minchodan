@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -10,7 +11,13 @@ from server.capture.frame_decoder import ProcessedFrame
 
 logger = logging.getLogger(__name__)
 
-QUEUE_MAXSIZE = 100
+# P0-2 (2026-07-17): 반사 큐는 latest-frame-wins로 얕게 잡아 지연 드리프트 방지.
+# 큐가 가득 차면 _push_to_queue가 oldest를 drop하므로 maxsize=2면 매 프레임 latest가 유지됨.
+# 인지는 1~2fps 특성상 소량 버퍼(4)로 충분. 환경변수로 오버라이드 가능.
+REFLEX_QUEUE_MAXSIZE = int(os.getenv("REFLEX_QUEUE_MAXSIZE", "2"))
+COGNITIVE_QUEUE_MAXSIZE = int(os.getenv("COGNITIVE_QUEUE_MAXSIZE", "6"))
+# 하위 호환: 기존 QUEUE_MAXSIZE 참조 유지 (두 분리 상수의 최댓값)
+QUEUE_MAXSIZE = max(REFLEX_QUEUE_MAXSIZE, COGNITIVE_QUEUE_MAXSIZE)
 VALID_STREAMS = {"reflex", "cognitive"}
 
 
@@ -107,7 +114,7 @@ def get_default_splitter() -> StreamSplitter:
     global _default_splitter
     if _default_splitter is None:
         _default_splitter = StreamSplitter(
-            reflex_queue=asyncio.Queue(maxsize=QUEUE_MAXSIZE),
-            cognitive_queue=asyncio.Queue(maxsize=QUEUE_MAXSIZE),
+            reflex_queue=asyncio.Queue(maxsize=REFLEX_QUEUE_MAXSIZE),
+            cognitive_queue=asyncio.Queue(maxsize=COGNITIVE_QUEUE_MAXSIZE),
         )
     return _default_splitter

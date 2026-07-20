@@ -80,7 +80,7 @@ def main():
             continue
         cls_name = AIHUB_CLASS_NAMES[cls_id]
         target_count = min(100, len(img_list))
-        sampled = random.sample(img_list, target_count)
+        sampled = random.sample(img_list, target_count)  # nosec B311
         sampled_dict[cls_name] = sampled
 
         cls_in_dir = os.path.join(out_dir, "input_images", f"{cls_id:02d}_{cls_name}")

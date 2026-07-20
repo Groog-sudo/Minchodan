@@ -72,6 +72,10 @@ def can_use_fast_lane(state: dict) -> bool:
         return False
     if state.get("is_departing_confirmed"):
         return False
+    # 2026-07-19: caution/roadway 노면 mid는 L2 노면 멘트가 필요하므로 패스트 레인 제외.
+    surface_classes = state.get("surface_classes") or []
+    if any(cls in ("caution", "roadway", "주의 노면", "차도") for cls in surface_classes):
+        return False
     if (state.get("navigation_guidance") or "").strip():
         return False
 

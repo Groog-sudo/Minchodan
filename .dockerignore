@@ -9,9 +9,14 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.venv*/
 venv/
 env/
 ENV/
+
+# Local development tools and generated runtime data
+.tools/
+data/
 
 # Environment files
 .env

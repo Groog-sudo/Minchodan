@@ -1,7 +1,7 @@
 # 관제 UI 및 시나리오 연동 지침서
 
 > **작성일**: 2026-07-08
-> **버전**: v2.3.0 (2026-07-11 kb 정합화: §1 웨이크 어휘 확장("길댕아" 2단계 웨이크워드·질문 모드)과 경로 수립 시 첫 방향 지시 멘트 반영, §2 콘솔 임베딩 실제 구현 현황 갱신 - 구버전 8001 하드코딩·비활성 상태를 8000 서브앱 경로로 수정·재활성화, §3에 단말 지도 패널(NavMapPanel) 병행 존재 명시)
+> **버전**: v2.3.1 (2026-07-19 Tailscale Serve HTTPS MagicDNS/443 관제 경로 반영)
 > **독자**: 관리자 관제 페이지 개발 담당자, 시나리오 및 UI 기획팀
 
 본 문서는 다른 팀원이 제작 중인 관리자 관제 콘솔 화면에 네비게이션 지도를 임베딩하는 방법과, 실제 스마트폰(iOS) 환경에서 구동되는 대화형 음성 길안내 활성화 시나리오에 대해 설명합니다.
@@ -29,13 +29,13 @@
 
 ---
 
-## 2. 관리자 관제 콘솔 지도 UI 임베딩 (8000포트 & ngrok 기준)
+## 2. 관리자 관제 콘솔 지도 UI 임베딩 (로컬 8000 및 Tailscale Serve 443 기준)
 
-8001번 독립 포트를 띄우지 않고, 8000번 기존 메인 FastAPI 주소 하위의 `/navigation` 경로 및 ngrok 도메인 터널링 주소를 사용하여 지도를 임베딩합니다.
+8001번 독립 포트를 띄우지 않고, 로컬 8000번 메인 FastAPI의 `/navigation` 경로를 Tailscale Serve 443 TLS 종단으로 제공합니다.
 
 ### 2.1. 쿼리 파라미터 옵션 및 임베딩 주소
 * **로컬 접속 주소**: `http://localhost:8000/navigation/?embed=true`
-* **ngrok 원격 접속 주소**: `https://xxxx.ngrok-free.app/navigation/?embed=true` (현장 도보 실측 시 외부 관제용)
+* **Tailscale 원격 접속 주소**: `https://[SERVER_MAGICDNS_NAME]/navigation/?embed=true` (현장 도보 실측 시 외부 관제용)
 * **동작 특징**: URL 뒤에 `embed=true`가 붙으면, 지도를 제외한 다른 컨트롤 패널(검색창, 보이스 패널, 로그 기록창 등)이 화면에서 숨겨져 **순수 지도 화면만 꽉 차게 렌더링**됩니다.
 
 ### 2.2. React 기반 관제 화면 삽입 예시
@@ -48,11 +48,11 @@ const OperatorLiveMap = () => {
   return (
     <div style={{ width: '100%', height: '100%', minHeight: '450px' }}>
       {/*
-        8000번 메인 서버 및 ngrok 터널 주소 하위의 서브앱 경로(/navigation)를
+        메인 서버의 Tailscale Serve 주소 하위 서브앱 경로(/navigation)를
         관제 콘솔 내에 iframe으로 임베딩하여 연동을 완료합니다.
       */}
       <iframe
-        src="https://xxxx.ngrok-free.app/navigation/?embed=true"
+        src="https://[SERVER_MAGICDNS_NAME]/navigation/?embed=true"
         title="스마트 가이드독 실시간 보행 관제 지도"
         width="100%"
         height="100%"
@@ -74,7 +74,7 @@ export default OperatorLiveMap;
 ---
 
 ## 3. 관제 및 검증 방법
-* ngrok 터널로 인입되는 아이폰 사용자의 실시간 GPS 좌표, 이동 궤적, 그리고 YOLO 탐지 피드백이 실시간으로 관제 화면(지도) 상에 동기화되어 그려집니다.
+* Tailscale 사설망으로 인입되는 아이폰 사용자의 실시간 GPS 좌표, 이동 궤적, 그리고 YOLO 탐지 피드백이 실시간으로 관제 화면(지도) 상에 동기화되어 그려집니다.
 * 관리자는 사용자에게 흘러가는 융합 음성을 관제 화면상에서 함께 모니터링하여 정상 작동 여부를 원격으로 검증할 수 있습니다.
 
 > **2026-07-11 구현 현황**: 콘솔의 `OperatorLiveMap.tsx`는 구버전 8001 독립 포트 주소로

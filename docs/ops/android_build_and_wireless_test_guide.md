@@ -1,6 +1,6 @@
 > **작성일**: 2026-07-09
-> **버전**: v1.1.0 (2026-07-13 §3 WiFi/USB 이중 접속 안내 추가)
-> **설명**: Android 온디바이스 TFLite 추론 패키징 설정 및 ngrok 터널링 기반 실기기 연동 테스트 종합 지침서
+> **버전**: v1.1.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
+> **설명**: Android 온디바이스 TFLite 추론 패키징 설정 및 Tailscale 기반 실기기 연동 테스트 종합 지침서
 
 ---
 
@@ -31,9 +31,9 @@ Android 환경에서는 `react-native-fast-tflite` 모듈을 사용하여 세그
 
 ---
 
-## 2. ngrok 기반 실기기 무선 테스트 및 실행 절차
+## 2. Tailscale 기반 실기기 무선 테스트 및 실행 절차
 
-PC의 로컬 개발 서버(8000포트)를 외부 가상 도메인으로 매핑하여, 방화벽 및 사설 IP 제약 없이 LTE/5G 환경의 모바일 실기기(Android)에서 통신을 수행할 수 있게 합니다.
+PC와 Android 실기기를 같은 Tailscale tailnet에 연결하여 LTE/5G 환경에서도 서버의 사설망 주소로 통신합니다.
 
 ### 2.1 단계별 연동 가이드
 
@@ -43,24 +43,21 @@ PC의 로컬 개발 서버(8000포트)를 외부 가상 도메인으로 매핑�
 - **설정 > 개발자 옵션**으로 진입한 뒤, **USB 디버깅** 스위치를 켭니다.
 - USB 케이블로 PC와 폰을 연결하고, 디바이스 화면에서 **USB 디버깅 허용** 팝업 창을 승인합니다.
 
-#### 2단계: ngrok 설치 및 터널 서버 활성화
-- ngrok 클라이언트를 개발 환경에 설치합니다.
-- 발급받은 개인 보안 인증 토큰을 등록합니다.
+#### 2단계: Tailscale 연결 및 서버 주소 확인
+- PC와 Android 단말에 Tailscale을 설치하고 같은 tailnet에 로그인합니다.
+- PC에서 연결 상태와 Tailscale IPv4를 확인합니다.
   ```bash
-  ngrok config add-authtoken <YOUR_NGROK_AUTHTOKEN>
+  tailscale status
+  tailscale ip -4
   ```
-- 메인 백엔드 서버(8000포트)에 대해 외부 웹 터널을 활성화합니다.
-  ```bash
-  ngrok http 8000
-  ```
-- 기동 직후 화면에 표기되는 **Forwarding** 주소(`https://xxxx.ngrok-free.app`)를 복사해 둡니다.
 
 #### 3단계: 모바일 앱 설정 변경
-- 앱 소스코드 내의 서버 접속 URL을 ngrok에서 생성된 도메인으로 매핑합니다.
-- **설정 파일**: [client/src/config/index.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/config/index.ts)
-- **변경 지점 (9번째 줄)**:
-  ```typescript
-  export const WS_URL = "wss://<발급받은_도메인>.ngrok-free.app/ws/detect";
+- `client/.env`에 Tailscale Serve 인증서와 일치하는 서버 MagicDNS 이름을 설정합니다.
+  ```ini
+  EXPO_PUBLIC_NETWORK_MODE=tailscale
+  EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+  EXPO_PUBLIC_SERVER_PORT=443
+  EXPO_PUBLIC_WS_SCHEME=wss
   ```
 
 #### 4단계: GPU 백엔드 서버 구동
@@ -90,7 +87,7 @@ PC의 로컬 개발 서버(8000포트)를 외부 가상 도메인으로 매핑�
 
 ## 3. WiFi / USB 이중 접속 (2026-07-13)
 
-ngrok 없이 **평상시(WiFi)** 와 **개발(USB + adb reverse)** 를 앱 토글로 전환하는 현재 운영 절차는 별도 문서에 정리했다.
+**평상시(WiFi)** 와 **개발(USB + adb reverse)** 를 앱 토글로 전환하는 현재 운영 절차는 별도 문서에 정리했다.
 
 - 절차·IP 실측·환경 변수: [android_wifi_usb_transport.md](android_wifi_usb_transport.md)
 - 앱 버튼: `연결: WiFi` (기본, `192.168.137.1`) / `연결: USB` (`127.0.0.1`)

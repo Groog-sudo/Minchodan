@@ -1,10 +1,10 @@
 ﻿# Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
 
 > **작성일**: 2026-07-01
-> **버전**: v0.4.1 (2026-07-10 th 브랜치 병합: pyttsx3를 로컬 저사양 대체 옵션으로 병기 + 이전 v0.4.0 이력 유지: 실기기 TTS 절단 근본 원인 규명에 따른 전면 갱신, 기본 TTS 엔진 Piper→Supertonic 교체(`SupertonicTTSService` 신규, Piper는 핫스왑 폴백으로 보존), guide 오디오 `audio_mp3_b64`→WS 바이너리 프레임 전환, `_synthesize_lock` 동시성 직렬화, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어(`playGuideAudioBytes`) 반영)
-> **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 7단계, [`docs/architecture.md`](architecture.md) 5.7절, [`docs/pipeline_stage_design.md`](pipeline_stage_design.md) 5.7절
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 3, 17.2
-> **스킬 참조**: [`.agents/skills/tts-voice-streamer/SKILL.md`](../.agents/skills/tts-voice-streamer/SKILL.md)
+> **버전**: v0.4.2 (2026-07-19 `react-native-tts`→`expo-speech` 잔여 정정 + 단말 TTS 백업 명세 동기화 + 이전 v0.4.1 이력 유지: 2026-07-10 th 브랜치 병합: pyttsx3를 로컬 저사양 대체 옵션으로 병기 + 이전 v0.4.0 이력 유지: 실기기 TTS 절단 근본 원인 규명에 따른 전면 갱신, 기본 TTS 엔진 Piper→Supertonic 교체(`SupertonicTTSService` 신규, Piper는 핫스왑 폴백으로 보존), guide 오디오 `audio_mp3_b64`→WS 바이너리 프레임 전환, `_synthesize_lock` 동시성 직렬화, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어(`playGuideAudioBytes`) 반영)
+> **설계 기준**: [`docs/design/minchodan_design_note.md`](../design/minchodan_design_note.md) 7단계, [`docs/design/architecture.md`](../design/architecture.md) 5.7절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) 5.7절
+> **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 섹션 3, 17.2
+> **스킬 참조**: [`../../.agents/skills/tts-voice-streamer/SKILL.md`](../../.agents/skills/tts-voice-streamer/SKILL.md)
 
 ---
 
@@ -183,7 +183,7 @@
 
 ## 10. 에러 처리 가드레일
 
-- TTS 호출 실패/타임아웃 → 기기 내장 TTS (react-native-tts) 우회 (minchodan_design_note.md)
+- TTS 호출 실패/타임아웃 → 기기 내장 TTS (expo-speech) 우회 (minchodan_design_note.md)
 - 빈 텍스트 → 합성 스킵 (realtime_tts.py 가드)
 - 중복 → Suppressor가 차단
 - 반사 클립 누락 → 무음 또는 기본 내장 음성
@@ -209,13 +209,13 @@
 
 ### 클라이언트
 - Web Audio API
-- react-native-tts (예비 / on-device 폴백)
+- expo-speech (예비 / on-device 폴백)
 - Haptics, announceForAccessibility
 - 번들 클립 (react-native-assets)
 
 ### 클라이언트 on-device 모델 (note.md 선별)
-- reflex-path: react-native-tts (OS TTS, Android 중심, 즉시 클립)
-- cognitive-path: react-native-tts (OS TTS, iOS 중심, 순차 가이드)
+- reflex-path: expo-speech (OS TTS, Android 중심, 즉시 클립)
+- cognitive-path: expo-speech (OS TTS, iOS 중심, 순차 가이드)
 - ONNX 후보 (일관성 필요 시): sherpa-melotts-kr-int8 (51MB, MIT), sherpa-piper-kss (60.6MB), sherpa-supertonic (91.9MB)
 - 목표: 100MB 이하, 오프라인, 한국어 특화
 

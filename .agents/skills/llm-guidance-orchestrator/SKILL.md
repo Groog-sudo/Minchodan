@@ -126,21 +126,24 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
-# 2026-07-07 정정: 실제 29클래스 모델 기준 목록. kickboard/pothole/manhole/construction_cone는
-# 존재하지 않는 클래스명이었다(전동킥보드는 scooter이며 반사 게이트 고위험 처리). 실제 코드는
-# barricade/bench/bicycle/bollard/carrier/chair/fire_hydrant/kiosk/movable_signage/parking_meter/
-# pole/potted_plant/power_controller/stroller/table/traffic_light_controller/tree_trunk/wheelchair.
-MID_RISK_CLASSES = {"bicycle", "bollard", "kiosk", "movable_signage", "pole", "wheelchair", "..."}
-# high 위험도는 3단계 게이트에서 이미 반사 경로로 처리됨
+# 2026-07-14 정책: 인지 경로 mid는 노면 이탈(is_departing_confirmed) 전용.
+# 객체 클래스는 mid로 분류하지 않는다. 근접/상체 위험은 3단계 반사·지연 인지·패스트 레인.
+MID_RISK_CLASSES: set[str] = set()
 
 def classify_risk(detected_classes: list) -> str:
+    if not detected_classes:
+        return "low"
     for cls in detected_classes:
-        if cls in MID_RISK_CLASSES: return "mid"
+        if cls in MID_RISK_CLASSES:
+            return "mid"
     return "low"
 
 async def l1_classifier_node(state: dict) -> dict:
     detected_classes = state.get("detected_classes", [])
+    is_departing_confirmed = state.get("is_departing_confirmed", False)
     risk_level = classify_risk(detected_classes)
+    if is_departing_confirmed and risk_level == "low":
+        risk_level = "mid"
     return {"risk_level": risk_level, "retry_count": 0}
 ```
 

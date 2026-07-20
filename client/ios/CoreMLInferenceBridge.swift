@@ -41,7 +41,7 @@ class CoreMLInferenceBridge: NSObject {
     3: "braille_normal"
   ]
 
-  // 2026-07-07 실기기(고태현 iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
+  // 2026-07-07 실기기(TH iPhone) 재검증 결과: raw tensor 파싱 아키텍처로 전환한
   // 뒤에도 .cpuAndGPU 설정 시 첫 프레임 추론 직후 크래시(백색 화면 후 프로세스 종료,
   // PID 재기동 반복)가 동일하게 재현됨을 확인함. GPU(Metal) 경로의 MLIR pass manager
   // failed 문제로 판단됨. 2026-07-11 모델을 FP16으로 재변환한 뒤, GPU를 배제하는
@@ -315,13 +315,30 @@ class CoreMLInferenceBridge: NSObject {
       let conf = Double(bestScore)
       if conf < confThreshold || bestClassId < 0 { continue }
 
-      // coordinates는 0~1 정규화 값(IOSDetectModel의 self.normalize = 1/640)이므로,
-      // 클라이언트가 기대하는 640 픽셀 단위로 되돌린다(prepareInput의 expectedSize와 동일 값).
+      // coordinates: Apple/Ultralytics NMS 계약은 [x,y,w,h] (center, image 대비 상대값).
+      // 정상 export는 IOSDetectModel.normalize(1/640)로 0~1이다. 일부 재변환본은
+      // 정규화가 빠진 픽셀 좌표(0~640)로 나와 *640을 한 번 더 하면 박스가 UI를
+      // 뚫을 정도로 커진다(2026-07-19 실기기). max>|1.5|이면 이미 픽셀로 본다.
       let coordBase = i * coordStrides[0]
-      let cx = Double(coordPtr[coordBase + 0 * coordStrides[1]]) * 640.0
-      let cy = Double(coordPtr[coordBase + 1 * coordStrides[1]]) * 640.0
-      let w = Double(coordPtr[coordBase + 2 * coordStrides[1]]) * 640.0
-      let h = Double(coordPtr[coordBase + 3 * coordStrides[1]]) * 640.0
+      let rawCx = Double(coordPtr[coordBase + 0 * coordStrides[1]])
+      let rawCy = Double(coordPtr[coordBase + 1 * coordStrides[1]])
+      let rawW = Double(coordPtr[coordBase + 2 * coordStrides[1]])
+      let rawH = Double(coordPtr[coordBase + 3 * coordStrides[1]])
+      let canvas = 640.0
+      let maxAbs = max(abs(rawCx), abs(rawCy), abs(rawW), abs(rawH))
+      let scale = maxAbs > 1.5 ? 1.0 : canvas
+      let cx = rawCx * scale
+      let cy = rawCy * scale
+      var w = rawW * scale
+      var h = rawH * scale
+      // 캔버스 밖으로 새는 회귀/스케일 오류를 디스플레이·게이트 전에 잘라낸다.
+      var x = cx - w / 2.0
+      var y = cy - h / 2.0
+      if x < 0 { w += x; x = 0 }
+      if y < 0 { h += y; y = 0 }
+      if x + w > canvas { w = canvas - x }
+      if y + h > canvas { h = canvas - y }
+      if w <= 1 || h <= 1 { continue }
       let className = activeClassNames[bestClassId] ?? "unknown"
 
       results.append([
@@ -329,8 +346,8 @@ class CoreMLInferenceBridge: NSObject {
         "className": className,
         "confidence": conf,
         "bbox": [
-          "x": cx - w / 2.0,
-          "y": cy - h / 2.0,
+          "x": x,
+          "y": y,
           "w": w,
           "h": h
         ]

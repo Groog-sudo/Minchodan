@@ -635,18 +635,18 @@
         function initMap() {
             if (map) return;
 
-            const defaultLat = 37.5560;
-            const defaultLon = 126.9722;
+            // 가짜 사용자 위치(서울역)로 마커를 찍지 않는다.
+            // GPS 수신 전에는 한반도 overview만 보여 주고, 실좌표 도착 시 마커를 올린다.
+            const overviewLat = 36.5;
+            const overviewLon = 127.8;
 
-            map = L.map('map').setView([defaultLat, defaultLon], 16);
+            map = L.map('map').setView([overviewLat, overviewLon], 7);
 
             // OpenStreetMap
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '© OpenStreetMap contributors'
             }).addTo(map);
-
-            updateUserMarkerOnMap(defaultLat, defaultLon, 0);
         }
 
         // Custom marker drawing
@@ -683,6 +683,9 @@
         function initGPS() {
             initMap();
 
+            const urlParams = new URLSearchParams(window.location.search);
+            const isEmbed = urlParams.get('embed') === 'true';
+
             // postMessage 주입: 콘솔 상위 페이지(iframe 부모)에서 앱 GPS 좌표를 전달할 수 있다.
             // 메시지 형식: { type: 'inject_gps', lat: number, lon: number, heading?: number }
             // PC 브라우저 GPS 부정확 문제를 우회하기 위해 콘솔이 앱으로부터 받은 realtime_gps
@@ -700,27 +703,28 @@
                 gpsText.innerText = "GPS 앱 연동 (실기기 위치)";
                 coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
                 updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                // embed 모드에서는 브라우저 geolocation WS 대신 주입만으로 동작한다.
+                if (isEmbed && typeof connectWebSocket === 'function') {
+                    // 중복 연결은 connectWebSocket 내부 가드에 맡긴다.
+                    try { connectWebSocket(); } catch (_) { /* ignore */ }
+                }
             });
 
-            // GPS Timeout Safety fallback (8초 대기 후 서울역 임시 좌표)
-            const fallbackTimer = setTimeout(() => {
-                if (currentLat === null) {
-                    currentLat = 37.5560;
-                    currentLon = 126.9722;
-                    gpsDot.className = "status-dot danger";
-                    gpsText.innerText = "GPS 수신 지연 (임시위치: 서울역)";
-                    coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
-                    logMessage("warning", "[GPS TIMEOUT] GPS 응답이 없어 기본 좌표(서울역)로 초기화합니다. (콘솔에서 앱 GPS가 연동되면 자동으로 갱신됩니다.)");
-                    updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
-                    connectWebSocket();
-                }
-            }, 8000);
+            // 콘솔 iframe(embed): 브라우저 GPS/서울역 폴백을 쓰지 않는다.
+            // 앱 → 서버 realtime_gps → 콘솔 postMessage 경로만 신뢰한다.
+            if (isEmbed) {
+                gpsDot.className = "status-dot";
+                gpsText.innerText = "앱 GPS 대기 중...";
+                coordDisplay.innerText = "GPS: (실기기 좌표 대기)";
+                logMessage("warning", "[GPS EMBED] 서울역 임시좌표 폴백을 비활성화했습니다. 앱 realtime_gps 주입을 대기합니다.");
+                return;
+            }
 
+            // 단독 네비 페이지: 브라우저 GPS 사용. 실패해도 가짜 서울역 좌표는 넣지 않는다.
             if ("geolocation" in navigator) {
                 gpsText.innerText = "GPS 신호를 검색 중...";
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
-                        clearTimeout(fallbackTimer);
                         currentLat = position.coords.latitude;
                         currentLon = position.coords.longitude;
                         gpsDot.className = "status-dot active";
@@ -733,20 +737,14 @@
                         startGPSTracking();
                     },
                     (error) => {
-                        clearTimeout(fallbackTimer);
-                        logMessage("danger", `[GPS ERROR] 위치 획득 실패: ${error.message}. 서울역 임시 좌표를 사용합니다.`);
-                        currentLat = 37.5560;
-                        currentLon = 126.9722;
+                        logMessage("danger", `[GPS ERROR] 위치 획득 실패: ${error.message}. 가짜 좌표를 사용하지 않습니다.`);
                         gpsDot.className = "status-dot danger";
-                        gpsText.innerText = "GPS 사용 불가 (임시위치 적용)";
-                        coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
-                        updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
-                        connectWebSocket();
+                        gpsText.innerText = "GPS 사용 불가 (좌표 없음)";
+                        coordDisplay.innerText = "GPS: (수신 실패)";
                     },
                     { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
                 );
             } else {
-                clearTimeout(fallbackTimer);
                 gpsText.innerText = "GPS 지원하지 않는 브라우저";
                 logMessage("danger", "[GPS ERROR] 이 브라우저는 GPS 위치정보를 지원하지 않습니다.");
             }
@@ -821,6 +819,13 @@
 
         // WebSocket Connection
         function connectWebSocket() {
+            // 2026-07-18: 가드 부재로 GPS 주입(postMessage)마다 새 WebSocket이 무조건
+            // 생성돼 연결이 무한정 쌓이는 버그를 실측 확인(초당 여러 건). 이미 열려 있거나
+            // 연결 중이면 재사용한다 - 호출부 주석("중복 연결은 내부 가드에 맡긴다")이
+            // 가리키던, 실제로는 존재하지 않았던 가드.
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
             // 마운트 경로(/navigation 등)를 동적으로 반영하여 WebSocket 엔드포인트 계산

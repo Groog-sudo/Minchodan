@@ -1,6 +1,6 @@
 # Minchodan Docker Compose
 # Redis + MariaDB + FastAPI 3컨테이너 구성
-# 상세 명세: docs/deployment_guide.md 7절
+# 상세 명세: docs/ops/deployment_guide.md 7절
 
 services:
   fastapi:
@@ -10,49 +10,67 @@ services:
     image: minchodan-server:latest
     container_name: minchodan-fastapi
     ports:
-      - "${WS_PORT:-8000}:8000"
+      - "127.0.0.1:${WS_PORT:-8000}:8000"
     volumes:
-      - ../server:/app/server
+      - ../server:/app/server:ro
       - ../data:/app/data
-      - ../scripts:/app/scripts
-      - ../tests:/app/tests
-      - ../.env:/app/.env:ro
+      - ../scripts:/app/scripts:ro
+      - ../tests:/app/tests:ro
       - ../requirements.txt:/app/requirements.txt:ro
     env_file:
       - ../.env
     environment:
-      # Docker Compose 환경에서는 컨테이너 서비스명 및 호스트 Ollama 주소로 재설정
-      # - DB_HOST=mariadb
-      - REDIS_URL=redis://redis:6379
+      # 기존 원격 DB 설정을 유지하고, 로컬 DB가 필요할 때만 COMPOSE_DB_HOST로 재정의
+      - DB_HOST=${COMPOSE_DB_HOST:-${DB_HOST:-mariadb}}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       # Ollama는 도커 외부 로컬에서 별도로 띄우므로 host.docker.internal 사용
       - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # 2026-07-19: ultralytics 런타임 AutoUpdate 비활성화(Dockerfile ENV로도 이미 기본값이지만
+      # compose 설정만 봐도 알 수 있도록 명시). docker-compose.macos.yml과 동일 이유.
+      - YOLO_AUTOINSTALL=False
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.18.0.1"
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       # mariadb:
       #   condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     networks:
       - minchodan-net
-    # GPU 접근 (NVIDIA Container Toolkit 필요)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    # Ubuntu 또는 Windows WSL2의 NVIDIA Container Toolkit을 통해 GPU를 전달한다.
+    # macOS는 GPU 전달을 지원하지 않으므로 docker-compose.macos.yml을 사용한다.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   redis:
     image: redis:7-alpine
     container_name: minchodan-redis
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     networks:
       - minchodan-net
 
@@ -62,31 +80,67 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-    ports:
-      - "${DB_HOST_PORT:-3306}:3306"
+    # ports:
+    #   - "${DB_HOST_PORT:-3306}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
       - ../server/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
-      - ../scripts/seed_dummy_data.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
+      # 2026-07-19: seed_dummy_data.sql 파일이 저장소에 없어 Docker가 동명 빈 디렉터리를
+      # 생성하는 문제가 있어 마운트를 제거한다. 시드가 필요하면 scripts/seed_dummy_data.sql
+      # 을 추가하고 아래 라인을 복원한다:
+      # - ../scripts/seed_dummy_data.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
     environment:
       MARIADB_DATABASE: ${COMPOSE_DB_NAME:-minchodan_db}
       MARIADB_USER: ${COMPOSE_DB_USER:-minchodan_team}
-      MARIADB_PASSWORD: ${COMPOSE_DB_PASSWORD:-minchodan_password}
-      MARIADB_ROOT_PASSWORD: ${COMPOSE_DB_ROOT_PASSWORD:-minchodan_root_password}
+      MARIADB_PASSWORD: ${COMPOSE_DB_PASSWORD:?COMPOSE_DB_PASSWORD is required}
+      MARIADB_ROOT_PASSWORD: ${COMPOSE_DB_ROOT_PASSWORD:?COMPOSE_DB_ROOT_PASSWORD is required}
     healthcheck:
-      test: [ "CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u$${MARIADB_USER} -p$${MARIADB_PASSWORD} --silent" ]
+      test: ["CMD-SHELL", "MYSQL_PWD=$${MARIADB_PASSWORD} mariadb-admin ping -h 127.0.0.1 -u$${MARIADB_USER} --silent"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 20s
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - minchodan-net
+
+  # 2026-07-19: 운영 콘솔(React + Vite) 컨테이너. docker-compose.macos.yml과 동일
+  # 구성. GPU 서버 환경에서도 콘솔을 동일하게 compose로 기동해 양 환경 정합성 유지.
+  # 2026-07-20: node_modules를 named 볼륨으로 고정(익명 볼륨 root 소유 EACCES 방지).
+  console:
+    build:
+      context: ../console
+      dockerfile: Dockerfile
+    image: minchodan-console:latest
+    container_name: minchodan-console
+    ports:
+      - "127.0.0.1:${CONSOLE_PORT:-5174}:5174"
+    volumes:
+      - ../console:/app
+      - console_node_modules:/app/node_modules
+    environment:
+      - VITE_PROXY_TARGET=http://fastapi:8000
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     networks:
       - minchodan-net
 
 volumes:
   redis_data:
   mariadb_data:
+  console_node_modules:
 
 networks:
   minchodan-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1

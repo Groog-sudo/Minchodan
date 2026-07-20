@@ -24,6 +24,10 @@
 		DE9780B20260711000000B2 /* DepthProbeBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = DE9780B20260711000000A2 /* DepthProbeBridge.mm */; };
 		DF90E9DC2398CACB6B13323F /* object_detection.mlpackage in Resources */ = {isa = PBXBuildFile; fileRef = D11F336DF4E1FAA4FA22DB4B /* object_detection.mlpackage */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		PHD5B10D20260716000000B1 /* PhoneDialBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = PHD5B10D20260716000000A1 /* PhoneDialBridge.swift */; };
+		PHD5B10D20260716000000B2 /* PhoneDialBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = PHD5B10D20260716000000A2 /* PhoneDialBridge.mm */; };
+		SIR5B10D20260716000000B1 /* MinchodanDialIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = SIR5B10D20260716000000A1 /* MinchodanDialIntent.swift */; };
+		SIR5B10D20260716000000B2 /* MinchodanSiriDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = SIR5B10D20260716000000A2 /* MinchodanSiriDialer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +54,10 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Minchodan/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Minchodan-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Minchodan-Bridging-Header.h"; path = "Minchodan/Minchodan-Bridging-Header.h"; sourceTree = "<group>"; };
+		PHD5B10D20260716000000A1 /* PhoneDialBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneDialBridge.swift; sourceTree = "<group>"; };
+		PHD5B10D20260716000000A2 /* PhoneDialBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = PhoneDialBridge.mm; sourceTree = "<group>"; };
+		SIR5B10D20260716000000A1 /* MinchodanDialIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinchodanDialIntent.swift; sourceTree = "<group>"; };
+		SIR5B10D20260716000000A2 /* MinchodanSiriDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinchodanSiriDialer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +82,10 @@
 				C9E22D51B3661C9BF2C1D436 /* ReflexFrameProcessorPlugin.m */,
 				AEC5B10D20260711000000A1 /* AudioSessionBridge.swift */,
 				AEC5B10D20260711000000A2 /* AudioSessionBridge.mm */,
+				PHD5B10D20260716000000A1 /* PhoneDialBridge.swift */,
+				PHD5B10D20260716000000A2 /* PhoneDialBridge.mm */,
+				SIR5B10D20260716000000A1 /* MinchodanDialIntent.swift */,
+				SIR5B10D20260716000000A2 /* MinchodanSiriDialer.swift */,
 				DE9780B20260711000000A1 /* DepthProbeBridge.swift */,
 				DE9780B20260711000000A2 /* DepthProbeBridge.mm */,
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
@@ -285,20 +297,34 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/RNSVG/RNSVGFilters.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/SDWebImage/SDWebImage.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/TensorFlowLiteC/TensorFlowLiteC.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/TensorFlowLiteC/TensorFlowLiteCCoreML.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-menu/EXDevMenu.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
 			);
 			name = "[CP] Copy Pods Resources";
 			outputPaths = (
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNSVGFilters.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/SDWebImage.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/TensorFlowLiteC.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/TensorFlowLiteCCoreML.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevMenu.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -312,32 +338,12 @@
 			);
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Minchodan/Pods-Minchodan-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem.framework/ExpoFileSystem",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFont/ExpoFont.framework/ExpoFont",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoImageManipulator/ExpoImageManipulator.framework/ExpoImageManipulator",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoImageManipulator/SDWebImage.framework/SDWebImage",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoImageManipulator/SDWebImageWebPCoder.framework/SDWebImageWebPCoder",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoLocation/ExpoLocation.framework/ExpoLocation",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesCore/ExpoModulesCore.framework/ExpoModulesCore",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesJSI/ExpoModulesJSI.framework/ExpoModulesJSI",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesWorklets/ExpoModulesWorklets.framework/ExpoModulesWorklets",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermesvm.framework/hermesvm",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFileSystem.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFont.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoImageManipulator.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/SDWebImage.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/SDWebImageWebPCoder.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoLocation.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesCore.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesJSI.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesWorklets.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermesvm.framework",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -383,6 +389,10 @@
 				032BC27755E52F228790816E /* ReflexFrameProcessorPlugin.m in Sources */,
 				AEC5B10D20260711000000B1 /* AudioSessionBridge.swift in Sources */,
 				AEC5B10D20260711000000B2 /* AudioSessionBridge.mm in Sources */,
+				PHD5B10D20260716000000B1 /* PhoneDialBridge.swift in Sources */,
+				PHD5B10D20260716000000B2 /* PhoneDialBridge.mm in Sources */,
+				SIR5B10D20260716000000B1 /* MinchodanDialIntent.swift in Sources */,
+				SIR5B10D20260716000000B2 /* MinchodanSiriDialer.swift in Sources */,
 				DE9780B20260711000000B1 /* DepthProbeBridge.swift in Sources */,
 				DE9780B20260711000000B2 /* DepthProbeBridge.mm in Sources */,
 				94886D699F70B815631A72EC /* ExpoModulesProvider.swift in Sources */,
@@ -423,7 +433,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.kwanbum;
+				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.kb.dev;
 				PRODUCT_NAME = Minchodan;
 				SWIFT_OBJC_BRIDGING_HEADER = "Minchodan/Minchodan-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -459,7 +469,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.kwanbum;
+				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.kb.dev;
 				PRODUCT_NAME = Minchodan;
 				SWIFT_OBJC_BRIDGING_HEADER = "Minchodan/Minchodan-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

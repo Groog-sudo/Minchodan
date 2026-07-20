@@ -126,11 +126,33 @@ def test_build_reflex_pipeline_debug():
         hit_count=3,
         track_id="t-1",
         inference_ms=18.2,
+        route="reflex",
+        effective_distance_zone="near",
+        route_reason="zone_near",
     )
     assert debug["path"] == "reflex"
     assert debug["clip"] == "reflex_clips/high_front.wav"
     assert debug["hit_count"] == 3
     assert debug["generation_mode"] == "reflex_prebaked_clip"
+    assert debug["route"] == "reflex"
+    assert debug["effective_distance_zone"] == "near"
+    assert debug["route_reason"] == "zone_near"
+
+
+def test_build_cognitive_pipeline_debug_route_fields():
+    debug = build_cognitive_pipeline_debug(
+        guidance_text="전방 주의",
+        rag_query="car",
+        rag_context="주의",
+        orch_result={"verified": True, "validation_errors": [], "retry_count": 0},
+        distance_class="medium",
+        route="cognitive",
+        effective_distance_zone="medium",
+        route_reason="zone_medium",
+    )
+    assert debug["route"] == "cognitive"
+    assert debug["effective_distance_zone"] == "medium"
+    assert debug["route_reason"] == "zone_medium"
 
 
 def test_serialize_pipeline_debug_roundtrip():

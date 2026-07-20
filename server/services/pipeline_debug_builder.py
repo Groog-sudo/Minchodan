@@ -35,6 +35,9 @@ def _compact_detection(det: Any) -> dict[str, Any]:
         "hit_count": int(data.get("hit_count", 0)),
         "risk": data.get("risk"),
         "track_id": data.get("track_id"),
+        "route": data.get("route"),
+        "effective_distance_zone": data.get("effective_distance_zone"),
+        "route_reason": data.get("route_reason"),
         "bbox": {
             "x": round(float(bbox.get("x", 0.0)), 1),
             "y": round(float(bbox.get("y", 0.0)), 1),
@@ -126,6 +129,9 @@ def build_reflex_pipeline_debug(
     track_id: str | None = None,
     inference_ms: float | None = None,
     detections: list[Any] | None = None,
+    route: str = "reflex",
+    effective_distance_zone: str = "near",
+    route_reason: str = "",
 ) -> dict[str, Any]:
     debug: dict[str, Any] = {
         "path": "reflex",
@@ -135,7 +141,11 @@ def build_reflex_pipeline_debug(
         "class_name": class_name,
         "distance": distance,
         "generation_mode": "reflex_prebaked_clip",
+        "route": route,
+        "effective_distance_zone": effective_distance_zone,
     }
+    if route_reason:
+        debug["route_reason"] = route_reason
     if risk_level:
         debug["risk_level"] = risk_level
     if hit_count is not None:
@@ -168,6 +178,9 @@ def build_cognitive_pipeline_debug(
     braille_direction: str = "",
     navigation_guidance: str = "",
     detected_classes_ko: list[str] | None = None,
+    route: str = "cognitive",
+    effective_distance_zone: str = "",
+    route_reason: str = "",
 ) -> dict[str, Any]:
     generation_mode = _resolve_cognitive_generation_mode(orch_result)
     used_fast_lane = bool(orch_result.get("used_fast_lane"))
@@ -181,6 +194,8 @@ def build_cognitive_pipeline_debug(
         "distance_class": distance_class or orch_result.get("distance") or "",
         "object_ko": object_ko or orch_result.get("object_ko") or "",
         "llm_provider": llm_provider,
+        "route": route,
+        "effective_distance_zone": effective_distance_zone or distance_class or "",
         "used_fast_lane": used_fast_lane,
         "fast_lane_cache_key": orch_result.get("fast_lane_cache_key") or "",
         "generation_mode": generation_mode,
@@ -197,6 +212,8 @@ def build_cognitive_pipeline_debug(
         ),
         "braille_direction": braille_direction or orch_result.get("braille_direction") or "",
     }
+    if route_reason:
+        debug["route_reason"] = route_reason
     if inference_ms is not None:
         debug["inference_ms"] = round(float(inference_ms), 1)
     if detected_classes_ko:

@@ -3,7 +3,7 @@ setlocal
 
 rem Minchodan Docker Build and Start - Windows
 rem Redis + MariaDB + FastAPI 3컨테이너 구성 + host-local Ollama
-rem 상세 명세: docs/deployment_guide.md
+rem 상세 명세: docs/ops/deployment_guide.md
 
 cd /d "%~dp0\.."
 
@@ -35,19 +35,6 @@ if not exist ".env" (
     echo.
     pause
     exit /b 1
-)
-
-rem 3. NGROK_AUTHTOKEN 설정 여부 확인 (경고만, 중단 없음)
-set NGROK_TOKEN_SET=
-for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
-    if /i "%%A"=="NGROK_AUTHTOKEN" if not "%%B"=="" set "NGROK_TOKEN_SET=1"
-)
-if not defined NGROK_TOKEN_SET (
-    echo.
-    echo [WARN] .env에 NGROK_AUTHTOKEN 이 비어있습니다.
-    echo        ngrok 컨테이너가 인증 오류로 종료됩니다.
-    echo        https://dashboard.ngrok.com 에서 토큰 발급 후 .env에 입력하십시오.
-    echo.
 )
 
 echo ========================================
@@ -126,13 +113,13 @@ echo [FastAPI] WebSocket:
 echo   ws://127.0.0.1:%WS_PORT%/ws/detect
 echo   Swagger: http://127.0.0.1:%WS_PORT%/docs
 echo.
-echo [ngrok] 터널 URL 확인 (외부 접속용):
-echo   http://127.0.0.1:4040
-echo   (터널 https://xxxx.ngrok-free.app 을 앱 WS_URL 환경변수에 입력)
+echo [Tailscale] 외부 접속용 호스트 확인:
+echo   tailscale ip -4
+echo   client\.env의 EXPO_PUBLIC_TAILSCALE_HOST에 위 IP 또는 MagicDNS 이름 입력
 echo.
 echo [Expo] 호스트 PC에서 별도 실행 필요:
 echo   cd client
-echo   npx expo start --tunnel
+echo   npx expo start
 echo   (스마트폰 Expo Go 앱에서 QR 코드 스캔)
 echo.
 echo [Ollama] 호스트 로컬에서 별도 실행 필요:
@@ -142,7 +129,6 @@ echo   (최초 1회) ollama pull nomic-embed-text
 echo.
 echo Logs:
 echo   docker compose --env-file .env -f %COMPOSE_FILE% logs -f fastapi
-echo   docker compose --env-file .env -f %COMPOSE_FILE% logs -f ngrok
 echo.
 echo Stop:
 echo   docker compose --env-file .env -f %COMPOSE_FILE% down

@@ -22,7 +22,7 @@ def main():
 
     # 2. Select 100 random images
     num_samples = min(100, len(all_images))
-    sampled_images = random.sample(all_images, num_samples)
+    sampled_images = random.sample(all_images, num_samples)  # nosec B311
 
     # 3. Create input dir and copy sampled images
     temp_in_dir = os.path.join(out_dir, "input_images")

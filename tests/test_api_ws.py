@@ -122,3 +122,23 @@ def test_websocket_binary_frame_without_pending_meta_is_ignored():
         websocket.send_json({"type": "ping", "ts": time.time()})
         pong_msg = websocket.receive_json()
         assert pong_msg["type"] == "pong"
+
+
+def test_unauthenticated_duplicate_does_not_evict_valid_session():
+    """같은 device_id의 미인증 연결이 기존 정상 세션을 끊지 못해야 한다."""
+    test_device = "dev-test-session-protection"
+    test_token = "token-test-session-protection"  # noqa: S105
+    REGISTERED_DEVICES[test_device] = test_token
+
+    with client.websocket_connect(f"/ws/detect?device_id={test_device}") as valid_ws:
+        valid_ws.receive_json()
+        valid_ws.send_json({"type": "hello", "token": test_token})
+        assert valid_ws.receive_json()["type"] == "auth_ok"
+
+        with client.websocket_connect(f"/ws/detect?device_id={test_device}") as attacker_ws:
+            attacker_ws.receive_json()
+            attacker_ws.send_json({"type": "hello", "token": "invalid-token"})
+            assert attacker_ws.receive_json()["code"] == "auth_failed"
+
+        valid_ws.send_json({"type": "ping"})
+        assert valid_ws.receive_json()["type"] == "pong"

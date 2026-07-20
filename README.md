@@ -6,7 +6,7 @@
 **Minchodan**은 시각장애인 보행 보조를 위한 스마트 가이드독 AI 플랫폼입니다. 스마트폰 카메라로 주변을 인식하고, GPU 서버에서 실시간으로 장애물·노면 상태를 탐지한 뒤, 음성과 햅틱으로 즉시 안내합니다. 안전 대응은 **반사 경로**(즉시 경보)와 **인지 경로**(상세 가이드) 두 갈래로 물리 분리하는 것이 핵심 원칙입니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.5 (2026-07-14 코드-문서 정합성 전면 교차 검증 기반 수정: `react-native-tts`→`expo-speech` 정정(미사용 의존성 잔존 기술), `data/reflex_clips/`→`client/assets/sounds/reflex_clips/` 경로 정정(단말 번들로 이동), `LLAVA_MODEL`(미사용 잔재) 행 제거, `TTS_ENGINE` 표에 `edge` 추가 + 이전 v0.2.4 이력 유지: 환경 변수 표 모순 정정, jy 브랜치 병합 Docker Compose Ollama 호스트 로컬 전환, TTS 엔진 Piper→Supertonic 교체, 반사 캡처 Frame Processor 전환)
+> **버전**: v0.2.7 (2026-07-19 전면 보안 강화 기준과 팀 반영 가이드 문서 연결)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1 반영)
 
 ---
@@ -59,7 +59,7 @@
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + 컨텍스트 TTL)
 - LangGraph (L1/L2/L3 오케스트레이션, raw SimpleOllamaClient/SimpleOpenAIClient)
-- Ollama (gemma4:e4b 가이드 생성, nomic-embed-text 임베딩)
+- Ollama (gemma4:e4b 가이드 생성, nomic-embed-text 보행 안전 수칙 임베딩, bge-m3 생활지원 RAG 임베딩)
 - Gemini API (gemini-2.5-flash-lite, 오프라인 RAG 빌드 캡셔닝; 최초 계획 로컬 Llava에서 전환)
 - ChromaDB (로컬 벡터 저장소)
 - Supertonic 3 (로컬 TTS, ONNX, MIT, 99M 파라미터; 기본 엔진, 2026-07-09 Piper에서 교체). Piper(piper-kss-korean.onnx)는 핫스왑 폴백으로 보존
@@ -83,7 +83,7 @@
 ### 인프라
 
 - Docker (Redis + MariaDB + FastAPI 컨테이너 구성, Ollama는 호스트 로컬 프로세스로 실행)
-- CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
+- 팀 GPU 서버 최대 사양 RTX 5090(Blackwell sm_120): Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU
 
 ---
 
@@ -93,7 +93,7 @@
 Minchodan/
 │
 ├── server/                          # GPU 서버 (FastAPI)
-│   ├── api/                         # WebSocket /ws/detect, 세션, 하트비트
+│   ├── api/                         # WebSocket /ws/detect, 세션, 하트비트, REST 라우터
 │   ├── capture/                     # 프레임 디코딩, 이중 스트림 분기
 │   ├── detection/                   # Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack, Gates
 │   │   └── gates/                   # Reflex Gate, Surface Gate
@@ -104,8 +104,14 @@ Minchodan/
 │   ├── tts/                         # 실시간 TTS, 반사 클립 전송, 억제
 │   ├── bus/                         # Redis Streams 인터페이스
 │   ├── db/                          # RDB ORM/DTO/DDL (사용자, 단말, 관리자, 감사 로그)
-│   └── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
-│       └── yolo26n/
+│   ├── models/                      # 사전학습 가중치 Git 추적, 커스텀 학습 가중치 git-ignore
+│   │   └── yolo26n/
+│   ├── services/                    # 비즈니스 로직 Service 계층 (Router-Service-Repository)
+│   ├── stt/                         # faster-whisper STT 서비스, 음성 명령-LLM 브릿지
+│   ├── navigation/                  # TMAP 보행자 경로 API, NavigationManager
+│   └── mcp/                         # MCP 연동 모듈 (GPU 모니터, Slack, LangSmith, 접근성 시뮬레이터 등)
+│
+├── console/                         # React 운영자 모니터링 콘솔
 │
 ├── client/                          # React Native 앱 (thin client)
 │   ├── assets/sounds/reflex_clips/  # 사전합성 반사 음성 클립 (WAV 5종, 단말 번들)
@@ -123,12 +129,14 @@ Minchodan/
 │
 ├── training/                        # 모델 학습 (오프라인)
 │   ├── datasets/                    # detection, segmentation
-│   ├── configs/                     # yolo26n_detection.yaml, yolo26n_segmentation.yaml
+│   ├── configs/                     # aihub_merged_detection.yaml, aihub_yolo_segmentation.yaml
 │   ├── train_detection.py
-│   ├── train_segmentation.py
-│   └── export_tensorrt.py
+│   └── train_segmentation.py
 │
 ├── scripts/                         # 유틸리티 스크립트
+│   ├── build_safety_db.py           # 4단계 RAG (safety_guidelines.json → ChromaDB)
+│   ├── build_convenience_db.py      # 편의 RAG 빌드
+│   └── build_guide_clips.py         # 반사 안내 클립 합성
 ├── tests/                           # 7단계별 검증 테스트
 ├── docker/                          # Docker Build & Setting
 ├── docs/                            # 설계 문서 및 가이드
@@ -149,14 +157,14 @@ Minchodan/
 
 ```powershell
 Copy-Item .env.example .env
-# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL 등을 설정합니다.
+# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 등을 설정합니다.
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
 cp .env.example .env
-# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL 등을 설정합니다.
+# LLM_PROVIDER, REDIS_URL, CHROMA_PATH, OLLAMA_BASE_URL, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD 등을 설정합니다.
 ```
 
 ### 2. 서버 의존성 설치 및 실행
@@ -179,23 +187,23 @@ python -m pip install -r requirements.txt
 python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. GPU 환경 검증 (Blackwell sm_120 / CUDA 12.8)
+### 3. 가속 환경 검증 (RTX 5090 최대 / CUDA 13.0 / macOS MPS)
 
 #### Windows (PowerShell)
 
 ```powershell
 python scripts\verify_gpu.py
-# device_capability >= (12, 0) 및 GPU 1 step 연산 검증
+# CUDA 13.0, RTX 5090 sm_120 호환성 및 GPU 1 step 연산 검증
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
 python scripts/verify_gpu.py
-# device_capability >= (12, 0) 및 GPU 1 step 연산 검증
+# Ubuntu는 CUDA 13.0 GPU, macOS는 MPS/CPU 1 step 연산 검증
 ```
 
-> CUDA 12.8 + cu128 PyTorch 휠이 필요합니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다.
+> Ubuntu x86_64와 Windows amd64 GPU 서버는 공식 `torch==2.13.0+cu130` 휠과 NVIDIA R580 이상 드라이버를 사용합니다. macOS는 CUDA가 아니라 같은 PyTorch 2.13의 MPS를 우선 사용하고, MPS가 없으면 CPU로 폴백합니다.
 
 ### 4. Docker 구성 (Redis + MariaDB + FastAPI + 호스트 로컬 Ollama)
 
@@ -222,18 +230,26 @@ bash docker/linux_docker_start.sh
 
 ### 5. RAG 지식베이스 빌드 (오프라인)
 
-#### Windows (PowerShell, Git Bash 또는 WSL bash 필요)
+#### Windows (PowerShell)
 
 ```powershell
-bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
+python scripts/build_safety_db.py
+# data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
+python scripts/build_convenience_db.py
+# data/convenience_guidelines.json → data/chroma_db/convenience_guidelines (생활지원 RAG)
+# 사전 요건: ollama pull bge-m3 (생활지원 RAG 임베딩 전용)
+# 선택: python scripts/build_guide_clips.py
 ```
 
 #### macOS / Linux (bash 또는 zsh)
 
 ```bash
-bash scripts/build_chroma.sh
-# 영상  1fps 프레임 추출  pHash 중복 제거  Gemini 캡셔닝  임베딩  ChromaDB persist
+python scripts/build_safety_db.py
+# data/safety_guidelines.json → data/chroma_db (보행 안전 수칙)
+python scripts/build_convenience_db.py
+# data/convenience_guidelines.json → data/chroma_db/convenience_guidelines (생활지원 RAG)
+# 사전 요건: ollama pull bge-m3 (생활지원 RAG 임베딩 전용)
+# 선택: python scripts/build_guide_clips.py
 ```
 
 ---
@@ -260,12 +276,15 @@ bash scripts/build_chroma.sh
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
 | `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키(내비게이션)  | (미설정)                 |
 | `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
-| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
+| `YOLO_CONF`         | Yolo 26N - Segmentation 신뢰도 임계값       | `0.35`                   |
+| `YOLO_DET_CONF`     | Yolo 26N - Object Detection 신뢰도 임계값   | `0.50`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
 | `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
-| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
+| `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행, 우선) | (미설정)                 |
+| `SLACK_BOT_TOKEN`   | Slack Web API Bot Token (폴백)            | (미설정)                 |
+| `SLACK_CHANNEL_ID`  | Slack Bot Token 발송 대상 채널 ID        | (코드 내 폴백값)         |
 
 전체 목록은 [`.env.example`](.env.example) 및 [`docs/ops/environment_variables.md`](docs/ops/environment_variables.md)를 참조합니다.
 
@@ -294,6 +313,7 @@ bash scripts/build_chroma.sh
 | 설계 노트 (원본)     | [`docs/design/minchodan_design_note.md`](docs/design/minchodan_design_note.md)   | 7단계 골격, 비전 v1.1 반영                     |
 | **코딩 패턴 기준**   | [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md)   | **수업 전체 코딩 패턴·함수 시그니처 표준 (필수 준수)** |
 | 문서 인덱스          | [`docs/README.md`](docs/README.md)                                 | 문서 목록 및 권장 독해 순서                    |
+| **보안 강화 및 팀 반영 가이드** | [`docs/security/security_hardening_and_team_adoption_guide.md`](docs/security/security_hardening_and_team_adoption_guide.md) | **인증·전송·컨테이너·의존성 보안 조치와 팀 적용·검증 절차** |
 | 에이전트 가이드      | [`AGENTS.md`](AGENTS.md)                                           | 코딩·커뮤니케이션 규칙, 기술 스택, 문서 인덱스 |
 | 백엔드 DB 설계 원칙 | [`docs/design/backend_db_architecture.md`](docs/design/backend_db_architecture.md) | 백엔드 코어 비동기 SQLAlchemy 기반 3계층 아키텍처 및 에러 방어 로직 설계 |
 | 시스템 아키텍처      | [`docs/design/architecture.md`](docs/design/architecture.md)                     | 이중 경로 구조, 컴포넌트 상세, 데이터 계약, MCP 연동 |
@@ -339,7 +359,7 @@ python tests\test_retriever.py        # 5단계: kickboard 쿼리 < 50ms
 python tests\test_langgraph.py        # 6단계: bollard  20자/방향 포함
 python tests\test_reflex_and_nav.py   # 7단계: 반사 클립 선점 재생
 python scripts\eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
-python scripts\verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
+python scripts\verify_gpu.py          # Windows GPU: CUDA 13.0 + 실제 연산 검증
 ```
 
 ### macOS / Linux (bash 또는 zsh)
@@ -352,7 +372,7 @@ python tests/test_retriever.py        # 5단계: kickboard 쿼리 < 50ms
 python tests/test_langgraph.py        # 6단계: bollard  20자/방향 포함
 python tests/test_reflex_and_nav.py   # 7단계: 반사 클립 선점 재생
 python scripts/eval_hitrate.py        # 4단계: Top-5 hit-rate >= 0.6
-python scripts/verify_gpu.py          # GPU: sm_120 + CUDA 12.8 검증
+python scripts/verify_gpu.py          # Ubuntu CUDA 13.0 또는 macOS MPS/CPU 검증
 ```
 
 상세 검증 기준은 [`docs/ops/test_specification.md`](docs/ops/test_specification.md)를 참조합니다.

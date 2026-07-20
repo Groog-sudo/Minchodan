@@ -126,11 +126,43 @@ class AppUserWithDevicesResponse(AppUserResponse):
 class AdminAccountCreate(BaseModel):
     """관리자 계정 생성 요청 DTO."""
 
-    employee_no: str = Field(..., min_length=1, max_length=50)
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    employee_no: str = Field(..., min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
     name: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=12, max_length=72)
     role: AdminRole = AdminRole.OPERATOR
     status: AdminAccountStatus = AdminAccountStatus.ACTIVE
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_strength(cls, value: str) -> str:
+        groups = (
+            any(char.islower() for char in value),
+            any(char.isupper() for char in value),
+            any(char.isdigit() for char in value),
+            any(not char.isalnum() for char in value),
+        )
+        if sum(groups) < 3:
+            raise ValueError(
+                "비밀번호는 영문 대·소문자, 숫자, 특수문자 중 3종 이상을 포함해야 합니다."
+            )
+        return value
+
+
+class AdminBootstrapCreate(BaseModel):
+    """최초 최고관리자 1회 생성 요청 DTO."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    employee_no: str = Field(..., min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
+    name: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=12, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_strength(cls, value: str) -> str:
+        return AdminAccountCreate._validate_password_strength(value)
 
 
 class AdminAccountResponse(BaseModel):
@@ -182,6 +214,18 @@ class DetectionGuidanceLogCreate(BaseModel):
     false_positive: bool | None = Field(default=None)
     latency_json: str | None = Field(default=None)
     pipeline_debug_json: str | None = Field(default=None)
+    event_source: str = Field(default="unknown", max_length=20)
+    stt_transcript_text: str | None = Field(default=None)
+    stt_audio_path: str | None = Field(default=None, max_length=255)
+    stt_audio_storage_status: str = Field(default="not_applicable", max_length=30)
+    stt_audio_format: str | None = Field(default=None, max_length=10)
+    stt_audio_size_bytes: int | None = Field(default=None, ge=0)
+    stt_audio_duration_ms: int | None = Field(default=None, ge=0)
+    stt_audio_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    stt_audio_error_code: str | None = Field(default=None, max_length=64)
+    stt_audio_consent_at: datetime | None = Field(default=None)
+    stt_audio_expires_at: datetime | None = Field(default=None)
+    writer_instance_id: str | None = Field(default=None, max_length=100)
 
 
 class DetectionGuidanceLogResponse(BaseModel):
@@ -202,10 +246,26 @@ class DetectionGuidanceLogResponse(BaseModel):
     latency_json: str | None
     pipeline_debug_json: str | None
     created_at: datetime
+    event_source: str
+    stt_transcript_text: str | None
+    stt_audio_path: str | None
+    stt_audio_storage_status: str
+    stt_audio_format: str | None
+    stt_audio_size_bytes: int | None
+    stt_audio_duration_ms: int | None
+    stt_audio_sha256: str | None
+    stt_audio_error_code: str | None
+    stt_audio_consent_at: datetime | None
+    stt_audio_expires_at: datetime | None
+    writer_instance_id: str | None
 
-    _normalize_dates = field_validator("detected_at", "created_at", mode="before")(
-        _assume_utc_if_naive
-    )
+    _normalize_dates = field_validator(
+        "detected_at",
+        "created_at",
+        "stt_audio_consent_at",
+        "stt_audio_expires_at",
+        mode="before",
+    )(_assume_utc_if_naive)
 
 
 class FalsePositiveUpdateRequest(BaseModel):
@@ -224,6 +284,7 @@ class TokenResponse(BaseModel):
 __all__ = [
     "AdminAccountCreate",
     "AdminAccountResponse",
+    "AdminBootstrapCreate",
     "AdminLoginAuditCreate",
     "AdminLoginAuditResponse",
     "AppUserCreate",

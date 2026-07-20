@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DetectionGuidanceLogRow } from "../types/monitor";
+import { forceAdminRelogin } from "./adminAuth";
 import { resolveApiBaseUrl } from "../config/network";
 
 // 발표/면접 포인트:
@@ -16,21 +17,51 @@ const API_BASE_URL: string =
 const LOGS_ENDPOINT = `${API_BASE_URL}/api/v1/admin/detection-logs`;
 const DEFAULT_POLL_MS = 30000;
 
-/**
- * 이벤트 프레임 이미지 URL을 만듭니다.
- * <img> 태그는 Authorization 헤더를 붙일 수 없어 SSE와 동일하게
- * 쿼리 토큰(?token=...)으로 인증합니다.
- */
-export function eventFrameUrl(eventId: string, token: string): string {
-  return `${API_BASE_URL}/api/v1/admin/event-frames/${encodeURIComponent(
-    eventId,
-  )}?${new URLSearchParams({ token }).toString()}`;
+/** 이벤트 프레임을 Authorization 헤더로 조회해 브라우저 전용 Blob URL로 반환합니다. */
+export function useAuthorizedEventFrameUrl(
+  eventId: string,
+  token: string,
+): string | null {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let createdUrl: string | null = null;
+
+    void (async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/admin/event-frames/${encodeURIComponent(eventId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        },
+      );
+      if (response.status === 401 || response.status === 403) {
+        forceAdminRelogin(`event_frame_${response.status}`);
+        return;
+      }
+      if (!response.ok) return;
+      createdUrl = URL.createObjectURL(await response.blob());
+      setObjectUrl(createdUrl);
+    })().catch(() => {
+      if (!controller.signal.aborted) setObjectUrl(null);
+    });
+
+    return () => {
+      controller.abort();
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+      setObjectUrl(null);
+    };
+  }, [eventId, token]);
+
+  return objectUrl;
 }
 
 export function useDetectionLogs(
   token: string | null,
   page: number,
   pageSize: number,
+  streamFilter: "all" | "reflex" | "cognitive" = "all",
   pollMs = DEFAULT_POLL_MS,
 ) {
   const [rows, setRows] = useState<DetectionGuidanceLogRow[]>([]);
@@ -43,10 +74,21 @@ export function useDetectionLogs(
     setLoading(true);
     try {
       const offset = page * pageSize;
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (streamFilter !== "all") {
+        params.set("stream_type", streamFilter);
+      }
       const response = await fetch(
-        `${LOGS_ENDPOINT}?limit=${pageSize}&offset=${offset}`,
+        `${LOGS_ENDPOINT}?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
+      if (response.status === 401) {
+        forceAdminRelogin("detection_logs_401");
+        return;
+      }
       if (!response.ok) {
         throw new Error(`로그 조회 실패 (HTTP ${response.status})`);
       }
@@ -60,7 +102,7 @@ export function useDetectionLogs(
     } finally {
       setLoading(false);
     }
-  }, [token, page, pageSize]);
+  }, [token, page, pageSize, streamFilter]);
 
   const updateLogFalsePositive = useCallback(
     async (logId: number, falsePositive: boolean | null) => {
@@ -77,6 +119,10 @@ export function useDetectionLogs(
             body: JSON.stringify({ false_positive: falsePositive }),
           },
         );
+        if (response.status === 401) {
+          forceAdminRelogin("false_positive_401");
+          return;
+        }
         if (!response.ok) {
           throw new Error(`오탐 판정 업데이트 실패 (HTTP ${response.status})`);
         }

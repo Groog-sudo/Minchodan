@@ -20,6 +20,7 @@ cryptography==49.0.0
 cycler==0.12.1
 distro==1.9.0
 durationpy==0.10
+defusedxml==0.7.1
 fastapi==0.138.2
 faster-whisper==1.2.1
 filelock==3.29.4
@@ -64,6 +65,7 @@ langgraph-checkpoint==4.1.1
 langgraph-prebuilt==1.1.0
 langgraph-sdk==0.4.2
 langsmith==0.9.3
+lap==0.5.13
 markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 matplotlib==3.11.0
@@ -90,7 +92,7 @@ overrides==7.7.0
 packaging==26.2
 passlib==1.7.4
 pathvalidate==3.3.1
-pillow==12.2.0
+pillow==12.3.0
 piper-tts==1.4.2
 pluggy==1.6.0
 polars==1.42.0
@@ -127,7 +129,7 @@ requests-toolbelt==1.0.0
 rich==15.0.0
 rpds-py==2026.5.1
 scipy==1.18.0
-setuptools==81.0.0
+setuptools==83.0.0
 pyttsx3==2.90
 pywin32>=306; sys_platform == "win32"
 shellingham==1.5.4
@@ -140,13 +142,13 @@ sympy==1.14.0
 tenacity==9.1.4
 tokenizers==0.23.1
 # TH HARDCODE AREA (면접/발표 핵심 방어 영역)
-# macOS와 Apple Silicon 기반 Linux 컨테이너는 PyPI 휠을 사용한다.
-# Blackwell GPU 서버(Linux x86_64)와 Windows는 공식 cu128 호환 조합을 사용한다.
---extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.12.1; sys_platform == "darwin" or (sys_platform == "linux" and platform_machine == "aarch64")
-torchvision==0.27.1; sys_platform == "darwin" or (sys_platform == "linux" and platform_machine == "aarch64")
-torch==2.11.0+cu128; sys_platform == "win32" or (sys_platform == "linux" and platform_machine == "x86_64")
-torchvision==0.26.0+cu128; sys_platform == "win32" or (sys_platform == "linux" and platform_machine == "x86_64")
+# macOS와 Apple Silicon 기반 Linux 컨테이너는 PyPI의 MPS/CPU 휠을 사용한다.
+# RTX 5090 GPU 서버(Ubuntu x86_64/Windows amd64)는 공식 cu130 휠을 사용한다.
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch==2.13.0; sys_platform == "darwin" or (sys_platform == "linux" and platform_machine == "aarch64")
+torchvision==0.28.0; sys_platform == "darwin" or (sys_platform == "linux" and platform_machine == "aarch64")
+torch==2.13.0+cu130; sys_platform == "win32" or (sys_platform == "linux" and platform_machine == "x86_64")
+torchvision==0.28.0+cu130; sys_platform == "win32" or (sys_platform == "linux" and platform_machine == "x86_64")
 tqdm==4.68.3
 typer==0.25.1
 typing-inspection==0.4.2

@@ -43,6 +43,10 @@ export function useOnDeviceDetection() {
   const [segLoaded, setSegLoaded] = useState(false);
   const [detLoaded, setDetLoaded] = useState(false);
   const [detShapeLog, setDetShapeLog] = useState<string>("CoreML Mode");
+  // 로컬 추론 엔진의 입력 계약. iOS CoreML 정상 모드면 false(base64만 사용),
+  // TFLite 또는 TFLite 폴백이면 true(float32 필요). 캡처 계층이 이 값으로
+  // JS JPEG 디코딩 + 4.7MiB Float32Array 할당을 우회할지 결정한다 (2026-07-17, P0).
+  const [requiresFloat32, setRequiresFloat32] = useState<boolean>(true);
   const detectorRef = useRef<any>(null);
   const isModelsLoaded = segLoaded && detLoaded;
 
@@ -58,6 +62,7 @@ export function useOnDeviceDetection() {
         setSegLoaded(detector.segLoaded);
         setDetLoaded(detector.detLoaded);
         setDetShapeLog(detector.detShapeLog);
+        setRequiresFloat32(!!detector.requiresFloat32);
       } else {
         console.warn("[OnDevice] 로컬 추론 엔진 로드 실패");
       }
@@ -124,5 +129,5 @@ export function useOnDeviceDetection() {
     []
   );
 
-  return { isModelsLoaded, segLoaded, detLoaded, detShapeLog, detectFrame };
+  return { isModelsLoaded, segLoaded, detLoaded, detShapeLog, requiresFloat32, detectFrame };
 }

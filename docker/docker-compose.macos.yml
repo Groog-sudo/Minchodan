@@ -1,6 +1,6 @@
 # Minchodan Docker Compose (macOS CPU Fallback)
 # Redis + MariaDB + FastAPI 3컨테이너 구성 + 호스트 로컬 Ollama 연동
-# 상세 명세: docs/deployment_guide.md 및 docker/macos_docker_start.sh
+# 상세 명세: docs/ops/deployment_guide.md 및 docker/macos_docker_start.sh
 
 services:
   fastapi:
@@ -10,13 +10,14 @@ services:
     image: minchodan-server:latest
     container_name: minchodan-fastapi
     ports:
-      - "${WS_PORT:-8000}:8000"
+      # 2026-07-20: EXPO_PUBLIC_NETWORK_MODE=tailscale 시 단말이 호스트 Tailscale IP:8000
+      # 으로 접속하므로 0.0.0.0 바인딩 필수. 127.0.0.1 이면 Tailscale 경로 HTTP 000.
+      - "${WS_BIND_HOST:-0.0.0.0}:${WS_PORT:-8000}:8000"
     volumes:
-      - ../server:/app/server
+      - ../server:/app/server:ro
       - ../data:/app/data
-      - ../scripts:/app/scripts
-      - ../tests:/app/tests
-      - ../.env:/app/.env:ro
+      - ../scripts:/app/scripts:ro
+      - ../tests:/app/tests:ro
       - ../requirements.txt:/app/requirements.txt:ro
     env_file:
       - ../.env
@@ -28,8 +29,15 @@ services:
       - MKL_NUM_THREADS=4
       - OPENBLAS_NUM_THREADS=4
       - NUMEXPR_NUM_THREADS=4
+      # 2026-07-19 실측 발견: ultralytics가 모델 로드/추론 시마다 체크포인트에 내장된
+      # requirements를 현재 설치본과 비교해 불일치하면 런타임 중 pip install로 조용히
+      # 갱신한다(AUTOINSTALL 기본값 True). 이미 임포트된 모듈과 방금 갱신된 디스크 상의
+      # 패키지가 어긋나면서 'Conv' object has no attribute 'bn' 추론 오류가 프레임마다
+      # 재발했다. requirements.txt로 버전을 이미 고정하고 있으므로 런타임 자동 설치를
+      # 끈다(비협상 아님, 순수 안정성 수정).
+      - YOLO_AUTOINSTALL=False
       # Docker Compose 환경에서는 컨테이너 서비스명과 호스트 Ollama 주소로 재설정
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       # macOS에서도 Ollama는 도커 외부 로컬에서 별도로 띄움
       - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       # 2026-07-10: 팀 공유 DB는 로컬 mariadb 컨테이너가 아니라 Tailscale로 연결되는
@@ -47,21 +55,36 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       mariadb:
         condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     networks:
       - minchodan-net
 
   redis:
     image: redis:7-alpine
     container_name: minchodan-redis
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     networks:
       - minchodan-net
 
@@ -72,31 +95,65 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     ports:
-      - "${DB_HOST_PORT:-3306}:3306"
+      - "127.0.0.1:${DB_HOST_PORT:-3306}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     environment:
       MARIADB_DATABASE: ${COMPOSE_DB_NAME:-minchodan_db}
       MARIADB_USER: ${COMPOSE_DB_USER:-minchodan_team}
-      MARIADB_PASSWORD: ${COMPOSE_DB_PASSWORD:-minchodan_password}
-      MARIADB_ROOT_PASSWORD: ${COMPOSE_DB_ROOT_PASSWORD:-minchodan_root_password}
+      MARIADB_PASSWORD: ${COMPOSE_DB_PASSWORD:?COMPOSE_DB_PASSWORD is required}
+      MARIADB_ROOT_PASSWORD: ${COMPOSE_DB_ROOT_PASSWORD:?COMPOSE_DB_ROOT_PASSWORD is required}
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "mariadb-admin ping -h 127.0.0.1 -u$${MARIADB_USER} -p$${MARIADB_PASSWORD} --silent",
+          "MYSQL_PWD=$${MARIADB_PASSWORD} mariadb-admin ping -h 127.0.0.1 -u$${MARIADB_USER} --silent",
         ]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 20s
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - minchodan-net
+
+  # 2026-07-19: 운영 콘솔(React + Vite) 컨테이너. integration-test-orchestrator
+  # 스킬 §5-B가 호스트에서 npm run dev 하던 단계를 compose 통합으로 대체. Vite dev
+  # 서버를 띄우고 FastAPI 컨테이너를 VITE_PROXY_TARGET으로 가리킨다. 소스는 볼륨
+  # 마운트해 HMR을 지원하고 node_modules는 named 볼륨으로 격리해 호스트/컨테이너
+  # 간 의존성 충돌을 방지한다.
+  # 2026-07-20: 익명 볼륨이 root 소유로 잔존하면 USER node(Vite .vite-temp 쓰기)에서
+  # EACCES로 Restarting 루프가 난다. named 볼륨으로 고정하고, 재발 시
+  # `docker volume rm minchodan_console_node_modules` 후 console만 recreate.
+  console:
+    build:
+      context: ../console
+      dockerfile: Dockerfile
+    image: minchodan-console:latest
+    container_name: minchodan-console
+    ports:
+      - "127.0.0.1:${CONSOLE_PORT:-5174}:5174"
+    volumes:
+      - ../console:/app
+      - console_node_modules:/app/node_modules
+    environment:
+      - VITE_PROXY_TARGET=http://fastapi:8000
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     networks:
       - minchodan-net
 
 volumes:
   redis_data:
   mariadb_data:
+  console_node_modules:
 
 networks:
   minchodan-net:

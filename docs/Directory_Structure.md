@@ -11,7 +11,7 @@ guidedog-ai/
 │   ├── main.py                      # FastAPI 앱 진입점, CORS, 라우터 등록
 │   ├── config.py                    # 환경변수 (LLM_PROVIDER, Redis URL 등)
 │   ├── requirements.txt
-│   ├── verify_gpu.py                # [부록C] sm_120 / CUDA 12.8 검증 스크립트
+│   ├── verify_gpu.py                # [부록C] CUDA 13.0 / macOS MPS 검증 스크립트
 │   │
 │   ├── api/                         # ─── 1단계: 통신망 ───
 │   │   ├── ws_router.py             # APIRouter + WebSocket /ws/detect
@@ -90,11 +90,10 @@ guidedog-ai/
 │   │       ├── images/
 │   │       └── masks/
 │   ├── configs/
-│   │   ├── yolo26n_detection.yaml   # 객체 탐지 클래스: kickboard, bollard, car …
-│   │   └── yolo26n_segmentation.yaml # 분할 클래스: braille_normal, sidewalk_damaged, roadway …
+│   │   ├── aihub_merged_detection.yaml   # 객체 탐지 29클래스
+│   │   └── aihub_yolo_segmentation.yaml  # 분할 4클래스: sidewalk_normal, caution, roadway, braille_normal
 │   ├── train_detection.py
-│   ├── train_segmentation.py
-│   └── export_tensorrt.py           # TRT 엔진 빌드 (데모 머신에서 실행)
+│   └── train_segmentation.py
 │
 ├── client/                          # ─── React Native 앱 (thin client) ───
 │   ├── App.tsx
@@ -128,8 +127,10 @@ guidedog-ai/
 │   └── package.json
 │
 ├── scripts/                         # ─── 유틸리티 스크립트 ───
-│   ├── verify_gpu.py                # sm_120 + CUDA 12.8 + GPU 1-step 연산 검증
-│   ├── build_chroma.sh              # 4단계 오프라인 DB 빌드 실행 쇼트컷
+│   ├── verify_gpu.py                # RTX 5090·CUDA 13.0 또는 macOS MPS/CPU 연산 검증
+│   ├── build_safety_db.py           # 4단계 RAG (safety_guidelines.json → ChromaDB)
+│   ├── build_convenience_db.py      # 편의 RAG 빌드
+│   ├── build_guide_clips.py         # 반사 안내 클립 합성
 │   └── eval_hitrate.py              # Top-5 hit-rate 평가 (완료 기준 ≥ 0.6)
 │
 ├── tests/

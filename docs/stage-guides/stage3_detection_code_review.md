@@ -91,7 +91,7 @@ flowchart LR
 | 항목 | 내용 |
 | --- | --- |
 | **경로** | `__file__` 기반 `project_root` + `resolve_path()` — guide 3.3 준수 |
-| **환경변수** | `YOLO_CONF`, `YOLO26N_OBJECT_DET`, `YOLO26N_SEG` |
+| **환경변수** | `YOLO_CONF`, `YOLO_DET_CONF`, `YOLO26N_OBJECT_DET`, `YOLO26N_SEG` |
 | **디바이스** | `torch.cuda.is_available()` → `cuda` / `cpu` |
 | **폴백** | 가중치 없음 또는 로드 실패 → `MockDetector` / `MockSegmentor` |
 

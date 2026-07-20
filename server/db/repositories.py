@@ -24,6 +24,8 @@ from server.db.models import (
     AdminLoginAudit,
     AppUser,
     DetectionGuidanceLog,
+    LidarDistanceValidationSample,
+    LidarFixedPointSample,
     StreamType,
     UserDevice,
 )
@@ -50,6 +52,10 @@ class AdminRepository:
         await self.session.commit()
         await self.session.refresh(admin)
         return admin
+
+    async def count(self) -> int:
+        result = await self.session.execute(select(func.count(AdminAccount.admin_id)))
+        return int(result.scalar_one())
 
 
 # 3. AuditRepository 클래스를 만드세요.
@@ -191,18 +197,26 @@ class DetectionGuidanceLogRepository:
     # - detected_at 내림차순 정렬에 IDX_DETECTION_GUIDANCE_LOGS_DETECTED_AT
     #   인덱스가 사용됩니다.
     # ==========================================
-    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[DetectionGuidanceLog]:
+    async def list_recent(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        stream_type: str = "all",
+    ) -> list[DetectionGuidanceLog]:
+        query = select(DetectionGuidanceLog)
+        if stream_type in ("reflex", "cognitive"):
+            query = query.where(DetectionGuidanceLog.stream_type == StreamType(stream_type))
         result = await self.session.execute(
-            select(DetectionGuidanceLog)
-            .order_by(DetectionGuidanceLog.detected_at.desc())
-            .offset(offset)
-            .limit(limit)
+            query.order_by(DetectionGuidanceLog.detected_at.desc()).offset(offset).limit(limit)
         )
         return list(result.scalars().all())
 
-    async def count_all(self) -> int:
+    async def count_all(self, stream_type: str = "all") -> int:
         """콘솔 페이지네이션이 전체 페이지 수를 계산하기 위한 전체 로그 건수."""
-        result = await self.session.execute(select(func.count()).select_from(DetectionGuidanceLog))
+        query = select(func.count()).select_from(DetectionGuidanceLog)
+        if stream_type in ("reflex", "cognitive"):
+            query = query.where(DetectionGuidanceLog.stream_type == StreamType(stream_type))
+        result = await self.session.execute(query)
         return int(result.scalar_one())
 
     # ==========================================
@@ -296,3 +310,63 @@ class DetectionGuidanceLogRepository:
             .limit(limit)
         )
         return [row[0] for row in result.all()]
+
+
+class LidarDistanceValidationRepository:
+    """lidar_distance_validation_samples 테이블 전담 Repository.
+
+    LiDAR 검증 캡처(거리측정 모드) 1건당 여러 bbox 행을 저장/조회한다. 검증 전용
+    데이터로 반사/인지 경로 로그(DetectionGuidanceLogRepository)와는 별개다.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create_many(
+        self, samples: list[LidarDistanceValidationSample]
+    ) -> list[LidarDistanceValidationSample]:
+        self.session.add_all(samples)
+        await self.session.commit()
+        for sample in samples:
+            await self.session.refresh(sample)
+        return samples
+
+    async def list_recent(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[LidarDistanceValidationSample]:
+        result = await self.session.execute(
+            select(LidarDistanceValidationSample)
+            .order_by(LidarDistanceValidationSample.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+
+class LidarFixedPointRepository:
+    """lidar_fixed_point_samples 테이블 전담 Repository.
+
+    거리측정 모드 고정 3지점(중앙/전방 하단/발밑) 캡처를 저장/조회한다. YOLO 탐지 객체와
+    무관한 순수 LiDAR 실측 로그로, LidarDistanceValidationRepository와는 별개다.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create_many(
+        self, samples: list[LidarFixedPointSample]
+    ) -> list[LidarFixedPointSample]:
+        self.session.add_all(samples)
+        await self.session.commit()
+        for sample in samples:
+            await self.session.refresh(sample)
+        return samples
+
+    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[LidarFixedPointSample]:
+        result = await self.session.execute(
+            select(LidarFixedPointSample)
+            .order_by(LidarFixedPointSample.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())

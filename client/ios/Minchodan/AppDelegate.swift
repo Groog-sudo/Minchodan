@@ -20,6 +20,17 @@ class AppDelegate: ExpoAppDelegate {
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
+#if DEBUG
+    // expo-dev-launcher가 bridge.bundleURL을 직접 채우면 ReactNativeDelegate.bundleURL()이
+    // 호출되지 않아 그 안의 설정이 반영되지 않는다. Metro는 평문 HTTP만 서빙하므로,
+    // NSUserDefaults에 과거 세션에서 남은 packagerScheme=https(재설치 후에도 유지됨)로
+    // 번들 요청이 TLS로 나가 실패하는 것을 막기 위해 앱 시작 시 무조건 http로 고정한다.
+    RCTBundleURLProvider.sharedSettings().packagerScheme = "http"
+    if let host = ProcessInfo.processInfo.environment["METRO_BUNDLER_HOST"], !host.isEmpty {
+      RCTBundleURLProvider.sharedSettings().jsLocation = host
+    }
+#endif
+
 #if os(iOS) || os(tvOS)
     window = UIWindow(frame: UIScreen.main.bounds)
     factory.startReactNative(
@@ -61,12 +72,14 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
-    // 2026-07-13: 실기기가 Wi-Fi를 벗어나면(Tailscale 경유 LTE/핫스팟) RCTBundleURLProvider의
-    // Bonjour 자동탐색이 실패해 jsLocation이 nil로 남고 "No script URL provided"가 발생했다.
-    // jsLocation을 명시적으로 지정해 자동탐색을 우회한다. METRO_BUNDLER_HOST 환경변수로
-    // 재빌드 없이 덮어쓸 수 있다(기본값은 이 Mac의 Tailscale IP).
-    let host = ProcessInfo.processInfo.environment["METRO_BUNDLER_HOST"] ?? "100.92.150.34:8081"
-    RCTBundleURLProvider.sharedSettings().jsLocation = host
+    // 개인 개발 PC 주소는 소스에 폴백으로 저장하지 않는다. Tailscale Metro를 쓸 때만
+    // 로컬 Xcode 환경의 METRO_BUNDLER_HOST에 MagicDNS 또는 개인 주소를 지정한다.
+    if let host = ProcessInfo.processInfo.environment["METRO_BUNDLER_HOST"], !host.isEmpty {
+      RCTBundleURLProvider.sharedSettings().jsLocation = host
+    }
+    // Metro는 평문 HTTP만 서빙한다. 이전 세션에서 NSUserDefaults에 남은 packagerScheme=https가
+    // 재설치 후에도 유지되어 번들 요청이 TLS로 나가 실패하는 사례가 있어 매 실행마다 http로 고정한다.
+    RCTBundleURLProvider.sharedSettings().packagerScheme = "http"
     return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")

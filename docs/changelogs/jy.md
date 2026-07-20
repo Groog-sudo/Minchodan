@@ -5,6 +5,119 @@
 
 ---
 
+### 2026-07-19 | 보안/클라이언트/문서 | ngrok 제거 및 uuid 취약점 해소
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 외부망 연결을 Tailscale로 단일화한 이후에도 `@expo/ngrok`와 플랫폼별 실행 바이너리, 클라이언트 ngrok 네트워크 모드, 과거 실행 안내가 남아 있었습니다.
+  - `@expo/ngrok -> uuid@3.4.0`과 `expo-splash-screen -> xcode -> uuid@7.0.3` 경로에서 `GHSA-w5hq-g745-h8pq` 취약점이 탐지됐습니다.
+- **변경 내용**:
+  - `@expo/ngrok` 직접 개발 의존성과 관련 바이너리·전이 패키지 34개를 제거하고 `package-lock.json`을 재생성했습니다.
+  - `NetworkMode`를 `lan | tailscale`로 축소하고, ngrok 도메인 환경변수·URL 생성·UI 라벨·접근성 분기를 제거했습니다.
+  - `xcode@3.0.1`의 미사용 취약 전이 의존성은 npm scoped override로 `uuid@11.1.1`에 고정했습니다.
+  - 루트 `.env`의 로컬 ngrok 환경변수 한 줄을 값 출력 없이 제거하고, Windows 시작 스크립트 및 실기기·통합 운영 문서를 Tailscale 기준으로 동기화했습니다.
+- **검증 결과**:
+  - `npm ls @expo/ngrok @expo/ngrok-bin uuid --all`: ngrok 패키지 없음, `uuid@11.1.1 overridden` 확인
+  - `npm audit --json`: 취약점 0건(Moderate/High/Critical 포함 전체 0)
+  - `npx tsc --noEmit`: 통과
+  - `npx expo config --type public`: 통과, ngrok 환경변수 미노출 확인
+  - `git diff --check`: 통과
+- **별도 기존 이슈**:
+  - `npx expo-doctor`는 21개 중 15개 통과, 6개 실패했습니다. 실패 항목은 이번 보안 변경과 무관한 기존 `app.json` splash 스키마, `expo-asset` peer·중복, 네이티브 폴더와 Prebuild 설정 병존, `react-native-fast-tflite` New Architecture 메타데이터, Expo SDK 56 패키지 버전 불일치입니다.
+
+---
+
+### 2026-07-17 | 문서 보안 | DB·미디어 API 가이드 외부 공개용·내부용 분리
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 통합 가이드에는 실제 Tailscale 주소, DB 식별자, 서버 상태와 내부 경로가 포함되어 팀 내부 운영에는 유용하지만 외부 공개본으로는 과도한 인프라 정보였습니다.
+- **변경 내용**:
+  - 추적되는 `docs/db_tailscale_guide/README.md`를 외부 공개용 v0.3.0으로 전환하고 실제 호스트·DB·포트·경로·API 식별자를 플레이스홀더로 치환했습니다.
+  - 실접속 정보가 포함된 기존 문서는 같은 폴더의 `README.internal.md`로 보존했습니다.
+  - 내부 문서는 `.gitignore`에 등록해 공개 저장소나 커밋에 실수로 포함되지 않도록 했습니다.
+  - `docs/README.md`에 공개용 문서와 Git 제외 내부 문서의 역할을 구분했습니다.
+- **관련 파일**: `.gitignore`, `docs/db_tailscale_guide/README.md`, `docs/db_tailscale_guide/README.internal.md`(Git 제외), `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 기준**:
+  - 공개본에는 실제 Tailscale IP, DB명·계정명, 서비스 버전, 내부 파일 경로와 실제 비밀번호·토큰이 없어야 합니다.
+  - 내부본은 로컬에 존재하되 `git check-ignore`와 `git status`에서 추적 대상이 아니어야 합니다.
+- **비고**:
+  - 내부 문서는 Git으로 팀에 배포하지 않으며 승인된 비밀관리 도구 또는 팀 내부 보안 채널로 별도 전달합니다.
+
+### 2026-07-17 | 문서·운영 | MariaDB·미디어 저장 API Tailscale 팀 연결 가이드 통합
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 기존 `docs/db_tailscale_guide/README.md`는 공동 MariaDB 접속만 설명해, Raspberry Pi 중앙 미디어 저장 API와 STT 원본 음성 저장 설정을 팀원이 별도 문서에서 찾아야 했습니다.
+  - `.vscode/log_Miss_Issue`의 MISS 조사·중앙 저장 진행 문서와 개발 감사 보고서를 팀 표준 문서로 정리하되, AI 에이전트가 비밀값을 노출하거나 운영 DB를 파괴적으로 변경하지 않도록 실행 경계를 명확히 할 필요가 있었습니다.
+- **변경 내용**:
+  - 기존 DB Tailscale 가이드를 공동 MariaDB와 중앙 미디어 저장 API를 함께 다루는 v0.2.0 통합 가이드로 개정했습니다.
+  - 실제 Tailscale 호스트와 서비스 포트, 루트 `.env` 설정, DBeaver·FastAPI·Docker Compose 연결, DB와 미디어 API의 읽기 전용 smoke test를 추가했습니다.
+  - 이벤트 프레임 object key와 사용자 STT 원본 음성 경로·전사문·저장 상태 컬럼의 역할, 미디어 API 라우트, 기존 데이터 보존형 마이그레이션 원칙을 문서화했습니다.
+  - AI 에이전트 시작 순서, 첫 확인 파일, 비밀값 보호, 금지 명령, 장애 분리표와 팀 전달용 프롬프트 예시를 추가했습니다.
+  - `docs/README.md` 인덱스를 갱신하고 실제 파일이 없는 오래된 보고서 링크 1건을 제거했으며, `docs/ops/deployment_guide.md`의 Docker DB 대상 설명을 실제 Compose의 원격 DB 보존 동작과 맞췄습니다.
+- **관련 파일**: `docs/db_tailscale_guide/README.md`, `docs/README.md`, `docs/ops/deployment_guide.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - Raspberry Pi에서 Tailscale·MariaDB·미디어 API 서비스 `active`/`enabled`, 포트 `3306`·`8081`, 미디어 `/health` HTTP 200을 읽기 전용 확인했습니다.
+  - 공동 MariaDB의 STT·writer 컬럼 존재와 개발 PC 루트 `.env` 기준 `SELECT 1`, 미디어 API Bearer 인증을 확인했습니다.
+- **비고**:
+  - 실제 DB 비밀번호, 미디어 API 토큰, 개인 SSH 키는 문서와 changelog에 기록하지 않았습니다.
+
+### 2026-07-17 | 환경변수 | Raspberry Pi 중앙 저장소·Ollama 기준 `.env.example` 재작성
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - Raspberry Pi MariaDB, 중앙 저장 API, STT 원본 음성 저장, Ollama `gemma4:e4b` 사용 설정이 한 번에 늘어나면서 기존 `.env.example`의 어느 위치에 어떤 값을 넣어야 하는지 파악하기 어려웠습니다.
+  - 실제 `.env`에는 DB 비밀번호, 저장 API 토큰, TMAP 키, LLM API 키 등 민감값이 포함되므로, 사용자가 값만 채워 넣을 수 있는 별도 템플릿 정리가 필요했습니다.
+- **변경 내용**:
+  - 루트 `.env.example`을 새로 생성하여 `0. 실행 환경`부터 `16. 테스트 / 검증 보조`까지 번호가 있는 섹션으로 재구성했습니다.
+  - Raspberry Pi MariaDB 설정(`DB_HOST`, `DB_PASSWORD`)과 중앙 저장 API 설정(`EVENT_FRAME_STORAGE_BACKEND`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `WRITER_INSTANCE_ID`)을 별도 섹션으로 분리했습니다.
+  - 사용자가 실제 값을 채워야 하는 항목은 `[RASPBERRY_PI_TAILSCALE_IP]`, `[MARIADB_PASSWORD]`, `[IMAGE_SERVER_TOKEN]`, `[TMAP_APP_KEY]`처럼 대괄호 플레이스홀더로 통일했습니다.
+  - LLM 기본 사용 의도에 맞춰 Ollama 경로(`OLLAMA_BASE_URL`, `GEMMA_MODEL=gemma4:e4b`)와 RAG 임베딩 경로(`EMBEDDING_PROVIDER`, `EMBEDDING_MODEL=nomic-embed-text`)를 명확히 분리했습니다.
+  - 현재 코드 기준 미구현인 `kokoro/coqui`는 TTS 기본값에서 제외하고 `TTS_ENGINE=supertonic`을 기본 예시로 정리했습니다.
+  - 기존 임시 백업 템플릿 `01_.env.example`은 삭제하지 않고 보존했습니다.
+- **관련 파일**: `.env.example`, `01_.env.example`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `python-dotenv`로 `.env.example` 파싱 성공: 78개 key 인식
+  - 중앙 저장 핵심 key(`DB_HOST`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `EVENT_FRAME_STORAGE_BACKEND`) 누락 없음 확인
+  - `git diff --check .env.example` 통과
+- **비고**:
+  - 실제 `.env` 파일은 민감 정보 보호를 위해 열람하지 않았습니다.
+  - 운영 반영 시에는 `.env.example`을 복사한 뒤 대괄호 플레이스홀더만 실제 값으로 교체하면 됩니다.
+
+---
+
+### 2026-07-16 | DB/저장소/STT | Raspberry Pi 중앙 저장 API 연동 및 Log STT 원본 음성 메타데이터 기록
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 공유 MariaDB를 여러 FastAPI writer가 함께 쓰는 구조에서 이벤트 프레임 JPEG는 각 writer의 로컬 디스크에 흩어져 `frame_path`는 있으나 콘솔 이미지 조회가 404가 되는 MISS가 발생했습니다.
+  - STT 경로는 기존에 사용자가 말한 원본 음성 파일과 전사 문장을 `detection_guidance_logs`에 함께 남기지 않아, 사용자 발화 기반 이력 추적과 재검증이 어려웠습니다.
+- **변경 내용**:
+  - `server/services/remote_storage_client.py`를 추가해 Raspberry Pi 중앙 저장 API에 이벤트 프레임 JPEG와 STT 원본 음성 bytes를 업로드하도록 했습니다.
+  - `server/services/event_frame_store.py`와 `server/detection/consumer.py`를 수정해 원격 저장 사용 시 `frame_path`에 중앙 저장소 object key만 저장하도록 연결했습니다.
+  - `server/api/ws_router.py` STT 처리부에서 사용자가 말한 원본 오디오를 업로드하고, `stt_transcript_text`, `stt_audio_path`, `stt_audio_storage_status`, `stt_audio_size_bytes`, `stt_audio_duration_ms`, `stt_audio_sha256` 등을 Log에 저장하도록 했습니다.
+  - `server/api/detection_log_router.py`는 로컬 파일이 없으면 중앙 저장소에서 프레임을 조회해 콘솔에 프록시 응답하도록 보강했습니다.
+  - `detection_guidance_logs` ORM/DTO/SQLite DDL/마이그레이션에 STT 원본 음성 저장 메타데이터 컬럼과 조회 인덱스를 추가했습니다.
+  - 콘솔 타입과 지연 패널에 STT 음성 업로드 시간(`stt_audio_upload_ms`)을 반영했습니다.
+  - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`를 새 저장 구조에 맞춰 갱신했습니다.
+- **관련 파일**:
+  - `server/services/remote_storage_client.py`, `server/services/event_frame_store.py`, `server/detection/consumer.py`, `server/api/ws_router.py`, `server/api/detection_log_router.py`
+  - `server/db/models.py`, `server/db/schemas.py`, `server/db/schema.sql`, `server/db/migrations/20260716_002_add_stt_audio_columns_to_detection_guidance_logs.sql`
+  - `console/src/types/monitor.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LatencySummaryPanel.tsx`, `console/src/pages/DashboardPage.tsx`
+  - `.env.example`, `docs/ops/environment_variables.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `.vscode/log_Miss_Issue/central_image_storage_latency_progress_share.md`
+- **검증 결과**:
+  - `python -m py_compile` 대상 Python 파일 통과
+  - `pytest tests/test_event_frame_store.py tests/test_ws_router_stt.py tests/test_false_positive.py tests/test_tts_prewarm.py` 통과: 20 passed, 3 warnings
+  - `cd console && ./node_modules/.bin/tsc --noEmit` 통과
+  - `git diff --check` 통과
+  - `ruff`는 현재 `.venv`와 PATH에 설치되어 있지 않아 실행하지 못했습니다.
+- **비고**:
+  - 이번 작업은 서버/DB/콘솔 저장 경로 연동 범위입니다. 작업 전부터 존재하던 iOS 네이티브/Podfile 변경은 이번 범위에서 수정하지 않았습니다.
+  - 실제 운영 반영 시 GPU FastAPI `.env`에 `EVENT_FRAME_STORAGE_BACKEND=remote`, `IMAGE_SERVER_BASE_URL`, `IMAGE_SERVER_TOKEN`, `WRITER_INSTANCE_ID`를 설정하고 서버를 재시작해야 합니다.
+
+---
+
 ### 2026-07-15 | Docker/Ollama | WSL/Linux 로컬 Ollama 자동 기동 보강
 
 - **커밋**: `infra: WSL/Linux 로컬 Ollama 실행 환경 보강`
@@ -285,7 +398,7 @@
   - iOS 단말 빌드 반복 문서에는 환경 확인, 단말 연결 확인, Signing Team 설정, Metro 실행, CLI 빌드, `devicectl` 설치/실행, 앱 확인 체크리스트, 재빌드 판단 기준을 정리했습니다.
 - **관련 파일**: `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`, `docs/changelogs/jy.md`
 - **검증 결과**:
-  - `rg`로 `file:///`, `/Users/jjun`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
+  - `rg`로 `file:///`, `/Users/<LOCAL_USER>`, 실제 단말명, 실제 bundle id, Apple 개발자 계정/Team 식별자 잔존 여부 확인 완료
   - `git diff --check -- docs/macOS_xcode_build docs/changelogs/jy.md` 통과
   - 기존 미추적 빌드 로그 `client/ios/build-device-debug.log`는 이번 문서 커밋 대상에서 제외했습니다.
 
@@ -488,5 +601,175 @@
 - **비고**:
   - 이번 변경은 `거리측정` 계측 버튼 경로의 신뢰 조건과 보정 산식을 강화한 작업입니다. 일반 객체 탐지 bbox에 들어오는 `distanceMeters` 계약은 유지되지만, 모든 탐지 객체가 보정된 LiDAR 실거리를 받는 정식 fusion 단계까지 완료된 것은 아닙니다.
   - 보정 후 값이 원본 z축 depth와 거의 같게 보이는 중앙 지점도 정상일 수 있습니다. 광선 스케일은 중심부에서 1에 가깝고, 차이는 보통 가장자리나 기기 각도 변화에서 더 잘 드러납니다.
+
+---
+
+### 2026-07-17 | 배포 | Docker 외부 DB 보존 및 iOS Pod 정합화
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - DB와 중앙 이미지 저장 API는 기존 외부 서비스를 그대로 사용해야 하므로, Linux Compose가 `DB_HOST=mariadb`로 강제 전환하던 동작을 제거할 필요가 있었습니다.
+  - iOS 의존성 설치 결과와 Xcode 프로젝트의 Expo Dev Client 리소스 목록을 현재 `client/package.json` 기준으로 맞출 필요가 있었습니다.
+- **변경 내용**:
+  - `docker/docker-compose.yml`의 FastAPI `DB_HOST`가 `.env`의 기존 원격 DB 값을 우선 유지하고, 필요할 때만 `COMPOSE_DB_HOST`로 재정의되도록 변경했습니다.
+  - 중앙 이미지 저장 API 관련 환경 변수는 Compose에서 재정의하지 않고 기존 `.env` 값을 그대로 전달합니다.
+  - `pod install` 결과에 맞춰 `Podfile.lock`과 Xcode 프로젝트의 Expo Dev Client 리소스 참조를 동기화했습니다.
+  - `docs/ops/environment_variables.md`와 `docs/ops/deployment_guide.md`의 DB 대상 선택 규칙을 실제 Compose 동작과 동기화했습니다.
+- **검증 결과**:
+  - `docker compose --env-file .env -f docker/docker-compose.yml config --quiet` 통과
+  - `Podfile.lock` YAML 파싱 및 Xcode 프로젝트 plist 파싱 통과
+  - `git diff --check` 통과
+- **비고**:
+  - 실제 호스트/IP가 포함된 `client/ios/Minchodan/AppDelegate.swift`, `client/src/config/index.ts`와 로컬 `.env` 파일은 이번 커밋에서 제외했습니다.
+
+---
+
+### 2026-07-18 | 설계 | 휴리스틱 거리 구역 기반 알림 라우팅 구현 계획 수립
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 현장 테스트에서 객체 탐지 알림이 과도하게 반복되어 비프·햅틱·TTS 알림 피로를 유발하는 문제가 확인됐습니다.
+  - 서버 면적비 구역, 서버 bbox 하단 의사 거리, 단말 면적비 휴리스틱, 수동 LiDAR 거리 기준이 서로 다른 의미로 사용되어 Near/Medium/Far 경로를 단일 규칙으로 적용하기 어려웠습니다.
+- **변경 내용**:
+  - 현행 서버·클라이언트·WebSocket·억제기·Fast Lane·LiDAR 검증 경로와 관련 설계 문서를 교차 감사했습니다.
+  - 일반 객체는 유효 Near에서 비프·햅틱 반사 경로, Medium/Far에서 발화 가치 필터를 거친 짧은 인지 TTS 경로를 사용하도록 목표 정책을 정의했습니다.
+  - 거리 정책 SSOT, 구역 히스테리시스, Near enter/update/clear 상태, 서버·단말 알림 소유권, API 호환, 테스트·KPI·문서 동기화 계획을 모바일 구현 계획서로 정리했습니다.
+  - 루트 경로의 구현 계획서를 `docs/mobile/` 하위로 이동해 모바일 관련 설계 문서 위치와 정합화했습니다.
+- **관련 파일**: `docs/mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md`, `docs/README.md`, `docs/changelogs/jy.md`
+- **검증 결과**:
+  - `tests/test_cognitive_fields.py`, `tests/test_fast_lane.py`, `tests/test_suppressor_rearm.py`: 27개 통과
+  - `tests/test_detection.py`, `tests/test_risk_ssot.py`, `tests/test_langgraph.py`: 91개 통과
+  - 계획서 UTF-8 확인 및 `git diff --check` 통과
+- **비고**:
+  - 초기 Near 진입 면적비 0.10, 이탈 0.08, Medium 진입 0.03, Far 이탈 0.025는 LiDAR 클래스별 검증 전 잠정 권장값입니다.
+  - 기존 사용자 로컬 변경 파일은 수정하지 않았습니다.
+
+---
+
+### 2026-07-19 | 보안 | 인증·전송·컨테이너·의존성 전면 보강
+
+- **커밋**: (이번 커밋)
+- **변경 배경**:
+  - 개발 기본 JWT·단말 토큰, 공개 관리자 생성, URL 쿼리 토큰, 인증 전 WebSocket 세션 교체, 무제한 STT 업로드와 공개 개발 API가 계정 탈취·서비스 고갈 경로가 될 수 있었습니다.
+  - Redis/MariaDB 약한 기본 비밀번호와 전체 인터페이스 포트, iOS ATS 전역 허용, 취약 버전 의존성 및 표준 XML 파서가 남아 있었습니다.
+- **변경 내용**:
+  - JWT를 모든 환경에서 fail-closed로 전환하고 표준 클레임 검증, 최초 최고관리자 1회 부트스트랩, 관리자 RBAC, 로그인 제한, 만료형 단말 JWT 발급을 적용했습니다.
+  - 콘솔 SSE·프레임·WebSocket의 URL 토큰을 제거하고 Authorization 헤더·최초 인증 메시지, Origin 검증, 인증 제한시간을 적용했습니다.
+  - STT 파일 형식·용량·동시성 제한, 디버그/내비게이션 시뮬레이터 명시 허용, 사용자 등록 운영자 권한을 적용했습니다.
+  - 공개 단말 토큰/IP 폴백과 iOS ATS 전역 허용을 제거하고 기본 WSS로 전환했습니다.
+  - 로컬 전용 비밀값 생성 스크립트, `.env` 권한 600, Redis 인증, Compose 필수 DB 비밀번호, 루프백 포트, 비루트 컨테이너와 `no-new-privileges`를 적용했습니다.
+  - Pillow·setuptools와 PyTorch 계열을 보안 수정 버전으로 올리고 XML 파서를 `defusedxml`로 교체했습니다. 팀 최대 RTX 5090 기준으로 Ubuntu x86_64/Windows amd64는 `torch==2.13.0+cu130`/`torchvision==0.28.0+cu130`, macOS는 PyPI 2.13.0/0.28.0 MPS·CPU 경로로 분리했습니다.
+- **검증 결과**:
+  - Python Ruff·Bandit, 콘솔 운영 빌드, 클라이언트 TypeScript, 양쪽 npm audit, Docker Compose 2종 구성 검증을 통과했습니다.
+  - 인증·JWT·단말 바인딩·요청 제한 회귀 테스트를 추가하고 비통합 테스트 361건 통과를 확인했습니다.
+  - macOS 로컬 `.venv`를 PyTorch 2.13/torchvision 0.28로 갱신하고 CPU 폴백 1 step 연산을 확인했습니다. 현재 호스트에서는 MPS가 비활성 상태였습니다.
+- **잔여 검증**:
+  - Tailscale Serve TLS 종단 구성 후 iOS 실기기 WSS 연결을 검증해야 합니다. RTX 5090 실장 Ubuntu·Windows 서버에서는 NVIDIA R580 이상 드라이버와 cu130 빌드의 실제 추론을 각각 검증해야 합니다.
+  - 패치가 없는 ChromaDB 임베디드 모드 취약점(`CVE-2026-45829`/`PYSEC-2026-311`)과 데이터베이스 개인정보 컬럼의 애플리케이션 계층 암호화는 별도 마이그레이션 과제로 유지합니다.
+
+---
+
+### 2026-07-19 | 배포/인프라/클라이언트/문서 | 로컬 GPU 서버 Docker 재배포 및 Mac·iOS Tailscale WSS 연결 구성
+
+- **커밋**: (이번 커밋)
+- **작업 목표**:
+  - 현재 프로젝트 소스 변경분을 Docker 이미지에 다시 반영하고 FastAPI·Redis·MariaDB·운영 콘솔을 로컬 GPU 서버에서 실행합니다.
+  - Ollama는 Docker 컨테이너로 중복 기동하지 않고 호스트 로컬 프로세스로 유지하며, FastAPI 컨테이너가 `gemma4:e4b`와 `nomic-embed-text`를 호출하도록 연결합니다.
+  - MariaDB와 중앙 미디어 저장 API는 기존 Raspberry Pi Tailscale 서비스를 유지하고, Mac에서 빌드한 iOS 앱은 Tailscale Serve의 유효한 TLS 인증서를 통해 `wss`로 GPU FastAPI에 연결하도록 구성합니다.
+  - 비밀값은 루트 `.env`와 `client/.env`에만 보관하고, Git 추적 문서·Compose 출력·애플리케이션 로그에는 원문을 남기지 않습니다.
+
+- **로컬 환경 변수 정합화**:
+  - 루트 `.env`에서 LLM 공급자를 Ollama, L2 모델을 `gemma4:e4b`, 임베딩 모델을 `nomic-embed-text`로 유지하고 Compose 전용 Ollama 주소를 `http://host.docker.internal:11434`로 설정했습니다.
+  - Docker 브리지에서 호스트 Ollama에 접근할 수 있도록 로컬 실행 환경의 `OLLAMA_HOST=0.0.0.0:11434`, `MINCHODAN_EXPOSE_OLLAMA=1` 구성을 사용하되, 전체 로컬망에 무제한 공개하지 않고 별도 UFW 최소 허용 규칙을 적용했습니다.
+  - 미구현 `kokoro` 값으로 인해 서버 기동마다 Supertonic으로 폴백하던 경고를 제거하기 위해 `TTS_ENGINE=supertonic`으로 정정했습니다.
+  - 루트 `.env` 권한은 `600`으로 유지하고 Git 제외 상태를 재확인했습니다.
+  - 클라이언트 로컬 `client/.env`는 `EXPO_PUBLIC_NETWORK_MODE=tailscale`, 서버 MagicDNS 이름, `EXPO_PUBLIC_SERVER_PORT=443`, `EXPO_PUBLIC_WS_SCHEME=wss` 조합으로 변경했습니다.
+  - 단말 ID와 단말 토큰은 서버 등록값과 일치하는 로컬 값으로 유지했으며, 본 변경 이력에는 실제 값을 기록하지 않았습니다.
+
+- **Docker 빌드·Compose 구성 변경**:
+  - 루트 `.dockerignore`와 `docker/.dockerignore`에 가상환경, 도구 캐시, 대용량 `data/` 경로를 제외해 Docker 빌드 컨텍스트를 약 `13.35MB`로 축소했습니다.
+  - FastAPI 이미지 빌드에서 Python 3.13, PyTorch `2.13.0+cu130`, CUDA 13.0 경로와 NVIDIA GPU 인식을 확인했습니다.
+  - Supertonic 모델 자산과 한국어 음소 변환 바이너리가 이미지 빌드 단계에 캐시된 상태로 FastAPI 이미지를 다시 생성했습니다.
+  - 루트 `.env`가 모드 `600`인 상태에서 비루트 FastAPI 사용자가 `/app/.env` 바인드 마운트를 읽지 못해 발생한 `PermissionError`를 해소하기 위해 `.env` 파일 마운트를 제거했습니다. 환경 변수는 Compose `env_file`로만 런타임에 주입합니다.
+  - FastAPI·Redis·운영 콘솔의 호스트 포트는 각각 `127.0.0.1:8000`, `127.0.0.1:6379`, `127.0.0.1:5174`로 제한하고 MariaDB 호스트 포트는 노출하지 않았습니다.
+  - Linux Compose의 `minchodan-net`을 `172.18.0.0/16`, 게이트웨이 `172.18.0.1`로 고정하고 `host.docker.internal`을 해당 게이트웨이에 명시적으로 매핑했습니다. Docker 네트워크가 재생성돼도 UFW 규칙과 목적지 주소가 바뀌지 않도록 하기 위한 조치입니다.
+  - macOS Compose는 Docker Desktop·Colima의 호스트 별칭 동작을 유지하기 위해 Linux 고정 IPAM을 적용하지 않았습니다.
+  - 운영 콘솔은 `VITE_PROXY_TARGET=http://fastapi:8000`을 사용하도록 하고, Linux inotify 한도 초과(`ENOSPC`)를 회피하기 위해 Chokidar polling과 1초 간격을 적용했습니다.
+  - 콘솔의 익명 `node_modules` 볼륨 권한 문제를 새 볼륨으로 해소하고 Vite 개발 서버가 정상 기동되는 것을 확인했습니다.
+  - Redis URL 전체를 출력하던 MCP 관리자와 내비게이션 Redis 초기화 로그를 일반 연결 성공 메시지로 교체했습니다.
+  - 기존 로그에 Redis 인증 URL이 노출된 이력이 있어 Redis 비밀번호를 로컬에서 재생성하고 관련 컨테이너를 재생성했습니다. 실제 비밀번호는 기록하지 않았습니다.
+
+- **호스트 Ollama 연결 및 방화벽 구성**:
+  - 호스트 Ollama가 `11434` 포트에서 실행되고 `gemma4:e4b`, `nomic-embed-text:latest` 모델이 설치된 것을 확인했습니다.
+  - FastAPI 컨테이너에서 `host.docker.internal`이 Docker 기본 브리지 주소로 해석되어 초기 UFW 규칙의 대상과 일치하지 않던 문제를 확인했습니다.
+  - Linux Compose 게이트웨이를 `172.18.0.1`로 고정한 후 `sudo ufw allow from 172.18.0.0/16 to 172.18.0.1 port 11434 proto tcp` 규칙을 적용했습니다.
+  - FastAPI 컨테이너 내부에서 호스트 Ollama `/api/tags`를 조회해 두 모델을 확인했습니다.
+  - 컨테이너에서 `gemma4:e4b` 실제 생성 요청을 보내 `연결 확인` 응답과 `done=true`를 확인했습니다.
+  - `nomic-embed-text` 실제 임베딩 요청으로 벡터 1개, 차원 768을 확인했습니다.
+
+- **Tailscale Serve 및 Mac·iOS 클라이언트 경로 구성**:
+  - tailnet 관리 콘솔에서 Serve 기능을 1회 활성화하고, Linux 호스트에서 `sudo tailscale set --operator="$USER"`로 현재 사용자에게 Serve 구성 권한을 부여했습니다.
+  - `tailscale serve --bg http://127.0.0.1:8000`을 적용해 서버 MagicDNS의 tailnet 전용 HTTPS/WSS 443 종단을 FastAPI 루프백 8000으로 프록시했습니다.
+  - 실제 MagicDNS 주소와 Tailscale IPv4는 로컬 설정에만 유지하고 본 변경 이력에서는 공개하지 않았습니다.
+  - MagicDNS `/`와 `/health` 요청에서 HTTP 200을 확인했습니다.
+  - 클라이언트 로컬 `.env`의 단말 ID·토큰을 읽되 값은 출력하지 않는 Node WebSocket 스모크를 실행해 `welcome -> hello -> auth_ok` 인증 핸드셰이크를 확인했습니다.
+  - Expo Metro를 `--host lan`으로 독립 백그라운드 세션에서 실행하고 로컬 루프백과 GPU 서버 Tailscale IPv4의 `8081/status`에서 모두 `packager-status:running`을 확인했습니다.
+  - Mac에서 만든 개발 빌드는 동일 tailnet에서 GPU 서버의 Tailscale IPv4 8081을 Metro 주소로 사용할 수 있고, FastAPI는 MagicDNS 443 WSS를 사용하도록 역할을 분리했습니다.
+  - 기존 Mac 빌드에 IP 기반 `wss://...:8000` 값이 번들돼 있다면 최신 `client/.env`를 Mac에 동기화한 뒤 Metro 재번들 또는 iOS 앱 재빌드가 필요함을 명시했습니다.
+  - Release·TestFlight 빌드는 JS 번들이 앱에 포함되므로 Mac의 최신 환경 변수를 반영해 재빌드해야 하며, 실행 시 Metro는 필요하지 않습니다.
+
+- **Raspberry Pi 외부 서비스 재검증**:
+  - FastAPI 컨테이너의 DB 환경 변수가 기존 Raspberry Pi MariaDB를 계속 가리키는 상태에서 읽기 전용 `SELECT 1`을 실행해 결과 `1`을 확인했습니다.
+  - 중앙 미디어 저장 백엔드가 활성 상태임을 확인하고 Raspberry Pi 미디어 API `/health`에서 HTTP 200을 확인했습니다.
+  - 인증이 필요한 미디어 객체 조회 경로는 토큰 원문을 출력하지 않은 상태에서 인증 실패가 아닌 미존재 객체 응답을 확인해 Bearer 인증 경로가 유지됨을 검증했습니다.
+
+- **실행 결과**:
+
+  | 검증 대상 | 결과 |
+  | :--- | :--- |
+  | FastAPI | `127.0.0.1:8000` HTTP 200, Tailscale Serve `/health` HTTP 200 |
+  | Redis | 컨테이너 `healthy`, FastAPI Redis 연결 성공 |
+  | MariaDB 컨테이너 | 컨테이너 `healthy`, 호스트 포트 미노출 |
+  | Raspberry Pi MariaDB | FastAPI 컨테이너에서 `SELECT 1` 성공 |
+  | Raspberry Pi 미디어 API | 원격 저장 활성, `/health` HTTP 200 |
+  | 운영 콘솔 | `127.0.0.1:5174` HTTP 200 |
+  | 호스트 Ollama | `/api/tags` HTTP 200, Gemma 생성 성공, nomic 임베딩 768차원 |
+  | Tailscale Serve | tailnet 전용 HTTPS/WSS 443 활성 |
+  | 클라이언트 WebSocket | 실제 `welcome -> hello -> auth_ok` 성공 |
+  | Expo Metro | 로컬 및 Tailscale IPv4 `8081/status` 응답 정상 |
+  | TTS | `TTS_ENGINE=supertonic`, 모델 로드와 30개 캐시 프리워밍 완료 |
+  | GPU 런타임 | 컨테이너에서 PyTorch cu130 및 CUDA GPU 인식 |
+
+- **검증 명령 및 품질 확인**:
+  - `docker compose --env-file ../.env -f docker-compose.yml config --quiet`: Linux 구성 통과
+  - `docker compose --env-file ../.env -f docker-compose.macos.yml config --quiet`: macOS 구성 통과
+  - `bash -n docker/linux_docker_start.sh`: 통과
+  - `docker ps --filter name=minchodan`: FastAPI·Redis·MariaDB·콘솔 모두 실행 상태 확인
+  - FastAPI 현재 컨테이너 전체 로그에서 `Traceback`, `ERROR`, 지원하지 않는 TTS 엔진 경고가 없음을 확인
+  - `git diff --check`: 통과
+
+- **문서 정합화**:
+  - `docs/ops/deployment_guide.md`와 `docs/ops/environment_variables.md`에 Linux 고정 Docker 서브넷, UFW 최소 허용 범위, `.env`의 `env_file` 주입, Tailscale Serve 초기 권한 설정, MagicDNS/443/WSS 클라이언트 구성을 반영했습니다.
+  - `client/.env.example`을 Tailscale IP·8000 예시에서 MagicDNS·443·`wss` 예시로 변경했습니다.
+  - 무선 테스트, 네트워크 지연 측정, Android 통합·빌드·온디바이스 실행, iOS/Android 분기 계약, 온디바이스 추론 격리 계획, 내비게이션 관제·서버 통합 지침을 같은 MagicDNS/443/WSS 기준으로 교차 갱신했습니다.
+  - 운영 가이드에 남아 있던 `minchodan-ollama` 컨테이너와 `llava` 다운로드 절차를 호스트 Ollama의 `gemma4:e4b`·`nomic-embed-text` 준비 절차로 정정했습니다. 이미지 캡셔닝은 Gemini 경로를 유지합니다.
+  - 과거 changelog와 연구·계획 문서의 역사적 기술 표현은 작업 당시 기록 보존을 위해 일괄 수정하지 않았습니다.
+
+- **관련 추적 파일**:
+  - Docker·환경 예시: `.dockerignore`, `.env.example`, `docker/.dockerignore`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docker/linux_docker_start.sh`, `client/.env.example`
+  - 로그 보안: `server/mcp/manager.py`, `server/navigation/server.py`
+  - 운영 문서: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/wireless_test_guide.md`, `docs/ops/network_latency_benchmark.md`, `docs/ops/tailscale_connection_guide.md`, Android 실행·통합 가이드 5종
+  - 모바일·통합 계약: `docs/mobile/ios_android_bifurcation_contract.md`, `docs/mobile/ondevice_inference_engine_isolation_plan.md`, `docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md`, `docs/dev-guides/integration/서버_및_시스템_통합_기술_지침서.md`
+  - 변경 이력: `docs/changelogs/jy.md`
+
+- **로컬 전용 변경 및 외부 런타임 상태**:
+  - 루트 `.env`, `client/.env`, 실제 단말 토큰, Redis·DB·미디어 API 비밀번호와 토큰, 실제 Tailscale IPv4·MagicDNS는 Git 추적 대상에서 제외했습니다.
+  - UFW 규칙, Tailscale Serve 활성화와 operator 지정, 호스트 Ollama 프로세스, 실행 중인 Metro는 호스트 런타임 상태이므로 저장소 checkout만으로 자동 복원되지 않습니다. 배포 가이드의 절차에 따라 새 호스트에서 별도로 적용해야 합니다.
+
+- **잔여 기능 상태**:
+  - 서버 연결과 인증은 완료됐지만 루트 `.env`의 `DETECTOR_TYPE=mock`이므로 서버 YOLO 실제 탐지는 아직 활성화하지 않았습니다.
+  - `data/chroma_db`가 존재하지 않아 RAG 검색 데이터베이스는 아직 구축되지 않았습니다.
+  - Mac에서 빌드한 실제 iOS 앱의 카메라 프레임 전송·TTS 수신까지의 실기기 종단 검증은 Mac 소스와 로컬 환경 변수 동기화 후 별도로 수행해야 합니다.
+  - 현재 Tailscale 피어 연결은 환경에 따라 DERP 릴레이를 사용할 수 있으므로 야외 실측 전 직접 연결 여부와 RTT를 다시 확인해야 합니다.
 
 ---

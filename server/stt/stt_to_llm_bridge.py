@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import time
 from typing import ClassVar
@@ -113,6 +114,12 @@ def _is_gildaeng_wake(text: str) -> bool:
 ECHO_MEMORY_TTL_SEC = 10.0
 ECHO_SIMILARITY_THRESHOLD = 0.6
 
+# 2026-07-19: 빈 전사/실패 안내 중복 발화 쿨다운(초).
+# 연속 오탐마다 "음성이 인식되지 않았어요"가 나와 재생 중 안내를 자르는 루프 방지.
+STT_EMPTY_NOTICE_COOLDOWN_SEC = 5.0
+STT_EMPTY_NOTICE_TEXT = "음성이 인식되지 않았어요. 다시 말씀해 주세요."
+STT_EMPTY_SUPPRESSED_SOURCE = "stt-bridge-empty-suppressed"
+
 
 def _is_self_echo(transcript: str, recent_guidance: str) -> bool:
     """전사 결과가 앱이 방금 재생한 안내문과 유사한지 판정한다.
@@ -207,12 +214,46 @@ class SttToLlmBridge:
     # 2026-07-11: device_id별 최근 전송 안내문 캐시 (자기-에코 감지용).
     # {device_id: (guidance_text, timestamp_monotonic)}
     _recent_guidance: ClassVar[dict[str, tuple[str, float]]] = {}
+    # 2026-07-19: device_id별 빈 전사 안내 마지막 발화 시각
+    _last_empty_notice_ts: ClassVar[dict[str, float]] = {}
 
     @classmethod
     def _record_guidance(cls, device_id: str, guidance_text: str) -> None:
         """클라이언트에 전송할 안내문을 에코 감지용 메모리에 기록한다."""
         if guidance_text:
             cls._recent_guidance[device_id] = (guidance_text, time.monotonic())
+
+    @classmethod
+    def _should_suppress_empty_notice(cls, device_id: str) -> bool:
+        """동일 device의 빈 전사 안내가 쿨다운 내면 True(발화 억제)."""
+        last_ts = cls._last_empty_notice_ts.get(device_id)
+        if last_ts is None:
+            return False
+        return (time.monotonic() - last_ts) < STT_EMPTY_NOTICE_COOLDOWN_SEC
+
+    @classmethod
+    def _mark_empty_notice(cls, device_id: str) -> None:
+        cls._last_empty_notice_ts[device_id] = time.monotonic()
+
+    @classmethod
+    def _empty_input_response(cls, device_id: str) -> dict:
+        """빈 전사 응답. 쿨다운 내면 무음 억제(클라이언트 미전송용 빈 guidance)."""
+        if cls._should_suppress_empty_notice(device_id):
+            print(
+                f"[STT BRIDGE] 빈 전사 안내 쿨다운 억제: device_id={device_id}, "
+                f"cooldown={STT_EMPTY_NOTICE_COOLDOWN_SEC}s"
+            )
+            return {
+                "guidance_text": "",
+                "used_fallback_llm": True,
+                "source": STT_EMPTY_SUPPRESSED_SOURCE,
+            }
+        cls._mark_empty_notice(device_id)
+        return {
+            "guidance_text": STT_EMPTY_NOTICE_TEXT,
+            "used_fallback_llm": True,
+            "source": "stt-bridge-empty",
+        }
 
     @classmethod
     def _check_self_echo(cls, device_id: str, transcript: str) -> bool:
@@ -353,12 +394,9 @@ class SttToLlmBridge:
         normalized_text = self._normalize_stt_text(stt_result.text)
 
         # [하드 코딩 부분 - 핵심] 입력 없음은 안전 우선 안내로 즉시 종료한다.
+        # 2026-07-19: 연속 오탐 시 동일 안내 쿨다운 억제.
         if not normalized_text:
-            return {
-                "guidance_text": "음성이 인식되지 않았어요. 다시 말씀해 주세요.",
-                "used_fallback_llm": True,
-                "source": "stt-bridge-empty",
-            }
+            return self._empty_input_response(device_id)
 
         # 2026-07-11 추가: 자기-에코 감지. TTS 안내문이 재생되는 도중 사용자가 녹음
         # 버튼을 누르면 스피커 소리가 마이크로 다시 들어가 전사된다(음향 블리드). 이
@@ -376,6 +414,12 @@ class SttToLlmBridge:
                 "used_fallback_llm": True,
                 "source": "stt-echo-detected",
             }
+
+        from server.stt.dial_resolver import resolve_dial_action
+
+        dial_result = await resolve_dial_action(device_id, normalized_text)
+        if dial_result is not None:
+            return dial_result
 
         # 2026-07-10 정정(실기기 실측): device_id를 "default_device"로 하드코딩했더니
         # 목적지 설정(WAITING_FOR_DESTINATION/NAVIGATING)은 이 가짜 ID의 세션에 저장되는
@@ -565,17 +609,24 @@ class SttToLlmBridge:
             try:
                 session = nav_manager._get_or_create_session(device_id)
 
-                # [하드 코딩 부분 - 핵심]
-                # GPS 미수신 시 서울역 인근 좌표를 기본 시작점으로 사용한다.
-                # 작성법: 폴백 좌표는 운영 기준점 하나로 고정하고 문서화한다.
-                curr_lat = session.lat if session.lat is not None else 37.5560
-                curr_lon = session.lon if session.lon is not None else 126.9722
+                # GPS 미수신이면 서울역 등 가짜 출발점으로 경로를 만들지 않는다.
+                # (콘솔/앱에 엉뚱한 위치가 찍히는 사고 방지)
+                if session.lat is None or session.lon is None:
+                    return {
+                        "guidance_text": (
+                            "현재 위치를 아직 받지 못했습니다. 잠시 후 목적지를 다시 말씀해 주세요."
+                        ),
+                        "used_fallback_llm": True,
+                        "source": "navigation-setup-no-gps",
+                    }
+                curr_lat = session.lat
+                curr_lon = session.lon
 
                 start_poi = {"name": "내 실시간 위치", "x": str(curr_lon), "y": str(curr_lat)}
 
-                end_poi = helper_search_poi(destination)
+                end_poi = await asyncio.to_thread(helper_search_poi, destination)
                 if end_poi:
-                    route_data = helper_fetch_route(start_poi, end_poi)
+                    route_data = await asyncio.to_thread(helper_fetch_route, start_poi, end_poi)
                     if route_data:
                         session_waypoints = []
                         features = route_data.get("features", [])
@@ -686,9 +737,10 @@ class SttToLlmBridge:
         from server.navigation.server import helper_search_nearest_poi
 
         session = nav_manager._get_or_create_session(device_id)
-        # GPS 미수신 시 서울역 인근 좌표를 기본값으로 사용(목적지 설정 분기와 동일 정책).
-        lat = session.lat if session.lat is not None else 37.5560
-        lon = session.lon if session.lon is not None else 126.9722
+        if session.lat is None or session.lon is None:
+            return "현재 위치를 아직 받지 못했습니다. 잠시 후 다시 말씀해 주세요."
+        lat = session.lat
+        lon = session.lon
 
         try:
             result = helper_search_nearest_poi(category, lat, lon)
@@ -711,8 +763,14 @@ class SttToLlmBridge:
         """자유 질의응답 모드에서 받은 발화에 답한다.
 
         순서: 1) 근접 POI 질의면 실거리 검색으로 사실 기반 답변(환각 방지)
-              2) 생활지원/기관 검색 질의면 RAG + Gemini로 답변
+              2) 생활지원/기관 검색 질의면 Convenience RAG(Ollama→Gemini 폴백)
               3) 아니면 장애물 회피 오케스트레이터를 우회해 순수 LLM 대화로 답변
+
+        # 💡 [면접 대비 주석 - STT → RAG 분기]
+        Q. 음성 질문이 왜 가끔 벡터DB 내용이 안 나오고 일반 안내만 나오나?
+        A. (1) looks_like_convenience_query miss → 3번 일반 LLM
+           (2) Convenience RAG 예외(예: bge-m3 미설치) → except 후 3번 폴백
+           콘솔 source가 question-convenience-rag 인지로 성공 여부를 판별한다.
         """
         if not question:
             return {
@@ -721,6 +779,7 @@ class SttToLlmBridge:
                 "source": "question-empty",
             }
 
+        # [하드 코딩 부분 - 핵심] 1) POI 실거리(환각 방지) 우선.
         poi_answer = self._try_answer_from_poi(device_id, question)
         if poi_answer:
             return {
@@ -729,8 +788,10 @@ class SttToLlmBridge:
                 "source": "question-poi",
             }
 
+        # [하드 코딩 부분 - 핵심] 2) 키워드 hit → 생활지원 RAG(인지 TTS와 동일 guide 경로).
         if looks_like_convenience_query(question):
             try:
+                # [바이브 코딩 부분] RAG 호출·결과 매핑. 실패 시 아래 일반 LLM으로 안전 폴백.
                 rag_result = await answer_convenience_question(question)
                 answer_text = (rag_result.get("answer") or "").strip()
                 if answer_text:
@@ -745,6 +806,7 @@ class SttToLlmBridge:
             except Exception as e:
                 print(f"[STT BRIDGE] Convenience RAG failed: {e}")
 
+        # [바이브 코딩 부분] 3) 일반 자유 대화 LLM (오케스트레이터 20자 가이드와 분리).
         try:
             from langchain_core.messages import HumanMessage, SystemMessage
 

@@ -110,12 +110,21 @@ def test_build_orch_input_success() -> None:
 @pytest.mark.asyncio
 async def test_invoke_existing_llm_empty_fallback() -> None:
     bridge = SttToLlmBridge()
+    # 쿨다운 상태 초기화 (다른 테스트 오염 방지)
+    SttToLlmBridge._last_empty_notice_ts.pop("test-device", None)
     result = _make_stt_result("", has_input=False)
 
     response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "stt-bridge-empty"
     assert response["used_fallback_llm"] is True
+    assert "인식되지" in response["guidance_text"]
+
+    # 쿨다운 내 재호출은 무음 억제
+    suppressed = await bridge.invoke_existing_llm(result, "test-device")
+    assert suppressed["source"] == "stt-bridge-empty-suppressed"
+    assert suppressed["guidance_text"] == ""
+    SttToLlmBridge._last_empty_notice_ts.pop("test-device", None)
 
 
 @pytest.mark.asyncio
@@ -276,6 +285,11 @@ async def test_navigation_destination_setup_success(
     import server.navigation.server as nav_server_module
 
     fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    # 2026-07-18(th): 서울역 GPS 폴백이 제거되어 session.lat/lon이 None이면
+    # navigation-setup-no-gps로 조기 반환한다 - 이 테스트는 GPS 수신 상태의
+    # 목적지 설정 성공 경로를 검증하므로 실좌표를 채워야 한다.
+    fake_manager.session.lat = 37.5665
+    fake_manager.session.lon = 126.9780
     monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
 
     def _fake_search_poi(keyword: str) -> dict:
@@ -316,6 +330,10 @@ async def test_navigation_destination_setup_fail_when_poi_not_found(
     import server.navigation.server as nav_server_module
 
     fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    # 2026-07-18(th): GPS 미수신이면 POI 검색 이전에 navigation-setup-no-gps로
+    # 조기 반환하므로, POI 미발견 분기를 검증하려면 실좌표가 필요하다.
+    fake_manager.session.lat = 37.5665
+    fake_manager.session.lon = 126.9780
     monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
 
     def _fake_search_poi(_keyword: str):
@@ -332,6 +350,33 @@ async def test_navigation_destination_setup_fail_when_poi_not_found(
     response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "navigation-setup-fail"
+    assert fake_manager.status == "WAITING_FOR_DESTINATION"
+
+
+@pytest.mark.asyncio
+async def test_navigation_destination_setup_no_gps(monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-07-18(th): GPS 미수신 상태에서는 서울역 등 가짜 출발점 없이
+    navigation-setup-no-gps로 조기 반환하고 POI/경로 조회를 아예 시도하지 않는다."""
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    search_calls: list[str] = []
+
+    def _fake_search_poi(keyword: str) -> dict:
+        search_calls.append(keyword)
+        return {"name": "서울역", "x": "126.9707", "y": "37.5547"}
+
+    monkeypatch.setattr(nav_server_module, "helper_search_poi", _fake_search_poi)
+
+    bridge = SttToLlmBridge()
+    result = _make_stt_result("서울역으로 설정")
+    response = await bridge.invoke_existing_llm(result, "test-device")
+
+    assert response["source"] == "navigation-setup-no-gps"
+    assert search_calls == []
     assert fake_manager.status == "WAITING_FOR_DESTINATION"
 
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DetectionGuidanceLogRow, LatencyStages, PipelineDebug } from "../types/monitor";
-import { eventFrameUrl } from "../api/useDetectionLogs";
+import { useAuthorizedEventFrameUrl } from "../api/useDetectionLogs";
 
 // 발표/면접 포인트:
 // - 이 컴포넌트는 실시간 SSE DetectionFeed가 아니라,
@@ -9,7 +9,7 @@ import { eventFrameUrl } from "../api/useDetectionLogs";
 //   오탐 여부 판별과 안내 발화 당시 상황 확인에 사용합니다.
 // - bbox는 이미지에 굽지 않고 detected_objects_json 좌표로 오버레이 렌더링합니다.
 //   원본 이미지를 보존해야 임계값/모델을 바꿔 재검증할 수 있기 때문입니다.
-// - 썸네일/상세 이미지를 클릭하면 라이트박스(확대 보기)가 열립니다.
+// - 목록 썸네일·상세·라이트박스 모두 동일 오버레이를 쓰며, 썸네일 클릭 시 확대 보기가 열립니다.
 
 // iOS 정자세 JPEG 재배포 후 Live Feed와 동일하게 0.
 const LOG_IMAGE_ROTATE_DEG: number = 0;
@@ -63,7 +63,8 @@ interface LoggedDetection {
   confidence?: number;
   direction?: string | null;
   bbox?: { x: number; y: number; w: number; h: number };
-  // 반사 로그는 bbox 없이 alert 메타데이터만 가집니다.
+  // 반사 로그는 과거엔 bbox 없이 alert 메타만 남겼다. 현재는 bbox를 함께 저장하며,
+  // 구 로그는 pipeline_debug.detections_summary로 오버레이 폴백한다.
   alert_id?: string;
   risk_level?: string;
   distance?: string | null;
@@ -76,6 +77,82 @@ function parseDetections(json: string): LoggedDetection[] {
   } catch {
     return [];
   }
+}
+
+function hasValidBBox(
+  bbox: LoggedDetection["bbox"] | Record<string, unknown> | null | undefined,
+): bbox is { x: number; y: number; w: number; h: number } {
+  if (!bbox || typeof bbox !== "object") return false;
+  const x = Number((bbox as { x?: unknown }).x);
+  const y = Number((bbox as { y?: unknown }).y);
+  const w = Number((bbox as { w?: unknown }).w);
+  const h = Number((bbox as { h?: unknown }).h);
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0;
+}
+
+function toLoggedDetection(raw: Record<string, unknown>): LoggedDetection | null {
+  const bboxRaw = raw.bbox as LoggedDetection["bbox"] | undefined;
+  if (!hasValidBBox(bboxRaw)) return null;
+  return {
+    track_id: (raw.track_id as string | null | undefined) ?? null,
+    class_name: typeof raw.class_name === "string" ? raw.class_name : undefined,
+    confidence: typeof raw.confidence === "number" ? raw.confidence : undefined,
+    direction: (raw.direction as string | null | undefined) ?? null,
+    bbox: {
+      x: Number(bboxRaw.x),
+      y: Number(bboxRaw.y),
+      w: Number(bboxRaw.w),
+      h: Number(bboxRaw.h),
+    },
+    alert_id: typeof raw.alert_id === "string" ? raw.alert_id : undefined,
+    risk_level: typeof raw.risk_level === "string" ? raw.risk_level : undefined,
+    distance:
+      typeof raw.distance === "string" || typeof raw.distance === "number"
+        ? String(raw.distance)
+        : null,
+  };
+}
+
+/** 오버레이용 탐지 목록.
+ * detected_objects_json에 bbox가 없으면(반사 로그·구버전) pipeline_debug의
+ * detections_summary / surfaces_summary(centroid→가상 bbox)로 폴백한다.
+ */
+function resolveOverlayDetections(
+  detectedObjectsJson: string,
+  pipelineDebugJson: string | PipelineDebug | null | undefined,
+): LoggedDetection[] {
+  const fromObjects = parseDetections(detectedObjectsJson)
+    .map((det) => (hasValidBBox(det.bbox) ? det : null))
+    .filter((det): det is LoggedDetection => det !== null);
+  if (fromObjects.length > 0) return fromObjects;
+
+  const debug = parsePipelineDebug(pipelineDebugJson);
+  const fromSummary: LoggedDetection[] = [];
+  for (const raw of debug?.detections_summary ?? []) {
+    if (!raw || typeof raw !== "object") continue;
+    const mapped = toLoggedDetection(raw as Record<string, unknown>);
+    if (mapped) fromSummary.push(mapped);
+  }
+  if (fromSummary.length > 0) return fromSummary;
+
+  const fromSurfaces: LoggedDetection[] = [];
+  for (const surf of debug?.surfaces_summary ?? []) {
+    if (!surf || typeof surf !== "object") continue;
+    const centroid = (surf as { centroid?: unknown }).centroid;
+    if (!Array.isArray(centroid) || centroid.length < 2) continue;
+    const cx = Number(centroid[0]);
+    const cy = Number(centroid[1]);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+    fromSurfaces.push({
+      class_name:
+        typeof (surf as { class_name?: unknown }).class_name === "string"
+          ? String((surf as { class_name?: unknown }).class_name)
+          : "surface",
+      confidence: 1,
+      bbox: { x: cx - 40, y: cy - 40, w: 80, h: 80 },
+    });
+  }
+  return fromSurfaces;
 }
 
 // 탐지 시각을 한국 표준시(KST) 기준 "YYYY-MM-DD HH:mm:ss"로 고정 표기합니다.
@@ -121,7 +198,9 @@ function parsePipelineDebug(raw: string | PipelineDebug | null | undefined): Pip
   }
 }
 
-/** 테이블 한 줄 요약용: STT 전사 / LLM 응답 / 패스트레인 등 핵심 텍스트 추출. */
+/** 테이블 한 줄 요약용: 사용자 발화(STT 전사)만 노출한다.
+ *  - "TTS 안내문" 컬럼과 겹치지 않도록 LLM 응답/최종 안내문은 이 컬럼에서 제외한다.
+ *  - 반사/인지 등 STT 입력이 없는 경로는 빈 문자열을 반환한다(테이블에서는 "-"로 표시). */
 function summarizePipelineDebug(
   debugJson: string | PipelineDebug | null | undefined,
   detectedObjectsJson: string,
@@ -131,25 +210,8 @@ function summarizePipelineDebug(
     return `[에코 스킵] ${debug.stt_transcript}`;
   }
   if (debug?.stt_transcript) {
-    const parts = [debug.stt_transcript];
-    if (debug.llm_text && debug.llm_text !== debug.stt_transcript) {
-      parts.push(`-> ${debug.llm_text}`);
-    } else if (debug.template_text && debug.template_text !== debug.stt_transcript) {
-      parts.push(`-> ${debug.template_text}`);
-    } else if (debug.response_text && debug.response_text !== debug.stt_transcript) {
-      parts.push(`-> ${debug.response_text}`);
-    }
-    return parts.join(" ");
+    return debug.stt_transcript;
   }
-  if (debug?.llm_text) return debug.llm_text;
-  if (debug?.response_text) return debug.response_text;
-  if (debug?.detections_summary?.length) {
-    const det = debug.detections_summary[0];
-    const cls = String(det.class_name ?? "");
-    const conf = det.confidence != null ? ` ${det.confidence}` : "";
-    return `${cls}${conf}`;
-  }
-  if (debug?.rag_context) return debug.rag_context.slice(0, 80);
 
   // pipeline_debug_json 이전 STT 로그 폴백: detected_objects_json.stt_transcript
   try {
@@ -345,6 +407,7 @@ const LATENCY_STAGE_ORDER: Array<[keyof LatencyStages, string]> = [
   ["rag_ms", "RAG"],
   ["llm_ms", "LLM"],
   ["tts_ms", "TTS"],
+  ["stt_audio_upload_ms", "음성업로드"],
   ["db_save_ms", "DB저장"],
   ["total_ms", "총합"],
 ];
@@ -415,9 +478,23 @@ function FrameWithOverlay({
 }) {
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [isImageBroken, setIsImageBroken] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const boxes = detections.filter(
     (det) => det.bbox && det.bbox.w > 0 && det.bbox.h > 0,
   );
+
+  useEffect(() => {
+    setNatural(null);
+    setIsImageBroken(false);
+  }, [src]);
+
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    if (img?.complete && img.naturalWidth > 0) {
+      setIsImageBroken(false);
+      setNatural({ w: img.naturalWidth, h: img.naturalHeight });
+    }
+  }, [src]);
 
   return (
     <div
@@ -434,6 +511,7 @@ function FrameWithOverlay({
       }
     >
       <img
+        ref={imgRef}
         src={src}
         alt="이벤트 프레임"
         className="frame-overlay-image live-feed-rotated"
@@ -484,6 +562,31 @@ function FrameWithOverlay({
           );
         })}
     </div>
+  );
+}
+
+function AuthorizedFrameWithOverlay({
+  eventId,
+  token,
+  detections,
+  className,
+  onClick,
+}: {
+  eventId: string;
+  token: string;
+  detections: LoggedDetection[];
+  className?: string;
+  onClick?: () => void;
+}) {
+  const src = useAuthorizedEventFrameUrl(eventId, token);
+  if (!src) return <span className="frame-loading">프레임 불러오는 중</span>;
+  return (
+    <FrameWithOverlay
+      src={src}
+      detections={detections}
+      className={className}
+      onClick={onClick}
+    />
   );
 }
 
@@ -550,6 +653,12 @@ function FrameLightbox({
             </div>
             <div className="frame-detail-item frame-detail-item-full">
               <span className="frame-detail-label">파이프라인 텍스트</span>
+              <span className="frame-detail-value">
+                {summarizePipelineDebug(row.pipeline_debug_json, row.detected_objects_json) || "-"}
+              </span>
+            </div>
+            <div className="frame-detail-item frame-detail-item-full">
+              <span className="frame-detail-label">파이프라인 디버그</span>
               <div className="frame-detail-value">
                 <PipelineDebugPanel
                   debugJson={row.pipeline_debug_json}
@@ -586,9 +695,13 @@ function FrameLightbox({
           </div>
         </div>
         <div className="frame-detail-image">
-          <FrameWithOverlay
-            src={eventFrameUrl(row.event_id!, token)}
-            detections={parseDetections(row.detected_objects_json)}
+          <AuthorizedFrameWithOverlay
+            eventId={row.event_id!}
+            token={token}
+            detections={resolveOverlayDetections(
+              row.detected_objects_json,
+              row.pipeline_debug_json,
+            )}
             className="frame-overlay-lightbox"
           />
         </div>
@@ -604,6 +717,8 @@ export function DetectionGuidanceLogTable({
   onRefresh,
   refreshing,
   live,
+  streamFilter = "all",
+  onStreamFilterChange,
   page = 0,
   pageSize = 10,
   totalCount,
@@ -617,6 +732,8 @@ export function DetectionGuidanceLogTable({
   onRefresh?: () => void;
   refreshing?: boolean;
   live?: boolean;
+  streamFilter?: StreamFilter;
+  onStreamFilterChange?: (filter: StreamFilter) => void;
   // 2026-07-12: 서버 페이지네이션으로 전환 - rows는 이미 서버가 offset/limit으로 잘라
   // 보낸 "현재 페이지" 데이터라 여기서 다시 슬라이싱하지 않는다. 페이지 이동은
   // onPrevPage/onNextPage로 부모(App.tsx)에 위임해 실제 REST 재조회를 트리거한다.
@@ -629,20 +746,21 @@ export function DetectionGuidanceLogTable({
 }) {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const [lightboxLogId, setLightboxLogId] = useState<number | null>(null);
-  const [streamFilter, setStreamFilter] = useState<StreamFilter>("all");
   const [isStreamFilterOpen, setIsStreamFilterOpen] = useState(false);
   const [isPageSearchOpen, setIsPageSearchOpen] = useState(false);
   const [pageSearchInput, setPageSearchInput] = useState("");
   const streamFilterRef = useRef<HTMLDivElement | null>(null);
   const pageSearchRef = useRef<HTMLDivElement | null>(null);
-  const filteredRows = useMemo(
+  const displayRows = useMemo(
     () =>
-      rows.filter(
-        (row) =>
-          streamFilter === "all" ||
-          (streamFilter === "reflex" && row.stream_type === "reflex") ||
-          (streamFilter === "cognitive" && row.stream_type === "cognitive"),
-      ),
+      [...rows]
+        .filter(
+          (row) =>
+            streamFilter === "all" ||
+            (streamFilter === "reflex" && row.stream_type === "reflex") ||
+            (streamFilter === "cognitive" && row.stream_type === "cognitive"),
+        )
+        .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime()),
     [rows, streamFilter],
   );
   const totalPages = Math.max(1, Math.ceil((totalCount ?? rows.length) / pageSize));
@@ -653,19 +771,19 @@ export function DetectionGuidanceLogTable({
     { length: pageWindowEnd - pageWindowStart },
     (_, index) => pageWindowStart + index,
   );
-  const selected = filteredRows.find((row) => row.log_id === selectedLogId) ?? null;
-  const lightboxRow = filteredRows.find((row) => row.log_id === lightboxLogId) ?? null;
+  const selected = displayRows.find((row) => row.log_id === selectedLogId) ?? null;
+  const lightboxRow = displayRows.find((row) => row.log_id === lightboxLogId) ?? null;
   const canShowFrame = (row: DetectionGuidanceLogRow) =>
     Boolean(token && row.event_id && row.frame_path);
 
   useEffect(() => {
-    if (selectedLogId !== null && !filteredRows.some((row) => row.log_id === selectedLogId)) {
+    if (selectedLogId !== null && !displayRows.some((row) => row.log_id === selectedLogId)) {
       setSelectedLogId(null);
     }
-    if (lightboxLogId !== null && !filteredRows.some((row) => row.log_id === lightboxLogId)) {
+    if (lightboxLogId !== null && !displayRows.some((row) => row.log_id === lightboxLogId)) {
       setLightboxLogId(null);
     }
-  }, [filteredRows, selectedLogId, lightboxLogId]);
+  }, [displayRows, selectedLogId, lightboxLogId]);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -757,7 +875,8 @@ export function DetectionGuidanceLogTable({
                 aria-selected={streamFilter === option}
                 className={`stream-filter-option ${streamFilter === option ? "stream-filter-option-active" : ""}`}
                 onClick={() => {
-                  setStreamFilter(option);
+                  onStreamFilterChange?.(option);
+                  onSetPage?.(0);
                   setIsStreamFilterOpen(false);
                 }}
               >
@@ -768,7 +887,7 @@ export function DetectionGuidanceLogTable({
         )}
       </div>
 
-      {filteredRows.length === 0 ? (
+      {displayRows.length === 0 ? (
         <p className="empty-text">아직 저장된 탐지/안내 이력이 없습니다.</p>
       ) : (
         <div className="table-wrap">
@@ -788,7 +907,7 @@ export function DetectionGuidanceLogTable({
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((row) => {
+              {displayRows.map((row) => {
                 const totalMs = parseLatency(row.latency_json).total_ms;
                 return (
                   <tr
@@ -810,16 +929,20 @@ export function DetectionGuidanceLogTable({
                         <button
                           type="button"
                           className="frame-thumb-btn"
+                          aria-label="이벤트 프레임 확대 보기"
                           onClick={(event) => {
                             event.stopPropagation();
                             setLightboxLogId(row.log_id);
                           }}
                         >
-                          <img
-                            src={eventFrameUrl(row.event_id!, token!)}
-                            alt="이벤트 썸네일 (클릭하면 확대)"
-                            className="frame-thumb"
-                            loading="lazy"
+                          <AuthorizedFrameWithOverlay
+                            eventId={row.event_id!}
+                            token={token!}
+                            detections={resolveOverlayDetections(
+                              row.detected_objects_json,
+                              row.pipeline_debug_json,
+                            )}
+                            className="frame-overlay-thumb"
                           />
                         </button>
                       ) : (
@@ -875,55 +998,59 @@ export function DetectionGuidanceLogTable({
             </button>
           ))}
 
-          <div className="page-search-anchor" ref={pageSearchRef}>
-            <button
-              type="button"
-              className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
-              onClick={() => setIsPageSearchOpen((open) => !open)}
-              disabled={disablePaginationControls}
-              aria-label="페이지 번호 검색"
-            >
-              ...
-            </button>
+          {pageWindowEnd < totalPages && (
+            <>
+              <div className="page-search-anchor" ref={pageSearchRef}>
+                <button
+                  type="button"
+                  className={`page-btn page-jump-btn ${isPageSearchOpen ? "page-btn-active" : ""}`}
+                  onClick={() => setIsPageSearchOpen((open) => !open)}
+                  disabled={disablePaginationControls}
+                  aria-label="페이지 번호 검색"
+                >
+                  ...
+                </button>
 
-            {isPageSearchOpen && (
-              <div className="page-search-popover">
-                <label className="page-search-label" htmlFor="log-page-search-input">
-                  페이지 번호
-                </label>
-                <div className="page-search-row">
-                  <input
-                    id="log-page-search-input"
-                    type="number"
-                    className="page-search-input"
-                    min={1}
-                    max={totalPages}
-                    placeholder={`1-${totalPages}`}
-                    value={pageSearchInput}
-                    onChange={(event) => setPageSearchInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        jumpToPage();
-                      }
-                    }}
-                  />
-                  <button type="button" className="page-btn" onClick={jumpToPage}>
-                    이동
-                  </button>
-                </div>
+                {isPageSearchOpen && (
+                  <div className="page-search-popover">
+                    <label className="page-search-label" htmlFor="log-page-search-input">
+                      페이지 번호
+                    </label>
+                    <div className="page-search-row">
+                      <input
+                        id="log-page-search-input"
+                        type="number"
+                        className="page-search-input"
+                        min={1}
+                        max={totalPages}
+                        placeholder={`1-${totalPages}`}
+                        value={pageSearchInput}
+                        onChange={(event) => setPageSearchInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            jumpToPage();
+                          }
+                        }}
+                      />
+                      <button type="button" className="page-btn" onClick={jumpToPage}>
+                        이동
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <button
-            type="button"
-            className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
-            onClick={() => onSetPage?.(totalPages - 1)}
-            disabled={disablePaginationControls}
-          >
-            {totalPages}
-          </button>
+              <button
+                type="button"
+                className={`page-btn ${page === totalPages - 1 ? "page-btn-active" : ""}`}
+                onClick={() => onSetPage?.(totalPages - 1)}
+                disabled={disablePaginationControls}
+              >
+                {totalPages}
+              </button>
+            </>
+          )}
         </div>
 
         <button
@@ -964,6 +1091,12 @@ export function DetectionGuidanceLogTable({
                 </div>
                 <div className="frame-detail-item frame-detail-item-full">
                   <span className="frame-detail-label">파이프라인 텍스트</span>
+                  <span className="frame-detail-value">
+                    {summarizePipelineDebug(selected.pipeline_debug_json, selected.detected_objects_json) || "-"}
+                  </span>
+                </div>
+                <div className="frame-detail-item frame-detail-item-full">
+                  <span className="frame-detail-label">파이프라인 디버그</span>
                   <div className="frame-detail-value">
                     <PipelineDebugPanel
                       debugJson={selected.pipeline_debug_json}
@@ -1009,9 +1142,13 @@ export function DetectionGuidanceLogTable({
               </div>
               {canShowFrame(selected) && token && (
                 <div className="frame-detail-image">
-                  <FrameWithOverlay
-                    src={eventFrameUrl(selected.event_id!, token)}
-                    detections={parseDetections(selected.detected_objects_json)}
+                  <AuthorizedFrameWithOverlay
+                    eventId={selected.event_id!}
+                    token={token}
+                    detections={resolveOverlayDetections(
+                      selected.detected_objects_json,
+                      selected.pipeline_debug_json,
+                    )}
                     onClick={() => setLightboxLogId(selected.log_id)}
                   />
                 </div>

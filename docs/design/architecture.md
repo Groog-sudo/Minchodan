@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.8 (2026-07-16 §13.3.2 `risk_event` SSE 발행 wiring 반영, `pipeline_debug_json`·STT 대기 안내 문서 교차 검증)
+> **버전**: v0.4.14 (2026-07-20 Medium 인지 기본 컨텍스트를 인메모리 회피 힌트(`GUIDANCE_CONTEXT_MODE=hints`)로 전환, Chroma RAG는 `rag` 롤백)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -46,7 +46,7 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 ### 인프라
 
 - Docker (Redis + MariaDB + FastAPI 컨테이너. Ollama는 컨테이너가 아닌 호스트 로컬 실행 `OLLAMA_BASE_URL=http://host.docker.internal:11434`)
-- CUDA 12.8 + cu128 PyTorch 휠 (Blackwell sm_120 전제)
+- 팀 GPU 서버 최대 사양 RTX 5090(Blackwell sm_120). Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU
 
 ---
 
@@ -78,9 +78,10 @@ graph TD
             SurfaceGate["Surface Fast-Alert Gate<br/>(룰베이스, LLM 미경유)"]
         end
 
-        subgraph Rag ["4·5. Vector DB 구축·검색"]
+        subgraph Rag ["4·5. 인지 컨텍스트 (힌트 / RAG)"]
+            Hints["GuidanceHints dict<br/>(기본, GUIDANCE_CONTEXT_MODE=hints)"]
             Builder["Build (오프라인)<br/>Gemini VLM 캡셔닝 + 임베딩"]
-            Retriever["Retriever<br/>(similarity_search k=5)"]
+            Retriever["Retriever<br/>(rag 모드, similarity_search k=5)"]
             Fallback["Rule Fallback"]
         end
 
@@ -99,7 +100,7 @@ graph TD
 
         subgraph Nav ["부가 기능. 실시간 내비게이션"]
             NavManager["NavigationManager<br/>(디바이스별 세션 상태기계)"]
-            Tmap["TMAP 보행자 경로 API<br/>(server/navigation/pedestrian_navigation.py)"]
+            Tmap["TMAP 보행자 경로 API<br/>(server/navigation/server.py)"]
         end
 
         subgraph Bus ["Redis Bus"]
@@ -136,7 +137,8 @@ graph TD
     L3 -->|"RETRY 1회"| L2
     L3 -->|"실패"| FallbackNode
     FallbackNode --> RealtimeTTS
-    Retriever --> L2
+    Hints -->|"기본 rag_context"| L2
+    Retriever -->|"GUIDANCE_CONTEXT_MODE=rag"| L2
     Builder --> Chroma
     Chroma --> Retriever
     Retriever --> Fallback
@@ -163,7 +165,7 @@ graph TD
 | :-------------------------------------------- | :------------------------------------------------------------------------- | :--- |
 | `server/api/`                                 | WebSocket 엔드포인트, 세션 관리, 하트비트                                  | 1    |
 | `server/api/ws_router.py`                     | `APIRouter` + `WebSocket /ws/detect`                                       | 1    |
-| `server/api/session_manager.py`               | `device_token` 검증, `session_id` 발급                                     | 1    |
+| `server/api/session_manager.py`               | `device_token` 검증, `session_id` 발급, **2026-07-18 추가(T3-S)**: device_id별 STT 상호작용 활성 레지스트리(`_stt_activity`)로 인지 가이드 발행 억제 상태 공유 | 1    |
 | `server/api/heartbeat.py`                     | 5초 ping/pong asyncio 루프                                                 | 1    |
 | `server/capture/frame_decoder.py`             | base64 `np.frombuffer` `cv2.imdecode` resize(640,640)                      | 2    |
 | `server/capture/stream_splitter.py`           | 반사 스트림(8~10fps) / 인지 스트림(1~2fps) 분기                            | 2    |
@@ -175,14 +177,15 @@ graph TD
 | `server/detection/gates/head_level_gate.py`   | 두상 높이 장애물(간판/차양 등) 게이트 판정                                 | 3    |
 | `server/detection/direction.py`               | bbox 기준 좌/우/직진 방향 판정 로직                                        | 3    |
 | `server/detection/risk_rules.py`               | 클래스별 위험도(high/mid/low) 규칙 판정                                    | 3    |
-| `server/detection/detection_pipeline.py`      | 탐지→게이트 전체 파이프라인 조립, `run()` 3-tuple 반환                     | 3    |
+| `server/detection/detection_pipeline.py`      | 탐지→게이트 전체 파이프라인 조립, `run()` 3-tuple 반환. **2026-07-18 추가(T1-a)**: 접근 객체(`direction==approaching`)의 hit_count 선필터를 4→2로 완화해 신규 접근 위험에 빠르게 반응 | 3    |
 | `server/detection/schemas.py`                 | `DetectionResult`, `SurfaceResult`, `RiskEvent` 타입                       | 3    |
 | `server/rag/build/frame_extractor.py`         | 영상 1fps 프레임 추출                                                      | 4    |
 | `server/rag/build/dedup_phash.py`             | pHash 중복 제거                                                            | 4    |
 | `server/rag/build/gemini_captioner.py`        | Gemini API(`gemini-2.5-flash-lite`) 한글 캡셔닝, `GOOGLE_API_KEY` 미설정 시 Mock 폴백 | 4    |
 | `server/rag/build/db_builder.py`              | `Chroma.from_documents(persist_directory)`                                 | 4    |
-| `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)`                                        | 5    |
-| `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열                                     | 5    |
+| `server/rag/guidance_hints.py`                | Medium 인지 기본: 클래스별 짧은 회피 힌트 dict (`select_guidance_hint`)   | 5·6  |
+| `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)` (`GUIDANCE_CONTEXT_MODE=rag` 롤백)     | 5    |
+| `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열 (실시간 경로 미배선)                | 5    |
 | `server/rag/vector_db_factory.py`             | Chroma Qdrant 핫스왑 추상화                                                | 4·5  |
 | `server/orchestration/state.py`               | `OrchState` TypedDict (event, risk_level, rag_context)                     | 6    |
 | `server/orchestration/graph.py`               | `StateGraph` 조립, 노드 등록, 엣지 정의                                    | 6    |
@@ -198,6 +201,7 @@ graph TD
 | `server/bus/redis_client.py`                  | aioredis 연결 풀                                                           | 3·6  |
 | `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                                    | 3    |
 | `server/bus/consumer.py`                      | `xread` 구독, orchestration 진입                                           | 6    |
+| `server/detection/consumer.py`                | **2026-07-18**: 이중 큐(반사/인지) 소비, DetectionPipeline 실행, 반사 WS 고우선 전송, 인지 Redis 발행. T2-G(회랑/접근 필터 + **near 인지 TTS 차단·far 무발화**), T3-S(STT 활성 중 인지 발행 억제), T1-b(**medium만** 12시 회랑 접근 시 쿨다운 3초 단축). 거리 등급은 `_resolve_distance_class()`로 `effective_distance_zone` SSOT 우선 | 3·6·7 |
 | `server/models/yolo26n/`                      | Yolo 26N - Object Detection 및 Yolo 26N - Segmentation 가중치 (git-ignore) | 3    |
 | `data/raw/`                                   | AI Hub 보행자 데이터셋 원본                                                | 4    |
 | `data/frames/`                                | 영상 1fps 추출 프레임                                                      | 4    |
@@ -211,7 +215,7 @@ graph TD
 | `client/src/services/frameCaptureProvider.ts` | **2026-07-10 정정**: 카메라 하드웨어 접근을 플랫폼별로 분리(iOS/Android 이원화 계약 §4). 공통 인터페이스(`FrameCaptureController`) + `takePhoto()` 공용 크롭 로직(`captureViaTakePhoto`)을 이 파일에 두고, 실제 캡처 방식은 `frameCaptureProviderSelect.ios.ts`/`.android.ts`(Metro 플랫폼 확장자 분기)가 구현 | 2    |
 | `client/src/services/frameCaptureProviderSelect.ios.ts` | 반사 캡처 기본 경로(iOS). `useFrameProcessor` + `client/ios/ReflexFrameProcessorPlugin.swift`(CVPixelBuffer→크롭/리사이즈/JPEG→base64) | 2    |
 | `client/src/services/frameCaptureProviderSelect.android.ts` | 반사 캡처 과도기 경로(Android). 네이티브 Frame Processor 플러그인이 아직 없어 `takePhoto()` 기반 단발 촬영으로 동작(`docs/mobile/ios_android_bifurcation_contract.md` §4.5 참조) | 2    |
-| `client/src/services/audioEngine.ts`          | `expo-audio` 상시 웜 플레이어로 반사/인지 음성 재생 및 선점 정지           | 7    |
+| `client/src/services/audioEngine.ts`          | `expo-audio` 상시 웜 플레이어로 반사/인지 음성 재생 및 선점 정지. **2026-07-18 추가(T3-C)**: P3(반사)/P2(STT)/P1(인지) 3단계 우선순위 조정자로 STT 응답과 인지 안내 충돌 해결 | 7    |
 | `client/src/services/audioSessionBridge.ts`   | iOS AVAudioSession voiceChat(AEC) 전환 TS 래퍼. STT 녹음 구간에서 스피커 출력의 마이크 유입(음향 블리드)을 상쇄(2026-07-11 신규, Android는 no-op) | -    |
 | `client/ios/AudioSessionBridge.swift`         | AVAudioSession `.playAndRecord`+`.voiceChat` 전환 네이티브 브릿지(`.defaultToSpeaker` 유지, 이전 세션 저장/복구, 검증용 `getSessionInfo`) | -    |
 | `client/src/services/depthProbe.ts`           | LiDAR 실거리 프로브 TS 래퍼(2026-07-11 프로토타입). iOS Pro 계열 전용, 그 외 null. bbox 거리 휴리스틱 검증 계측용 | -    |
@@ -220,7 +224,7 @@ graph TD
 | `client/src/hooks/useLocation.ts`             | `expo-location` `watchPositionAsync` GPS 실시간 전송(`realtime_gps`)       | -    |
 | `client/src/components/NavMapPanel.tsx`       | 하단 T맵 지도 패널(WebView + TMap JS API). `nav_route` 좌표 폴리라인 + 현재 위치 마커(2초 스로틀), 토글 꺼짐 시 미마운트. 운영자/데모용(2026-07-11 신규) | -    |
 | `server/navigation/manager.py`                | `NavigationManager`, 디바이스별 세션 상태기계(IDLE/대기/안내중)            | -    |
-| `server/navigation/pedestrian_navigation.py`  | TMAP POI 검색·보행자 경로 API 연동                                        | -    |
+| `server/navigation/server.py`                 | TMAP POI 검색·보행자 경로 API 연동 (NavigationManager와 연동하는 내비게이션 전용 FastAPI) | -    |
 | `server/navigation/navigation_filter.py`      | 경로 이탈·재탐색 필터링                                                    | -    |
 | `server/stt/stt_service.py`                   | faster-whisper 기반 음성 전사 (`transcribe_file`)                          | -    |
 | `server/stt/stt_to_llm_bridge.py`             | STT 전사 결과 → 네비게이션/LLM 브리지. 자기-에코 감지(`_check_self_echo`), 인텐트 분기, 자유 질의응답 | -    |
@@ -254,7 +258,7 @@ graph TD
 1. `cv2.imdecode`로 프레임 복원
 2. **Yolo 26N - Object Detection** `predict(conf=0.35)` 클래스·bbox 파싱
 3. **Yolo 26N - Segmentation** 노면 의미 분할 마스크
-4. **ByteTrack** `update()` Track ID 부여, Redis `hset`+TTL=30 접근/이탈·속도 산출
+4. **ByteTrack** `update()` Track ID 부여, Redis `hset`+TTL=30 접근/이탈·속도 산출. **2026-07-18 추가(T1-a)**: 접근 객체(`direction=="approaching"`)는 hit_count 선필터를 4→2로 완화해 신규 접근 위험에 빠르게 반응. 정적 오탐은 여전히 4프레임 유지
 5. **Reflex Risk Gate(룰베이스, LLM 미경유)**: 고위험 클래스 && 근접(면적·하단) 즉시 `alert_id`+방향
 6. **Surface Fast-Alert Gate(룰베이스)**: P0 노면(횡단볼도/맨홀/계단/그레이팅/점자블록파손) 하단 검출 즉시 `alert_id`
 7. mid/low만 `redis_bus.xadd("risk.events", …)`로 인지 경로에 발행
@@ -269,28 +273,34 @@ graph TD
 - `Document` + 메타etadata(`scene_type`, `risk_level`, `objects`, `guidance_template`) `Chroma.from_documents(persist_directory)`
 - 메타데이터 `objects`·`scene_type`을 3단계 분리 클래스(예: `braille_damaged`)와 일치시켜 검색 정합 확보
 
-### 5.5 5단계 - 실시간 대처 수칙 검색 (RAG)
+### 5.5 5단계 - 인지 컨텍스트 (기본: 인메모리 힌트 / 선택: RAG)
 
-- `Chroma(persist_directory, embedding_function)` 읽기 전용 로드
-- 탐지 클래스로 쿼리 생성(`f"{label} 보행 중 회피 방법"`) `similarity_search_with_score(query, k=5)`
-- `page_content` 결합 LangGraph `state["rag_context"]` 저장
-- 미적중 시 룰 기반 fallback
-- `VectorDBFactory`로 Chroma Qdrant 추상화
+> **2026-07-20**: Medium 인지 경로의 기본 컨텍스트는 Chroma 벡터검색이 아니라
+> `server/rag/guidance_hints.py`의 짧은 회피 힌트 dict다 (`GUIDANCE_CONTEXT_MODE=hints`).
+> Chroma `search_guidance`는 `GUIDANCE_CONTEXT_MODE=rag` 롤백·A/B용으로 유지한다.
+> STT/생활지원 convenience RAG는 본 절과 무관하게 별도 유지한다.
+
+- **기본(`hints`)**: 탐지 클래스 → `select_guidance_hint()` → `state["rag_context"]` (rag_ms≈0)
+- **롤백(`rag`)**: `Chroma` 읽기 전용 로드 → `similarity_search_with_score(k=5)` → `page_content` 결합
+- `VectorDBFactory`로 Chroma/Qdrant 핫스왑 (rag 모드)
 
 ### 5.6 6단계 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 - `StateGraph(OrchState)` 조립
 - **L1**: 룰 기반 위험도 분류 (high는 이미 즉시 경보 처리됨 / mid·low만 진입)
-- **L2**: RAG+탐지 결합 프롬프트로 ChatOllama(gemma4-e4b) `ainvoke` — "한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함"
+- **T2-G (2026-07-18)**: 인지 발화 회랑/접근 필터. 보도 이탈·고위험·접근 객체·유의미 노면은 통과, 측면·원거리·정적 저위험은 무발화
+- **L2**: `[탐지 방향]` + `[회피 힌트]`(+탐지) 결합 프롬프트로 gemma4-e4b `ainvoke` — "한국어 1문장, 20자 내". 방향은 `[탐지 방향]`만 사용
 - **L3**: 길이·방향 키워드 검증, 위반 시 L2 RETRY(최대 1회)
 - **Fallback/핫스왑**: L3 실패율 >10% 또는 `LLM_PROVIDER=openai` 시 gpt-4o-mini 자동 전환; 최종 실패 시 고정 문장("전방 주의, 천천히 멈추세요")
-- `LLMClientFactory(BaseChatModel)`로 로컬상용 핫스왑
+- `LLMClientFactory`로 로컬/상용 핫스왑
 
 ### 5.7 7단계 - 음성 안내 출력 (이중 채널)
 
 > **2026-07-09 정정**: 아래는 실제 구현 기준이다(최초 계획 Kokoro/Coqui·MP3·Web Audio는 미구현).
 
 - **(인지)** 로컬 TTS(**Supertonic**, `TTS_ENGINE=supertonic` 기본. **Piper**는 `TTS_ENGINE=piper` 핫스왑 폴백으로 코드 보존) `generate(guidance_text, voice="ko")` → WAV bytes → WS 바이너리 프레임(`transport:"binary"`, base64 미경유) → 단말 `expo-audio` 상시 재생 웜 플레이어(`player.replace()`, iOS Hearing Protection 우회)
+- **T3-C (2026-07-18)**: 단말 `audioEngine`에서 P3(반사)/P2(STT)/P1(인지) 우선순위 조정. STT 상호작용 중 인지 안내 드롭, STT 응답은 인지 안내를 선점. 결정론적 콜백 해제 + 안전 상한 타이머
+- **T3-S (2026-07-18)**: 서버 `session_manager`의 `_stt_activity` 레지스트리로 STT 처리 중인 device_id를 추적. `DetectionConsumer`는 해당 device_id의 인지 가이드 발행을 조기 반환(반사는 제외)
 - **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생 (실시간 TTS 합성 금지)
 - **선점(preempt)**: 반사 음성은 인지 음성을 중단시키고 재생. WS에서 반사 이벤트는 별도 고우선 타입
 - 중복 억제 `setex(suppress:…, 60)`
@@ -352,8 +362,9 @@ graph TD
 | In   | `{type:"realtime_gps", lat, lon, heading}`                                            |
 | Out  | `{type:"server_detection", event_id, detections:[{model, className, confidence, bbox}], ts}` |
 | Out  | `{type:"nav_route", waypoints:[{lat, lon}], app_key, ts}` (경로 수립/해제/재접속 복원 시, 지도 패널용. 2026-07-11 신설) |
+| In   | `{type:"distance_probe_sample", payload:{event_id, samples:[{class_name, confidence, bbox, lidar_meters, ...}]}}` (LiDAR 실거리 검증 전용, 반사/인지 경로 미관여. 2026-07-17 신설) |
 
-상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6을 참조합니다.
+상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6, §6.8을 참조합니다.
 
 > **2026-07-11 길안내 발화 경로 분리**: 턴바이턴 멘트 조회가 `DetectionConsumer` 내부에만
 > 있어 카메라 탐지가 없으면 NAVIGATING 상태여도 무음이던 결함을 수정했다. `realtime_gps`
@@ -368,7 +379,7 @@ graph TD
 | 경로     | 위험도  | 흐름                                                            | 음성                      | 목표 지연               |
 | -------- | ------- | --------------------------------------------------------------- | ------------------------- | ----------------------- |
 | **반사** | high    | Detection Reflex Gate / Seg Surface Gate 사전합성 클립          | 사전합성 고정 클립 (선점) | <300ms (Detection 기준) |
-| **인지** | mid/low | Detection+Seg Redis Streams LangGraph L1/L2/L3 + RAG 실시간 TTS | 실시간 합성 상세 가이드   | 1~2Hz                   |
+| **인지** | mid/low | Detection+Seg → Redis Streams → LangGraph L1/T2-G/L2/L3 + 인지 컨텍스트(기본 hints / 선택 rag) → 실시간 TTS. STT 활성 중 발행 억제(T3-S) | 실시간 합성 상세 가이드   | 1~2Hz                   |
 
 반사 경로는 **LLM/RAG/실시간 TTS를 절대 경유하지 않습니다** (비협상 원칙).
 
@@ -385,7 +396,7 @@ sequenceDiagram
     participant L1 as L1 Classifier
     participant L2 as L2 Generator
     participant L3 as L3 Validator
-    participant RAG as RAG Retriever
+    participant Ctx as GuidanceHints / RAG
     participant TTS as 실시간 TTS
 
     Phone->>WS: 인지 프레임 (1~2fps)
@@ -396,9 +407,9 @@ sequenceDiagram
     else mid/low 위험 (인지)
         Det->>Redis: xadd("risk.events")
         Redis->>L1: 위험도 분류
-        L1->>RAG: 탐지 클래스 쿼리
-        RAG-->>L1: 수칙 컨텍스트 (k=5)
-        L1->>L2: RAG+탐지 결합 프롬프트
+        L1->>Ctx: 탐지 클래스 컨텍스트
+        Ctx-->>L1: 회피 힌트(기본) 또는 RAG k=5(rag)
+        L1->>L2: 힌트/RAG + 탐지 결합 프롬프트
         L2->>L3: 가이드 문장 (20자/방향)
         L3->>L3: 검증 (위반 시 RETRY 1회)
         L3->>TTS: 가이드 문장
@@ -433,6 +444,7 @@ sequenceDiagram
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
 | `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `safety_guidelines`      |
+| `GUIDANCE_CONTEXT_MODE` | Medium 인지 컨텍스트 (`hints` 기본 / `rag` 롤백) | `hints` |
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
@@ -441,7 +453,8 @@ sequenceDiagram
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
 | `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키. `nav_route` 메시지 `app_key`로 단말 지도 패널에도 전달(2026-07-11) | (미설정)                 |
 | `DB_HOST`           | MariaDB 접속 호스트                       | (필수, IP 지정)          |
-| `YOLO_CONF`         | Yolo 26N - Object Detection 신뢰도 임계값 | `0.35`                   |
+| `YOLO_CONF`         | Yolo 26N - Segmentation 신뢰도 임계값     | `0.35`                   |
+| `YOLO_DET_CONF`     | Yolo 26N - Object Detection 신뢰도 임계값 | `0.50`                   |
 | `FRAME_SIZE`        | 프레임 리사이즈 크기                      | `640`                    |
 | `REFLEX_FPS`        | 반사 캡처 목표 fps                        | `10`                     |
 | `COGNITIVE_FPS`     | 인지 캡처 목표 fps                        | `2`                      |
@@ -454,7 +467,7 @@ sequenceDiagram
 
 ## 11. 학습 환경 전제 (v1.1 C3)
 
-3·4단계 모델 학습은 **RTX 5090 / 5070 Ti(Blackwell sm_120)** **CUDA 12.8 + cu128 PyTorch 휠 필수**입니다. 11.8/12.1 휠은 silent CPU 폴백이 발생합니다. 학습 전 `scripts/verify_gpu.py`로 `device_capability ≥ (12,0)` 및 GPU 연산 1 step 검증합니다. TensorRT 엔진은 데모 머신에서 재빌드합니다(세대 간 전송 불가).
+3·4단계 모델 학습의 팀 GPU 서버 최대 사양은 **RTX 5090(Blackwell sm_120)**입니다. Ubuntu x86_64와 Windows amd64는 공식 **PyTorch 2.13 + CUDA 13.0(cu130)** 휠과 NVIDIA R580 이상 드라이버를 사용합니다. 이전 세대 NVIDIA GPU는 개발용으로 허용하되 Blackwell 최적화가 적용되지 않을 수 있습니다. macOS는 동일 PyTorch 2.13의 MPS/CPU 경로로 개발·기능 검증하며 CUDA 학습 서버로 간주하지 않습니다. 배포 전 `scripts/verify_gpu.py`로 실제 가속 연산을 검증하고, TensorRT 엔진은 배포 GPU에서 재빌드합니다(세대 간 전송 불가).
 
 ---
 
@@ -469,7 +482,7 @@ sequenceDiagram
 - `python -m pytest tests/test_langgraph.py -v` - 6단계: bollard 주입 20자/방향 포함 검증
 - `python -m pytest tests/test_tts_reflex.py -v` - 7단계: 반사 클립 선점 재생 검증
 - `python scripts/eval_hitrate.py` - 4단계: Top-5 hit-rate ≥ 0.6 평가
-- `python scripts/verify_gpu.py` - GPU: sm_120 + CUDA 12.8 검증
+- `python scripts/verify_gpu.py` - Ubuntu/Windows CUDA 13.0 또는 macOS MPS/CPU 실제 연산 검증
 
 상세 검증 기준은 [`docs/test_specification.md`](test_specification.md)를 참조합니다.
 
@@ -523,17 +536,17 @@ sequenceDiagram
    - **cache_suppression**: `{"suppressed_keys": ["suppress:ref_alert_001"], "ttl_seconds": 45}`
    - **system_error**: `{"error_message": "Ollama connection timeout, hot-swapping to OpenAI", "severity": "warning"}`
 
-### 13.3.1 사후 이력 조회와 이벤트 프레임 보존 (2026-07-12 신설)
+### 13.3.1 사후 이력 조회와 이벤트 프레임·STT 음성 보존 (2026-07-16 갱신)
 
-실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다.
+실시간 SSE와 별개로, 콘솔의 Detection Guidance Log 테이블은 REST 폴링으로 `detection_guidance_logs`를 조회합니다. 오탐 여부 판별과 안내 발화 당시 상황 확인을 위해 로그 적재 이벤트의 발생 시점 프레임을 함께 보존합니다. STT 경로는 사용자의 원본 음성 파일 경로와 전사 문장을 같은 로그 행에 보존합니다.
 
 | 항목 | 내용 |
 | :--- | :--- |
-| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 (`server/services/event_frame_store.py`) |
-| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임만 (JPEG, `data/event_frames/YYYYMMDD/{event_id}.jpg`) |
-| **DB 연결** | `detection_guidance_logs.frame_path` 컬럼에 상대 경로만 기록 (BLOB 미사용) |
-| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO는 `asyncio.to_thread`로 로그 태스크 내부에서만 수행 (반사 <300ms 비협상 원칙 유지) |
-| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지, bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
+| **저장 주체** | `DetectionConsumer` 백그라운드 로그 태스크 및 `/ws/detect` STT 처리부 (`server/services/event_frame_store.py`, `server/services/remote_storage_client.py`) |
+| **저장 대상** | 반사 알림/인지 가이드가 실제 전송 성사된 이벤트의 원본 프레임(JPEG)과 STT 경로에서 사용자가 말한 원본 음성 파일 |
+| **DB 연결** | 이미지: `detection_guidance_logs.frame_path`; 사용자 음성: `stt_audio_path`, `stt_transcript_text`, `stt_audio_storage_status` 등 메타데이터. 파일 BLOB은 DB에 저장하지 않음 |
+| **실시간 경로 영향** | 없음 - 인코딩/디스크 IO/원격 업로드는 로그 태스크 내부에서 수행 (반사 <300ms 비협상 원칙 유지) |
+| **콘솔 표시** | `GET /api/v1/admin/detection-logs` 목록 + `GET /api/v1/admin/event-frames/{event_id}` 이미지. 로컬 파일이 없으면 중앙 저장 API에서 프록시 조회. bbox는 `detected_objects_json` 좌표로 콘솔이 오버레이 렌더링 |
 | **보존 정책** | 기본 7일(`EVENT_FRAME_RETENTION_DAYS`), 서버 기동 시 만료 폴더 삭제 (개인정보 기간 한정 보존) |
 
 상세 계약은 [`api_specification.md`](api_specification.md) §8.5를 참조하십시오.
@@ -652,3 +665,44 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | **포스트 D** | 단말-서버 알림 중복 조정 (dedupe/debounce/우선순위 머지) | 알림 중복 억제, 온라인 복귀 자동화 |
 
 > 상세 매커니즘, 시나리오 흐름도, 리스크 분석, 환경 변수 추가 예정, 검증 기준은 [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md)를 참조.
+
+---
+
+## 11. 필드 테스트 개선 (2026-07-17, M1-M7)
+
+실사용 필드 테스트 피드백 기반 7개 마일스톤 개선. 상세는 [`docs/research/field_test_improvement_plan.md`](../research/field_test_improvement_plan.md).
+
+### 11.1 반사 경로 강화 (P0)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M1/P0-2** | 반사 큐 최신성 보장 (latest-frame-wins + 신선도 검사) | `stream_splitter`, `consumer` |
+| **M2/P0-1** | 억제 재무장 정책 (60s 침묵 -> 상황 변화 시 즉시 재발화) | `suppressor`, `reflex_gate` |
+| **M3/P0-3** | 소형 객체 하단 근접 + Approach-Lost 즉시 재발화 | `reflex_gate`, `bytetrack_tracker` |
+
+### 11.2 인지 경로 강화 (P1)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M4/P1-2** | 발화 가치 게이트 (동일 상황 30s 쿨다운, TTS 합성 생략) | `consumer` |
+| **M5/P1-1** | 반사 후속 avoidance fast lane (LangGraph 우회, 우회 방향 즉시 안내) | `avoidance.py` 신규, `consumer` |
+| **M6/T2-G** | 인지 발화 회랑/접근 필터. **2026-07-18 정합**: near=인지 TTS 차단(반사 전담), far=무발화(BBox만), medium=12시 회랑·접근 시 발화 | `consumer`, `direction`, `distance_policy` |
+| **M7/T3-C** | 단말 통합 오디오 우선순위 조정자 (P3 반사/P2 STT/P1 인지) | `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts` |
+| **M8/T3-S** | 서버 STT 활성 중 인지 발행 억제 게이트 | `server/api/session_manager.py`, `server/api/ws_router.py`, `server/detection/consumer.py` |
+| **M9/T1-b** | 12시 회랑 접근 객체 쿨다운 단축 (**medium만** 3초; near는 반사 전담이라 인지 쿨다운 단축 대상 제외) | `consumer` |
+
+### 11.3 노면/지연 보정 (P2)
+
+| 마일스톤 | 개선 | 핵심 모듈 |
+| :--- | :--- | :--- |
+| **M6/P2-1(a)(b)** | 계단 실측 평가 스크립트 + surface_caution 히스테리시스 | `scripts/eval_segmentation_stairs.py`, `consumer`, `risk_rules` |
+| **M7/P2-1(c)** | 세그 5클래스 재학습 파이프라인 + STAIR_DOWN 활성화 사전 등록 | `scripts/train_segmentation_5class.py`, `surface_gate` |
+| **M7/P2-2** | 파이프라인 지연 관측 (콘솔 latency_alert) | `consumer` |
+
+### 11.4 신규 환경변수
+
+`REFLEX_QUEUE_MAXSIZE`, `COGNITIVE_QUEUE_MAXSIZE`, `REFLEX_MAX_AGE_S`, `COGNITIVE_MAX_AGE_S`, `REFLEX_SUPPRESS_TTL_S`, `REFLEX_MIN_GAP_S`, `REFLEX_NEAR_HAPTIC_THROTTLE_S`, `APPROACH_LOST_WINDOW_S`, `APPROACH_LOST_MIN_PREV_HIT`, `COGNITIVE_UTTERANCE_COOLDOWN_S`, `SURFACE_CAUTION_CONFIRM_STREAK`, `REFLEX_LATENCY_ALERT_MS`, `COGNITIVE_LATENCY_ALERT_MS` (상세는 `docs/ops/environment_variables.md`).
+
+### 11.5 오해 방지 조항
+
+"폴백 동작 제거"는 임시 함수 기본값 폴백(예: detector 미로드 시 mock 반환)을 의미하며, **서버-온디바이스 폴백(WS 끊김 시 단말 CoreML/TFLite 추론 전환)은 유지**됩니다. 단말 `useWebSocket.ts`의 서버-온디바이스 폴백 메커니즘은 본 개선에서 변경되지 않습니다.

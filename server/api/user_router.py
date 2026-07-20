@@ -17,6 +17,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.api.dependencies import require_operator
+from server.api.rate_limit import enforce_rate_limit
 from server.db.connection import get_db
 from server.db.schemas import AppUserCreate, AppUserResponse, UserDeviceCreate
 from server.services.user_service import UserService
@@ -52,8 +54,18 @@ class UserRegistrationRequest(BaseModel):
 #    이렇게 명시적으로 묶어두면 Swagger UI 문서에 계층 구조가 아주 깔끔하게 나오고,
 #    프론트엔드 개발자가 API 명세서를 헷갈릴 일이 없어 협업 효율이 극대화됩니다."
 @router.post("/register", response_model=AppUserResponse)
-async def register_user(request: UserRegistrationRequest, db: AsyncSession = Depends(get_db)):
+async def register_user(
+    payload: UserRegistrationRequest,
+    operator_id: str = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    await enforce_rate_limit(
+        "user-register",
+        operator_id,
+        limit=10,
+        window_seconds=60,
+    )
     service = UserService(db)
     return await service.register_user_and_device(
-        user_data=request.user, device_data=request.device
+        user_data=payload.user, device_data=payload.device
     )

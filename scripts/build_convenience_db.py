@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -46,10 +47,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--embedding-model",
-        default=os.getenv("CONVENIENCE_EMBEDDING_MODEL", "nomic-embed-text"),
+        default=os.getenv("CONVENIENCE_EMBEDDING_MODEL", "bge-m3"),
         help="임베딩 모델명",
     )
+    parser.add_argument(
+        "--keep-existing",
+        action="store_true",
+        help="기존 ChromaDB를 삭제하지 않고 문서를 추가합니다.",
+    )
     args = parser.parse_args()
+
+    if not args.keep_existing and os.path.isdir(args.persist_dir):
+        shutil.rmtree(args.persist_dir)
 
     embeddings = EmbeddingEngineFactory.get_embeddings(
         provider=args.embedding_provider,
@@ -68,6 +77,7 @@ def main() -> None:
     print(f"- JSON: {args.json_path}")
     print(f"- 저장 경로: {args.persist_dir}")
     print(f"- 컬렉션: {args.collection_name}")
+    print(f"- 임베딩 모델: {args.embedding_model}")
     print(f"- 문서 수: {count}")
 
 

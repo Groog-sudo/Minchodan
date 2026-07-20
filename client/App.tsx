@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { View, StyleSheet, Platform, StatusBar, AppState } from "react-native";
+import { View, StyleSheet, Platform, StatusBar, AppState, LogBox } from "react-native";
 import { setAudioModeAsync } from "expo-audio";
 import * as ExpoSplashScreen from "expo-splash-screen";
 
@@ -9,8 +9,21 @@ import { audioEngine } from "./src/services/audioEngine";
 
 void ExpoSplashScreen.preventAutoHideAsync();
 
+// 2026-07-18: 실기기 테스트 중 반복 확인된 무해한 경고들이 LogBox 알림 토스트를 계속
+// 재노출시켜(각 console.warn/error마다 다시 뜸) 하단 버튼 dock을 가려 닫을 수 없게 만드는
+// 문제가 있었다. 원인이 이미 파악되고 안전하게 처리되는(catch됨) 경고만 화이트리스트로
+// 무시한다 - 새로운 유형의 경고는 계속 정상적으로 노출된다.
+LogBox.ignoreLogs([
+  "Packager status check returned unexpected result",
+  "오디오 세션 전환 실패",
+]);
+
 // CameraView가 아직 별도의 "준비 완료" 콜백을 제공하지 않아 고정 시간으로 처리한다.
 const MIN_LOADING_DURATION_MS = 1800;
+// Metro/HMR 재연결로 App이 반복 마운트돼도 로딩 타이머가 리셋되지 않게 모듈 스코프로 고정.
+// (재연결마다 1.8s가 다시 시작되면 Loading 화면에 영구 고착될 수 있다.)
+let loadingEpochMs = 0;
+let loadingCompleted = false;
 
 // 앱 시작 시 1회 재생하는 온보딩 안내 문구. 문구 확정은 담당자 영역(SKILLS.md 협업 규칙)이며,
 // 실제 STT 트리거 흐름(길댕아 wake-word -> 길찾아줘/물어볼게, server/stt/stt_to_llm_bridge.py)과
@@ -24,7 +37,7 @@ export default function App() {
   // 재생되지 않도록 막는다(카메라/반사 구동을 지연시키지 않기 위해 짧게 1회만 재생).
   const onboardingPlayedRef = useRef(false);
   const splashHiddenRef = useRef(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!loadingCompleted);
 
   useLayoutEffect(() => {
     if (splashHiddenRef.current) {
@@ -35,7 +48,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), MIN_LOADING_DURATION_MS);
+    if (loadingCompleted) {
+      setIsLoading(false);
+      return;
+    }
+    if (!loadingEpochMs) {
+      loadingEpochMs = Date.now();
+    }
+    const remainingMs = Math.max(0, MIN_LOADING_DURATION_MS - (Date.now() - loadingEpochMs));
+    const timer = setTimeout(() => {
+      loadingCompleted = true;
+      setIsLoading(false);
+    }, remainingMs);
     return () => clearTimeout(timer);
   }, []);
 

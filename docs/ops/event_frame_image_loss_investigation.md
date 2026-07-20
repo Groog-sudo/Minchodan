@@ -92,7 +92,7 @@ API 검증 예:
 | **저장 레이스 (path 먼저, 파일 나중)** | `_persist_log_safe`는 `save_event_frame` 후 DB INSERT | 코드상 순서 정상 |
 | **중복 event_id dedup** | 당일 duplicate 0건, `UK_DETECTION_GUIDANCE_LOGS_EVENT_ID` | **배제** |
 | **개별 JPEG 삭제** | `event_frame_store`는 날짜 폴더 단위 `cleanup_expired_frames`만 | **배제** |
-| **앱=원격 / 콘솔=로컬 호스트 불일치** | 앱 WS와 콘솔 API 모두 **동일 Mac `100.121.247.4:8000`** | **단독 원인 아님** |
+| **앱=원격 / 콘솔=로컬 호스트 불일치** | 앱 WS와 콘솔 API 모두 **동일 서버 `[SERVER_MAGICDNS]:8000`** | **단독 원인 아님** |
 
 ### 5.3 결정적 증거: 이 Mac FastAPI는 MISS를 한 번도 처리하지 않음
 
@@ -122,32 +122,32 @@ MISS 샘플(`event-dev-001-reflex-1784105448378` 등)은 **FrameDecoder/guide/�
 Metro/`client/.env` 기준 **고태현 iPhone은 아래만 사용**:
 
 ```text
-ws://100.121.247.4:8000/ws/detect?device_id=dev-001
+wss://[SERVER_MAGICDNS]/ws/detect?device_id=[DEVICE_ID]
 ```
 
 | 설정 | 값 |
 | :--- | :--- |
 | `EXPO_PUBLIC_NETWORK_MODE` | `tailscale` |
-| `EXPO_PUBLIC_TAILSCALE_HOST` | `100.121.247.4` (sojiroh Mac mini) |
+| `EXPO_PUBLIC_TAILSCALE_HOST` | `[SERVER_MAGICDNS]` |
 | Tailscale peer 중 `:8000` FastAPI | **이 Mac만** (`Minchodan GPU Inference Server`) |
 
 ### 6.2 공유 MariaDB
 
 | 항목 | 값 |
 | :--- | :--- |
-| **DB_HOST** | `100.105.221.31` (minchodan-rpi-db, moon1053759@ Tailnet) |
+| **DB_HOST** | `<TAILSCALE_IP>` (minchodan-rpi-db, moon1053759@ Tailnet) |
 | **FastAPI `:8000`** | RPi에는 **없음** |
 
 ### 6.3 DB 클라이언트 IP (PROCESSLIST, 실측)
 
 | 소스 IP (DB가 본 주소) | 연결 수 | 해석 |
 | :--- | :--- | :--- |
-| **`100.83.180.75`** | 6 | **이 Mac Docker FastAPI** (컨테이너 `USER()` = `minchodan_team@100.83.180.75`) |
-| **`100.93.115.26`** | 9 | 다른 머신 FastAPI connection pool 추정 |
-| **`100.92.150.34`** | 7 | 다른 머신 FastAPI connection pool 추정 |
-| **`100.91.250.109`** | 2 | 기타 클라이언트 |
+| **`<TAILSCALE_IP>`** | 6 | **이 Mac Docker FastAPI** (컨테이너 `USER()` = `minchodan_team@<TAILSCALE_IP>`) |
+| **`<TAILSCALE_IP>`** | 9 | 다른 머신 FastAPI connection pool 추정 |
+| **`<TAILSCALE_IP>`** | 7 | 다른 머신 FastAPI connection pool 추정 |
+| **`<TAILSCALE_IP>`** | 2 | 기타 클라이언트 |
 
-이 Mac의 Tailscale `status --json` peer에는 `100.93/92/91/83`(sublet/exit node 등) **호스트명이 노출되지 않음**.
+이 Mac의 Tailscale `status --json` peer에는 `[TAILSCALE_SUBNET_PREFIXES]`(sublet/exit node 등) **호스트명이 노출되지 않음**.
 RPi Tailnet(`tail77994d`)과 개발 Mac Tailnet(`tailb6acd5`)이 **분리**되어 있어, Mac에서 `tailscale whois`로 타 IP 해석 불가.
 
 ### 6.4 device_id 공유
@@ -161,12 +161,12 @@ RPi Tailnet(`tail77994d`)과 개발 Mac Tailnet(`tailb6acd5`)이 **분리**되�
 
 ```mermaid
 graph LR
-    A["고태현 iPhone<br/>ws://100.121.247.4:8000"] --> B["Mac mini FastAPI<br/>100.121.247.4"]
+    A["테스트 iPhone<br/>wss://SERVER_MAGICDNS"] --> B["FastAPI 서버<br/>SERVER_MAGICDNS"]
     B --> C["로컬 data/event_frames<br/>(OK 썸네일)"]
-    B --> D["MariaDB 100.105.221.31"]
+    B --> D["MariaDB <TAILSCALE_IP>"]
 
-    E["팀 FastAPI A<br/>100.93.115.26"] --> F["A 로컬 event_frames"]
-    G["팀 FastAPI B<br/>100.92.150.34"] --> H["B 로컬 event_frames"]
+    E["팀 FastAPI A<br/><TAILSCALE_IP>"] --> F["A 로컬 event_frames"]
+    G["팀 FastAPI B<br/><TAILSCALE_IP>"] --> H["B 로컬 event_frames"]
     E --> D
     G --> D
 
@@ -209,7 +209,7 @@ graph LR
 | 방안 | 한계 |
 | :--- | :--- |
 | 콘솔 `VITE_API_BASE_URL`을 "파일 있는" FastAPI로 변경 | 그 서버가 쓴 로그만 썸네일 OK |
-| RPi에서 `tailscale whois 100.93.115.26` | **누가 쓰는지** 확인만 가능 |
+| RPi에서 `tailscale whois <TAILSCALE_IP>` | **누가 쓰는지** 확인만 가능 |
 
 ### 9.3 코드/운영 후속 (선택)
 
@@ -217,7 +217,7 @@ graph LR
 | :--- | :--- |
 | DB에 `writer_host` / `writer_instance_id` 컬럼 | 어느 FastAPI가 저장했는지 추적 |
 | 콘솔 MISS 행에 "타 서버 저장" 배지 | 404 대신 UX 개선 |
-| 팀 Tailnet 통합 또는 RPi admin `whois` | `100.93/92/91` 실제 호스트명 확정 |
+| 팀 Tailnet 통합 또는 RPi admin `whois` | `[TAILSCALE_SUBNET_PREFIXES]` 실제 호스트명 확정 |
 
 ---
 
@@ -226,9 +226,9 @@ graph LR
 Mac 개발 Tailnet에서는 peer 이름을 알 수 없었다. RPi DB Tailnet 관리자(`moon1053759`)에게 아래 실행 요청:
 
 ```bash
-tailscale whois 100.93.115.26
-tailscale whois 100.92.150.34
-tailscale whois 100.91.250.109
+tailscale whois <TAILSCALE_IP>
+tailscale whois <TAILSCALE_IP>
+tailscale whois <TAILSCALE_IP>
 tailscale status
 ```
 
@@ -241,8 +241,8 @@ tailscale status
 앱과 콘솔을 동일 호스트로 맞추는 예 (`console/.env`):
 
 ```env
-VITE_API_BASE_URL=http://100.121.247.4:8000
-VITE_MONITOR_STREAM_URL=http://100.121.247.4:8000/api/v1/monitor/stream
+VITE_API_BASE_URL=https://[SERVER_MAGICDNS]
+VITE_MONITOR_STREAM_URL=https://[SERVER_MAGICDNS]/api/v1/monitor/stream
 ```
 
 **2026-07-15 환경**: 콘솔은 이미 `localhost:8000` → 동일 Mac Docker이므로 **추가 변경 효과 없음**.
@@ -266,4 +266,4 @@ MISS는 **다른 writer의 DB row** 때문이다.
 
 ## 13. 한 줄 요약
 
-**콘솔 이미지 유실(MISS)은 저장 버그가 아니라, 공유 MariaDB에 여러 FastAPI가 `frame_path`를 쓰는데 JPEG는 각 서버 로컬 디스크에만 있기 때문이다. iPhone은 이 Mac FastAPI만 쓰지만, DB에는 다른 팀 서버(`100.93/92/91` 등) 로그가 섞여 콘솔에서 404가 난다.**
+**콘솔 이미지 유실(MISS)은 저장 버그가 아니라, 공유 MariaDB에 여러 FastAPI가 `frame_path`를 쓰는데 JPEG는 각 서버 로컬 디스크에만 있기 때문이다. iPhone은 이 Mac FastAPI만 쓰지만, DB에는 다른 팀 서버(`[TAILSCALE_SUBNET_PREFIXES]` 등) 로그가 섞여 콘솔에서 404가 난다.**

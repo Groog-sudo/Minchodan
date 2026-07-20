@@ -90,6 +90,10 @@ async def test_login_locked_account_raises_403(db_session: AsyncSession) -> None
 
     assert exc_info.value.status_code == 403
 
+    result = await db_session.execute(select(AdminLoginAudit))
+    audit = result.scalar_one()
+    assert audit.success is False
+
 
 @pytest.mark.asyncio
 async def test_login_success_issues_token_with_real_role(db_session: AsyncSession) -> None:

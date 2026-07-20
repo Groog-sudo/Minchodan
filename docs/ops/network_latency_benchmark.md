@@ -1,7 +1,7 @@
 # Tailscale 네트워크 지연 벤치마크 가이드
 
 > **작성일**: 2026-07-13
-> **버전**: v0.1.0
+> **버전**: v0.1.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
 > **목적**: ngrok 대비 Tailscale 외부망 전환 후 WebSocket 왕복 지연(RTT) 개선 폭을 같은 기준으로 측정합니다.
 
 ---
@@ -24,14 +24,15 @@ iPhone이 LTE/5G 등 외부망에 있고 Tailscale VPN으로 서버에 붙는 �
 | 파일 | 설정 |
 | :--- | :--- |
 | `client/.env` | 아래 예시처럼 Tailscale 모드와 서버 주소를 지정 |
-| `client/src/config/index.ts` | `EXPO_PUBLIC_NETWORK_MODE=tailscale`이면 `ws://{TAILSCALE_HOST}:{SERVER_PORT}/ws/detect` 생성 |
+| `client/src/config/index.ts` | `EXPO_PUBLIC_NETWORK_MODE=tailscale`이면 `wss://{MAGICDNS_HOST}:443/ws/detect` 생성 |
 | `client/src/hooks/useWebSocket.ts` | `EXPO_PUBLIC_NETWORK_BENCHMARK=true`이면 앱에서 `network_probe` 주기 전송 |
 | `client/src/components/CameraView.tsx` | 디버그 줄에 `망RTT: ...ms (평균 ...ms)` 표시 |
 
 ```ini
 EXPO_PUBLIC_NETWORK_MODE=tailscale
-EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
-EXPO_PUBLIC_SERVER_PORT=8000
+EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+EXPO_PUBLIC_SERVER_PORT=443
+EXPO_PUBLIC_WS_SCHEME=wss
 EXPO_PUBLIC_NETWORK_BENCHMARK=true
 EXPO_PUBLIC_NETWORK_BENCHMARK_INTERVAL_MS=1000
 EXPO_PUBLIC_NETWORK_BENCHMARK_PAYLOAD_BYTES=256
@@ -48,7 +49,7 @@ EXPO_PUBLIC_DEVICE_TOKEN=[DEVICE_TOKEN]
 | 순서 | 작업 | 정상 기준 |
 | :--- | :--- | :--- |
 | 1 | 서버 PC와 iPhone에서 Tailscale Connected 확인 | 같은 tailnet 장비 목록 표시 |
-| 2 | iPhone Safari에서 `http://[SERVER_TAILSCALE_HOST]:8000/health` 접속 | JSON 응답 반환 |
+| 2 | iPhone Safari에서 `https://[SERVER_MAGICDNS_NAME]/health` 접속 | JSON 응답 반환 |
 | 3 | `client/.env` 설정 후 Metro 캐시 초기화 | 새 환경 변수가 번들에 반영 |
 | 4 | iOS 앱 실행 | 화면에 `연결: Tailscale` 표시 |
 | 5 | 10초 이상 대기 | `망RTT: ...ms (평균 ...ms)` 값 갱신 |
@@ -64,12 +65,12 @@ npx expo start -c
 
 ## 4. 터미널 비교 측정
 
-서버가 `network_probe`를 지원하므로 같은 스크립트로 ngrok과 Tailscale을 나란히 측정할 수 있습니다.
+서버가 `network_probe`를 지원하므로 같은 스크립트로 로컬 루프백과 Tailscale Serve를 나란히 측정할 수 있습니다.
 
 ```bash
 python scripts/benchmark_ws_network.py \
-  --target ngrok=wss://[NGROK_DOMAIN]/ws/detect \
-  --target tailscale=ws://[SERVER_TAILSCALE_HOST]:8000/ws/detect \
+  --target local=ws://127.0.0.1:8000/ws/detect \
+  --target tailscale=wss://[SERVER_MAGICDNS_NAME]/ws/detect \
   --device-id dev-001 \
   --token [DEVICE_TOKEN] \
   --count 50 \
@@ -107,7 +108,7 @@ python scripts/benchmark_ws_network.py \
 | :--- | :--- |
 | Tailscale `avg`와 `p95` 모두 감소 | 전환 효과가 안정적으로 있음 |
 | `avg`만 감소하고 `p95`가 높음 | 순간 지연이 남아 있어 실기기 보행 테스트 추가 필요 |
-| Tailscale 실패, ngrok 성공 | iPhone Tailscale VPN, 서버 방화벽, 포트 `8000` 열림 여부 확인 |
+| Tailscale 실패, 로컬 성공 | iPhone Tailscale VPN, MagicDNS, `tailscale serve status` 확인 |
 | 둘 다 실패 | FastAPI 서버 또는 디바이스 토큰 인증부터 확인 |
 
-Tailscale은 공개 터널이 아니라 tailnet 사설망입니다. 단말과 서버가 모두 Tailscale에 연결되어 있어야 하며, 서버 OS 방화벽이 Tailscale 인터페이스의 TCP `8000`을 허용해야 합니다.
+Tailscale은 공개 터널이 아니라 tailnet 사설망입니다. 단말과 서버가 모두 Tailscale에 연결되어야 하며, FastAPI는 루프백 `8000`을 유지하고 Tailscale Serve가 tailnet 전용 `443` TLS 종단을 제공합니다.

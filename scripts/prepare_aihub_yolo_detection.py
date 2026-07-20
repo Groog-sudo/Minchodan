@@ -5,10 +5,11 @@ import json
 import random
 import shutil
 import sys
-import xml.etree.ElementTree as ET  # nosec B405
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from defusedxml import ElementTree as ET
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -83,7 +84,7 @@ def normalize_label(label: str) -> str:
 
 
 def parse_xml(xml_path: Path) -> list[ImageItem]:
-    root = ET.parse(xml_path).getroot()  # nosec B314 # noqa: S314
+    root = ET.parse(xml_path).getroot()
     items: list[ImageItem] = []
     for image_node in root.findall("./image"):
         boxes: list[Box] = []

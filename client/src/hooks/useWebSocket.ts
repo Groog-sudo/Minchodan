@@ -16,14 +16,18 @@ import {
   NETWORK_BENCHMARK_PAYLOAD_BYTES,
   RECONNECT_DELAY,
   RECONNECT_DELAY_MAX,
-  SERVER_PORT,
-  TAILSCALE_HOST,
   TOKEN,
   WS_URL,
   getWsUrlCandidates,
 } from "../config";
 import { audioEngine } from "../services/audioEngine";
+import {
+  GUIDE_PRIORITY,
+  resolveGuidePriority,
+  type GuidePriority,
+} from "../services/guidePriority";
 import { hapticEngine } from "../services/hapticEngine";
+import { placePhoneCall } from "../services/phoneDialBridge";
 import type { WSMessage, WSStatus } from "../types/detection";
 
 /**
@@ -39,14 +43,6 @@ function expandWsUrlCandidates(primaryBase: string): string[] {
       merged.push(normalized);
     }
   }
-  const tailscaleUrl = `ws://${TAILSCALE_HOST}:${SERVER_PORT}/ws/detect`;
-  if (
-    TAILSCALE_HOST &&
-    TAILSCALE_HOST !== "127.0.0.1" &&
-    !merged.includes(tailscaleUrl)
-  ) {
-    merged.push(tailscaleUrl);
-  }
   return merged;
 }
 
@@ -60,15 +56,22 @@ export interface UseWebSocketReturn {
   send: (data: object) => void;
   /** JPEG raw byte 프레임을 바이너리 WS 프레임으로 전송한다 (base64 미경유). */
   sendBinary: (data: Uint8Array) => void;
+  /**
+   * ACK 기반 in-flight 제한을 적용해 detection 메타(JSON) + binary JPEG를 한 쌍으로 전송한다
+   * (2026-07-17, P0). MAX_IN_FLIGHT_FRAMES 초과 시 메타·binary 모두 같이 드롭하고 false를
+   * 반환한다(서버 pending_binary_meta 매칭 오류 방지). ACK 수신 시 in-flight에서 해제된다.
+   */
+  sendDetectionFrame: (
+    meta: { type: string; payload: { event_id?: string; frame_id?: number; [k: string]: unknown } },
+    jpegBytes: Uint8Array,
+  ) => boolean;
+  /** 현재 ACK를 기다리는 in-flight 프레임 수. 디버그/지표용. */
+  inFlightFrameCount: number;
   lastMessage: WSMessage | null;
   /** 지도 패널용 경로. lastMessage는 초당 수십 건의 ack/탐지 메시지에 덮여
    * 저빈도 이벤트가 React 배칭으로 유실될 수 있어(guide 오디오와 동일한 이유)
    * nav_route는 전용 상태로 직접 보존한다. null = 경로 미설정/해제. */
   navRoute: NavRouteData | null;
-  /** STT 질문 상호작용(녹음~응답 수신) 구간 동안 인지 경로 가이드 음성을 뮤트한다.
-   * 반사 경로(reflex_alert)는 안전 비협상 원칙에 따라 절대 뮤트하지 않는다.
-   * timeoutMs를 넘기면 해당 시간 뒤 자동 해제(기본은 STT_INTERACTION_TIMEOUT_MS 안전 상한). */
-  setSttInteractionActive: (active: boolean, timeoutMs?: number) => void;
   /** network_probe RTT 최신값(ms). EXPO_PUBLIC_NETWORK_BENCHMARK=true일 때 갱신된다. */
   networkRttMs: number | null;
   /** network_probe RTT 최근 30개 평균(ms). */
@@ -78,6 +81,18 @@ export interface UseWebSocketReturn {
 // STT 응답이 오지 않는 예외 상황(네트워크 끊김 등)에서 인지 경로가 무한정 뮤트된 채
 // 남지 않도록 하는 안전 상한(서버 STT+LLM+TTS 실측 지연이 최대 15s대인 것을 감안).
 const STT_INTERACTION_TIMEOUT_MS = 20000;
+
+// 💡 [면접 대비 주석] ACK 기반 in-flight 프레임 제한 (2026-07-17, P0).
+// 서버가 ACK를 반환하기 전에 단말이 무제한 프레임을 밀어 넣으면, WS 송신 버퍼·서버
+// 수신 큐·콘솔 relay 경로에 과거 프레임이 누적돼 버퍼링이 발생한다. ACK를 받은 프레임만
+// 다음 프레임으로 교체하는 최소 역압력(backpressure). 2는 "현재 전송중 + 여유 1" 의미로,
+// 단일 RTT 지연 동안 다음 프레임을 멈추지 않기 위한 여유분이다.
+const MAX_IN_FLIGHT_FRAMES = 2;
+
+// 2026-07-18: 핸드셰이크(welcome)까지 못 가고 끊긴 후보를 재시도 순환에서 잠시 제외하는
+// 쿨다운(ms). RECONNECT_DELAY_MAX보다 넉넉히 길게 잡아, 짧은 백오프 구간 동안은 계속
+// 건너뛰고 망 상태가 바뀔 시간을 준 뒤에만 다시 시도한다.
+const CANDIDATE_COOLDOWN_MS = 45000;
 
 export function useWebSocket(
   deviceId: string = DEVICE_ID,
@@ -90,6 +105,10 @@ export function useWebSocket(
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const networkProbeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingNetworkProbes = useRef<Map<string, number>>(new Map());
+  // ACK 기반 in-flight 프레임 추적 (2026-07-17, P0).
+  // key: `${event_id}:${frame_id}`, value: 송신 시각(Date.now()).
+  // 서버 ACK가 frame_id를 반환하므로 이를 키로 사용한다.
+  const pendingFrames = useRef<Map<string, number>>(new Map());
   const networkRttSamples = useRef<number[]>([]);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<WSStatus>("disconnected");
@@ -99,10 +118,11 @@ export function useWebSocket(
   const [networkRttAvgMs, setNetworkRttAvgMs] = useState<number | null>(null);
   const appStateRef = useRef(AppState.currentState);
 
-  // STT 상호작용 중 인지 경로 뮤트 상태. ref로 관리해 onmessage 클로저 안에서도
-  // 항상 최신 값을 읽는다(state였다면 connect()가 재실행되지 않는 한 stale closure).
-  const sttInteractionActiveRef = useRef(false);
-  const sttInteractionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // T3-C (2026-07-18): STT 응답 종료 콜백 누락 시 강제 해제하기 위한 안전 상한 타이머.
+  // audioEngine.setSttActive(false)는 원칙적으로 STT 응답 오디오의 onDone/onStopped
+  // 콜백에서 호출되지만, iOS 백그라운드 전환 등으로 콜백이 도착하지 않을 경우를
+  // 대비해 최대 STT_INTERACTION_TIMEOUT_MS 후에는 강제 해제한다.
+  const sttSafetyReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 폴백 모드 진입 음성 고지를 단절 1회당 한 번만 내보내기 위한 플래그.
   // true인 동안 재연결이 성공하면 복구 고지를 내보내고 다시 false로 돌린다.
   const fallbackAnnouncedRef = useRef(false);
@@ -110,29 +130,45 @@ export function useWebSocket(
   // 성공한 후보 우선순위는 welcome에서 승격하며, wsBaseUrl이 바뀔 때만 목록을 재생성한다.
   const wsUrlCandidatesRef = useRef<string[]>(expandWsUrlCandidates(wsBaseUrl));
   const wsUrlIndexRef = useRef(0);
+  // 2026-07-18: 후보가 welcome까지 못 가고(핸드셰이크 전) 끊기면 "연결 실패"로 보고
+  // 이 시각까지 재시도 순환에서 제외한다. 도달 불가능한 후보(예: Tailscale 미설정망)를
+  // 매 재연결마다 블라인드하게 다시 시도해 10초씩 낭비하던 문제를 해소한다(실기기 실측).
+  const candidateCooldownUntilRef = useRef<Map<string, number>>(new Map());
   const lastWsBaseUrlRef = useRef(wsBaseUrl);
-  // 직전에 수신한 "guide" JSON 메시지가 인지(카메라) 출처인지 기록해, 뒤이어 오는
-  // 바이너리 오디오 프레임(ArrayBuffer)도 같은 기준으로 뮤트할지 판단한다.
-  const pendingGuideIsCognitiveRef = useRef(false);
+  // T3-C (2026-07-18): 직전 guide JSON 메시지의 event_id를 임시 저장해, 이어 도착하는
+  // 바이너리 WAV 프레임이 STT 응답("stt-")인지 인지 안내("event-")인지 구분한다.
+  const pendingGuideEventIdRef = useRef<string | null>(null);
+  // 2026-07-19: 바이너리 WAV에 넘길 해석된 우선순위(JSON guide에서 계산).
+  const pendingGuidePriorityRef = useRef<GuidePriority>(GUIDE_PRIORITY.OTHER);
   // onclose/AppState 타이머가 항상 최신 connect를 호출하도록 한다.
   const connectRef = useRef<() => void>(() => {});
 
-  const setSttInteractionActive = useCallback(
-    (active: boolean, timeoutMs: number = STT_INTERACTION_TIMEOUT_MS) => {
-      sttInteractionActiveRef.current = active;
-      if (sttInteractionTimeoutRef.current) {
-        clearTimeout(sttInteractionTimeoutRef.current);
-        sttInteractionTimeoutRef.current = null;
+  /**
+   * T3-C (2026-07-18): STT 상호작용 안전 상한 타이머를 설정한다.
+   * CameraView.tsx에서 STT 녹음 시작 시 직접 audioEngine.setSttActive(true)를 호출하며,
+   * 이 훅에서는 STT 응답 수신 후 최대 timeoutMs까지의 백스톱만 관리한다.
+   */
+  const scheduleSttSafetyRelease = useCallback(
+    (timeoutMs: number = STT_INTERACTION_TIMEOUT_MS) => {
+      if (sttSafetyReleaseTimerRef.current) {
+        clearTimeout(sttSafetyReleaseTimerRef.current);
+        sttSafetyReleaseTimerRef.current = null;
       }
-      if (active) {
-        sttInteractionTimeoutRef.current = setTimeout(() => {
-          sttInteractionActiveRef.current = false;
-          sttInteractionTimeoutRef.current = null;
-        }, timeoutMs);
-      }
+      sttSafetyReleaseTimerRef.current = setTimeout(() => {
+        console.log("[WS] STT 안전 상한 타이머 - audioEngine STT 상태 강제 해제");
+        audioEngine.setSttActive(false);
+        sttSafetyReleaseTimerRef.current = null;
+      }, timeoutMs);
     },
     [],
   );
+
+  const clearSttSafetyRelease = useCallback(() => {
+    if (sttSafetyReleaseTimerRef.current) {
+      clearTimeout(sttSafetyReleaseTimerRef.current);
+      sttSafetyReleaseTimerRef.current = null;
+    }
+  }, []);
 
   const clearHeartbeat = useCallback(() => {
     if (heartbeatTimer.current) {
@@ -179,6 +215,11 @@ export function useWebSocket(
   }, []);
 
   const connect = useCallback(() => {
+    if (!deviceId || !token) {
+      console.warn("[WS] 단말 식별자 또는 인증 토큰이 없어 연결을 중단합니다.");
+      setStatus("fallback");
+      return;
+    }
     const currentState = wsRef.current?.readyState;
     if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) return;
 
@@ -190,10 +231,21 @@ export function useWebSocket(
       wsUrlIndexRef.current = 0;
     }
     const candidates = wsUrlCandidatesRef.current;
-    if (candidates.length > 1) {
-      wsUrlIndexRef.current = reconnectCount.current % candidates.length;
+    // 2026-07-18: 쿨다운 중인(최근 핸드셰이크 실패) 후보는 건너뛰고, 남은 후보들 안에서만
+    // 순환한다. 전부 쿨다운 중이면(모두 최근 실패) 어쩔 수 없이 원래 순환으로 되돌아간다 -
+    // 재시도를 완전히 멈추지 않기 위한 안전장치.
+    const now = Date.now();
+    const availableIndices = candidates
+      .map((_, i) => i)
+      .filter((i) => {
+        const until = candidateCooldownUntilRef.current.get(candidates[i]);
+        return until === undefined || until <= now;
+      });
+    const pool = availableIndices.length > 0 ? availableIndices : candidates.map((_, i) => i);
+    if (pool.length > 1) {
+      wsUrlIndexRef.current = pool[reconnectCount.current % pool.length];
     } else {
-      wsUrlIndexRef.current = 0;
+      wsUrlIndexRef.current = pool[0] ?? 0;
     }
     const selectedBase = candidates[wsUrlIndexRef.current] ?? wsBaseUrl;
     const wsUrl = `${selectedBase}?device_id=${deviceId}`;
@@ -204,6 +256,9 @@ export function useWebSocket(
           : ""),
     );
     const ws = new WebSocket(wsUrl);
+    // 이 후보로 welcome(핸드셰이크 성공)까지 도달했는지 추적한다. onclose에서 false면
+    // "이 후보가 연결 자체에 실패했다"로 보고 쿨다운을 건다(예: Tailscale 미도달망).
+    let receivedWelcome = false;
     // guide 오디오(WAV)를 서버가 바이너리 프레임으로 보내므로(2026-07-09 도입),
     // 수신 시 Blob이 아닌 ArrayBuffer로 받아 동기적으로 다루기 쉽게 한다.
     ws.binaryType = "arraybuffer";
@@ -242,13 +297,24 @@ export function useWebSocket(
       if (wsRef.current !== ws) return;
       // guide 오디오 바이너리 프레임: 직전 "guide" JSON 메시지(transport:"binary")에
       // 이어 도착하는 원본 WAV 바이트다. base64 인코딩을 완전히 우회한다(2026-07-09).
+      // T3-C (2026-07-18): audioEngine 우선순위 조정자에 STT/인지 구분을 전달한다.
       if (event.data instanceof ArrayBuffer) {
-        if (pendingGuideIsCognitiveRef.current && sttInteractionActiveRef.current) {
-          console.log(`[WS] STT 상호작용 중 - 인지 경로 오디오 뮤트(bytes=${event.data.byteLength})`);
-          return;
-        }
-          console.log(`[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}`);
-        void audioEngine.playGuideAudioBytes(new Uint8Array(event.data));
+        const isStt = String(pendingGuideEventIdRef.current ?? "").startsWith("stt-");
+        const priority = pendingGuidePriorityRef.current;
+        console.log(
+          `[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}, isStt=${isStt}, priority=${priority}`,
+        );
+        void audioEngine.playGuideAudioBytes(
+          new Uint8Array(event.data),
+          priority,
+          () => {
+            // STT 응답 종료 시 결정론적으로 상태 해제
+            if (isStt) {
+              audioEngine.setSttActive(false);
+              clearSttSafetyRelease();
+            }
+          },
+        );
         return;
       }
 
@@ -256,11 +322,15 @@ export function useWebSocket(
         const data: WSMessage = JSON.parse(event.data);
 
         if (data.type === "welcome") {
+          receivedWelcome = true;
           setLastMessage(data);
           setStatus("connected");
           reconnectCount.current = 0;
           // 성공한 후보를 다음 재연결의 1순위로 고정한다.
           const working = wsUrlCandidatesRef.current[wsUrlIndexRef.current];
+          if (working) {
+            candidateCooldownUntilRef.current.delete(working);
+          }
           if (working && wsUrlIndexRef.current > 0) {
             wsUrlCandidatesRef.current = [
               working,
@@ -281,6 +351,12 @@ export function useWebSocket(
           );
         } else if (data.type === "network_probe_ack") {
           recordNetworkProbeAck(data.probe_id);
+        } else if (data.type === "ack") {
+          // 서버가 ACK를 반환하면 해당 프레임을 in-flight 추적에서 해제한다 (2026-07-17, P0).
+          // 이 해제로 다음 프레임 송신이 허용된다(canSendFrame 게이트 통과).
+          const ackKey = `${data.event_id ?? ""}:${data.frame_id ?? ""}`;
+          pendingFrames.current.delete(ackKey);
+          setInFlightFrameCount(pendingFrames.current.size);
         } else if (data.type === "reflex_alert") {
           setLastMessage(data);
           // 입체 비프음 및 햅틱 연동 실행 (docs/reflex_audio_specification.md 준수)
@@ -303,6 +379,16 @@ export function useWebSocket(
           if (data.clip && !isUrgentBeepOnly) {
             void audioEngine.playReflexClip(data.clip);
           }
+        } else if (data.type === "reflex_clear") {
+          // 2026-07-18 거리 정책 SSOT: Near episode 종료(이탈 또는 track 소실) 통지.
+          // 서버가 명시적으로 종료를 알려주므로, 단말은 지금 재생 중인 반사 비프·햅틱을
+          // 즉시 정지한다(다음 reflex_alert가 올 때까지 새 episode를 기다림).
+          setLastMessage(data);
+          console.log(
+            `[LocalReflex][WS] 서버 반사 해제: alert_id=${data.alert_id}, track_id=${data.track_id ?? "-"}, reason=${data.reason ?? "-"}`,
+          );
+          audioEngine.stopBeep();
+          hapticEngine.stopContinuous();
         } else if (data.type === "guide") {
           // 인지 경로 가이드 음성은 onmessage에서 직접 재생한다(React 상태를 경유하지 않음).
           // [2026-07-09 변경] 서버가 guide 오디오를 더 이상 audio_mp3_b64(base64 문자열)로
@@ -315,34 +401,45 @@ export function useWebSocket(
               `transport=${data.transport}`,
           );
 
-          // event_id가 "stt-"로 시작하면 STT 질문/네비게이션 응답(항상 재생),
-          // 그 외(카메라 event-*)는 인지 경로 - STT 상호작용 중이면 뮤트 대상이다.
+          // 2026-07-19: STT(길찾아줘/물어볼게) > Near > 12시 MED > 기타.
+          // STT 구간에는 Near 비프/햅틱/위험 음성도 억제한다.
           const isStt = String(data.event_id ?? "").startsWith("stt-");
-          pendingGuideIsCognitiveRef.current = !isStt;
+          pendingGuideEventIdRef.current = data.event_id ?? null;
+          const priority = resolveGuidePriority({
+            isStt,
+            clockDirection: data.clock_direction,
+            distanceClass: data.distance_class,
+          });
+          pendingGuidePriorityRef.current = priority;
+          console.log(
+            `[Cognitive] guide priority=${priority} (isStt=${isStt}, dir=${data.clock_direction ?? "-"}, dist=${data.distance_class ?? "-"})`,
+          );
+
           if (isStt) {
-            // 2026-07-10 실기기 실측: 응답 텍스트가 "도착한 순간" 바로 뮤트를 풀면,
-            // 실제 오디오 재생은 그 뒤로도 몇 초 더 이어지는데 그 사이 인지 경로
-            // 메시지가 끼어들어 답변이 중간에 끊기는 문제가 있었다("직진하면 차량을
-            // 건너주세요"가 답변을 끊음). 응답 재생이 끝날 것으로 추정되는 시점까지
-            // 뮤트를 유지한다 - duration_ms(바이너리 WAV 실측 길이)가 있으면 그 값을,
-            // 없으면(speakFallback 폴백) 텍스트 길이로 대략 추정한다.
-            // 2026-07-10 추가 실측: 서버가 보낸 duration_ms가 긴 문장(TTS 청크 분할
-            // 추정)에서 실제 재생 길이보다 훨씬 짧게 나오는 경우가 확인됐다(13초 분량
-            // 오디오인데 duration_ms 기준 홀드가 1.3초 만에 풀려 끊김 재현). 서버 값을
-            // 그대로 신뢰하지 않고 텍스트 길이 추정치와 큰 값을 사용한다(방어적 하한).
+            // STT 응답 수신: 위험 비프/햅틱을 끄고 STT 답변을 최우선 재생.
+            hapticEngine.stopContinuous();
+            audioEngine.setSttActive(true);
             const guideText = data.guidance_text ?? "";
             const serverDurationMs =
               typeof data.duration_ms === "number" && data.duration_ms > 0 ? data.duration_ms : 0;
             const textEstimateMs = Math.max(guideText.length * 180, 2000);
             const estimatedMs = Math.max(serverDurationMs, textEstimateMs);
-            setSttInteractionActive(true, estimatedMs + 1200);
+            scheduleSttSafetyRelease(estimatedMs + 1200);
           }
 
-          if (!isStt && sttInteractionActiveRef.current) {
-            console.log("[WS] STT 상호작용 중 - 인지 경로 가이드 텍스트 뮤트");
-          } else if (data.transport !== "binary" && data.guidance_text) {
+          if (data.transport !== "binary" && data.guidance_text) {
             console.log("[WS] -> speakFallback(단말 TTS) 경로 진입");
-            audioEngine.speakFallback(data.guidance_text);
+            audioEngine.speakFallback(
+              data.guidance_text,
+              priority,
+              () => {
+                // STT 응답 종료 시 결정론적으로 상태 해제
+                if (isStt) {
+                  audioEngine.setSttActive(false);
+                  clearSttSafetyRelease();
+                }
+              },
+            );
           }
           setLastMessage(data as WSMessage);
         } else if (data.type === "nav_route") {
@@ -355,6 +452,24 @@ export function useWebSocket(
               ? { appKey: data.app_key ?? "", waypoints: wps }
               : null,
           );
+        } else if (data.type === "dial_action") {
+          const phoneNumber = String(data.phone_number ?? "").replace(/\D/g, "");
+          const contactName = data.contact_name ?? "";
+          const delayMs =
+            typeof data.delay_ms === "number" && data.delay_ms > 0
+              ? data.delay_ms
+              : 1500;
+          console.log(
+            `[WS] dial_action 수신: contact=${contactName}, phone=${phoneNumber}, delayMs=${delayMs}`,
+          );
+          if (phoneNumber) {
+            setTimeout(() => {
+              void placePhoneCall(phoneNumber, contactName).catch((error: unknown) => {
+                console.warn(`[WS] dial_action 실패: ${String(error)}`);
+              });
+            }, delayMs);
+          }
+          setLastMessage(data);
         } else {
           setLastMessage(data);
         }
@@ -377,6 +492,17 @@ export function useWebSocket(
       const closeCode = typeof event?.code === "number" ? event.code : -1;
       const closeReason = typeof event?.reason === "string" ? event.reason : "";
       console.log(`[WS] 연결 종료 code=${closeCode} reason=${closeReason}`);
+
+      // 2026-07-18: welcome을 못 받고 끊겼다 = 이 후보가 연결 자체에 실패했다.
+      // 다음 재연결 순환에서 쿨다운이 끝날 때까지 건너뛴다(Tailscale 등 도달 불가 후보를
+      // 매번 10초씩 재시도해 LAN 폴백을 지연시키던 문제 해소, 실기기 실측).
+      if (!receivedWelcome) {
+        const failedBase = wsUrlCandidatesRef.current[wsUrlIndexRef.current];
+        if (failedBase) {
+          candidateCooldownUntilRef.current.set(failedBase, Date.now() + CANDIDATE_COOLDOWN_MS);
+          console.log(`[WS] 후보 쿨다운 설정: ${failedBase} (${CANDIDATE_COOLDOWN_MS}ms)`);
+        }
+      }
 
       // 오디오 및 진동 피드백 즉각 종료
       audioEngine.stopBeep();
@@ -449,6 +575,58 @@ export function useWebSocket(
     }
   }, []);
 
+  // 💡 [면접 대비 주석] ACK 기반 in-flight 프레임 제한 (2026-07-17, P0).
+  // 느린 서버/망에서 단말이 ACK 없이 프레임을 무한정 밀어 넣으면 송신 버퍼·서버 큐·
+  // 콘솔 relay에 과거 프레임이 누적된다. ACK를 받은 프레임만 in-flight 슬롯에서 해제해
+  // 다음 프레임을 허용한다(역압력). 초과 시 메타와 binary를 "한 쌍으로 같이" 드롭한다 -
+  // 서버 pending_binary_meta가 단일 슬롯이므로, 메타만 또는 binary만 드롭하면 짝이 어긋나
+  // 다음 프레임이 잘못 매칭되는 버그를 방지한다.
+  const [inFlightFrameCount, setInFlightFrameCount] = useState(0);
+
+  const sendDetectionFrame = useCallback(
+    (
+      meta: { type: string; payload: { event_id?: string; frame_id?: number; [k: string]: unknown } },
+      jpegBytes: Uint8Array,
+    ): boolean => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+      // 오래된 stale 슬롯 정리(ACK 유실/네트워크 끊김 후 잔류 방지). 2초 이상 된 항목은 제거.
+      const now = Date.now();
+      for (const [key, ts] of pendingFrames.current) {
+        if (now - ts > 2000) pendingFrames.current.delete(key);
+      }
+
+      if (pendingFrames.current.size >= MAX_IN_FLIGHT_FRAMES) {
+        // in-flight 상한 초과: 메타 + binary를 한 쌍으로 같이 드롭(서버 매칭 오류 방지).
+        return false;
+      }
+
+      const event_id = meta.payload.event_id ?? "";
+      const frame_id = meta.payload.frame_id ?? 0;
+      const key = `${event_id}:${frame_id}`;
+      pendingFrames.current.set(key, now);
+      setInFlightFrameCount(pendingFrames.current.size);
+
+      // 메타 JSON 먼저, 직후 binary JPEG (서버 pending_binary_meta 매칭 순서).
+      try {
+        ws.send(JSON.stringify(meta));
+      } catch (error) {
+        pendingFrames.current.delete(key);
+        setInFlightFrameCount(pendingFrames.current.size);
+        console.warn("[WS] detection 메타 전송 스킵(소켓 상태 변경):", error);
+        return false;
+      }
+      try {
+        ws.send(jpegBytes);
+      } catch (error) {
+        console.warn("[WS] detection binary 전송 스킵(소켓 상태 변경):", error);
+      }
+      return true;
+    },
+    [],
+  );
+
   useEffect(() => {
     connectRef.current = connect;
   }, [connect]);
@@ -481,9 +659,9 @@ export function useWebSocket(
       audioEngine.stopBeep();
       hapticEngine.stopContinuous();
 
-      if (sttInteractionTimeoutRef.current) {
-        clearTimeout(sttInteractionTimeoutRef.current);
-        sttInteractionTimeoutRef.current = null;
+      if (sttSafetyReleaseTimerRef.current) {
+        clearTimeout(sttSafetyReleaseTimerRef.current);
+        sttSafetyReleaseTimerRef.current = null;
       }
 
       if (wsRef.current) {
@@ -529,9 +707,10 @@ export function useWebSocket(
     status,
     send,
     sendBinary,
+    sendDetectionFrame,
+    inFlightFrameCount,
     lastMessage,
     navRoute,
-    setSttInteractionActive,
     networkRttMs,
     networkRttAvgMs,
   };

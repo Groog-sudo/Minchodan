@@ -7,6 +7,7 @@ import type {
   RiskEvent,
   SessionStatus,
 } from "../types/monitor";
+import { forceAdminRelogin } from "./adminAuth";
 import { resolveServiceUrl } from "../config/network";
 
 const DEFAULT_STREAM_URL = resolveServiceUrl(
@@ -105,122 +106,91 @@ export function useMonitorStream(token: string | null = null) {
    */
 
   useEffect(() => {
-    // 토큰이 없으면 인증되지 않은 SSE 연결을 만들지 않는다.
     if (!token) return;
 
-    // 1. useEffect 안에서 new EventSource(resolvedUrl) 생성
     setState((current) => ({
       ...current,
       connection: "connecting",
     }));
+    const controller = new AbortController();
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    /*
-     * 발표/면접 대응 포인트:
-     * - EventSource는 브라우저 내장 SSE 클라이언트입니다.
-     * - 별도 라이브러리 없이 HTTP 연결을 유지하며 서버 이벤트를 계속 수신합니다.
-     * - 연결 생성은 컴포넌트 생명주기에 맞춰 useEffect 안에서 한 번 수행합니다.
-     */
-    const separator = resolvedUrl.includes("?") ? "&" : "?";
-    const tokenQuery = new URLSearchParams({ token }).toString();
-    const urlWithToken = `${resolvedUrl}${separator}${tokenQuery}`;
-    const source = new EventSource(urlWithToken);
-
-    // 2. source.onopen에서 connection="connected" 처리
-    source.onopen = () => {
-      /*
-       * 발표/면접 대응 포인트:
-       * - onopen은 SSE 연결이 실제로 열린 순간입니다.
-       * - 이 값을 화면 상단 연결 상태 배지와 연결하면 관제자가 서버 연결 여부를 즉시 확인할 수 있습니다.
-       */
-      setState((current) => ({
-        ...current,
-        connection : "connected",
-      }));
+    const reportParseError = (error: unknown) => {
+      applyEvent({
+        event_type: "system_error",
+        timestamp: new Date().toISOString(),
+        payload: {
+          error_message:
+            error instanceof Error ? error.message : "SSE payload parse failed",
+        },
+      });
     };
 
-    // 3. source.onmessage에서 JSON.parse(message.data) 처리
-    source.onmessage = (message) => {
-      /*
-       * 발표/면접 대응 포인트:
-       * - 백엔드 monitor.py는 SSE의 data 필드에 JSON 문자열을 실어 보냅니다.
-       * - 여기서는 그 문자열을 MonitorEvent 계약으로 파싱한 뒤 applyEvent로 넘깁니다.
-       * - 다음 개선 포인트는 try/catch를 추가해 파싱 실패도 system_error로 관측하는 것입니다.
-       */
-
-
+    const connect = async () => {
       try {
-        const parsed = JSON.parse(message.data) as MonitorEvent;
-        applyEvent(parsed);
-      } catch (error) {
-        applyEvent({
-          event_type: "system_error",
-          timestamp: new Date().toISOString(),
-          payload: {
-            error_message:
-              error instanceof Error ? error.message : "SSE payload parse failed",
+        const response = await fetch(resolvedUrl, {
+          headers: {
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${token}`,
           },
+          cache: "no-store",
+          signal: controller.signal,
         });
+        if (response.status === 401 || response.status === 403) {
+          forceAdminRelogin(`sse_${response.status}`);
+          return;
+        }
+        if (!response.ok || !response.body) {
+          throw new Error(`SSE 연결 실패 (HTTP ${response.status})`);
+        }
+
+        setState((current) => ({ ...current, connection: "connected" }));
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!disposed) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+
+          for (const block of blocks) {
+            const payload = block
+              .split("\n")
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.slice(5).trimStart())
+              .join("\n");
+            if (!payload) continue;
+            try {
+              applyEvent(JSON.parse(payload) as MonitorEvent);
+            } catch (error) {
+              reportParseError(error);
+            }
+          }
+        }
+      } catch (error) {
+        if (disposed || controller.signal.aborted) return;
+        setState((current) => ({ ...current, connection: "error" }));
+        reportParseError(error);
+        reconnectTimer = setTimeout(() => void connect(), 1500);
       }
     };
 
-    // 4. source.onerror에서 connection="error" 처리
-    source.onerror = () => {
-      /*
-       * 발표/면접 대응 포인트:
-       * - SSE 연결 실패, 서버 중단, CORS 문제는 onerror로 들어옵니다.
-       * - EventSource는 HTTP 상태코드를 노출하지 않으므로, 401/만료 토큰은
-       *   동일 URL을 fetch로 한 번 프로브해 구별합니다.
-       */
-      setState((current) => ({
-        ...current,
-        connection: "error",
-      }));
+    void connect();
 
-      void (async () => {
-        try {
-          const probe = await fetch(urlWithToken, {
-            method: "GET",
-            headers: { Accept: "text/event-stream" },
-            signal: AbortSignal.timeout(3000),
-          });
-          if (probe.status === 401) {
-            setState((current) => ({
-              ...current,
-              connection: "error",
-              system: {
-                ...current.system,
-                last_error: "SSE 인증 실패(401). 다시 로그인하세요.",
-              },
-            }));
-          }
-          // 프로브 응답 본문은 읽지 않고 즉시 중단(스트림 점유 방지)
-          try {
-            await probe.body?.cancel();
-          } catch {
-            /* ignore */
-          }
-        } catch {
-          /* 네트워크 오류는 connection=error 상태로 충분 */
-        }
-      })();
-    };
-
-    // 5. cleanup에서 source.close() 처리
     return () => {
-      /*
-       * 발표/면접 대응 포인트:
-       * - React 컴포넌트가 unmount되거나 URL이 바뀌면 기존 SSE 연결을 반드시 닫아야 합니다.
-       * - 닫지 않으면 브라우저에 오래된 연결이 남아 중복 이벤트와 메모리 누수가 발생할 수 있습니다.
-       */
-      source.close();
-
+      disposed = true;
+      controller.abort();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       setState((current) => ({
         ...current ,
         connection : "disconnected" ,
       }));
     };
-
-  }, [resolvedUrl, token])
+  }, [resolvedUrl, token]);
 
   /*
    * TH HARDCODE AREA 2: 이벤트 분기

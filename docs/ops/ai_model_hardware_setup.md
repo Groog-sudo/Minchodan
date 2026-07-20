@@ -1,7 +1,7 @@
 > **작성일**: 2026-07-05
-> **수정일**: 2026-07-14
-> **버전**: v1.3.1 (WSL/Linux systemd 미사용 Ollama 실행 기준 반영)
-> **설계 기준**: docs/ops/deployment_guide.md (v0.5.0)
+> **수정일**: 2026-07-19
+> **버전**: v1.4.0 (RTX 5090 최대 사양 및 Ubuntu·Windows·macOS PyTorch 2.13 호환성 반영)
+> **설계 기준**: docs/ops/deployment_guide.md (v0.5.6)
 
 # Minchodan AI 모델 및 하드웨어 구성 지침
 
@@ -11,23 +11,22 @@
 
 ## 1. 하드웨어 요건 및 드라이버 스펙
 
-### 1.1 GPU 권장 및 필수 하위 한계선
+### 1.1 팀 지원 운영체제 및 가속 경로
 
-| 분류 | 권장사양 (GPU 가속) | 최소사양 (CPU Fallback) |
-| :--- | :--- | :--- |
-| **장치 (Device)** | **NVIDIA RTX 3060 / 4080** 이상<br/>(Blackwell sm_120 아키텍처 지원 권장) | macOS (Apple Silicon M1/M2/M3)<br/>또는 외장 GPU 없는 Windows 데스크톱 |
-| **CUDA 버전** | **CUDA 12.8** 이상 필수 (권장 사양) | N/A (CPU 구동) |
-| **NVIDIA Driver** | **v550.x** 이상 필수 | N/A |
-| **VRAM / RAM** | **VRAM 8GB** 이상 / RAM 16GB 이상 | RAM 16GB 이상 (Ollama 모델 로드 전제) |
+| 운영체제 | 팀 사용 범위 | PyTorch 의존성 | 가속기·드라이버 기준 |
+| :--- | :--- | :--- | :--- |
+| **Ubuntu x86_64** | 운영 GPU 서버·학습 | `torch==2.13.0+cu130`, `torchvision==0.28.0+cu130` | 팀 최대 RTX 5090(Blackwell sm_120), NVIDIA R580 이상 드라이버 |
+| **Windows amd64** | 운영 GPU 서버·학습·개발 | `torch==2.13.0+cu130`, `torchvision==0.28.0+cu130` | 팀 최대 RTX 5090(Blackwell sm_120), NVIDIA R580 이상 드라이버를 별도 설치 |
+| **macOS Apple Silicon** | 로컬 개발·기능 검증 | `torch==2.13.0`, `torchvision==0.28.0` | Apple MPS 우선, 미지원 시 CPU 폴백. CUDA 서버로 분류하지 않음 |
 
-> `requirements.txt`는 환경 마커로 PyTorch 휠을 분리합니다. macOS와 Apple Silicon 기반 Linux 컨테이너는 PyPI의 `torch==2.12.1`/`torchvision==0.27.1`을 사용하고, Blackwell 배포 대상인 Linux x86_64와 Windows는 공식 cu128 인덱스의 `torch==2.11.0+cu128`/`torchvision==0.26.0+cu128`을 사용합니다. GPU 환경은 설치 후 `scripts/verify_gpu.py`로 CUDA 바인딩을 별도 검증해야 합니다.
+> `requirements.txt`의 환경 마커가 위 세 경로를 자동 선택합니다. Ubuntu·Windows의 cu130 휠은 CUDA 런타임을 포함하므로 일반 실행에 호스트 CUDA Toolkit 전체 설치가 필수는 아니지만, NVIDIA 드라이버는 R580 이상이어야 합니다. 커스텀 CUDA 확장이나 TensorRT 엔진을 빌드할 때는 호환 CUDA 13.x Toolkit을 별도로 설치합니다. RAM은 16GB 이상을 기본으로 하고, GPU 서버 VRAM은 모델·배치 크기에 맞추되 팀 최대 사양은 RTX 5090 32GB입니다.
 
 ### 1.2 GPU 가속 연결 검증
-개발자는 컨테이너 기동 전 호스트 OS 상에서 파이썬 스크립트를 통해 GPU 연계 가능 여부를 사전 검증해야 합니다:
+개발자는 컨테이너 기동 전 호스트 OS에서 다음 스크립트로 실제 가속 연산을 검증해야 합니다:
 ```bash
 python scripts/verify_gpu.py
 ```
-*이 스크립트는 PyTorch의 CUDA 바인딩 여부와 BlackwellCapability 검사를 거쳐 1 step 가속 연산 통과 여부를 검증합니다.*
+이 스크립트는 Ubuntu·Windows에서 CUDA 13 이상과 GPU 1 step 연산을 필수 확인합니다. RTX 5090의 sm_120보다 낮은 이전 세대 GPU는 경고 후 개발용 실행을 허용합니다. macOS에서는 MPS 1 step 연산을 우선 검증하고, MPS를 사용할 수 없을 때만 CPU 폴백을 검증합니다.
 
 ---
 

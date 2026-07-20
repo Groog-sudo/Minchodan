@@ -44,9 +44,10 @@ def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
     # 테스트용 관리자 의존성도 우회 설정 (테스트 클라이언트에서 get_current_admin 우회)
-    from server.api.dependencies import get_current_admin
+    from server.api.dependencies import get_current_admin, require_operator
 
     app.dependency_overrides[get_current_admin] = lambda: "admin-id-001"
+    app.dependency_overrides[require_operator] = lambda: "operator-id-001"
 
     with TestClient(app) as c:
         yield c

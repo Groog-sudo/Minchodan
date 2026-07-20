@@ -1,7 +1,7 @@
 # 안드로이드 스마트폰 연동 실행 가이드
 
 > **작성일**: 2026-07-09
-> **버전**: v2.0.0
+> **버전**: v2.0.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
 > **대상**: Minchodan 프로젝트 Android 실기기 테스트 담당자 (입문자 기준)
 > **목적**: iOS 스마트폰과 PC 연동 구동 방식과 동일하게 Android 스마트폰과 PC를 연동하여 Minchodan 프로그램을 실행하기
 
@@ -40,9 +40,6 @@ OLLAMA_BASE_URL=http://ollama:11434
 # --- 구글 Gemini API 키 (RAG 데이터베이스 구축용) ---
 GOOGLE_API_KEY=AIzaSy... (본인의 실제 구글 API 키 입력)
 
-# --- ngrok 터널 보안 인증 토큰 ---
-NGROK_AUTHTOKEN=여기에_본인의_ngrok_토큰_입력
-
 # --- 데이터베이스 (DB 미구성 환경 임시 우회용) ---
 DATABASE_URL=sqlite+aiosqlite:///./data/minchodan_temp.db
 ```
@@ -62,11 +59,10 @@ DATABASE_URL=sqlite+aiosqlite:///./data/minchodan_temp.db
    - 하드웨어 선택 프롬프트가 뜨면 **`2`** (CPU Only Mode) 입력 후 엔터
    - 완료 후 브라우저에서 `http://localhost:8000/docs` 접속하여 Swagger 화면 확인
 
-3. **Ollama AI 모델 컨테이너 내부 다운로드**:
+3. **호스트 Ollama 모델 다운로드**:
    ```bash
-   docker exec -it minchodan-ollama ollama pull gemma4:e4b
-   docker exec -it minchodan-ollama ollama pull llava
-   docker exec -it minchodan-ollama ollama pull nomic-embed-text
+   ollama pull gemma4:e4b
+   ollama pull nomic-embed-text
    ```
 
 4. **RAG 데이터베이스(ChromaDB) 빌드** (venv 활성화 상태에서):
@@ -77,33 +73,30 @@ DATABASE_URL=sqlite+aiosqlite:///./data/minchodan_temp.db
 
 ---
 
-### 4단계: ngrok 보안 터널 기동 및 모바일 주소 연동
+### 4단계: Tailscale 연결 및 모바일 주소 연동
 
-공용 PC 터미널 이력에 토큰이 평문으로 남지 않도록 .env에서 동적으로 로드합니다.
+서버 PC와 Android 단말을 같은 tailnet에 연결하고 서버 주소를 확인합니다.
 
 **PowerShell 환경**:
 ```powershell
-$env:NGROK_AUTHTOKEN = (Get-Content .env | Select-String "NGROK_AUTHTOKEN=" | Out-String).Split("=")[1].Trim()
-npx ngrok http 8000 --authtoken $env:NGROK_AUTHTOKEN
+tailscale status
+tailscale ip -4
 ```
 
 **Git Bash 환경**:
 ```bash
-export NGROK_AUTHTOKEN=$(grep NGROK_AUTHTOKEN .env | cut -d '=' -f2)
-npx ngrok http 8000 --authtoken $NGROK_AUTHTOKEN
+tailscale status
+tailscale ip -4
 ```
 
-- ngrok이 로컬에 설치되지 않아도 `npx`가 자동 다운로드 후 실행합니다.
-- 최초 실행 시 `Ok to proceed? (y)` 물음이 뜨면 `y` 입력
+`client/.env`에 서버 Tailscale 주소를 설정합니다.
 
-기동 화면에서 Forwarding 주소(`https://xxxx.ngrok-free.app`)를 복사한 뒤, [client/src/config/index.ts](../../client/src/config/index.ts) 파일 9번째 줄의 `WS_URL`을 수정합니다.
-
-```typescript
-// 정적 따옴표 문자열로 작성 (백틱 템플릿 문법 사용 금지 - Android 번들링 오류 유발)
-export const WS_URL = "wss://xxxx.ngrok-free.app/ws/detect";
+```ini
+EXPO_PUBLIC_NETWORK_MODE=tailscale
+EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+EXPO_PUBLIC_SERVER_PORT=443
+EXPO_PUBLIC_WS_SCHEME=wss
 ```
-
-> **중요**: 백틱(`` ` ``) 템플릿 문법과 변수 조합(`\`ws://${LAN_IP}...\``)은 Android Metro 번들러에서 500 에러를 유발합니다. 반드시 일반 따옴표(`"`)로 작성합니다.
 
 ---
 
@@ -179,33 +172,24 @@ docker ps  # STATUS가 "Up"인지 확인
 
 ---
 
-### 오류 C: `bash: scripts/build_chroma.sh: No such file or directory`
+### 오류 C: RAG 빌드 스크립트 경로 오류 (`build_chroma.sh` 등)
 
-**원인**: RAG 빌드 스크립트 파일명이 변경됨 (`.sh` 쉘 스크립트 -> `.py` 파이썬 스크립트)
+**원인**: 구버전 쉘 스크립트(`build_chroma.sh`) 참조. 현재는 Python 빌더 사용.
 
-**해결**: 올바른 명령어로 교체
+**해결**:
 
 ```bash
-# 잘못된 명령어
-bash scripts/build_chroma.sh
-
-# 올바른 명령어
 python scripts/build_safety_db.py
+# 선택: python scripts/build_convenience_db.py
 ```
 
 ---
 
-### 오류 D: `bash: ngrok: command not found`
+### 오류 D: `tailscale: command not found`
 
-**원인**: 로컬 PC에 ngrok이 직접 설치되어 있지 않음
+**원인**: 로컬 PC에 Tailscale CLI가 설치되어 있지 않거나 PATH에 등록되지 않음
 
-**해결**: `ngrok` 앞에 `npx`를 붙여 즉시 실행 (설치 불필요)
-
-```bash
-npx ngrok http 8000 --authtoken $NGROK_AUTHTOKEN
-```
-
-최초 실행 시 `Ok to proceed? (y)` 문구가 뜨면 `y` 입력
+**해결**: 운영체제용 Tailscale 앱을 설치하고 로그인한 뒤 `tailscale status`로 연결 상태를 확인합니다. 상세 절차는 [tailscale_connection_guide.md](tailscale_connection_guide.md)를 따릅니다.
 
 ---
 
@@ -386,27 +370,21 @@ docker restart minchodan-fastapi
 
 ---
 
-### 오류 M: ngrok 터널링 연결 지연/타임아웃으로 인한 무한 "연결 중" 현상
+### 오류 M: Tailscale 연결 실패로 인한 무한 "연결 중" 현상
 
 - **원인**:
-  - ngrok 무료 계정의 대역폭 한도 초과 또는 클라우드 세션 차단으로 인해 `wss://partake-primer-surround.ngrok-free.dev/ws/detect` 주소로의 외부 프레임 포워딩이 타임아웃(Operation timed out)을 일으키며 끊김.
+  - 단말 Tailscale VPN이 꺼졌거나, 서버와 단말이 다른 tailnet에 연결됐거나, Tailscale Serve가 비활성 상태임.
 - **해결**:
-  - **USB 직접 연결(localhost)로 전환**: USB 케이블로 단말기가 연결된 상태에서 `adb reverse` 포트 터널링이 완벽히 가동 중이므로, ngrok 도메인 대신 로컬 직통 주소를 설정하여 속도 및 연결성을 100% 확보합니다.
-  1. [client/src/config/index.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/config/index.ts) 파일의 **`WS_URL`** 변수를 다음과 같이 수정하여 로컬 호스트 터널로 전환합니다:
-     ```typescript
-     // ngrok 외부 터널 (ngrok 정상 동작 시 사용)
-     // export const WS_URL = "wss://partake-primer-surround.ngrok-free.dev/ws/detect";
-
-     // USB 직접 연결 - adb reverse tcp:8000 tcp:8000 설정 후 사용 (현재 활성)
-     export const WS_URL = "ws://localhost:8000/ws/detect";
-     ```
+  1. 서버에서 `tailscale status`, `tailscale ip -4`와 `http://127.0.0.1:8000/health`를 확인합니다.
+  2. 단말 브라우저에서 `https://[SERVER_MAGICDNS_NAME]/health`를 엽니다.
+  3. 실패가 계속되면 USB 직접 연결로 전환합니다.
   2. Metro 번들러 실행 포트와 WebSocket 포트를 단말에 재할당합니다:
      ```powershell
      adb reverse tcp:8081 tcp:8081
      adb reverse tcp:8000 tcp:8000
      ```
   3. 스마트폰 화면을 흔들어 Expo 개발자 메뉴에서 **[Reload]**를 클릭하여 새로운 자바스크립트 설정을 적용합니다.
-  4. 웹소켓 세션이 `ws://localhost:8000`을 타며 PC 호스트의 Docker FastAPI 서버(`minchodan-fastapi`)로 ngrok 지연 없이 즉각 수립되고 디코딩이 실행됩니다.
+  4. 웹소켓 세션이 `ws://localhost:8000`을 타며 PC 호스트의 Docker FastAPI 서버로 직접 수립되는지 확인합니다.
 
 ---
 
@@ -453,15 +431,15 @@ docker restart minchodan-fastapi
 USB 케이블 연결을 완전히 분리한 상태에서, LAN Wi-Fi망을 경유해 무선으로 Metro 컴파일러와 백엔드 서버를 연동하는 최종 동작 수칙입니다.
 
 #### 1단계: 서버 LAN IP 확인 및 config 설정
-* PC의 LAN IP 주소를 확인한 뒤 [client/src/config/index.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/config/index.ts)의 `WS_URL`에 반영합니다:
+* PC의 LAN IP 주소를 확인한 뒤 [client/src/config/index.ts](../../client/src/config/index.ts)의 `WS_URL`에 반영합니다:
   ```typescript
-  export const WS_URL = "ws://192.168.0.136:8000/ws/detect";
+  export const WS_URL = "ws://[PC_LAN_IP]:8000/ws/detect";
   ```
 
 #### 2단계: 스마트폰 개발자 메뉴 내 번들러 서버 지정
 1. 스마트폰과 PC가 **동일한 와이파이(LAN)망**에 물려 있는지 확인합니다.
 2. 스마트폰 앱 기동 후 기기를 흔들어 Expo 개발자 메뉴를 띄운 뒤, **[Change Bundle Location]** (또는 Configure Bundler)을 터치합니다.
-3. PC 호스트 IP 주소와 포트 번호인 **`192.168.0.136:8081`** 을 정확히 입력하고 확인을 누릅니다.
+3. PC 호스트 IP 주소와 포트 번호인 **`[PC_LAN_IP]:8081`** 을 정확히 입력하고 확인을 누릅니다.
 4. 개발자 메뉴의 **[Reload]**를 눌러 무선 번들 다운로드를 완료합니다.
 
 #### 3단계: USB 해제 및 가동

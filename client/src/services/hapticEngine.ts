@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 
 import { MOCK_HAPTIC } from "../config/mock";
+import { audioEngine } from "./audioEngine";
 
 export type HapticMockHandler = (pattern: string) => void;
 
@@ -26,8 +27,18 @@ class HapticEngine {
   /**
    * 지정된 패턴으로 진동 피드백을 트리거합니다.
    * @param pattern 'short' | 'double' | 'continuous'
+   * @param opts.allowDuringStt STT(길찾아줘/물어볼게) 중에도 허용(녹음 시작 큐 등)
    */
-  public async trigger(pattern: string): Promise<void> {
+  public async trigger(
+    pattern: string,
+    opts?: { allowDuringStt?: boolean },
+  ): Promise<void> {
+    // 1순위 STT 구간: Near 위험 햅틱 억제. STT 자체 큐만 allowDuringStt로 통과.
+    if (!opts?.allowDuringStt && audioEngine.isSttActive()) {
+      console.log(`[HapticEngine] STT 상호작용 중 - 위험 햅틱 억제: ${pattern}`);
+      return;
+    }
+
     if (MOCK_HAPTIC) {
       console.log(`[Mock Haptics] 진동 패턴: ${pattern}`);
       this.mockHandler?.(pattern);

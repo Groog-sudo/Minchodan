@@ -28,22 +28,20 @@ logger = logging.getLogger(__name__)
 RISK_LEVELS = {"high", "mid", "low"}
 
 # =========================================================================
-# 👨‍💻 HARD CODE 영역 시작: cognitive 경로로 넘길 mid risk 클래스 확정 👨‍💻
+# 👨‍💻 HARD CODE 영역 시작: 인지 경로 mid risk 객체·노면·머리높이 격상 분리 👨‍💻
 # 💡 [면접 대비 주석]
-# 질문: 왜 모든 탐지 객체를 reflex(즉시 경보)로 보내지 않았나요?
-# 답변: 시각장애인 보행 보조에서 가장 위험한 것은 "경보 과다"로 인한 피로 누적입니다.
-# 따라서 즉시 충돌 가능성이 큰 5종(car/truck/bus/motorcycle/scooter)만 reflex로 고정하고,
-# 나머지 정적 장애물/보행 방해물은 mid risk로 분류해 cognitive 경로에서 방향성과 회피
-# 문장을 포함한 상세 안내로 처리하도록 설계했습니다.
+# 질문: 2026-07-14 이후 객체 mid 목록은 왜 비었나요?
+# 답변: stage3 v0.3.1·class-agnostic reflex(Option A) 채택 후, 근접 객체는 reflex_gate/
+# head_level_gate가 반사 경로를 담당하고 consumer의 800ms 지연 인지·패스트 레인이 설명을 맡습니다.
+# LangGraph L1의 인지 mid는 노면 이탈(is_departing_confirmed) 전용이므로 객체 클래스는 mid로
+# 올리지 않습니다. server/orchestration/nodes/l1_classifier.py의 MID_RISK_CLASSES와
+# 동일하게 유지할 것(tests/test_langgraph.py::TestRiskClassifierConsistency 참조).
 #
-# 2026-07-07 정정: 이전 목록은 COCO 80클래스 잔재(skateboard/backpack/handbag/suitcase/
-# umbrella/"fire hydrant" 등)였고 실제 파인튜닝 완료 29클래스 모델과 대부분 일치하지 않았다.
-# 반사 게이트가 이미 처리하는 5종(car/truck/bus/motorcycle/scooter)과 정보성/비장애물
-# 클래스(person/cat/dog/traffic_light/traffic_sign/stop)를 제외한 정적 장애물 전부를 채택했다.
-# server/orchestration/nodes/l1_classifier.py의 MID_RISK_CLASSES와 동일하게 유지할 것
-# (두 분류기가 서로 다른 목록으로 어긋났던 것이 이번에 고친 버그였다. tests/test_langgraph.py의
-# 일관성 회귀 테스트 참조).
-MID_RISK_CLASSES = {
+# HEAD_LEVEL_ESCALATION_CLASSES는 인지 mid와 별도입니다. 상체 높이(화면 상단 40%) 돌출물은
+# LLM 지연 전에 head_level_gate가 반사 경로로 격상해야 하므로 18종 정적 장애물 목록을 유지합니다.
+MID_RISK_CLASSES: set[str] = set()
+
+HEAD_LEVEL_ESCALATION_CLASSES = {
     "barricade",
     "bench",
     "bicycle",
@@ -103,6 +101,7 @@ class DetectionPipeline:
         event_id: str,
         device_id: str,
         is_outdoor: bool | None = None,
+        probe_source: str | None = None,
     ) -> tuple[DetectionResult | ReflexAlert, list[Detection], list[SurfaceResult]]:
         start_ts = time.time()
 
@@ -134,7 +133,9 @@ class DetectionPipeline:
             logger.error(f"[Pipeline] Segmentor 추론 실패: {e}")
             surfaces = []
 
-        detections = await self.tracker.update(detections, self.redis_bus)
+        detections = await self.tracker.update(
+            detections, self.redis_bus, frame_width=width, frame_height=height
+        )
 
         # 1. 진단 및 2. 완화 조치 (교차검증 게이트 + 시간적 지속성)
         filtered_detections = []
@@ -149,8 +150,18 @@ class DetectionPipeline:
 
         for det in detections:
             # 시간적 지속성 강화 (최소 4프레임 이상 유지된 경우만 승격, Mock/테스트 등은 예외)
-            if det.track_id is not None and det.hit_count < 4:
-                continue
+            # T1-a (2026-07-18): 접근 중인 객체는 hit_count 선필터를 완화해 빠른 안내가
+            # 가능하도록 한다. 정적 객체는 4프레임, 접근 객체는 2프레임을 요구한다.
+            # [면접 대비 주석] 먼 객체는 누적으로 안전 확보, 근접 신규 객체는 접근성으로
+            # 조기 통과하는 비대칭 설계. 정적 오탐은 여전히 4프레임으로 필터링 유지.
+            # 2026-07-19: "거리측정" 모드의 단발 검증 캡처(probe_source="lidar_validation")는
+            # 연속 스트림이 아니라 사용자가 명시적으로 트리거한 1회성 정지 프레임이므로,
+            # 연속 프레임 누적을 전제로 하는 이 필터를 적용할 수 없다(항상 hit_count=1로
+            # 걸러져 탐지 0건이 되는 결함이었음). 검증 캡처는 이 필터를 건너뛴다.
+            if det.track_id is not None and probe_source != "lidar_validation":
+                min_hit_count = 2 if det.direction == "approaching" else 4
+                if det.hit_count < min_hit_count:
+                    continue
 
             # 세그멘테이션이 없으면 교차검증을 건너뛴다(seg 실패 시 반사까지 전량 드롭 방지).
             if surfaces:
@@ -190,29 +201,46 @@ class DetectionPipeline:
 
         detections = filtered_detections
 
-        reflex_alert = self._evaluate_reflex(detections, height, width)
-        if reflex_alert is not None:
-            reflex_alert.event_id = event_id
-            reflex_alert.ts = time.time()
-            reflex_alert.inference_ms = (time.time() - start_ts) * 1000
-            logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
-            return reflex_alert, detections, surfaces
+        # 2026-07-18 거리 정책 SSOT: stream 불변식 강제.
+        # [면접 대비 주석] stream 인자를 받고도 실제 분기에 쓰지 않던 것이 기존 결함이었다
+        # (반사 프레임에서도 인지 후보가 만들어지고, 인지 프레임에서도 반사 경보가 나올 수
+        # 있었음). 반사(8~10fps)는 안전 게이트(Near 반사·머리높이·노면)만 평가하고,
+        # 인지(1~2fps)는 mid/low 분류와 보도 이탈만 평가해 서로의 출력 종류를 침범하지 않는다.
+        if stream == "reflex":
+            reflex_alert = self._evaluate_reflex(detections, height, width)
+            if reflex_alert is not None:
+                reflex_alert.event_id = event_id
+                reflex_alert.ts = time.time()
+                reflex_alert.inference_ms = (time.time() - start_ts) * 1000
+                logger.info(f"[Pipeline] 반사 경로: {reflex_alert.alert_id}")
+                return reflex_alert, detections, surfaces
 
-        head_level_alert = self._evaluate_head_level(detections, height, width)
-        if head_level_alert is not None:
-            head_level_alert.event_id = event_id
-            head_level_alert.ts = time.time()
-            head_level_alert.inference_ms = (time.time() - start_ts) * 1000
-            logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
-            return head_level_alert, detections, surfaces
+            head_level_alert = self._evaluate_head_level(detections, height, width)
+            if head_level_alert is not None:
+                head_level_alert.event_id = event_id
+                head_level_alert.ts = time.time()
+                head_level_alert.inference_ms = (time.time() - start_ts) * 1000
+                logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
+                return head_level_alert, detections, surfaces
 
-        surface_alert = self._evaluate_surface(surfaces, height)
-        if surface_alert is not None:
-            surface_alert.event_id = event_id
-            surface_alert.ts = time.time()
-            surface_alert.inference_ms = (time.time() - start_ts) * 1000
-            logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
-            return surface_alert, detections, surfaces
+            surface_alert = self._evaluate_surface(surfaces, height, width)
+            if surface_alert is not None:
+                surface_alert.event_id = event_id
+                surface_alert.ts = time.time()
+                surface_alert.inference_ms = (time.time() - start_ts) * 1000
+                logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
+                return surface_alert, detections, surfaces
+
+            # 반사 스트림에서 안전 게이트가 하나도 발동하지 않으면 인지 후보를 만들지
+            # 않고(risk_hint="none") BBox 오버레이용 원시 탐지 정보만 반환한다.
+            res = DetectionResult(
+                event_id=event_id,
+                detections=detections,
+                surface=surfaces,
+                risk_hint="none",
+                inference_ms=(time.time() - start_ts) * 1000,
+            )
+            return res, detections, surfaces
 
         risk_hint = self._classify_risk(detections, surfaces)
         inference_ms = (time.time() - start_ts) * 1000
@@ -283,7 +311,7 @@ class DetectionPipeline:
         발밑 근접만 보는 reflex_gate와 달리, 흰지팡이로 감지 불가능한 상체 높이
         돌출 장애물(나뭇가지, 개방된 적재함 등)을 조기에 반사 경로로 격상한다.
         """
-        escalation_classes = frozenset(MID_RISK_CLASSES)
+        escalation_classes = frozenset(HEAD_LEVEL_ESCALATION_CLASSES)
         for det in detections:
             alert = head_level_gate(det, frame_height, frame_width, escalation_classes)
             if alert is not None:
@@ -294,9 +322,10 @@ class DetectionPipeline:
     def _evaluate_surface(
         surfaces: list[SurfaceResult],
         frame_height: float,
+        frame_width: float = 0.0,
     ) -> ReflexAlert | None:
         for surf in surfaces:
-            alert = surface_gate(surf, frame_height)
+            alert = surface_gate(surf, frame_height, frame_width)
             if alert is not None:
                 return alert
         return None

@@ -577,7 +577,7 @@ class EdgeTTSService(TTSService):
 # [파트 4] get_tts_service() 팩토리 함수
 # - 환경 변수에 따라 어떤 TTS 구현체를 사용할지 결정
 # - 현재 지원: edge (자연한국어), supertonic (기본 로컬), piper, pyttsx3
-# - 클라이언트(react-native-tts) 사용 시에도 이 팩토리는 유지될 수 있음
+# - 클라이언트(expo-speech) 사용 시에도 이 팩토리는 유지될 수 있음
 #   (단, 이 경우 실제 audio bytes 생성은 클라이언트가 담당)
 # ============================================================
 

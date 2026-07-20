@@ -22,11 +22,13 @@ export type MessageType =
   | "detection"
   | "ack"
   | "reflex_alert"
+  | "reflex_clear"
   | "guide"
   | "error"
   | "server_detection"
   | "network_probe_ack"
-  | "nav_route";
+  | "nav_route"
+  | "dial_action";
 
 export interface BBox {
   x: number;
@@ -67,6 +69,18 @@ export interface WSMessage {
   distance?: number;
   beep_interval_ms?: number;
   haptic_pattern?: HapticPattern | string;
+  /** 2026-07-18 거리 정책 SSOT: reflex_alert/reflex_clear 출처 구분 (server/detection/schemas.py ReflexAlert.alert_source와 동일 값). */
+  alert_source?: "object" | "head_level" | "surface" | string;
+  /** reflex_alert 전용: Near episode 상태("enter"=새 episode 시작, "update"=같은 episode 지속). */
+  event_state?: "enter" | "update" | string;
+  /** reflex_alert 전용: distance_policy 파생 거리(m). 레거시 distance 필드와 동일 값. */
+  estimated_distance_m?: number;
+  /** reflex_alert/reflex_clear 공통: 서버·단말 정책 버전 불일치 감지용. */
+  policy_version?: string;
+  /** reflex_clear 전용: 해제 대상 track_id (surface 등 track이 없으면 null). */
+  track_id?: string | null;
+  /** reflex_clear 전용: 해제 사유 ("zone_exit" | "track_lost"). */
+  reason?: string;
   guidance_text?: string;
   /** guide 구조화 필드 (Phase 2): 시계 방향. 음성 텍스트와 분리. */
   clock_direction?: string;
@@ -90,6 +104,10 @@ export interface WSMessage {
   waypoints?: { lat: number; lon: number }[];
   /** nav_route 메시지: TMap JS API appKey (서버 환경변수 재사용) */
   app_key?: string;
+  /** dial_action: 전화 연결 대상 */
+  contact_name?: string;
+  phone_number?: string;
+  delay_ms?: number;
 }
 
 export interface DetectionPayload {

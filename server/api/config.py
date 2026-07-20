@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # 무선 환경에서 정상 연결도 오탐 종료시켰다(2026-07-10 실기기 LTE/ngrok 테스트로 확인).
     HEARTBEAT_TIMEOUT: int = int(os.getenv("HEARTBEAT_TIMEOUT", "15"))
     MAX_RECONNECT_ATTEMPTS: int = int(os.getenv("MAX_RECONNECT_ATTEMPTS", "3"))
+    WS_AUTH_TIMEOUT_SECONDS: int = int(os.getenv("WS_AUTH_TIMEOUT_SECONDS", "10"))
     # 운영자 콘솔(React) 개발 서버 기본 출처만 허용. 프로덕션 배포 시 .env의
     # CORS_ORIGINS(JSON 배열 문자열, 예: ["https://console.example.com"])로 반드시 override.
     CORS_ORIGINS: list[str] = []

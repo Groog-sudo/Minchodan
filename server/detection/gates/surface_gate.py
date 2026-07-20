@@ -1,8 +1,10 @@
+# -*- coding: utf-8 -*-
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+from server.detection.direction import FRONT_BAND
 from server.detection.schemas import ReflexAlert, SurfaceResult
 
 # =========================================================================
@@ -20,26 +22,46 @@ from server.detection.schemas import ReflexAlert, SurfaceResult
 # 하나로 통합한 4클래스(sidewalk_normal/caution/roadway/braille_normal)로 확정됐다
 # (stage3_detection_design.md §5 참조). 예전 클래스명 그대로 두면 실제 모델 출력과 절대
 # 매칭되지 않아 이 게이트가 영구히 발동하지 않는 문제가 있어, 실제 클래스명으로 교체한다.
+#
+# P2-1(c) (2026-07-17): 5클래스 재학습 파이프라인(train_segmentation_5class.py)으로 caution을
+# stair_down/manhole로 분리한 모델이 배포되면 이 클래스들도 즉시 경보 대상이 되도록 사전 등록.
+# [면접 대비 주석] 두 모델(4클래스 caution 통합 / 5클래스 분리)을 모두 지원해 모델 교체 시
+# 게이트 코드 변경 없이 STAIR_DOWN이 활성화되도록 설계.
 P0_SURFACE_CLASSES = {
-    "caution",  # 계단/맨홀/그레이팅 통합 클래스 - 즉시 물리적 낙상/충돌 위험
+    "caution",  # 4클래스 모델: 계단/맨홀/그레이팅 통합 클래스 - 즉시 물리적 낙상/충돌 위험
+    "stair_down",  # 5클래스 모델: 계단(내려막) 분리 클래스
+    "manhole",  # 5클래스 모델: 맨홀 분리 클래스
 }
 
 
 def surface_gate(
     surface_result: SurfaceResult,
     frame_height: float,
+    frame_width: float = 0.0,
 ) -> ReflexAlert | None:
-    """P0 노면 클래스가 프레임 하단에 검출되면 alert_id를 반환한다."""
+    """P0 노면이 Near(하단) + 12시 회랑에 있을 때만 반사 경보를 반환한다."""
     # 💡 [면접 대비 주석]
     # segmentation은 프레임 전체 영역을 보지만, 모든 위치의 위험을 즉시 경보로 보내면 과경보가 된다.
     # 그래서 centroid가 화면 하단 60% 아래에 들어온 경우만 "사용자 진행 경로에 바로 닿은 위험"으로 보고
     # 반사 경로를 발동시켰다. 위쪽에 멀리 보이는 caution은 cognitive 경로에서 설명하게 두는 구조다.
+    #
+    # 2026-07-19: 좌우 측면 노면까지 비프/햅틱이 울리면 진행 방향과 무관한 과경보가 된다.
+    # Near FRONT_BAND(0.20~0.80) 안(12시 회랑) centroid만 통과시킨다.
     if surface_result.class_name not in P0_SURFACE_CLASSES:
+        return None
+
+    if not surface_result.centroid or len(surface_result.centroid) < 2:
         return None
 
     centroid_y = surface_result.centroid[1]
     if centroid_y <= frame_height * 0.6:
         return None
+
+    if frame_width > 0:
+        front_lo, front_hi = FRONT_BAND["near"]
+        cx_n = float(surface_result.centroid[0]) / frame_width
+        if cx_n < front_lo or cx_n > front_hi:
+            return None
 
     alert_id = f"surface_{surface_result.class_name}"
     return ReflexAlert(
@@ -54,4 +76,7 @@ def surface_gate(
         track_id=None,
         class_name=surface_result.class_name,
         hit_count=0,
+        # 2026-07-18: 일반 객체 Near 억제 키와 네임스페이스를 분리해 서로 다른 위험이
+        # 교차 억제되지 않도록 한다(docs 설계 §7.2 안전 예외 원칙).
+        alert_source="surface",
     )
