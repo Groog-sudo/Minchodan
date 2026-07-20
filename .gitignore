@@ -224,6 +224,13 @@ results/
 generated/
 reports/
 
+# docs/ops/reports는 자동 생성물이 아닌 수기 검토 보고서만 선별 추적
+# (무시된 디렉토리 내부 파일은 직접 재포함 불가하므로 3단 패턴 사용)
+!docs/ops/reports/
+docs/ops/reports/*
+!docs/ops/reports/presentation_template_cache_code_review.md
+!docs/ops/reports/presentation_script_consistency_check.md
+
 # ==========================================
 # Cache
 # ==========================================

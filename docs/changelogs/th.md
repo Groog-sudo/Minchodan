@@ -930,3 +930,27 @@
   - `DebugTriggerPanel.tsx` / `tts_read_text_experiment.py`: 단말 speakFallback vs 서버 푸시 검증 포인트.
 - **관련 파일**: 위 7개 + `docs/changelogs/th.md`
 
+---
+
+### 2026-07-19 | 문서화 | 발표 대본 템플릿 캐시 서술 코드 검토 보고서 작성
+
+- **배경**: 발표 대본(PDF)에 "RAG 설정: 고정 프롬프트 템플릿을 캐시에 저장하고 탐지 객체로 동적 치환(예: 전방에 {클래스명}이 있으니 주의하세요)" 서술을 추가하자는 제안이 있어, 코드 수정 없이 실제 구현과의 일치 여부를 검증했다.
+- **변경 내용**:
+  - `docs/ops/reports/presentation_template_cache_code_review.md` 신규: 저장소 내 템플릿·치환·캐시 메커니즘 8종 전수 매핑(파일·라인 근거), 제안 서술 판정표, 발표 반영 시 정정 5개 항목, 슬라이드 10 말미 반영 권장 문안 수록.
+  - 핵심 판정: 기능 실체는 6단계 패스트 레인(`fast_lane.py` 거리 밴드 템플릿 + `graph.py` LLM 생략 분기) + 7단계 사전합성 클립 캐시(`build_guide_clips.py` 최대 210조합, `realtime_tts.py` 디스크+메모리 캐시)이며, "프롬프트 캐시"·"RAG 설정" 표현은 부정확. `server/rag/fallback.py`의 유사 문구는 실시간 경로 미배선으로 인용 부적합.
+  - `docs/README.md` §7 ops/reports 표에 보고서 등재 및 버전 v0.13.13 갱신.
+- **관련 파일**: `docs/ops/reports/presentation_template_cache_code_review.md`, `docs/README.md`, `docs/changelogs/th.md`
+- **검증 결과**: 서버 코드 무수정(읽기 전용 검토). 근거 라인 전부 현행 코드 대조 확인.
+
+---
+
+### 2026-07-19 | 문서화 | 발표 대본 18개 슬라이드 전면 정합성 검사 보고서 작성
+
+- **배경**: 템플릿 캐시 검토(직전 엔트리)에 이어, 발표 대본 PDF 전체(18슬라이드+Q&A 부록)의 기술 주장을 최신 코드·문서와 슬라이드별로 전수 대조하는 전면 정합성 검사를 진행했다.
+- **변경 내용**:
+  - `docs/ops/reports/presentation_script_consistency_check.md` 신규: 슬라이드별 판정표(일치 12건, 부분 불일치 4개 슬라이드 9건), 불일치 상세와 권고 문안, 일치 근거 파일·라인 매핑, 발표 전 체크리스트 7항목 수록.
+  - 주요 불일치: (1) 슬라이드 10 "ChatOllama·로컬 LLM 기본" — 실제는 raw SimpleOllamaClient + 시연 기본 `LLM_PROVIDER=gemini`, 폴백도 동적 문장으로 진화. (2) 슬라이드 9 "미적중 시 룰 폴백" — `rag/fallback.py` 미배선, 실제는 "관련 수칙 없음" L2 직행. (3) 슬라이드 11 "60초 억제" — 반사 재무장 TTL 5초로 교체, 긴급은 비프 전용. (4) 슬라이드 17 "셀룰러 미검증·온디바이스 부재" 단정 — LTE 터널링 가이드·CoreML/TFLite 실기기 배포 이력과 상충.
+  - `docs/README.md` §7 표 등재 및 버전 v0.13.14 갱신.
+- **관련 파일**: `docs/ops/reports/presentation_script_consistency_check.md`, `docs/README.md`, `docs/changelogs/th.md`
+- **검증 결과**: 서버·클라이언트 코드 무수정(읽기 전용). 대조 근거: suppressor/llm_client_factory/graph/gates/direction/risk_rules/stt_config/tts_service/stream_splitter/distance_policy/audioEngine/config 및 pipeline_stage_design·model_class_validation_report·wireless_test_guide.
+

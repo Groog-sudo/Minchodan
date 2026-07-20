@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-19
-> **버전**: v0.14.1 (2026-07-20 Medium 인지 짧은 힌트 Dict 전환 계획서 등재)
+> **버전**: v0.14.2 (2026-07-19 ops/reports에 발표 대본 전면 정합성 검사·템플릿 캐시 검토 보고서 등재 + 기존 v0.14.1 이력 유지: Medium 인지 짧은 힌트 Dict 전환 계획서 등재)
 
 ## 문서 목록
 
@@ -193,6 +193,8 @@ docs/
 
 | 문서 | 파일 | 설명 |
 | :--- | :--- | :--- |
+| **발표 대본 템플릿 캐시 서술 코드 검토** | [presentation_template_cache_code_review.md](ops/reports/presentation_template_cache_code_review.md) | **"프롬프트 템플릿 캐시+탐지 객체 치환" 발표 추가 제안을 코드 실측으로 검증. 패스트 레인·사전합성 클립 캐시가 실체이며 용어 정정과 반영 문안 제시** |
+| **발표 대본 전면 정합성 검사** | [presentation_script_consistency_check.md](ops/reports/presentation_script_consistency_check.md) | **발표 대본 18개 슬라이드 전 기술 주장을 현행 코드·문서와 전수 대조. 슬라이드 9·10·11·17의 부분 불일치와 발표 전 체크리스트 수록** |
 
 ---
 
