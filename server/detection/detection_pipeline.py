@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 import time
+from typing import ClassVar
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -288,17 +289,39 @@ class DetectionPipeline:
         )
         return res, detections, surfaces
 
-    @staticmethod
+    _REFLEX_BAND_PRIORITY: ClassVar[dict[str, int]] = {"near": 0, "medium": 1, "far": 2}
+
+    @classmethod
     def _evaluate_reflex(
+        cls,
         detections: list[Detection],
         frame_height: float,
         frame_width: float,
     ) -> ReflexAlert | None:
-        for det in detections:
-            alert = reflex_gate(det, frame_height, frame_width)
-            if alert is not None:
-                return alert
-        return None
+        """프레임 내 모든 탐지를 게이트 통과 여부와 무관하게 전부 평가한 뒤,
+        통과한 후보 중 가장 위험한 1건만 반사 알림으로 반환한다.
+
+        2026-07-20: 기존에는 detections 리스트 순서상 첫 통과 항목을 즉시 반환했다.
+        YOLO 출력 순서는 confidence/거리 정렬을 보장하지 않으므로, 여러 객체가 동시에
+        잡히는 프레임(자동차+사람+트럭 등)에서 진짜 근접 위험 객체가 리스트 뒤쪽에
+        있으면 앞쪽 객체의 게이트 통과 여부와 무관하게 스킵될 수 있었다(프레임당 1건
+        상한 자체는 유지하되, 그 1건을 뽑는 기준을 리스트 순서에서 거리/밴드 우선순위로
+        교체 - reflex_gate가 반환하는 모든 후보를 먼저 모은다).
+        """
+        candidates = [
+            alert
+            for det in detections
+            if (alert := reflex_gate(det, frame_height, frame_width)) is not None
+        ]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda a: (
+                cls._REFLEX_BAND_PRIORITY.get(a.distance_band, 2),
+                a.distance,
+            ),
+        )
 
     @staticmethod
     def _evaluate_head_level(

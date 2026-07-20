@@ -39,7 +39,7 @@
 | 원인 | 코드 근거 (현행) | 설명 |
 | :--- | :--- | :--- |
 | **구현된 P1-2 = 중복 억제(dedup)일 뿐** | `server/detection/consumer.py:157` `_has_utterance_value`, `:143` `_compute_cognitive_signature` | 실제 발화 가치 게이트는 서명(`정렬된 객체 클래스 + 정렬된 표면 클래스 + 이탈 여부`)이 **직전과 다르면 즉시 발화**합니다. 즉 "9시 방향 사람"이 처음 등장하면(새 서명) 그대로 발화하고, 객체 조합이 바뀔 때마다 재발화합니다. **방향(9시/3시)·회랑(12시) 침범·접근 여부를 보는 필터가 없습니다.** |
-| **회랑/거리 필터 부재** | `server/detection/consumer.py` `_send_cognitive_guide` 진입부(발화 가치 게이트 외 방향 조건 없음), `primary_det = max(..., key=confidence)` | 인지 경로가 primary를 신뢰도 최대값으로만 고르고, 그 객체가 12시 충돌 회랑 밖 측면 정적 객체여도 발화 대상이 됩니다. |
+| **회랑/거리 필터 부재** | ~~`server/detection/consumer.py` `_send_cognitive_guide` 진입부(발화 가치 게이트 외 방향 조건 없음), `primary_det = max(..., key=confidence)`~~ **해소(2026-07-19/2026-07-20)**: 회랑 필터는 `_is_speech_worthy()`+`is_speech_front()`(`SPEECH_FRONT_BAND`)로, primary 선정은 `distance_policy.select_primary_detection()`(거리 구역>실측 거리>회랑 근접도>confidence 순)으로 각각 별도 커밋에서 구현됨. 인지 경로가 primary를 신뢰도 최대값으로만 고르던 문제(다중 객체 프레임에서 정면 위험이 confidence 경쟁에 밀려 간헐적으로 무발화)를 실기기 로그로 재확인 후 수정 | 인지 경로가 primary를 신뢰도 최대값으로만 고르고, 그 객체가 12시 충돌 회랑 밖 측면 정적 객체여도 발화 대상이 됐던 문제(해소됨). |
 
 정리: 1차 P1-2는 **동일 상황 반복 스팸**을 줄였을 뿐, **애초에 발화할 가치가 없는 측면·원거리·정적 객체를 걸러내지 못합니다.** T2는 이 필터(회랑+접근 기준)를 신규로 추가해야 합니다.
 

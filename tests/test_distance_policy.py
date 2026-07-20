@@ -3,8 +3,21 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+from dataclasses import dataclass
+
 from server.detection import distance_policy as dp
 from server.detection.schemas import BBox
+
+
+@dataclass
+class _FakeDetection:
+    """select_primary_detection() 우선순위 로직만 검증하기 위한 최소 스텁."""
+
+    class_name: str
+    confidence: float
+    bbox: BBox
+    effective_distance_zone: str
+    heuristic_distance_m: float
 
 
 def test_clip_bbox_to_frame_clips_out_of_bounds():
@@ -155,3 +168,107 @@ def test_zone_from_lidar_meters_medium():
 def test_zone_from_lidar_meters_far():
     assert dp.zone_from_lidar_meters(2.0) == "far"
     assert dp.zone_from_lidar_meters(3.0) == "far"
+
+
+class TestSelectPrimaryDetection:
+    """2026-07-20: confidence 최댓값 대신 거리 구역/실측 거리/12시 회랑 근접도 기준
+    주위험 객체 선정. 실기기 로그(자동차+사람+트럭 동시 탐지 시 confidence 흔들림으로
+    안내 대상이 프레임마다 바뀌는 문제) 회귀 방지."""
+
+    def test_empty_list_returns_none(self):
+        assert dp.select_primary_detection([], frame_width=640.0) is None
+
+    def test_single_detection_returned(self):
+        det = _FakeDetection(
+            class_name="car",
+            confidence=0.5,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.0,
+        )
+        assert dp.select_primary_detection([det], frame_width=640.0) is det
+
+    def test_near_beats_medium_even_with_lower_confidence(self):
+        """실기기 로그 재현: confidence 낮은 near 객체가 confidence 높은 medium
+        객체보다 우선해야 한다(거리가 confidence보다 우선)."""
+        near_low_conf = _FakeDetection(
+            class_name="car",
+            confidence=0.55,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="near",
+            heuristic_distance_m=0.8,
+        )
+        medium_high_conf = _FakeDetection(
+            class_name="person",
+            confidence=0.95,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="medium",
+            heuristic_distance_m=2.0,
+        )
+        result = dp.select_primary_detection([medium_high_conf, near_low_conf], frame_width=640.0)
+        assert result is near_low_conf
+
+    def test_same_zone_closer_distance_wins(self):
+        far_in_zone = _FakeDetection(
+            class_name="truck",
+            confidence=0.9,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.8,
+        )
+        near_in_zone = _FakeDetection(
+            class_name="car",
+            confidence=0.5,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.0,
+        )
+        result = dp.select_primary_detection([far_in_zone, near_in_zone], frame_width=640.0)
+        assert result is near_in_zone
+
+    def test_same_zone_same_distance_corridor_center_wins(self):
+        off_center = _FakeDetection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=550, y=0, w=40, h=40),  # center_x=570/640≈0.89, 회랑 밖
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.0,
+        )
+        centered = _FakeDetection(
+            class_name="person",
+            confidence=0.5,
+            bbox=BBox(x=300, y=0, w=40, h=40),  # center_x=320/640=0.5, 정중앙
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.0,
+        )
+        result = dp.select_primary_detection([off_center, centered], frame_width=640.0)
+        assert result is centered
+
+    def test_full_tie_breaks_by_confidence(self):
+        low_conf = _FakeDetection(
+            class_name="car",
+            confidence=0.4,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.0,
+        )
+        high_conf = _FakeDetection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.0,
+        )
+        result = dp.select_primary_detection([low_conf, high_conf], frame_width=640.0)
+        assert result is high_conf
+
+    def test_zero_frame_width_treats_all_as_off_corridor(self):
+        det = _FakeDetection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=300, y=0, w=40, h=40),
+            effective_distance_zone="medium",
+            heuristic_distance_m=1.0,
+        )
+        # frame_width<=0이어도 예외 없이 동작해야 한다(단일 후보이므로 그대로 반환).
+        assert dp.select_primary_detection([det], frame_width=0.0) is det

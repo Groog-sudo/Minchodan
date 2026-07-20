@@ -142,6 +142,53 @@ def route_for_zone(zone: Zone) -> Route:
     return "reflex" if zone == "near" else "cognitive"
 
 
+_ZONE_PRIORITY: dict[str, int] = {"near": 0, "medium": 1, "far": 2}
+
+
+class PrioritizableDetection(Protocol):
+    effective_distance_zone: str
+    heuristic_distance_m: float
+    confidence: float
+    bbox: BBoxLike
+
+
+def _corridor_offset(bbox: BBoxLike, frame_width: float) -> float:
+    """bbox 중심 x가 화면 중앙(0.5)에서 얼마나 떨어졌는지(0에 가까울수록 중앙)."""
+    if frame_width <= 0:
+        return 1.0
+    center_x = bbox.x + bbox.w / 2.0
+    return abs(center_x / frame_width - 0.5)
+
+
+def select_primary_detection(
+    detections: list[PrioritizableDetection], frame_width: float
+) -> PrioritizableDetection | None:
+    """여러 탐지 중 안내/반사 판단 대상이 될 "주위험 객체" 하나를 선정한다.
+
+    # [면접 대비 주석]
+    # 질문: 왜 confidence 최댓값만으로는 부족한가요?
+    # 답변: confidence는 "이 객체가 그 클래스가 맞는가"에 대한 모델의 확신도일 뿐,
+    # "이 객체가 보행자에게 얼마나 위협적인가"와는 무관하다. 자동차·사람·트럭이 매
+    # 프레임 함께 잡히는 실외 도로에서는 confidence가 프레임마다 미세하게 흔들려
+    # "이번 프레임의 대표 객체"가 계속 바뀌고, 실제로 정면에 있는 위험 객체가 confidence
+    # 경쟁에서 밀려 안내/반사 대상에서 간헐적으로 빠지는 문제가 실기기 로그로 확인됨.
+    #
+    # 우선순위(순서대로 비교): (1) 거리 구역(near>medium>far) - confidence보다 물리적
+    # 거리가 안전에 직결, (2) 동일 구역 내 실측 거리(heuristic_distance_m) 오름차순 -
+    # 더 가까운 객체 우선, (3) 12시 회랑 중심 근접도 - 진행 경로상 위협일 가능성 반영,
+    # (4) confidence - 위 세 조건이 모두 동률일 때만 최종 tie-break.
+    """
+    if not detections:
+        return None
+
+    def _priority_key(det: PrioritizableDetection) -> tuple[int, float, float, float]:
+        zone_rank = _ZONE_PRIORITY.get(det.effective_distance_zone, 2)
+        corridor_offset = _corridor_offset(det.bbox, frame_width)
+        return (zone_rank, det.heuristic_distance_m, corridor_offset, -det.confidence)
+
+    return min(detections, key=_priority_key)
+
+
 def compute_heuristic_distance_m(area_ratio: float) -> float:
     """면적비 기반 의사 거리(m)를 계산한다. 실측 거리가 아니라 파생값이다."""
     safe_ratio = max(area_ratio, 1e-6)
