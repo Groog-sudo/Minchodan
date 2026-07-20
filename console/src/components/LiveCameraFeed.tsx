@@ -354,6 +354,11 @@ export function LiveCameraFeed({
                   <div className="hud-header-left">
                     <span className="hud-pulse-dot"></span>
                     <span>GPS TRACKING HUD</span>
+                    <span className="hud-gps-coords">
+                      {lastGps
+                        ? `${lastGps.lat.toFixed(5)}, ${lastGps.lon.toFixed(5)}`
+                        : "앱 좌표 대기"}
+                    </span>
                   </div>
                   <button
                     type="button"

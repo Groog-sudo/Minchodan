@@ -3559,3 +3559,13 @@
 - **관련 파일**: `server/rag/guidance_hints.py`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`, `tests/test_guidance_hints.py`, `docs/ops/medium_guidance_hint_dict_implementation_plan.md`, `docs/ops/environment_variables.md`, `docs/README.md`, `docs/stage-guides/stage6_orchestration_design.md`, `.env.example`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`
 - **검증 결과**: `pytest tests/test_guidance_hints.py` + `tests/test_langgraph.py` 통과. 이중 경로·react-doctor·자동 발행 통과.
 - **비고**: Chroma/편의 RAG는 유지. 실기기 A/B(S5)는 후속. 롤백은 `GUIDANCE_CONTEXT_MODE=rag`.
+
+---
+
+### 2026-07-20 | 6단계 | console_gps_hud_bbox_overlay
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Detection Guidance Log 목록 썸네일 bbox 오버레이·반사/노면 로그 bbox 저장, realtime_gps를 WS connected 후 즉시 전송해 콘솔 GPS HUD 고착 해소, architecture/api/pipeline 문서 동기화.
+- **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/hooks/useLocation.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LiveCameraFeed.css`, `console/src/components/LiveCameraFeed.tsx`, `console/src/styles.css`, `docs/README.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/design/pipeline_stage_design.md`, `server/api/ws_router.py`, `server/detection/consumer.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

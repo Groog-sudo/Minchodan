@@ -232,7 +232,7 @@ docs/
 
 ## 현재 문서 기준선
 
-- **이중 경로 원칙**(비협상): 반사 경로(즉시 경보, LLM/RAG/실시간 TTS 미경유, 사전합성 음성)와 인지 경로(mid/low 상세 가이드, LangGraph + RAG + 실시간 TTS)를 물리 분리합니다.
+- **이중 경로 원칙**(비협상): 반사 경로(즉시 경보, LLM/RAG/실시간 TTS 미경유, 사전합성 음성)와 인지 경로(mid/low 상세 가이드, LangGraph + 인지 컨텍스트(`GUIDANCE_CONTEXT_MODE=hints` 기본) + 실시간 TTS)를 물리 분리합니다.
 - **모바일은 thin client**입니다. 카메라 캡처와 음성/햡틱 재생만 담당하며, 모든 추론은 GPU 서버에서 수행합니다.
 - **3단계는 듀얼헤드 + 이중 게이트**입니다. Yolo 26N - Object Detection(Reflex Gate) + Yolo 26N - Segmentation(Surface Gate)가 모두 룰베이스로 동작하며 LLM을 경유하지 않습니다.
 - **노면 클래스는 분리**(C2)합니다. `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution`(stairs/manhole/grating)을 독립 클래스로 학습합니다.

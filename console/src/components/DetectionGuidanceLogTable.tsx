@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DetectionGuidanceLogRow, LatencyStages, PipelineDebug } from "../types/monitor";
 import { useAuthorizedEventFrameUrl } from "../api/useDetectionLogs";
 
@@ -9,7 +9,7 @@ import { useAuthorizedEventFrameUrl } from "../api/useDetectionLogs";
 //   오탐 여부 판별과 안내 발화 당시 상황 확인에 사용합니다.
 // - bbox는 이미지에 굽지 않고 detected_objects_json 좌표로 오버레이 렌더링합니다.
 //   원본 이미지를 보존해야 임계값/모델을 바꿔 재검증할 수 있기 때문입니다.
-// - 썸네일/상세 이미지를 클릭하면 라이트박스(확대 보기)가 열립니다.
+// - 목록 썸네일·상세·라이트박스 모두 동일 오버레이를 쓰며, 썸네일 클릭 시 확대 보기가 열립니다.
 
 // iOS 정자세 JPEG 재배포 후 Live Feed와 동일하게 0.
 const LOG_IMAGE_ROTATE_DEG: number = 0;
@@ -63,7 +63,8 @@ interface LoggedDetection {
   confidence?: number;
   direction?: string | null;
   bbox?: { x: number; y: number; w: number; h: number };
-  // 반사 로그는 bbox 없이 alert 메타데이터만 가집니다.
+  // 반사 로그는 과거엔 bbox 없이 alert 메타만 남겼다. 현재는 bbox를 함께 저장하며,
+  // 구 로그는 pipeline_debug.detections_summary로 오버레이 폴백한다.
   alert_id?: string;
   risk_level?: string;
   distance?: string | null;
@@ -76,6 +77,82 @@ function parseDetections(json: string): LoggedDetection[] {
   } catch {
     return [];
   }
+}
+
+function hasValidBBox(
+  bbox: LoggedDetection["bbox"] | Record<string, unknown> | null | undefined,
+): bbox is { x: number; y: number; w: number; h: number } {
+  if (!bbox || typeof bbox !== "object") return false;
+  const x = Number((bbox as { x?: unknown }).x);
+  const y = Number((bbox as { y?: unknown }).y);
+  const w = Number((bbox as { w?: unknown }).w);
+  const h = Number((bbox as { h?: unknown }).h);
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0;
+}
+
+function toLoggedDetection(raw: Record<string, unknown>): LoggedDetection | null {
+  const bboxRaw = raw.bbox as LoggedDetection["bbox"] | undefined;
+  if (!hasValidBBox(bboxRaw)) return null;
+  return {
+    track_id: (raw.track_id as string | null | undefined) ?? null,
+    class_name: typeof raw.class_name === "string" ? raw.class_name : undefined,
+    confidence: typeof raw.confidence === "number" ? raw.confidence : undefined,
+    direction: (raw.direction as string | null | undefined) ?? null,
+    bbox: {
+      x: Number(bboxRaw.x),
+      y: Number(bboxRaw.y),
+      w: Number(bboxRaw.w),
+      h: Number(bboxRaw.h),
+    },
+    alert_id: typeof raw.alert_id === "string" ? raw.alert_id : undefined,
+    risk_level: typeof raw.risk_level === "string" ? raw.risk_level : undefined,
+    distance:
+      typeof raw.distance === "string" || typeof raw.distance === "number"
+        ? String(raw.distance)
+        : null,
+  };
+}
+
+/** 오버레이용 탐지 목록.
+ * detected_objects_json에 bbox가 없으면(반사 로그·구버전) pipeline_debug의
+ * detections_summary / surfaces_summary(centroid→가상 bbox)로 폴백한다.
+ */
+function resolveOverlayDetections(
+  detectedObjectsJson: string,
+  pipelineDebugJson: string | PipelineDebug | null | undefined,
+): LoggedDetection[] {
+  const fromObjects = parseDetections(detectedObjectsJson)
+    .map((det) => (hasValidBBox(det.bbox) ? det : null))
+    .filter((det): det is LoggedDetection => det !== null);
+  if (fromObjects.length > 0) return fromObjects;
+
+  const debug = parsePipelineDebug(pipelineDebugJson);
+  const fromSummary: LoggedDetection[] = [];
+  for (const raw of debug?.detections_summary ?? []) {
+    if (!raw || typeof raw !== "object") continue;
+    const mapped = toLoggedDetection(raw as Record<string, unknown>);
+    if (mapped) fromSummary.push(mapped);
+  }
+  if (fromSummary.length > 0) return fromSummary;
+
+  const fromSurfaces: LoggedDetection[] = [];
+  for (const surf of debug?.surfaces_summary ?? []) {
+    if (!surf || typeof surf !== "object") continue;
+    const centroid = (surf as { centroid?: unknown }).centroid;
+    if (!Array.isArray(centroid) || centroid.length < 2) continue;
+    const cx = Number(centroid[0]);
+    const cy = Number(centroid[1]);
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+    fromSurfaces.push({
+      class_name:
+        typeof (surf as { class_name?: unknown }).class_name === "string"
+          ? String((surf as { class_name?: unknown }).class_name)
+          : "surface",
+      confidence: 1,
+      bbox: { x: cx - 40, y: cy - 40, w: 80, h: 80 },
+    });
+  }
+  return fromSurfaces;
 }
 
 // 탐지 시각을 한국 표준시(KST) 기준 "YYYY-MM-DD HH:mm:ss"로 고정 표기합니다.
@@ -401,9 +478,23 @@ function FrameWithOverlay({
 }) {
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [isImageBroken, setIsImageBroken] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const boxes = detections.filter(
     (det) => det.bbox && det.bbox.w > 0 && det.bbox.h > 0,
   );
+
+  useEffect(() => {
+    setNatural(null);
+    setIsImageBroken(false);
+  }, [src]);
+
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    if (img?.complete && img.naturalWidth > 0) {
+      setIsImageBroken(false);
+      setNatural({ w: img.naturalWidth, h: img.naturalHeight });
+    }
+  }, [src]);
 
   return (
     <div
@@ -420,6 +511,7 @@ function FrameWithOverlay({
       }
     >
       <img
+        ref={imgRef}
         src={src}
         alt="이벤트 프레임"
         className="frame-overlay-image live-feed-rotated"
@@ -494,25 +586,6 @@ function AuthorizedFrameWithOverlay({
       detections={detections}
       className={className}
       onClick={onClick}
-    />
-  );
-}
-
-function AuthorizedFrameThumbnail({
-  eventId,
-  token,
-}: {
-  eventId: string;
-  token: string;
-}) {
-  const src = useAuthorizedEventFrameUrl(eventId, token);
-  if (!src) return <span className="frame-loading">로딩 중</span>;
-  return (
-    <img
-      src={src}
-      alt="이벤트 썸네일 (클릭하면 확대)"
-      className="frame-thumb"
-      loading="lazy"
     />
   );
 }
@@ -625,7 +698,10 @@ function FrameLightbox({
           <AuthorizedFrameWithOverlay
             eventId={row.event_id!}
             token={token}
-            detections={parseDetections(row.detected_objects_json)}
+            detections={resolveOverlayDetections(
+              row.detected_objects_json,
+              row.pipeline_debug_json,
+            )}
             className="frame-overlay-lightbox"
           />
         </div>
@@ -853,14 +929,20 @@ export function DetectionGuidanceLogTable({
                         <button
                           type="button"
                           className="frame-thumb-btn"
+                          aria-label="이벤트 프레임 확대 보기"
                           onClick={(event) => {
                             event.stopPropagation();
                             setLightboxLogId(row.log_id);
                           }}
                         >
-                          <AuthorizedFrameThumbnail
+                          <AuthorizedFrameWithOverlay
                             eventId={row.event_id!}
                             token={token!}
+                            detections={resolveOverlayDetections(
+                              row.detected_objects_json,
+                              row.pipeline_debug_json,
+                            )}
+                            className="frame-overlay-thumb"
                           />
                         </button>
                       ) : (
@@ -1063,7 +1145,10 @@ export function DetectionGuidanceLogTable({
                   <AuthorizedFrameWithOverlay
                     eventId={selected.event_id!}
                     token={token}
-                    detections={parseDetections(selected.detected_objects_json)}
+                    detections={resolveOverlayDetections(
+                      selected.detected_objects_json,
+                      selected.pipeline_debug_json,
+                    )}
                     onClick={() => setLightboxLogId(selected.log_id)}
                   />
                 </div>

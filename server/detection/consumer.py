@@ -1185,20 +1185,30 @@ class DetectionConsumer:
                     reflex_primary = matched[0] if matched else None
                 if reflex_primary is None:
                     reflex_primary = max(detections, key=lambda d: d.confidence)
+            reflex_log_det: dict = {
+                "track_id": alert.track_id,
+                "class_name": alert.class_name,
+                "hit_count": alert.hit_count,
+                "alert_id": alert.alert_id,
+                "direction": alert.direction,
+                "risk_level": alert.risk_level,
+                "distance": alert.distance,
+            }
+            # 콘솔 Detection Guidance Log bbox 오버레이용. pipeline_debug에도
+            # detections_summary가 있지만 detected_objects_json에 좌표를 남겨
+            # 썸네일/라이트박스가 동일 소스를 쓰게 한다.
+            if reflex_primary is not None:
+                reflex_log_det["confidence"] = float(reflex_primary.confidence)
+                reflex_log_det["bbox"] = {
+                    "x": float(reflex_primary.bbox.x),
+                    "y": float(reflex_primary.bbox.y),
+                    "w": float(reflex_primary.bbox.w),
+                    "h": float(reflex_primary.bbox.h),
+                }
             self._schedule_log_persist(
                 event_id=alert.event_id,
                 stream_type="reflex",
-                detections=[
-                    {
-                        "track_id": alert.track_id,
-                        "class_name": alert.class_name,
-                        "hit_count": alert.hit_count,
-                        "alert_id": alert.alert_id,
-                        "direction": alert.direction,
-                        "risk_level": alert.risk_level,
-                        "distance": alert.distance,
-                    }
-                ],
+                detections=[reflex_log_det],
                 tts_text=f"[반사 클립] {alert.clip}",
                 frame=frame,
                 latency_stages=latency_stages,
@@ -1622,6 +1632,8 @@ class DetectionConsumer:
             )
             # DB 로그에는 콘솔 오탐 검증용 bbox 오버레이를 위해 좌표를 함께 남긴다.
             # (LLM 입력 orch_input에는 bbox를 넣지 않는다 - 프롬프트 오염 방지)
+            # 노면-only 인지(detections 공란)는 centroid 주변 가상 bbox로 남겨
+            # Detection Guidance Log 썸네일에 박스가 보이게 한다.
             log_detections = [
                 {
                     "track_id": det.track_id,
@@ -1638,6 +1650,26 @@ class DetectionConsumer:
                 }
                 for det in result.detections
             ]
+            if not log_detections:
+                for surf in result.surface:
+                    if not surf.centroid or len(surf.centroid) < 2:
+                        continue
+                    cx, cy = float(surf.centroid[0]), float(surf.centroid[1])
+                    log_detections.append(
+                        {
+                            "track_id": None,
+                            "class_name": surf.class_name,
+                            "confidence": 1.0,
+                            "direction": None,
+                            "hit_count": 0,
+                            "bbox": {
+                                "x": cx - 40.0,
+                                "y": cy - 40.0,
+                                "w": 80.0,
+                                "h": 80.0,
+                            },
+                        }
+                    )
             latency_stages: dict[str, float] = {
                 "decode_ms": round(decode_ms, 1),
                 "inference_ms": round(result.inference_ms, 1),

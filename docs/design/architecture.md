@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.13 (2026-07-19 RTX 5090 최대 사양과 Ubuntu·Windows·macOS별 PyTorch 2.13 가속 경로 반영)
+> **버전**: v0.4.14 (2026-07-20 Medium 인지 기본 컨텍스트를 인메모리 회피 힌트(`GUIDANCE_CONTEXT_MODE=hints`)로 전환, Chroma RAG는 `rag` 롤백)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -78,9 +78,10 @@ graph TD
             SurfaceGate["Surface Fast-Alert Gate<br/>(룰베이스, LLM 미경유)"]
         end
 
-        subgraph Rag ["4·5. Vector DB 구축·검색"]
+        subgraph Rag ["4·5. 인지 컨텍스트 (힌트 / RAG)"]
+            Hints["GuidanceHints dict<br/>(기본, GUIDANCE_CONTEXT_MODE=hints)"]
             Builder["Build (오프라인)<br/>Gemini VLM 캡셔닝 + 임베딩"]
-            Retriever["Retriever<br/>(similarity_search k=5)"]
+            Retriever["Retriever<br/>(rag 모드, similarity_search k=5)"]
             Fallback["Rule Fallback"]
         end
 
@@ -136,7 +137,8 @@ graph TD
     L3 -->|"RETRY 1회"| L2
     L3 -->|"실패"| FallbackNode
     FallbackNode --> RealtimeTTS
-    Retriever --> L2
+    Hints -->|"기본 rag_context"| L2
+    Retriever -->|"GUIDANCE_CONTEXT_MODE=rag"| L2
     Builder --> Chroma
     Chroma --> Retriever
     Retriever --> Fallback
@@ -181,8 +183,9 @@ graph TD
 | `server/rag/build/dedup_phash.py`             | pHash 중복 제거                                                            | 4    |
 | `server/rag/build/gemini_captioner.py`        | Gemini API(`gemini-2.5-flash-lite`) 한글 캡셔닝, `GOOGLE_API_KEY` 미설정 시 Mock 폴백 | 4    |
 | `server/rag/build/db_builder.py`              | `Chroma.from_documents(persist_directory)`                                 | 4    |
-| `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)`                                        | 5    |
-| `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열                                     | 5    |
+| `server/rag/guidance_hints.py`                | Medium 인지 기본: 클래스별 짧은 회피 힌트 dict (`select_guidance_hint`)   | 5·6  |
+| `server/rag/retriever.py`                     | `similarity_search_with_score(k=5)` (`GUIDANCE_CONTEXT_MODE=rag` 롤백)     | 5    |
+| `server/rag/fallback.py`                      | 유사도 미달 시 룰 기반 fallback 문자열 (실시간 경로 미배선)                | 5    |
 | `server/rag/vector_db_factory.py`             | Chroma Qdrant 핫스왑 추상화                                                | 4·5  |
 | `server/orchestration/state.py`               | `OrchState` TypedDict (event, risk_level, rag_context)                     | 6    |
 | `server/orchestration/graph.py`               | `StateGraph` 조립, 노드 등록, 엣지 정의                                    | 6    |
@@ -270,23 +273,26 @@ graph TD
 - `Document` + 메타etadata(`scene_type`, `risk_level`, `objects`, `guidance_template`) `Chroma.from_documents(persist_directory)`
 - 메타데이터 `objects`·`scene_type`을 3단계 분리 클래스(예: `braille_damaged`)와 일치시켜 검색 정합 확보
 
-### 5.5 5단계 - 실시간 대처 수칙 검색 (RAG)
+### 5.5 5단계 - 인지 컨텍스트 (기본: 인메모리 힌트 / 선택: RAG)
 
-- `Chroma(persist_directory, embedding_function)` 읽기 전용 로드
-- 탐지 클래스로 쿼리 생성(`f"{label} 보행 중 회피 방법"`) `similarity_search_with_score(query, k=5)`
-- `page_content` 결합 LangGraph `state["rag_context"]` 저장
-- 미적중 시 룰 기반 fallback
-- `VectorDBFactory`로 Chroma Qdrant 추상화
+> **2026-07-20**: Medium 인지 경로의 기본 컨텍스트는 Chroma 벡터검색이 아니라
+> `server/rag/guidance_hints.py`의 짧은 회피 힌트 dict다 (`GUIDANCE_CONTEXT_MODE=hints`).
+> Chroma `search_guidance`는 `GUIDANCE_CONTEXT_MODE=rag` 롤백·A/B용으로 유지한다.
+> STT/생활지원 convenience RAG는 본 절과 무관하게 별도 유지한다.
+
+- **기본(`hints`)**: 탐지 클래스 → `select_guidance_hint()` → `state["rag_context"]` (rag_ms≈0)
+- **롤백(`rag`)**: `Chroma` 읽기 전용 로드 → `similarity_search_with_score(k=5)` → `page_content` 결합
+- `VectorDBFactory`로 Chroma/Qdrant 핫스왑 (rag 모드)
 
 ### 5.6 6단계 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 - `StateGraph(OrchState)` 조립
 - **L1**: 룰 기반 위험도 분류 (high는 이미 즉시 경보 처리됨 / mid·low만 진입)
 - **T2-G (2026-07-18)**: 인지 발화 회랑/접근 필터. 보도 이탈·고위험·접근 객체·유의미 노면은 통과, 측면·원거리·정적 저위험은 무발화
-- **L2**: RAG+탐지 결합 프롬프트로 ChatOllama(gemma4-e4b) `ainvoke` — "한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함"
+- **L2**: `[탐지 방향]` + `[회피 힌트]`(+탐지) 결합 프롬프트로 gemma4-e4b `ainvoke` — "한국어 1문장, 20자 내". 방향은 `[탐지 방향]`만 사용
 - **L3**: 길이·방향 키워드 검증, 위반 시 L2 RETRY(최대 1회)
 - **Fallback/핫스왑**: L3 실패율 >10% 또는 `LLM_PROVIDER=openai` 시 gpt-4o-mini 자동 전환; 최종 실패 시 고정 문장("전방 주의, 천천히 멈추세요")
-- `LLMClientFactory(BaseChatModel)`로 로컬상용 핫스왑
+- `LLMClientFactory`로 로컬/상용 핫스왑
 
 ### 5.7 7단계 - 음성 안내 출력 (이중 채널)
 
@@ -373,7 +379,7 @@ graph TD
 | 경로     | 위험도  | 흐름                                                            | 음성                      | 목표 지연               |
 | -------- | ------- | --------------------------------------------------------------- | ------------------------- | ----------------------- |
 | **반사** | high    | Detection Reflex Gate / Seg Surface Gate 사전합성 클립          | 사전합성 고정 클립 (선점) | <300ms (Detection 기준) |
-| **인지** | mid/low | Detection+Seg → Redis Streams → LangGraph L1/T2-G/L2/L3 + RAG 실시간 TTS. STT 활성 중 발행 억제(T3-S) | 실시간 합성 상세 가이드   | 1~2Hz                   |
+| **인지** | mid/low | Detection+Seg → Redis Streams → LangGraph L1/T2-G/L2/L3 + 인지 컨텍스트(기본 hints / 선택 rag) → 실시간 TTS. STT 활성 중 발행 억제(T3-S) | 실시간 합성 상세 가이드   | 1~2Hz                   |
 
 반사 경로는 **LLM/RAG/실시간 TTS를 절대 경유하지 않습니다** (비협상 원칙).
 
@@ -390,7 +396,7 @@ sequenceDiagram
     participant L1 as L1 Classifier
     participant L2 as L2 Generator
     participant L3 as L3 Validator
-    participant RAG as RAG Retriever
+    participant Ctx as GuidanceHints / RAG
     participant TTS as 실시간 TTS
 
     Phone->>WS: 인지 프레임 (1~2fps)
@@ -401,9 +407,9 @@ sequenceDiagram
     else mid/low 위험 (인지)
         Det->>Redis: xadd("risk.events")
         Redis->>L1: 위험도 분류
-        L1->>RAG: 탐지 클래스 쿼리
-        RAG-->>L1: 수칙 컨텍스트 (k=5)
-        L1->>L2: RAG+탐지 결합 프롬프트
+        L1->>Ctx: 탐지 클래스 컨텍스트
+        Ctx-->>L1: 회피 힌트(기본) 또는 RAG k=5(rag)
+        L1->>L2: 힌트/RAG + 탐지 결합 프롬프트
         L2->>L3: 가이드 문장 (20자/방향)
         L3->>L3: 검증 (위반 시 RETRY 1회)
         L3->>TTS: 가이드 문장
@@ -438,6 +444,7 @@ sequenceDiagram
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
 | `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `safety_guidelines`      |
+| `GUIDANCE_CONTEXT_MODE` | Medium 인지 컨텍스트 (`hints` 기본 / `rag` 롤백) | `hints` |
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
 | `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |

@@ -55,6 +55,10 @@ if sys.stdout.encoding != "utf-8":
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# realtime_gps는 2초 주기로 올 수 있어 INFO 스팸을 막기 위해 디바이스별 스로틀.
+_LAST_GPS_LOG_TS: dict[str, float] = {}
+_GPS_LOG_INTERVAL_S = 15.0
+
 MIN_STT_AUDIO_BYTES = 11200  # 2026-07-19: ~0.35s @16kHz mono PCM16 (이전 4096은 탭 오탐 통과)
 MAX_STT_AUDIO_BYTES = max(1, int(os.getenv("STT_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))))
 MAX_STT_BASE64_CHARS = ((MAX_STT_AUDIO_BYTES + 2) // 3) * 4 + 4
@@ -752,7 +756,8 @@ async def ws_console_live_feed(
         async with async_sessionmaker_factory() as db:
             await authenticate_admin_token(token, db)
     except (TimeoutError, HTTPException, ValueError, json.JSONDecodeError, WebSocketDisconnect):
-        await ws.close(code=1008, reason="invalid token")
+        with contextlib.suppress(Exception):
+            await ws.close(code=1008, reason="invalid token")
         return
     await manager.connect_console(ws, accept=False)
     await ws.send_json({"type": "auth_ok"})
@@ -1152,10 +1157,19 @@ async def ws_detect(
                         float(lon),
                         float(heading) if heading is not None else None,
                     )
-                    logger.debug(
-                        f"[WS] realtime_gps 수신: device_id={device_id}, "
-                        f"lat={lat}, lon={lon}, heading={heading}"
-                    )
+                    now_log = time.monotonic()
+                    last_log = _LAST_GPS_LOG_TS.get(device_id, 0.0)
+                    if now_log - last_log >= _GPS_LOG_INTERVAL_S:
+                        _LAST_GPS_LOG_TS[device_id] = now_log
+                        logger.info(
+                            f"[WS] realtime_gps 수신: device_id={device_id}, "
+                            f"lat={lat}, lon={lon}, heading={heading}"
+                        )
+                    else:
+                        logger.debug(
+                            f"[WS] realtime_gps 수신: device_id={device_id}, "
+                            f"lat={lat}, lon={lon}, heading={heading}"
+                        )
                     # 콘솔 HUD 미니맵 실시간 갱신: 앱 실기기 GPS 좌표를 콘솔로 브로드캐스트.
                     # useLiveFeed가 이 메시지를 받아 lastGps 상태를 갱신하고,
                     # LiveCameraFeed가 HUD 미니맵 iframe에 postMessage로 주입한다.

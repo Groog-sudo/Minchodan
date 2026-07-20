@@ -541,7 +541,8 @@ export function CameraView() {
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, requiresFloat32, detectFrame } =
     useOnDeviceDetection();
-  const { requestLocationPermission, startWatching, stopWatching } = useLocation();
+  const { requestLocationPermission, getCurrentCoords, startWatching, stopWatching } =
+    useLocation();
 
   // 로컬 추론 엔진의 입력 계약을 캡처 계층에 전달 (2026-07-17, P0).
   // CoreML 정상 모드(requiresFloat32=false)면 JS JPEG 디코딩 + Float32Array 할당을 건너뛴다.
@@ -699,30 +700,39 @@ export function CameraView() {
   // 기본은 접힌 상태(작은 토글 버튼만 노출)로 시작하고 필요할 때만 펼친다.
   const [debugPanelExpanded, setDebugPanelExpanded] = useState(false);
 
-  // GPS 전송: 앱 부팅 직후부터 watch를 시작해 공기계의 첫 GPS fix 지연을 줄인다.
-  // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
-  // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
-  // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
+  // GPS 전송: WS가 OPEN일 때만 보낸다. 연결 전 좌표는 send()가 조용히 버리고,
+  // 실내에서 1m 이상 안 움직이면 watch가 거의 안 와서 콘솔 HUD가 "앱 GPS 대기"에
+  // 고착된다. 연결 직후 getCurrentCoords로 즉시 1회 전송한 뒤 watch를 시작한다.
   useEffect(() => {
     if (isMockMode) return;
+    if (status !== "connected") return;
     let cancelled = false;
+
+    const pushGps = (coords: GpsCoords) => {
+      send({
+        type: "realtime_gps",
+        lat: coords.lat,
+        lon: coords.lon,
+        heading: coords.heading,
+      });
+      const nowTs = Date.now();
+      if (nowTs - lastMapPosTsRef.current >= 2000) {
+        lastMapPosTsRef.current = nowTs;
+        setMapPos({ lat: coords.lat, lon: coords.lon });
+      }
+    };
 
     (async () => {
       const granted = await requestLocationPermission();
       if (cancelled || !granted) return;
+
+      const current = await getCurrentCoords();
+      if (cancelled) return;
+      if (current) pushGps(current);
+
       await startWatching((coords: GpsCoords) => {
-        send({
-          type: "realtime_gps",
-          lat: coords.lat,
-          lon: coords.lon,
-          heading: coords.heading,
-        });
-        // 지도 마커 갱신은 2초 스로틀(WebView 주입 빈도 제한, 성능 합의 사항).
-        const nowTs = Date.now();
-        if (nowTs - lastMapPosTsRef.current >= 2000) {
-          lastMapPosTsRef.current = nowTs;
-          setMapPos({ lat: coords.lat, lon: coords.lon });
-        }
+        if (cancelled) return;
+        pushGps(coords);
       });
     })();
 
@@ -731,7 +741,7 @@ export function CameraView() {
       stopWatching();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode]);
+  }, [isMockMode, status]);
 
   // State variables moved to top of Component to avoid block-scope/TDZ errors.
 

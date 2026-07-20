@@ -754,21 +754,46 @@ td.tts-text-cell {
   padding: 0;
 }
 
-.frame-thumb {
-  border-radius: 2px;
+.frame-thumb-btn:hover .frame-overlay-thumb {
+  transform: scale(1.05);
+  border-color: var(--color-gildang-yellow);
+  box-shadow: 0 0 6px rgba(249, 183, 0, 0.3);
+}
+
+/* 목록 썸네일: wrap의 width:100%보다 특이도를 높여 64px 고정 */
+.frame-overlay-wrap.frame-overlay-thumb {
   border: 1px solid var(--border-tactical);
-  cursor: zoom-in;
+  border-radius: 2px;
   display: block;
-  height: 48px;
-  object-fit: cover;
+  max-width: 64px;
+  overflow: visible;
+  position: relative;
   transition: transform 0.12s ease;
   width: 64px;
 }
 
-.frame-thumb:hover {
-  transform: scale(1.05);
-  border-color: var(--color-gildang-yellow);
-  box-shadow: 0 0 6px rgba(249, 183, 0, 0.3);
+.frame-overlay-wrap.frame-overlay-thumb .frame-overlay-image {
+  border: none;
+  border-radius: 0;
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.frame-overlay-wrap.frame-overlay-thumb .frame-overlay-box {
+  border-width: 1.5px;
+  z-index: 1;
+}
+
+.frame-overlay-wrap.frame-overlay-thumb .frame-overlay-label {
+  font-size: 7px;
+  left: -1px;
+  max-width: 62px;
+  overflow: hidden;
+  padding: 0 2px;
+  text-overflow: ellipsis;
+  top: -11px;
+  z-index: 2;
 }
 
 .row-selected td {

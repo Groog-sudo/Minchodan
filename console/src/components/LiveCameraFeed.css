@@ -232,6 +232,16 @@
   gap: 6px;
 }
 
+.hud-gps-coords {
+  color: #9ae6ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin-left: 4px;
+  opacity: 0.9;
+}
+
 .hud-pulse-dot {
   width: 6px;
   height: 6px;
