@@ -158,57 +158,86 @@ export function useLiveFeed(token: string | null = null) {
       ws.onmessage = (event) => {
         if (disposed || myGen !== generation || wsRef.current !== ws) return;
 
-        let blobData: Blob | null = null;
-        if (event.data instanceof Blob) {
-          blobData = event.data;
-        } else if (event.data instanceof ArrayBuffer) {
-          // 직전에 console_guide_audio JSON을 받은 적이 있으면 이 바이너리는
-          // 단말과 동일한 guide 오디오(WAV)다. image/jpeg로 강제 해석하지 않고
-          // 오디오 Blob으로 래핑해 컴포넌트에 넘긴다(2026-07-19).
-          if (pendingGuideAudioRef.current) {
-            const meta = pendingGuideAudioRef.current;
-            pendingGuideAudioRef.current = null;
-            const audioBlob = new Blob([event.data], { type: `audio/${meta.audio_codec || "wav"}` });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            if (prevAudioUrlRef.current) {
-              URL.revokeObjectURL(prevAudioUrlRef.current);
-            }
-            prevAudioUrlRef.current = audioUrl;
-            setGuideAudioEvent({
-              ...meta,
-              received_at: Date.now(),
-              audio_url: audioUrl,
-            });
-            return;
+        // 직전 console_guide_audio JSON이 있으면 다음 바이너리는 guide WAV일 수 있다.
+        // 다만 binaryType=blob 이고 라이브 JPEG도 Blob으로 오므로, pending만으로
+        // 소비하면 카메라 프레임이 오디오로 오인된다. WAV는 RIFF 헤더로 판별한다.
+        const tryConsumeGuideAudio = async (raw: Blob | ArrayBuffer): Promise<boolean> => {
+          if (!pendingGuideAudioRef.current) return false;
+
+          let header: Uint8Array;
+          if (raw instanceof Blob) {
+            const slice = raw.slice(0, 12);
+            header = new Uint8Array(await slice.arrayBuffer());
+          } else {
+            header = new Uint8Array(raw.slice(0, 12));
           }
-          blobData = new Blob([event.data], { type: "image/jpeg" });
-        }
+          // WAV: "RIFF"...."WAVE"
+          const isRiff =
+            header.length >= 12 &&
+            header[0] === 0x52 &&
+            header[1] === 0x49 &&
+            header[2] === 0x46 &&
+            header[3] === 0x46 &&
+            header[8] === 0x57 &&
+            header[9] === 0x41 &&
+            header[10] === 0x56 &&
+            header[11] === 0x45;
+          if (!isRiff) return false;
 
-        if (blobData) {
-          // 최신 프레임만 다음 페인트에 반영 (밀린 blob 드롭 → 끊김 완화)
-          pendingBlobRef.current = blobData;
-          if (rafRef.current == null) {
-            rafRef.current = requestAnimationFrame(() => {
-              rafRef.current = null;
-              const latest = pendingBlobRef.current;
-              pendingBlobRef.current = null;
-              if (!latest || disposed || myGen !== generation || wsRef.current !== ws) return;
+          const meta = pendingGuideAudioRef.current;
+          pendingGuideAudioRef.current = null;
+          const codec = meta.audio_codec || "wav";
+          const audioBlob =
+            raw instanceof Blob
+              ? new Blob([raw], { type: `audio/${codec}` })
+              : new Blob([raw], { type: `audio/${codec}` });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          if (prevAudioUrlRef.current) {
+            URL.revokeObjectURL(prevAudioUrlRef.current);
+          }
+          prevAudioUrlRef.current = audioUrl;
+          setGuideAudioEvent({
+            ...meta,
+            received_at: Date.now(),
+            audio_url: audioUrl,
+          });
+          return true;
+        };
 
-              const newUrl = URL.createObjectURL(latest);
-              setImageUrl(newUrl);
-              if (prevUrlRef.current) {
-                URL.revokeObjectURL(prevUrlRef.current);
-              }
-              prevUrlRef.current = newUrl;
+        const handleBinary = (raw: Blob | ArrayBuffer) => {
+          void (async () => {
+            if (await tryConsumeGuideAudio(raw)) return;
+            const blobData =
+              raw instanceof Blob ? raw : new Blob([raw], { type: "image/jpeg" });
+            // 최신 프레임만 다음 페인트에 반영 (밀린 blob 드롭 → 끊김 완화)
+            pendingBlobRef.current = blobData;
+            if (rafRef.current == null) {
+              rafRef.current = requestAnimationFrame(() => {
+                rafRef.current = null;
+                const latest = pendingBlobRef.current;
+                pendingBlobRef.current = null;
+                if (!latest || disposed || myGen !== generation || wsRef.current !== ws) return;
 
-              clearIdleTimer();
-              clearTimerRef.current = setTimeout(() => {
-                if (!disposed && myGen === generation) {
-                  setLatestDetections([]);
+                const newUrl = URL.createObjectURL(latest);
+                setImageUrl(newUrl);
+                if (prevUrlRef.current) {
+                  URL.revokeObjectURL(prevUrlRef.current);
                 }
-              }, 2000);
-            });
-          }
+                prevUrlRef.current = newUrl;
+
+                clearIdleTimer();
+                clearTimerRef.current = setTimeout(() => {
+                  if (!disposed && myGen === generation) {
+                    setLatestDetections([]);
+                  }
+                }, 2000);
+              });
+            }
+          })();
+        };
+
+        if (event.data instanceof Blob || event.data instanceof ArrayBuffer) {
+          handleBinary(event.data);
           return;
         }
 
@@ -234,8 +263,8 @@ export function useLiveFeed(token: string | null = null) {
               heading: data.heading ?? 0,
             });
           } else if (data.type === "console_guide_audio") {
-            // 직후 도착할 ArrayBuffer(WAV)와 짝을 이룰 메타를 보관한다.
-            // 바이너리가 오지 않거나 순서가 어긋나면 타임아웃으로 폐기한다.
+            // JSON 수신 즉시 텍스트를 표시한다(WAV 짝이 늦거나 유실돼도 '대기 중'에 안 머묾).
+            // 직후 WAV 바이너리가 오면 audio_url을 채운다.
             pendingGuideAudioRef.current = {
               event_id: data.event_id,
               device_id: data.device_id,
@@ -245,7 +274,12 @@ export function useLiveFeed(token: string | null = null) {
               source: data.source,
               ts: data.ts ?? Date.now(),
             };
-            // 가드레일: 5초 내 바이너리가 오지 않으면 상태 폐기(정체 방지).
+            setGuideAudioEvent({
+              ...pendingGuideAudioRef.current,
+              received_at: Date.now(),
+              audio_url: null,
+            });
+            // 가드레일: 5초 내 바이너리가 오지 않으면 pending만 폐기(텍스트 표시는 유지).
             setTimeout(() => {
               if (pendingGuideAudioRef.current && pendingGuideAudioRef.current.event_id === data.event_id) {
                 pendingGuideAudioRef.current = null;

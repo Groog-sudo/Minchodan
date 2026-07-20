@@ -1,7 +1,7 @@
 # Minchodan 파이프라인 단계 설계
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.5 (2026-07-19 RTX 5090 최대 사양과 3개 OS별 PyTorch 2.13 가속 경로 반영)
+> **버전**: v0.3.6 (2026-07-20 Medium 인지 기본 컨텍스트를 인메모리 회피 힌트로 전환)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -30,7 +30,7 @@ graph LR
         C2["2단계 인지 캡처<br/>1~2fps"]
         C3["3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation<br/>mid/low 발행"]
         C4["4단계 RAG DB<br/>(오프라인)"]
-        C5["5단계 RAG 검색"]
+        C5["5단계 인지 컨텍스트<br/>(hints 기본 / rag 선택)"]
         C6["6단계 LangGraph<br/>L1/L2/L3"]
         C7b["7단계 실시간 TTS"]
         C1 --> C2 --> C3 --> C5
@@ -49,7 +49,7 @@ graph LR
 | 2    | 카메라 캡처 전송 | `online_reflex` / `online_cognitive`          | 단말 + 서버         | 비동기 (이중 타이머) |
 | 3    | 탐지·분할·게이트 | `online_inference`                            | GPU 서버            | 동기 (프레임 단위)   |
 | 4    | RAG DB 구축      | `offline_batch`                               | GPU 서버 (오프라인) | 배치                 |
-| 5    | RAG 검색         | `online_retrieval`                            | 서버                | 동기 (쿼리 단위)     |
+| 5    | 인지 컨텍스트    | `online_hints` / `online_retrieval`           | 서버                | 동기 (쿼리 단위)     |
 | 6    | LangGraph 가이드 | `online_orchestration`                        | 서버 (Ollama)       | 비동기 (`ainvoke`)   |
 | 7    | 음성 출력        | `online_reflex_clip` / `online_cognitive_tts` | 서버 + 단말         | 비동기               |
 
@@ -60,7 +60,7 @@ graph LR
 | 경로 | 흐름                                                        | 목표                        | 비고                      |
 | ---- | ----------------------------------------------------------- | --------------------------- | ------------------------- |
 | 반사 | 캡처 WS Yolo 26N - Object Detection Gate 사전합성 클립 재생 | **<300ms** (Detection 기준) | LLM/RAG/실시간 TTS 미경유 |
-| 인지 | 캡처 WS 탐지 Redis RAG LangGraph TTS 재생                   | 1~2Hz                       | 상세 가이드               |
+| 인지 | 캡처 WS 탐지 Redis 힌트/RAG LangGraph TTS 재생 | 1~2Hz                       | 상세 가이드               |
 
 단계별 지연 목표:
 
@@ -69,7 +69,7 @@ graph LR
 | 1    | WS RTT          | < 100ms | (미계측 - ack 왕복 별도 측정 필요)          |
 | 2    | 캡처수신        | < 50ms  | 0.8ms (decode_ms)                            |
 | 3    | Detection 추론  | < 80ms  | 235~340ms (목표 미달 - 후속 최적화 필요)     |
-| 5    | RAG 검색        | < 50ms  | 56~78ms (목표 근접)                          |
+| 5    | 인지 컨텍스트   | hints≈0 / rag < 50ms | hints 기본. rag 모드는 기존 56~78ms 표본 |
 | 6    | L2 `ainvoke`    | (미정)  | 460ms~3.7s (편차 큼 - 표본 축적 후 목표 확정) |
 | 7    | 실시간 TTS 합성 | (미정)  | 0~2.0s (0ms 사례 원인 미확인, 후속 조사)      |
 
@@ -117,17 +117,17 @@ graph LR
 - 영상 1fps 프레임 추출 pHash 중복 제거 Gemini(`gemini-2.5-flash-lite`) 한글 캡셔닝 nomic-embed-text(768d) `Chroma.from_documents(persist_directory)`
 - 메타데이터 `objects`/`scene_type`을 3단계 분리 클래스와 일치
 
-### 5.5 5단계 - 실시간 대처 수칙 검색
+### 5.5 5단계 - 인지 컨텍스트 (힌트 / RAG)
 
-- `Chroma(persist_directory, embedding_function)` 읽기 전용 로드
-- 탐지 클래스 쿼리 `similarity_search_with_score(k=5)` `page_content` 결합 `state["rag_context"]`
-- 미적중 시 룰 기반 fallback
+- **기본(`GUIDANCE_CONTEXT_MODE=hints`)**: `server/rag/guidance_hints.py` 인메모리 dict → `state["rag_context"]` (rag_ms≈0)
+- **롤백(`rag`)**: Chroma `similarity_search_with_score(k=5)` → `page_content` 결합
+- STT/생활지원 convenience RAG는 별도 유지
 
 ### 5.6 6단계 - 종합 회피 가이드 생성 (LangGraph)
 
 - `StateGraph(OrchState)`:
   - L1: 룰 기반 위험도 분류 (mid/low만 진입)
-  - L2: `SimpleOllamaClient`(gemma4-e4b, LangChain `ChatOllama` 미경유 커스텀 클라이언트) `ainvoke` (20자/방향)
+  - L2: `[회피 힌트]` + `[탐지 방향]` 결합, `SimpleOllamaClient`(gemma4-e4b) `ainvoke` (20자)
   - L3: 검증 + RETRY(최대 1회) → 초과 시 fallback 노드로 라우팅
   - Fallback: GPU 부하 기반 `SimpleOpenAIClient`(gpt-4o-mini) 핫스왑 또는 고정 문장
 

@@ -55,6 +55,10 @@ if sys.stdout.encoding != "utf-8":
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# realtime_gps는 2초 주기로 올 수 있어 INFO 스팸을 막기 위해 디바이스별 스로틀.
+_LAST_GPS_LOG_TS: dict[str, float] = {}
+_GPS_LOG_INTERVAL_S = 15.0
+
 MIN_STT_AUDIO_BYTES = 11200  # 2026-07-19: ~0.35s @16kHz mono PCM16 (이전 4096은 탭 오탐 통과)
 MAX_STT_AUDIO_BYTES = max(1, int(os.getenv("STT_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))))
 MAX_STT_BASE64_CHARS = ((MAX_STT_AUDIO_BYTES + 2) // 3) * 4 + 4
@@ -286,7 +290,7 @@ async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
         if audio_bytes_out:
             await ws.send_bytes(audio_bytes_out)
             # 2026-07-19: 관제 콘솔 미러링. STT 대기 안내도 단말과 동일하게 재생.
-            await manager.broadcast_json_to_consoles(
+            await manager.broadcast_guide_audio_to_consoles(
                 {
                     "type": "console_guide_audio",
                     "event_id": f"stt-wait-{device_id}-{now_ts()}",
@@ -296,9 +300,9 @@ async def _send_stt_wait_notice(ws: WebSocket, device_id: str) -> None:
                     "guidance_text": wait_text,
                     "source": "stt-wait-notice",
                     "ts": now_ts(),
-                }
+                },
+                audio_bytes_out,
             )
-            await manager.broadcast_to_consoles(audio_bytes_out)
     logger.info(f"[WS] STT 대기 안내 전송: device_id={device_id}, text={wait_text!r}")
 
 
@@ -333,7 +337,7 @@ async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> 
         if audio_bytes_out:
             await ws.send_bytes(audio_bytes_out)
             # 2026-07-19: 관제 콘솔 미러링. 길안내 멘트도 단말과 동일하게 재생.
-            await manager.broadcast_json_to_consoles(
+            await manager.broadcast_guide_audio_to_consoles(
                 {
                     "type": "console_guide_audio",
                     "event_id": f"nav-{device_id}-{now_ts()}",
@@ -343,9 +347,9 @@ async def _send_nav_guidance(ws: WebSocket, device_id: str, nav_event: dict) -> 
                     "guidance_text": text,
                     "source": nav_event.get("type", "nav-guidance"),
                     "ts": now_ts(),
-                }
+                },
+                audio_bytes_out,
             )
-            await manager.broadcast_to_consoles(audio_bytes_out)
     logger.info(
         f"[WS] 길안내 전송: device_id={device_id}, text={text!r}, "
         f"type={nav_event.get('type')}, waypoint_idx={nav_event.get('active_waypoint_idx')}"
@@ -570,7 +574,7 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
             if audio_bytes_out:
                 await ws.send_bytes(audio_bytes_out)
                 # 2026-07-19: 관제 콘솔 미러링. STT 응답 안내도 단말과 동일하게 재생.
-                await manager.broadcast_json_to_consoles(
+                await manager.broadcast_guide_audio_to_consoles(
                     {
                         "type": "console_guide_audio",
                         "event_id": stt_event_id,
@@ -580,9 +584,9 @@ async def _process_stt_audio(ws: WebSocket, device_id: str, data: dict, audio_b6
                         "guidance_text": guidance_text,
                         "source": bridge_result.get("source", "stt-bridge"),
                         "ts": now_ts(),
-                    }
+                    },
+                    audio_bytes_out,
                 )
-                await manager.broadcast_to_consoles(audio_bytes_out)
 
         dial_action = bridge_result.get("dial_action")
         if isinstance(dial_action, dict):
@@ -752,7 +756,8 @@ async def ws_console_live_feed(
         async with async_sessionmaker_factory() as db:
             await authenticate_admin_token(token, db)
     except (TimeoutError, HTTPException, ValueError, json.JSONDecodeError, WebSocketDisconnect):
-        await ws.close(code=1008, reason="invalid token")
+        with contextlib.suppress(Exception):
+            await ws.close(code=1008, reason="invalid token")
         return
     await manager.connect_console(ws, accept=False)
     await ws.send_json({"type": "auth_ok"})
@@ -978,6 +983,33 @@ async def ws_detect(
                 # 콘솔 중계는 이제 session_manager의 latest-only 큐로 분리되어 논블로킹이다.
                 await _send_detection_ack(ws, event_id, frame_id, decode_ms)
 
+                # 임시: data/seg_compare/.enable 파일이 있으면 cognitive JPEG를
+                # 최대 N장 덤프. 검은/빈 프레임(실측 7KB대)은 제외하고 실사만 저장.
+                dump_dir = Path(os.getenv("SEG_COMPARE_DIR", "/app/data/seg_compare"))
+                enable_flag = dump_dir / ".enable"
+                min_jpeg_bytes = int(os.getenv("SEG_COMPARE_MIN_BYTES", "20000") or "20000")
+                if (
+                    enable_flag.exists()
+                    and meta.get("stream") == "cognitive"
+                    and raw_bytes
+                    and len(raw_bytes) >= min_jpeg_bytes
+                    and raw_bytes[:3] == b"\xff\xd8\xff"
+                ):
+                    dump_left = int(os.getenv("SEG_COMPARE_DUMP", "40") or "40")
+                    try:
+                        dump_dir.mkdir(parents=True, exist_ok=True)
+                        existing = len(list(dump_dir.glob("*.jpg")))
+                        if existing < dump_left:
+                            out = dump_dir / f"{event_id}.jpg"
+                            out.write_bytes(raw_bytes)
+                            if existing + 1 >= dump_left:
+                                enable_flag.unlink(missing_ok=True)
+                                logger.info(
+                                    f"[SEG_COMPARE] dump complete: {dump_left} frames -> {dump_dir}"
+                                )
+                    except Exception as dump_err:
+                        logger.warning(f"[SEG_COMPARE] dump failed: {dump_err}")
+
                 # 콘솔 relay FPS 분리(A5): 설정 주기 이내면 relay 건너뛰기(최신 프레임만 유지 목적).
                 relay_now = time.perf_counter()
                 if relay_now - last_console_relay_ts >= console_relay_interval_s:
@@ -1125,10 +1157,19 @@ async def ws_detect(
                         float(lon),
                         float(heading) if heading is not None else None,
                     )
-                    logger.debug(
-                        f"[WS] realtime_gps 수신: device_id={device_id}, "
-                        f"lat={lat}, lon={lon}, heading={heading}"
-                    )
+                    now_log = time.monotonic()
+                    last_log = _LAST_GPS_LOG_TS.get(device_id, 0.0)
+                    if now_log - last_log >= _GPS_LOG_INTERVAL_S:
+                        _LAST_GPS_LOG_TS[device_id] = now_log
+                        logger.info(
+                            f"[WS] realtime_gps 수신: device_id={device_id}, "
+                            f"lat={lat}, lon={lon}, heading={heading}"
+                        )
+                    else:
+                        logger.debug(
+                            f"[WS] realtime_gps 수신: device_id={device_id}, "
+                            f"lat={lat}, lon={lon}, heading={heading}"
+                        )
                     # 콘솔 HUD 미니맵 실시간 갱신: 앱 실기기 GPS 좌표를 콘솔로 브로드캐스트.
                     # useLiveFeed가 이 메시지를 받아 lastGps 상태를 갱신하고,
                     # LiveCameraFeed가 HUD 미니맵 iframe에 postMessage로 주입한다.

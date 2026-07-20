@@ -18,6 +18,9 @@ REFLEX_SUPPRESS_TTL_S = int(os.getenv("REFLEX_SUPPRESS_TTL_S", "5"))
 REFLEX_MIN_GAP_S = float(os.getenv("REFLEX_MIN_GAP_S", "1.5"))
 # near(<=0.6m) 햅틱+비프 스로틀 간격. 충돌 임박 촉각 신호는 반복되어도 안전 이득이 손실보다 큼.
 REFLEX_NEAR_HAPTIC_THROTTLE_S = float(os.getenv("REFLEX_NEAR_HAPTIC_THROTTLE_S", "0.5"))
+# 2026-07-19: 노면(surface) 반사는 세그 흔들림으로 매초 재발화하기 쉬워 TTL/갭을 길게 둔다.
+REFLEX_SURFACE_SUPPRESS_TTL_S = int(os.getenv("REFLEX_SURFACE_SUPPRESS_TTL_S", "15"))
+REFLEX_SURFACE_MIN_GAP_S = float(os.getenv("REFLEX_SURFACE_MIN_GAP_S", "8.0"))
 
 
 class AlertSuppressor:
@@ -34,11 +37,7 @@ class AlertSuppressor:
     - near(<=0.6m) 햅틱+비프: TTL 억제 제외, REFLEX_NEAR_HAPTIC_THROTTLE_S(500ms) 스로틀만
     """
 
-    DEFAULT_TTL = 60  # 기존 억제 기본 유효시간 60초 (레거시 should_suppress용)
-    DEFALUT_TTL = DEFAULT_TTL  # 기존 오타 상수 호환 유지
-
-    def __init__(self, ttl: int = DEFAULT_TTL):  # ttl은 DEFAULT_TTL로 기본값 설정
-        self.ttl = ttl
+    def __init__(self):
         # P0-1: device 단위 최소 쿨다운 추적 (non-near 클립/비프)
         self._last_device_alert_ts: dict[str, float] = {}
         # near 햅틱+비프 스로틀 추적 (TTL 억제 제외)
@@ -49,10 +48,6 @@ class AlertSuppressor:
         # alert_source == "object"인 반사에만 적용된다(head_level/surface는 episode 없이
         # 매 발동이 독립 이벤트). Near 이탈/track 소실 감지 시 reflex_clear 판정에 사용한다.
         self._active_near_track: dict[str, str] = {}
-
-    def _make_key(self, device_id: str, alert_id: str) -> str:
-        """suppress:{device_id}:{alert_id} - 레거시 (방향 제외 high_obstacle 고정)."""
-        return f"suppress:{device_id}:{alert_id}"
 
     def _make_reflex_key(
         self, device_id: str, alert_source: str, track_id: str | None, distance_band: str
@@ -163,6 +158,23 @@ class AlertSuppressor:
             4. 위 조건 통과 시 발화 허용.
         """
         now = time.time()
+        # 2026-07-19: 노면 반사는 near 스로틀 경로로 빠지지 않게 하고(기본 distance=0),
+        # surface 전용 긴 갭/TTL을 적용한다. caution 세그 흔들림으로 음성/비프가 반복되는
+        # 실외 과처리를 막기 위함.
+        if alert_source == "surface":
+            last_device = self._last_device_alert_ts.get(device_id, 0.0)
+            if now - last_device < REFLEX_SURFACE_MIN_GAP_S:
+                return False
+            key = self._make_reflex_key(device_id, alert_source, track_id, distance_band)
+            if await self._key_exists(key):
+                return False
+            self._last_device_alert_ts[device_id] = now
+            self._last_alert_state[device_id] = {
+                "track_id": track_id,
+                "distance_band": distance_band,
+            }
+            return True
+
         # 1. near: 스로틀만 (충돌 임박 촉각 신호는 반복되어도 안전 이득)
         if is_near:
             last_near = self._last_near_alert_ts.get(device_id, 0.0)
@@ -210,27 +222,8 @@ class AlertSuppressor:
     ) -> None:
         """P0-1: 반사 경보 전송 완료 마킹 (track_id+band 키, REFLEX_SUPPRESS_TTL_S)."""
         key = self._make_reflex_key(device_id, alert_source, track_id, distance_band)
-        await self._setex(key, REFLEX_SUPPRESS_TTL_S)
-
-    async def should_suppress(self, device_id: str, alert_id: str) -> bool:
-        """[레거시] 해당 alert_id가 최근에 발행되었는지 확인.
-
-        Returns:
-            True  -> 억제해야 함 (이미 최근에 보냄)
-            False -> 발행해도 됨
-        """
-        key = self._make_key(device_id, alert_id)
-        return await self._key_exists(key)
-
-    async def should_supperss(self, device_id: str, alert_id: str) -> bool:
-        """기존 오타 메서드 호환용 래퍼."""
-        return await self.should_suppress(device_id, alert_id)
-
-    async def mark_as_sent(self, device_id: str, alert_id: str, ttl: int | None = None) -> None:
-        """[레거시] 경보를 보냈음을 표시 (TTL 동안 중복 방지)."""
-        key = self._make_key(device_id, alert_id)
-        ttl_seconds = ttl or self.ttl
-        await self._setex(key, ttl_seconds)
+        ttl = REFLEX_SURFACE_SUPPRESS_TTL_S if alert_source == "surface" else REFLEX_SUPPRESS_TTL_S
+        await self._setex(key, ttl)
 
 
 # 싱글톤 인스턴트 (필요시)

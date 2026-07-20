@@ -10,7 +10,9 @@ services:
     image: minchodan-server:latest
     container_name: minchodan-fastapi
     ports:
-      - "127.0.0.1:${WS_PORT:-8000}:8000"
+      # 2026-07-20: EXPO_PUBLIC_NETWORK_MODE=tailscale 시 단말이 호스트 Tailscale IP:8000
+      # 으로 접속하므로 0.0.0.0 바인딩 필수. 127.0.0.1 이면 Tailscale 경로 HTTP 000.
+      - "${WS_BIND_HOST:-0.0.0.0}:${WS_PORT:-8000}:8000"
     volumes:
       - ../server:/app/server:ro
       - ../data:/app/data
@@ -120,8 +122,11 @@ services:
   # 2026-07-19: 운영 콘솔(React + Vite) 컨테이너. integration-test-orchestrator
   # 스킬 §5-B가 호스트에서 npm run dev 하던 단계를 compose 통합으로 대체. Vite dev
   # 서버를 띄우고 FastAPI 컨테이너를 VITE_PROXY_TARGET으로 가리킨다. 소스는 볼륨
-  # 마운트해 HMR을 지원하고 node_modules는 익명 볼륨으로 격리해 호스트/컨테이너
+  # 마운트해 HMR을 지원하고 node_modules는 named 볼륨으로 격리해 호스트/컨테이너
   # 간 의존성 충돌을 방지한다.
+  # 2026-07-20: 익명 볼륨이 root 소유로 잔존하면 USER node(Vite .vite-temp 쓰기)에서
+  # EACCES로 Restarting 루프가 난다. named 볼륨으로 고정하고, 재발 시
+  # `docker volume rm minchodan_console_node_modules` 후 console만 recreate.
   console:
     build:
       context: ../console
@@ -132,7 +137,7 @@ services:
       - "127.0.0.1:${CONSOLE_PORT:-5174}:5174"
     volumes:
       - ../console:/app
-      - /app/node_modules
+      - console_node_modules:/app/node_modules
     environment:
       - VITE_PROXY_TARGET=http://fastapi:8000
       - CHOKIDAR_USEPOLLING=true
@@ -148,6 +153,7 @@ services:
 volumes:
   redis_data:
   mariadb_data:
+  console_node_modules:
 
 networks:
   minchodan-net:

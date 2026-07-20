@@ -113,8 +113,13 @@ def helper_search_poi(keyword):
         pass
 
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        logger.warning("[TMAP] API Key가 유효하지 않아 가상의 목적지를 반환합니다.")
-        return {"name": f"{keyword} (가상)", "x": "126.8722", "y": "37.4590"}
+        # 2026-07-20 (회귀 분석 보고서 P0 - fail-closed): 고정 가상 좌표(126.8722/
+        # 37.4590) 성공 처리를 제거했다. docs/ops/environment_variables.md와
+        # .env.example이 이미 "키 미설정 시 기능 비활성화"를 명시하고 있었는데,
+        # 이전 코드는 문서와 반대로 항상 성공 처리해 어떤 목적지를 말해도 같은
+        # 위치 부근으로 경로가 생성될 수 있었다.
+        logger.warning("[TMAP] API Key가 유효하지 않아 목적지 검색을 비활성화합니다.")
+        return None
 
     url = "https://apis.openapi.sk.com/tmap/pois"
     params = {
@@ -161,13 +166,10 @@ def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float
     "가까운 지하철역이 어디야" 같은 근접 질의에 정확히 답할 수 있다.
     """
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        logger.warning("[TMAP] API Key가 유효하지 않아 가상의 인접 목적지를 반환합니다.")
-        return {
-            "name": f"가장 가까운 {keyword} (가상)",
-            "x": str(center_lon + 0.001),
-            "y": str(center_lat + 0.001),
-            "distance_m": 150.0,
-        }
+        # 2026-07-20 (회귀 분석 보고서 P0 - fail-closed): 가상 인접 목적지 성공
+        # 처리를 제거했다(위 helper_search_poi와 동일 이유).
+        logger.warning("[TMAP] API Key가 유효하지 않아 인접 목적지 검색을 비활성화합니다.")
+        return None
 
     url = "https://apis.openapi.sk.com/tmap/pois"
     params = {
@@ -216,31 +218,104 @@ def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float
         return None
 
 
+# 2026-07-20 (회귀 분석 보고서 P0 확정 결함 3): 동명 POI 모호성 판단 임계값(미터).
+# 최상위 후보와 동일 이름의 차상위 후보 간 거리 차가 이 값보다 작으면 거리만으로
+# 자신 있게 고를 수 없다고 보고 사용자 확인을 요구한다.
+POI_AMBIGUITY_DISTANCE_GAP_M = 2000.0
+
+
+def helper_resolve_destination_poi(
+    keyword: str, center_lat: float, center_lon: float, count: int = 5
+) -> dict | None:
+    """목적지 설정 전용 POI 해석기.
+
+    `helper_search_poi(count=1, pois[0] 고정)`는 현재 위치·주소 확인 없이 TMAP
+    relevance 1위를 무조건 확정해, 동명 지점이 여러 지역에 있을 때 엉뚱한 곳으로
+    안내될 수 있었다(회귀 분석 보고서 §6.4). 여러 후보를 받아 (1) 정확 이름 일치,
+    (2) 현재 위치에서의 거리 순으로 점수화하고, 동명 후보 간 거리 우위가 불분명하면
+    `ambiguous=True`로 표시해 호출측이 사용자 확인을 거치도록 신호한다.
+
+    Returns:
+        {
+            "best": {"name", "x", "y", "distance_m"},       # 최상위 후보
+            "candidates": [{"name", "x", "y", "distance_m"}, ...],  # 점수순, 최대 count개
+            "ambiguous": bool,
+        }
+        검색 결과가 없거나 API 실패 시 None.
+    """
+    if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
+        logger.warning("[TMAP] API Key가 유효하지 않아 목적지를 해석할 수 없습니다.")
+        return None
+
+    url = "https://apis.openapi.sk.com/tmap/pois"
+    params = {
+        "version": 1,
+        "searchKeyword": keyword,
+        "count": max(count, 5),
+        "reqCoordType": "WGS84GEO",
+        "resCoordType": "WGS84GEO",
+        "format": "json",
+        "appKey": APP_KEY,
+        "centerLon": center_lon,
+        "centerLat": center_lat,
+    }
+    headers = {"Accept": "application/json"}
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return None
+        pois = response.json().get("searchPoiInfo", {}).get("pois", {}).get("poi", [])
+        if not pois:
+            return None
+
+        scored = []
+        for poi in pois:
+            name = poi.get("name")
+            try:
+                poi_lat = float(poi.get("noorLat"))
+                poi_lon = float(poi.get("noorLon"))
+            except (TypeError, ValueError):
+                continue
+            dist = _haversine_distance_m(center_lat, center_lon, poi_lat, poi_lon)
+            scored.append(
+                {
+                    "name": name,
+                    "x": poi.get("noorLon"),
+                    "y": poi.get("noorLat"),
+                    "distance_m": dist,
+                    "_exact": (name or "").strip() == keyword.strip(),
+                }
+            )
+        if not scored:
+            return None
+
+        # 정확 이름 일치를 최우선으로, 그 다음은 현재 위치에서 가까운 순으로 정렬.
+        scored.sort(key=lambda c: (0 if c["_exact"] else 1, c["distance_m"]))
+        best = scored[0]
+
+        ambiguous = False
+        same_name_others = [c for c in scored[1:] if c["name"] == best["name"]]
+        if same_name_others:
+            nearest_gap = min(c["distance_m"] for c in same_name_others) - best["distance_m"]
+            if nearest_gap < POI_AMBIGUITY_DISTANCE_GAP_M:
+                ambiguous = True
+
+        for c in scored:
+            c.pop("_exact", None)
+
+        return {"best": best, "candidates": scored[:count], "ambiguous": ambiguous}
+    except Exception as e:
+        logger.error(f"[TMAP] Destination POI resolver exception: {e}")
+        return None
+
+
 def helper_fetch_route(start_poi, end_poi):
     """TMAP 보행자 경로 API를 호출해 경로 GeoJSON을 가져옵니다."""
     if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        logger.warning("[TMAP] API Key가 유효하지 않아 가상의 경로를 반환합니다.")
-        return {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [start_poi["x"], start_poi["y"]]},
-                    "properties": {
-                        "description": "출발지를 떠나 직진하세요.",
-                        "facilityType": "11",
-                    },
-                },
-                {
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [end_poi["x"], end_poi["y"]]},
-                    "properties": {
-                        "description": f"{end_poi['name']} 목적지에 도착했습니다.",
-                        "facilityType": "11",
-                    },
-                },
-            ],
-        }
+        # 2026-07-20 (회귀 분석 보고서 P0 - fail-closed): 가상 경로(FeatureCollection)
+        # 성공 처리를 제거했다(위 helper_search_poi와 동일 이유).
+        logger.warning("[TMAP] API Key가 유효하지 않아 경로 조회를 비활성화합니다.")
+        return None
 
     url = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json"
     headers = {"appKey": APP_KEY, "Content-Type": "application/json"}

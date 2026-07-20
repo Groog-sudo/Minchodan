@@ -21,6 +21,11 @@ import {
   getWsUrlCandidates,
 } from "../config";
 import { audioEngine } from "../services/audioEngine";
+import {
+  GUIDE_PRIORITY,
+  resolveGuidePriority,
+  type GuidePriority,
+} from "../services/guidePriority";
 import { hapticEngine } from "../services/hapticEngine";
 import { placePhoneCall } from "../services/phoneDialBridge";
 import type { WSMessage, WSStatus } from "../types/detection";
@@ -133,6 +138,8 @@ export function useWebSocket(
   // T3-C (2026-07-18): 직전 guide JSON 메시지의 event_id를 임시 저장해, 이어 도착하는
   // 바이너리 WAV 프레임이 STT 응답("stt-")인지 인지 안내("event-")인지 구분한다.
   const pendingGuideEventIdRef = useRef<string | null>(null);
+  // 2026-07-19: 바이너리 WAV에 넘길 해석된 우선순위(JSON guide에서 계산).
+  const pendingGuidePriorityRef = useRef<GuidePriority>(GUIDE_PRIORITY.OTHER);
   // onclose/AppState 타이머가 항상 최신 connect를 호출하도록 한다.
   const connectRef = useRef<() => void>(() => {});
 
@@ -293,8 +300,10 @@ export function useWebSocket(
       // T3-C (2026-07-18): audioEngine 우선순위 조정자에 STT/인지 구분을 전달한다.
       if (event.data instanceof ArrayBuffer) {
         const isStt = String(pendingGuideEventIdRef.current ?? "").startsWith("stt-");
-        const priority = isStt ? 2 : 1;
-        console.log(`[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}, isStt=${isStt}`);
+        const priority = pendingGuidePriorityRef.current;
+        console.log(
+          `[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}, isStt=${isStt}, priority=${priority}`,
+        );
         void audioEngine.playGuideAudioBytes(
           new Uint8Array(event.data),
           priority,
@@ -379,7 +388,9 @@ export function useWebSocket(
             `[LocalReflex][WS] 서버 반사 해제: alert_id=${data.alert_id}, track_id=${data.track_id ?? "-"}, reason=${data.reason ?? "-"}`,
           );
           audioEngine.stopBeep();
-          hapticEngine.stopContinuous();
+          // respectMinimum: Near episode가 300ms 안팎으로 짧게 끝나도 최소 CONTINUOUS_MIN_MS는
+          // 진동이 실제로 느껴지도록 유예한다(2026-07-20, 실기기 필드 테스트 피드백).
+          hapticEngine.stopContinuous({ respectMinimum: true });
         } else if (data.type === "guide") {
           // 인지 경로 가이드 음성은 onmessage에서 직접 재생한다(React 상태를 경유하지 않음).
           // [2026-07-09 변경] 서버가 guide 오디오를 더 이상 audio_mp3_b64(base64 문자열)로
@@ -392,18 +403,23 @@ export function useWebSocket(
               `transport=${data.transport}`,
           );
 
-          // T3-C (2026-07-18): event_id가 "stt-"로 시작하면 STT 응답(priority=2),
-          // 그 외(카메라 event-*)는 인지 경로(priority=1). audioEngine 우선순위
-          // 조정자가 충돌을 방지하며, STT 응답은 결정론적 종료 콜백에서 상태를 해제한다.
+          // 2026-07-19: STT(길찾아줘/물어볼게) > Near > 12시 MED > 기타.
+          // STT 구간에는 Near 비프/햅틱/위험 음성도 억제한다.
           const isStt = String(data.event_id ?? "").startsWith("stt-");
           pendingGuideEventIdRef.current = data.event_id ?? null;
-          const priority = isStt ? 2 : 1;
+          const priority = resolveGuidePriority({
+            isStt,
+            clockDirection: data.clock_direction,
+            distanceClass: data.distance_class,
+          });
+          pendingGuidePriorityRef.current = priority;
+          console.log(
+            `[Cognitive] guide priority=${priority} (isStt=${isStt}, dir=${data.clock_direction ?? "-"}, dist=${data.distance_class ?? "-"})`,
+          );
 
           if (isStt) {
-            // STT 응답 수신: audioEngine에 STT 활성화를 알리고 안전 상한 타이머 설정.
-            // 2026-07-10 실기기 실측: duration_ms가 실제보다 짧게 나오는 경우가 있어
-            // 텍스트 길이 추정치와 큰 값을 사용한다(방어적 하한). 콜백 누락 시 타이머가
-            // 강제 해제한다.
+            // STT 응답 수신: 위험 비프/햅틱을 끄고 STT 답변을 최우선 재생.
+            hapticEngine.stopContinuous();
             audioEngine.setSttActive(true);
             const guideText = data.guidance_text ?? "";
             const serverDurationMs =

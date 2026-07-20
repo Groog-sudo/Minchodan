@@ -109,6 +109,18 @@ def _is_gildaeng_wake(text: str) -> bool:
     return False
 
 
+# 2026-07-20 (회귀 분석 보고서 P0 확정 결함 2): WAITING_FOR_DESTINATION 중에는
+# _is_gildaeng_wake의 열린 퍼지 매칭을 쓰지 않는다. "길동역"/"길음역"/"길상사"처럼
+# 편집거리 1 이하인 정상 목적지를 wake로 오인해 POI 검색 자체를 막던 결함이었다.
+# 목적지 대기 중의 재확인 wake는 정확 일치(퍼지 아님)로만 좁혀 인정한다.
+_GILDAENG_EXACT_RECONFIRM_PHRASES = ("길댕아", "길댕이", "길댕")
+
+
+def _is_exact_gildaeng_reconfirm(text: str) -> bool:
+    """목적지 대기 중 wake 재확인 여부를 정확 일치로만 판별(퍼지 매칭 미사용)."""
+    return text.strip() in _GILDAENG_EXACT_RECONFIRM_PHRASES
+
+
 # 2026-07-11 추가: 자기-에코(앱 자신의 TTS 안내문이 마이크로 다시 들어가 전사되는 현상)
 # 방지용 short-term 메모리. device_id별로 최근 전송한 안내문과 시각을 보관한다.
 ECHO_MEMORY_TTL_SEC = 10.0
@@ -175,6 +187,87 @@ def _looks_like_question(text: str) -> bool:
     if "?" in text or "？" in text:  # noqa: RUF001
         return True
     return any(w in text for w in QUESTION_HINT_WORDS)
+
+
+# 2026-07-20: 목적지 파서(회귀 분석 보고서 P0 확정 결함 1). 이전에는 문자열
+# 전체에서 "로"/"으로"/"설정"을 전역 replace해 "구로역"->"구역"처럼 장소명
+# 내부 글자까지 삭제됐다. 접두 호출 문구와 접미 조사·명령 어미만 위치 기반으로
+# 제거해 장소명 내부 문자는 절대 건드리지 않는다.
+_DESTINATION_PREFIX = "목적지는"
+
+# 긴 패턴을 먼저 검사해야 짧은 패턴이 먼저 매치되어 뒤쪽 어미가 남지 않는다
+# ("까지 어떻게 가"를 "까지"보다 먼저 검사). "로"/"으로"만 단독으로 오는
+# 패턴은 의도적으로 포함하지 않는다 - "테헤란로", "종로"처럼 장소명 자체가
+# "로"로 끝나는 경우, 뒤에 명령어가 없으면 조사인지 이름의 일부인지 구분할
+# 수 없어 잘못 잘라낼 위험이 더 크다. "까지"는 한국어에서 장소명의 일부가
+# 될 수 없는 순수 조사이므로 단독으로도 제거한다.
+_DESTINATION_SUFFIX_PATTERNS = (
+    "까지 어떻게 가",
+    "까지 어떻게가",
+    "까지 안내해 줘",
+    "까지 안내해줘",
+    "까지 가 줘",
+    "까지 가줘",
+    "까지 가자",
+    "으로 안내해 줘",
+    "으로 안내해줘",
+    "로 안내해 줘",
+    "로 안내해줘",
+    "으로 가 줘",
+    "으로 가줘",
+    "로 가 줘",
+    "로 가줘",
+    "으로 가자",
+    "로 가자",
+    "으로 설정",
+    "로 설정",
+    "까지",
+)
+
+
+def _parse_destination_text(normalized_text: str) -> str:
+    """STT 전사문에서 접두 호출 문구·접미 조사/명령 어미만 제거해 POI 검색어를 만든다.
+
+    장소명 내부 문자는 절대 건드리지 않는다(회귀 분석 보고서 §14.2 요구 계약).
+    """
+    text = normalized_text.strip()
+    if text.startswith(_DESTINATION_PREFIX):
+        text = text[len(_DESTINATION_PREFIX) :].strip()
+    for pattern in _DESTINATION_SUFFIX_PATTERNS:
+        if text.endswith(pattern):
+            return text[: -len(pattern)].strip()
+    return text
+
+
+# 목적지 대기 중에도 "서울역까지 어떻게 가"처럼 질문 힌트 단어("어떻게")가
+# 있지만 명시적 경로 의도("까지"+이동 표현)가 함께 있으면 자유 질문이 아니라
+# 목적지 요청으로 우선 처리한다(회귀 분석 보고서 P0 - 질문 분기).
+_DESTINATION_INTENT_MARKERS = ("까지", "로 가", "으로 가", "로 안내", "으로 안내")
+
+
+def _has_explicit_destination_intent(text: str) -> bool:
+    """목적지 대기 중 질문 휴리스틱보다 우선할 명시적 경로 의도 표지가 있는지 판별."""
+    return any(marker in text for marker in _DESTINATION_INTENT_MARKERS)
+
+
+# 2026-07-20 (회귀 분석 보고서 P0 - 사용자 확인): 동명 POI 후보 확인 대기 중
+# 사용자가 말한 순번을 0-base 인덱스로 변환한다. 상위 3개 후보만 다룬다.
+_ORDINAL_SELECTION_PHRASES: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (0, ("1번", "첫번째", "첫 번째", "하나")),
+    (1, ("2번", "두번째", "두 번째", "둘")),
+    (2, ("3번", "세번째", "세 번째", "셋")),
+)
+
+
+def _parse_ordinal_selection(text: str) -> int | None:
+    """POI 확인 대기 중 발화에서 순번을 인식한다. 인식 실패 시 None."""
+    stripped = text.strip()
+    if stripped in {"1", "2", "3"}:
+        return int(stripped) - 1
+    for index, phrases in _ORDINAL_SELECTION_PHRASES:
+        if any(p in stripped for p in phrases):
+            return index
+    return None
 
 
 QUESTION_SYSTEM_PROMPT = """당신은 시각장애인 보행자를 돕는 음성 비서입니다.
@@ -370,6 +463,72 @@ class SttToLlmBridge:
 
         return True
 
+    async def _setup_route_with_poi(
+        self,
+        device_id: str,
+        destination: str,
+        end_poi: dict,
+        curr_lat: float,
+        curr_lon: float,
+    ) -> dict:
+        """선택된 end_poi로 경로를 조회하고 세션에 반영한다.
+
+        2026-07-20 (회귀 분석 보고서 §6.5): 성공 안내는 사용자가 말한 검색어
+        (destination)가 아니라 TMAP이 실제로 선택한 POI 이름(end_poi["name"])을
+        읽는다. 이전에는 검색어를 그대로 되읽어 TMAP이 다른 동명 지점을 선택해도
+        사용자가 알아챌 방법이 없었다.
+        """
+        from server.navigation.manager import nav_manager
+        from server.navigation.server import helper_fetch_route
+
+        start_poi = {"name": "내 실시간 위치", "x": str(curr_lon), "y": str(curr_lat)}
+        selected_name = (end_poi.get("name") or destination).strip()
+
+        route_data = await asyncio.to_thread(helper_fetch_route, start_poi, end_poi)
+        if not route_data:
+            # WAITING_FOR_POI_CONFIRMATION에서 호출된 경우 후보를 이미 비웠으므로,
+            # 목적지 재입력을 받을 수 있게 WAITING_FOR_DESTINATION으로 되돌린다.
+            nav_manager.set_status(device_id, "WAITING_FOR_DESTINATION")
+            return {
+                "guidance_text": "목적지를 찾지 못했습니다. 다시 말씀해 주세요.",
+                "used_fallback_llm": True,
+                "source": "navigation-setup-fail",
+            }
+
+        session_waypoints = []
+        features = route_data.get("features", [])
+        point_idx = 1
+        for feature in features:
+            geom = feature.get("geometry", {})
+            if geom.get("type") == "Point":
+                coords = geom.get("coordinates", [])
+                props = feature.get("properties", {})
+                session_waypoints.append(
+                    {
+                        "index": point_idx,
+                        "lat": float(coords[1]),
+                        "lon": float(coords[0]),
+                        "description": props.get("description", "").strip(),
+                        "facility_type": props.get("facilityType"),
+                    }
+                )
+                point_idx += 1
+
+        nav_manager.update_route(device_id, session_waypoints)
+        nav_manager.set_status(device_id, "NAVIGATING")
+        first_direction = ""
+        for wp in session_waypoints:
+            desc = (wp.get("description") or "").strip()
+            if desc and "출발" not in desc:
+                first_direction = f" 먼저, {desc}"
+                break
+        return {
+            "guidance_text": (f"{selected_name}까지 보행 경로 안내를 시작합니다.{first_direction}"),
+            "used_fallback_llm": True,
+            "source": "navigation-setup-success",
+            "nav_waypoints": [{"lat": wp["lat"], "lon": wp["lon"]} for wp in session_waypoints],
+        }
+
     async def invoke_existing_llm(self, stt_result: SttTranscribeResult, device_id: str) -> dict:
         """
         [바이브 코딩 부분]
@@ -549,9 +708,131 @@ class SttToLlmBridge:
                 "nav_waypoints": [],
             }
 
+        elif current_status == "WAITING_FOR_POI_CONFIRMATION":
+            # 2026-07-20 (회귀 분석 보고서 P0 - 사용자 확인): 동명 POI 후보 중
+            # 순번 선택을 해석해 경로를 확정한다. 인식 실패 시 대기 상태를
+            # 유지한 채 재입력을 유도한다(옵션 A - 추측하지 않음, 다른 분기와 동일 원칙).
+            candidates = nav_manager.get_pending_poi_candidates(device_id) or []
+            selection = _parse_ordinal_selection(normalized_text)
+            if selection is None or selection >= len(candidates):
+                ordinal_words = ["1번", "2번", "3번"][: len(candidates)]
+                return {
+                    "guidance_text": (
+                        f"{', '.join(ordinal_words)} 중 하나로 다시 말씀해 주세요."
+                        if ordinal_words
+                        else "목적지를 다시 말씀해 주세요."
+                    ),
+                    "used_fallback_llm": True,
+                    "source": "navigation-poi-confirm-retry",
+                }
+            chosen = candidates[selection]
+            nav_manager.set_pending_poi_candidates(device_id, None)
+            session = nav_manager._get_or_create_session(device_id)
+            if session.lat is None or session.lon is None:
+                nav_manager.set_status(device_id, "WAITING_FOR_DESTINATION")
+                return {
+                    "guidance_text": (
+                        "현재 위치를 아직 받지 못했습니다. 잠시 후 목적지를 다시 말씀해 주세요."
+                    ),
+                    "used_fallback_llm": True,
+                    "source": "navigation-setup-no-gps",
+                }
+            try:
+                return await self._setup_route_with_poi(
+                    device_id, chosen["destination"], chosen["poi"], session.lat, session.lon
+                )
+            except Exception as ex:
+                # [바이브 코딩 부분] 위 목적지 분기와 동일한 방어: 예외 시 재입력 유도.
+                print(f"[STT BRIDGE] Failed to setup route from POI confirmation: {ex}")
+                nav_manager.set_status(device_id, "WAITING_FOR_DESTINATION")
+                return {
+                    "guidance_text": "목적지를 찾지 못했습니다. 다시 말씀해 주세요.",
+                    "used_fallback_llm": True,
+                    "source": "navigation-setup-fail",
+                }
+
+        elif current_status == "WAITING_FOR_DESTINATION" and not _is_exact_gildaeng_reconfirm(
+            normalized_text
+        ):
+            # 2026-07-20 (회귀 분석 보고서 P0 - wake/질문 분기 우선순위): 목적지
+            # 대기 중에는 fuzzy wake·질문 휴리스틱보다 목적지 처리를 우선한다.
+            # 이전에는 이 상태 분기가 wake/wakeup/question_trigger 분기보다 뒤에
+            # 있어서 "길동역"/"길음역"/"길상사"가 fuzzy wake로 가로채졌다. 정확히
+            # "길댕아"류 재확인 문구만(퍼지 아님) 아래 is_gildaeng_wake 분기로 넘긴다.
+            #
+            # "서울역까지 어떻게 가"처럼 질문 힌트 단어("어떻게")가 있어도 명시적
+            # 경로 의도("까지"+이동 표현)가 있으면 자유 질문으로 보내지 않는다.
+            if _looks_like_question(normalized_text) and not _has_explicit_destination_intent(
+                normalized_text
+            ):
+                nav_manager.set_status(device_id, "IDLE")
+                return await self._answer_free_question(device_id, normalized_text)
+
+            # [하드 코딩 부분 - 핵심]
+            # 목적지 파싱: _parse_destination_text가 접두 호출 문구·접미 조사/명령
+            # 어미만 위치 기반으로 제거한다(장소명 내부 문자 보존).
+            destination = _parse_destination_text(normalized_text)
+
+            from server.navigation.server import helper_resolve_destination_poi
+
+            # [바이브 코딩 부분] POI 조회와 경로 계산을 순차 수행해 세션 경로를 구성
+            try:
+                session = nav_manager._get_or_create_session(device_id)
+
+                # GPS 미수신이면 서울역 등 가짜 출발점으로 경로를 만들지 않는다.
+                # (콘솔/앱에 엉뚱한 위치가 찍히는 사고 방지)
+                if session.lat is None or session.lon is None:
+                    return {
+                        "guidance_text": (
+                            "현재 위치를 아직 받지 못했습니다. 잠시 후 목적지를 다시 말씀해 주세요."
+                        ),
+                        "used_fallback_llm": True,
+                        "source": "navigation-setup-no-gps",
+                    }
+                curr_lat = session.lat
+                curr_lon = session.lon
+
+                # 2026-07-20 (회귀 분석 보고서 P0 확정 결함 3 - POI resolver):
+                # count=1/pois[0] 고정 대신 후보 5개 이상을 현재 위치 거리로 점수화한다.
+                resolved = await asyncio.to_thread(
+                    helper_resolve_destination_poi, destination, curr_lat, curr_lon
+                )
+                if resolved:
+                    if resolved["ambiguous"]:
+                        # 2026-07-20 (P0 - 사용자 확인): 동명 후보 간 거리 우위가
+                        # 불분명하면 자동 확정하지 않고 상위 후보를 음성으로 확인한다.
+                        candidates = resolved["candidates"][:3]
+                        nav_manager.set_pending_poi_candidates(
+                            device_id,
+                            [{"poi": c, "destination": destination} for c in candidates],
+                        )
+                        nav_manager.set_status(device_id, "WAITING_FOR_POI_CONFIRMATION")
+                        ordinal_words = ["1번", "2번", "3번"][: len(candidates)]
+                        return {
+                            "guidance_text": (
+                                f"같은 이름의 장소가 {len(candidates)}곳 있어요. 가까운 순서대로 "
+                                f"{', '.join(ordinal_words)}입니다. 몇 번째로 안내할까요?"
+                            ),
+                            "used_fallback_llm": True,
+                            "source": "navigation-poi-confirm-needed",
+                        }
+                    return await self._setup_route_with_poi(
+                        device_id, destination, resolved["best"], curr_lat, curr_lon
+                    )
+            except Exception as ex:
+                # [바이브 코딩 부분] 경로 수립 예외는 음성 재입력을 유도해 세션 지속성을 지킨다.
+                print(f"[STT BRIDGE] Failed to setup route via voice: {ex}")
+
+            # [하드 코딩 부분 - 핵심] 실패 시 WAITING 상태를 유지해 재입력을 받을 수 있게 한다.
+            return {
+                "guidance_text": "목적지를 찾지 못했습니다. 다시 말씀해 주세요.",
+                "used_fallback_llm": True,
+                "source": "navigation-setup-fail",
+            }
+
         elif is_gildaeng_wake:
-            # 2026-07-14 정정: 목적지 대기 중 "길찾아줘" 퍼지 오인/재웨크로
-            # WAITING을 깨고 인텐트 선택으로 되돌리던 동작을 막는다. 대기 유지 + 재안지만.
+            # 목적지 대기 중 정확히 "길댕아"류 재확인 문구만 여기로 넘어온다
+            # (위 분기가 fuzzy 오탐을 막고 정확 일치만 통과시킴).
             if current_status == "WAITING_FOR_DESTINATION":
                 return {
                     "guidance_text": "목적지를 말씀해 주세요.",
@@ -583,108 +864,6 @@ class SttToLlmBridge:
                 "guidance_text": "네, 질문해 주세요.",
                 "used_fallback_llm": True,
                 "source": "question-mode-wakeup",
-            }
-
-        elif current_status == "WAITING_FOR_DESTINATION":
-            # 2026-07-13: 목적지 대기 중에도 "지금 몇 시야" 같은 질문을 목적지로
-            # 삼켜 네비만 돌리던 문제를 막는다. 질문처럼 보이면 대기를 풀고 자유 답변.
-            if _looks_like_question(normalized_text):
-                nav_manager.set_status(device_id, "IDLE")
-                return await self._answer_free_question(device_id, normalized_text)
-
-            # [하드 코딩 부분 - 핵심]
-            # 목적지 파싱 규칙: 조사/설정 어미를 제거해 POI 검색용 핵심 문자열을 만든다.
-            # 작성법: replace 체인은 짧게 유지하고, 복잡해지면 정규식/파서 함수로 분리한다.
-            destination = (
-                normalized_text.replace("목적지는", "")
-                .replace("으로", "")
-                .replace("로", "")
-                .replace("설정", "")
-                .strip()
-            )
-
-            from server.navigation.server import helper_fetch_route, helper_search_poi
-
-            # [바이브 코딩 부분] POI 조회와 경로 계산을 순차 수행해 세션 경로를 구성
-            try:
-                session = nav_manager._get_or_create_session(device_id)
-
-                # GPS 미수신이면 서울역 등 가짜 출발점으로 경로를 만들지 않는다.
-                # (콘솔/앱에 엉뚱한 위치가 찍히는 사고 방지)
-                if session.lat is None or session.lon is None:
-                    return {
-                        "guidance_text": (
-                            "현재 위치를 아직 받지 못했습니다. 잠시 후 목적지를 다시 말씀해 주세요."
-                        ),
-                        "used_fallback_llm": True,
-                        "source": "navigation-setup-no-gps",
-                    }
-                curr_lat = session.lat
-                curr_lon = session.lon
-
-                start_poi = {"name": "내 실시간 위치", "x": str(curr_lon), "y": str(curr_lat)}
-
-                end_poi = await asyncio.to_thread(helper_search_poi, destination)
-                if end_poi:
-                    route_data = await asyncio.to_thread(helper_fetch_route, start_poi, end_poi)
-                    if route_data:
-                        session_waypoints = []
-                        features = route_data.get("features", [])
-                        point_idx = 1
-
-                        # [바이브 코딩 부분] Point 지오메트리만 추출해 TTS 안내용 웨이포인트로 변환
-                        for feature in features:
-                            geom = feature.get("geometry", {})
-                            if geom.get("type") == "Point":
-                                coords = geom.get("coordinates", [])
-                                props = feature.get("properties", {})
-                                session_waypoints.append(
-                                    {
-                                        "index": point_idx,
-                                        "lat": float(coords[1]),
-                                        "lon": float(coords[0]),
-                                        "description": props.get("description", "").strip(),
-                                        "facility_type": props.get("facilityType"),
-                                    }
-                                )
-                                point_idx += 1
-
-                        # [하드 코딩 부분 - 핵심]
-                        # 상태 전이 순서: route 갱신 -> NAVIGATING 전환
-                        # 작성법: 상태를 먼저 바꾸면 route 비어있는 구간이 생길 수 있으므로 현재 순서를 유지한다.
-                        nav_manager.update_route(device_id, session_waypoints)
-                        nav_manager.set_status(device_id, "NAVIGATING")
-                        # 2026-07-11 추가: 안내 시작 직후 첫 행동 지시가 없어 사용자가
-                        # 어디로 출발할지 알 수 없었다(거리 트리거는 50m/15m 근접 시에만
-                        # 발화). 경로의 첫 유의미 웨이포인트 설명을 시작 멘트에 붙인다.
-                        first_direction = ""
-                        for wp in session_waypoints:
-                            desc = (wp.get("description") or "").strip()
-                            if desc and "출발" not in desc:
-                                first_direction = f" 먼저, {desc}"
-                                break
-                        return {
-                            "guidance_text": (
-                                f"{destination}까지 보행 경로 안내를 시작합니다.{first_direction}"
-                            ),
-                            "used_fallback_llm": True,
-                            "source": "navigation-setup-success",
-                            # 2026-07-11 지도 표시용: 클라이언트 하단 지도 패널이 경로
-                            # 폴리라인을 그릴 수 있도록 좌표만 추려 전달한다(ws_router가
-                            # nav_route 메시지로 변환). 좌표 외 상세 정보는 보내지 않는다.
-                            "nav_waypoints": [
-                                {"lat": wp["lat"], "lon": wp["lon"]} for wp in session_waypoints
-                            ],
-                        }
-            except Exception as ex:
-                # [바이브 코딩 부분] 경로 수립 예외는 음성 재입력을 유도해 세션 지속성을 지킨다.
-                print(f"[STT BRIDGE] Failed to setup route via voice: {ex}")
-
-            # [하드 코딩 부분 - 핵심] 실패 시 WAITING 상태를 유지해 재입력을 받을 수 있게 한다.
-            return {
-                "guidance_text": "목적지를 찾지 못했습니다. 다시 말씀해 주세요.",
-                "used_fallback_llm": True,
-                "source": "navigation-setup-fail",
             }
 
         # [바이브 코딩 부분] 개인정보 최소화를 위해 원문 대신 최소 메타만 보존

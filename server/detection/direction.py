@@ -91,3 +91,21 @@ def estimate_clock_direction(bbox: BBoxLike, frame_width: float) -> str:
     normalized = min(1.0, max(0.0, center_x / frame_width))
     index = round(normalized * (len(CLOCK_HOURS) - 1))
     return f"{CLOCK_HOURS[index]}시"
+
+
+def estimate_avoid_clock_direction(bbox: BBoxLike, frame_width: float) -> str:
+    """전방 장애물 기준 우회 제안 시각(10시/2시).
+
+    객체가 화면 중심보다 왼쪽이면 오른쪽으로(2시), 오른쪽이면 왼쪽으로(10시) 우회한다.
+    데드센터는 L2 예시("전방 볼라드, 2시로 우회하세요")에 맞춰 2시로 둔다.
+    """
+    if frame_width <= 0:
+        return "2시"
+
+    center_x = bbox.x + bbox.w / 2
+    normalized = min(1.0, max(0.0, center_x / frame_width))
+    if normalized < 0.48:
+        return "2시"
+    if normalized > 0.52:
+        return "10시"
+    return "2시"

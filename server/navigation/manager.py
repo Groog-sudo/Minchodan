@@ -32,8 +32,12 @@ class NavigationSession:
         self.lon: float | None = None
         self.heading: float | None = None
 
-        # 네비게이션 동작 상태 기계 (IDLE: 꺼짐, WAITING_FOR_DESTINATION: 목적지 음성 대기, NAVIGATING: 안내 중)
-        self.status: Literal["IDLE", "WAITING_FOR_DESTINATION", "NAVIGATING"] = "IDLE"
+        # 네비게이션 동작 상태 기계 (IDLE: 꺼짐, WAITING_FOR_DESTINATION: 목적지 음성 대기,
+        # WAITING_FOR_POI_CONFIRMATION: 동명 POI 후보 중 선택 대기(2026-07-20 P0 신설),
+        # NAVIGATING: 안내 중)
+        self.status: Literal[
+            "IDLE", "WAITING_FOR_DESTINATION", "WAITING_FOR_POI_CONFIRMATION", "NAVIGATING"
+        ] = "IDLE"
 
         # 자유 질의응답 모드 대기 플래그. status(네비게이션 상태)와 독립적으로 관리해
         # NAVIGATING 중에도 "질문할게" 후 자유 질문을 받을 수 있게 한다.
@@ -50,6 +54,11 @@ class NavigationSession:
         # Redis Stream 등으로부터 수신된 미해결 장애물 이벤트 캐시
         self.pending_obstacles: list[dict[str, Any]] = []
         self.last_announced_obstacle_time: float = 0.0
+
+        # 2026-07-20 (회귀 분석 보고서 P0 - 사용자 확인): 동명 POI 후보가 모호할 때
+        # WAITING_FOR_POI_CONFIRMATION 동안 다음 발화(번호 선택)를 해석하기 위해
+        # 후보 목록을 임시 보관한다. 확정되거나 취소되면 None으로 비운다.
+        self.pending_poi_candidates: list[dict[str, Any]] | None = None
 
 
 class NavigationManager:
@@ -103,16 +112,33 @@ class NavigationManager:
             logger.error(f"[NavigationManager] Broadcast failed: {e}")
 
     def set_status(
-        self, device_id: str, status: Literal["IDLE", "WAITING_FOR_DESTINATION", "NAVIGATING"]
+        self,
+        device_id: str,
+        status: Literal[
+            "IDLE", "WAITING_FOR_DESTINATION", "WAITING_FOR_POI_CONFIRMATION", "NAVIGATING"
+        ],
     ) -> None:
         session = self._get_or_create_session(device_id)
         session.status = status
+        if status != "WAITING_FOR_POI_CONFIRMATION":
+            session.pending_poi_candidates = None
         logger.info(f"[NavigationManager] Status changed for '{device_id}' to: {status}")
         self._broadcast_nav_change(device_id, session)
 
     def get_status(self, device_id: str) -> str:
         session = self._get_or_create_session(device_id)
         return session.status
+
+    def set_pending_poi_candidates(
+        self, device_id: str, candidates: list[dict[str, Any]] | None
+    ) -> None:
+        """동명 POI 확인 대기 후보 목록을 저장/해제한다."""
+        session = self._get_or_create_session(device_id)
+        session.pending_poi_candidates = candidates
+
+    def get_pending_poi_candidates(self, device_id: str) -> list[dict[str, Any]] | None:
+        session = self._get_or_create_session(device_id)
+        return session.pending_poi_candidates
 
     def set_awaiting_question(self, device_id: str, waiting: bool) -> None:
         session = self._get_or_create_session(device_id)

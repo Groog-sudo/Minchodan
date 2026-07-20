@@ -3322,3 +3322,361 @@
 - **관련 파일**: `client/app.json`, `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `client/src/hooks/useSttRecorder.ts`, `docs/changelogs/kb.md`
 - **검증 결과**: 설치 후 Metro에 CoreML 기동·Stream 캡처·SceneHysteresis 추론 로그 확인. `Native Module 미발견` 해소.
 - **비고**: `expo prebuild --clean` 재실행 금지. 표시명은 GILDANG(브랜딩), 번들/앱 경로는 Minchodan.
+
+---
+
+### 2026-07-19 | 7단계 | 음성 안내 우선순위 4단 적용
+
+- **배경**: 사용자 요구 - (1) 12시 NEAR (2) STT 답변 (3) 12시 MED (4) 그 외 순으로 선점.
+- **변경 내용**:
+  - `guidePriority.ts` 신설: `GUIDE_PRIORITY` 1~4 + `resolveGuidePriority(clock/distance/stt)`.
+  - `audioEngine`: 우선순위 타입 확장. STT 활성 중에는 STT 미만만 드롭(12시 NEAR는 통과).
+  - `useWebSocket`: guide JSON의 `clock_direction`/`distance_class`로 priority 계산 후 바이너리/폴백 TTS에 전달.
+  - `CameraView`: STT arm 시 `FRONT_MED` 이하만 선점. 정면 경로 장애물 로컬 TTS는 `FRONT_NEAR`.
+- **관련 파일**: `client/src/services/guidePriority.ts`, `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit`(client) 클린.
+- **비고**: 반사 비프/클립 채널은 기존과 분리 유지.
+
+
+---
+
+### 2026-07-19 | 7단계 | STT(길찾아줘/물어볼게) 최우선 + Near 비프/햅틱 2순위
+
+- **배경**: 사용자가 멈춰 질문/길찾기 할 때 Near 위험 안내·햅틱·비프가 끼어들면 발화가 방해됨. 1순위는 STT 상호작용, 2순위가 Near 햅틱/비프여야 함.
+- **변경 내용**:
+  - 우선순위 재배치: STT(4) > FRONT_NEAR(3) > FRONT_MED(2) > OTHER(1).
+  - STT 활성 중 `playBeep`/`playReflexClip`/위험 햅틱/`canStartGuide`(NEAR 포함) 전부 억제.
+  - STT arm·STT 응답 수신 시 진행 중 Near 비프·continuous 햅틱 즉시 정지.
+  - STT 자체 큐 햅틱만 `allowDuringStt`로 허용.
+  - Near 비프는 STT가 아닐 때 MED/기타 음성만 선점(Near 음성은 덕킹).
+- **관련 파일**: `guidePriority.ts`, `audioEngine.ts`, `hapticEngine.ts`, `CameraView.tsx`, `useWebSocket.ts`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit`(client) 클린.
+- **비고**: Metro 핫리로드로 반영.
+
+---
+
+### 2026-07-19 | 7단계 | Near/음성 안내 대기열 상한 6 + 최신만 재생
+
+- **배경**: Near·인지 음성 안내가 재생보다 빨리 쌓이면 오래된 안내가 줄줄이 나와 현재 장면과 어긋남.
+- **변경 내용**:
+  - `audioEngine`: 재생 중 동일 우선순위 안내는 대기열 적재(최대 6, 초과 시 오래된 것 drop). 종료 시 최신 1건만 재생하고 나머지 폐기. 상위 우선순위는 즉시 선점.
+  - STT 활성/`stopGuideAudio` 시 대기열 정리. `guideEpoch`로 선점 콜백의 오배수 방지.
+  - 서버 `COGNITIVE_QUEUE_MAXSIZE` 기본값 4→6(오래된 프레임 drop-oldest 유지).
+- **관련 파일**: `client/src/services/audioEngine.ts`, `server/capture/stream_splitter.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit`(client) 클린.
+- **비고**: Metro 핫리로드로 단말 반영.
+
+---
+
+### 2026-07-19 | 콘솔 | 단말 오디오 미러 무음 수정
+
+- **배경**: 콘솔 웹에서 단말과 동일한 안내 음성이 전혀 들리지 않음.
+- **원인**:
+  1. `useLiveFeed`가 `binaryType=blob`인데 guide WAV는 `ArrayBuffer` 분기만 처리 → WAV가 JPEG로 오인.
+  2. 반사 clip 경로 `reflex_clips/xxx.wav`를 `/reflex_clips/`에 또 붙여 404.
+  3. 브라우저 자동재생 정책으로 `audio.play()` 차단.
+- **변경 내용**:
+  - Blob/ArrayBuffer 모두 RIFF 헤더로 guide WAV 판별 후 Blob URL 생성.
+  - clip basename으로 `public/reflex_clips/` 매핑.
+  - "오디오 활성화" 버튼으로 자동재생 unlock.
+- **관련 파일**: `console/src/api/useLiveFeed.ts`, `console/src/components/ConsoleAudioMirror.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npx tsc --noEmit` 클린.
+- **비고**: 대시보드에서 "오디오 활성화" 클릭 후 단말 안내 시 미러 재생 확인.
+
+---
+
+### 2026-07-19 | 콘솔 | 인지 가이드 미러 복구 + 활성/비활성 토글
+
+- **배경**: 인지 가이드는 계속 "대기 중", 반사 알림만 정상. 미러 on/off 필요.
+- **원인**: 콘솔 송신 큐 `maxsize=1`이 guide JSON 직후 WAV를 넣을 때 JSON을 드롭.
+- **변경 내용**:
+  - `broadcast_guide_audio_to_consoles`: JSON+WAV 쌍을 latest-only 큐 우회로 원자 전송.
+  - `useLiveFeed`: `console_guide_audio` JSON 수신 즉시 텍스트 표시.
+  - `ConsoleAudioMirror`: 인지/반사 각각 활성·비활성 토글(localStorage 유지).
+- **관련 파일**: `server/api/session_manager.py`, `consumer.py`, `ws_router.py`, `debug_router.py`, `console/src/api/useLiveFeed.ts`, `ConsoleAudioMirror.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npx tsc --noEmit` 클린.
+- **비고**: 서버 재시작 후 콘솔에서 "오디오 활성화" + 인지/반사 토글 확인.
+
+---
+
+### 2026-07-19 | 콘솔 | RiskEventLog 상세 출력 박스·페이지네이션 정렬
+
+- **배경**: Detection Guidance Log와 달리 RiskEventLog는 전체 목록만 보여 가독성·탐색이 떨어짐.
+- **변경 내용**:
+  - 페이지당 10건, ←/번호/.../→ 페이지네이션(Guidance Log와 동일 CSS).
+  - 행 클릭 시 `frame-detail` 출력 박스로 위험도·객체·안내문 등 상세 표시.
+- **관련 파일**: `console/src/components/RiskEventLog.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 콘솔 `npx tsc --noEmit` 클린.
+- **비고**: SSE `state.risks`(최대 80건) 기준 클라이언트 페이지네이션.
+
+### 2026-07-19 | 6단계 | Medium caution/roadway 인지 멘트 복구
+
+- **배경**: 중거리 caution/roadway는 인지(Medium) TTS가 나가야 하는데 무발화.
+- **원인**:
+  1. `_is_speech_worthy`가 `risk_hint in ("high","medium")`만 허용 → 파이프라인 `"mid"` 불일치.
+  2. 노면만 있는 프레임은 `primary_det is None`으로 탈락.
+  3. `orch_input`에 surface 미전달 → L1 mid 승격·L2 노면 프롬프트 불가.
+- **변경 내용**:
+  - speech_worthy: `mid`/`medium`/`high` + `has_significant_surface` 예외.
+  - orch에 `surface_classes`/`surface_classes_ko` 전달, L1 `MID_RISK_SURFACE_CLASSES` mid 분류.
+  - L2: caution/roadway 노면 상태 줄 추가, 패스트 레인은 위험 노면 시 제외.
+  - `CLASS_TEXT`에 segmentation 4클래스 한국어 매핑.
+- **관련 파일**: `consumer.py`, `l1_classifier.py`, `l2_generator.py`, `fast_lane.py`, `state.py`, `risk_rules.py`, `tests/test_detection.py`, `tests/test_langgraph.py`, `tests/test_departure_hysteresis.py`
+- **검증 결과**: pytest SpeechWorthy/L1 surface/departure 관련 케이스.
+- **비고**: Far BBox 표시와 Near 반사는 기존 유지. Medium 노면만 인지 멘트 경로 복구.
+
+
+### 2026-07-19 | 3단계 | 서버 seg 가중치 segbest.pt 복구
+
+- **배경**: 실기기 차도 장면에서도 roadway 미탐. 서버가 `segmentation.pt`(스톡/비최적)를 로드 중이었고, `segbest.pt`는 과거 실사에서 roadway 재현 가능이 확인됨.
+- **변경 내용**: `.env`의 `YOLO26N_SEG`를 `server/models/yolo26n/segbest.pt`로 전환 후 FastAPI 재기동.
+- **관련 파일**: `.env`, `docs/changelogs/kb.md`
+- **검증 결과**: `docker compose ... --force-recreate` 후 `printenv YOLO26N_SEG=.../segbest.pt`, 로그 `YoloSegmentor 모델 로드 성공: .../segbest.pt` 확인. (`restart`만으로는 env_file이 갱신되지 않음)
+- **비고**: 온디바이스 CoreML 재변환은 별도 후속. 단말 roadway 미탐은 앱 재빌드 전까지 잔존 가능.
+
+
+### 2026-07-19 | 단말 | segbest CoreML 재변환 + 실기기 유선 재빌드
+
+- **배경**: 서버 `segbest.pt` 전환 후 roadway 인지 멘트는 복구됐으나 온디바이스 CoreML은 구 가중치로 roadway 미탐.
+- **변경 내용**:
+  - `scripts/convert_yolo_to_coreml.py`에 `--weights` 옵션 추가.
+  - `segbest.pt` → FP16 CoreML(`--no-nms`) 변환 후 `client/assets/.../segmentation.mlpackage` 및 `client/ios/segmentation.mlpackage` 동기화.
+  - `xcodebuild` Debug → 고태현 iPhone(UDID `00008120-0011705611F0201E`) 빌드·`devicectl` 설치·실행 (`com.minchodan.app.kb.dev`).
+- **관련 파일**: `scripts/convert_yolo_to_coreml.py`, `client/ios/segmentation.mlpackage`, `client/assets/models/yolo26n/ios/segmentation.mlpackage`, `docs/changelogs/kb.md`
+- **검증 결과**: BUILD SUCCEEDED, 번들 `segmentation.mlmodelc` storagePrecision=Float16, 출력 `[1,300,38]`+proto 마스크. CoreML 브릿지는 기존 `.cpuAndNeuralEngine` 유지(ANE 우선).
+- **비고**: 단말 Metro에서 `roadway` 출현 여부로 온디바이스 개선을 추가 확인한다.
+
+
+### 2026-07-19 | 단말 | object_detection CoreML 재변환 + 실기기 재빌드
+
+- **배경**: seg는 `segbest`로 서버·단말 정합을 맞췄으나 det는 구 CoreML 변환본이 남아 완전 동일하지 않음.
+- **변경 내용**:
+  - 서버와 동일 파일(`object_detection.pt`, `object_detection260714.pt`와 MD5 일치)을 FP16+NMS CoreML로 재변환.
+  - `client/assets/models/yolo26n/ios/object_detection.mlpackage` 갱신 후 실기기 Debug 빌드·설치·실행.
+- **관련 파일**: `client/assets/models/yolo26n/ios/object_detection.mlpackage`, `docs/changelogs/kb.md`
+- **검증 결과**: BUILD SUCCEEDED, 번들 det=`confidence`/`coordinates`(NMS), seg=`[1,300,38]`+proto, 둘 다 Float16. ANE 설정(`.cpuAndNeuralEngine`) 유지.
+- **비고**: 서버 det=`object_detection.pt`, seg=`segbest.pt`와 온디바이스 CoreML 소스가 각각 일치.
+
+### 2026-07-19 | 통합 | jy 보안 강화 → kb 병합
+
+- **커밋**: `347dc53` (`merge: origin/jy 보안 강화를 kb에 통합`)
+- **변경 내용**:
+  - `origin/jy` 보안 강화(JWT iss/aud·관리자 부트스트랩·RBAC·콘솔 live-feed `auth` JSON·STT 상한/세마포어·Redis `requirepass`·loopback 바인딩·ngrok 제거)를 `kb`에 병합.
+  - ort 자동 머지로 충돌 6파일(`ws_router`/`session_manager`/`useLiveFeed`/`debug_router`/`useWebSocket`/`CameraView`)이 양쪽 기능을 유지한 채 합성됨(인지 mid/가이드 큐/콘솔 WAV 미러 + 보안 계약).
+  - `scripts/configure_security_secrets.py`로 `.env` JWT/Redis/bootstrap/정적 단말 토큰 재발급. Compose Redis·FastAPI·MariaDB recreate(`DB_HOST_PORT=3307` — 호스트 MySQL 3306 점유 회피). Tailscale lab용 `EXPO_PUBLIC_WS_SCHEME=ws` 유지.
+- **관련 파일**: `server/api/ws_router.py`, `server/api/session_manager.py`, `console/src/api/useLiveFeed.ts`, `server/api/debug_router.py`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docker/docker-compose.macos.yml`, `scripts/configure_security_secrets.py`, `docs/security/security_hardening_and_team_adoption_guide.md`, `docs/changelogs/kb.md`
+- **검증 결과**:
+  - `pytest tests/test_security_hardening.py` + `TestSpeechWorthyFilter` + `test_l1_risk_classification` → **16 passed** (speech_worthy 단독 재실행 10 passed).
+  - 단말 WS: welcome → hello(정적 토큰) → `auth_ok`.
+  - 콘솔 live-feed: `auth` → `auth_ok` → `speak-to-device` 미러로 `console_guide_audio` + RIFF WAV 수신 확인(검증 후 `ENABLE_DEBUG_API=false` 복구).
+  - FastAPI `YOLO26N_SEG=segbest.pt`, `/health` 200. Tailscale Serve는 tailnet에서 미활성(`login.tailscale.com/f/serve?...`)이라 실기기 TS 직접 접속은 loopback 바인딩과 함께 후속 설정 필요.
+- **비고**: 콘솔은 JWT 시크릿 교체로 재로그인 필요. 실기기 외부 접속은 `0.0.0.0` 공개 대신 Tailscale Serve/프록시를 사용할 것.
+
+
+### 2026-07-19 | 단말·콘솔 | BBox 콘솔 정합 + GPS 지도 복구 + Tailscale Serve 연동
+
+- **커밋**: (본 엔트리 커밋)
+- **변경 내용**:
+  - 단말 BBox: 오늘 재변환 det CoreML을 어제(`ff553a1`) 번들로 복원. CoreML 좌표 스케일 가드·캔버스 clamp. 오버레이는 콘솔 `server_detection` 계약과 동일하게 seg를 centroid 80x80 마커로만 표시. Camera `resizeMode=cover`.
+  - ATS: Metro 로컬 HTTP용 `NSAllowsLocalNetworking=true` (`Info.plist`/`app.json`).
+  - 콘솔 GPS: jy 보안 병합 후 `ENABLE_NAVIGATION_SIMULATOR=false` + `X-Frame-Options: DENY`로 `/navigation` iframe이 404/차단되던 회귀 수정. development 기본 마운트 + `frame-ancestors` 콘솔 origin 허용.
+  - 클라이언트 `.env.example`: Tailscale Serve 사용 시 `wss`+`443`+MagicDNS 안내.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/ios/CoreMLInferenceBridge.swift`, `client/assets/.../object_detection.mlpackage`, `client/ios/Minchodan/Info.plist`, `client/app.json`, `client/.env.example`, `server/main.py`, `docs/ops/environment_variables.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `/navigation/?embed=true` 200, Vite 프록시 200. 단말 Metro 리로드로 오버레이 계약 반영. `ruff check server/main.py` 통과, `pytest tests/test_security_hardening.py` 5 passed.
+- **비고**: 루프백 바인딩 환경의 실기기 접속은 Tailscale Serve(`https://<magicdns>/`) 전제.
+
+### 2026-07-19 | 3단계 | 노면 Near/Medium/Far + 인지 에피소드 억제
+
+- **배경**: caution/roadway가 시야에 있는 동안 `has_significant_surface`/`risk_hint=mid` 무조건 통과로 인지 TTS가 반복되고, Near 반사 비프와 TTS가 동시에 울려 과처리됨.
+- **변경 내용**:
+  - 노면 거리 구역(centroid_y): Near(>0.6H)=반사만 / Medium=인지 TTS / Far=화면만. `_is_speech_worthy`에서 무조건 통과 제거.
+  - 노면 인지 에피소드: 같은 caution|roadway 키가 시야에 있는 동안 enter 1회만 안내, 이탈·클래스 변경 시에만 재안내.
+  - 인지 서명 거칠게: `caution|roadway`만 키로 사용(sidewalk/braille 흔들림으로 쿨다운 리셋 방지). 노면-only는 주기 갱신 금지.
+  - Near 노면 반사 후 `_trigger_delayed_cognitive_guide` 생략(비프+TTS 동시 반복 금지).
+- **관련 파일**: `server/detection/consumer.py`, `tests/test_detection.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `.venv/bin/python -m pytest tests/test_detection.py::TestSpeechWorthyFilter tests/test_detection.py::TestUtteranceValueGate` → **24 passed**
+- **비고**: 서버(DetectionConsumer) 재기동 후 실기기에서 Medium 진입 1회 TTS / Near 반사만 확인 권장.
+
+### 2026-07-19 | 3단계 | Medium 노면 안내 무음 버그 수정
+
+- **배경**: 실외 로그에서 Medium이 `episode=continue`만 반복되고 guide TTS가 나오지 않음. enter 시점에 episode를 선커밋해 TTS 실패 후에도 잠김 + 노면-only 동일 서명을 utterance가 막아 이탈 후 재진입도 무음.
+- **변경 내용**:
+  - 노면 인지: enter 시 `pending`만 걸고, 단말 guide 전송 성공 후에만 `_commit_surface_cognitive_episode`. 실패/조기반환 시 pending 해제해 재시도.
+  - Far 구역을 에피소드 이탈로 취급. caution/roadway는 단일 `surface_hazard` 키.
+  - `_has_utterance_value`: 노면-only는 서명 동일로 막지 않음(에피소드 게이트가 1회 담당).
+- **관련 파일**: `server/detection/consumer.py`, `tests/test_detection.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `.venv/bin/python -m pytest tests/test_detection.py -k 'Surface or utterance or speech_worthy or Approaching or hazard'` → **32 passed**. `minchodan-fastapi` 재기동 완료.
+- **비고**: Medium 진입 시 로그에 `노면 인지 에피소드 enter` → `guide 전송` 1회, 이후 `continue` 확인.
+
+
+### 2026-07-19 | 3단계·단말 | 12시 회랑 경보 + 오버레이 중심선
+
+- **배경**: Near 햅틱/비프와 Medium 인지 안내가 측면 탐지에도 울려 과경보. 거리선(Near/Med)과 구분되는 12시 시각 가이드가 필요.
+- **변경 내용**:
+  - `DistanceZoneOverlay`: 기존 Near/Med 호 유지, cyan 12시 세로선(소실점→하단) + 라벨 추가.
+  - `surface_gate`: Near FRONT_BAND(0.20~0.80) 밖 노면은 반사 제외. 파이프라인에 frame_width 전달.
+  - 인지: Medium 노면/객체는 12시 회랑(`FRONT_BAND`)만 speech_worthy. 측면 approaching 인지 TTS 제거.
+  - 온디바이스 로컬 반사: `estimateDirection===front` 후보만 햅틱/비프.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `server/detection/gates/surface_gate.py`, `server/detection/detection_pipeline.py`, `server/detection/consumer.py`, `tests/test_detection.py`
+- **검증 결과**: `pytest tests/test_detection.py` → **79 passed**. FastAPI 재기동.
+- **비고**: Metro 리로드로 단말 오버레이 확인. 측면 탐지는 BBox만, 12시 선 위의 Near/Med만 음성·햅틱.
+
+
+---
+
+### 2026-07-19 | 3단계 | metro_https_ats_fix_rag_toggle
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 실기기-Metro 연결 실패 원인 규명 및 수정: expo-dev-launcher가 NSUserDefaults에 남은 packagerScheme=https로 평문 Metro(8081)에 접속 시도해 실패하던 문제를 AppDelegate.swift에서 앱 시작 시 http로 고정해 해결, NSAllowsArbitraryLoads+NSAllowsLocalNetworking 동시 설정이 Tailscale CGNAT(100.64.0.0/10) 대역에 대해 ATS를 오히려 차단하던 문제를 NSAllowsLocalNetworking 제거로 해결(app.json/Info.plist). 안내 문장 어색함 원인 분석 후 RAG on/off 비교 테스트용 RAG_ENABLED 환경변수 토글 추가(server/detection/consumer.py, 기본값 true, 삭제 아닌 비활성화). Xcode DerivedData 등 로컬 빌드 산출물이 !client/ios/** 예외로 추적되던 .gitignore 결함 수정. LiveCameraFeed.tsx 렌더 중 ref mutation을 useLayoutEffect로 이동(React Doctor 지적), consumer.py SIM103 lint 위반 수정
+- **관련 파일**: `gitignore`, `client/App.tsx`, `client/app.json`, `client/ios/.gitignore`, `client/ios/Minchodan/AppDelegate.swift`, `client/ios/Minchodan/Info.plist`, `client/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/kb.md`, `docs/ops/environment_variables.md`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `server/detection/gates/surface_gate.py`, `server/tts/suppressor.py`, `tests/test_detection.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-20 | 문서·7단계 | 발표 대본 정합성 검사 후속: 온디바이스 문서 동기화 및 TTS 억제기 레거시 코드 정리
+
+- **배경**: 발표 대본 정합성 검사 보고서(Fable 5 작성)를 코드 대조로 재검증하는 과정에서, `docs/README.md`(온디바이스 추론 "없음/post-MVP")와 `AGENTS.md` §2(CoreML/TFLite 온디바이스 탐지 등재) 간 서술 상충과, `server/tts/suppressor.py`에 호출자가 전혀 없는 레거시 억제 로직(60초 TTL 방식)이 남아있는 것을 확인.
+- **변경 내용**:
+  - `docs/README.md`: "현재 문서 기준선" 항목을 CoreML(iOS)/TFLite(Android) 온디바이스 반사 추론이 이미 구현·실기기 배포된 상태로 갱신(단, 서버 왕복 없는 완전 온디바이스 완결은 미검증임을 명시). "1주차 미결정 7개" 표는 역사 기록으로 보존하고 기존 확정 반영 각주 패턴에 맞춰 On-device 항목 갱신 각주를 추가.
+  - `server/tts/suppressor.py`: 호출자 없는 레거시 `DEFAULT_TTL`/`DEFALUT_TTL` 상수, `__init__`의 `ttl` 파라미터/`self.ttl`, `_make_key()`, `should_suppress()`, `should_supperss()`(오타 메서드), `mark_as_sent()`를 삭제. 실제 사용 중인 재무장 정책(track_id+거리밴드 키, `REFLEX_SUPPRESS_TTL_S=5`)만 남김.
+- **관련 파일**: `docs/README.md`, `server/tts/suppressor.py`
+- **검증 결과**: `.venv/bin/ruff check` 통과, `.venv/bin/bandit -r server/tts/suppressor.py` 이상 없음, `.venv/bin/mypy server/tts/suppressor.py` 이상 없음(별도 파일 `korean_g2p.py`의 사전 존재 오류 1건은 본 변경과 무관). 리포 전체 grep으로 삭제 대상 심볼의 잔존 참조 없음 확인.
+- **비고**: `server/rag/fallback.py`(룰 기반 RAG 폴백 모듈, 실시간 파이프라인 미배선) 배선 여부는 별도 논의 필요 — 이번 작업 범위에서 제외.
+
+---
+
+### 2026-07-20 | 5~6단계 | Medium 인지 짧은 힌트 Dict 전환 (GUIDANCE_CONTEXT_MODE)
+
+- **커밋**: `dc8f020`
+- **배경**: Medium 안내가 RAG on이면 완성문 압축으로 어색하고, RAG off면 힌트 부재로 단조로워지며, 임베딩+Chroma 왕복은 사실상 라벨 매칭인데도 rag_ms를 소모한다. 계획서 검증 후 인메모리 짧은 힌트로 교체.
+- **변경 내용**:
+  - `server/rag/guidance_hints.py` 신규: 29+노면 클래스별 2힌트, 길이/방향금지어 검증, seed 결정적 선택.
+  - `server/detection/consumer.py`: `GUIDANCE_CONTEXT_MODE=hints|rag` (기본 hints). hints면 retriever 미호출.
+  - `server/orchestration/nodes/l2_generator.py`: `[회피 힌트]` 주입 및 방향은 [탐지 방향]만 사용 규칙 추가.
+  - `tests/test_guidance_hints.py` 신규. 계획서·`docs/README.md`·`environment_variables.md` v0.4.27·`.env.example`·`stage6_orchestration_design.md` 동기화.
+  - Docker: console `node_modules` named volume, macos compose FastAPI `0.0.0.0` 바인딩.
+- **관련 파일**: `server/rag/guidance_hints.py`, `server/detection/consumer.py`, `server/orchestration/nodes/l2_generator.py`, `tests/test_guidance_hints.py`, `docs/ops/medium_guidance_hint_dict_implementation_plan.md`, `docs/ops/environment_variables.md`, `docs/README.md`, `docs/stage-guides/stage6_orchestration_design.md`, `.env.example`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`
+- **검증 결과**: `pytest tests/test_guidance_hints.py` + `tests/test_langgraph.py` 통과. 이중 경로·react-doctor·자동 발행 통과.
+- **비고**: Chroma/편의 RAG는 유지. 실기기 A/B(S5)는 후속. 롤백은 `GUIDANCE_CONTEXT_MODE=rag`.
+
+---
+
+### 2026-07-20 | 1·3·콘솔 | console_gps_hud_bbox_overlay
+
+- **커밋**: `2accf80`
+- **배경**: Detection Guidance Log 썸네일에 박스가 없고, 콘솔 GPS HUD가 "앱 GPS 대기"에 고착.
+- **변경 내용**:
+  - 콘솔: 목록 썸네일에도 bbox 오버레이, `pipeline_debug` 폴백. HUD 헤더에 수신 좌표 표시.
+  - 서버: 반사·노면-only 로그에 bbox 저장. `realtime_gps` 콘솔 브로드캐스트 유지, 수신 로그 스로틀.
+  - 단말: WS `connected` 후 GPS 전송 + 즉시 `getCurrentPosition`, `distanceInterval=0`.
+  - 문서: `architecture.md`/`api_specification.md` v0.4.33/`pipeline_stage_design.md`/`docs/README.md` 동기화.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useLocation.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/styles.css`, `server/api/ws_router.py`, `server/detection/consumer.py`, `docs/design/*`
+- **검증 결과**: 이중 경로·react-doctor·`test_langgraph` 통과. FastAPI recreate 후 `dev-001` welcome 확인.
+- **비고**: 단말 Metro 리로드 후 HUD 헤더 좌표·서버 `[WS] realtime_gps 수신` 로그로 확인.
+
+---
+
+### 2026-07-20 | ops | Metro 에이전트 셸 독립 detach
+
+- **커밋**: `a904d75`
+- **배경**: `metro_tailscale.sh`의 `nohup`+`disown` 기동이 Cursor 에이전트 짧은 셸 종료 시 회수되어 Dev Client가 서버를 못 찾는 문제가 반복됨.
+- **변경 내용**:
+  - `scripts/metro_tailscale.sh` start를 Python double-fork + `os.setsid()` orphan 기동으로 교체. session root가 `launchd`(ppid=1).
+  - `status`에 ancestry/`detach: OK|WARN` 출력. `METRO_CLEAR=1`로 `--clear` 지원.
+  - `integration-test-orchestrator` 스킬 v1.3.1 반영(.agents/.claude 미러).
+- **관련 파일**: `scripts/metro_tailscale.sh`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
+- **검증 결과**: 짧은 `bash -c '… start'` 후 `npm` 부모=`launchd(1)`, localhost·Tailscale `/status` 200. cursor-agent ancestry 없음.
+- **비고**: 기존처럼 테스트 중 불필요한 `stop`/`kill :8081`은 금지.
+
+---
+### 2026-07-20 | 단말·ops | Metro Tailscale 고정 운영 스크립트
+
+- **커밋**: `199ed28`
+- **배경**: Metro가 세션마다 kill/잘못된 host/setsid로 자주 죽어 Dev Client가 서버를 못 찾음.
+- **변경 내용**:
+  - `scripts/metro_tailscale.sh` 신규: start(이미 살아 있으면 유지)·stop·restart·status·launch(딥링크).
+  - `client/package.json`에 `metro:ts*` npm 스크립트 추가.
+  - `integration-test-orchestrator` 스킬: 무조건 kill 금지, 본 스크립트 사용으로 정정(.agents/.claude 미러).
+- **관련 파일**: `scripts/metro_tailscale.sh`, `client/package.json`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
+- **검증 결과**: `metro_tailscale.sh status/start` — localhost·Tailscale OK, 기존 프로세스 skip 확인.
+- **비고**: 앱 실행은 `bash scripts/metro_tailscale.sh launch` 권장.
+
+---
+
+### 2026-07-20 | 단말·7단계 | 인지 안내 대기열 폐기 정책을 시간순에서 위험도순으로 전환
+
+- **배경**: 12시 회랑 인지 안내 대기열(`GUIDE_PENDING_MAX=6`)이 초과분을 오래된 순(FIFO)으로 폐기하고, 재생 종료 후에도 "최신 1건"만 재생했다. 위험도(우선순위) 낮은 것부터 버리도록 바꿔달라는 요청에 따라 확인해보니, 기존 구조에서는 재생 중인 것보다 낮은 우선순위가 즉시 드롭돼 큐 안 항목이 항상 동일 우선순위였고(비교 대상 자체가 없어 우선순위 기반 폐기가 무의미), 큐가 우선순위를 혼합해 담도록 입장 게이트부터 완화해야 함을 확인.
+- **변경 내용**:
+  - `canStartGuide`: 재생 중인 것보다 낮은 우선순위를 즉시 드롭하던 조건 제거(STT 게이트는 유지). 낮은 우선순위도 대기열 적재 후보가 됨.
+  - 신규 `evictLowestPriorityPendingGuide()`: 대기열 6개 초과 시 최하위 우선순위부터 폐기(동률이면 오래된 쪽). `enqueueGuide`의 overflow 처리에서 기존 `shift()`(FIFO) 대체.
+  - `drainNewestPendingGuide` → `drainHighestPriorityPendingGuide`로 개명 및 로직 전환: 재생 자연 종료 시 "최신 1건" 대신 "최고 우선순위 1건"(동률이면 최신)을 재생. 호출부 2곳(자연 종료, 재생 실패 폴백) 갱신.
+  - 선점(preemption) 시 하위 우선순위 큐 전체를 비우는 `discardPendingGuidesBelow`는 의도적으로 유지(위급 상황 종료 후 낡은 저위험 안내가 뒤늦게 재생되는 것을 방지, 접근성 안전 보수적 선택).
+  - stale 주석 정리(`GUIDE_PENDING_MAX` 상단 주석, `pendingGuides` 필드 주석).
+- **관련 파일**: `client/src/services/audioEngine.ts`
+- **검증 결과**: `cd client && npx tsc --noEmit -p .` 통과(오류 0건). ESLint 설정 부재로 스킵.
+- **비고**: 빌드/실기기 재생 순서 확인은 미실시 — Metro 리로드 후 실기기에서 우선순위 혼합 상황(예: 측면 저위험 다건 + 정면 near) 재생 순서 실측 권장.
+
+---
+
+### 2026-07-20 | 문서·7단계 | 반사 오디오 명세서 §5.2 우선순위 모델 문서 동기화 (auto-publish-work Step 2 후속)
+
+- **배경**: 직전 커밋(대기열 위험도순 폐기 전환)에서 `auto-publish-work` 스킬 Step 2(문서 교차 검증)를 건너뛰었다는 지적을 받고 확인. `docs/design/reflex_audio_specification.md` §5.2 "T3-C 통합 오디오 우선순위 모델(2026-07-18)"이 3단(P1/P2/P3) 모델로 남아있어, 실제 코드의 4단 모델(`guidePriority.ts`, 2026-07-19 전환)과 이미 어긋나 있었고 대기열 정책(FIFO/최신 1건) 서술도 이번 변경으로 완전히 stale해짐을 확인.
+- **변경 내용**:
+  - §5.2를 실제 코드 기준 4단(OTHER=1/FRONT_MED=2/FRONT_NEAR=3/STT=4)으로 정정하고, "거리보다 12시 정면 여부가 먼저 걸리는 하드 게이트"라는 비직관적 동작을 명시.
+  - 대기열 정책 절 신설: `GUIDE_PENDING_MAX=6`, 선점 시 하위 큐 전량 폐기(유지), 6개 초과 시 최하위 우선순위 폐기(신규), 자연 종료 시 최고 우선순위 1건 드레인(신규) 및 각각의 이전 동작(FIFO/최신 1건) 대비.
+  - 문서 버전 헤더 v1.3.1 → v1.3.2.
+  - `docs/design/api_specification.md`는 WS 메시지 스키마(`clock_direction`/`distance_class` 필드) 변경이 없어 확인만 하고 미수정. `docs/mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md`는 특정 시점 감사 기록(C-09 등)이라 갱신 대상에서 제외.
+- **관련 파일**: `docs/design/reflex_audio_specification.md`
+- **검증 결과**: 문서만 수정(코드 변경 없음). 목차·인접 절(§5.1, §5.3) 번호·앵커 정합 확인.
+- **비고**: HEURISTIC 문서의 `HIGH_DANGER_INTERVAL_MS`(250ms→100ms, 2026-07-19 정정) 관련 서술도 별도로 stale하나 이번 작업 범위 밖으로 남겨둠.
+
+---
+
+### 2026-07-20 | 6단계 | medium_fast_lane_guidance_templates
+
+- **커밋**: `8e81b28`
+- **변경 내용**:
+  - Medium/Near 인지 패스트 레인 안내를 N시 방향 객체 주의하세요 및 전방 객체 N시로 우회하세요 패턴으로 통일하고, avoid_clock_direction과 노면-only 힌트 주입·Fallback 동일 템플릿·stage6 설계서 v0.2.2를 반영한다.
+- **관련 파일**: `ocs/stage-guides/stage6_orchestration_design.md`, `server/detection/consumer.py`, `server/detection/direction.py`, `server/orchestration/nodes/fallback_node.py`, `server/orchestration/nodes/fast_lane.py`, `server/orchestration/nodes/l3_validator.py`, `server/orchestration/state.py`, `tests/test_fast_lane.py`, `tests/test_langgraph.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-20 | 3·6·7단계 | 실기기 필드 테스트 피드백 4건 수정 (12시 밖 TTS·무명사 안내·노면 방향 고정·Near 햅틱)
+
+- **배경**: 통합 테스트 환경(Docker+Metro+실기기) 세션 중 사용자가 실기기로 직접 테스트하며 4가지 문제를 보고. FastAPI/Metro 로그를 대조해 각각 실제 발생 지점을 확인.
+- **변경 내용**:
+  - `server/orchestration/avoidance.py`(P1-1 반사 후속 avoidance fast lane): `direction != "front"`(12시 회랑 밖)는 `None`을 반환해 무발화 처리 - 반사 비프·햅틱의 스테레오 패닝으로 이미 방향이 전달되므로 측면까지 TTS로 중복 안내하지 않음. `build_avoidance_guidance`가 `object_ko`를 받아 모든 분기(정면 중앙 애매, "정지" 표지판 클래스)에서 명사 없는 "멈추세요" 대신 객체명을 포함하도록 변경(L2 프롬프트가 정지 명령을 금지하는 것과 동일한 이유).
+  - `server/detection/consumer.py`: 노면(차도/주의 노면) 전용 인지 안내 분기가 `clock_direction="12시"`/`avoid_clock_direction="2시"`로 무조건 하드코딩되어 있던 것을, 노면 centroid 기반 `estimate_clock_direction`/`estimate_avoid_clock_direction` 재사용으로 교체(계산 불가 시에만 12시/2시 안전 폴백). 실측 로그상 "차도"/"주의 노면" 우회 안내 15건 전부 "2시"로 고정돼 있었음 - 방향이 동적이지 않다는 피드백의 실제 원인.
+  - `client/src/services/hapticEngine.ts`: `stopContinuous({ respectMinimum: true })` 옵션 신설 - 이미 시작된 continuous 진동 패턴을 최소 500ms(`CONTINUOUS_MIN_MS`)까지는 실제 정지를 유예. `client/src/hooks/useWebSocket.ts`의 `reflex_clear` 핸들러에만 적용(다른 13곳의 즉시-정지 호출은 그대로 유지). 실측 로그상 Near 반사 진입~`reflex_clear`까지 약 300ms만에 종료되는 경우가 흔해, 300ms 간격 반복 진동이 시작 알림 1회 외엔 거의 못 느껴지던 문제 대응.
+  - `tests/test_langgraph.py`의 `TestAvoidanceFastLane`을 새 동작(12시 밖 None, 명사 포함 문구)에 맞춰 갱신 및 신규 케이스 추가.
+- **관련 파일**: `server/orchestration/avoidance.py`, `server/detection/consumer.py`, `client/src/services/hapticEngine.ts`, `client/src/hooks/useWebSocket.ts`, `tests/test_langgraph.py`
+- **검증 결과**: `pytest tests/test_langgraph.py tests/test_fast_lane.py tests/test_detection.py` → **119 passed**. `ruff check`/`bandit`/`mypy` 이상 없음(기존 무관 오류 2건 제외). `tsc --noEmit` 통과. FastAPI 재기동 후 정상, 실기기 재연결 확인.
+- **비고**: 실기기 라이브 재검증은 사용자 테스트 진행 중(로그 모니터 병행).
+
+---
+
+### 2026-07-20 | STT·네비게이션 | STT 목적지 인식 회귀 분석 보고서 P0 6건 수정
+
+- **배경**: GPT가 작성한 `stt_navigation_destination_accuracy_regression_analysis.md`(jy 브랜치 STT 목적지 인식·경로 안내 회귀 분석)를 코드 실행·git diff 대조로 재검증(확정 결함 3건·회귀 커밋 10건·테스트 공백 주장 전부 100% 재현 확인) 후, P0 권고 6건을 순서대로 구현.
+- **변경 내용**:
+  - `server/stt/stt_to_llm_bridge.py`: `_parse_destination_text()` 신설 - 전역 `.replace("로","")` 치환(`"구로역"`→`"구역"` 훼손) 대신 접두("목적지는")·접미(조사+명령어미) 위치기반 stripping. 단독 "로"/"으로" 제거는 "테헤란로"/"종로" 등 장소명 보호를 위해 의도적으로 제외.
+  - 같은 파일: `_is_exact_gildaeng_reconfirm()` 신설, WAITING_FOR_DESTINATION 분기를 fuzzy wake보다 앞으로 재배치 - "길동역"/"길음역"/"길상사"(편집거리 1 이하로 "길댕"과 유사)가 더 이상 wake로 오인돼 재질문만 반환되지 않음. `_has_explicit_destination_intent()` 신설 - "까지"+이동 표현이 있으면 "어떻게" 같은 질문 힌트가 있어도 목적지로 우선 처리("서울역까지 어떻게 가" 대응).
+  - `server/navigation/server.py`: `helper_resolve_destination_poi()` 신설 - `count=1`/`pois[0]` 고정 대신 후보 5개 이상을 정확명일치→현재 위치 거리 순으로 점수화, 동명 후보 거리 우위가 불분명하면 `ambiguous=True` 신호. `helper_search_poi`/`helper_search_nearest_poi`/`helper_fetch_route`의 TMAP 키 누락 시 고정 가상 좌표(126.8722/37.4590 등) 성공 처리를 제거하고 `None`(실패)로 전환 - `docs/ops/environment_variables.md`에 이미 문서화된 "키 미설정 시 기능 비활성화" 정책과 정합.
+  - `server/navigation/manager.py`: 신규 상태 `WAITING_FOR_POI_CONFIRMATION` 추가, `pending_poi_candidates` 세션 필드와 접근자 메서드 신설. `stt_to_llm_bridge.py`는 동명 POI가 모호하면 자동 확정 대신 "1번/2번..." 음성 확인 질문을 반환하고 다음 발화(순번 선택)로 경로를 확정하도록 신규 분기 추가. 성공 안내도 사용자 검색어 대신 실제 선택된 `end_poi["name"]`을 읽도록 `_setup_route_with_poi()`로 공통화(이전엔 TMAP이 다른 동명 지점을 선택해도 사용자가 알아챌 방법이 없었음).
+  - `tests/test_stt_to_llm_bridge_template.py`, `tests/test_navigation_server_poi_resolver.py`(신규): 보고서 §15 필수 회귀 케이스(장소명 보존 5종, wake 충돌 3종, 질문 의도 우선, 동명 POI 확인·선택 플로우, 키 누락 fail-closed 4종) 커버.
+- **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `server/navigation/server.py`, `server/navigation/manager.py`, `tests/test_stt_to_llm_bridge_template.py`, `tests/test_navigation_server_poi_resolver.py`
+- **검증 결과**: `pytest tests/test_stt_to_llm_bridge_template.py tests/test_ws_router_stt.py tests/test_stt_config_policy.py tests/test_stt_service_template.py tests/test_stt_wait_notice.py tests/test_navigation_server_poi_resolver.py` → **60 passed**. `ruff check` 이상 없음. `bandit`/`mypy` 기존 무관 오류만 잔존(신규 없음).
+- **비고**: P1(녹음 UX 200ms arm, 절단 검사 복원, GPS 전송 큐잉, LineString 지도 전달, facilityType 타입 정합)·P2(관측성 로그)는 이번 범위 밖. 실기기 오디오 절단·AEC 순서는 정적 분석만으로 확정 불가해 별도 실기기 검증 필요(보고서 자체도 명시).
+
+---
+
+### 2026-07-20 | 문서 | STT/네비게이션 P0 수정 문서 동기화 (auto-publish-work Step 2 후속)
+
+- **배경**: 직전 P0 6건 커밋 시 `auto-publish-work` 스킬 Step 2(문서 교차 검증)를 다시 건너뛴 것을 사용자가 지적. `docs/design/api_specification.md` §6.3 명령 어휘 표와 `docs/stage-guides/stage_stt_integration_guide.md` §5·§6이 새 목적지 파서·POI 확인 플로우·fail-closed 정책을 반영하지 못해 stale해진 것을 확인하고 정정.
+- **변경 내용**:
+  - `docs/design/api_specification.md`: §6.3 명령 어휘 표에 목적지 발화(위치기반 파서+POI resolver) 행 갱신, `1번`/`2번`/`3번`(`WAITING_FOR_POI_CONFIRMATION`) 행 신설. 2026-07-20 비고 블록 추가(파서·wake 우선순위·POI 확인·fail-closed 4건 요약, `environment_variables.md` §2.14 교차 참조). 버전 헤더·이력 표 v0.4.33 → v0.4.34.
+  - `docs/stage-guides/stage_stt_integration_guide.md`: §5 가드레일에 "목적지 대기 우선순위"·"목적지 파서 위치기반 stripping"·"POI 확인" 3행 신설. §6 테스트 체크리스트에 TC-STT-012~015(장소명 보존·wake 오탐 방지·동명 POI 확인·키 누락 fail-closed) 추가, 대응 pytest 테스트명 명시. 버전 헤더 v0.2.4 → v0.2.5.
+- **관련 파일**: `docs/design/api_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`
+- **검증 결과**: 문서만 수정(코드 변경 없음). 표·비고 블록 마크다운 파싱 확인(`grep -c "^|"`), 버전 헤더-이력 표 정합 확인.

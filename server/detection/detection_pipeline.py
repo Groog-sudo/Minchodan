@@ -223,7 +223,7 @@ class DetectionPipeline:
                 logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
                 return head_level_alert, detections, surfaces
 
-            surface_alert = self._evaluate_surface(surfaces, height)
+            surface_alert = self._evaluate_surface(surfaces, height, width)
             if surface_alert is not None:
                 surface_alert.event_id = event_id
                 surface_alert.ts = time.time()
@@ -322,9 +322,10 @@ class DetectionPipeline:
     def _evaluate_surface(
         surfaces: list[SurfaceResult],
         frame_height: float,
+        frame_width: float = 0.0,
     ) -> ReflexAlert | None:
         for surf in surfaces:
-            alert = surface_gate(surf, frame_height)
+            alert = surface_gate(surf, frame_height, frame_width)
             if alert is not None:
                 return alert
         return None

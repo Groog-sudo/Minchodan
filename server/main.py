@@ -264,16 +264,34 @@ app.add_middleware(
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
+    is_navigation = request.url.path.startswith("/navigation")
     interactive_dev_path = request.url.path.startswith(("/docs", "/redoc", "/navigation"))
-    if not interactive_dev_path:
+    if is_navigation:
+        # 콘솔 Live Feed GPS HUD / OperatorLiveMap 이 iframe으로 /navigation 을
+        # 임베드한다. X-Frame-Options: DENY 와 frame-ancestors 'none' 이면 지도가
+        # 빈 화면이 된다(2026-07-19 실측, jy 보안 헤더 도입 후 회귀).
+        # localhost 와 127.0.0.1 은 브라우저가 다른 origin 으로 취급하므로 둘 다 허용.
+        ancestor_origins: list[str] = []
+        for origin in settings.CORS_ORIGINS or []:
+            ancestor_origins.append(origin)
+            if "://localhost" in origin:
+                ancestor_origins.append(origin.replace("://localhost", "://127.0.0.1"))
+            elif "://127.0.0.1" in origin:
+                ancestor_origins.append(origin.replace("://127.0.0.1", "://localhost"))
+        origins = " ".join(dict.fromkeys(ancestor_origins)) or "'self'"
+        response.headers["Content-Security-Policy"] = f"frame-ancestors 'self' {origins}"
+        # Starlette MutableHeaders 에는 pop 이 없다.
+        if "x-frame-options" in response.headers:
+            del response.headers["x-frame-options"]
+    elif not interactive_dev_path:
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'none'; frame-ancestors 'none'",
         )
+        response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
     if request.url.scheme == "https":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     if request.url.path.startswith("/api/v1/admin"):
@@ -296,8 +314,17 @@ app.include_router(stt_router)
 # 개발용: 문자/안내문 TTS를 연결된 모바일로 푸시 (APP_ENV=production 시 404)
 app.include_router(debug_router)
 
-# 개발용 내비게이션 시뮬레이터는 명시적 허용 시에만 공격면에 포함한다.
-if os.getenv("ENABLE_NAVIGATION_SIMULATOR", "false").strip().lower() in {"1", "true", "yes"}:
+# 내비게이션 맵(/navigation)은 콘솔 GPS HUD·OperatorLiveMap iframe이 의존한다.
+# production 에서는 ENABLE_NAVIGATION_SIMULATOR=true 일 때만 열고,
+# development 에서는 기본 마운트한다(보안 스크립트가 false로 내려도 관제 지도가
+# 404로 죽지 않도록 — 2026-07-19 실측 회귀).
+_app_env = os.getenv("APP_ENV", "development").strip().lower()
+_nav_flag = os.getenv("ENABLE_NAVIGATION_SIMULATOR", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+if _nav_flag or _app_env != "production":
     app.mount("/navigation", navigation_app)
 
 

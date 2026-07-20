@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-19
-> **버전**: v0.14.0 (2026-07-19 보안 문서 전용 인덱스와 전면 보안 강화·팀 반영 가이드 추가)
+> **버전**: v0.14.1 (2026-07-20 Medium 인지 짧은 힌트 Dict 전환 계획서 등재)
 
 ## 문서 목록
 
@@ -24,6 +24,7 @@
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
 | **dev 통합 개선 실행 계획서** | [ops/dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 기반 P0/P1 개선 순서와 완료 기준** |
+| **Medium 인지 짧은 힌트 Dict 전환 계획서** | [ops/medium_guidance_hint_dict_implementation_plan.md](ops/medium_guidance_hint_dict_implementation_plan.md) | **완성문 RAG → 인메모리 회피 힌트로 Medium 안내 품질·레이턴시 개선** |
 | **프로젝트 보완점: Mitos (정정본)** | [research/mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵. v0.3.0 코드 대조 검증 기록 포함 (루트에서 이동)** |
 | **백엔드 DB 아키텍처** | [design/backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
 | 2단계 캡처 설계서     | [stage-guides/stage2_capture_design.md](stage-guides/stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
@@ -157,6 +158,7 @@ docs/
 | Git 브랜칭 전략 | [git_branching_strategy.md](ops/git_branching_strategy.md) | 3계층 브랜치 구조 (`main` / `dev` / 개인), PR 작업 규칙 |
 | 테스트 명세서 | [test_specification.md](ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
 | **dev 통합 개선 실행 계획서** | [dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 결과 기반 P0/P1 개선 순서와 완료 기준 (Mitos 로드맵과 교차 참조)** |
+| **Medium 인지 짧은 힌트 Dict 전환 계획서** | [medium_guidance_hint_dict_implementation_plan.md](ops/medium_guidance_hint_dict_implementation_plan.md) | **완성문 RAG → 인메모리 회피 힌트 (품질·레이턴시)** |
 
 ---
 
@@ -230,7 +232,7 @@ docs/
 
 ## 현재 문서 기준선
 
-- **이중 경로 원칙**(비협상): 반사 경로(즉시 경보, LLM/RAG/실시간 TTS 미경유, 사전합성 음성)와 인지 경로(mid/low 상세 가이드, LangGraph + RAG + 실시간 TTS)를 물리 분리합니다.
+- **이중 경로 원칙**(비협상): 반사 경로(즉시 경보, LLM/RAG/실시간 TTS 미경유, 사전합성 음성)와 인지 경로(mid/low 상세 가이드, LangGraph + 인지 컨텍스트(`GUIDANCE_CONTEXT_MODE=hints` 기본) + 실시간 TTS)를 물리 분리합니다.
 - **모바일은 thin client**입니다. 카메라 캡처와 음성/햡틱 재생만 담당하며, 모든 추론은 GPU 서버에서 수행합니다.
 - **3단계는 듀얼헤드 + 이중 게이트**입니다. Yolo 26N - Object Detection(Reflex Gate) + Yolo 26N - Segmentation(Surface Gate)가 모두 룰베이스로 동작하며 LLM을 경유하지 않습니다.
 - **노면 클래스는 분리**(C2)합니다. `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution`(stairs/manhole/grating)을 독립 클래스로 학습합니다.
@@ -243,7 +245,7 @@ docs/
 - **부가 기능으로 GPS 실시간 내비게이션**(`realtime_gps` WS 메시지 + TMAP 보행자 경로 API)을 지원합니다. 길안내 발화는 `realtime_gps` 수신 시점에 직접 평가하며(카메라 탐지와 분리, 2026-07-11), 경로 좌표는 `nav_route` 메시지로 단말 하단 T맵 지도 패널(운영자/데모용)에 전달됩니다.
 - **DB는 MariaDB**입니다(세션·디바이스·탐지-가이드 로그 영속화). Docker Compose에서 Ollama는 컨테이너가 아닌 호스트 로컬로 실행됩니다.
 - **팀 GPU 서버 최대 사양은 RTX 5090(Blackwell sm_120)**입니다. Ubuntu x86_64/Windows amd64는 PyTorch 2.13 + CUDA 13.0(cu130), macOS는 PyTorch 2.13 MPS/CPU 경로를 사용합니다.
-- **로컬 WiFi MVP**에서는 즉시 경보도 서버 추론에 의존합니다. 단말 on-device 반사 레이어는 post-MVP입니다.
+- **온디바이스 반사 추론**(iOS CoreML `client/ios/CoreMLInferenceBridge.swift`, Android TFLite `client/src/inference/tfliteDetector.ts`)은 이미 구현되어 실기기에 배포된 상태입니다. 다만 반사 경보가 서버 왕복 없이 완전히 온디바이스만으로 완결되는지는 아직 검증 전이며, 로컬 WiFi 서버 추론 경로도 계속 병행 유지됩니다.
 
 ---
 
@@ -260,3 +262,5 @@ docs/
 | RDB            | 비동기 SQLAlchemy  | MariaDB/PostgreSQL     |
 
 > **2026-07-10 확정 반영**: 위 표는 1주차 시점의 잠정 기본값이며 현재는 확정 상태입니다. **TTS**는 Kokoro/Coqui가 아닌 **Supertonic**(기본, Piper/pyttsx3 핫스왑)으로 구현됐고, **RDB**는 비동기 SQLAlchemy 계층 위에서 **MariaDB**로 확정됐습니다. 상세는 [`design/architecture.md`](design/architecture.md) §2·§5.7, [`design/backend_db_architecture.md`](design/backend_db_architecture.md)를 참조합니다.
+>
+> **2026-07-16 갱신**: **On-device 추론** 항목도 더 이상 "없음"이 아닙니다. iOS CoreML / Android TFLite 반사 추론 브릿지가 구현되어 실기기에 배포됐습니다(`AGENTS.md` §2, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/tfliteDetector.ts`). 다만 반사 경보의 완전 온디바이스 완결(서버 왕복 없는 종단)은 아직 검증되지 않았습니다.

@@ -12,7 +12,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Dimensions, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
-import Svg, { Path, Text as SvgText } from "react-native-svg";
+import Svg, { Line, Path, Text as SvgText } from "react-native-svg";
 
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
@@ -43,6 +43,7 @@ import {
 import { getFrameProvider } from "../services/frameProvider";
 import { hapticEngine } from "../services/hapticEngine";
 import { audioEngine } from "../services/audioEngine";
+import { GUIDE_PRIORITY, STT_PREEMPT_MAX_PRIORITY } from "../services/guidePriority";
 import { pathObstacleDetector } from "../inference/pathObstacleDetector";
 import {
   loadServerTransport,
@@ -214,6 +215,44 @@ function pointInPolygon(px: number, py: number, polygon: [number, number][]): bo
 function isGeometricallyImplausible(bbox: { w: number; h: number }): boolean {
   const maxSize = FRAME_SIZE * CANVAS_OVERFLOW_MARGIN;
   return bbox.w > maxSize || bbox.h > maxSize;
+}
+
+// 서버/콘솔 server_detection 과 동일한 seg 표시 규약(centroid 주변 80x80).
+// consumer._send_server_detection 과 값을 맞춰 단말·콘솔 BBox 비교가 가능하도록 한다.
+const CONSOLE_SEG_MARKER_SIZE = 80;
+
+function toConsoleAlignedOverlayBBox(
+  detection: OnDeviceDetectionResult,
+): { x: number; y: number; w: number; h: number } | null {
+  const { bbox, model } = detection;
+  if (!bbox || bbox.w <= 0 || bbox.h <= 0) return null;
+
+  if (model === "segmentation") {
+    const cx = bbox.x + bbox.w / 2;
+    const cy = bbox.y + bbox.h / 2;
+    const size = CONSOLE_SEG_MARKER_SIZE;
+    const x = Math.max(0, Math.min(FRAME_SIZE - size, cx - size / 2));
+    const y = Math.max(0, Math.min(FRAME_SIZE - size, cy - size / 2));
+    return { x, y, w: size, h: size };
+  }
+
+  // object_detection: 640 캔버스 안으로만 clamp (표시용, 추론/경보 로직은 원본 유지).
+  let x = bbox.x;
+  let y = bbox.y;
+  let w = bbox.w;
+  let h = bbox.h;
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (x + w > FRAME_SIZE) w = FRAME_SIZE - x;
+  if (y + h > FRAME_SIZE) h = FRAME_SIZE - y;
+  if (w <= 1 || h <= 1) return null;
+  return { x, y, w, h };
 }
 
 function detectionAreaRatio(bbox: { w: number; h: number }): number {
@@ -502,7 +541,8 @@ export function CameraView() {
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, requiresFloat32, detectFrame } =
     useOnDeviceDetection();
-  const { requestLocationPermission, startWatching, stopWatching } = useLocation();
+  const { requestLocationPermission, getCurrentCoords, startWatching, stopWatching } =
+    useLocation();
 
   // 로컬 추론 엔진의 입력 계약을 캡처 계층에 전달 (2026-07-17, P0).
   // CoreML 정상 모드(requiresFloat32=false)면 JS JPEG 디코딩 + Float32Array 할당을 건너뛴다.
@@ -532,20 +572,20 @@ export function CameraView() {
   } = useSttRecorder(
     (audioB64) => {
       if (status !== "connected") {
-        void hapticEngine.trigger("double");
+        void hapticEngine.trigger("double", { allowDuringStt: true });
         setSttErrorInfo(`STT 실패[ws_disconnected]: websocket 상태=${status}`);
         audioEngine.speakFallback("서버 연결이 불안정해 음성 명령을 전송할 수 없습니다.");
         setCapturePaused(false);
         return;
       }
-      void hapticEngine.trigger("short");
+      void hapticEngine.trigger("short", { allowDuringStt: true });
       setSttErrorInfo("");
       send({ type: "stt_audio", audio_b64: audioB64 });
       // 전송 직후 캡처 재개(응답 재생은 setSttInteractionActive가 인지 경로만 뮤트).
       setCapturePaused(false);
     },
     (reason, detail) => {
-      void hapticEngine.trigger("double");
+      void hapticEngine.trigger("double", { allowDuringStt: true });
       setSttErrorInfo(`STT 실패[${reason}]: ${detail ?? "-"}`);
       setCapturePaused(false);
     },
@@ -577,7 +617,7 @@ export function CameraView() {
       clearTimeout(delayedSttStartTimerRef.current);
       delayedSttStartTimerRef.current = null;
     }
-    void hapticEngine.trigger("short");
+    void hapticEngine.trigger("short", { allowDuringStt: true });
     setSttErrorInfo("");
     // 2026-07-19: 탭/짧은 터치(탐지 시작·화면 탭 오탐)가 온보딩·인지 안내를 즉시
     // Speech.stop()으로 끊지 않도록, STT_ARM_DELAY_MS 이상 누른 뒤에만 선점·녹음.
@@ -586,9 +626,10 @@ export function CameraView() {
       delayedSttStartTimerRef.current = null;
       if (!sttPressActiveRef.current) return;
       sttArmedRef.current = true;
+      // 길찾아줘/물어볼게: Near 비프·햅틱·위험 음성 전부 억제/선점.
+      hapticEngine.stopContinuous();
       audioEngine.setSttActive(true);
-      // STT 실패/응답 안내(priority=2) 재생 중에는 stop하지 않는다.
-      audioEngine.stopGuideAudioIfPriorityAtMost(1);
+      audioEngine.stopGuideAudioIfPriorityAtMost(STT_PREEMPT_MAX_PRIORITY);
       void startSttRecording();
     }, STT_ARM_DELAY_MS);
   }, [startSttRecording, setCapturePaused]);
@@ -659,30 +700,39 @@ export function CameraView() {
   // 기본은 접힌 상태(작은 토글 버튼만 노출)로 시작하고 필요할 때만 펼친다.
   const [debugPanelExpanded, setDebugPanelExpanded] = useState(false);
 
-  // GPS 전송: 앱 부팅 직후부터 watch를 시작해 공기계의 첫 GPS fix 지연을 줄인다.
-  // 네비게이션 경로 이탈/웨이포인트 판정은 전부 서버(NavigationFilter)가
-  // 수행하므로, 클라이언트는 좌표를 주기적으로 realtime_gps 메시지로 보내기만 한다.
-  // Mock 모드는 시뮬레이터 좌표가 무의미하므로 제외.
+  // GPS 전송: WS가 OPEN일 때만 보낸다. 연결 전 좌표는 send()가 조용히 버리고,
+  // 실내에서 1m 이상 안 움직이면 watch가 거의 안 와서 콘솔 HUD가 "앱 GPS 대기"에
+  // 고착된다. 연결 직후 getCurrentCoords로 즉시 1회 전송한 뒤 watch를 시작한다.
   useEffect(() => {
     if (isMockMode) return;
+    if (status !== "connected") return;
     let cancelled = false;
+
+    const pushGps = (coords: GpsCoords) => {
+      send({
+        type: "realtime_gps",
+        lat: coords.lat,
+        lon: coords.lon,
+        heading: coords.heading,
+      });
+      const nowTs = Date.now();
+      if (nowTs - lastMapPosTsRef.current >= 2000) {
+        lastMapPosTsRef.current = nowTs;
+        setMapPos({ lat: coords.lat, lon: coords.lon });
+      }
+    };
 
     (async () => {
       const granted = await requestLocationPermission();
       if (cancelled || !granted) return;
+
+      const current = await getCurrentCoords();
+      if (cancelled) return;
+      if (current) pushGps(current);
+
       await startWatching((coords: GpsCoords) => {
-        send({
-          type: "realtime_gps",
-          lat: coords.lat,
-          lon: coords.lon,
-          heading: coords.heading,
-        });
-        // 지도 마커 갱신은 2초 스로틀(WebView 주입 빈도 제한, 성능 합의 사항).
-        const nowTs = Date.now();
-        if (nowTs - lastMapPosTsRef.current >= 2000) {
-          lastMapPosTsRef.current = nowTs;
-          setMapPos({ lat: coords.lat, lon: coords.lon });
-        }
+        if (cancelled) return;
+        pushGps(coords);
       });
     })();
 
@@ -691,7 +741,7 @@ export function CameraView() {
       stopWatching();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMockMode]);
+  }, [isMockMode, status]);
 
   // State variables moved to top of Component to avoid block-scope/TDZ errors.
 
@@ -1110,13 +1160,17 @@ export function CameraView() {
       const urgentDetections = baseCandidates.filter((d) =>
         isProximityUrgent(d.bbox, d.className),
       );
+      // 2026-07-19: Near 햅틱/비프는 12시 회랑(front) 탐지만. 측면은 BBox만 표시.
+      const frontUrgentDetections = urgentDetections.filter(
+        (d) => estimateDirection(d.bbox, FRAME_SIZE) === "front",
+      );
       // 2026-07-18 거리 정책 SSOT: Near 전용 반사 원칙에 따라 로컬 반사 후보를
       // urgentDetections(Near, isProximityUrgent 통과)로만 한정한다. 이전에는 근접
       // 후보가 없으면 실외 신호가 있는 중·원거리 객체까지 로컬 반사 후보로 승격했으나
       // (outdoorScopedDetections), 이는 서버 Near 전용 반사 정책과 정면 충돌해 제거했다.
       // Medium/Far는 서버 인지 경로(guide TTS)가 전담하며, 서버 연결이 끊긴 동안에는
       // 무출력이 정책상 올바른 동작이다(§12.1 "A. 오프라인 Near만 출력").
-      const reflexDetections = urgentDetections;
+      const reflexDetections = frontUrgentDetections;
 
       // 2. 단일 프레임 오탐 방지를 위한 연속 4프레임 안정화 필터 적용
       if (reflexDetections.length > 0) {
@@ -1206,7 +1260,7 @@ export function CameraView() {
             } else if (pathRes.bestTurn === "right") {
               guidanceText = "정면 장애물, 오른쪽 공간 넓음";
             }
-            audioEngine.speakFallback(guidanceText);
+            audioEngine.speakFallback(guidanceText, GUIDE_PRIORITY.FRONT_NEAR);
             console.log(
               `[LocalReflex][PathObstacle] 회피 가이드: "${guidanceText}" (L: ${pathRes.leftClearance.toFixed(1)}m, R: ${pathRes.rightClearance.toFixed(1)}m)`,
             );
@@ -1312,6 +1366,17 @@ export function CameraView() {
   const activeDetections = detections.filter(
     d => d.confidence > getEffectiveConfThreshold(d.className, confThreshold)
   );
+  // 콘솔 Live Feed 와 동일 계약으로 맞춘 표시용 bbox.
+  // 서버 `_send_server_detection` 은 seg 를 centroid 주변 80x80 마커로만 보내고,
+  // 단말 CoreML seg 인스턴스 박스(노면 전체)를 그대로 그리면 콘솔 대비 박스가
+  // 비정상적으로 커 보인다(2026-07-19 실측).
+  const overlayDetections = activeDetections
+    .map((d) => {
+      const box = toConsoleAlignedOverlayBBox(d);
+      if (!box) return null;
+      return { ...d, bbox: box };
+    })
+    .filter((d): d is OnDeviceDetectionResult => d != null);
   const detectedClassesStr = activeDetections.length > 0
     ? activeDetections.map(d => {
       const distance = resolveDetectionDistance(d);
@@ -1348,6 +1413,9 @@ export function CameraView() {
               video={true}
               audio={false}
               pixelFormat="yuv"
+              // 추론/전송 프레임(중앙 정사각 크롭)과 프리뷰 FOV를 맞춘다.
+              // contain 이면 레터박스가 생겨 640 좌표 % 오버레이가 콘솔 JPEG 대비 어긋난다.
+              resizeMode="cover"
               frameProcessor={frameProcessor}
               style={StyleSheet.absoluteFill}
             />
@@ -1358,6 +1426,7 @@ export function CameraView() {
               isActive={detectionEnabled && !depthMode}
               photo={true}
               audio={false}
+              resizeMode="cover"
               style={StyleSheet.absoluteFill}
             />
           ))
@@ -1389,8 +1458,8 @@ export function CameraView() {
             3구역 거리 경계선으로 교체. 시각적 도식화만 변경하고 반사 후보 필터링
             로직(roiPolygon/pointInPolygon)은 그대로 유지한다. */}
         {detectionEnabled && !depthMode && <DistanceZoneOverlay />}
-        {/* BBox 오버레이: 640x640 비율과 1:1 카메라 프레임의 완벽 정합, 신뢰도 임계값 이상만 표시 */}
-        <BBoxOverlay detections={activeDetections} />
+        {/* BBox 오버레이: 콘솔 server_detection 계약과 동일한 표시 기하 */}
+        <BBoxOverlay detections={overlayDetections} />
       </View>
 
       {/* 2026-07-10 설계: 화면 전체가 STT press-and-hold.
@@ -1709,16 +1778,18 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
         const zone = getZoneTag(areaRatio);
         const hazardOverride = HIGH_HAZARDS.includes(d.className) || d.className === "caution" || d.className === "roadway";
         const color = hazardOverride ? getClassColor(d.className) : zone.color;
-        const leftPct = (d.bbox.x / FRAME_SIZE) * 100;
-        const topPct = (d.bbox.y / FRAME_SIZE) * 100;
-        const widthPct = (d.bbox.w / FRAME_SIZE) * 100;
-        const heightPct = (d.bbox.h / FRAME_SIZE) * 100;
+        // 좌표 스케일 오류로 %가 100을 크게 넘으면 카메라 컨테이너(overflow:hidden)를
+        // 뚫고 운영자 UI 위까지 박스가 그려진다(2026-07-19 실기기). 표시만 캔버스 안으로 clamp.
+        const leftPct = Math.min(100, Math.max(0, (d.bbox.x / FRAME_SIZE) * 100));
+        const topPct = Math.min(100, Math.max(0, (d.bbox.y / FRAME_SIZE) * 100));
+        const widthPct = Math.min(100 - leftPct, Math.max(0, (d.bbox.w / FRAME_SIZE) * 100));
+        const heightPct = Math.min(100 - topPct, Math.max(0, (d.bbox.h / FRAME_SIZE) * 100));
         const distance = resolveDetectionDistance(d);
         const distanceText = distance.meters !== null ? `${distance.meters.toFixed(1)}m ${distance.label}` : distance.label;
         // 박스가 화면 밖(음수 좌표 등)으로 나가도 클래스명 라벨은 항상 화면 안쪽에 보이도록
         // 박스 테두리와 라벨의 위치를 분리하고, 라벨 좌표만 [0, 100]%로 clamp한다.
-        const labelLeftPct = Math.min(100, Math.max(0, leftPct));
-        const labelTopPct = Math.min(100, Math.max(0, topPct));
+        const labelLeftPct = leftPct;
+        const labelTopPct = topPct;
         // Fragment 사용 필수: 두 절대좌표 View를 감싸는 style 없는 중간 View를 두면
         // 그 View가 0x0으로 collapse되어, 안쪽 %기반 left/top/width/height가 그 0x0
         // 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생함(실기기 재현 확인, 2026-07-07).
@@ -1759,26 +1830,19 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 }
 
 /**
- * 2026-07-19: Near/Medium/Far 3구역 거리 경계선 오버레이 (SVG 부채꼴).
- * 소실점(apex)에서 하단 좌·우 모서리로 퍼지는 부채꼴.
- *
- * 기하학 (좌우 끝까지 연결):
- * - 호 끝점: 좌·우 화면 가장자리(x=0, x=W)에 고정
- *   예) NEAR 호 = (0, H*0.78) ↔ (W, H*0.78) 를 apex 중심 원호로 연결
- * - 측면선(소실점→하단 모서리)은 시각적으로 FAR 삼각형처럼 보여 혼동을 주므로 제거
- * - 이전 구현은 레이 위 짧은 반경만 써서 호가 화면 중앙에만 그려지는 문제가 있었음
- *
- * 색상은 BBox zone 색상과 동일 팔레트.
+ * 콘솔 LiveCameraFeed와 동일 기하:
+ * Near/Med 부채꼴 호 + 12시 중심선 (react-native-svg).
+ * 네이티브 RNSVG가 링크된 Debug 빌드에서만 정상 표시된다.
  */
 function DistanceZoneOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
-
   const W = size.width;
   const H = size.height;
 
   const NEAR_COLOR = "#EF4444";
   const MED_COLOR = "#F59E0B";
   const FAR_COLOR = "#3B82F6";
+  const CLOCK12_COLOR = "#22D3EE";
   const STROKE_W = 2;
   const STROKE_OPACITY = 0.75;
 
@@ -1792,23 +1856,20 @@ function DistanceZoneOverlay() {
     );
   }
 
-  // 소실점: 화면 중앙, 상단 22% (부채꼴이 아래로 더 넓게 퍼지도록)
   const apexX = W / 2;
   const apexY = H * 0.22;
 
-  // 좌·우 가장자리에 끝점을 두고, apex 중심 원호로 연결 (화면 끝까지 연결)
   const edgeArc = (edgeYRatio: number) => {
     const edgeY = H * edgeYRatio;
     const r = Math.sqrt(apexX ** 2 + (edgeY - apexY) ** 2);
-    const left = { x: 0, y: edgeY };
-    const right = { x: W, y: edgeY };
-    // y 하향 좌표계에서 좌→우, 아래로 볼록한 호: sweep=1
-    const d = `M ${left.x} ${left.y} A ${r} ${r} 0 0 1 ${right.x} ${right.y}`;
-    return { d, r, left, right, edgeY };
+    return {
+      d: `M 0 ${edgeY} A ${r} ${r} 0 0 1 ${W} ${edgeY}`,
+      edgeY,
+    };
   };
 
-  const nearArc = edgeArc(0.78); // NEAR/MED
-  const medArc = edgeArc(0.52);  // MED/FAR
+  const nearArc = edgeArc(0.78);
+  const medArc = edgeArc(0.52);
 
   return (
     <View
@@ -1817,7 +1878,6 @@ function DistanceZoneOverlay() {
       onLayout={(e) => setSize(e.nativeEvent.layout)}
     >
       <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
-        {/* NEAR/MED 호 (좌우 끝 → 끝) */}
         <Path
           d={nearArc.d}
           fill="none"
@@ -1825,13 +1885,21 @@ function DistanceZoneOverlay() {
           strokeWidth={STROKE_W}
           strokeOpacity={STROKE_OPACITY}
         />
-        {/* MED/FAR 호 (좌우 끝 → 끝) */}
         <Path
           d={medArc.d}
           fill="none"
           stroke={MED_COLOR}
           strokeWidth={STROKE_W}
           strokeOpacity={STROKE_OPACITY}
+        />
+        <Line
+          x1={apexX}
+          y1={apexY}
+          x2={apexX}
+          y2={H}
+          stroke={CLOCK12_COLOR}
+          strokeWidth={3}
+          strokeOpacity={0.95}
         />
         <SvgText x={W - 44} y={nearArc.edgeY - 6} fill={NEAR_COLOR} fontSize={11} fontWeight="bold">
           NEAR
@@ -1841,6 +1909,9 @@ function DistanceZoneOverlay() {
         </SvgText>
         <SvgText x={apexX + 8} y={apexY - 4} fill={FAR_COLOR} fontSize={11} fontWeight="bold">
           FAR
+        </SvgText>
+        <SvgText x={apexX + 8} y={H * 0.38} fill={CLOCK12_COLOR} fontSize={11} fontWeight="bold">
+          12시
         </SvgText>
       </Svg>
     </View>

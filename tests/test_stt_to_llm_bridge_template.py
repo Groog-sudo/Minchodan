@@ -50,6 +50,7 @@ class _FakeNavManager:
         self.awaiting_question = False
         self.awaiting_intent = False
         self.detection_enabled = detection_enabled
+        self.pending_poi_candidates: list[dict] | None = None
 
     def get_status(self, device_id: str) -> str:
         _ = device_id
@@ -58,6 +59,16 @@ class _FakeNavManager:
     def set_status(self, device_id: str, status: str) -> None:
         _ = device_id
         self.status = status
+        if status != "WAITING_FOR_POI_CONFIRMATION":
+            self.pending_poi_candidates = None
+
+    def set_pending_poi_candidates(self, device_id: str, candidates: list[dict] | None) -> None:
+        _ = device_id
+        self.pending_poi_candidates = candidates
+
+    def get_pending_poi_candidates(self, device_id: str) -> list[dict] | None:
+        _ = device_id
+        return self.pending_poi_candidates
 
     def update_route(self, device_id: str, waypoints: list[dict]) -> None:
         _ = device_id
@@ -292,9 +303,13 @@ async def test_navigation_destination_setup_success(
     fake_manager.session.lon = 126.9780
     monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
 
-    def _fake_search_poi(keyword: str) -> dict:
-        _ = keyword
-        return {"name": "서울역", "x": "126.9707", "y": "37.5547"}
+    def _fake_resolve(keyword: str, center_lat: float, center_lon: float) -> dict:
+        _ = (keyword, center_lat, center_lon)
+        return {
+            "best": {"name": "서울역", "x": "126.9707", "y": "37.5547", "distance_m": 10.0},
+            "candidates": [],
+            "ambiguous": False,
+        }
 
     def _fake_fetch_route(_start: dict, _end: dict) -> dict:
         return {
@@ -309,7 +324,7 @@ async def test_navigation_destination_setup_success(
             ]
         }
 
-    monkeypatch.setattr(nav_server_module, "helper_search_poi", _fake_search_poi)
+    monkeypatch.setattr(nav_server_module, "helper_resolve_destination_poi", _fake_resolve)
     monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
 
     bridge = SttToLlmBridge()
@@ -317,6 +332,8 @@ async def test_navigation_destination_setup_success(
     response = await bridge.invoke_existing_llm(result, "test-device")
 
     assert response["source"] == "navigation-setup-success"
+    # 2026-07-20(P0 §6.5): 성공 안내는 실제 선택된 POI 이름을 읽는다.
+    assert "서울역" in response["guidance_text"]
     assert fake_manager.status == "NAVIGATING"
     assert len(fake_manager.last_route) == 1
     assert fake_manager.last_route[0]["description"] == "직진"
@@ -336,14 +353,10 @@ async def test_navigation_destination_setup_fail_when_poi_not_found(
     fake_manager.session.lon = 126.9780
     monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
 
-    def _fake_search_poi(_keyword: str):
+    def _fake_resolve(_keyword: str, _center_lat: float, _center_lon: float):
         return None
 
-    def _fake_fetch_route(_start: dict, _end: dict):
-        return None
-
-    monkeypatch.setattr(nav_server_module, "helper_search_poi", _fake_search_poi)
-    monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
+    monkeypatch.setattr(nav_server_module, "helper_resolve_destination_poi", _fake_resolve)
 
     bridge = SttToLlmBridge()
     result = _make_stt_result("없는목적지로 설정")
@@ -378,6 +391,252 @@ async def test_navigation_destination_setup_no_gps(monkeypatch: pytest.MonkeyPat
     assert response["source"] == "navigation-setup-no-gps"
     assert search_calls == []
     assert fake_manager.status == "WAITING_FOR_DESTINATION"
+
+
+# [하드 코딩 부분 - 핵심]
+# 2026-07-20: 실기기 필드 테스트 회귀 분석 보고서(P0 확정 결함 1~3) 재발 방지 테스트.
+# - 목적지 파서가 장소명 내부 문자(로/으로)를 보존하는지 실제 TMAP 호출 인자로 검증.
+# - fuzzy wake("길댕")가 "길동역"/"길음역"/"길상사" 같은 정상 목적지를 가로채지 않는지 검증.
+# - "까지 어떻게 가"처럼 질문 힌트 단어가 있어도 명시적 경로 의도가 있으면 목적지로 처리하는지 검증.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("utterance", "expected_keyword"),
+    [
+        ("구로역으로 설정", "구로역"),
+        ("종로3가역으로 안내해줘", "종로3가역"),
+        ("가로수길로 가줘", "가로수길"),
+        ("압구정로데오역까지 안내해줘", "압구정로데오역"),
+        ("목적지는 서울역", "서울역"),
+    ],
+)
+async def test_destination_parser_preserves_place_name(
+    monkeypatch: pytest.MonkeyPatch, utterance: str, expected_keyword: str
+) -> None:
+    """전역 replace가 아니라 위치기반 파서를 써서 TMAP searchKeyword가 원래 장소명과 같아야 한다."""
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    fake_manager.session.lat = 37.5665
+    fake_manager.session.lon = 126.9780
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    search_calls: list[str] = []
+
+    def _fake_resolve(keyword: str, center_lat: float, center_lon: float) -> dict:
+        _ = (center_lat, center_lon)
+        search_calls.append(keyword)
+        return {
+            "best": {"name": keyword, "x": "126.9707", "y": "37.5547", "distance_m": 10.0},
+            "candidates": [],
+            "ambiguous": False,
+        }
+
+    def _fake_fetch_route(_start: dict, _end: dict) -> dict:
+        return {"features": []}
+
+    monkeypatch.setattr(nav_server_module, "helper_resolve_destination_poi", _fake_resolve)
+    monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
+
+    bridge = SttToLlmBridge()
+    await bridge.invoke_existing_llm(_make_stt_result(utterance), "test-device")
+
+    assert search_calls == [expected_keyword]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("place_name", ["길동역", "길음역", "길상사"])
+async def test_gildaeng_fuzzy_wake_does_not_intercept_real_destination(
+    monkeypatch: pytest.MonkeyPatch, place_name: str
+) -> None:
+    """편집거리 1 이하로 '길댕'과 유사한 정상 목적지가 wake로 오인돼 재질문만 반환되면 안 된다."""
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    fake_manager.session.lat = 37.5665
+    fake_manager.session.lon = 126.9780
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    search_calls: list[str] = []
+
+    def _fake_resolve(keyword: str, center_lat: float, center_lon: float) -> dict:
+        _ = (center_lat, center_lon)
+        search_calls.append(keyword)
+        return {
+            "best": {"name": keyword, "x": "126.9707", "y": "37.5547", "distance_m": 10.0},
+            "candidates": [],
+            "ambiguous": False,
+        }
+
+    def _fake_fetch_route(_start: dict, _end: dict) -> dict:
+        return {"features": []}
+
+    monkeypatch.setattr(nav_server_module, "helper_resolve_destination_poi", _fake_resolve)
+    monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(_make_stt_result(place_name), "test-device")
+
+    assert search_calls == [place_name]
+    assert response["source"] != "navigation-destination-reprompt"
+
+
+@pytest.mark.asyncio
+async def test_gildaeng_exact_reconfirm_still_reprompts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """목적지 대기 중 '길댕아'를 정확히 다시 말하면(재확인 습관) 여전히 재질문으로 받는다."""
+    import server.navigation.manager as nav_manager_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(_make_stt_result("길댕아"), "test-device")
+
+    assert response["source"] == "navigation-destination-reprompt"
+    assert fake_manager.status == "WAITING_FOR_DESTINATION"
+
+
+@pytest.mark.asyncio
+async def test_destination_intent_overrides_question_heuristic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """'까지'+이동 표현이 있으면 '어떻게' 같은 질문 힌트 단어가 있어도 목적지로 처리한다."""
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    fake_manager.session.lat = 37.5665
+    fake_manager.session.lon = 126.9780
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    search_calls: list[str] = []
+
+    def _fake_resolve(keyword: str, center_lat: float, center_lon: float) -> dict:
+        _ = (center_lat, center_lon)
+        search_calls.append(keyword)
+        return {
+            "best": {"name": keyword, "x": "126.9707", "y": "37.5547", "distance_m": 10.0},
+            "candidates": [],
+            "ambiguous": False,
+        }
+
+    def _fake_fetch_route(_start: dict, _end: dict) -> dict:
+        return {"features": []}
+
+    monkeypatch.setattr(nav_server_module, "helper_resolve_destination_poi", _fake_resolve)
+    monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(
+        _make_stt_result("서울역까지 어떻게 가"), "test-device"
+    )
+
+    assert search_calls == ["서울역"]
+    assert response["source"] != "question-llm"
+    assert fake_manager.status != "IDLE"
+
+
+# [하드 코딩 부분 - 핵심]
+# 2026-07-20: 회귀 분석 보고서 P0 "사용자 확인" - 동명 POI 후보가 모호하면
+# 자동 확정하지 않고 음성으로 확인한 뒤, 다음 발화의 순번 선택으로 경로를 확정한다.
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_poi_triggers_confirmation_instead_of_auto_pick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """동명 후보 간 거리 우위가 불분명하면 자동 확정 대신 확인 질문으로 대기 상태를 바꾼다."""
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_DESTINATION")
+    fake_manager.session.lat = 37.5665
+    fake_manager.session.lon = 126.9780
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    def _fake_resolve(_keyword: str, _center_lat: float, _center_lon: float) -> dict:
+        return {
+            "best": {"name": "스타벅스", "x": "127.0280", "y": "37.4980", "distance_m": 300.0},
+            "candidates": [
+                {"name": "스타벅스", "x": "127.0280", "y": "37.4980", "distance_m": 300.0},
+                {"name": "스타벅스", "x": "126.9220", "y": "37.5563", "distance_m": 500.0},
+            ],
+            "ambiguous": True,
+        }
+
+    monkeypatch.setattr(nav_server_module, "helper_resolve_destination_poi", _fake_resolve)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(_make_stt_result("스타벅스로 설정"), "test-device")
+
+    assert response["source"] == "navigation-poi-confirm-needed"
+    assert fake_manager.status == "WAITING_FOR_POI_CONFIRMATION"
+    assert fake_manager.pending_poi_candidates is not None
+    assert len(fake_manager.pending_poi_candidates) == 2
+
+
+@pytest.mark.asyncio
+async def test_poi_confirmation_selection_completes_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    """확인 대기 중 '2번'을 말하면 두 번째 후보로 경로를 확정하고 실제 선택 POI를 읽는다."""
+    import server.navigation.manager as nav_manager_module
+    import server.navigation.server as nav_server_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_POI_CONFIRMATION")
+    fake_manager.session.lat = 37.5665
+    fake_manager.session.lon = 126.9780
+    fake_manager.pending_poi_candidates = [
+        {
+            "poi": {"name": "스타벅스", "x": "127.0280", "y": "37.4980"},
+            "destination": "스타벅스",
+        },
+        {
+            "poi": {"name": "스타벅스", "x": "126.9220", "y": "37.5563"},
+            "destination": "스타벅스",
+        },
+    ]
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    fetch_calls: list[dict] = []
+
+    def _fake_fetch_route(_start: dict, end: dict) -> dict:
+        fetch_calls.append(end)
+        return {"features": []}
+
+    monkeypatch.setattr(nav_server_module, "helper_fetch_route", _fake_fetch_route)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(_make_stt_result("2번"), "test-device")
+
+    assert response["source"] == "navigation-setup-success"
+    assert fake_manager.status == "NAVIGATING"
+    assert fake_manager.pending_poi_candidates is None
+    # 두 번째 후보(홍대 좌표)가 선택되어 helper_fetch_route에 전달되어야 한다.
+    assert fetch_calls == [{"name": "스타벅스", "x": "126.9220", "y": "37.5563"}]
+
+
+@pytest.mark.asyncio
+async def test_poi_confirmation_unrecognized_reply_reprompts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """확인 대기 중 순번으로 해석되지 않는 발화는 추측하지 않고 재입력을 유도한다."""
+    import server.navigation.manager as nav_manager_module
+
+    fake_manager = _FakeNavManager(status="WAITING_FOR_POI_CONFIRMATION")
+    fake_manager.pending_poi_candidates = [
+        {"poi": {"name": "스타벅스", "x": "1", "y": "1"}, "destination": "스타벅스"},
+        {"poi": {"name": "스타벅스", "x": "2", "y": "2"}, "destination": "스타벅스"},
+    ]
+    monkeypatch.setattr(nav_manager_module, "nav_manager", fake_manager)
+
+    bridge = SttToLlmBridge()
+    response = await bridge.invoke_existing_llm(_make_stt_result("음 잘 모르겠어"), "test-device")
+
+    assert response["source"] == "navigation-poi-confirm-retry"
+    assert fake_manager.status == "WAITING_FOR_POI_CONFIRMATION"
+    assert fake_manager.pending_poi_candidates is not None
 
 
 @pytest.mark.asyncio

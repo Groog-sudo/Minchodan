@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-19
-> **버전**: v0.4.27 (2026-07-19 Linux Compose 고정 Ollama 게이트웨이·UFW 범위 반영)
+> **수정일**: 2026-07-20
+> **버전**: v0.4.28 (2026-07-20 Medium 인지 GUIDANCE_CONTEXT_MODE 힌트 dict + Linux Compose 고정 Ollama 게이트웨이·UFW 범위 반영)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -70,7 +70,7 @@
 | **`ALLOW_STATIC_DEVICE_TOKENS`** | bool | 선택 | `false` | 개발용 정적 단말 토큰을 명시적으로 허용. 운영에서는 `false` 유지하고 관리자 발급 단말 JWT 사용 | `server/api/auth.py` |
 | **`DEVICE_STATIC_TOKENS`** | string | 선택 | 없음 | 32자 이상 정적 토큰의 `device_id:token` 목록. `ALLOW_STATIC_DEVICE_TOKENS=true`일 때만 로드 | `server/api/auth.py` |
 | **`ENABLE_DEBUG_API`** | bool | 선택 | `false` | 비운영 환경에서 최고관리자용 디버그 TTS API를 명시적으로 활성화 | `server/api/debug_router.py` |
-| **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | 개발용 내비게이션 시뮬레이터 서브앱 마운트를 명시적으로 활성화 | `server/main.py` |
+| **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | `/navigation` 서브앱(콘솔 GPS HUD·OperatorLiveMap iframe) 마운트. **production** 에서는 `true` 일 때만 열고, **development**(`APP_ENV!=production`)에서는 플래그와 무관하게 기본 마운트한다(관제 지도 404 방지, 2026-07-19). | `server/main.py` |
 
 ### 2.6 탐지 설정 (3단계 Detection)
 
@@ -96,6 +96,8 @@
 | **`REFLEX_LATENCY_ALERT_MS`** | float | 선택 | `300` | **2026-07-17 신규 (P2-2).** 반사 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_event에 latency_alert=True (비협상 목표 <300ms) | `server/detection/consumer.py` |
 | **`COGNITIVE_LATENCY_ALERT_MS`** | float | 선택 | `3000` | **2026-07-17 신규 (P2-2).** 인지 파이프라인 지연 관측 임계(ms). total_ms 초과 시 콘솔 latency_alert=True (가이드 허용 범위 <3000ms) | `server/detection/consumer.py` |
 | **`GUIDE_LOW_RISK_NARRATION`** | bool | 선택 | `false` | **2026-07-18 신규 (T2-G).** `true`이면 저위험(low) 순수 내레이션을 발화한다. `false`이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 안내를 억제해 청각 피로를 줄인다. 보도 이탈, 고위험, 접근 객체, 유의미 노면은 예외로 항상 발화 | `server/detection/consumer.py` |
+| **`RAG_ENABLED`** | bool | 선택 | `true` | **2026-07-19 신규.** `GUIDANCE_CONTEXT_MODE=rag`일 때만 의미 있음. `false`면 Chroma 검색을 건너뛰고 `rag_context`를 "관련 수칙 없음"으로 둔다. `hints` 모드에서는 무시 | `server/detection/consumer.py` |
+| **`GUIDANCE_CONTEXT_MODE`** | string | 선택 | `hints` | **2026-07-20 신규.** Medium 인지 경로 컨텍스트 소스. `hints`(기본)=인메모리 짧은 회피 힌트(`server/rag/guidance_hints.py`, rag_ms≈0). `rag`=기존 Chroma `search_guidance` 롤백/A/B. 잘못된 값은 `hints`로 폴백 | `server/detection/consumer.py`, [`medium_guidance_hint_dict_implementation_plan.md`](medium_guidance_hint_dict_implementation_plan.md) |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO_AUTOINSTALL`** | bool | 선택 | `False` | **2026-07-19 신규.** ultralytics 자체 환경변수(`YOLO_AUTOINSTALL`, Minchodan 접두사 아님). 모델 로드/추론마다 체크포인트 내장 requirements를 현재 설치본과 비교해 불일치 시 런타임 `pip install`을 시도하는 AutoUpdate 기능을 제어. `True`(ultralytics 기본값)면 방금 갱신된 패키지와 이미 임포트된 모듈이 어긋나 `'Conv' object has no attribute 'bn'` 추론 오류가 재발한다(실측 확인). `docker/Dockerfile`에 `ENV`로 기본값 고정, `docker-compose*.yml`에도 명시 | `docker/Dockerfile`, `docker/docker-compose*.yml` |
