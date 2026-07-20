@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.5.9 (2026-07-20 jy 병합: Raspberry Pi DB·미디어 demo/test 무빌드 전환 추가. 기존 v0.5.8 이력 유지: 코드-문서 정합 - mariadb 포트 검증 기대결과 정정(미노출), schema.sql 마운트 경로 `server/db/schema.sql` 정정, §7.1 서비스 표에 console 행 추가, macOS 변형 fastapi 0.0.0.0 바인딩 예외 명시)
+> **버전**: v0.5.10 (2026-07-20 kb 병합: 실기기 통합테스트 중 STT 무한 대기 결함 확인 - huggingface_hub 캐시 미영속화로 컨테이너 재생성마다 faster-whisper-small 재다운로드가 발생, 느린 네트워크에서 중간에 정체되면 STT가 응답 없이 무한 대기. `hf_cache` 명명 볼륨을 fastapi 서비스(Linux/macOS 변형 모두)에 추가해 해결. 기존 v0.5.9 이력 유지: jy 병합 Raspberry Pi DB·미디어 demo/test 무빌드 전환 추가. 기존 v0.5.8 이력 유지: 코드-문서 정합 mariadb 포트 검증 기대결과 정정, schema.sql 마운트 경로 정정, §7.1 console 행 추가, macOS 변형 fastapi 0.0.0.0 바인딩 예외 명시)
 > **설계 기준**: [`../design/architecture.md`](../design/architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`../dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -43,7 +43,7 @@ graph TD
 
 | 컨테이너 | 이미지 | 포트 | 볼륨 마운트 | 역할 |
 | :--- | :--- | :--- | :--- | :--- |
-| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능 | 비루트 사용자 FastAPI + WebSocket/SSE. 공통 `.env`와 선택적 `.env.network.*`를 `env_file`로 주입하며 외부 단말은 Tailscale Serve의 TLS 종단을 경유 |
+| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능, `hf_cache:/home/minchodan/.cache/huggingface`(2026-07-20 신규) | 비루트 사용자 FastAPI + WebSocket/SSE. 공통 `.env`와 선택적 `.env.network.*`를 `env_file`로 주입하며 외부 단말은 Tailscale Serve의 TLS 종단을 경유. `hf_cache`는 faster-whisper-small 등 huggingface_hub 모델을 영속화해 컨테이너 재생성마다 재다운로드(느린 네트워크에서 STT 무한 대기 유발 확인)하지 않도록 함 |
 | **redis** | `redis:7-alpine` (공식) | `127.0.0.1:6379:6379` | `redis_data:/data` | `REDIS_PASSWORD` 필수, AOF 영속화, Redis Streams + 컨텍스트 TTL |
 | **mariadb** | `mariadb:11.4` (공식) | 미노출(주석 처리, 2026-07-17) | `mariadb_data:/var/lib/mysql`, `../server/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro` (Linux 변형, 2026-07-20 정정) | 공유 GPU 서버 로컬 3306 포트 충돌 방지를 위해 호스트 포트 노출을 비활성화. 원격 DB(`DB_HOST`) 기본 연결 유지, 로컬 노출이 필요하면 `docker-compose.macos.yml` 사용 (macOS 변형은 schema.sql 마운트 미적용) |
 | **console** | `minchodan-console:latest` (로컬 빌드) | `127.0.0.1:${CONSOLE_PORT:-5174}:5174` | `./console:/app`, `/app/node_modules` | 권한 제한 `node` 사용자로 Vite 콘솔 실행. 외부 공개가 필요하면 인증된 TLS 프록시를 별도로 사용 |
@@ -299,6 +299,7 @@ Raspberry Pi 미디어 API는 두 인터페이스에서 접근할 수 있도록 
 | :--- | :--- | :--- |
 | `redis_data` | `redis:/data` | Redis 영속화 |
 | `mariadb_data` | `mariadb:/var/lib/mysql` | MariaDB 데이터 영속화 |
+| `hf_cache` | `fastapi:/home/minchodan/.cache/huggingface` | **2026-07-20 신규.** huggingface_hub 모델 캐시(faster-whisper-small 등) 영속화. 미마운트 시 컨테이너 재생성마다 ~480MB 재다운로드가 필요하고, 느린 네트워크에서 다운로드가 중간에 멈추면 STT가 응답 없이 무한 대기하는 결함이 실기기 테스트에서 확인됨 |
 
 ### 7.3 네트워크
 

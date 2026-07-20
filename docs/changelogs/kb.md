@@ -3755,3 +3755,30 @@
 - **관련 파일**: `server/tts/suppressor.py`, `.env.example`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, `tests/test_suppressor_rearm.py`
 - **검증 결과**: `pytest tests/test_suppressor_rearm.py` → **15 passed**(신규 3건 포함). `pytest tests/` 전체 435 passed(기존에도 실패하던 WS/임베딩 통합 테스트 7건은 무관, `git stash`로 무변경 상태에서도 동일 실패 확인). Ruff OK, mypy 무관.
 - **비고**: STT 응답 무반응 별도 이슈는 faster-whisper-small 모델(`model.bin`) 프리로드 다운로드가 컨테이너 기동 중 정체된 것이 원인으로 확인·재다운로드 후 해소(코드 변경 없음, 인프라 이슈).
+
+---
+
+### 2026-07-20 | 인프라 | huggingface 모델 캐시 영속 볼륨 추가(STT 무한 대기 재발 방지)
+
+- **배경**: 위 항목에서 STT 무응답을 재다운로드로 임시 해소했으나, `hf_cache`가 컨테이너 쓰기 계층에만 존재해 컨테이너 재생성(코드 변경 후 `--build`)마다 faster-whisper-small(~480MB)을 처음부터 다시 받아야 했다. 재빌드 직후 실기기 테스트에서 동일 증상이 즉시 재현되어, 근본 원인(캐시 미영속화)을 인프라 레벨에서 수정.
+- **변경 내용**:
+  - `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`: fastapi 서비스에 `hf_cache:/home/minchodan/.cache/huggingface` 명명 볼륨 추가(두 변형 모두).
+  - `docs/ops/deployment_guide.md`: §2.1 서비스 표·§7.2 볼륨 정의에 `hf_cache` 반영.
+- **관련 파일**: `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docs/ops/deployment_guide.md`
+- **검증 결과**: 컨테이너 재생성 후 `docker exec`로 faster-whisper-small 로드 재수행, 볼륨에 모델 저장 확인. YAML 구문 검증(`yaml.safe_load`) 통과.
+- **비고**: 다음 컨테이너 재생성부터는 재다운로드 없이 캐시를 재사용하므로 이 클래스의 STT 무한 대기가 재발하지 않는다.
+
+---
+
+### 2026-07-20 | 6단계 | 실외 재테스트 3건 - 패스트레인 다중객체 차단·캐시 키 정확성·노면 반사 2차 조정
+
+- **배경**: 1차 조정(노면 반사 TTL/갭 상향, near track 재발동 억제) 배포 후 실외 재테스트에서 3건 재보고: (1) 노면 안내가 여전히 큰 위험 아닌데도 자주 나옴, (2) 안내 음성이 싱크 안 맞게 늦는 느낌, (3) 안내 음성 빈도가 여전히 적어 보임. `detection_guidance_logs`의 `latency_json`을 직접 조회해 원인 특정:
+  - "전방 차도, 2시로 우회하세요"가 280ms(우연한 범용 텍스트 캐시 히트)와 6666ms(실시간 LLM+TTS)로 들쭉날쭉 - `scripts/build_guide_clips.py`가 object 클래스 10종만 순회하고 `caution`/`roadway`는 애초에 사전합성 대상에서 빠져 있어 "차도" 클립이 0개였음.
+  - "사람" 안내는 클립이 다 있음에도 항상 LLM 호출(~2초) - `can_use_fast_lane()`이 프레임 내 탐지 객체가 2개 이상이면 통째로 차단(사람은 다른 보행자/차량과 자주 동시 탐지됨).
+  - `make_fast_lane_cache_key()`가 `avoid_clock_direction`을 반영하지 않아, 12시+우회 문구와 12시+단순 주의 문구가 같은 키로 충돌(정확성 결함 - 다른 안내문 오디오가 재생될 수 있었음).
+- **변경 내용**:
+  - `fast_lane.py`: `can_use_fast_lane()`을 프레임 내 전체 탐지 개수가 아니라 주위험 객체(object_ko) 하나만 기준으로 완화. `make_fast_lane_cache_key()`에 `avoid_clock` 반영(12시+우회는 `avoid{10시|2시}` 접미사로 키 분리). `FAST_LANE_SURFACE_CLASS_NAMES`, `FAST_LANE_AVOID_CLOCKS` 신규.
+  - `scripts/build_guide_clips.py`: caution/roadway 클래스와 12시 우회 변형(avoid_clock=10시/2시)을 사전합성 대상에 추가(210→324건). 신규 114건 합성 완료.
+  - `server/tts/suppressor.py`: `REFLEX_SURFACE_SUPPRESS_TTL_S` 30→60초, `REFLEX_SURFACE_MIN_GAP_S` 15.0→45.0초 2차 상향.
+- **관련 파일**: `server/orchestration/nodes/fast_lane.py`, `scripts/build_guide_clips.py`, `server/tts/suppressor.py`, `.env.example`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, `docs/stage-guides/stage6_orchestration_design.md`, `tests/test_fast_lane.py`
+- **검증 결과**: `pytest tests/` 전체 443 passed(신규 8건 포함, 기존 무관 실패 7건 동일 유지). `python scripts/build_guide_clips.py --dry-run` 324건 확인, 실제 빌드 324/324 성공. Ruff/mypy OK(무관 1건 제외).

@@ -31,31 +31,21 @@ FAST_LANE_CLASS_NAMES = (
     "truck",
 )
 
-FAST_LANE_OBJECT_KO = frozenset(CLASS_TEXT[c] for c in FAST_LANE_CLASS_NAMES) | {
-    CLASS_TEXT["caution"],
-    CLASS_TEXT["roadway"],
-}
+# 2026-07-20: 노면(caution/roadway) 단독 안내도 route_after_l1에서 패스트 레인이
+# 허용되지만(can_use_fast_lane L111 예외), 사전합성 스크립트가 이 두 클래스를
+# 순회하지 않아 클립이 한 건도 없었다("전방 차도..." 안내가 항상 실시간 6초대
+# LLM+TTS로 빠지던 원인). build_guide_clips.py가 이 목록도 함께 순회한다.
+FAST_LANE_SURFACE_CLASS_NAMES = ("caution", "roadway")
+
+FAST_LANE_OBJECT_KO = frozenset(
+    CLASS_TEXT[c] for c in FAST_LANE_CLASS_NAMES + FAST_LANE_SURFACE_CLASS_NAMES
+)
 
 FAST_LANE_DISTANCES = frozenset({"near", "medium", "far"})
 FAST_LANE_PATTERN = "caution"
+# 12시 + 우회 방향이 있는 문구("전방 X, N시로 우회하세요")용 사전합성 대상.
+FAST_LANE_AVOID_CLOCKS = ("10시", "2시")
 _CLOCK_HOUR_PATTERN = re.compile(r"^(9|10|11|12|1|2|3)시$")
-
-
-def make_fast_lane_cache_key(
-    clock_direction: str,
-    object_ko: str,
-    distance: str,
-    pattern: str = FAST_LANE_PATTERN,
-) -> str:
-    """사전합성 TTS 클립 파일명/조회 키. 형식: {clock}_{object_ko}_{distance}_{pattern}."""
-    obj_slug = object_ko.replace(" ", "_")
-    return f"{clock_direction}_{obj_slug}_{distance}_{pattern}"
-
-
-def _format_direction_phrase(clock_direction: str) -> str:
-    if clock_direction == "12시":
-        return "전방"
-    return f"{clock_direction} 방향"
 
 
 def _normalize_avoid_clock(avoid_clock: str | None) -> str | None:
@@ -66,6 +56,36 @@ def _normalize_avoid_clock(avoid_clock: str | None) -> str | None:
     if text in ("9시", "10시", "11시"):
         return "10시"
     return None
+
+
+def make_fast_lane_cache_key(
+    clock_direction: str,
+    object_ko: str,
+    distance: str,
+    pattern: str = FAST_LANE_PATTERN,
+    avoid_clock: str | None = None,
+) -> str:
+    """사전합성 TTS 클립 파일명/조회 키.
+
+    형식: {clock}_{object_ko}_{distance}_{pattern}, 12시 + 우회 방향이 있으면
+    {clock}_{object_ko}_{distance}_avoid{avoid}.
+
+    2026-07-20: avoid_clock을 키에 반영하지 않으면 12시 + 우회 방향 문구
+    ("전방 X, 2시로 우회하세요")와 12시 + 단순 주의 문구("전방 X 주의하세요")가
+    같은 키로 충돌해, 실제 안내문과 다른 음성(잘못된 우회 방향 또는 방향 누락)이
+    재생될 수 있는 결함이 있었다.
+    """
+    obj_slug = object_ko.replace(" ", "_")
+    normalized_avoid = _normalize_avoid_clock(avoid_clock)
+    if clock_direction == "12시" and normalized_avoid:
+        return f"{clock_direction}_{obj_slug}_{distance}_avoid{normalized_avoid}"
+    return f"{clock_direction}_{obj_slug}_{distance}_{pattern}"
+
+
+def _format_direction_phrase(clock_direction: str) -> str:
+    if clock_direction == "12시":
+        return "전방"
+    return f"{clock_direction} 방향"
 
 
 def build_fast_lane_guidance(
@@ -103,12 +123,19 @@ def build_fast_lane_guidance(
 
 
 def can_use_fast_lane(state: dict) -> bool:
-    """L1 직후 LLM 대신 패스트 레인으로 분기할지 판단한다."""
+    """L1 직후 LLM 대신 패스트 레인으로 분기할지 판단한다.
+
+    2026-07-20: 프레임 내 전체 탐지 개수(detected_classes)가 아니라, 실제 안내
+    대상인 주위험 객체(object_ko, consumer.py에서 confidence 최댓값 detection으로
+    이미 선정됨) 하나만 기준으로 판단한다. 기존에는 프레임에 다른 객체가 하나만
+    더 잡혀도(도로에서 흔함, 특히 사람) 패스트 레인이 통째로 차단돼 실시간
+    LLM(~2초)으로 빠지며 안내가 늦게 나오는 문제가 실기기 테스트에서 확인됨.
+    guidance_text는 항상 object_ko 하나만 언급하므로(L2 템플릿도 동일), 다른
+    객체 존재 여부가 문구 정확성에 영향을 주지 않는다.
+    """
     detected_classes = state.get("detected_classes") or []
     object_ko = (state.get("object_ko") or "").strip()
-    if len(detected_classes) > 1:
-        return False
-    if len(detected_classes) == 0 and object_ko not in (
+    if not detected_classes and object_ko not in (
         CLASS_TEXT["caution"],
         CLASS_TEXT["roadway"],
     ):
@@ -147,7 +174,9 @@ async def fast_lane_node(state: dict) -> dict:
     guidance_text = build_fast_lane_guidance(
         clock_direction, object_ko, distance, avoid_clock=avoid_clock
     )
-    cache_key = make_fast_lane_cache_key(clock_direction, object_ko, distance)
+    cache_key = make_fast_lane_cache_key(
+        clock_direction, object_ko, distance, avoid_clock=avoid_clock
+    )
 
     return {
         "guidance_text": guidance_text,

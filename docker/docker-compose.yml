@@ -17,6 +17,10 @@ services:
       - ../scripts:/app/scripts:ro
       - ../tests:/app/tests:ro
       - ../requirements.txt:/app/requirements.txt:ro
+      # 2026-07-20: faster-whisper-small 등 huggingface_hub 캐시를 영속화한다.
+      # 미마운트 시 컨테이너 재생성마다 ~480MB를 재다운로드해야 하고, 느린 네트워크에서
+      # 다운로드가 중간에 멈춰 STT가 응답 없이 무한 대기하는 결함이 실기기 테스트에서 확인됨.
+      - hf_cache:/home/minchodan/.cache/huggingface
     env_file:
       - ../.env
       # 시연/테스트 네트워크 프로필. 미지정 시 기존 .env를 다시 읽어 하위 호환 유지.
@@ -138,6 +142,7 @@ volumes:
   redis_data:
   mariadb_data:
   console_node_modules:
+  hf_cache:
 
 networks:
   minchodan-net:

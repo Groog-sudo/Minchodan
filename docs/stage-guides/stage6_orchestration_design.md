@@ -1,7 +1,7 @@
 # 6단계 설계서 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 > **작성일**: 2026-06-26
-> **버전**: v0.2.3 (2026-07-20 7단계 TTS 서술 정합: Kokoro/Coqui→Supertonic WAV 바이너리. 기존 v0.2.2: 패스트 레인 안내 템플릿·`avoid_clock_direction`)
+> **버전**: v0.2.4 (2026-07-20 실외 필드 피드백 기반 패스트 레인 2차 수정: 다중객체 차단 조건을 주위험 객체 기준으로 완화, avoid_clock_direction 캐시 키 반영 정확성 수정, 노면 클래스 사전합성 클립 추가. 기존 v0.2.3: 7단계 TTS 서술 정합. 기존 v0.2.2: 패스트 레인 안내 템플릿·`avoid_clock_direction`)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 6단계, [`docs/architecture.md`](architecture.md) 5.6절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 11, 12, 14, 17.2
 > **스킬 참조**: [`.agents/skills/llm-guidance-orchestrator/SKILL.md`](../.agents/skills/llm-guidance-orchestrator/SKILL.md)
@@ -137,6 +137,19 @@ server/orchestration/
 > - 측면: `"10시 방향 전동 킥보드 주의하세요"`
 > - 전방: `"전방 볼라드, 2시로 우회하세요"` (`avoid_clock_direction` 필요)
 > Medium도 `"확인하세요"`가 아니라 `"주의하세요"`로 통일한다. Fallback도 동일 템플릿을 재사용한다.
+>
+> **2026-07-20 실외 필드 피드백 기반 2차 수정**:
+> 1. `can_use_fast_lane()`의 패스트 레인 진입 조건을 프레임 내 전체 탐지 개수(`detected_classes`)가
+>    아니라 실제 안내 대상인 주위험 객체(`object_ko`, confidence 최댓값 detection) 하나만 기준으로
+>    완화. 기존에는 다른 객체가 하나만 더 잡혀도(도로에서 흔함, 특히 사람) 통째로 차단돼 실시간
+>    LLM(~2초)으로 빠지며 안내가 늦게 나오던 문제를 실기기 레이턴시 로그로 확인.
+> 2. `make_fast_lane_cache_key()`가 `avoid_clock_direction`을 반영하지 않아, 12시 + 우회 문구
+>    ("전방 X, 2시로 우회하세요")와 12시 + 단순 주의 문구("전방 X 주의하세요")가 같은 캐시 키로
+>    충돌하는 결함을 수정(우회 방향이 있으면 `avoid{10시|2시}` 접미사로 키 분리). 사전합성 클립이
+>    실제 안내문과 다른 내용으로 재생될 수 있었던 정확성 결함.
+> 3. `scripts/build_guide_clips.py`가 object 클래스 10종만 순회하고 노면(`caution`/`roadway`)은
+>    빠져 있어("전방 차도..." 안내가 매번 실시간 6초대로 빠지던 원인) 두 클래스와 12시 우회 변형을
+>    사전합성 대상에 추가.
 
 > **코딩 패턴**: TypedDict는 `total=False`로 선언하여 모든 필드를 선택적으로 취급합니다 (guide 14 패턴). 이는 LangGraph 노드가 부분 상태만 반환해도 병합 오류가 발생하지 않도록 보장합니다.
 
