@@ -4,7 +4,7 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from server.detection.direction import estimate_direction
+from server.detection.direction import is_speech_front
 from server.detection.distance_policy import NEAR_ENTER_AREA_RATIO
 from server.detection.schemas import Detection, ReflexAlert
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # 소비합니다. 오탐 완화는 여전히 이 파일이 담당합니다.
 #   (1) 존재 confidence 하한 (AGNOSTIC_MIN_CONFIDENCE)
 #   (2) ByteTrack hit_count >= MIN_HIT_COUNT
-#   (3) 중앙 존 (원거리·측면 오탐 제외는 distance_policy의 Near 진입 조건이 담당)
+#   (3) 안내용 12시 회랑 (is_speech_front / SPEECH_FRONT_BAND near)
 #   (4) alert_id를 방향 버킷과 분리해 억제 우회 방지
 # =========================================================================
 # 단말 SSOT 정합용 참조 테이블 (게이트 본문 미사용).
@@ -66,8 +66,6 @@ HIGH_RISK_CLASSES: dict[str, float] = {
 
 # class-agnostic 게이트 임계 (서버 실행 경로)
 AGNOSTIC_MIN_CONFIDENCE = 0.35
-CENTER_X_MIN = 0.30
-CENTER_X_MAX = 0.70
 # 동일 track_id가 최소 이만큼 연속 프레임 유지되어야 반사 경보를 발동한다.
 MIN_HIT_COUNT = 3
 # 억제 키용. 방향은 clip/direction 필드에만 두고 alert_id에서는 제외한다.
@@ -101,20 +99,21 @@ def reflex_gate(
 
     center_x = detection.bbox.x + detection.bbox.w / 2
     center_x_norm = center_x / frame_width
-    is_centered = CENTER_X_MIN <= center_x_norm <= CENTER_X_MAX
+    # 2026-07-20: 안내용 12시 회랑(center_x in SPEECH_FRONT_BAND)만 비프/햅틱.
+    speech_ok = is_speech_front(detection.bbox, frame_width, "near")
 
     # 2026-07-19 임시 진단 로그: 실기기 테스트에서 near 진입 시 반사 미발동 원인 추적용.
     # 신뢰도·hit_count를 이미 통과한 후보만 찍어 로그 폭주를 막는다.
     logger.debug(
         f"[ReflexGate] 후보 평가: track_id={detection.track_id}, "
-        f"center_x_norm={center_x_norm:.3f} (범위 {CENTER_X_MIN}~{CENTER_X_MAX}), "
-        f"centered={is_centered}, route={detection.route}, "
+        f"center_x_norm={center_x_norm:.3f}, speech_front={speech_ok}, "
+        f"route={detection.route}, "
         f"effective_zone={detection.effective_distance_zone}, "
         f"area_ratio={detection.area_ratio:.4f} (near 진입 {NEAR_ENTER_AREA_RATIO}), "
         f"heuristic_m={detection.heuristic_distance_m:.2f}"
     )
 
-    if not is_centered:
+    if not speech_ok:
         return None
 
     # 거리 정책 SSOT의 route 불변식: Near(reflex)만 이 게이트를 통과한다.
@@ -123,8 +122,7 @@ def reflex_gate(
         return None
     # =========================================================================
 
-    direction = estimate_direction(detection.bbox, frame_width, distance_class="near")
-    # 억제는 방향 버킷과 무관하게 동일 키를 쓴다 (front ↔ front-left TTL 우회 방지).
+    # 억제는 방향 버킷과 무관하게 동일 키를 쓴다. 안내 클립은 12시(front)만.
     alert_id = SUPPRESS_ALERT_ID
 
     panning = (center_x / frame_width) * 2 - 1.0
@@ -146,9 +144,9 @@ def reflex_gate(
     return ReflexAlert(
         event_id="",
         alert_id=alert_id,
-        direction=direction,
+        direction="front",
         # 클라이언트가 client/assets/sounds/reflex_clips/에 동일 파일명으로 번들 재생한다.
-        clip=f"reflex_clips/high_{direction}.wav",
+        clip="reflex_clips/high_front.wav",
         haptic=True,
         panning=panning,
         distance=round(distance_m, 2),

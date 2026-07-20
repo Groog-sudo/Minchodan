@@ -1347,6 +1347,104 @@ class TestSpeechWorthyFilter:
         assert alert is not None
         assert alert.alert_id == "head_level_bollard"
 
+    def test_head_level_skips_near_outside_speech_front(self):
+        """near여도 안내용 12시 회랑 밖이면 head_level 미발동."""
+        side_det = Detection(
+            class_name="bollard",
+            confidence=0.9,
+            bbox=BBox(x=20.0, y=20.0, w=40.0, h=80.0),
+            track_id="T-side",
+            hit_count=5,
+            effective_distance_zone="near",
+            route="reflex",
+        )
+        assert DetectionPipeline._evaluate_head_level([side_det], 480.0, 640.0) is None
+
+
+class TestSpeechFrontCorridor:
+    """2026-07-20: SPEECH_FRONT_BAND(center_x) 안내용 12시 회랑."""
+
+    def test_is_speech_front_width_zero_false(self):
+        from server.detection.direction import is_speech_front
+
+        bbox = BBox(x=300.0, y=200.0, w=40.0, h=40.0)
+        assert is_speech_front(bbox, 0.0, "near") is False
+
+    def test_is_speech_front_center_in_band(self):
+        from server.detection.direction import is_speech_front
+
+        # center_x=320 → xn=0.5 (near/medium speech band 안)
+        bbox = BBox(x=300.0, y=200.0, w=40.0, h=40.0)
+        assert is_speech_front(bbox, 640.0, "near") is True
+        assert is_speech_front(bbox, 640.0, "medium") is True
+
+    def test_overlap_front_but_center_outside_not_speech(self):
+        """FRONT_BAND 겹침으로 spatial front여도 center가 speech band 밖이면 안내 거부."""
+        from server.detection.direction import estimate_direction, is_speech_front
+
+        # xmin~xmax가 Near FRONT_BAND(0.20~0.80)와 겹치지만 center xn≈0.21
+        bbox = BBox(x=10.0, y=280.0, w=250.0, h=160.0)
+        assert estimate_direction(bbox, 640.0, "near") == "front"
+        assert is_speech_front(bbox, 640.0, "near") is False
+
+        consumer = DetectionConsumer()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        det = Detection(
+            class_name="bicycle",
+            confidence=0.9,
+            bbox=bbox,
+            track_id="T-edge",
+            direction="approaching",
+            hit_count=4,
+        )
+        assert consumer._is_speech_worthy(det, frame, "medium", "low", False) is False
+
+    def test_reflex_rejects_edge_overlap_only(self):
+        """가장자리만 넓은 FRONT_BAND에 걸친 near는 반사 미발동."""
+        bbox = BBox(x=10.0, y=280.0, w=250.0, h=160.0)
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=bbox,
+            hit_count=3,
+            **_policy_fields(bbox),
+        )
+        assert reflex_gate(det, 480.0, 640.0) is None
+
+    def test_reflex_emits_high_front_clip_only(self):
+        bbox = BBox(x=210.0, y=280.0, w=220.0, h=160.0)
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=bbox,
+            hit_count=3,
+            **_policy_fields(bbox),
+        )
+        alert = reflex_gate(det, 480.0, 640.0)
+        assert alert is not None
+        assert alert.direction == "front"
+        assert alert.clip == "reflex_clips/high_front.wav"
+
+    def test_surface_gate_rejects_old_wide_band_side(self):
+        """구 FRONT_BAND near(0.20+)에는 들어가도 speech near(0.35+) 밖이면 미발동."""
+        surf = SurfaceResult(class_name="caution", centroid=[150.0, 400.0])  # xn≈0.23
+        assert surface_gate(surf, 480.0, 640.0) is None
+
+    def test_direction_text_unknown_not_front(self):
+        from server.detection.risk_rules import DIRECTION_TEXT, build_message_hint
+        from server.detection.schemas import Detection
+
+        assert DIRECTION_TEXT["unknown"] != "정면"
+        assert DIRECTION_TEXT["center"] != "정면"
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=300.0, y=200.0, w=40.0, h=40.0),
+            hit_count=3,
+        )
+        assert build_message_hint(det, "unknown", "near", "high") is None
+        assert build_message_hint(det, "center", "near", "high") is None
+
 
 class TestApproachingCooldownShortcut:
     """T1-b (2026-07-18): 12시 회랑 접근 객체 쿨다운 단축 단위 테스트."""

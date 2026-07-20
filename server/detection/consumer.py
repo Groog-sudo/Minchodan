@@ -28,11 +28,11 @@ from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.config import get_detector, get_segmentor
 from server.detection.detection_pipeline import DetectionPipeline
 from server.detection.direction import (
-    FRONT_BAND,
     estimate_avoid_clock_direction,
     estimate_clock_direction,
-    estimate_direction,
     estimate_distance,
+    is_speech_front,
+    is_speech_front_x,
 )
 from server.detection.risk_rules import class_name_to_ko
 from server.detection.schemas import BBox, Detection, DetectionResult, ReflexAlert, ReflexClear
@@ -228,7 +228,7 @@ class DetectionConsumer:
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
 
-        # T1-b: 12시 회랑 + approaching + medium이면 쿨다운을 3초로 단축
+        # T1-b: 안내용 12시 회랑 + approaching + medium이면 쿨다운을 3초로 단축
         # (near는 반사 전담이므로 인지 쿨다운 단축 대상에서 제외)
         if not distance_class and primary_det is not None and frame is not None:
             distance_class = self._resolve_distance_class(primary_det, frame)
@@ -239,8 +239,7 @@ class DetectionConsumer:
             and primary_det.direction == "approaching"
         ):
             _h, w = frame.shape[:2]
-            spatial_dir = estimate_direction(primary_det.bbox, w, distance_class)
-            if spatial_dir == "front":
+            if is_speech_front(primary_det.bbox, w, distance_class):
                 return max(3.0, prev_duration_sec + self._guide_cooldown_margin_sec)
 
         return base_gap
@@ -274,16 +273,12 @@ class DetectionConsumer:
 
     @staticmethod
     def _is_front_corridor_x(x: float, frame_width: float, distance_class: str = "medium") -> bool:
-        """정규화 x가 거리별 FRONT_BAND(12시 회랑) 안인지 판정."""
-        if frame_width <= 0:
-            return True
-        front_lo, front_hi = FRONT_BAND.get(distance_class, (0.30, 0.70))
-        xn = float(x) / frame_width
-        return front_lo <= xn <= front_hi
+        """안내용 12시 회랑(SPEECH_FRONT_BAND) 안인지 판정. width<=0이면 False."""
+        return is_speech_front_x(x, frame_width, distance_class)
 
     @staticmethod
     def _surface_hazard_in_front(surfaces: list, frame: np.ndarray | None, zone: str) -> bool:
-        """위험 노면 centroid가 해당 구역 FRONT_BAND(12시) 안에 하나라도 있으면 True."""
+        """위험 노면 centroid가 안내용 12시 회랑(SPEECH_FRONT_BAND) 안에 있으면 True."""
         if frame is None or not surfaces:
             return False
         w = int(frame.shape[1]) if frame.ndim >= 2 else 0
@@ -555,7 +550,9 @@ class DetectionConsumer:
         #
         # 2026-07-19: has_significant_surface/mid 무조건 통과를 제거. 노면은
         # Near=반사만 / Medium=인지 1회 / Far=화면만.
-        # 2026-07-19: Near 햅틱·Medium 인지는 12시 회랑(FRONT_BAND) 탐지만 허용.
+        # 2026-07-19: Near 햅틱·Medium 인지는 12시 회랑 탐지만 허용.
+        # 2026-07-20: 안내용 회랑은 SPEECH_FRONT_BAND(center_x)로 통일.
+        # FRONT_BAND overlap=front는 공간 라벨용이며 안내 허용에 쓰지 않는다.
         """
         if departure_confirmed:
             return True
@@ -592,10 +589,11 @@ class DetectionConsumer:
         if distance_class == "far":
             return False
 
-        # 12시 회랑 밖은 무발화 (측면 approaching도 인지 TTS 제외).
+        # 안내용 12시 회랑(center_x) 밖은 무발화.
         _h, w = frame.shape[:2]
-        spatial_dir = estimate_direction(primary_det.bbox, w, distance_class)
-        return spatial_dir == "front"
+        if w <= 0:
+            return False
+        return is_speech_front(primary_det.bbox, w, distance_class)
 
     def get_runtime_status(self) -> dict[str, str | float | int | None]:
         """최근 DetectionConsumer 처리 상태를 반환한다."""
@@ -1637,18 +1635,21 @@ class DetectionConsumer:
                             },
                         )
                 if frame is not None:
-                    clock_direction = estimate_clock_direction(primary_det.bbox, frame.shape[1])
-                    # 전방(12시)일 때만 우회 시각을 채워 패스트 레인 "전방 X, N시로 우회"에 쓴다.
-                    if clock_direction == "12시":
-                        avoid_clock_direction = estimate_avoid_clock_direction(
-                            primary_det.bbox, frame.shape[1]
-                        )
+                    w = int(frame.shape[1])
+                    # speech_front일 때만 인지 안내가 여기까지 오므로 clock은 12시로 정규화.
+                    # (11시/1시를 말로 흘려 진행축을 흐리게 하지 않는다)
+                    if is_speech_front(primary_det.bbox, w, distance_class or "medium"):
+                        clock_direction = "12시"
+                        avoid_clock_direction = estimate_avoid_clock_direction(primary_det.bbox, w)
+                    else:
+                        clock_direction = estimate_clock_direction(primary_det.bbox, w)
                 object_ko = class_name_to_ko(primary_det.class_name)
             elif has_significant_surface:
                 # 노면-only Medium: 객체 힌트 대신 caution/roadway 힌트를 채우고,
                 # 방향은 centroid 기반으로 실측한다(2026-07-20: 12시/2시 고정값이었던
                 # 것을 실기기 필드 테스트에서 "방향이 동적이지 않다"는 피드백으로 수정 -
                 # 객체 탐지(primary_det)와 동일하게 estimate_clock_direction을 재사용).
+                # 2026-07-20: speech_front일 때 clock을 12시로 정규화, 미확정 폴백 제거.
                 surface_hazard = next(
                     (s for s in result.surface if s.class_name in ("caution", "roadway")),
                     None,
@@ -1660,17 +1661,16 @@ class DetectionConsumer:
                     object_ko = class_name_to_ko(surface_key)
                     centroid = getattr(surface_hazard, "centroid", None)
                     if frame is not None and centroid and len(centroid) >= 2:
+                        w = int(frame.shape[1])
                         surface_bbox = BBox(
                             x=float(centroid[0]), y=float(centroid[1]), w=0.0, h=0.0
                         )
-                        clock_direction = estimate_clock_direction(surface_bbox, frame.shape[1])
-                        if clock_direction == "12시":
-                            avoid_clock_direction = estimate_avoid_clock_direction(
-                                surface_bbox, frame.shape[1]
-                            )
-                    # centroid를 못 구했을 때만(프레임 없음 등) 안전 기본값으로 폴백.
-                    clock_direction = clock_direction or "12시"
-                    avoid_clock_direction = avoid_clock_direction or "2시"
+                        zone_for_speech = surface_zone or "medium"
+                        if is_speech_front(surface_bbox, w, zone_for_speech):
+                            clock_direction = "12시"
+                            avoid_clock_direction = estimate_avoid_clock_direction(surface_bbox, w)
+                        else:
+                            clock_direction = estimate_clock_direction(surface_bbox, w)
                     if not distance_class:
                         distance_class = surface_zone or "medium"
         except Exception as e:

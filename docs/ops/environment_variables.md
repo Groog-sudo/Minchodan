@@ -113,6 +113,8 @@
 | **`BRAILLE_REENTER_COOLDOWN_S`** | float | 선택 | `45.0` | **2026-07-20 신규.** 점자블록-only 인지 재진입 쿨다운(초). 위험 노면보다 길게 잡아 잔소리 완화 | `server/detection/consumer.py` |
 | **`BRAILLE_ABSENT_STREAK`** | int | 선택 | `5` | **2026-07-20 신규.** 점자블록 인지 에피소드 이탈 히스테리시스 프레임 수 | `server/detection/consumer.py` |
 | **`NEAR_CLEAR_HOLD_OFF_S`** | float | 선택 | `0.4` | **2026-07-20 신규.** Near episode `reflex_clear` 전 hold-off(초). near↔medium 경계 진동으로 비프가 끊기는 채터 완화 | `server/detection/consumer.py` |
+| **`SPEECH_FRONT_BAND_NEAR_LO`** / **`SPEECH_FRONT_BAND_NEAR_HI`** | float | 선택 | `0.35` / `0.65` | **2026-07-20 신규.** 안내용 12시 회랑(정규화 x, Near). bbox **중심 x**가 이 구간일 때만 반사 비프/햅틱. 공간 라벨용 `FRONT_BAND`와 분리 | `server/detection/direction.py` |
+| **`SPEECH_FRONT_BAND_MEDIUM_LO`** / **`SPEECH_FRONT_BAND_MEDIUM_HI`** | float | 선택 | `0.40` / `0.60` | **2026-07-20 신규.** 안내용 12시 회랑(정규화 x, Medium). 인지 TTS 허용 조건 | `server/detection/direction.py` |
 | **`SURFACE_ZONE_NEAR_Y_RATIO`** | float | 선택 | `0.6` | 노면 Y좌표 기반 near 거리 구역 비율. centroid_y > frame_height*이 값이면 near로 판정 | `server/detection/consumer.py:99` |
 | **`SURFACE_ZONE_MEDIUM_Y_RATIO`** | float | 선택 | `0.35` | 노면 Y좌표 기반 medium 거리 구역 비율 | `server/detection/consumer.py:100` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |

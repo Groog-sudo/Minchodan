@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.5 (2026-07-20 §5.2 STT 중 Near 반사 비프·햅틱 병행 허용 - 인지 guide만 STT 우선. 기존 v1.3.4: STT 안전 상한 타이머를 `audioEngine.setSttActive()` 내장으로 정정. 기존 v1.3.3: §2.1 `alert_id`를 class-agnostic `"high_obstacle"` 고정값으로 정정. 기존 v1.3.2: §5.2 우선순위 4단·대기열 위험도순)
+> **버전**: v1.3.6 (2026-07-20 §2.1 안내용 12시 회랑 `SPEECH_FRONT_BAND`/`is_speech_front` 분리 - 음성·햅틱만 진행축. 기존 v1.3.5: §5.2 STT 중 Near 비프·햅틱 병행. 기존 v1.3.4: STT 안전 상한. 기존 v1.3.3: alert_id `high_obstacle`)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -73,9 +73,9 @@
 | :------------------- | :------ | :-------- | :-------------------------------------------------------------------------------------- |
 | **type**             | String  | **필수**  | 메시지 타입 식별자 (`reflex_alert` 고정)                                                |
 | **alert_id**         | String  | **필수**  | 경보 고유 식별자. **2026-07-18 class-agnostic**: `"high_obstacle"` 고정(`SUPPRESS_ALERT_ID`). 억제 키는 `high_obstacle:{track_id}:{distance_band}`로 분리 (`server/detection/gates/reflex_gate.py`) |
-| **direction**        | String  | **필수**  | 장애물 출현 방향 (`front-left`, `front`, `front-right` — `server/detection/direction.py`의 `estimate_direction()` 산출값. `left`/`right`/`center`/`stop`은 사용하지 않음) |
+| **direction**        | String  | **필수**  | 장애물 출현 방향. **2026-07-20**: 반사 안내는 `is_speech_front()`(안내용 `SPEECH_FRONT_BAND`, bbox 중심 x)를 통과한 경우만 발동하며 payload `direction`은 `"front"`로 정규화한다. 공간 라벨용 `estimate_direction()`+`FRONT_BAND`(bbox 겹침, Near 0.20~0.80 등)는 로그/콘솔용으로 유지하되 **안내 허용 조건으로 쓰지 않는다**. `center`/`unknown`은 「정면」 안내 키로 쓰지 않는다 |
 | **panning**          | Float   | **필수**  | 오디오 좌우 밸런스 편향값 (**-1.0**은 완전 왼쪽, **1.0**은 완전 오른쪽, **0.0**은 중앙) |
-| **clip**             | String  | **필수**  | 사전합성 음성 클립 경로(`reflex_clips/high_front.wav` 형식). 클래스와 무관하게 direction/유형 기준으로만 정해진다(§4.2 참조). 서버는 오디오 바이트가 아니라 이 경로 문자열만 전달하고, 실제 파일은 단말 번들(`client/assets/sounds/reflex_clips/`)에서 재생한다 |
+| **clip**             | String  | **필수**  | 사전합성 음성 클립 경로. **2026-07-20**: 객체 Near 반사는 `reflex_clips/high_front.wav` 고정(측면 클립으로 안내하지 않음). 노면은 `reflex_clips/surface_*.wav` |
 | **distance**         | Float   | **필수**  | 탐지된 장애물과의 렌즈 기준 상대 거리 (단위: 미터)                                      |
 | **beep_interval_ms** | Integer | **필수**  | 비프음 반복 재생 주기 (단위: 밀리초, **0**은 무점멸 연속음)                             |
 | **haptic_pattern**   | String  | **필수**  | 기기에 전달할 진동 프로파일 식별자 (`short`, `double`, `continuous`)                    |

@@ -3726,3 +3726,16 @@
 - **관련 파일**: `server/detection/consumer.py`, `detection_pipeline.py`, `server/navigation/manager.py`, `server/services/pipeline_debug_builder.py`, `client/src/services/audioEngine.ts`, `hapticEngine.ts`, `useWebSocket.ts`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, tests
 - **검증 결과**: Docker `pytest tests/test_detection.py tests/test_navigation_manager_obstacles.py` → **87 passed**. 이중 경로 OK, react-doctor 통과.
 - **커밋**: `be7337f`
+
+---
+
+### 2026-07-20 | 3·7단계 | 안내용 12시 회랑(SPEECH_FRONT_BAND) 분리
+
+- **배경**: 필드 테스트에서 전방 다수 객체에 음성·햅틱이 과도. `front`(충돌 회랑)·`center`(화면 중앙)·`unknown`(폴백)이 모두 「정면」으로 안내되던 혼동.
+- **변경 내용**:
+  - `direction.py`: `SPEECH_FRONT_BAND`(near 0.35~0.65, medium 0.40~0.60) + `is_speech_front`/`is_speech_front_x`(center_x, width<=0→False). `FRONT_BAND`는 공간 라벨용 유지.
+  - 반사/인지/노면/head_level 게이트를 speech_front만 통과. 반사 클립 `high_front.wav` 고정. 인지 clock은 12시 정규화.
+  - `risk_rules`: `center`→화면 중앙, `unknown`→방향 미상, 안내 hint에서 제외.
+- **관련 파일**: `server/detection/direction.py`, `gates/reflex_gate.py`, `gates/surface_gate.py`, `detection_pipeline.py`, `consumer.py`, `risk_rules.py`, docs, tests
+- **검증 결과**: Docker `pytest tests/test_detection.py tests/test_distance_priority_integration.py` → **98 passed**. Ruff OK.
+- **비고**: 커밋 해시는 커밋 후 기입.
