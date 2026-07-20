@@ -36,6 +36,10 @@
   "scripts": {
     "start": "expo start",
     "start:android": "expo start --scheme minchodan",
+    "metro:ts": "bash ../scripts/metro_tailscale.sh start",
+    "metro:ts:status": "bash ../scripts/metro_tailscale.sh status",
+    "metro:ts:launch": "bash ../scripts/metro_tailscale.sh launch",
+    "metro:ts:stop": "bash ../scripts/metro_tailscale.sh stop",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web"

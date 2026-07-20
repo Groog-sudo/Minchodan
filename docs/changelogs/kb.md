@@ -3574,3 +3574,17 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useLocation.ts`, `console/src/components/DetectionGuidanceLogTable.tsx`, `console/src/components/LiveCameraFeed.tsx`, `console/src/styles.css`, `server/api/ws_router.py`, `server/detection/consumer.py`, `docs/design/*`
 - **검증 결과**: 이중 경로·react-doctor·`test_langgraph` 통과. FastAPI recreate 후 `dev-001` welcome 확인.
 - **비고**: 단말 Metro 리로드 후 HUD 헤더 좌표·서버 `[WS] realtime_gps 수신` 로그로 확인.
+
+---
+
+### 2026-07-20 | 단말·ops | Metro Tailscale 고정 운영 스크립트
+
+- **커밋**: (푸시 후 해시)
+- **배경**: Metro가 세션마다 kill/잘못된 host/setsid로 자주 죽어 Dev Client가 서버를 못 찾음.
+- **변경 내용**:
+  - `scripts/metro_tailscale.sh` 신규: start(이미 살아 있으면 유지)·stop·restart·status·launch(딥링크).
+  - `client/package.json`에 `metro:ts*` npm 스크립트 추가.
+  - `integration-test-orchestrator` 스킬: 무조건 kill 금지, 본 스크립트 사용으로 정정(.agents/.claude 미러).
+- **관련 파일**: `scripts/metro_tailscale.sh`, `client/package.json`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
+- **검증 결과**: `metro_tailscale.sh status/start` — localhost·Tailscale OK, 기존 프로세스 skip 확인.
+- **비고**: 앱 실행은 `bash scripts/metro_tailscale.sh launch` 권장.

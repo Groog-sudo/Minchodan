@@ -248,36 +248,40 @@ cd ios && pod install && cd ../..
 
 Metro는 빌드/실행 전에 별도 백그라운드 프로세스로 계속 떠 있어야 합니다.
 
-> **2026-07-19 보완 - Metro 백그라운드 실행 안정성**: 단순 `nohup ... &` 는 부모 셸 종료 시
-> SIGHUP 이 nohup 자식에게까지 전달되어 Metro 가 조용히 종료되는 사례가 반복됨(실측).
-> `setsid` 로 완전히 분리된 세션으로 실행하거나, 최소한 `disown` 을 함께 사용합니다.
-> 또한 `EXPO_PUBLIC_NETWORK_MODE=tailscale` 일 때 Metro 가 `0.0.0.0:8081` 에 바인딩되는지
-> 반드시 확인합니다 (단말이 Tailscale IP 로 번들을 받아가야 하므로).
+> **2026-07-20 고정 운영**: Metro는 `scripts/metro_tailscale.sh`로만 기동/종료/실기기 실행한다.
+> - `start`: 이미 `:8081`이 살아 있으면 **kill 하지 않고 유지**
+> - `launch`: Tailscale 딥링크로 Dev Client 실행 (Bonjour 검색 우회)
+> - `stop`/`restart`: 명시적 재기동에서만 kill
+>
+> ```bash
+> bash scripts/metro_tailscale.sh start
+> bash scripts/metro_tailscale.sh status
+> bash scripts/metro_tailscale.sh launch
+> ```
+>
+> 에이전트는 세션마다 `lsof -ti:8081 | xargs kill`을 하지 않는다. status가 DOWN일 때만 start.
+>
+> **macOS**: `setsid` 없음. 스크립트가 `nohup`+`disown`을 사용한다.
+> **Expo host**: `--host 0.0.0.0`은 거부된다. `--host lan` + `REACT_NATIVE_PACKAGER_HOSTNAME=<Tailscale IPv4>`.
 
 ```bash
-# 안정적인 백그라운드 실행 (setsid 로 세션 분리)
-cd client && setsid bash -c 'exec npm run start -- --clear' > "../$LOG_DIR/metro.log" 2>&1 < /dev/null &
-disown 2>/dev/null || true
-
-# 또는 --host 0.0.0.0 을 명시해 Tailscale 인터페이스 바인딩 보장
-cd client && setsid bash -c 'exec npx expo start --clear --host 0.0.0.0' > "../$LOG_DIR/metro.log" 2>&1 < /dev/null &
-disown 2>/dev/null || true
+# (레거시) 직접 기동이 필요할 때만 — 가능하면 metro_tailscale.sh 사용
+cd client && REACT_NATIVE_PACKAGER_HOSTNAME="$(tailscale ip -4 | head -1)" \
+  npx expo start --host lan --port 8081 --scheme minchodan
 ```
 
 **Metro 헬스체크 (이중 경로 - localhost + Tailscale IP)**:
 
 ```bash
-# localhost 경로 (호스트 자체 검증)
-curl -sf -o /dev/null -w "Metro localhost:8081 → HTTP %{http_code}\n" --max-time 5 http://localhost:8081/
-
-# Tailscale IP 경로 (단말이 실제로 접근하는 경로 - 반드시 200 이어야 함)
+bash scripts/metro_tailscale.sh status
+# 또는
+curl -sf -o /dev/null -w "Metro localhost:8081 → HTTP %{http_code}\n" --max-time 5 http://localhost:8081/status
 HOST_TS_IP="$(tailscale ip -4 | head -1)"
-curl -sf -o /dev/null -w "Metro $HOST_TS_IP:8081 → HTTP %{http_code}\n" --max-time 5 "http://$HOST_TS_IP:8081/"
+curl -sf -o /dev/null -w "Metro $HOST_TS_IP:8081 → HTTP %{http_code}\n" --max-time 5 "http://$HOST_TS_IP:8081/status"
 ```
 
-> **주의**: `localhost:8081` 이 200 이고 `<Tailscale IP>:8081` 이 000 이면 Metro 가
-> `127.0.0.1` 만 바인딩한 것입니다. 이 경우 단말이 번들을 받지 못해 앱이 흰 화면이 됩니다.
-> `--host 0.0.0.0` 을 명시하거나 `EXPO_PUBLIC_NETWORK_MODE=tailscale` 설정을 재확인합니다.
+> **주의**: `localhost:8081` 이 200 이고 `<Tailscale IP>:8081` 이 000 이면 Tailscale 경로가
+> 막힌 것입니다. `REACT_NATIVE_PACKAGER_HOSTNAME`과 방화벽을 재확인합니다.
 > Metro 번들 빌드는 단말이 실제로 번들을 요청할 때 진행되므로, 첫 빌드는 1~2분 소요될 수 있습니다.
 
 ### 5-B. 운영 콘솔(console) 프론트 기동
