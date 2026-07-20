@@ -3588,3 +3588,18 @@
 - **관련 파일**: `scripts/metro_tailscale.sh`, `client/package.json`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`
 - **검증 결과**: `metro_tailscale.sh status/start` — localhost·Tailscale OK, 기존 프로세스 skip 확인.
 - **비고**: 앱 실행은 `bash scripts/metro_tailscale.sh launch` 권장.
+
+---
+
+### 2026-07-20 | 단말·7단계 | 인지 안내 대기열 폐기 정책을 시간순에서 위험도순으로 전환
+
+- **배경**: 12시 회랑 인지 안내 대기열(`GUIDE_PENDING_MAX=6`)이 초과분을 오래된 순(FIFO)으로 폐기하고, 재생 종료 후에도 "최신 1건"만 재생했다. 위험도(우선순위) 낮은 것부터 버리도록 바꿔달라는 요청에 따라 확인해보니, 기존 구조에서는 재생 중인 것보다 낮은 우선순위가 즉시 드롭돼 큐 안 항목이 항상 동일 우선순위였고(비교 대상 자체가 없어 우선순위 기반 폐기가 무의미), 큐가 우선순위를 혼합해 담도록 입장 게이트부터 완화해야 함을 확인.
+- **변경 내용**:
+  - `canStartGuide`: 재생 중인 것보다 낮은 우선순위를 즉시 드롭하던 조건 제거(STT 게이트는 유지). 낮은 우선순위도 대기열 적재 후보가 됨.
+  - 신규 `evictLowestPriorityPendingGuide()`: 대기열 6개 초과 시 최하위 우선순위부터 폐기(동률이면 오래된 쪽). `enqueueGuide`의 overflow 처리에서 기존 `shift()`(FIFO) 대체.
+  - `drainNewestPendingGuide` → `drainHighestPriorityPendingGuide`로 개명 및 로직 전환: 재생 자연 종료 시 "최신 1건" 대신 "최고 우선순위 1건"(동률이면 최신)을 재생. 호출부 2곳(자연 종료, 재생 실패 폴백) 갱신.
+  - 선점(preemption) 시 하위 우선순위 큐 전체를 비우는 `discardPendingGuidesBelow`는 의도적으로 유지(위급 상황 종료 후 낡은 저위험 안내가 뒤늦게 재생되는 것을 방지, 접근성 안전 보수적 선택).
+  - stale 주석 정리(`GUIDE_PENDING_MAX` 상단 주석, `pendingGuides` 필드 주석).
+- **관련 파일**: `client/src/services/audioEngine.ts`
+- **검증 결과**: `cd client && npx tsc --noEmit -p .` 통과(오류 0건). ESLint 설정 부재로 스킵.
+- **비고**: 빌드/실기기 재생 순서 확인은 미실시 — Metro 리로드 후 실기기에서 우선순위 혼합 상황(예: 측면 저위험 다건 + 정면 near) 재생 순서 실측 권장.

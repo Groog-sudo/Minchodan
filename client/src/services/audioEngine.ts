@@ -26,7 +26,7 @@ const HIGH_DANGER_INTERVAL_MS = 100;
 // 가이드 재생 중 저위험(3~4단계) 비프의 덕킹 볼륨. 0으로 완전히 죽이지 않고
 // 존재감만 남겨, 방향성 안내 자체는 계속 인지할 수 있게 한다.
 const DUCKED_BEEP_VOLUME = 0.25;
-/** Near/인지 음성 안내 대기열 상한. 초과 시 오래된 항목을 drop하고 신규만 유지. */
+/** Near/인지 음성 안내 대기열 상한. 초과 시 최하위 우선순위 항목을 drop한다(동률이면 오래된 쪽). */
 const GUIDE_PENDING_MAX = 6;
 
 type PendingGuideItem =
@@ -87,8 +87,8 @@ class AudioEngine {
    */
   private sttActive = false;
   /**
-   * 재생 중 쌓인 Near/인지 음성 대기열(최대 GUIDE_PENDING_MAX).
-   * 재생 종료 시 최신 1건만 꺼내 재생하고 나머지는 폐기한다.
+   * 재생 중 쌓인 Near/인지 음성 대기열(최대 GUIDE_PENDING_MAX, 우선순위 혼합 가능).
+   * 재생 종료 시 최고 우선순위 1건만 꺼내 재생하고 나머지는 폐기한다.
    */
   private pendingGuides: PendingGuideItem[] = [];
   /** 선점/중단 시 이전 재생 콜백이 drain 하지 않도록 무효화하는 세대 번호. */
@@ -421,19 +421,15 @@ class AudioEngine {
 
   /**
    * 가이드 음성 재생 우선순위 판정.
-   * STT 활성 중에는 STT 미만(Near 위험 안내 포함) 전부 드롭.
-   * 재생 중 동일/상위 우선순위는 대기열 적재 후보(즉시 드롭하지 않음).
+   * STT 활성 중에는 STT 미만(Near 위험 안내 포함) 전부 드롭(질문 방해 금지, 유지).
+   * 재생 중인 항목보다 낮은 우선순위도 더 이상 즉시 드롭하지 않고 대기열 적재
+   * 후보로 넘긴다 - 큐가 우선순위 혼합을 담아야 위험도 기반 폐기(evictLowestPriority)가
+   * 의미를 가진다. 상위/동일/하위 판정은 enqueueGuide가 담당한다.
    */
   private canStartGuide(priority: GuidePriority): boolean {
     if (this.sttActive && priority < GUIDE_PRIORITY.STT) {
       console.log(
         `[AudioEngine] STT 상호작용 중 - 위험/일반 안내 드롭(priority=${priority} < STT=${GUIDE_PRIORITY.STT})`,
-      );
-      return false;
-    }
-    if (priority < this.activeGuidePriority) {
-      console.log(
-        `[AudioEngine] 낮은 우선순위 가이드 드롭: incoming=${priority}, active=${this.activeGuidePriority}`,
       );
       return false;
     }
@@ -476,11 +472,27 @@ class AudioEngine {
   }
 
   /**
+   * 대기열이 상한(GUIDE_PENDING_MAX)을 넘으면 가장 낮은 우선순위 항목부터 폐기한다.
+   * 우선순위가 같으면 먼저 들어온(오래된) 쪽을 버려 최근 상황 정보를 우선 보존한다.
+   */
+  private evictLowestPriorityPendingGuide(): PendingGuideItem | undefined {
+    if (this.pendingGuides.length === 0) return undefined;
+    let dropIndex = 0;
+    for (let i = 1; i < this.pendingGuides.length; i++) {
+      if (this.pendingGuides[i].priority < this.pendingGuides[dropIndex].priority) {
+        dropIndex = i;
+      }
+    }
+    const [dropped] = this.pendingGuides.splice(dropIndex, 1);
+    return dropped;
+  }
+
+  /**
    * Near/인지 음성을 대기열에 넣거나 즉시 재생한다.
-   * - 재생 중 + 상위 우선순위: 선점 즉시 재생
-   * - 재생 중 + 동일 우선순위: 대기열(최대 6, 초과 시 오래된 것 drop)
+   * - 재생 중 + 상위 우선순위: 선점 즉시 재생(큐의 하위 우선순위는 정리)
+   * - 재생 중 + 동일/하위 우선순위: 대기열(최대 6, 초과 시 최하위 우선순위부터 drop)
    * - 유휴: 즉시 재생
-   * 재생 종료 시 대기열의 최신 1건만 재생하고 나머지는 폐기.
+   * 재생 종료 시 대기열에서 최고 우선순위 1건만 재생하고 나머지는 폐기.
    */
   private enqueueGuide(item: PendingGuideItem): void {
     if (!this.canStartGuide(item.priority)) {
@@ -496,10 +508,10 @@ class AudioEngine {
       }
       this.pendingGuides.push(item);
       while (this.pendingGuides.length > GUIDE_PENDING_MAX) {
-        const dropped = this.pendingGuides.shift();
+        const dropped = this.evictLowestPriorityPendingGuide();
         if (dropped) {
           console.log(
-            `[AudioEngine] 대기열 초과(${GUIDE_PENDING_MAX}) - 오래된 안내 폐기 kind=${dropped.kind} priority=${dropped.priority}`,
+            `[AudioEngine] 대기열 초과(${GUIDE_PENDING_MAX}) - 최하위 우선순위 안내 폐기 kind=${dropped.kind} priority=${dropped.priority}`,
           );
           dropped.onComplete?.();
         }
@@ -513,24 +525,33 @@ class AudioEngine {
     void this.playGuideImmediate(item);
   }
 
-  /** 자연 종료 후 대기열에서 최신 1건만 재생하고 나머지는 폐기한다. */
-  private drainNewestPendingGuide(): void {
+  /**
+   * 자연 종료 후 대기열에서 최고 우선순위 1건만 재생하고 나머지는 폐기한다.
+   * 우선순위가 같으면 가장 최근에 들어온 쪽을 선택한다(오래된 상황 정보 배제).
+   */
+  private drainHighestPriorityPendingGuide(): void {
     if (this.pendingGuides.length === 0) return;
-    const newest = this.pendingGuides.pop()!;
+    let bestIndex = this.pendingGuides.length - 1;
+    for (let i = this.pendingGuides.length - 2; i >= 0; i--) {
+      if (this.pendingGuides[i].priority > this.pendingGuides[bestIndex].priority) {
+        bestIndex = i;
+      }
+    }
+    const [best] = this.pendingGuides.splice(bestIndex, 1);
     const discarded = this.pendingGuides.splice(0);
     for (const item of discarded) {
       item.onComplete?.();
     }
     if (discarded.length > 0) {
       console.log(
-        `[AudioEngine] 대기 ${discarded.length}건 폐기, 최신만 재생 kind=${newest.kind} priority=${newest.priority}`,
+        `[AudioEngine] 대기 ${discarded.length}건 폐기, 최고 우선순위만 재생 kind=${best.kind} priority=${best.priority}`,
       );
     } else {
       console.log(
-        `[AudioEngine] 대기 최신 재생 kind=${newest.kind} priority=${newest.priority}`,
+        `[AudioEngine] 대기 최고 우선순위 재생 kind=${best.kind} priority=${best.priority}`,
       );
     }
-    void this.playGuideImmediate(newest);
+    void this.playGuideImmediate(best);
   }
 
   private notifyGuideFinished(epoch: number, onComplete?: () => void): void {
@@ -538,7 +559,7 @@ class AudioEngine {
     this.isGuidePlaying = false;
     this.clearGuidePriority();
     onComplete?.();
-    this.drainNewestPendingGuide();
+    this.drainHighestPriorityPendingGuide();
   }
 
   private async playGuideImmediate(item: PendingGuideItem): Promise<void> {
@@ -716,7 +737,7 @@ class AudioEngine {
       }
       if (epoch === this.guideEpoch) {
         onComplete?.();
-        this.drainNewestPendingGuide();
+        this.drainHighestPriorityPendingGuide();
       } else {
         onComplete?.();
       }
