@@ -3683,10 +3683,14 @@
 
 ---
 
-### 2026-07-20 | 3단계 | code_docs_consistency_sync
+### 2026-07-20 | 3·7단계 | code_docs_consistency_sync
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `18ac9d9`
+- **배경**: GLM 문서 정합 작업이 중단된 미커밋 working tree를 코드 SSOT와 교차 검증한 뒤 남은 stale를 마저 맞춤.
 - **변경 내용**:
-  - 코드-문서 정합: alert_id high_obstacle·Surface Gate P0·억제 TTL 5s·TTS 4엔진·status dead contract를 설계/ops/스킬에 동기화하고, server_detection·latency_event ts를 epoch ms로 통일하며 인지 guide에 source=cognitive를 주입한다.
-- **관련 파일**: `agents/skills/yolo-obstacle-detection/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `docs/Directory_Structure.md`, `docs/README.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/design/minchodan_design_note.md`, `docs/design/pipeline_stage_design.md`, `docs/design/reflex_audio_specification.md`, `docs/ops/android_device_integration_guide.md`, `docs/ops/android_wireless_test_guide_v2.md`, `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/integration_scenario_test.md`, `docs/ops/model_class_validation_report.md`, `docs/ops/redis_streams_schema.md`, `docs/ops/test_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage6_orchestration_design.md`, `docs/stage-guides/stage7_tts_design.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `server/detection/consumer.py`, `server/tts/realtime_tts.py`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+  - 설계/ops/스킬: alert_id `high_obstacle`, Surface Gate P0 `{caution,stair_down,manhole}`, 억제 TTL 5s(surface 15s), TTS 4엔진, status dead contract, STT `faster-whisper-small` 동기화.
+  - 잔여 stale: pipeline/test/redis/Directory_Structure/README/reflex_audio/stage6/android/`high_car_front` 정정.
+  - 코드: `server_detection`·`latency_event` ts를 epoch ms(`now_ts`), 인지 guide `source=cognitive`, TTS 타임아웃 주석 15s.
+- **관련 파일**: `docs/design/*`, `docs/ops/*`, `docs/stage-guides/*`, yolo-obstacle-detection SKILL(.agents/.claude), `server/detection/consumer.py`, `server/tts/realtime_tts.py`
+- **검증 결과**: 이중 경로 OK, react-doctor 통과. Docker `pytest tests/test_detection.py tests/test_fast_lane.py tests/test_langgraph.py` → **119 passed**. 호스트 stage3(`verify_gpu`/torch)는 환경 부재로 skip-test 후 Docker 검증으로 대체.
+- **비고**: `docs/research/*` 과거 문제 서술(개선 계획서)은 현행 명세가 아니므로 범위 외.
