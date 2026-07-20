@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.4 (2026-07-20 §5.2 STT 안전 상한 타이머를 `audioEngine.setSttActive()` 내장으로 정정 - 녹음 시작 시점 호출에 백스톱이 없어 외부망에서 억제 상태가 영구 고착되던 결함 반영. 기존 v1.3.3: §2.1 `alert_id`를 class-agnostic `"high_obstacle"` 고정값으로 정정. 기존 v1.3.2: §5.2 우선순위 4단·대기열 위험도순)
+> **버전**: v1.3.5 (2026-07-20 §5.2 STT 중 Near 반사 비프·햅틱 병행 허용 - 인지 guide만 STT 우선. 기존 v1.3.4: STT 안전 상한 타이머를 `audioEngine.setSttActive()` 내장으로 정정. 기존 v1.3.3: §2.1 `alert_id`를 class-agnostic `"high_obstacle"` 고정값으로 정정. 기존 v1.3.2: §5.2 우선순위 4단·대기열 위험도순)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -147,7 +147,7 @@ graph TD
 - 재생 중 더 높은 우선순위가 들어오면 즉시 선점 재생하고, 대기열에 남아있던 하위 우선순위는 전량 폐기한다(`discardPendingGuidesBelow`) — 위급 상황 종료 후 낡은 저위험 안내가 뒤늦게 재생되는 것을 막기 위한 의도적 보수 정책.
 - 재생 중 동일/하위 우선순위는 더 이상 즉시 드롭되지 않고 대기열에 쌓인다(상한 6). 6개 초과 시 **최하위 우선순위부터** 폐기한다(`evictLowestPriorityPendingGuide`, 동률이면 오래된 쪽). 2026-07-19 이전에는 오래된 순(FIFO)으로 폐기했다.
 - 현재 재생이 자연 종료되면 대기열에서 **최고 우선순위 1건**(동률이면 최신)만 꺼내 재생하고 나머지는 폐기한다(`drainHighestPriorityPendingGuide`). 2026-07-19 이전에는 "최신 1건"만 재생했다.
-- STT 상호작용(녹음~응답 종료) 구간 동안 `audioEngine.setSttActive(true)`로 STT 미만 전부를 드롭한다(대기열에도 넣지 않음 - 질문 방해 금지가 최우선). 녹음 시작은 `CameraView.tsx`가 담당한다.
+- STT 상호작용(녹음~응답 종료) 구간 동안 `audioEngine.setSttActive(true)`로 **인지/일반 guide**(STT 미만)만 드롭한다(대기열에도 넣지 않음 - 질문 음성 방해 금지). **2026-07-20**: Near 반사 비프(`playBeep`)·햅틱(`allowDuringStt`)은 STT와 병행한다. 반사 음성 클립(`playReflexClip`)만 STT 중 억제해 말이 겹치지 않게 한다. 녹음 시작은 `CameraView.tsx`가 담당한다.
 - STT 응답 수신 시 `useWebSocket.ts`가 priority=STT(4)로 재생하며, `didJustFinish`/`onDone`/`onStopped` 콜백에서 결정론적으로 상태를 해제한다.
 - 콜백 누락 시 `useWebSocket.ts`의 안전 상한 타이머(`STT_INTERACTION_TIMEOUT_MS`, 20초)가 강제 해제한다. **2026-07-20 정정**: 이 백스톱은 "STT 응답 수신 이후" 구간에만 걸려 있어, `CameraView.tsx`가 녹음 시작 시점에 호출하는 `setSttActive(true)`에는 대응하는 안전 타이머가 없었다. 외부망 필드 테스트에서 응답이 끝내 오지 않는 경우(연결 유실 등) 억제 상태가 영구히 풀리지 않아 햅틱·비프·인지 안내가 조용히 죽는 결함으로 재현됐다(STT 활성화 14회 대비 비활성화 9회 실측). `audioEngine.setSttActive()` 자체에 `STT_SAFETY_TIMEOUT_MS`(20초) 안전 상한을 내장해, 호출 지점과 무관하게 항상 백스톱이 걸리도록 정정했다. `useWebSocket.ts`의 기존 타이머는 중복 백스톱으로 그대로 유지된다(둘 다 `setSttActive(false)` 호출뿐이라 idempotent).
 - 반사 클립/비프는 별도 최상위 채널로 유지되며, 이 우선순위 모델을 거치지 않는다.

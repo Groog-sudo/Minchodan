@@ -12,6 +12,7 @@ from server.bus.producer import RiskEventProducer
 from server.bus.redis_client import RedisBus
 from server.detection.bytetrack_tracker import ByteTrackTracker
 from server.detection.detector_interface import DetectorInterface, SegmentorInterface
+from server.detection.direction import estimate_direction
 from server.detection.gates.head_level_gate import head_level_gate
 from server.detection.gates.reflex_gate import reflex_gate
 from server.detection.gates.surface_gate import surface_gate
@@ -310,9 +311,21 @@ class DetectionPipeline:
         docs/design/behavior_and_risk_insight.md 제안 반영(2026-07-09 구현):
         발밑 근접만 보는 reflex_gate와 달리, 흰지팡이로 감지 불가능한 상체 높이
         돌출 장애물(나뭇가지, 개방된 적재함 등)을 조기에 반사 경로로 격상한다.
+
+        2026-07-20: far head_level 스팸이 Near 비프 UX를 잠식하는 DB 실측을 반영해
+        near 전역 + medium 12시 회랑만 허용한다(far는 화면/인지만).
         """
         escalation_classes = frozenset(HEAD_LEVEL_ESCALATION_CLASSES)
         for det in detections:
+            zone = getattr(det, "effective_distance_zone", "") or ""
+            if zone == "far":
+                continue
+            if zone == "medium":
+                if estimate_direction(det.bbox, frame_width, "medium") != "front":
+                    continue
+            elif zone != "near" and getattr(det, "route", "") != "reflex":
+                # zone 미부착: route=reflex(near)만 허용
+                continue
             alert = head_level_gate(det, frame_height, frame_width, escalation_classes)
             if alert is not None:
                 return alert

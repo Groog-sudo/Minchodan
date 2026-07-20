@@ -375,7 +375,8 @@ export function useWebSocket(
             );
           }
           audioEngine.playBeep(panning, beepInterval);
-          hapticEngine.trigger(hapticPattern);
+          // 2026-07-20: STT 중에도 Near 반사 햅틱은 유지(비프와 동일 정책).
+          hapticEngine.trigger(hapticPattern, { allowDuringStt: true });
           if (data.clip && !isUrgentBeepOnly) {
             void audioEngine.playReflexClip(data.clip);
           }
@@ -418,8 +419,7 @@ export function useWebSocket(
           );
 
           if (isStt) {
-            // STT 응답 수신: 위험 비프/햅틱을 끄고 STT 답변을 최우선 재생.
-            hapticEngine.stopContinuous();
+            // STT 응답 수신: 인지 안내만 STT 우선. Near 비프/햅틱은 유지(2026-07-20).
             audioEngine.setSttActive(true);
             const guideText = data.guidance_text ?? "";
             const serverDurationMs =

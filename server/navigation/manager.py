@@ -36,7 +36,17 @@ NAV_OBSTACLE_EXCLUDED_CLASSES = frozenset({"sidewalk_normal", "braille_normal"})
 # 같은 장애물 클래스가 계속 재탐지돼도 한 번 안내한 뒤에는 이 시간(초) 동안 같은
 # 클래스 재안내를 억제한다("같은 노면이면 한 번만 안내" 실기기 피드백 대응). 다른
 # 클래스가 끼어들면 억제와 무관하게 즉시 안내한다.
+# 2026-07-20: caution/roadway는 surface_hazard 그룹으로 묶어 교차 재안내를 막는다.
 OBSTACLE_REPEAT_SUPPRESS_S = 30.0
+NAV_SURFACE_HAZARD_SUPPRESS_KEY = "surface_hazard"
+NAV_SURFACE_HAZARD_CLASSES = frozenset({"caution", "roadway"})
+
+
+def _nav_obstacle_suppress_key(class_name: str) -> str:
+    """내비게이션 장애물 재안내 억제 키. 위험 노면은 단일 그룹."""
+    if class_name in NAV_SURFACE_HAZARD_CLASSES:
+        return NAV_SURFACE_HAZARD_SUPPRESS_KEY
+    return class_name
 
 
 class NavigationSession:
@@ -326,8 +336,12 @@ class NavigationManager:
 
         for idx, obs in enumerate(session.pending_obstacles):
             class_name = obs["class_name"]
+            suppress_key = _nav_obstacle_suppress_key(class_name)
+            last_key = session.last_announced_class
+            if last_key in NAV_SURFACE_HAZARD_CLASSES:
+                last_key = NAV_SURFACE_HAZARD_SUPPRESS_KEY
             is_repeat_suppressed = (
-                class_name == session.last_announced_class
+                suppress_key == last_key
                 and (now - session.last_announced_class_ts) < OBSTACLE_REPEAT_SUPPRESS_S
             )
             if is_repeat_suppressed:
@@ -336,7 +350,8 @@ class NavigationManager:
             session.pending_obstacles.pop(idx)
             class_ko = class_name_to_ko(class_name)
             session.last_announced_obstacle_time = now
-            session.last_announced_class = class_name
+            # 억제 키로 저장해 caution↔roadway 교차 재안내를 막는다.
+            session.last_announced_class = suppress_key
             session.last_announced_class_ts = now
             return f"전방에 {class_ko} 주의하세요."
 

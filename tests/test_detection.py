@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 from unittest.mock import AsyncMock
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -22,7 +23,13 @@ from server.detection import (
     YoloDetector,
     distance_policy,
 )
-from server.detection.consumer import DetectionConsumer
+from server.detection.consumer import (
+    BRAILLE_ABSENT_STREAK,
+    BRAILLE_REENTER_COOLDOWN_S,
+    SURFACE_HAZARD_ABSENT_STREAK,
+    SURFACE_REENTER_COOLDOWN_S,
+    DetectionConsumer,
+)
 from server.detection.gates import reflex_gate, surface_gate
 from server.detection.schemas import SurfaceResult
 
@@ -1247,7 +1254,7 @@ class TestSpeechWorthyFilter:
         assert consumer._resolve_surface_zone(far, frame) == "far"
 
     def test_surface_episode_enter_continue_leave(self):
-        """노면 에피소드: enter → pending/commit continue → Far 이탈 후 재진입 enter."""
+        """노면 에피소드: enter → pending/commit continue → Far 이탈 후 쿨다운 내 재진입 억제."""
         consumer = DetectionConsumer()
         assert (
             consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium") == "enter"
@@ -1268,17 +1275,43 @@ class TestSpeechWorthyFilter:
             consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium")
             == "continue"
         )
-        # Far는 이탈로 취급 (히스테리시스)
-        assert (
-            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "far") == "continue"
-        )
-        assert (
-            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "far") == "continue"
-        )
+        # Far는 이탈로 취급 (히스테리시스: 기본 5프레임)
+        for _ in range(SURFACE_HAZARD_ABSENT_STREAK - 1):
+            assert (
+                consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "far")
+                == "continue"
+            )
         assert consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "far") == "idle"
+        # 재진입 쿨다운 안이면 enter가 아니라 continue(억제)
+        assert (
+            consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium")
+            == "continue"
+        )
+        # 쿨다운 만료 후에는 재진입 enter
+        consumer._surface_cognitive_last_commit_ts["dev1"] = time.monotonic() - (
+            SURFACE_REENTER_COOLDOWN_S + 1.0
+        )
         assert (
             consumer._sync_surface_cognitive_episode("dev1", "surface_hazard", "medium") == "enter"
         )
+
+    def test_braille_episode_cooldown(self):
+        """점자-only는 별도 에피소드 + 긴 재진입 쿨다운."""
+        consumer = DetectionConsumer()
+        braille = [SurfaceResult(class_name="braille_normal", centroid=[320.0, 240.0])]
+        key = DetectionConsumer._braille_only_episode_key(braille)
+        assert key == "braille_normal"
+        assert consumer._sync_braille_cognitive_episode("dev1", key) == "enter"
+        consumer._commit_braille_cognitive_episode("dev1", key)
+        assert consumer._sync_braille_cognitive_episode("dev1", key) == "continue"
+        # 이탈
+        for _ in range(BRAILLE_ABSENT_STREAK):
+            consumer._sync_braille_cognitive_episode("dev1", "")
+        assert consumer._sync_braille_cognitive_episode("dev1", key) == "continue"  # 쿨다운
+        consumer._braille_cognitive_last_commit_ts["dev1"] = time.monotonic() - (
+            BRAILLE_REENTER_COOLDOWN_S + 1.0
+        )
+        assert consumer._sync_braille_cognitive_episode("dev1", key) == "enter"
 
     def test_hazard_episode_key_unifies_caution_roadway(self):
         """caution/roadway는 동일 surface_hazard 에피소드 키."""
@@ -1290,6 +1323,29 @@ class TestSpeechWorthyFilter:
         assert DetectionConsumer._hazard_surface_episode_key(caution) == "surface_hazard"
         assert DetectionConsumer._hazard_surface_episode_key(both) == "surface_hazard"
         assert DetectionConsumer._hazard_surface_key(both) == "caution,roadway"
+
+    def test_head_level_skips_far_zone(self):
+        """far 구역 head_level은 반사 격상하지 않는다(2026-07-20)."""
+        far_det = Detection(
+            class_name="bollard",
+            confidence=0.9,
+            bbox=BBox(x=280.0, y=20.0, w=40.0, h=80.0),
+            track_id="T-far",
+            hit_count=5,
+            effective_distance_zone="far",
+        )
+        near_det = Detection(
+            class_name="bollard",
+            confidence=0.9,
+            bbox=BBox(x=280.0, y=20.0, w=40.0, h=80.0),
+            track_id="T-near",
+            hit_count=5,
+            effective_distance_zone="near",
+        )
+        assert DetectionPipeline._evaluate_head_level([far_det], 480.0, 640.0) is None
+        alert = DetectionPipeline._evaluate_head_level([near_det], 480.0, 640.0)
+        assert alert is not None
+        assert alert.alert_id == "head_level_bollard"
 
 
 class TestApproachingCooldownShortcut:

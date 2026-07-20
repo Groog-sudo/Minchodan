@@ -3708,3 +3708,21 @@
 - **관련 파일**: `server/navigation/manager.py`, `client/src/services/audioEngine.ts`, `docs/design/reflex_audio_specification.md`, `tests/test_navigation_manager_obstacles.py`
 - **검증 결과**: `pytest` **163 passed**. `ruff check`/`mypy` 이상 없음(기존 무관 오류 1건 제외). `tsc --noEmit` 통과. FastAPI 재기동 후 정상.
 - **비고**: 실기기 재검증은 사용자 진행 중.
+
+---
+
+### 2026-07-20 | 3·7단계 | 필드 로그 기반 노면 비중·Near 무반응 수정 (P0~P2 일괄)
+
+- **배경**: device_id=3 DB 로그 분석 - 인지의 ~67%가 노면, 후반 세션에서 Near 비프가 STT/head_level/노면에 잠식. 제안 P0~P2를 일괄 구현.
+- **변경 내용**:
+  - P0-1: 노면 에피소드 `SURFACE_HAZARD_ABSENT_STREAK` 기본 5, `SURFACE_REENTER_COOLDOWN_S=20` 재진입 억제.
+  - P0-2: STT 중 Near 반사 비프·햅틱 병행(`playBeep` 허용, `allowDuringStt`, `setSttActive`에서 stopBeep 제거). 인지 guide만 STT 우선.
+  - P0-3: `head_level` 반사는 near + medium 12시 회랑만(far 스팸 차단).
+  - P1-4: Near 노면 인지 명시 억제(반사 전담) 재확인.
+  - P1-5: nav `caution|roadway` → `surface_hazard` 억제 키 그룹화.
+  - P1-6: 점자-only 별도 에피소드 + `BRAILLE_REENTER_COOLDOWN_S=45`.
+  - P2-7: Near `reflex_clear` `NEAR_CLEAR_HOLD_OFF_S=0.4` hold-off.
+  - P2-8: `pipeline_debug`에 surface_episode/reset_reason/stt_gate_blocked 관측 필드.
+- **관련 파일**: `server/detection/consumer.py`, `detection_pipeline.py`, `server/navigation/manager.py`, `server/services/pipeline_debug_builder.py`, `client/src/services/audioEngine.ts`, `hapticEngine.ts`, `useWebSocket.ts`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, tests
+- **검증 결과**: Docker `pytest tests/test_detection.py tests/test_navigation_manager_obstacles.py` → **87 passed**. 이중 경로 OK, react-doctor 통과.
+- **비고**: 커밋 해시는 커밋 후 기입.
