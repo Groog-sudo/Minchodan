@@ -3635,7 +3635,7 @@
 
 ### 2026-07-20 | 6단계 | medium_fast_lane_guidance_templates
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `8e81b28`
 - **변경 내용**:
   - Medium/Near 인지 패스트 레인 안내를 N시 방향 객체 주의하세요 및 전방 객체 N시로 우회하세요 패턴으로 통일하고, avoid_clock_direction과 노면-only 힌트 주입·Fallback 동일 템플릿·stage6 설계서 v0.2.2를 반영한다.
 - **관련 파일**: `ocs/stage-guides/stage6_orchestration_design.md`, `server/detection/consumer.py`, `server/detection/direction.py`, `server/orchestration/nodes/fallback_node.py`, `server/orchestration/nodes/fast_lane.py`, `server/orchestration/nodes/l3_validator.py`, `server/orchestration/state.py`, `tests/test_fast_lane.py`, `tests/test_langgraph.py`
