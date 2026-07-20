@@ -3577,9 +3577,7 @@
 
 ---
 
-### 2026-07-20 | 단말·ops | Metro Tailscale 고정 운영 스크립트
-
-- **커밋**: (푸시 후 해시)
+- **커밋**: `199ed28`
 - **배경**: Metro가 세션마다 kill/잘못된 host/setsid로 자주 죽어 Dev Client가 서버를 못 찾음.
 - **변경 내용**:
   - `scripts/metro_tailscale.sh` 신규: start(이미 살아 있으면 유지)·stop·restart·status·launch(딥링크).
