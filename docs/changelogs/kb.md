@@ -3725,4 +3725,4 @@
   - P2-8: `pipeline_debug`에 surface_episode/reset_reason/stt_gate_blocked 관측 필드.
 - **관련 파일**: `server/detection/consumer.py`, `detection_pipeline.py`, `server/navigation/manager.py`, `server/services/pipeline_debug_builder.py`, `client/src/services/audioEngine.ts`, `hapticEngine.ts`, `useWebSocket.ts`, `docs/ops/environment_variables.md`, `docs/design/reflex_audio_specification.md`, tests
 - **검증 결과**: Docker `pytest tests/test_detection.py tests/test_navigation_manager_obstacles.py` → **87 passed**. 이중 경로 OK, react-doctor 통과.
-- **비고**: 커밋 해시는 커밋 후 기입.
+- **커밋**: `be7337f`
