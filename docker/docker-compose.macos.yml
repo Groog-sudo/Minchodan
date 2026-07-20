@@ -21,6 +21,8 @@ services:
       - ../requirements.txt:/app/requirements.txt:ro
     env_file:
       - ../.env
+      # 시연/테스트 네트워크 프로필. 미지정 시 기존 .env를 다시 읽어 하위 호환 유지.
+      - ${NETWORK_ENV_FILE:-../.env}
     environment:
       # CPU 폴백 환경에서 YOLO(det/seg) 배치=1 추론이 호출마다 호스트 전체 코어를
       # 스레드로 점유해(14코어 실측 800~1300% CPU) 반사/인지 두 스트림이 겹칠 때

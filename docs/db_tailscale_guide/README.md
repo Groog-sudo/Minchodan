@@ -1,7 +1,7 @@
 # MariaDB·미디어 저장 API Tailscale 연결 가이드 (외부 공개용)
 
 > **작성일**: 2026-07-17
-> **버전**: v0.3.0
+> **버전**: v0.3.1
 > **공개 범위**: 외부 공유 가능
 > **상태**: 실제 내부 식별자를 제거하고 플레이스홀더로 치환한 공개용 템플릿
 > **내부 문서**: 실접속 정보가 필요한 승인 팀원은 Git에서 제외된 `README.internal.md`를 별도 보안 채널로 전달받습니다.
@@ -276,6 +276,19 @@ awk 'BEGIN { FS="=" }
 ```
 
 AI 에이전트는 `.env` 전체를 `cat`, `sed`, `git diff`, 터미널 로그로 출력하지 않습니다. 필요한 경우 변수명, 값 존재 여부, 길이, 해시처럼 비식별 정보만 확인합니다.
+
+### 9.2 시연 내부망·테스트 Tailscale 프로필 전환
+
+같은 Raspberry Pi의 네트워크 경로만 전환할 때는 루트 `.env`를 매번 수정하지 않습니다. 공통 DB 비밀번호와 미디어 토큰은 `.env`에 유지하고, Git-ignore된 프로필에는 호스트와 기본 URL만 둡니다.
+
+| 프로필 | DB 대상 | 미디어 API 대상 | 실행 명령 |
+| :--- | :--- | :--- | :--- |
+| **시연 `demo`** | `[PI_LAN_HOST]:[DB_PORT]` | `http://[PI_LAN_HOST]:[MEDIA_API_PORT]` | `bash scripts/switch_rpi_network.sh demo` |
+| **테스트 `test`** | `[PI_TAILSCALE_HOST]:[DB_PORT]` | `http://[PI_TAILSCALE_HOST]:[MEDIA_API_PORT]` | `bash scripts/switch_rpi_network.sh test` |
+
+프로필 파일의 필수 키는 `NETWORK_ENV_FILE`, `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL`입니다. 스크립트는 Docker 이미지를 빌드하지 않고 `--no-deps`로 FastAPI 컨테이너만 재생성합니다. macOS는 호스트 `socat` 프록시의 실제 DB 목적지도 함께 교체합니다.
+
+Raspberry Pi 미디어 API가 Tailscale 주소 하나에만 바인딩되어 있으면 내부망 프로필의 `/health`가 실패합니다. 서비스는 `0.0.0.0:[MEDIA_API_PORT]`에 바인딩하고 UFW에서 `[PI_LAN_SUBNET]`, `tailscale0`, Tailscale UDP 포트만 최소 허용합니다.
 
 ---
 
