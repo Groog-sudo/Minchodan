@@ -10,7 +10,7 @@
 이 문서는 **Minchodan** 프로젝트의 코딩 표준, 기술 스택, 디자인 시스템 및 AI 에이전트의 행동 지침을 정의합니다. 이 프로젝트에 참여하는 모든 AI 에이전트는 본 가이드라인을 반드시 준수해야 합니다.
 
 > **작성일**: 2026-06-24
-> **버전**: v0.3.8 (2026-07-19 RTX 5090 최대 사양과 Ubuntu·Windows·macOS 3개 OS 기준으로 PyTorch 2.13, CUDA 13.0/cu130, macOS MPS·CPU 경로 정합화 + 기존 v0.3.7 이력 유지: `integration-test-orchestrator` 스킬 신규 등재 및 다중 에이전트 규칙 자동 로드 통합)
+> **버전**: v0.3.9 (2026-07-20 `rpi-network-profile-switcher` 스킬 신규 등재; 기존 v0.3.8의 RTX 5090·PyTorch 2.13·CUDA 13.0/cu130 및 다중 에이전트 규칙 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 > **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
@@ -171,6 +171,7 @@
 | `auto-publish-work`         | -    | `.agents/skills/auto-publish-work/`         | 작업 완료 후 문서 정합성 분석, 린트/테스트 검증, Changelog 작성 및 Git 자동 마감 |
 | `react-doctor`              | -    | `.agents/skills/react-doctor/`              | react-doctor 정적 분석기를 활용한 React 및 React Native 코드 품질 관리 및 개선 |
 | `integration-test-orchestrator` | - | `.agents/skills/integration-test-orchestrator/` | 실기기(iOS)-Docker(FastAPI/Redis/MariaDB)-DB 통합 테스트 환경 기동, Expo/Metro·xcodebuildmcp 빌드·설치·실행, 전 구간 로그·모니터링 오케스트레이션 |
+| `rpi-network-profile-switcher` | - | `.agents/skills/rpi-network-profile-switcher/` | Raspberry Pi DB·미디어 API의 시연 내부망·Tailscale 테스트망 무빌드 전환과 검증 |
 
 > 스킬 정본은 `.agents/skills/`(Git 추적)입니다. `.claude/skills/`는 Claude Code·Cursor(Claude skills 임포트)용 **동일 내용 사본**이며 junction/symlink가 아닙니다(inode 다름, 2026-07-07 실측). `.claude/`의 로컬 아티팩트(`settings.local.json` 등)는 gitignore하되 **`skills/`만 Git 추적**합니다. 스킬 추가·수정 시 `.agents/skills/`를 먼저 고치고 `.claude/skills/`에 동일 반영해야 합니다.
 

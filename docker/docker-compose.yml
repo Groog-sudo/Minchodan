@@ -19,6 +19,8 @@ services:
       - ../requirements.txt:/app/requirements.txt:ro
     env_file:
       - ../.env
+      # 시연/테스트 네트워크 프로필. 미지정 시 기존 .env를 다시 읽어 하위 호환 유지.
+      - ${NETWORK_ENV_FILE:-../.env}
     environment:
       # 기존 원격 DB 설정을 유지하고, 로컬 DB가 필요할 때만 COMPOSE_DB_HOST로 재정의
       - DB_HOST=${COMPOSE_DB_HOST:-${DB_HOST:-mariadb}}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "RPi 네트워크 프로필 전환"
+  short_description: "시연 내부망과 Tailscale 테스트망을 안전하게 전환합니다."
+  default_prompt: "$rpi-network-profile-switcher를 사용해 Raspberry Pi DB·미디어 네트워크 프로필을 전환하고 검증해 주세요."

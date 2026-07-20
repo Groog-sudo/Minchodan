@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.5.8 (2026-07-20 코드-문서 정합: mariadb 포트 검증 기대결과 정정(미노출), schema.sql 마운트 경로 `server/db/schema.sql` 정정, §7.1 서비스 표에 console 행 추가, macOS 변형 fastapi 0.0.0.0 바인딩 예외 명시. 기존 v0.5.7 이력 유지)
+> **버전**: v0.5.9 (2026-07-20 jy 병합: Raspberry Pi DB·미디어 demo/test 무빌드 전환 추가. 기존 v0.5.8 이력 유지: 코드-문서 정합 - mariadb 포트 검증 기대결과 정정(미노출), schema.sql 마운트 경로 `server/db/schema.sql` 정정, §7.1 서비스 표에 console 행 추가, macOS 변형 fastapi 0.0.0.0 바인딩 예외 명시)
 > **설계 기준**: [`../design/architecture.md`](../design/architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`../dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -43,7 +43,7 @@ graph TD
 
 | 컨테이너 | 이미지 | 포트 | 볼륨 마운트 | 역할 |
 | :--- | :--- | :--- | :--- | :--- |
-| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능 | 비루트 사용자 FastAPI + WebSocket/SSE. `.env`는 `env_file`로 주입하며 외부 단말은 Tailscale Serve의 TLS 종단을 경유 |
+| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능 | 비루트 사용자 FastAPI + WebSocket/SSE. 공통 `.env`와 선택적 `.env.network.*`를 `env_file`로 주입하며 외부 단말은 Tailscale Serve의 TLS 종단을 경유 |
 | **redis** | `redis:7-alpine` (공식) | `127.0.0.1:6379:6379` | `redis_data:/data` | `REDIS_PASSWORD` 필수, AOF 영속화, Redis Streams + 컨텍스트 TTL |
 | **mariadb** | `mariadb:11.4` (공식) | 미노출(주석 처리, 2026-07-17) | `mariadb_data:/var/lib/mysql`, `../server/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro` (Linux 변형, 2026-07-20 정정) | 공유 GPU 서버 로컬 3306 포트 충돌 방지를 위해 호스트 포트 노출을 비활성화. 원격 DB(`DB_HOST`) 기본 연결 유지, 로컬 노출이 필요하면 `docker-compose.macos.yml` 사용 (macOS 변형은 schema.sql 마운트 미적용) |
 | **console** | `minchodan-console:latest` (로컬 빌드) | `127.0.0.1:${CONSOLE_PORT:-5174}:5174` | `./console:/app`, `/app/node_modules` | 권한 제한 `node` 사용자로 Vite 콘솔 실행. 외부 공개가 필요하면 인증된 TLS 프록시를 별도로 사용 |
@@ -177,6 +177,51 @@ docker compose --env-file .env -f docker/docker-compose.yml logs -f fastapi
 # 정지
 docker compose --env-file .env -f docker/docker-compose.yml down
 ```
+
+### 4.4 Raspberry Pi 내부망·Tailscale 프로필 전환
+
+Raspberry Pi 한 대가 MariaDB와 중앙 미디어 API를 함께 제공할 때, 시연은 내부망, 테스트는 Tailscale 경로를 사용합니다. 비밀번호와 토큰은 루트 `.env`에 유지하고 접속 대상만 Git-ignore된 프로필 파일로 분리합니다.
+
+| 프로필 | DB 대상 | 미디어 API 대상 |
+| :--- | :--- | :--- |
+| **`demo`** | `[PI_LAN_HOST]:[DB_PORT]` | `http://[PI_LAN_HOST]:[MEDIA_API_PORT]` |
+| **`test`** | `[PI_TAILSCALE_HOST]:[DB_PORT]` | `http://[PI_TAILSCALE_HOST]:[MEDIA_API_PORT]` |
+
+`.env.network.demo` 형식:
+
+```dotenv
+NETWORK_ENV_FILE=../.env.network.demo
+DB_HOST=[PI_LAN_HOST]
+DB_PORT=[DB_PORT]
+IMAGE_SERVER_BASE_URL=http://[PI_LAN_HOST]:[MEDIA_API_PORT]
+```
+
+`.env.network.test` 형식:
+
+```dotenv
+NETWORK_ENV_FILE=../.env.network.test
+DB_HOST=[PI_TAILSCALE_HOST]
+DB_PORT=[DB_PORT]
+IMAGE_SERVER_BASE_URL=http://[PI_TAILSCALE_HOST]:[MEDIA_API_PORT]
+```
+
+전환 명령:
+
+```bash
+bash scripts/switch_rpi_network.sh demo
+bash scripts/switch_rpi_network.sh test
+```
+
+스크립트는 DB TCP와 미디어 `/health`를 먼저 검사하고, Compose 구성을 검증한 다음 FastAPI만 `--no-build --no-deps --force-recreate`로 교체합니다. macOS에서는 `socat` 프록시를 launchd 작업으로 관리해 선택된 DB 경로로 함께 전환합니다. 최초 1회 `brew install socat`이 필요합니다.
+
+| 구분 | 동작 |
+| :--- | :--- |
+| **이미지** | 기존 `minchodan-server:latest` 재사용 |
+| **컨테이너** | 새 환경변수 반영을 위해 FastAPI 재생성 |
+| **DB·Redis 볼륨** | 보존, `down -v` 사용 금지 |
+| **검증 전용** | `MINCHODAN_SWITCH_CHECK_ONLY=1 bash scripts/switch_rpi_network.sh demo` |
+
+Raspberry Pi 미디어 API는 두 인터페이스에서 접근할 수 있도록 `0.0.0.0:[MEDIA_API_PORT]`에 바인딩하고, UFW에서 내부망 대역과 `tailscale0`만 허용합니다. 내부 IP는 DHCP 예약으로 고정합니다.
 
 ---
 

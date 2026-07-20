@@ -178,14 +178,18 @@ if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --quiet; th
   exit 1
 fi
 
-# 4. Docker 이미지 빌드
+# 4. Docker 이미지 빌드. 네트워크 환경 전환은 기존 이미지를 재사용할 수 있다.
 echo
-echo "[2/4] Building Docker image (FastAPI)..."
-if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build fastapi; then
-  echo
-  echo "[ERROR] Docker image build failed."
-  pause_if_interactive
-  exit 1
+if [[ "${MINCHODAN_SKIP_BUILD:-0}" == "1" ]]; then
+  echo "[2/4] Skipping Docker image build (MINCHODAN_SKIP_BUILD=1)..."
+else
+  echo "[2/4] Building Docker image (FastAPI)..."
+  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build fastapi; then
+    echo
+    echo "[ERROR] Docker image build failed."
+    pause_if_interactive
+    exit 1
+  fi
 fi
 
 # 5. 컨테이너 시작

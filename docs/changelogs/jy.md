@@ -5,6 +5,49 @@
 
 ---
 
+### 2026-07-20 | 인프라/에이전트 | Raspberry Pi 네트워크 프로필 전환 스킬 추가
+
+- **커밋**: (이번 커밋)
+- **작업 목표**:
+  - AI 에이전트가 Raspberry Pi DB·미디어 API의 시연 내부망과 Tailscale 테스트망 전환을 기존 자동화 스크립트로 안전하게 수행하도록 전용 스킬을 추가했습니다.
+- **변경 내용**:
+  - `.agents/skills/rpi-network-profile-switcher/`에 트리거 메타데이터, 실행 경계, 정본 파일, 보안 가드레일, 사전검사, 전환, 검증, 복구 및 완료 기준을 정의했습니다.
+  - `agents/openai.yaml`에 표시 이름, 설명과 기본 호출 프롬프트를 추가했습니다.
+  - `.claude/skills/`에 동일 사본을 반영하고 `SKILLS.md`·`AGENTS.md` 스킬 인덱스를 갱신했습니다.
+- **검증 기준**:
+  - 스킬 구조 검증, 정본·사본 미러 비교, 다중 에이전트 규칙 정합성 검사를 수행합니다.
+  - 실제 IP·DB 비밀번호·미디어 토큰은 스킬 문서에 기록하지 않습니다.
+
+---
+
+### 2026-07-20 | 인프라/배포 | Raspberry Pi DB·미디어 내부망/Tailscale 무빌드 전환
+
+- **커밋**: (이번 커밋)
+- **작업 목표**:
+  - 시연 환경은 Raspberry Pi 내부망, 테스트 환경은 Tailscale 경로를 사용하되 Docker 이미지를 다시 생성하지 않도록 런타임 프로필을 분리했습니다.
+  - 공통 DB 비밀번호와 미디어 토큰은 기존 루트 `.env`에 유지하고, Git-ignore된 `.env.network.demo`·`.env.network.test`에는 비밀이 아닌 접속 대상만 보관했습니다.
+- **라즈베리파이 런타임 변경**:
+  - SSH 별칭으로 Ubuntu 26.04 ARM64 호스트 접속을 확인하고 내부망·Tailscale 주소가 같은 장비의 `eth0`·`tailscale0`에 연결된 것을 검증했습니다.
+  - 미디어 API의 Tailscale 단일 주소 바인딩을 백업한 뒤 `0.0.0.0:8081`로 전환해 내부망과 Tailscale `/health`가 모두 HTTP 200을 반환하도록 했습니다.
+  - UFW를 기본 수신 차단으로 활성화하고 SSH·MariaDB·미디어 API는 내부망 대역과 `tailscale0`에만 허용했습니다. Tailscale 직접 연결용 UDP 포트는 별도 허용했습니다.
+  - 주 MariaDB는 active 상태이고 두 경로의 TCP 3306 및 계정 Host 패턴이 정상임을 확인했습니다. 별도 replica 서비스의 기존 failed 상태는 이번 네트워크 전환 범위에서 변경하지 않았습니다.
+- **저장소 변경**:
+  - Linux·macOS Compose의 FastAPI `env_file`에 선택적 `NETWORK_ENV_FILE`을 추가했습니다.
+  - `scripts/switch_rpi_network.sh`를 추가해 사전 연결 확인, Compose 검증, macOS 프록시 전환, `--no-build --no-deps --force-recreate`, DB `SELECT 1`, 미디어 `/health` 검증을 자동화했습니다.
+  - macOS DB 프록시는 목적지가 바뀌면 기존 `socat`만 안전하게 교체하고, launchd 작업으로 셸과 독립 실행되도록 보강했습니다.
+  - `macos_docker_start.sh`에 `MINCHODAN_SKIP_BUILD=1` 경로를 추가했습니다.
+- **검증 결과**:
+  - 라즈베리파이와 현재 Mac에서 내부망·Tailscale 미디어 API HTTP 200을 확인했습니다.
+  - 내부망·Tailscale MariaDB TCP 3306 연결과 UFW 적용 후 새 SSH 세션을 확인했습니다.
+  - Tailscale ping은 내부망 직접 경로로 1ms 응답을 유지했습니다.
+  - `demo`·`test` 프로필 check-only와 macOS `socat` 목적지 교체 및 13306 중계를 확인했습니다.
+  - 기존 FastAPI 이미지 ID를 유지한 채 두 프로필에서 DB `SELECT 1=True`, 미디어 HTTP 200을 확인했고 MariaDB·Redis 컨테이너 ID도 전환 전후 동일했습니다.
+- **보안 및 비고**:
+  - 실제 IP, DB 비밀번호, 미디어 토큰은 Git 추적 문서와 changelog에 기록하지 않았습니다.
+  - 내부 IP는 현재 DHCP이므로 공유기 DHCP 예약을 별도 적용해야 합니다.
+
+---
+
 ### 2026-07-19 | 보안/클라이언트/문서 | ngrok 제거 및 uuid 취약점 해소
 
 - **커밋**: (이번 커밋)

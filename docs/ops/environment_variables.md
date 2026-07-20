@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-20
-> **버전**: v0.4.29 (2026-07-20 코드-문서 정합: 누락 변수 13종 일괄 등재(EMBEDDING_PROVIDER·STT_*·CONSOLE_*·WS_BIND_HOST·반사/노면 튜닝·인증 만료·SEG_COMPARE 디버그), EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시. 기존 v0.4.28 이력 유지)
+> **버전**: v0.4.30 (2026-07-20 jy 병합: Raspberry Pi DB·미디어 내부망/Tailscale 런타임 프로필 전환 추가. 기존 v0.4.29 이력 유지: 코드-문서 정합 - 누락 변수 13종 일괄 등재(EMBEDDING_PROVIDER·STT_*·CONSOLE_*·WS_BIND_HOST·반사/노면 튜닝·인증 만료·SEG_COMPARE 디버그), EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -222,6 +222,14 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`COMPOSE_DB_ROOT_PASSWORD`** | string | 선택 | `minchodan_root_password` | Docker Compose 로컬 MariaDB 컨테이너의 root 계정 비밀번호. 실제 배포 값과 분리해 `.env`에서 교체할 수 있습니다. | [`.env.example`](../../.env.example) |
 | **`COMPOSE_DB_HOST`** | string | 선택 | (`DB_HOST`, 미설정 시 `mariadb`) | FastAPI 컨테이너의 DB 호스트만 명시적으로 재정의합니다. 미설정 시 기존 원격 `DB_HOST`를 유지합니다. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 | **`DB_HOST_PORT`** | int | 선택 | `3306` | Docker Compose 로컬 MariaDB 컨테이너를 호스트로 노출할 포트. FastAPI의 실제 DB 대상은 `COMPOSE_DB_HOST` 또는 `DB_HOST`가 결정합니다. **2026-07-18 정정**: 공유 GPU 서버의 로컬 3306 포트 충돌을 피하기 위해 `docker/docker-compose.yml`의 `mariadb` 서비스 `ports` 노출을 주석 처리함(원격 DB 기본 연결 유지) — 이 변수는 현재 `docker-compose.macos.yml`에만 적용됨. | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml) |
+| **`NETWORK_ENV_FILE`** | path | 선택 | `../.env` | FastAPI 컨테이너에 추가로 주입할 Raspberry Pi 네트워크 프로필 경로입니다. `demo`는 내부망, `test`는 Tailscale 경로이며 `scripts/switch_rpi_network.sh`가 OS별 Compose와 macOS DB 프록시를 함께 전환합니다. Compose 파일 기준 상대경로를 사용합니다. | `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `scripts/switch_rpi_network.sh` |
+
+네트워크 프로필 파일은 Git에서 제외되는 로컬 설정입니다. 공통 비밀번호와 토큰은 루트 `.env`에 한 번만 보관하고, 프로필에는 아래 비밀이 아닌 대상값만 둡니다.
+
+| 프로필 | 로컬 파일 | 필수 키 | 용도 |
+| :--- | :--- | :--- | :--- |
+| **시연** | `.env.network.demo` | `NETWORK_ENV_FILE`, `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` | Raspberry Pi 내부망 경로 |
+| **테스트** | `.env.network.test` | `NETWORK_ENV_FILE`, `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` | Raspberry Pi Tailscale 경로 |
 
 ### 2.14 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
 
