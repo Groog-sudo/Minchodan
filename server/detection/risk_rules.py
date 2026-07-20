@@ -62,11 +62,11 @@ DIRECTION_TEXT = {
     "left": "왼쪽",
     "front-left": "왼쪽 앞",
     "front": "정면",
-    "center": "정면",
+    "center": "화면 중앙",
     "right": "오른쪽",
     "front-right": "오른쪽 앞",
     "stop": "정지",
-    "unknown": "정면",
+    "unknown": "방향 미상",
 }
 
 CLASS_TEXT = {
@@ -128,6 +128,10 @@ def build_message_hint(
     risk_level: str,
 ) -> MessageHint | None:
     """기존 Detection 위에 단말 TTS용 message_hint 계약을 얹는다."""
+    # center/unknown은 안내 키에서 제외(정면으로 위장하지 않음).
+    if direction in ("center", "unknown"):
+        return None
+
     hint_id = _hint_id_for_class(detection.class_name)
     hint_type: MessageHintType = _hint_type_for_risk(detection.class_name, risk_level)
 
@@ -162,7 +166,7 @@ def estimate_risk_level(class_name: str, direction: str, distance: str) -> RiskL
     """데모용 문장 생성 전에 사용할 결정적 위험도 규칙."""
     normalized = class_name.strip().lower()
 
-    # 측면 객체는 Reflex 발동을 막기 위해 위험도 하향
+    # 측면·미확정(center/unknown)은 Reflex 발동을 막기 위해 위험도 하향
     if direction != "front":
         return "low"
 
@@ -179,12 +183,17 @@ def build_reflex_message_hint(alert: ReflexAlert) -> MessageHint:
     """ReflexAlert를 단말 TTS용 message_hint로 변환한다."""
     hint_id = _hint_id_for_alert(alert)
     direction = alert.direction or "front"
+    if direction in ("center", "unknown"):
+        direction = "front"
     text = "정지하세요" if hint_id == "STOP" else build_message_text("obstacle", direction, hint_id)
     return {"id": hint_id, "type": "REFLEX", "text": text}
 
 
 def build_message_text(class_name: str, direction: str, hint_id: MessageHintId) -> str:
-    direction_text = DIRECTION_TEXT.get(direction, "정면")
+    if direction in ("center", "unknown"):
+        direction_text = DIRECTION_TEXT.get(direction, "방향 미상")
+    else:
+        direction_text = DIRECTION_TEXT.get(direction, "정면")
     if hint_id == "STAIR_DOWN":
         return f"{direction_text} 계단 주의"
     if hint_id == "ROAD":

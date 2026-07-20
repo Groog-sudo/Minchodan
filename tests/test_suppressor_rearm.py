@@ -64,14 +64,53 @@ class TestShouldEmitReflexNear:
 
     @pytest.mark.asyncio
     async def test_near_emits_after_throttle_window(self, monkeypatch):
-        """near 스로틀 창(500ms) 경과 후 재경보는 발화."""
+        """near 스로틀 창(500ms)과 동일 track_id 최소 간격(1.2s) 모두 경과 후 재경보는 발화."""
         sup = AlertSuppressor()
         monkeypatch.setattr(sup, "_key_exists", lambda key: _afalse())
-        # 첫 경보 후 타임스탬프를 과거로 돌려 스로틀 창 경과 시뮬레이션
+        # 첫 경보 후 타임스탬프를 과거로 돌려 스로틀/트랙 간격 모두 경과 시뮬레이션
         await sup.should_emit_reflex("dev1", "t1", "near", is_near=True)
-        sup._last_near_alert_ts["dev1"] -= 1.0  # 1초 전으로 이동
+        sup._last_near_alert_ts["dev1"] -= 1.3
+        sup._last_near_track_alert["dev1"] = ("t1", sup._last_near_track_alert["dev1"][1] - 1.3)
         result = await sup.should_emit_reflex("dev1", "t1", "near", is_near=True)
         assert result is True
+
+
+class TestShouldEmitReflexNearTrackGap:
+    """2026-07-20: near에서 동일 track_id 재발동 최소 간격(REFLEX_NEAR_TRACK_MIN_GAP_S)."""
+
+    @pytest.mark.asyncio
+    async def test_same_track_blocked_within_track_min_gap(self, monkeypatch):
+        """500ms 스로틀은 지났지만 1.2s 미만이면 동일 track_id는 억제."""
+        sup = AlertSuppressor()
+        monkeypatch.setattr(sup, "_key_exists", lambda key: _afalse())
+        first = await sup.should_emit_reflex("dev1", "T-0008", "near", is_near=True)
+        sup._last_near_alert_ts["dev1"] -= 0.6  # 500ms 스로틀만 회피(1.2s 미만)
+        second = await sup.should_emit_reflex("dev1", "T-0008", "near", is_near=True)
+        assert first is True
+        assert second is False
+
+    @pytest.mark.asyncio
+    async def test_same_track_emits_after_track_min_gap(self, monkeypatch):
+        """1.2s 경과 후에는 동일 track_id도 재발화."""
+        sup = AlertSuppressor()
+        monkeypatch.setattr(sup, "_key_exists", lambda key: _afalse())
+        first = await sup.should_emit_reflex("dev1", "T-0008", "near", is_near=True)
+        sup._last_near_alert_ts["dev1"] -= 1.3
+        sup._last_near_track_alert["dev1"] = ("T-0008", sup._last_near_track_alert["dev1"][1] - 1.3)
+        second = await sup.should_emit_reflex("dev1", "T-0008", "near", is_near=True)
+        assert first is True
+        assert second is True
+
+    @pytest.mark.asyncio
+    async def test_different_track_emits_after_throttle_only(self, monkeypatch):
+        """다른 track_id는 기존 500ms 스로틀만 통과하면 즉시 발화(반응성 유지)."""
+        sup = AlertSuppressor()
+        monkeypatch.setattr(sup, "_key_exists", lambda key: _afalse())
+        first = await sup.should_emit_reflex("dev1", "T-0008", "near", is_near=True)
+        sup._last_near_alert_ts["dev1"] -= 0.6  # 500ms 스로틀만 회피
+        second = await sup.should_emit_reflex("dev1", "T-0099", "near", is_near=True)
+        assert first is True
+        assert second is True
 
 
 class TestShouldEmitReflexNonNear:

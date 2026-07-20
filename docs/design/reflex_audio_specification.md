@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.5 (2026-07-20 §5.2 STT 중 Near 반사 비프·햅틱 병행 허용 - 인지 guide만 STT 우선. 기존 v1.3.4: STT 안전 상한 타이머를 `audioEngine.setSttActive()` 내장으로 정정. 기존 v1.3.3: §2.1 `alert_id`를 class-agnostic `"high_obstacle"` 고정값으로 정정. 기존 v1.3.2: §5.2 우선순위 4단·대기열 위험도순)
+> **버전**: v1.3.7 (2026-07-20 §6.3 필드 DB 분석 기반 반사 억제 재조정: 동일 track_id near 재발동 최소 간격 `REFLEX_NEAR_TRACK_MIN_GAP_S=1.2`초 신규, 노면 억제 TTL/최소 간격 상향(15→30s / 8.0→15.0s). 기존 v1.3.6: §2.1 안내용 12시 회랑 `SPEECH_FRONT_BAND`/`is_speech_front` 분리. 기존 v1.3.5: §5.2 STT 중 Near 비프·햅틱 병행. 기존 v1.3.4: STT 안전 상한. 기존 v1.3.3: alert_id `high_obstacle`)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -73,9 +73,9 @@
 | :------------------- | :------ | :-------- | :-------------------------------------------------------------------------------------- |
 | **type**             | String  | **필수**  | 메시지 타입 식별자 (`reflex_alert` 고정)                                                |
 | **alert_id**         | String  | **필수**  | 경보 고유 식별자. **2026-07-18 class-agnostic**: `"high_obstacle"` 고정(`SUPPRESS_ALERT_ID`). 억제 키는 `high_obstacle:{track_id}:{distance_band}`로 분리 (`server/detection/gates/reflex_gate.py`) |
-| **direction**        | String  | **필수**  | 장애물 출현 방향 (`front-left`, `front`, `front-right` — `server/detection/direction.py`의 `estimate_direction()` 산출값. `left`/`right`/`center`/`stop`은 사용하지 않음) |
+| **direction**        | String  | **필수**  | 장애물 출현 방향. **2026-07-20**: 반사 안내는 `is_speech_front()`(안내용 `SPEECH_FRONT_BAND`, bbox 중심 x)를 통과한 경우만 발동하며 payload `direction`은 `"front"`로 정규화한다. 공간 라벨용 `estimate_direction()`+`FRONT_BAND`(bbox 겹침, Near 0.20~0.80 등)는 로그/콘솔용으로 유지하되 **안내 허용 조건으로 쓰지 않는다**. `center`/`unknown`은 「정면」 안내 키로 쓰지 않는다 |
 | **panning**          | Float   | **필수**  | 오디오 좌우 밸런스 편향값 (**-1.0**은 완전 왼쪽, **1.0**은 완전 오른쪽, **0.0**은 중앙) |
-| **clip**             | String  | **필수**  | 사전합성 음성 클립 경로(`reflex_clips/high_front.wav` 형식). 클래스와 무관하게 direction/유형 기준으로만 정해진다(§4.2 참조). 서버는 오디오 바이트가 아니라 이 경로 문자열만 전달하고, 실제 파일은 단말 번들(`client/assets/sounds/reflex_clips/`)에서 재생한다 |
+| **clip**             | String  | **필수**  | 사전합성 음성 클립 경로. **2026-07-20**: 객체 Near 반사는 `reflex_clips/high_front.wav` 고정(측면 클립으로 안내하지 않음). 노면은 `reflex_clips/surface_*.wav` |
 | **distance**         | Float   | **필수**  | 탐지된 장애물과의 렌즈 기준 상대 거리 (단위: 미터)                                      |
 | **beep_interval_ms** | Integer | **필수**  | 비프음 반복 재생 주기 (단위: 밀리초, **0**은 무점멸 연속음)                             |
 | **haptic_pattern**   | String  | **필수**  | 기기에 전달할 진동 프로파일 식별자 (`short`, `double`, `continuous`)                    |
@@ -179,9 +179,10 @@ graph TD
 
 | 밴드 | 거리 | 억제 정책 |
 | :--- | :--- | :--- |
-| `near` | <=0.6m | TTL 억제 **제외**, `REFLEX_NEAR_HAPTIC_THROTTLE_S=0.5`초 스로틀만 (충돌 임박 촉각 신호 반복 안전 이득) |
+| `near` | <=0.6m | TTL 억제 **제외**, `REFLEX_NEAR_HAPTIC_THROTTLE_S=0.5`초 스로틀 + **2026-07-20 신규**: 동일 track_id는 `REFLEX_NEAR_TRACK_MIN_GAP_S=1.2`초 추가 최소 간격(다른 물체는 500ms 스로틀만 적용해 반응성 유지) |
 | `medium` | <=1.5m | 동일 키 5s TTL + device 단위 `REFLEX_MIN_GAP_S=1.5`초 쿨다운 + 밴드 악화 재발화 |
 | `far` | >1.5m | (reflex_gate 범위 밖, 발생 안 함) |
+| `surface`(노면) | - | 동일 키 `REFLEX_SURFACE_SUPPRESS_TTL_S=30`초(2026-07-20 상향, 기존 15) + device 단위 `REFLEX_SURFACE_MIN_GAP_S=15.0`초 쿨다운(2026-07-20 상향, 기존 8.0) - 필드 DB 분석 결과 같은 노면 구간에서 5분간 8회(평균 35초 간격) 반복돼 체감 과다 확인 후 상향 |
 
 ### 6.4 should_rearm 판정
 

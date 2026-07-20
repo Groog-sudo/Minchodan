@@ -4,7 +4,7 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from server.detection.direction import FRONT_BAND
+from server.detection.direction import is_speech_front_x
 from server.detection.schemas import ReflexAlert, SurfaceResult
 
 # =========================================================================
@@ -46,7 +46,7 @@ def surface_gate(
     # 반사 경로를 발동시켰다. 위쪽에 멀리 보이는 caution은 cognitive 경로에서 설명하게 두는 구조다.
     #
     # 2026-07-19: 좌우 측면 노면까지 비프/햅틱이 울리면 진행 방향과 무관한 과경보가 된다.
-    # Near FRONT_BAND(0.20~0.80) 안(12시 회랑) centroid만 통과시킨다.
+    # 2026-07-20: 안내용 SPEECH_FRONT_BAND near(center/centroid)만 통과.
     if surface_result.class_name not in P0_SURFACE_CLASSES:
         return None
 
@@ -57,11 +57,10 @@ def surface_gate(
     if centroid_y <= frame_height * 0.6:
         return None
 
-    if frame_width > 0:
-        front_lo, front_hi = FRONT_BAND["near"]
-        cx_n = float(surface_result.centroid[0]) / frame_width
-        if cx_n < front_lo or cx_n > front_hi:
-            return None
+    if frame_width <= 0 or not is_speech_front_x(
+        float(surface_result.centroid[0]), frame_width, "near"
+    ):
+        return None
 
     alert_id = f"surface_{surface_result.class_name}"
     return ReflexAlert(

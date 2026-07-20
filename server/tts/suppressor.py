@@ -18,9 +18,14 @@ REFLEX_SUPPRESS_TTL_S = int(os.getenv("REFLEX_SUPPRESS_TTL_S", "5"))
 REFLEX_MIN_GAP_S = float(os.getenv("REFLEX_MIN_GAP_S", "1.5"))
 # near(<=0.6m) 햅틱+비프 스로틀 간격. 충돌 임박 촉각 신호는 반복되어도 안전 이득이 손실보다 큼.
 REFLEX_NEAR_HAPTIC_THROTTLE_S = float(os.getenv("REFLEX_NEAR_HAPTIC_THROTTLE_S", "0.5"))
+# 2026-07-20: near에서 "같은 물체(track_id)"가 500ms 스로틀만으로 0.5~1초 간격 재발동해
+# 햅틱이 따닥거리는 필드 피드백 반영. 다른 물체가 새로 근접하면 기존 500ms 스로틀만 적용해
+# 반응성을 유지하되, 동일 track_id 재발동에는 더 긴 최소 간격을 추가로 요구한다.
+REFLEX_NEAR_TRACK_MIN_GAP_S = float(os.getenv("REFLEX_NEAR_TRACK_MIN_GAP_S", "1.2"))
 # 2026-07-19: 노면(surface) 반사는 세그 흔들림으로 매초 재발화하기 쉬워 TTL/갭을 길게 둔다.
-REFLEX_SURFACE_SUPPRESS_TTL_S = int(os.getenv("REFLEX_SURFACE_SUPPRESS_TTL_S", "15"))
-REFLEX_SURFACE_MIN_GAP_S = float(os.getenv("REFLEX_SURFACE_MIN_GAP_S", "8.0"))
+# 2026-07-20: 필드 DB 분석 결과 5분간 8회(평균 35초 간격) 반복되어 체감 과다 - 기본값 상향.
+REFLEX_SURFACE_SUPPRESS_TTL_S = int(os.getenv("REFLEX_SURFACE_SUPPRESS_TTL_S", "30"))
+REFLEX_SURFACE_MIN_GAP_S = float(os.getenv("REFLEX_SURFACE_MIN_GAP_S", "15.0"))
 
 
 class AlertSuppressor:
@@ -42,6 +47,8 @@ class AlertSuppressor:
         self._last_device_alert_ts: dict[str, float] = {}
         # near 햅틱+비프 스로틀 추적 (TTL 억제 제외)
         self._last_near_alert_ts: dict[str, float] = {}
+        # 2026-07-20: near에서 동일 track_id 재발동 최소 간격 추적 (device_id -> (track_id, ts))
+        self._last_near_track_alert: dict[str, tuple[str, float]] = {}
         # 직전 경보 상태 (track_id + distance_band) - 밴드 악화 재발화 판정용
         self._last_alert_state: dict[str, dict] = {}
         # 2026-07-18 거리 정책 SSOT: device_id별 현재 열려 있는 Near episode의 track_id.
@@ -180,7 +187,19 @@ class AlertSuppressor:
             last_near = self._last_near_alert_ts.get(device_id, 0.0)
             if now - last_near < REFLEX_NEAR_HAPTIC_THROTTLE_S:
                 return False
+            # 2026-07-20: 다른 물체는 기존 500ms 스로틀만으로 즉시 반응하되, 같은
+            # track_id의 재발동은 REFLEX_NEAR_TRACK_MIN_GAP_S(1.2s)를 추가로 요구해
+            # 0.5~1초 간격의 "따닥거림"을 줄인다(필드 DB 분석: T-0008이 0.54s/0.72s
+            # 간격으로 연속 재발동한 사례).
+            last_track_id, last_track_ts = self._last_near_track_alert.get(device_id, (None, 0.0))
+            if (
+                track_id is not None
+                and track_id == last_track_id
+                and now - last_track_ts < REFLEX_NEAR_TRACK_MIN_GAP_S
+            ):
+                return False
             self._last_near_alert_ts[device_id] = now
+            self._last_near_track_alert[device_id] = (track_id or "unknown", now)
             self._last_alert_state[device_id] = {
                 "track_id": track_id,
                 "distance_band": distance_band,

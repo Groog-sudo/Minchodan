@@ -1,3 +1,4 @@
+import os
 import sys
 from typing import Literal, Protocol
 
@@ -27,12 +28,35 @@ class BBoxLike(Protocol):
 # front 판정 폭을 더 넓게 잡아 보수적으로 경고해야 합니다. 반대로 먼 장애물은 너무 이르게
 # 정면으로 판정하면 과경보가 많아지므로 front 폭을 좁혀 정밀도를 높였습니다.
 # 즉 이 값은 "영상 좌표계의 중심"이 아니라 "보행자 충돌 가능 회랑"을 하드코딩한 것입니다.
+#
+# 2026-07-20: FRONT_BAND는 공간 라벨(front/front-left/front-right)·로그·콘솔용이다.
+# 음성·햅틱 안내는 SPEECH_FRONT_BAND + is_speech_front()만 사용한다.
 FRONT_BAND = {"near": (0.20, 0.80), "medium": (0.30, 0.70), "far": (0.38, 0.62)}
+
+
+def _env_band(prefix: str, default_lo: float, default_hi: float) -> tuple[float, float]:
+    lo = float(os.getenv(f"{prefix}_LO", str(default_lo)))
+    hi = float(os.getenv(f"{prefix}_HI", str(default_hi)))
+    if lo > hi:
+        lo, hi = hi, lo
+    return (lo, hi)
+
+
+# 안내용 12시 진행축 회랑(bbox 중심 x). Near/Medium만 안내, Far는 무발화.
+# 환경변수: SPEECH_FRONT_BAND_NEAR_LO/HI, SPEECH_FRONT_BAND_MEDIUM_LO/HI
+SPEECH_FRONT_BAND = {
+    "near": _env_band("SPEECH_FRONT_BAND_NEAR", 0.35, 0.65),
+    "medium": _env_band("SPEECH_FRONT_BAND_MEDIUM", 0.40, 0.60),
+    "far": (0.45, 0.55),  # far는 안내 게이트에서 차단; 상수만 정의해 둔다
+}
 # =========================================================================
 
 
 def estimate_direction(bbox: BBoxLike, frame_width: float, distance_class: Distance) -> Direction:
-    """bbox의 좌우 끝점(x_min, x_max)을 이용해 거리에 따른 충돌 회랑 띠 포함 여부를 계산한다."""
+    """bbox의 좌우 끝점(x_min, x_max)을 이용해 거리에 따른 충돌 회랑 띠 포함 여부를 계산한다.
+
+    공간 라벨·로그용. 음성/햅틱 허용 여부는 is_speech_front()를 쓴다.
+    """
     # 💡 [면접 대비 주석]
     # 중심점(center_x) 하나만 보면 길쭉한 장애물이나 큰 차량의 폭을 반영하지 못합니다.
     # 그래서 bbox의 좌우 끝점(x_min, x_max)이 충돌 회랑 띠를 침범하는지를 보고,
@@ -51,6 +75,39 @@ def estimate_direction(bbox: BBoxLike, frame_width: float, distance_class: Dista
     if xmax_n >= front_lo and xmin_n <= front_hi:
         return "front"
     return "front-left" if xmax_n < front_lo else "front-right"
+
+
+def is_speech_front(
+    bbox: BBoxLike, frame_width: float, distance_class: Distance | str = "medium"
+) -> bool:
+    """안내용 12시 진행축 회랑: bbox 중심 x가 SPEECH_FRONT_BAND 안일 때만 True.
+
+    frame_width<=0 이면 False(모르면 정면으로 폴백하지 않음).
+    far는 안내 대상이 아니므로 False.
+    """
+    if frame_width <= 0:
+        return False
+    zone = distance_class if distance_class in ("near", "medium", "far") else "medium"
+    if zone == "far":
+        return False
+    front_lo, front_hi = SPEECH_FRONT_BAND.get(zone, SPEECH_FRONT_BAND["medium"])
+    center_x = bbox.x + bbox.w / 2.0
+    xn = center_x / frame_width
+    return front_lo <= xn <= front_hi
+
+
+def is_speech_front_x(
+    x: float, frame_width: float, distance_class: Distance | str = "medium"
+) -> bool:
+    """centroid x 등 단일 좌표용 안내용 12시 회랑 판정."""
+    if frame_width <= 0:
+        return False
+    zone = distance_class if distance_class in ("near", "medium", "far") else "medium"
+    if zone == "far":
+        return False
+    front_lo, front_hi = SPEECH_FRONT_BAND.get(zone, SPEECH_FRONT_BAND["medium"])
+    xn = float(x) / frame_width
+    return front_lo <= xn <= front_hi
 
 
 def estimate_distance(
@@ -83,6 +140,8 @@ def estimate_clock_direction(bbox: BBoxLike, frame_width: float) -> str:
 
     인지 경로 안내 문장의 "좌측/우측" 같은 모호한 표현을 실제 탐지 위치 기반의
     정확한 방향("2시 방향" 등)으로 대체하기 위해 도입했다(2026-07-13).
+    안내 발화 허용은 is_speech_front()가 담당하며, speech_front일 때 호출부는
+    clock_direction을 "12시"로 정규화한다.
     """
     if frame_width <= 0:
         return "12시"
