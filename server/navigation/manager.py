@@ -19,6 +19,25 @@ except ImportError:
     # (해당 스크립트가 자신의 디렉토리를 sys.path에 추가함)
     from navigation_filter import NavigationFilter
 
+try:
+    from server.detection.risk_rules import class_name_to_ko
+except ImportError:
+    # 독립 스크립트 실행 시 detection 패키지 경로가 없을 수 있어, 원문 그대로
+    # 반환하는 폴백만 둔다(운영 배포는 항상 패키지 임포트 경로를 탄다).
+    def class_name_to_ko(class_name: str) -> str:
+        return class_name
+
+
+# 2026-07-20 (실기기 필드 테스트): 노면 세그멘테이션 클래스 중 "정상"(안전) 클래스는
+# 장애물이 아니므로 내비게이션 장애물 안내 대상에서 제외한다. 위험 노면(caution/roadway)만
+# server/detection/consumer.py의 SPEECH_SURFACE_HAZARD_CLASSES와 동일하게 유지한다.
+NAV_OBSTACLE_EXCLUDED_CLASSES = frozenset({"sidewalk_normal", "braille_normal"})
+
+# 같은 장애물 클래스가 계속 재탐지돼도 한 번 안내한 뒤에는 이 시간(초) 동안 같은
+# 클래스 재안내를 억제한다("같은 노면이면 한 번만 안내" 실기기 피드백 대응). 다른
+# 클래스가 끼어들면 억제와 무관하게 즉시 안내한다.
+OBSTACLE_REPEAT_SUPPRESS_S = 30.0
+
 
 class NavigationSession:
     """
@@ -54,6 +73,10 @@ class NavigationSession:
         # Redis Stream 등으로부터 수신된 미해결 장애물 이벤트 캐시
         self.pending_obstacles: list[dict[str, Any]] = []
         self.last_announced_obstacle_time: float = 0.0
+        # 2026-07-20: 마지막으로 실제 안내한 장애물 클래스와 그 시각. 같은 클래스가
+        # 연속 재탐지돼도 OBSTACLE_REPEAT_SUPPRESS_S 동안은 재안내하지 않기 위함.
+        self.last_announced_class: str | None = None
+        self.last_announced_class_ts: float = 0.0
 
         # 2026-07-20 (회귀 분석 보고서 P0 - 사용자 확인): 동명 POI 후보가 모호할 때
         # WAITING_FOR_POI_CONFIRMATION 동안 다음 발화(번호 선택)를 해석하기 위해
@@ -208,6 +231,12 @@ class NavigationManager:
         Redis Stream 등을 통해 기존 Minchodan 서버(8000포트)로부터
         전달받은 실시간 장애물 탐지 이벤트를 세션 캐시에 추가합니다.
         """
+        # 2026-07-20: "sidewalk_normal" 등 안전 노면 클래스는 애초에 장애물이 아니므로
+        # 캐시에 넣지도 않는다(실기기 필드 테스트: "전방에 sidewalk_normal 주의하세요"
+        # 처럼 안전한 노면을 경고문으로 안내하던 결함).
+        if class_name in NAV_OBSTACLE_EXCLUDED_CLASSES:
+            return
+
         session = self._get_or_create_session(device_id)
         now = time.time()
         for obs in session.pending_obstacles:
@@ -274,34 +303,43 @@ class NavigationManager:
         return None
 
     def _pop_obstacle_text(self, session: NavigationSession) -> str:
-        """대기 중인 가장 최근 장애물 이벤트를 정제된 한국어 텍스트 경고로 변환하고 뺍니다."""
+        """대기 중인 장애물 이벤트를 정제된 한국어 텍스트 경고로 변환하고 뺍니다.
+
+        2026-07-20 실기기 필드 테스트 피드백 2건 수정:
+        (1) 클래스명을 자체 축약 매핑(9종만 커버) 대신 SSOT `class_name_to_ko`
+            (29+4클래스 전체 커버)로 번역해 "sidewalk_normal" 같은 원문 클래스명이
+            그대로 음성 안내에 새던 결함을 해소한다.
+        (2) 같은 클래스가 계속 재탐지돼도 큐의 맨 앞(가장 오래된 것)을 무조건 꺼내
+            5초 전역 쿨다운으로만 반복을 막던 방식이, 연속 재탐지되는 하나의 노면을
+            사실상 몇 초마다 계속 재안내하는 결과("같은 노면은 한 번만" 설계 위반)를
+            낳았다. 이제 같은 클래스 재안내는 OBSTACLE_REPEAT_SUPPRESS_S 동안
+            억제하고, 그사이 다른 클래스가 대기 중이면 그것을 우선 안내한다.
+        """
         now = time.time()
         session.pending_obstacles = [
             obs for obs in session.pending_obstacles if (now - obs["ts"]) < 5.0
         ]
-
         if not session.pending_obstacles:
             return ""
+        if (now - session.last_announced_obstacle_time) < 5.0:
+            return ""
 
-        target_obs = session.pending_obstacles.pop(0)
-        class_name = target_obs["class_name"]
+        for idx, obs in enumerate(session.pending_obstacles):
+            class_name = obs["class_name"]
+            is_repeat_suppressed = (
+                class_name == session.last_announced_class
+                and (now - session.last_announced_class_ts) < OBSTACLE_REPEAT_SUPPRESS_S
+            )
+            if is_repeat_suppressed:
+                continue
 
-        korean_mapping = {
-            "scooter": "전동 킥보드",
-            "kickboard": "전동 킥보드",
-            "bollard": "볼라드",
-            "car": "차량",
-            "motorcycle": "오토바이",
-            "bicycle": "자전거",
-            "person": "보행자",
-            "pothole": "포트홀",
-            "dog": "안내견",
-        }
-        class_ko = korean_mapping.get(class_name, class_name)
-
-        if (now - session.last_announced_obstacle_time) >= 5.0:
+            session.pending_obstacles.pop(idx)
+            class_ko = class_name_to_ko(class_name)
             session.last_announced_obstacle_time = now
+            session.last_announced_class = class_name
+            session.last_announced_class_ts = now
             return f"전방에 {class_ko} 주의하세요."
+
         return ""
 
 

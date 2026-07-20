@@ -28,6 +28,12 @@ const HIGH_DANGER_INTERVAL_MS = 100;
 const DUCKED_BEEP_VOLUME = 0.25;
 /** Near/인지 음성 안내 대기열 상한. 초과 시 최하위 우선순위 항목을 drop한다(동률이면 오래된 쪽). */
 const GUIDE_PENDING_MAX = 6;
+/**
+ * setSttActive(true) 이후 응답 콜백이 끝내 오지 않을 경우의 안전 상한(ms).
+ * useWebSocket.ts의 STT_INTERACTION_TIMEOUT_MS와 동일 값을 쓴다 - 두 백스톱이
+ * 겹쳐도 무해하다(둘 다 setSttActive(false) 호출뿐이라 idempotent).
+ */
+const STT_SAFETY_TIMEOUT_MS = 20000;
 
 type PendingGuideItem =
   | {
@@ -86,6 +92,16 @@ class AudioEngine {
    * 활성 중에는 위험 안내(NEAR 포함)·비프·반사 클립을 막아 질문/길찾기를 방해하지 않는다.
    */
   private sttActive = false;
+  /**
+   * 2026-07-20: setSttActive(true) 호출 지점(CameraView.tsx 녹음 시작, useWebSocket.ts
+   * 응답 수신)과 무관하게 일괄 적용되는 안전 상한 타이머. 이전에는 useWebSocket.ts의
+   * STT_INTERACTION_TIMEOUT_MS 백스톱이 "응답 수신 이후" 구간에만 걸려 있어, 녹음
+   * 시작 직후 네트워크 유실 등으로 응답 자체가 끝내 오지 않으면 STT 억제 상태가
+   * 영구히 풀리지 않아 햅틱·비프·인지 안내가 전부 조용히 억제되는 결함이 있었다
+   * (외부망 실기기 필드 테스트에서 재현: STT 활성화 14회 대비 비활성화 9회로
+   * 마지막 활성화가 해제되지 않은 채 로그가 종료됨).
+   */
+  private sttSafetyTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * 재생 중 쌓인 Near/인지 음성 대기열(최대 GUIDE_PENDING_MAX, 우선순위 혼합 가능).
    * 재생 종료 시 최고 우선순위 1건만 꺼내 재생하고 나머지는 폐기한다.
@@ -404,13 +420,26 @@ class AudioEngine {
   /**
    * STT 상호작용 구간 활성화/비활성화.
    * 활성 시 진행 중 Near 비프를 즉시 끄고, STT 미만 위험 안내는 canStartGuide에서 드롭.
+   *
+   * 호출 지점(CameraView.tsx 녹음 시작, useWebSocket.ts 응답 수신 전후)과 무관하게
+   * STT_SAFETY_TIMEOUT_MS 안전 상한을 여기서 일괄 건다(2026-07-20). 이전에는 녹음
+   * 시작 직후 setSttActive(true)에는 백스톱이 없어, 응답이 끝내 오지 않으면(외부망
+   * 유실 등) 억제 상태가 영구히 풀리지 않아 햅틱·비프·안내가 조용히 죽는 결함이 있었다.
    */
   public setSttActive(active: boolean): void {
     this.sttActive = active;
+    if (this.sttSafetyTimer) {
+      clearTimeout(this.sttSafetyTimer);
+      this.sttSafetyTimer = null;
+    }
     if (active) {
       void this.stopBeep();
       // STT 시작 시 대기 중인 위험/일반 안내는 전부 폐기(질문 방해 방지).
       this.discardPendingGuidesBelow(GUIDE_PRIORITY.STT);
+      this.sttSafetyTimer = setTimeout(() => {
+        console.log("[AudioEngine] STT 안전 상한 타이머 - 상태 강제 해제");
+        this.setSttActive(false);
+      }, STT_SAFETY_TIMEOUT_MS);
     }
     // 재생 중인 STT 답변 우선순위를 여기서 지우면 초단시간 폐기 직후 위험 안내가 끼어든다.
     if (!active && !this.isGuidePlaying) {

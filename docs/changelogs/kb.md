@@ -3694,3 +3694,17 @@
 - **관련 파일**: `docs/design/*`, `docs/ops/*`, `docs/stage-guides/*`, yolo-obstacle-detection SKILL(.agents/.claude), `server/detection/consumer.py`, `server/tts/realtime_tts.py`
 - **검증 결과**: 이중 경로 OK, react-doctor 통과. Docker `pytest tests/test_detection.py tests/test_fast_lane.py tests/test_langgraph.py` → **119 passed**. 호스트 stage3(`verify_gpu`/torch)는 환경 부재로 skip-test 후 Docker 검증으로 대체.
 - **비고**: `docs/research/*` 과거 문제 서술(개선 계획서)은 현행 명세가 아니므로 범위 외.
+
+---
+
+### 2026-07-20 | 3·7단계 | 외부망 실기기 필드 테스트 피드백 3건 수정 (클래스명 누출·노면 반복 안내·햅틱 고착)
+
+- **배경**: 외부 Tailscale 망 실기기 테스트 로그를 직접 분석해 3가지 문제 재현·원인 규명 후 수정. 앞선 세션의 코드 4건 수정과는 별개의, 이번에 처음 발견된 결함들.
+- **변경 내용**:
+  - `server/navigation/manager.py`: TMAP 길안내 중 장애물을 같이 읽어주는 `_pop_obstacle_text()`가 SSOT `class_name_to_ko`(29+4클래스)를 쓰지 않고 자체 9종짜리 불완전 사전(`korean_mapping`)을 갖고 있어, 커버 안 되는 클래스(`sidewalk_normal` 등)가 원문 그대로 새던 결함 수정(실측: "전방에 sidewalk_normal 주의하세요." 280회). 안전 노면(`sidewalk_normal`/`braille_normal`)은 애초에 장애물 캐시에서 제외. 전역 5초 쿨다운(같은 클래스도 계속 재탐지되면 5~6초마다 무한 반복 안내)을 "같은 클래스는 `OBSTACLE_REPEAT_SUPPRESS_S`(30초) 동안 억제, 다른 클래스는 즉시 안내"로 교체.
+  - `client/src/services/audioEngine.ts`: `setSttActive(true)`가 `CameraView.tsx`(녹음 시작)와 `useWebSocket.ts`(응답 수신) 두 지점에서 호출되는데, 안전 상한 타이머(`STT_INTERACTION_TIMEOUT_MS`)는 응답-수신 경로에만 걸려 있어 녹음 시작 직후 응답이 끝내 안 오면(외부망 연결 유실 등) STT 억제 상태가 영구 고착 - 실측 로그: STT "활성화" 14회 대비 "비활성화" 9회, 로그 종료 시점도 활성 상태로 멈춤. `setSttActive()` 자체에 `STT_SAFETY_TIMEOUT_MS`(20초) 안전 상한을 내장해 호출 지점과 무관하게 항상 해제되도록 정정(기존 useWebSocket.ts 타이머는 중복 백스톱으로 유지, idempotent).
+  - `docs/design/reflex_audio_specification.md`: §5.2 STT 안전 상한 서술을 위 변경에 맞춰 정정. 버전 v1.3.3 → v1.3.4.
+  - `tests/test_navigation_manager_obstacles.py`(신규): 안전 노면 미캐시, SSOT 번역, 같은 클래스 억제, 다른 클래스 즉시 안내, 억제 시간 만료 후 재안내 5건.
+- **관련 파일**: `server/navigation/manager.py`, `client/src/services/audioEngine.ts`, `docs/design/reflex_audio_specification.md`, `tests/test_navigation_manager_obstacles.py`
+- **검증 결과**: `pytest` **163 passed**. `ruff check`/`mypy` 이상 없음(기존 무관 오류 1건 제외). `tsc --noEmit` 통과. FastAPI 재기동 후 정상.
+- **비고**: 실기기 재검증은 사용자 진행 중.
