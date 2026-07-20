@@ -101,6 +101,11 @@ async def lifespan(app: FastAPI):
 
     # 4. 이벤트 프레임 보존 기간 초과분 정리 (콘솔 오탐 검증용 이미지, 기본 7일)
     # 디스크 IO이므로 스레드로 위임하고 실패해도 기동은 막지 않는다.
+    # 2026-07-20: 기존에는 서버 기동 시 1회만 실행돼, 재시작 없이 장기간 구동하면
+    # 보존 기간을 넘긴 폴더가 서버를 껐다 켜기 전까지 전혀 정리되지 않았다(실기기
+    # 장시간 테스트에서 "데이터가 안 지워지는 것 같다" 피드백으로 확인). 기동 시
+    # 1회 실행은 유지하되, EVENT_FRAME_CLEANUP_INTERVAL_S 주기로 반복 실행하는
+    # 루프로 전환한다.
     from server.services.event_frame_store import cleanup_expired_frames
 
     def _cleanup_event_frames() -> None:
@@ -109,7 +114,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"이벤트 프레임 보존 정리 실패: {e}")
 
-    frame_cleanup_task = asyncio.create_task(asyncio.to_thread(_cleanup_event_frames))
+    async def _periodic_event_frame_cleanup() -> None:
+        interval_s = int(os.getenv("EVENT_FRAME_CLEANUP_INTERVAL_S", "21600"))  # 기본 6시간
+        await asyncio.to_thread(_cleanup_event_frames)  # 기동 시 즉시 1회
+        while True:
+            await asyncio.sleep(interval_s)
+            await asyncio.to_thread(_cleanup_event_frames)
+
+    frame_cleanup_task = asyncio.create_task(_periodic_event_frame_cleanup())
 
     # 5. TTS 캐시 프리워밍: DB 이력에서 빈도 높은 안내 문장을 뽑아 서버 기동 중
     # 미리 합성해둔다(실시간 합성 캐시는 콜드 상태로 시작하면 첫 재생마다

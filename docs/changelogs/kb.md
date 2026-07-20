@@ -3797,3 +3797,15 @@
 - **관련 파일**: `server/detection/distance_policy.py`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `tests/test_distance_policy.py`, `tests/test_detection.py`, `docs/research/field_test_round2_improvement_plan.md`
 - **검증 결과**: `pytest tests/` 전체 452 passed(신규 9건 포함, 기존 무관 실패 7건 동일 유지). Ruff/mypy OK(무관 기존 오류 제외, stash 비교로 신규 오류 없음 확인).
 - **비고**: 반사 경로는 결정론적 게이트 로직(LLM/RAG 미경유)을 그대로 유지 - "누가 프레임당 1건의 대표가 되는가"만 개선했다.
+
+---
+
+### 2026-07-20 | 1단계 | 장시간 테스트 시 데이터 미정리로 인한 체감 지연 - Redis 스트림 트리밍·이벤트 프레임 주기 정리
+
+- **배경**: "시간이 지날수록 반응이 느려진다"는 실기기 피드백. 컨테이너 직접 점검 결과 `risk.events` Redis Stream이 `xadd`에 `maxlen`이 없어 **29시간 동안 236,529건까지 무제한 누적**돼 있었고(수동 `XTRIM`으로 5,000건까지 즉시 축소), 이벤트 프레임(JPEG) 정리(`EVENT_FRAME_RETENTION_DAYS=7`)는 **서버 기동 시 1회만 실행**돼 재시작 없이 장기간 구동하면 보존 기간을 넘긴 폴더도 전혀 정리되지 않는 구조였다(85MB/1556개 파일 확인). 다만 FastAPI 컨테이너 CPU 329%·`StreamSplitter 큐 가득참` 드롭 로그도 함께 확인되어, 체감 지연의 더 직접적 원인은 로컬 CPU 기반 YOLO 추론 포화일 가능성이 높다는 점도 함께 보고함(하드웨어 제약, 별도 대응 필요).
+- **변경 내용**:
+  - `server/bus/redis_client.py`: `RedisBus.publish_event()`의 `xadd` 호출에 `maxlen=REDIS_STREAM_MAXLEN(기본 5000)`, `approximate=True` 추가. 컨슈머(navigation/mcp)는 `XREAD`로 최신 이벤트만 순차 소비하므로 트리밍이 기능에 영향 없음.
+  - `server/main.py`: 이벤트 프레임 정리를 기동 시 1회 실행에서 `EVENT_FRAME_CLEANUP_INTERVAL_S`(기본 6시간) 주기 반복 루프로 전환.
+  - `server/services/event_frame_store.py`: `cleanup_expired_frames()` 독스트링을 주기 실행 반영으로 정정.
+- **관련 파일**: `server/bus/redis_client.py`, `server/main.py`, `server/services/event_frame_store.py`, `.env.example`, `docs/ops/environment_variables.md`, `tests/test_redis_client.py`(신규)
+- **검증 결과**: `pytest tests/` 전체 455 passed(신규 3건 포함, 기존 무관 실패 7건 동일 유지). Ruff/Bandit OK. 운영 중인 Redis에서 `XTRIM risk.events MAXLEN 5000` 즉시 적용해 236,529→5,000건으로 축소 확인.

@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-20
-> **버전**: v0.4.31 (2026-07-20 실외 재테스트 기반 2차 반사 억제 재조정: REFLEX_SURFACE_SUPPRESS_TTL_S 30→60·REFLEX_SURFACE_MIN_GAP_S 15.0→45.0 추가 상향. 기존 v0.4.30 이력 유지: REFLEX_NEAR_TRACK_MIN_GAP_S 신규(동일 track_id near 재발동 간격), REFLEX_SURFACE_SUPPRESS_TTL_S 15→30·REFLEX_SURFACE_MIN_GAP_S 8.0→15.0 1차 상향. 기존 v0.4.29 이력 유지: 코드-문서 정합 누락 변수 13종 일괄 등재, EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시)
+> **버전**: v0.4.32 (2026-07-20 실기기 장시간 테스트 기반 데이터 정리 결함 수정: REDIS_STREAM_MAXLEN 신규(risk.events 무제한 누적 트리밍), EVENT_FRAME_CLEANUP_INTERVAL_S 신규(기동 시 1회→주기 정리 전환). 기존 v0.4.31 이력 유지: 실외 재테스트 기반 2차 반사 억제 재조정. 기존 v0.4.30 이력 유지: REFLEX_NEAR_TRACK_MIN_GAP_S 신규, jy 병합. 기존 v0.4.29 이력 유지: 코드-문서 정합 누락 변수 13종 일괄 등재, EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -53,6 +53,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`REDIS_PASSWORD`** | string | 필수 | 없음 | Redis `requirepass` 비밀값. `scripts/configure_security_secrets.py`로 생성하며 Git에 기록하지 않음 | `docker/docker-compose*.yml` |
 | **`REDIS_URL`** | string | 필수 | 없음 | 인증정보를 포함한 Redis 연결 URL. 로컬 예: `redis://:${REDIS_PASSWORD}@localhost:6379` | [`architecture.md`](architecture.md) 2절·13.3절 |
+| **`REDIS_STREAM_MAXLEN`** | int | 선택 | `5000` | **2026-07-20 신규.** `risk.events` 등 Redis Stream의 approximate MAXLEN 트리밍 상한. 기존 xadd에 maxlen이 없어 실기기 29시간 테스트에서 236,529건까지 무제한 누적된 것을 확인 후 추가 | `server/bus/redis_client.py` |
 
 ### 2.5 WebSocket 서버 (1단계 통신망)
 
@@ -150,7 +151,8 @@
 | **`DATA_CAPTIONS`** | path | 필수 | `data/captions` | 캡셔닝 결과 JSON (Llava 또는 Gemini API 사용에 따라 동일 경로에 저장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`DATA_REFLEX_CLIPS`** | path | 미사용(폐기) | `data/reflex_clips` | **2026-07-09 정정**: 코드 어디서도 소비되지 않는 죽은 변수. 반사 음성 클립은 서버 `data/`가 아니라 단말 번들(`client/assets/sounds/reflex_clips/`, WAV 5종)로 실제 구현됨 | [`reflex_audio_specification.md`](../design/reflex_audio_specification.md) §4 |
 | **`EVENT_FRAMES_DIR`** | path | 선택 | `data/event_frames` | 이벤트 프레임 이미지 저장소 루트(2026-07-12 신설). 탐지/안내 로그 적재 이벤트의 발생 시점 프레임 JPEG을 날짜 폴더로 보관 | `server/services/event_frame_store.py`, [`api_specification.md`](../design/api_specification.md) §8.5 |
-| **`EVENT_FRAME_RETENTION_DAYS`** | int | 선택 | `7` | 이벤트 프레임 보존 기간(일). 초과 날짜 폴더는 서버 기동 시 삭제. `0` 이하는 정리 비활성. 보행 중 촬영 이미지는 개인정보 포함 가능성으로 기간 한정 보존 | `server/services/event_frame_store.py` |
+| **`EVENT_FRAME_RETENTION_DAYS`** | int | 선택 | `7` | 이벤트 프레임 보존 기간(일). 초과 날짜 폴더는 정리 주기마다 삭제(2026-07-20 이전: 서버 기동 시 1회만). `0` 이하는 정리 비활성. 보행 중 촬영 이미지는 개인정보 포함 가능성으로 기간 한정 보존 | `server/services/event_frame_store.py` |
+| **`EVENT_FRAME_CLEANUP_INTERVAL_S`** | int | 선택 | `21600` | **2026-07-20 신규.** 이벤트 프레임 보존 정리 반복 주기(초, 기본 6시간). 기존에는 기동 시 1회만 정리해 재시작 없이 장기간 구동하면 보존 기간 초과 폴더가 전혀 정리되지 않았음(실기기 장시간 테스트 피드백) | `server/main.py` |
 | **`EVENT_FRAME_JPEG_QUALITY`** | int | 선택 | `80` | 이벤트 프레임 JPEG 품질(용량 통제 우선) | `server/services/event_frame_store.py` |
 | **`EVENT_FRAME_STORAGE_BACKEND`** | string | 선택 | `local` | 이벤트 프레임/STT 원본 음성 파일 저장 백엔드. `local`이면 기존 GPU 서버 로컬 디스크, `remote`이면 Raspberry Pi 중앙 저장 API에 업로드. 구 명칭 `EVENT_FRAME_BACKEND`도 코드에서 폴백 지원 | `server/services/event_frame_store.py`, `server/services/remote_storage_client.py` |
 | **`IMAGE_SERVER_BASE_URL`** | string | 선택(원격 저장 사용 시 필수) | (미설정) | Raspberry Pi 중앙 저장 API 기본 URL. 예: `http://100.x.x.x:8081`. 구 명칭 `EVENT_FRAME_REMOTE_URL`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
