@@ -51,14 +51,14 @@ guidedog-ai/
 │   │   │   ├── l1_classifier.py     # L1: 룰 기반 위험도 분류 (mid/low만 진입)
 │   │   │   ├── l2_generator.py      # L2: ChatOllama(Gemma2) ainvoke — 20자/방향 포함
 │   │   │   ├── l3_validator.py      # L3: 길이·방향 키워드 검증, RETRY(최대 1회)
-│   │   │   └── fallback_node.py     # 최종 실패  고정 문장("전방 주의, 천천히 멈추세요")
-│   │   └── llm_client_factory.py    # [추상화] BaseChatModel — Ollama  gpt-4o-mini 핫스왑
+│   │   │   └── fallback_node.py     # 최종 실패  고정/템플릿 문장("전방 주의하세요")
+│   │   └── llm_client_factory.py    # [추상화] SimpleOllama/OpenAI/Gemini 핫스왑
 │   │
 │   ├── tts/                         # ─── 7단계: 음성 출력 (서버 측) ───
-│   │   ├── realtime_tts.py          # 인지 경로: Kokoro/Coqui generate()  base64 MP3
+│   │   ├── realtime_tts.py          # 인지 경로: TTSService.generate() → WAV WS 바이너리
 │   │   ├── reflex_clip_sender.py    # 반사 경로: alert_id  사전합성 클립 WS 고우선 전송
-│   │   ├── suppressor.py            # Redis setex(suppress:…, 60) 중복 억제
-│   │   └── tts_service.py           # [추상화] TTSService — 출력 MP3/WAV 규격 통일
+│   │   ├── suppressor.py            # Redis setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5) 중복 억제
+│   │   └── tts_service.py           # [추상화] TTSService — Supertonic/Piper/pyttsx3/edge, WAV 통일
 │   │
 │   ├── bus/                         # Redis Streams 인터페이스
 │   │   ├── redis_client.py          # aioredis 연결 풀

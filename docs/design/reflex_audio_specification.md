@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.2 (2026-07-20 §5.2 우선순위 모델을 실제 코드 기준 4단(OTHER/FRONT_MED/FRONT_NEAR/STT)으로 정정하고, 대기열 폐기 정책을 시간순(FIFO)에서 위험도순(최하위 우선순위 폐기·최고 우선순위 드레인)으로 전환한 내용 반영. 기존 v1.3.1 이력 유지: 2026-07-18 §5.3 T3-S 서버 STT 억제 게이트 정정 - 응답 전송 직후 즉시 해제하던 것을 예상 재생시간+마진까지 TTL 연장하도록 수정. 기존 v1.3.0 이력 유지: 2026-07-13 긴급=핑퐁만 / 여유=음성 채널 분기, §3.1·§4.2·§5 정합)
+> **버전**: v1.3.3 (2026-07-20 §2.1 `alert_id`를 class-agnostic `"high_obstacle"` 고정값으로 정정. 기존 v1.3.2: §5.2 우선순위 4단·대기열 위험도순)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -72,7 +72,7 @@
 | 필드명               | 타입    | 필수 여부 | 설명                                                                                    |
 | :------------------- | :------ | :-------- | :-------------------------------------------------------------------------------------- |
 | **type**             | String  | **필수**  | 메시지 타입 식별자 (`reflex_alert` 고정)                                                |
-| **alert_id**         | String  | **필수**  | 경보 고유 식별자 (`f"high_{class_name}_{direction}"` 형식, 예: `high_car_front-left`. `server/detection/gates/reflex_gate.py:55` 참조) |
+| **alert_id**         | String  | **필수**  | 경보 고유 식별자. **2026-07-18 class-agnostic**: `"high_obstacle"` 고정(`SUPPRESS_ALERT_ID`). 억제 키는 `high_obstacle:{track_id}:{distance_band}`로 분리 (`server/detection/gates/reflex_gate.py`) |
 | **direction**        | String  | **필수**  | 장애물 출현 방향 (`front-left`, `front`, `front-right` — `server/detection/direction.py`의 `estimate_direction()` 산출값. `left`/`right`/`center`/`stop`은 사용하지 않음) |
 | **panning**          | Float   | **필수**  | 오디오 좌우 밸런스 편향값 (**-1.0**은 완전 왼쪽, **1.0**은 완전 오른쪽, **0.0**은 중앙) |
 | **clip**             | String  | **필수**  | 사전합성 음성 클립 경로(`reflex_clips/high_front.wav` 형식). 클래스와 무관하게 direction/유형 기준으로만 정해진다(§4.2 참조). 서버는 오디오 바이트가 아니라 이 경로 문자열만 전달하고, 실제 파일은 단말 번들(`client/assets/sounds/reflex_clips/`)에서 재생한다 |

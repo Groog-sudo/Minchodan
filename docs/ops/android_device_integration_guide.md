@@ -388,9 +388,9 @@ docker restart minchodan-fastapi
 
 ---
 
-### 참고: `DETECTOR_TYPE=mock` 환경 변수에 대하여
+### 참고: `DETECTOR_TYPE` 환경 변수에 대하여
 
-`.env` 파일의 `DETECTOR_TYPE=mock` 설정은 **현재 서버 코드에서 읽히지 않는 죽은 변수(Dead Variable)**입니다. 서버는 이 설정과 무관하게 항상 실제 YOLO AI 모델(`server/models/yolo26n/`)을 로드하여 추론을 실행합니다.
+`DETECTOR_TYPE`은 **실제 소비되는 변수**입니다(`server/detection/config.py`). `.env`에 `yolo`(랩/실기기 기본, `.env.example`과 동일)면 YOLO 가중치를 로드하고, `mock`이면 `MockDetector`/`MockSegmentor`로 폴백합니다. 미지원 값은 안전상 `mock`으로 폴백합니다. 탐지가 안 보이면 먼저 `.env`의 `DETECTOR_TYPE=yolo`와 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 경로를 확인하십시오.
 
 ---
 

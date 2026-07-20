@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.1.0 (2026-07-07 §1.2/§2 전면 재작성 — 실제 코드의 필드/키 패턴과 크게 어긋나 있던 것을 `stream_splitter.py`/`producer.py`/`suppressor.py`/`redis_client.py` 기준으로 정정)
+> **버전**: v1.1.1 (2026-07-20 억제 키·TTL을 P0-1 실코드 기준 정정: `suppress:{device}:{source}:{track}:{band}`, TTL 5s/surface 15s)
 > **설계 기준**: docs/design/architecture.md (v1.1.0)
 
 # Minchodan Redis Streams 데이터 모델 및 TTL 세션 스키마 명세
@@ -57,12 +57,13 @@
 시각장애인 보행 환경에서 동일 경보가 너무 자주 울리는 피로 현상(중복 노이즈)을 억제하고, ByteTrack 컨텍스트를 유지하기 위한 휘발성 캐시 영역입니다.
 
 ### 2.1 경보 중복 억제 (`server/tts/suppressor.py`)
-- **키 네이밍 규칙**: `suppress:{device_id}:{alert_id}` (클래스명이 아니라 **alert_id 기준**)
-  - 예시: `suppress:dev-001:high_car_front`
+- **키 네이밍 규칙**: `suppress:{device_id}:{alert_source}:{track_id}:{distance_band}` (P0-1, 2026-07-17)
+  - 예시: `suppress:dev-001:reflex_gate:T-0003:near`
+  - `alert_id`는 class-agnostic `"high_obstacle"` 고정이며, 억제 키에는 track/band가 포함된다
 - **데이터 타입**: `String` (SETEX 값은 `"1"`)
-- **기록 명령어**: `SETEX suppress:{device_id}:{alert_id} 60 1`
-- **만료 타임아웃**: **60초** (`AlertSuppressor.DEFAULT_TTL = 60`) — 최초 설계의 30초가 아님
-- **조회**: `should_suppress(device_id, alert_id)` → `EXISTS` 확인 후 없으면 `SETEX`로 갱신
+- **기록 명령어**: `SETEX suppress:{device_id}:{alert_source}:{track_id}:{distance_band} {ttl} 1`
+- **만료 타임아웃**: **`REFLEX_SUPPRESS_TTL_S=5`초** (일반 반사). 노면(surface)은 **`REFLEX_SURFACE_SUPPRESS_TTL_S=15`초**. 최초 설계의 60초 무조건 침묵은 폐기(2026-07-17 P0-1)
+- **조회/마킹**: `should_suppress` / `mark_sent` — 동일 키 TTL + device 쿨다운 + 거리 밴드 악화 시 재발화
 
 ### 2.2 ByteTrack 컨텍스트 (`server/bus/redis_client.py`, 최초 설계 문서에 누락됐던 실제 키)
 - **키 네이밍 규칙**: `ctx:{track_id}`

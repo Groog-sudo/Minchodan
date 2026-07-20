@@ -125,7 +125,7 @@ class RealtimeTTS:
         정하는 데 사용한다(고정 쿨다운으로 인한 짤림 방지).
 
         [타임아웃 근거] PiperTTSService는 최초 1회 모델을 상주 로드한 뒤
-        재사용하므로 콜드스타트 비용은 초기화 시 1회만 발생한다. 3.0초는
+        재사용하므로 콜드스타트 비용은 초기화 시 1회만 발생한다. 15.0초는
         상주 로드 이후 순수 합성 시간에 대한 여유 가드레일이다.
         """
 
@@ -201,7 +201,7 @@ class RealtimeTTS:
 
         except TimeoutError:
             logger.warning(
-                f"[TTS] 음성 합성 시간 초과(3.0s 경과). 단말 내장 TTS 우회 폴백을 가동합니다: '{text}'"
+                f"[TTS] 음성 합성 시간 초과(15.0s 경과). 단말 내장 TTS 우회 폴백을 가동합니다: '{text}'"
             )
             return None, 0.0
         except Exception as e:

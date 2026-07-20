@@ -1,7 +1,7 @@
 ﻿# Minchodan 7단계 음성 안내 출력 (이중 채널) 설계서
 
 > **작성일**: 2026-07-01
-> **버전**: v0.4.2 (2026-07-19 `react-native-tts`→`expo-speech` 잔여 정정 + 단말 TTS 백업 명세 동기화 + 이전 v0.4.1 이력 유지: 2026-07-10 th 브랜치 병합: pyttsx3를 로컬 저사양 대체 옵션으로 병기 + 이전 v0.4.0 이력 유지: 실기기 TTS 절단 근본 원인 규명에 따른 전면 갱신, 기본 TTS 엔진 Piper→Supertonic 교체(`SupertonicTTSService` 신규, Piper는 핫스왑 폴백으로 보존), guide 오디오 `audio_mp3_b64`→WS 바이너리 프레임 전환, `_synthesize_lock` 동시성 직렬화, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어(`playGuideAudioBytes`) 반영)
+> **버전**: v0.4.3 (2026-07-20 코드-문서 정합: edge-tts 4번째 엔진(`EdgeTTSService`, 2026-07-13) 추가, SUPERTONIC_VOICE 기본 F1→F2 정정, Suppressor 60s→5s 정정, §12 클라이언트 Web Audio→expo-audio 정정. 기존 v0.4.2 이력 유지: 2026-07-19 `react-native-tts`→`expo-speech` 잔여 정정 + 단말 TTS 백업 명세 동기화. 기존 v0.4.0 이력 유지: 실기기 TTS 절단 근본 원인 규명에 따른 전면 갱신, 기본 TTS 엔진 Piper→Supertonic 교체, guide 오디오 WS 바이너리 프레임 전환, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어 반영)
 > **설계 기준**: [`docs/design/minchodan_design_note.md`](../design/minchodan_design_note.md) 7단계, [`docs/design/architecture.md`](../design/architecture.md) 5.7절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) 5.7절
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 섹션 3, 17.2
 > **스킬 참조**: [`../../.agents/skills/tts-voice-streamer/SKILL.md`](../../.agents/skills/tts-voice-streamer/SKILL.md)
@@ -29,8 +29,8 @@
 
 - **[완료]** 반사 경로: direction/유형 기준 사전합성 클립 즉시 재생 + 선점 + 중복 억제. **2026-07-09 정정**: 실제 전송 경로는 `server/detection/consumer.py`의 `_send_reflex_alert()`가 게이트(`reflex_gate.py`/`surface_gate.py`/`head_level_gate.py`)가 채운 `ReflexAlert.clip`을 그대로 사용한다 — `server/tts/reflex_clip_sender.py`(아래 참조)는 실제로는 어디서도 호출되지 않는 죽은 코드였다.
 - **[완료, 2026-07-09 엔진 교체]** 인지 경로: LangGraph L3 검증 통과 가이드 문장 → 서버 실시간 TTS(**Supertonic 3**, `TTS_ENGINE=supertonic` 기본) → raw **WAV** WS 바이너리 프레임 전송(`audio_mp3_b64` base64 필드는 폐기됨, §9 참조) → 단말 `expo-audio` 재생(Web Audio API 아님, React Native 환경 제약)
-- **[완료]** TTSService 추상화 계층: **Supertonic**(`SupertonicTTSService`, 기본), **Piper**(`PiperTTSService`, 핫스왑 폴백으로 코드 보존, `TTS_ENGINE=piper`로 즉시 전환 가능), **pyttsx3**(`Pyttsx3TTSService`, GPU·네트워크 불필요한 로컬 저사양 대체, `TTS_ENGINE=pyttsx3`) 3종 구현. Kokoro/Coqui는 여전히 미구현(핫스왑 대비 설계만 존재).
-- **[완료]** 중복 억제 (Suppressor, Redis SETEX 60초)
+- **[완료]** TTSService 추상화 계층: **Supertonic**(`SupertonicTTSService`, 기본), **Piper**(`PiperTTSService`, 핫스왑 폴백으로 코드 보존, `TTS_ENGINE=piper`로 즉시 전환 가능), **pyttsx3**(`Pyttsx3TTSService`, GPU·네트워크 불필요한 로컬 저사양 대체, `TTS_ENGINE=pyttsx3`), **edge-tts**(`EdgeTTSService`, 2026-07-13 추가, `TTS_ENGINE=edge`, 한국어 자연도 보조) 4종 구현. Kokoro/Coqui는 여전히 미구현(핫스왑 대비 설계만 존재).
+- **[완료]** 중복 억제 (Suppressor, Redis SETEX `REFLEX_SUPPRESS_TTL_S=5`초. 노면 surface 경보는 `REFLEX_SURFACE_SUPPRESS_TTL_S=15`초. 2026-07-17 P0-1 재무장 정책 반영, 이전 60초 무조건 침묵은 폐기)
 - **[부분 완료]** 햅틱·접근성 연동 (Haptics 연동 완료, `announceForAccessibility` 별도 확인 필요)
 - **[완료, 2026-07-09]** 클라이언트 번들 클립 관리: 최초 설계(`data/reflex_clips/` → `client/assets/reflex_clips/`)와 실제 경로가 다르다 — 실제로는 `client/assets/sounds/reflex_clips/`(기존 `beep.wav`와 같은 `sounds/` 하위 규칙 준수)에 WAV 5종(direction 3종 + surface_caution + head_level_warning)으로 번들됨. `audioEngine.playReflexClip()` 신규 구현.
 - **[완료, 2026-07-09]** 실패 시 기기 내장 TTS 우회: `expo-speech`로 서버 TTS 3초 타임아웃 시 단말이 직접 발화하는 `audioEngine.speakFallback()` 구현. 상세는 `docs/changelogs/kb.md`(2026-07-09) 참조.
@@ -64,8 +64,8 @@
 - `client/src/utils/haptics.ts`: Haptics + announceForAccessibility
 
 ### 환경 변수 (docs/environment_variables.md 참조)
-- `TTS_ENGINE`: supertonic (기본, 2026-07-09 변경) | piper (핫스왑 폴백) | pyttsx3 (로컬 저사양 대체, 2026-07-10 추가) — 그 외 값 지정 시 `tts_service.py`가 경고 로그를 남기고 supertonic으로 강제 폴백
-- `SUPERTONIC_VOICE`: F1 (기본, 2026-07-09 신규 - Supertonic 보이스 스타일 이름)
+- `TTS_ENGINE`: supertonic (기본, 2026-07-09 변경) | piper (핫스왑 폴백) | pyttsx3 (로컬 저사양 대체, 2026-07-10 추가) | edge (한국어 자연도 보조, 2026-07-13 추가) — 그 외 값 지정 시 `tts_service.py`가 경고 로그를 남기고 supertonic으로 강제 폴백
+- `SUPERTONIC_VOICE`: F2 (기본, `tts_service.py:293` 코드 기준. 2026-07-20 정정: 기존 F1은 `environment_variables.md`와 충돌)
 - `DATA_REFLEX_CLIPS`: data/reflex_clips
 
 ### 테스트
@@ -79,9 +79,9 @@
 
 - **이중 채널 강제 분리**: 반사 = 사전합성 (즉시, <300ms 목표), 인지 = 실시간 TTS (상세 가이드, 1~2Hz)
 - **서버 합성 원칙**: 클라이언트 thin client 유지. Supertonic(ONNX) 로컬 모델 사용 (클라우드 비용·지연 제거, 2026-07-09 Piper에서 교체)
-- **TTSService 추상화**: Supertonic(기본) + Piper(핫스왑 폴백) 2종 구현. Kokoro ↔ Coqui ↔ (미래) OpenAI TTS 핫스왑은 여전히 추상화 설계만 되어 있고 실제 구현체는 없음 (architecture.md 추상화 표)
+- **TTSService 추상화**: Supertonic(기본) + Piper + pyttsx3 + edge-tts 4종 구현. Kokoro/Coqui/OpenAI TTS는 미구현(핫스왑 대비 설계만 존재)
 - **선점 규칙**: 반사 WS (alert_reflex) 수신 시 인지 재생 즉시 중단
-- **중복 억제**: alert_id 기준 Redis SETEX 60초 (Suppressor)
+- **중복 억제**: `suppress:{device_id}:{alert_source}:{track_id}:{distance_band}` Redis SETEX `REFLEX_SUPPRESS_TTL_S=5`초 (노면 surface는 15초)
 - **출력 규격 통일**: WAV bytes → WS 바이너리 프레임(2026-07-09, base64 경유 안 함) → `expo-audio`
 - **클라이언트 책임**: 재생 + 선점 + 햅틱. 합성은 서버 전담 (반사 클립 제외)
 
@@ -129,7 +129,7 @@
 | TC-TTS-002 | 단말 재생 성공      | `expo-audio` `playGuideAudioBytes()` 재생        | 대기 |
 | TC-TTS-003 | 반사 클립 선점 재생 | 인지 음성 중단 후 반사 재생               | 대기 |
 | TC-TTS-004 | high 햅틱 동시 출력 | Haptics 동시 동작                         | 대기 |
-| TC-TTS-005 | 중복 억제           | `setex(suppress:…, 60)` 60초              | 대기 |
+| TC-TTS-005 | 중복 억제           | `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` (surface 15초) | 대기 |
 | TC-TTS-006 | TTS 실패 우회       | 기기 내장 TTS로 우회                      | 대기 |
 | TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인                   | 대기 |
 
@@ -203,12 +203,12 @@
 ## 12. 의존성 및 전제
 
 ### 서버
-- TTS_ENGINE = supertonic (기본, 2026-07-09 변경) | piper (핫스왑 폴백)
+- TTS_ENGINE = supertonic (기본, 2026-07-09 변경) | piper (핫스왑 폴백) | pyttsx3 | edge (2026-07-13 추가)
 - Supertonic 모델 캐시(`~/.cache/supertonic3`, 최초 실행 시 자동 다운로드) 또는 Piper ONNX 모델(`server/models/piper/`, 핫스왑용 보존)
 - DATA_REFLEX_CLIPS = data/reflex_clips
 
 ### 클라이언트
-- Web Audio API
+- expo-audio (2026-07-20 정정: 기존 "Web Audio API"는 React Native 미지원으로 실제 사용 계층과 불일치. 본 문서 §59·§99와 정합)
 - expo-speech (예비 / on-device 폴백)
 - Haptics, announceForAccessibility
 - 번들 클립 (react-native-assets)

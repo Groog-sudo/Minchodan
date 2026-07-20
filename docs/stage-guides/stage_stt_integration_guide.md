@@ -43,7 +43,7 @@ flowchart TD
 {
   "type": "stt_audio",
   "audio_b64": "UklGR...",
-  "model_name": "medium"
+  "model_name": "faster-whisper-small"
 }
 ```
 

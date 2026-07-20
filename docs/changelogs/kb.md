@@ -3680,3 +3680,13 @@
   - `docs/stage-guides/stage_stt_integration_guide.md`: §5 가드레일에 "목적지 대기 우선순위"·"목적지 파서 위치기반 stripping"·"POI 확인" 3행 신설. §6 테스트 체크리스트에 TC-STT-012~015(장소명 보존·wake 오탐 방지·동명 POI 확인·키 누락 fail-closed) 추가, 대응 pytest 테스트명 명시. 버전 헤더 v0.2.4 → v0.2.5.
 - **관련 파일**: `docs/design/api_specification.md`, `docs/stage-guides/stage_stt_integration_guide.md`
 - **검증 결과**: 문서만 수정(코드 변경 없음). 표·비고 블록 마크다운 파싱 확인(`grep -c "^|"`), 버전 헤더-이력 표 정합 확인.
+
+---
+
+### 2026-07-20 | 3단계 | code_docs_consistency_sync
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 코드-문서 정합: alert_id high_obstacle·Surface Gate P0·억제 TTL 5s·TTS 4엔진·status dead contract를 설계/ops/스킬에 동기화하고, server_detection·latency_event ts를 epoch ms로 통일하며 인지 guide에 source=cognitive를 주입한다.
+- **관련 파일**: `agents/skills/yolo-obstacle-detection/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `docs/Directory_Structure.md`, `docs/README.md`, `docs/design/api_specification.md`, `docs/design/architecture.md`, `docs/design/minchodan_design_note.md`, `docs/design/pipeline_stage_design.md`, `docs/design/reflex_audio_specification.md`, `docs/ops/android_device_integration_guide.md`, `docs/ops/android_wireless_test_guide_v2.md`, `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/integration_scenario_test.md`, `docs/ops/model_class_validation_report.md`, `docs/ops/redis_streams_schema.md`, `docs/ops/test_specification.md`, `docs/stage-guides/stage3_detection_design.md`, `docs/stage-guides/stage6_orchestration_design.md`, `docs/stage-guides/stage7_tts_design.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `server/detection/consumer.py`, `server/tts/realtime_tts.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

@@ -258,9 +258,9 @@ docs/
 | L2 LLM         | gemma4-e4b         | gpt-4o-mini            |
 | On-device 추론 | 없음 (thin client) | 반사 레이어 (post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis  | WebRTC/gRPC 등         |
-| TTS            | Kokoro/Coqui       | OpenAI TTS             |
-| RDB            | 비동기 SQLAlchemy  | MariaDB/PostgreSQL     |
+| TTS            | Supertonic (Piper/pyttsx3/edge-tts 핫스왑) | OpenAI TTS / Kokoro·Coqui(미구현) |
+| RDB            | MariaDB + 비동기 SQLAlchemy | PostgreSQL             |
 
-> **2026-07-10 확정 반영**: 위 표는 1주차 시점의 잠정 기본값이며 현재는 확정 상태입니다. **TTS**는 Kokoro/Coqui가 아닌 **Supertonic**(기본, Piper/pyttsx3 핫스왑)으로 구현됐고, **RDB**는 비동기 SQLAlchemy 계층 위에서 **MariaDB**로 확정됐습니다. 상세는 [`design/architecture.md`](design/architecture.md) §2·§5.7, [`design/backend_db_architecture.md`](design/backend_db_architecture.md)를 참조합니다.
+> **2026-07-20 정합**: 위 표는 현재 구현 기준입니다. **TTS**는 **Supertonic** 기본(Piper/pyttsx3/edge-tts 핫스왑), **RDB**는 MariaDB입니다. 상세는 [`design/architecture.md`](design/architecture.md) §2·§5.7, [`design/backend_db_architecture.md`](design/backend_db_architecture.md)를 참조합니다.
 >
 > **2026-07-16 갱신**: **On-device 추론** 항목도 더 이상 "없음"이 아닙니다. iOS CoreML / Android TFLite 반사 추론 브릿지가 구현되어 실기기에 배포됐습니다(`AGENTS.md` §2, `client/ios/CoreMLInferenceBridge.swift`, `client/src/inference/tfliteDetector.ts`). 다만 반사 경보의 완전 온디바이스 완결(서버 왕복 없는 종단)은 아직 검증되지 않았습니다.

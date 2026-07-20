@@ -503,7 +503,7 @@ class DetectionConsumer:
                     "latency": latency_stages,
                     "latency_alert": latency_alert,
                     "latency_threshold_ms": threshold,
-                    "ts": time.time(),
+                    "ts": now_ts(),
                 }
             )
         except Exception as e:
@@ -1002,7 +1002,7 @@ class DetectionConsumer:
             "type": "server_detection",
             "event_id": event_id,
             "detections": payload_detections,
-            "ts": time.time(),
+            "ts": now_ts(),
         }
 
         try:
@@ -1633,6 +1633,7 @@ class DetectionConsumer:
                 "clock_direction": orch_result.get("clock_direction") or clock_direction,
                 "distance_class": orch_result.get("distance") or distance_class,
                 "object_ko": orch_result.get("object_ko") or object_ko,
+                "source": "cognitive",
                 "audio_codec": "wav",
                 "duration_ms": duration_ms,
                 "transport": "binary" if audio_bytes else "none",

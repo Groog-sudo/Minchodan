@@ -1,7 +1,7 @@
 # Minchodan 시스템 아키텍처 설계서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.14 (2026-07-20 Medium 인지 기본 컨텍스트를 인메모리 회피 힌트(`GUIDANCE_CONTEXT_MODE=hints`)로 전환, Chroma RAG는 `rag` 롤백)
+> **버전**: v0.4.15 (2026-07-20 코드-문서 정합: Suppressor TTL 5초 정정, DETECTOR_TYPE 기본값 yolo 정합, TTS 4엔진·edge-tts 반영, §10 보안 변수 참조 보강)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
@@ -95,7 +95,7 @@ graph TD
         subgraph TTS ["7. 음성 출력"]
             RealtimeTTS["실시간 TTS<br/>(Supertonic 기본, Piper/pyttsx3 핫스왑)"]
             ClipSender["Reflex Clip Sender<br/>(사전합성 클립)"]
-            Suppressor["Suppressor<br/>(Redis setex 60)"]
+            Suppressor["Suppressor<br/>(Redis setex 5s, REFLEX_SUPPRESS_TTL_S)"]
         end
 
         subgraph Nav ["부가 기능. 실시간 내비게이션"]
@@ -196,7 +196,7 @@ graph TD
 | `server/orchestration/llm_client_factory.py`  | `BaseChatModel` Ollama(gemma4-e4b) gpt-4o-mini 핫스왑                      | 6    |
 | `server/tts/realtime_tts.py`                  | 인지 경로 `TTSService.generate()` 호출, WAV 바이너리 WS 프레임 전송. (text, voice, speed) 키 FIFO 캐시(64건)로 고정 안내문 재합성 회피(2026-07-11, CPU 폴백 환경 합성 1.4~1.9초 실측 근거) | 7    |
 | `server/tts/reflex_clip_sender.py`            | 반사 경로 alert_id 사전합성 클립 WS 고우선 전송                            | 7    |
-| `server/tts/suppressor.py`                    | Redis `setex(suppress:…, 60)` 중복 억제                                    | 7    |
+| `server/tts/suppressor.py`                    | Redis `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` 중복 억제. 노면(surface) 경보는 `REFLEX_SURFACE_SUPPRESS_TTL_S=15`로 별도 적용 | 7    |
 | `server/tts/tts_service.py`                   | `TTSService` 추상화(Supertonic/Piper/Pyttsx3), WAV 규격 통일               | 7    |
 | `server/bus/redis_client.py`                  | aioredis 연결 풀                                                           | 3·6  |
 | `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                                    | 3    |
@@ -303,9 +303,9 @@ graph TD
 - **T3-S (2026-07-18)**: 서버 `session_manager`의 `_stt_activity` 레지스트리로 STT 처리 중인 device_id를 추적. `DetectionConsumer`는 해당 device_id의 인지 가이드 발행을 조기 반환(반사는 제외)
 - **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생 (실시간 TTS 합성 금지)
 - **선점(preempt)**: 반사 음성은 인지 음성을 중단시키고 재생. WS에서 반사 이벤트는 별도 고우선 타입
-- 중복 억제 `setex(suppress:…, 60)`
+- 중복 억제 `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` (노면 surface 경보는 `REFLEX_SURFACE_SUPPRESS_TTL_S=15`)
 - 햅틱·접근성(`announceForAccessibility`) 연동
-- `TTSService` 추상화(`SupertonicTTSService`/`PiperTTSService`), 출력은 WAV로 규격 통일
+- `TTSService` 추상화(`SupertonicTTSService`/`PiperTTSService`/`Pyttsx3TTSService`/`EdgeTTSService`, 4종 핫스왑), 출력은 WAV로 규격 통일
 
 ---
 
@@ -364,7 +364,7 @@ graph TD
 | Out  | `{type:"nav_route", waypoints:[{lat, lon}], app_key, ts}` (경로 수립/해제/재접속 복원 시, 지도 패널용. 2026-07-11 신설) |
 | In   | `{type:"distance_probe_sample", payload:{event_id, samples:[{class_name, confidence, bbox, lidar_meters, ...}]}}` (LiDAR 실거리 검증 전용, 반사/인지 경로 미관여. 2026-07-17 신설) |
 
-상세 스키마는 [`api_specification.md`](api_specification.md) §6.4~§6.6, §6.8을 참조합니다.
+상세 스키마는 [`api_specification.md`](api_specification.md) §6.3(STT `stt_audio`), §6.4~§6.6(nav_route·guide·detection_control), §6.7(`dial_action`), §6.8(`distance_probe_sample`), §6.9(`fixed_point_probe_sample`)를 참조합니다.
 
 > **2026-07-11 길안내 발화 경로 분리**: 턴바이턴 멘트 조회가 `DetectionConsumer` 내부에만
 > 있어 카메라 탐지가 없으면 NAVIGATING 상태여도 무음이던 결함을 수정했다. `realtime_gps`
@@ -436,7 +436,7 @@ sequenceDiagram
 
 | 변수                | 설명                                      | 기본값                   |
 | ------------------- | ----------------------------------------- | ------------------------ |
-| `LLM_PROVIDER`      | LLM 공급자 (`ollama` 또는 `openai`)       | `ollama`                 |
+| `LLM_PROVIDER`      | LLM 공급자 (`ollama`/`gemini`/`openai`). 랩 기본 `ollama`, 시연/운영 `.env.example`은 `gemini`. 상세는 env doc §2.2 | `ollama`                 |
 | `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
 | `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4-e4b`             |
 | `GOOGLE_API_KEY`    | 4단계 Gemini VLM 캡셔닝(`gemini-2.5-flash-lite`, 오프라인 빌드 전용) 필수 | (미설정) |
@@ -447,8 +447,8 @@ sequenceDiagram
 | `GUIDANCE_CONTEXT_MODE` | Medium 인지 컨텍스트 (`hints` 기본 / `rag` 롤백) | `hints` |
 | `WS_HOST`           | WebSocket 서버 바인드 호스트              | `0.0.0.0`                |
 | `WS_PORT`           | WebSocket 서버 포트                       | `8000`                   |
-| `DETECTOR_TYPE`     | 탐지기 유형 (`mock` 또는 `yolo`)          | `mock`                   |
-| `TTS_ENGINE`        | TTS 엔진 (`supertonic` 기본, `piper`/`pyttsx3` 핫스왑) | `supertonic` |
+| `DETECTOR_TYPE`     | 탐지기 유형 (`yolo` 기본, 랩 실측. `mock`은 노트북/데모·CI 폴백. 상세는 env doc §2.6) | `yolo`                   |
+| `TTS_ENGINE`        | TTS 엔진 (`supertonic` 기본, `piper`/`pyttsx3`/`edge` 핫스왑) | `supertonic` |
 | `HEARTBEAT_INTERVAL`| WS ping 주기(초)                          | `5`                      |
 | `HEARTBEAT_TIMEOUT` | WS 하트비트 유예 타임아웃(초)             | `15`                     |
 | `TMAP_APP_KEY`      | TMAP 보행자 경로 안내 API 키. `nav_route` 메시지 `app_key`로 단말 지도 패널에도 전달(2026-07-11) | (미설정)                 |
@@ -461,6 +461,8 @@ sequenceDiagram
 | `OPENAI_API_KEY`    | OpenAI 전환 시 필요                       | (미설정)                 |
 | `SLACK_WEBHOOK_URL` | Slack Incoming Webhook URL (경보 발행)    | (미설정)                 |
 
+> **보안·인증 변수**: `JWT_SECRET_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE`, `ADMIN_BOOTSTRAP_TOKEN`, `APP_ENV`, `ALLOW_STATIC_DEVICE_TOKENS`, `WS_AUTH_TIMEOUT_SECONDS`, `REDIS_PASSWORD`, `DB_PASSWORD`, `ACCESS_TOKEN_EXPIRE_HOURS`, `DEVICE_TOKEN_EXPIRE_DAYS` 등은 보안 민감 변수로 [`docs/ops/environment_variables.md`](../ops/environment_variables.md) §2.5(인증)·§2.1(서버 전체)를 단일 명세로 참조합니다. 본 §10 표는 런타임 동작 핵심 요약만 포함합니다.
+>
 > **불일치 해소 이력**: 2026-06-27 환경 변수 3원화(`.env.example`·본 절·루트 `README.md`)를 단일 명세서로 통합. 상세 내용은 [`docs/environment_variables.md`](environment_variables.md) 4절을 참조.
 
 ---
@@ -499,7 +501,7 @@ sequenceDiagram
 | **6단계 (오케스트레이션)** | **LangSmith Trace MCP** | `StateGraph` 내의 노드 전이 및 실행 지연(Latency)을 시각적으로 추적하고 가드레일 위반 시의 재시도 루프를 감시합니다. |
 | **6단계 (오케스트레이션)** | **System / GPU Monitor MCP** | GPU 자원 사용량과 CUDA 메모리 한계를 모니터링하여 로컬 Ollama 모델 부하 임계치 도달 시 OpenAI GPT-4o-mini로의 핫스왑을 제어합니다. |
 | **7단계 (음성 출력)** | **Audio Validator MCP** | 실시간 생성된 음성 안내(WAV 바이너리 WS 프레임)의 샘플 레이트 규격 준수 여부, 오디오 TTFB 및 무음 구간(Silence)을 검증합니다. |
-| **7단계 (음성 출력)** | **Redis Cache Monitor MCP** | 중복 경보 방지를 위한 `suppress:alert_id` 캐시 키와 TTL(60초)의 정밀 상태를 상시 모니터링하고 관리합니다. |
+| **7단계 (음성 출력)** | **Redis Cache Monitor MCP** | 중복 경보 방지를 위한 `suppress:alert_id` 캐시 키와 TTL(`REFLEX_SUPPRESS_TTL_S=5`, surface는 15초)의 정밀 상태를 상시 모니터링하고 관리합니다. |
 | **7단계 (음성 출력)** | **Accessibility Simulator MCP** | `announceForAccessibility` 텍스트와 실제 재생되는 오디오 파일 간의 의미 정합성을 시각장애인 접근성 관점에서 비교 검증합니다. |
 | **공통 (경보)** | **Slack Notification MCP** | L3 가드레일 최종 실패(Fallback 작동) 및 추론 서버 크리티컬 예외 발생 시 실시간으로 개발팀 채널에 즉시 에러 로그를 전송합니다. |
 

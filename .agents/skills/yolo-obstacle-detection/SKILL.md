@@ -226,10 +226,12 @@ if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 # P0 노면 클래스 (즉시 경보 대상)
-# 2026-07-07 정정: 실제 seg 모델은 crosswalk/manhole/stair/grating/braille_damaged를 별도 클래스로
-# 학습하지 않고 전부 "caution" 하나로 통합했다. 따라서 P0는 "caution" 단일 클래스다.
+# 2026-07-20 정정: server/detection/gates/surface_gate.py 실제 값 기준. 최초 제안(crosswalk/manhole/stair/grating/braille_damaged)과
+# 2026-07-07 1차 정정({"caution"} 단일)을 거쳐, 현재는 caution(통합) + stair_down + manhole 3종으로 확장됐다.
 P0_SURFACE_CLASSES = {
-    "caution",  # 계단/맨홀/그레이팅/파손 통합 클래스
+    "caution",       # 계단/맨홀/그레이팅/파손 통합 클래스
+    "stair_down",    # 계단 하향
+    "manhole",       # 맨홀
 }
 
 def surface_gate(surface_result, frame_height):
@@ -244,7 +246,7 @@ def surface_gate(surface_result, frame_height):
     return None
 ```
 
-> **알려진 이슈(2026-07-07)**: 위 정정 이전 코드가 존재하지 않는 클래스명(`crosswalk`/`stair` 등)을 참조하던 흔적으로, 실제 `surface_gate.py`가 4클래스 세그멘테이션 결과와 매칭되지 않아 **Surface Gate가 현재 발동하지 않는 상태**가 관측됐다(위험도 규칙 담당자 판단 영역이라 코드 직접 수정은 보류, 사실만 기록). 상세: [`docs/stage-guides/stage3_detection_design.md`](../../../docs/stage-guides/stage3_detection_design.md).
+> **정정 완료(2026-07-07, 2026-07-20 갱신)**: 위 정정 이전 코드가 존재하지 않는 클래스명(`crosswalk`/`stair` 등)을 참조하던 흔적으로, 실제 `surface_gate.py`가 4클래스 세그멘테이션 결과와 매칭되지 않아 **Surface Gate가 발동하지 않던 결함**이 있었다. 2026-07-07 `{"caution"}`으로 1차 정정 후 정상 발동했고, 2026-07-20 기준 `P0_SURFACE_CLASSES = {"caution", "stair_down", "manhole"}` 3종으로 확장돼 정상 발동 중이다. 상세: [`docs/stage-guides/stage3_detection_design.md`](../../../docs/stage-guides/stage3_detection_design.md) §5·§6.2.
 
 ### 단계 3-8. 위험도별 처리 분기
 
@@ -276,7 +278,7 @@ def publish_to_cognitive_path(detection, risk):
 | 클래스 | 설명 | 게이트 |
 | --- | --- | --- |
 | `sidewalk_normal` | 정상 보도 | (해당 없음) |
-| `caution` | 계단/맨홀/그레이팅/파손 통합(주의 구간) | Surface Gate (P0, 단 현재 미발동 - 위 알려진 이슈 참조) |
+| `caution` | 계단/맨홀/그레이팅/파손 통합(주의 구간) | Surface Gate (P0, 정상 발동 - 2026-07-07 정정 완료, `P0_SURFACE_CLASSES = {caution, stair_down, manhole}`) |
 | `roadway` | 차도 | (주의, mid) |
 | `braille_normal` | 점자블록 정상 | (해당 없음) |
 

@@ -1,7 +1,7 @@
 # YOLO26n 학습 모델 클래스별 검증 보고서
 
 > **작성일**: 2026-07-06
-> **버전**: v1.0.0 (33클래스 샘플 검증 최초 실행)
+> **버전**: v1.0.1 (2026-07-20 헤더 표기 정정: "33클래스"를 "탐지 29 + 분할 4 = 33클래스"로 명시. 본문은 정합. 기존 v1.0.0 이력: 33클래스 샘플 검증 최초 실행)
 > **기준 문서**: [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md) (3단계 KPI), [`docs/ops/ondevice_coreml_benchmark.md`](ondevice_coreml_benchmark.md)
 > **코드 참조**: `scripts/validate_class_samples.py`, `server/detection/yolo_detector.py`
 > **모델 파일**: `server/models/yolo26n/det_best_20260705.pt` (Object Detection 29클래스), `server/models/yolo26n/segbest.pt` (Segmentation 4클래스)

@@ -59,7 +59,7 @@
 | `server/detection/yolo_segmentor.py` | Yolo 26N Segmentation | `YoloSegmentor` — `ultralytics.YOLO` 로드 + masks 파싱. 노면 클래스 분리(C2) 준수 |
 | `server/detection/bytetrack_tracker.py` | ByteTrack 래퍼 | `ByteTrackTracker` — track_id 자체는 `YoloDetector._parse_result`가 `model.track()`의 `box.id`를 `T-0001` 포맷으로 파싱해 이미 부여한다. 본 클래스는 그 track_id를 받아 Redis 컨텍스트(`ctx:{track_id}`)로 이전 위치와 대조해 speed/direction만 계산한다 |
 | `server/detection/gates/__init__.py` | 게이트 패키지 | export |
-| `server/detection/gates/reflex_gate.py` | Reflex Risk Gate | 룰베이스, **LLM 미경유**. 고위험 클래스 + 근접(하단 15%) → `alert_id` + 방향 |
+| `server/detection/gates/reflex_gate.py` | Reflex Risk Gate | 룰베이스, **LLM 미경유**, **class-agnostic**(2026-07-18). confidence≥0.35 + 중앙 40% 회랑 + 3회 연속 히트 + `route=="reflex"`(near) → `alert_id="high_obstacle"` + 방향 |
 | `server/detection/gates/surface_gate.py` | Surface Fast-Alert Gate | 룰베이스, **LLM 미경유**. P0 노면 하단 검출 → `alert_id` |
 | `server/detection/detection_pipeline.py` | 파이프라인 오케스트레이션 | `DetectionPipeline` 클래스 — 프레임 입력 → Detection → Segmentation → ByteTrack → 이중 게이트 분기. **방어적 코딩**: None 가드레일, 무탐지 빈 리스트, Redis 실패 시 탐지 결과 정상 반환 |
 
@@ -271,7 +271,7 @@ class DetectionResult(BaseModel):
 
 class ReflexAlert(BaseModel):
     event_id: str
-    alert_id: str                   # f"high_{class_name}_{direction}", 예: "high_car_front-left"
+    alert_id: str                   # "high_obstacle" 고정 (class-agnostic, 2026-07-18)
     direction: str                  # "front-left" | "front" | "front-right" (estimate_direction() 산출)
     risk_level: str = "high"
     clip: str                       # "reflex_clips/high_front.mp3" (direction 기준, class_name 무관)
@@ -292,47 +292,49 @@ class ReflexAlert(BaseModel):
 
 ## 5. 노면 클래스 분리 (C2)
 
-v1.1 설계에 따라 노면 클래스를 **독립 클래스로 분리**합니다. 같은 클래스로 묶으면 파손 학습이 불가하므로 분리가 필수입니다.
+v1.1 초기 설계는 노면을 7~8개 독립 클래스로 분리할 계획이었으나, 2026-07-07 실측 결과 **4클래스**로 파인튜닝이 확정됐습니다(`braille_damaged`/`sidewalk_damaged`/`crosswalk` 별도 세분화는 학습 데이터 미확보로 미채택). 본 절은 실제 학습된 4클래스를 기준으로 합니다.
 
 | 클래스 | 설명 | 게이트 | 위험도 |
 | --- | --- | --- | --- |
-| `braille_normal` | 점자블록 정상 | (해당 없음) | low |
-| `braille_damaged` | 점자블록 파손 | Surface Gate (P0) | high |
-| `sidewalk_normal` | 복도 정상 | (해당 없음) | low |
-| `sidewalk_damaged` | 복도 파손 | (해당 없음) | mid |
-| `crosswalk` | 횡단복도 | Surface Gate (P0) | high |
+| `sidewalk_normal` | 보도 정상 | (해당 없음) | low |
+| `caution` | 계단·맨홀·그레이팅 통합 | Surface Gate (P0) | high |
 | `roadway` | 차도 | (주의) | mid |
-| `caution` | 계단/맨홀/그레이팅 | Surface Gate (P0) | high |
+| `braille_normal` | 점자블록 정상 | (해당 없음) | low |
 
-> **참고**: `caution` 클래스는 stairs/manhole/grating을 포함하는 통합 클래스입니다. 팀원 학습 시 별도 클래스로 분리할지 통합할지는 학습 데이터에 따라 결정하며, 본 설계서는 SKILL.md 기준으로 `caution` 통합 클래스를 따릅니다.
-
-> **2026-07-07 실제 학습 결과 반영**: 위 7클래스는 최초 제안이었고, 실제로 파인튜닝 완료된 Segmentation 모델(`segbest.pt`)은 **4클래스만 채택**됐다 — `sidewalk_normal`, `caution`, `roadway`, `braille_normal` (`braille_damaged`/`sidewalk_damaged`/`crosswalk` 별도 세분화는 데이터 미확보로 미채택, `docs/ops/model_class_validation_report.md` 참조).
+> **참고**: `caution` 클래스는 stairs/manhole/grating을 통합한 클래스입니다. v1.1 초기 계획에는 이들을 별도 클래스로 분리하는 안도 검토했으나 데이터 수급 한계로 통합 1클래스로 확정했습니다(`docs/ops/model_class_validation_report.md`, 학습 config `training/configs/aihub_yolo_segmentation.yaml`).
 >
-> **버그 및 수정 (2026-07-07)**: `server/detection/gates/surface_gate.py`의 `P0_SURFACE_CLASSES`가 최초 제안 시절의 클래스명(`crosswalk`, `manhole`, `stair`, `stairs`, `grating`, `braille_damaged`)으로 남아 있어 실제 4클래스 모델 출력과 단 하나도 겹치지 않아 **Surface Gate가 한 번도 발동한 적이 없던 실제 코드 결함**이었다(계단·맨홀 등 노면 위험에 대한 <300ms 즉시 반사 경보가 전혀 작동하지 않음). `P0_SURFACE_CLASSES = {"caution"}`으로 정정하여 수정 완료했다. 같은 조사에서 `server/detection/detection_pipeline.py::_classify_risk`(COCO 잔재 클래스명 사용)와 `server/orchestration/nodes/l1_classifier.py::MID_RISK_CLASSES`(`kickboard`/`pothole`/`manhole`/`construction_cone` 등 실제 존재하지 않는 클래스명, `scooter`가 아닌 `kickboard`로 오기)도 함께 발견되어 실제 29클래스 기준으로 정정했다. `tests/test_langgraph.py::TestRiskClassifierConsistency`에 두 분류기 간 불일치 및 존재하지 않는 클래스명 사용을 막는 회귀 테스트를 추가했다.
+> **버그 및 수정 이력 (2026-07-07)**: `server/detection/gates/surface_gate.py`의 `P0_SURFACE_CLASSES`가 최초 제안 시절의 클래스명(`crosswalk`, `manhole`, `stair`, `stairs`, `grating`, `braille_damaged`)으로 남아 있어 실제 4클래스 모델 출력과 단 하나도 겹치지 않아 **Surface Gate가 한 번도 발동하지 않던 결함**이 있었다. 현재는 `P0_SURFACE_CLASSES = {"caution", "stair_down", "manhole"}`로 정정되어 정상 발동한다(상세는 §6.2). `server/detection/detection_pipeline.py::_classify_risk`(COCO 잔재 클래스명)와 `server/orchestration/nodes/l1_classifier.py::MID_RISK_CLASSES`(`kickboard`/`pothole`/`manhole`/`construction_cone` 등 미존재 클래스명)도 함께 정정됐다. `tests/test_langgraph.py::TestRiskClassifierConsistency`에 회귀 테스트가 추가됐다.
 
 ---
 
 ## 6. 이중 게이트 규칙
 
-### 6.1 Reflex Risk Gate (룰베이스, LLM 미경유)
+### 6.1 Reflex Risk Gate (룰베이스, LLM 미경유, class-agnostic)
 
 **입력**: `Detection` 객체, 프레임 높이/너비
 **출력**: `ReflexAlert` 또는 `None`
 
+Reflex Gate는 위험 클래스 분기 없이 **class-agnostic**으로 동작합니다(2026-07-18 `risk_ssot_contract.md` §2-B/§2-C 확정). 거리 구역 판정은 `server/detection/distance_policy.py` SSOT가 담당하고, 게이트 본문은 `Detection.route == "reflex"`(= `effective_distance_zone == "near"`)일 때만 통과시킵니다.
+
 | 조건 | 임계값 | 결과 |
 | --- | --- | --- |
-| 고위험 클래스 | `car`, `truck`, `bus`, `motorcycle`, `scooter` (5종) | 1차 통과 |
-| 근접 (하단) | bbox 하단 y > 프레임 높이 × (1 - 0.15) | 2차 통과 → `alert_id` 발행 |
-| 방향 추정 | `estimate_direction()`(`direction.py`)의 거리별 충돌 회랑 띠(near/medium/far별 폭이 다름) 겹침 판정 | `front-left` / `front` / `front-right` 3종만 산출 (단순 x<width/3 임계치가 아님) |
+| 신뢰도 | `AGNOSTIC_MIN_CONFIDENCE = 0.35` 이상 | 1차 통과 |
+| 중앙 회각 | `CENTER_X_MIN = 0.30 ≤ center_x ≤ CENTER_X_MAX = 0.70` (프레임 중앙 40%) | 2차 통과 |
+| 연속 히트 | 동일 track_id로 `MIN_HIT_COUNT = 3`회 연속 히트 | 3차 통과 |
+| 거리 구역 | `distance_policy.evaluate_distance()`가 부착한 `route == "reflex"`(near 구역, `NEAR_ENTER_AREA_RATIO = 0.10` 히스테리시스) | 4차 통과 → `alert_id` 발행 |
+| 방향 추정 | `estimate_direction()`(`direction.py`)의 거리별 충돌 회랑 띠(near/medium/far별 폭이 다름) 겹침 판정 | `front-left` / `front` / `front-right` 3종 산출 |
 
-**고위험 클래스 정의** (`server/detection/gates/reflex_gate.py` 실제 코드):
+**실제 코드 상수** (`server/detection/gates/reflex_gate.py`):
 
 ```python
-HIGH_RISK_CLASSES = {"car", "truck", "bus", "motorcycle", "scooter"}
-PROXIMITY_THRESHOLD = 0.15  # 프레임 하단 면적 비율
+AGNOSTIC_MIN_CONFIDENCE = 0.35
+CENTER_X_MIN = 0.30
+CENTER_X_MAX = 0.70
+MIN_HIT_COUNT = 3
+SUPPRESS_ALERT_ID = "high_obstacle"  # 방향·클래스 제외 고정
 ```
 
-> **2026-07-07 정정**: 29개 클래스 전부를 반사 경로로 보내면 피로도 때문에 실사용이 불가능하므로, 가장 치명적인 동적 객체 5종만 Reflex Gate 1차 필터로 선별했다(코드 내 주석 참조). 최초 설계(4종, `motorcycle`까지)에는 `scooter`가 누락되어 있었다.
+> **class-agnostic 전환 배경 (2026-07-18)**: 최초 설계는 `HIGH_RISK_CLASSES = {"car","truck","bus","motorcycle","scooter"}` 5종 클래스 분기였으나, 29개 클래스 전부를 후보로 두되 confidence+회랑+히트수+거리 구역으로 발화 여부를 결정하는 class-agnostic 정책(Option A)으로 전환했다. 5종 집합은 `HIGH_RISK_CLASSES` 참조 테이블로만 보존된다. 상세 임계값·SSOT 계약은 [`docs/design/risk_ssot_contract.md`](../design/risk_ssot_contract.md) §2-B/§2-C를 참조.
 
 ### 6.2 Surface Fast-Alert Gate (룰베이스, LLM 미경유)
 
@@ -341,25 +343,26 @@ PROXIMITY_THRESHOLD = 0.15  # 프레임 하단 면적 비율
 
 | 조건 | 임계값 | 결과 |
 | --- | --- | --- |
-| P0 노면 클래스 | `crosswalk`, `manhole`, `stair`, `grating`, `braille_damaged` | 1차 통과 |
-| 하단 검출 | centroid y > 프레임 높이 × 0.6 | 2차 통과 → `alert_id` 발행 |
+| P0 노면 클래스 | `caution`, `stair_down`, `manhole` (3종) | 1차 통과 |
+| 하단 검출 | centroid y > 프레임 높이 × 0.6 | 2차 통과 |
+| 전방 밴드 | near 전방 밴드(`FRONT_BAND` 0.20~0.80) 내 | 3차 통과 → `alert_id` 발행 |
 
-**P0 노면 클래스 정의**:
+**P0 노면 클래스 정의** (`server/detection/gates/surface_gate.py` 실제 코드):
 
 ```python
-P0_SURFACE_CLASSES = {
-    "crosswalk", "manhole", "stair", "grating", "braille_damaged"
-}
+P0_SURFACE_CLASSES = {"caution", "stair_down", "manhole"}
 ```
 
-### 6.3 alert_id 실제 생성 규칙 (2026-07-07 정정)
+> **정정 이력**: 최초 설계는 `{"crosswalk","manhole","stair","grating","braille_damaged"}` 5종이었으나 실제 4클래스 모델과 겹치지 않아 한 번도 발동하지 않던 결함이었다(§5 버그 이력 참조). 2026-07-07 `{"caution"}`으로 정정 후, 추가로 `stair_down`/`manhole`까지 포함해 3종으로 확장됐다.
 
-> 최초 설계는 `high_front`/`high_left`/`high_right`/`high_stop` 같은 **고정 alert_id 목록**을 전제로 했으나, 실제 `reflex_gate.py:55`는 `alert_id = f"high_{detection.class_name}_{direction}"`로 **클래스명을 포함한 동적 문자열**을 생성한다(예: `high_car_front-left`, `high_scooter_front`). 재생 클립(`clip`)만 `f"reflex_clips/high_{direction}.mp3"`로 direction 기준으로 고정된다 — 클래스와 무관하게 방향별 클립 3종(`high_front-left.mp3`, `high_front.mp3`, `high_front-right.mp3`)만 존재하면 된다.
+### 6.3 alert_id 실제 생성 규칙 (2026-07-18 class-agnostic 정정)
+
+> Reflex Gate는 class-agnostic 전환에 따라 `alert_id`를 **`"high_obstacle"` 고정 문자열**로 발행한다(방향·클래스 제외). 억제 키는 `high_obstacle:{track_id}:{distance_band}`로, 새 객체나 거리 악화 시 키가 달라져 억제를 우회해 재발화한다(`risk_ssot_contract.md` §2-B). 재생 클립은 `f"reflex_clips/high_{direction}.mp3"`로 direction 기준 고정 — 방향별 클립 3종(`high_front-left.mp3`, `high_front.mp3`, `high_front-right.mp3`)만 존재하면 된다.
 
 | 게이트 | `alert_id` 생성식 | 예시 |
 | --- | --- | --- |
-| Reflex Gate | `f"high_{class_name}_{direction}"` | `high_car_front`, `high_scooter_front-left` |
-| Surface Gate | `f"surface_{class_name}"` | `surface_crosswalk`, `surface_manhole` (단, §6.2의 실제 4클래스 모델과 P0_SURFACE_CLASSES 불일치 문제로 현재는 발동하지 않음) |
+| Reflex Gate | `"high_obstacle"` (고정, `SUPPRESS_ALERT_ID`) | `high_obstacle` |
+| Surface Gate | `f"surface_{class_name}"` | `surface_caution`, `surface_stair_down`, `surface_manhole` |
 
 ---
 
@@ -459,7 +462,7 @@ python -m pytest tests/test_detection.py -v
   "event_id": "uuid",
   "detections": [
     {
-      "class_name": "kickboard",
+      "class_name": "scooter",
       "confidence": 0.87,
       "bbox": [120, 200, 280, 360],
       "track_id": "T-0003"
@@ -477,7 +480,7 @@ python -m pytest tests/test_detection.py -v
 }
 ```
 
-> **2026-07-07 클래스명 참고**: `l1_classifier.py`의 `MID_RISK_CLASSES`는 `"kickboard"`라는 이름을 그대로 쓰고 있으나, 실제 학습 완료된 Object Detection 29클래스(`docs/ops/model_class_validation_report.md`)에는 `kickboard`가 없고 `scooter`가 그 역할을 한다 — 두 게이트/분류기 코드 간 클래스명이 어긋나 있어 `kickboard`는 현재 `l1_classifier`에서 실제로 매칭되지 않는 죽은 규칙일 가능성이 있다. `surface` 예시는 실제 4클래스 모델에 존재하는 `caution`으로 교체했다(§5 참조, `crosswalk`는 실제 모델에 없음).
+> **2026-07-07 정정 완료**: `l1_classifier.py`의 `MID_RISK_CLASSES`는 과거 `"kickboard"`/`"pothole"`/`"manhole"`/`"construction_cone"` 등 실제 29클래스에 없는 이름을 쓰고 있어 매칭되지 않는 죽은 규칙이었다. 현재는 `MID_RISK_CLASSES = set()`(공집합)으로 정정돼 L1 룰 분류를 경유하지 않고 모두 인지 경로로 흐른다(`server/orchestration/nodes/l1_classifier.py:22`). 본 예시의 `class_name`도 실제 29클래스에 존재하는 `scooter`로 교체했고, `surface` 예시는 4클래스 모델에 존재하는 `caution`이다(`crosswalk`/`kickboard`는 실제 모델에 없음).
 
 ### 9.3 Redis Streams 발행 (mid/low)
 
@@ -592,9 +595,9 @@ redis_bus.expire(f"ctx:{track_id}", 30)
   - LLM 호출 실패 또는 L3 가드레일 탈락 시에도 최후 안전망인 `fallback_node.py`가 고정 정지 메시지("천천히 멈추세요") 대신, **"N시 방향 [장애물명] 주의하세요"** 형태의 동적 우회/주의 멘트를 동적으로 조합해 생성하도록 리팩토링함.
 - **직접 충돌 위험 객체 필터 추가 및 완화 보정** (`reflex_gate.py`):
   - 무차별적인 반사 경보로 인한 피로 고갈 및 큐 지연을 막기 위해 반사 조건을 재조정함.
-  - **조건 1**: 사물의 바닥(bottom_y)이 화면 하단 18% 이내로 인접한 물체 (`bottom_y > frame_height * 0.82`).
-  - **조건 2**: 사물의 중심(center_x)이 좌우 20% 여백을 제외한 중앙 60% 충돌 회랑 내에 있는 물체 (`0.2 * width <= center_x <= 0.8 * width`).
-  - 위 두 조건(적정 위험 인접 + 정면 충돌 방향)을 모두 만족할 때만 즉각 비프음(반사)을 발생시키고, 그 외의 원경/측면 사물은 비프음 없이 800ms 뒤 부드러운 우회 가이드 음성으로만 설명하도록 차별화함 (실기기 0.95 기하 기준이 너무 가혹했던 버그 수정).
+  - **조건 1**(초기 v0.3.1): 사물의 바닥(bottom_y)이 화면 하단 18% 이내로 인접한 물체, 중앙 60% 회랑(`0.2~0.8`).
+  - **2026-07-18 class-agnostic 전환**: 위 임계값은 `CENTER_X_MIN=0.30 / CENTER_X_MAX=0.70`(중앙 40% 회랑) + `MIN_HIT_COUNT=3` + `AGNOSTIC_MIN_CONFIDENCE=0.35` + 거리 구역 SSOT(`distance_policy.py`, `NEAR_ENTER_AREA_RATIO=0.10` 히스테리시스)로 대체됐다. `bottom_y*0.82` 규칙은 폐기.
+  - 위 조건들을 모두 만족할 때만 즉각 비프음(반사)을 발생시키고, 그 외의 원경/측면 사물은 비프음 없이 800ms 뒤 부드러운 우회 가이드 음성으로만 설명하도록 차별화함 (실기기 0.95 기하 기준이 너무 가혹했던 버그 수정).
 - **신규 파인튜닝 가중치 적용**: 파인튜닝 가중치 파일명을 `.env` 및 `config.py` 기본값에 `object_detection260714.pt` 및 `segmentation260714.pt`로 업데이트 반영함.
 
 ---

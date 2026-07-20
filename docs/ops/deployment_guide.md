@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.5.7 (2026-07-19 Linux Compose 고정 게이트웨이·Ollama UFW 최소 허용 규칙 반영)
+> **버전**: v0.5.8 (2026-07-20 코드-문서 정합: mariadb 포트 검증 기대결과 정정(미노출), schema.sql 마운트 경로 `server/db/schema.sql` 정정, §7.1 서비스 표에 console 행 추가, macOS 변형 fastapi 0.0.0.0 바인딩 예외 명시. 기존 v0.5.7 이력 유지)
 > **설계 기준**: [`../design/architecture.md`](../design/architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`../dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -45,7 +45,7 @@ graph TD
 | :--- | :--- | :--- | :--- | :--- |
 | **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능 | 비루트 사용자 FastAPI + WebSocket/SSE. `.env`는 `env_file`로 주입하며 외부 단말은 Tailscale Serve의 TLS 종단을 경유 |
 | **redis** | `redis:7-alpine` (공식) | `127.0.0.1:6379:6379` | `redis_data:/data` | `REDIS_PASSWORD` 필수, AOF 영속화, Redis Streams + 컨텍스트 TTL |
-| **mariadb** | `mariadb:11.4` (공식) | 미노출(주석 처리, 2026-07-17) | `mariadb_data:/var/lib/mysql`, `Minchodan DB.session.sql:/docker-entrypoint-initdb.d/01_minchodan_schema.sql` | 공유 GPU 서버 로컬 3306 포트 충돌 방지를 위해 호스트 포트 노출을 비활성화. 원격 DB(`DB_HOST`) 기본 연결 유지, 로컬 노출이 필요하면 `docker-compose.macos.yml` 사용 |
+| **mariadb** | `mariadb:11.4` (공식) | 미노출(주석 처리, 2026-07-17) | `mariadb_data:/var/lib/mysql`, `../server/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro` (Linux 변형, 2026-07-20 정정) | 공유 GPU 서버 로컬 3306 포트 충돌 방지를 위해 호스트 포트 노출을 비활성화. 원격 DB(`DB_HOST`) 기본 연결 유지, 로컬 노출이 필요하면 `docker-compose.macos.yml` 사용 (macOS 변형은 schema.sql 마운트 미적용) |
 | **console** | `minchodan-console:latest` (로컬 빌드) | `127.0.0.1:${CONSOLE_PORT:-5174}:5174` | `./console:/app`, `/app/node_modules` | 권한 제한 `node` 사용자로 Vite 콘솔 실행. 외부 공개가 필요하면 인증된 TLS 프록시를 별도로 사용 |
 
 > Ollama는 Compose 서비스가 아닙니다. 호스트에서 `ollama serve`로 실행하고, FastAPI 컨테이너는 `COMPOSE_OLLAMA_BASE_URL` 값을 통해 호스트 Ollama에 접속합니다.
@@ -246,6 +246,7 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 | **fastapi** | `minchodan-server:latest` | `..` (프로젝트 루트) | `redis`, `mariadb` | `unless-stopped` |
 | **redis** | `redis:7-alpine` | (공식 이미지) | - | `unless-stopped` |
 | **mariadb** | `mariadb:11.4` | (공식 이미지) | - | `unless-stopped` |
+| **console** | `minchodan-console:latest` | `../console` | `fastapi` | `unless-stopped` |
 
 ### 7.2 볼륨 정의
 
@@ -274,7 +275,7 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 | **비밀값 생성** | `python scripts/configure_security_secrets.py`가 JWT·Redis·Compose DB·개발 단말 토큰을 무작위 생성하고 `.env` 권한을 `600`으로 제한 |
 | **Redis** | `REDIS_PASSWORD` 없이는 Compose 구성이 실패하며 `requirepass`를 항상 적용 |
 | **MariaDB** | `COMPOSE_DB_PASSWORD`와 `COMPOSE_DB_ROOT_PASSWORD` 기본 폴백을 제거해 미설정 시 즉시 실패 |
-| **호스트 포트** | FastAPI·Redis·MariaDB·콘솔 포트를 `127.0.0.1`에만 바인딩 |
+| **호스트 포트** | FastAPI·Redis·MariaDB·콘솔 포트를 `127.0.0.1`에만 바인딩 (Linux 변형). **macOS 변형 예외**(`docker-compose.macos.yml`): FastAPI는 `${WS_BIND_HOST:-0.0.0.0}`로 바인딩해 Tailscale IP 직접 접속을 허용(2026-07-20, Tailscale Serve 경유 없이 단말이 직접 Tailscale IP:8000으로 접속하는 시나리오 지원) |
 | **컨테이너 권한** | FastAPI와 콘솔을 비루트 사용자로 실행하고 모든 서비스에 `no-new-privileges` 적용 |
 | **Tailscale 공개** | iOS ATS 전역 예외 없이 `wss`를 사용하도록 Tailscale Serve 또는 동등한 TLS 종단 필요 |
 
@@ -329,7 +330,8 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 # NAME                 STATUS         PORTS
 # minchodan-fastapi    Up             127.0.0.1:8000->8000/tcp
 # minchodan-redis      Up             127.0.0.1:6379->6379/tcp
-# minchodan-mariadb    Up             127.0.0.1:3306->3306/tcp
+# minchodan-mariadb    Up             (포트 미노출, 2026-07-17 주석 처리)
+# minchodan-console    Up             127.0.0.1:5174->5174/tcp
 ```
 
 ### 9.2 엔드포인트 연결 확인

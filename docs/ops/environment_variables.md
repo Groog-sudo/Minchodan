@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-20
-> **버전**: v0.4.28 (2026-07-20 Medium 인지 GUIDANCE_CONTEXT_MODE 힌트 dict + Linux Compose 고정 Ollama 게이트웨이·UFW 범위 반영)
+> **버전**: v0.4.29 (2026-07-20 코드-문서 정합: 누락 변수 13종 일괄 등재(EMBEDDING_PROVIDER·STT_*·CONSOLE_*·WS_BIND_HOST·반사/노면 튜닝·인증 만료·SEG_COMPARE 디버그), EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시. 기존 v0.4.28 이력 유지)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -32,7 +32,9 @@
 | **`COMPOSE_OLLAMA_BASE_URL`** | string | 선택 | `http://host.docker.internal:11434` | Docker Compose의 FastAPI 컨테이너가 호스트 로컬 Ollama로 접속할 때 `OLLAMA_BASE_URL`로 주입할 주소. Linux Compose는 `host.docker.internal`을 고정 게이트웨이 `172.18.0.1`로 매핑하므로 `172.18.0.0/16 -> 172.18.0.1:11434/tcp` UFW 허용이 필요합니다. macOS Colima에서는 `http://host.lima.internal:11434` 사용 권장 | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 | **`OLLAMA_HOST`** | string | 선택 | (코드 기본값) | 임베딩 팩토리 전용 Ollama 호스트 (2026-07-07 추가 — `OLLAMA_BASE_URL`과 별개로 존재) | `server/rag/embedding_engine_factory.py:46` |
 | **`GEMMA_MODEL`** | string | 필수 | `gemma4:e4b` | L2 가이드 생성 모델 (로컬) | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
-| **`LLAVA_MODEL`** | string | 선택 | `llava` | 4단계 오프라인 캡셔닝 모델 (Ollama 로컬 경로 사용 시). Gemini 캡셔닝 선택 시 미사용 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
+| **`LLAVA_MODEL`** | string | 선택(잔재) | `llava` | **2026-07-07 폐기**: 4단계 캡셔닝을 Llava에서 Gemini API로 전환하면서 코드에서 더 이상 소비되지 않는 잔재 변수. `.env.example`에도 "미사용" 주석 처리됨. 제거 대상이나 하위 호환 표시로 잔존 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
+| **`OLLAMA_KEEP_ALIVE`** | string | 선택 | (Ollama 기본 `5m`) | `docker/linux_docker_start.sh`가 `ollama serve` 실행 시 모델 언로드 지연 제어. `.env.example`에 명시됨 | `docker/linux_docker_start.sh` |
+| **`OLLAMA_MAX_LOADED_MODELS`** | int | 선택 | (Ollama 기본) | 동시 상주 모델 수 상한. `docker/linux_docker_start.sh`에서 사용 | `docker/linux_docker_start.sh` |
 | **`GOOGLE_API_KEY`** | string | 선택 | (미설정) | 4단계 캡셔닝 모델 Gemini API(`gemini-2.5-flash-lite`, `server/rag/build/gemini_captioner.py`) 사용 시 필수. 미설정 시 `ValueError` 발생(Llava 폴백 없음 — 2026-07-07 확인: 실제 캡셔너 구현체는 Gemini뿐). **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0) | [`stage4_5_rag_design.md`](stage4_5_rag_design.md) 2.1절 |
 | **`EMBEDDING_MODEL`** | string | 필수 | `nomic-embed-text` | 임베딩 모델 (768차원) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
 | **`OPENAI_API_KEY`** | string | 선택 | (미설정) | OpenAI 핫스왑 시 필요. 미설정 시 OpenAI 클라이언트 초기화에서 `ValueError` 발생 후 Ollama로 폴백 | [`architecture.md`](architecture.md) 13.4절 |
@@ -43,6 +45,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`CHROMA_PATH`** | path | 필수(설계상) | `data/chroma_db` | ChromaDB persist 디렉토리 (로컬 파일 기반). **2026-07-08 정정**: `server/rag/retriever.py`의 `get_default_retriever()`가 `os.getenv("CHROMA_PATH", "data/chroma_db")`로 읽어 실시간 인지 가이드 파이프라인에 실제 연결됨(이전에는 미소비 상태였음) | [`architecture.md`](architecture.md) 2절 |
 | **`CHROMA_COLLECTION`** | string | 필수(설계상) | `safety_guidelines` | ChromaDB 컬렉션명 (보행 수칙 지식베이스). **2026-07-08 정정**: 기존 `.env`/`.env.example` 기본값(`bidding_kb`/`minchodan_kb`)이 실제 저장된 컬렉션명과 달라 RAG 검색이 항상 미적중이었음. 실제 데이터가 적재된 컬렉션명(`safety_guidelines`)으로 정정하고 `get_default_retriever()`에서 소비하도록 연결 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.5절 |
+| **`EMBEDDING_PROVIDER`** | string | 선택 | `ollama` | 임베딩 공급자(`ollama`/`mock`/`openai`). `server/rag/retriever.py`가 `get_default_retriever()`에서 소비. **주의**: `.env.example`은 시연용 키워드 매칭을 위해 `mock`을 기본으로 하되, 랩 기본은 `ollama`(`nomic-embed-text`) | `server/rag/retriever.py:143`, `server/rag/embedding_engine_factory.py:41` |
 
 ### 2.4 Redis (이벤트 버스·MCP 메트릭)
 
@@ -56,6 +59,7 @@
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`WS_HOST`** | string | 필수 | `0.0.0.0` | WebSocket 서버 바인드 호스트 | [`api_specification.md`](api_specification.md) 1절 |
+| **`WS_BIND_HOST`** | string | 선택(macOS Docker) | `0.0.0.0` | **macOS Docker 변형 전용.** `docker-compose.macos.yml`이 FastAPI 컨테이너 포트를 이 호스트에 바인딩. Tailscale 직접 접속 시 `0.0.0.0`(기본), Linux 변형은 루프백 `127.0.0.1` 고정 | `docker/docker-compose.macos.yml` |
 | **`WS_PORT`** | int | 필수 | `8000` | WebSocket 서버 포트 | [`api_specification.md`](api_specification.md) 1절 |
 | **`HEARTBEAT_INTERVAL`** | int | 선택 | (코드 기본값) | 하트비트 송신 주기(초). `server/api/config.py` (2026-07-07 추가 — 기존 명세서에 누락돼 있었음) | `server/api/config.py:30` |
 | **`HEARTBEAT_TIMEOUT`** | int | 선택 | `15` | 하트비트 미수신 타임아웃(초). 총 유예 시간은 `HEARTBEAT_INTERVAL+HEARTBEAT_TIMEOUT`(기본 20초). **2026-07-10 변경**(기존 5): ngrok 등 공인망 릴레이 경유 시 왕복 지연으로 정상 연결도 오탐 종료되는 문제를 실기기 LTE 테스트로 확인해 상향 | `server/api/config.py:31` |
@@ -71,6 +75,10 @@
 | **`DEVICE_STATIC_TOKENS`** | string | 선택 | 없음 | 32자 이상 정적 토큰의 `device_id:token` 목록. `ALLOW_STATIC_DEVICE_TOKENS=true`일 때만 로드 | `server/api/auth.py` |
 | **`ENABLE_DEBUG_API`** | bool | 선택 | `false` | 비운영 환경에서 최고관리자용 디버그 TTS API를 명시적으로 활성화 | `server/api/debug_router.py` |
 | **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | `/navigation` 서브앱(콘솔 GPS HUD·OperatorLiveMap iframe) 마운트. **production** 에서는 `true` 일 때만 열고, **development**(`APP_ENV!=production`)에서는 플래그와 무관하게 기본 마운트한다(관제 지도 404 방지, 2026-07-19). | `server/main.py` |
+| **`CONSOLE_PORT`** | int | 선택 | `5174` | 운영자 콘솔 컨테이너 호스트 노출 포트. `docker-compose*.yml` `${CONSOLE_PORT:-5174}:5174` | `docker/docker-compose.yml`, `docker/docker-compose.macos.yml` |
+| **`CONSOLE_RELAY_MIN_INTERVAL_S`** | float | 선택 | `0.2` | 콘솔 Live Feed 프레임 릴레이 스로틀 간격(초, 기본 5fps). 단말 프레임을 콘솔에 중계할 때 최소 간격 | `server/api/ws_router.py:921` |
+| **`ACCESS_TOKEN_EXPIRE_HOURS`** | int | 선택 | `8` | 관리자 JWT 액세스 토큰 만료 시간(시간) | `server/db/security.py:27` |
+| **`DEVICE_TOKEN_EXPIRE_DAYS`** | int | 선택 | `30` | 단말 JWT 만료 일수(일). §8.8 단말 토큰 발급 계약과 연동 | `server/api/auth.py:58` |
 
 ### 2.6 탐지 설정 (3단계 Detection)
 
@@ -98,6 +106,11 @@
 | **`GUIDE_LOW_RISK_NARRATION`** | bool | 선택 | `false` | **2026-07-18 신규 (T2-G).** `true`이면 저위험(low) 순수 내레이션을 발화한다. `false`이면 "측면·원거리·정적 객체" 등 저위험 상황의 단순 안내를 억제해 청각 피로를 줄인다. 보도 이탈, 고위험, 접근 객체, 유의미 노면은 예외로 항상 발화 | `server/detection/consumer.py` |
 | **`RAG_ENABLED`** | bool | 선택 | `true` | **2026-07-19 신규.** `GUIDANCE_CONTEXT_MODE=rag`일 때만 의미 있음. `false`면 Chroma 검색을 건너뛰고 `rag_context`를 "관련 수칙 없음"으로 둔다. `hints` 모드에서는 무시 | `server/detection/consumer.py` |
 | **`GUIDANCE_CONTEXT_MODE`** | string | 선택 | `hints` | **2026-07-20 신규.** Medium 인지 경로 컨텍스트 소스. `hints`(기본)=인메모리 짧은 회피 힌트(`server/rag/guidance_hints.py`, rag_ms≈0). `rag`=기존 Chroma `search_guidance` 롤백/A/B. 잘못된 값은 `hints`로 폴백 | `server/detection/consumer.py`, [`medium_guidance_hint_dict_implementation_plan.md`](medium_guidance_hint_dict_implementation_plan.md) |
+| **`REFLEX_SURFACE_SUPPRESS_TTL_S`** | int | 선택 | `15` | **2026-07-19 신규.** 노면(surface) 반사 경보 전용 억제 TTL(초). 세그먼트 흔들림으로 매초 재발화하기 쉬워 일반 반사(5s)보다 길게 설정 | `server/tts/suppressor.py:22` |
+| **`REFLEX_SURFACE_MIN_GAP_S`** | float | 선택 | `8.0` | **2026-07-19 신규.** 노면 surface 경보 발화 간 최소 간격(초, device 단위) | `server/tts/suppressor.py:23` |
+| **`SURFACE_HAZARD_ABSENT_STREAK`** | int | 선택 | `3` | 노면 위험 소실 히스테리시스. 연속 N 프레임 미탐지 시에만 위험 해제로 판정해 세그먼트 깜빡임 오탐 완화 | `server/detection/consumer.py:107` |
+| **`SURFACE_ZONE_NEAR_Y_RATIO`** | float | 선택 | `0.6` | 노면 Y좌표 기반 near 거리 구역 비율. centroid_y > frame_height*이 값이면 near로 판정 | `server/detection/consumer.py:99` |
+| **`SURFACE_ZONE_MEDIUM_Y_RATIO`** | float | 선택 | `0.35` | 노면 Y좌표 기반 medium 거리 구역 비율 | `server/detection/consumer.py:100` |
 | **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
 | **`YOLO_AUTOINSTALL`** | bool | 선택 | `False` | **2026-07-19 신규.** ultralytics 자체 환경변수(`YOLO_AUTOINSTALL`, Minchodan 접두사 아님). 모델 로드/추론마다 체크포인트 내장 requirements를 현재 설치본과 비교해 불일치 시 런타임 `pip install`을 시도하는 AutoUpdate 기능을 제어. `True`(ultralytics 기본값)면 방금 갱신된 패키지와 이미 임포트된 모듈이 어긋나 `'Conv' object has no attribute 'bn'` 추론 오류가 재발한다(실측 확인). `docker/Dockerfile`에 `ENV`로 기본값 고정, `docker-compose*.yml`에도 명시 | `docker/Dockerfile`, `docker/docker-compose*.yml` |
@@ -177,6 +190,10 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 **2026-07-19 보안 정리**: 사용하지 않는 외부 터널 클라이언트 패키지와 바이너리 의존성, 클라이언트 네트워크 모드·도메인 환경변수 폴백을 제거했다. 외부망 연결은 Tailscale만 지원한다.
 
+| 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`MINCHODAN_EXPOSE_OLLAMA`** | bool | 선택 | `false` | Linux Docker 스타트업 스크립트가 호스트 로컬 Ollama(11434)를 외부망(Tailscale)에 노출할지 여부. `true`일 때만 Tailscale IP 바인딩 허용 | `docker/linux_docker_start.sh`, [`deployment_guide.md`](deployment_guide.md) |
+
 **2026-07-19 보강 (iOS 네이티브 Metro)**: LTE/Tailscale에서 Expo Dev Launcher가 Bonjour로 Metro를 못 찾을 때 로컬 Xcode 환경의 `METRO_BUNDLER_HOST`에 개인 개발 PC의 MagicDNS 이름 또는 주소를 지정한다. 저장소 소스·공유 스킴·Info.plist에는 개인 주소 폴백을 두지 않는다. 서버 API 호스트(`EXPO_PUBLIC_TAILSCALE_HOST`)와 Metro 호스트는 역할이 다르므로 각각 설정한다.
 
 > **팀 운영 규칙**: 개인 개발 Mac 주소는 Git 추적 파일에 기록하지 않고 로컬 Xcode 환경에서만 설정한다.
@@ -244,19 +261,25 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | 변수명 | 타입 | 필수/선택 | 기본값(코드) | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`CONVENIENCE_CHROMA_COLLECTION`** | string | 선택 | `convenience_guide` | 생활지원 RAG 전용 ChromaDB 컬렉션명. 안전 수칙(`safety_guidelines`)과 분리된 생활 정보 검색용 | `server/rag/retriever.py`, `scripts/` |
+| **`CONVENIENCE_CHROMA_PATH`** | path | 선택 | `data/chroma_db/convenience_guidelines` | 생활지원 RAG 전용 ChromaDB persist 디렉토리. `.env.example`에 명시됨 | `server/rag/convenience_rag.py:397,597`, `scripts/build_convenience_db.py:33` |
 | **`CONVENIENCE_EMBEDDING_MODEL`** | string | 선택 | (`EMBEDDING_MODEL` 폴백) | 생활지원 RAG 전용 임베딩 모델 | `server/rag/embedding_engine_factory.py` |
 | **`CONVENIENCE_EMBEDDING_PROVIDER`** | string | 선택 | (`LLM_PROVIDER` 폴백) | 생활지원 RAG 임베딩 공급자(`ollama`/`openai`) | `server/rag/embedding_engine_factory.py` |
 | **`CONVENIENCE_LLM_PROVIDER`** | string | 선택 | `ollama` | 생활지원 RAG **답변** LLM. `ollama`(기본, 실패 시 Gemini 폴백) / `gemini`(API 우선) / `ollama_only` / `gemini_only` | `server/rag/convenience_rag.py` |
 | **`GEMINI_MODEL`** | string | 선택 | `gemini-2.5-flash-lite` | Gemini 캡셔닝/LLM 모델명. 4단계 RAG 빌드 및 L2 가이드 생성(gemini provider) 시 사용 | `server/rag/build/gemini_captioner.py`, `server/orchestration/llm_client_factory.py` |
 | **`GEMINI_MAX_OUTPUT_TOKENS`** | int | 선택 | `180` | Gemini `maxOutputTokens`(생성 길이 상한, 입력 컨텍스트 아님). 음성 안내가 중간에 끊기지 않도록 짧게 유지 | `server/orchestration/llm_client_factory.py` |
-| **`EDGE_TTS_SAMPLE_RATE`** | int | 선택 | `24000` | edge-tts 출력 샘플레이트(Hz) | `server/tts/tts_service.py` |
+| **`EDGE_TTS_SAMPLE_RATE`** | int | 선택 | `22050` | **2026-07-20 정정**(기존 24000): `server/tts/tts_service.py:481` 코드 기본값은 `22050`Hz. edge-tts 출력 샘플레이트 | `server/tts/tts_service.py:481` |
 | **`SUPERTONIC_SPEED_MIN`** / **`SUPERTONIC_SPEED_MAX`** | float | 선택 | (코드 기본값) | Supertonic 발화 속도 허용 범위 | `server/tts/tts_service.py` |
 | **`DATABASE_URL`** | string | 선택 | (미설정) | SQLAlchemy 통합 DB 연결 URL. 설정 시 개별 `DB_HOST`/`DB_PORT`/... 조합보다 우선 | `server/db/connection.py` |
 | **`LANGCHAIN_PROJECT`** | string | 선택 | `minchodan` | LangSmith 트레이스 프로젝트명 | `server/mcp/langsmith_tracer.py` |
+| **`STT_MAX_CONCURRENT_REQUESTS`** | int | 선택 | `2` | STT 동시 처리 요청 상한. 메모리 보호용 세마포어 | `server/api/ws_router.py:65`, `server/api/stt_router.py:26` |
+| **`STT_UPLOAD_MAX_BYTES`** | int | 선택 | `10485760` | STT 오디오 업로드 최대 바이트(10MB). §8.5 STT 음성 저장 계약과 연관 | `server/api/ws_router.py:63`, `server/api/stt_router.py:84` |
 | **`STT_CONFIG_SOURCE`** | string | 선택 | (코드 기본값) | STT 설정 소스 분기 | `server/stt/stt_config.py` |
 | **`TEST_VERIFY_MODE`** | bool | 선택 | `false` | 검증 테스트 모드 활성화(오프라인 검증 스크립트용) | `server/` |
 | **`DEVICE_TOKEN`** | string | 선택 | (미설정) | 디바이스 토큰(`scripts/` 유틸리티 스크립트 전용) | `scripts/` |
 | **`AIHUB_WALK_DATASET_ROOT`** | path | 선택 | (미설정) | AIHub 인도보행 영상 데이터셋 루트 경로(RAG 빌드 스크립트용) | `scripts/` |
+| **`SEG_COMPARE_DIR`** | path | 선택(디버그) | `/app/data/seg_compare` | 세그멘테이션 비교 디버그 덤프 디렉토리 | `server/api/ws_router.py:988` |
+| **`SEG_COMPARE_DUMP`** | int | 선택(디버그) | `40` | 세그멘테이션 비교 덤프 잔여 프레임 수. `0`이면 덤프 비활성. 양수면 해당 프레임 수만큼 JPEG를 `SEG_COMPARE_DIR`에 저장 후 자동 종료 | `server/api/ws_router.py:998` |
+| **`SEG_COMPARE_MIN_BYTES`** | int | 선택(디버그) | `20000` | 세그멘테이션 비교 덤프 최소 바이트 | `server/api/ws_router.py:998` |
 
 > **참고**: 이 변수들은 `.env.example`에 주석 처리 또는 미기재 상태일 수 있으며, 고급 사용자만 설정하는 튜닝 포인트입니다. 프로젝트 기동에는 영향을 주지 않습니다.
 

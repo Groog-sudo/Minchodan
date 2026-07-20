@@ -1,7 +1,7 @@
 # Minchodan 기능 검증 테스트 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.6.10 (2026-07-19 RTX 5090 최대 사양과 Ubuntu·Windows·macOS 가속 검증 기준 반영)
+> **버전**: v0.6.11 (2026-07-20 코드-문서 정합: 노면 4클래스·억제 TTL 5초·TTS Supertonic/expo-audio 기준으로 §3.3·TC-TTS 갱신)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`, `docs/design/minchodan_design_note.md`, [`docs/dev-guides/course_codebase_guide.md`](dev-guides/course_codebase_guide.md), [`docs/ops/code_quality_guide.md`](ops/code_quality_guide.md)
 
 ---
@@ -64,12 +64,12 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 1. 반사 캡처는 8~10fps, 인지 캡처는 1~2fps입니다.
 2. Yolo 26N - Object Detection 신뢰도 임계값은 `conf=0.35`입니다.
 3. 프레임 리사이즈 크기는 640x640입니다.
-4. 노면 클래스는 분리(C2)합니다 (`braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution`).
+4. 노면 클래스는 학습 확정 4종입니다 (`sidewalk_normal`, `caution`, `roadway`, `braille_normal`). Surface Gate P0는 `{caution, stair_down, manhole}`.
 5. L2 가이드는 한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함입니다.
 6. L3 RETRY는 최대 1회입니다.
-7. RAG `similarity_search_with_score`의 `k=5`입니다.
+7. RAG `similarity_search_with_score`의 `k=5`입니다 (`GUIDANCE_CONTEXT_MODE=rag`일 때). Medium 기본은 `hints`.
 8. Redis Track 컨텍스트 TTL은 30초입니다.
-9. 중복 억제 `setex(suppress:…, 60)`는 60초입니다.
+9. 중복 억제 TTL은 `REFLEX_SUPPRESS_TTL_S=5`초(노면 surface는 15초)입니다.
 
 ---
 
@@ -217,18 +217,18 @@ Minchodan의 기능 검증은 화면 단위 점검이 아니라 아래 흐름이
 
 | ID         | 검증 항목           | 기준                                 | 상태 |
 | ---------- | ------------------- | ------------------------------------ | ---- |
-| TC-TTS-001 | 실시간 TTS 합성     | Kokoro/Coqui `generate()` base64 MP3 | 대기 |
-| TC-TTS-002 | 단말 재생 성공      | Web Audio `decodeAudioData()` 재생   | 대기 |
+| TC-TTS-001 | 실시간 TTS 합성     | Supertonic `generate()` → WAV bytes (WS 바이너리) | 대기 |
+| TC-TTS-002 | 단말 재생 성공      | `expo-audio` `playGuideAudioBytes()` 재생 | 대기 |
 | TC-TTS-003 | 반사 클립 선점 재생 | 인지 음성 중단 후 반사 재생          | 완료 |
 | TC-TTS-004 | high 햅틱 동시 출력 | Haptics 동시 동작                    | 완료 |
-| TC-TTS-005 | 중복 억제           | `setex(suppress:…, 60)` 60초         | 완료 |
+| TC-TTS-005 | 중복 억제           | `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` (surface 15초) | 완료 |
 | TC-TTS-006 | TTS 실패 우회       | 기기 내장 TTS로 우회                 | 대기 |
 | TC-TTS-007 | 반사 클립 사전합성  | 실시간 합성 미사용 확인              | 완료 |
 | **TC-TTS-008** | 통합 오디오 우선순위 조정자 (T3-C) | STT 상호작용 중 인지 안내(priority=1) 드롭, STT 응답(priority=2)은 인지 안내를 선점. 반사(P3)는 항상 통과. 단말 `audioEngine` 우선순위 상태 및 콜백 해제 검증 (TSC + 단말 수동) | 신규 (2026-07-18) |
 | **TC-TTS-009** | 서버 STT 활성 중 인지 발행 억제 (T3-S) | `_handle_stt_audio`가 `_process_stt_audio` 진입 시 `manager.set_stt_active(true)`. 응답 전송 후에는 `_estimate_stt_hold_seconds()`가 계산한 예상 재생시간+마진만큼 `ttl_seconds`로 연장(2026-07-18 정정 - 최초 구현은 전송 직후 즉시 해제하는 gap이 있었음). `DetectionConsumer._send_cognitive_guide`는 STT 활성 device_id에서 조기 반환. 반사 경로는 억제되지 않음 (`tests/test_ws_router_stt.py::test_stt_audio_success_extends_stt_active_ttl`, `TestEstimateSttHoldSeconds`, `tests/test_detection.py`) | 신규 (2026-07-18, 2026-07-18 억제 창 정정) |
 
 > **7단계 비고 (2026-07-01)**: `docs/reflex_audio_specification.md`에 근거한 입체 비프음(`audioEngine.ts`) 및 햅틱 엔진(`hapticEngine.ts`) 구현 완료. 반사 경보 수신 시 인지 음성 선점 차단 및 동시 햅틱 피드백 검증 완료.
-> **7단계 비고 (2026-07-08)**: TC-TTS-005 — `AlertSuppressor`(60초 setex)는 구현돼 있었으나 실제 반사 전송 경로(`server/detection/consumer.py`의 `_send_reflex_alert`)에서 호출되지 않아 중복 억제가 실질적으로 동작하지 않던 결함을 발견해 연결. `tests/test_detection.py::TestReflexAlertSuppression` 2건(억제/비억제 각 케이스)으로 검증 완료.
+> **7단계 비고 (2026-07-08)**: TC-TTS-005 — `AlertSuppressor`는 구현돼 있었으나 실제 반사 전송 경로(`server/detection/consumer.py`의 `_send_reflex_alert`)에서 호출되지 않아 중복 억제가 실질적으로 동작하지 않던 결함을 발견해 연결. `tests/test_detection.py::TestReflexAlertSuppression` 2건(억제/비억제 각 케이스)으로 검증 완료. **2026-07-17 P0-1**: TTL을 60초에서 `REFLEX_SUPPRESS_TTL_S=5`(surface 15초)로 재무장하고 키를 `suppress:{device_id}:{alert_source}:{track_id}:{distance_band}`로 분리.
 >
 > **2026-07-09 해소**: 위에서 미해결로 남겼던 반사 클립 파일 부재 문제를 해소했다. `data/reflex_clips/*.mp3`(서버 경유)가 아니라 `client/assets/sounds/reflex_clips/*.wav`(단말 번들) 방식으로 실제 구현: macOS `say`로 한국어 임시 음성 5종을 생성해 번들하고 `audioEngine.playReflexClip()`/`useWebSocket.ts` reflex_alert 핸들러에 연결. 조사 중 `reflex_gate.py`의 `alert_id`(클래스명 포함)와 `clip`(direction 기준)이 애초부터 다른 값이었고, `reflex_clip_sender.py`의 `REFLEX_CLIP_MAP`이 실제로는 어디서도 호출되지 않는 죽은 코드였음도 함께 확인·정정. 상세는 `docs/changelogs/kb.md`(2026-07-09) 참조. 실기기 청취(음질) 검증은 아직 미완.
 

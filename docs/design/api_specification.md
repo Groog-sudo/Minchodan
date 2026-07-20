@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.34 (2026-07-20 §6.3 STT 목적지 파서 위치기반 교체, POI 확인 대기 상태(`WAITING_FOR_POI_CONFIRMATION`) 신설, TMAP 키 누락 fail-closed 전환 반영. 기존 v0.4.33 이력 유지: realtime_gps→콘솔 HUD 브로드캐스트·Detection Guidance Log bbox 오버레이 계약 보강)
+> **버전**: v0.4.35 (2026-07-20 코드-문서 정합: §4.1 reflex_alert 4개 필드 추가·alert_id class-agnostic 정정, §6.1 인지 guide source 필드, §6.2 status dead contract 표기, §1 contact_save 제거, §4.3 latency_event 필드 한정, §6.3 STT 예시 model_name 정정. 기존 v0.4.34 이력 유지: §6.3 STT 목적지 파서 위치기반 교체, POI 확인 대기 상태 신설, TMAP 키 누락 fail-closed 전환)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -42,7 +42,7 @@
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status, stt_audio, nav_route, realtime_gps, distance_probe_sample, fixed_point_probe_sample, detection_control, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, contact_save, deviation_alert, guidance_audio, route_success, route_error, image_url, console_guide_audio - 상세는 각 섹션 참조) |
+| `type` | 메시지 타입 (hello, welcome, auth_ok, detection, server_detection, ack, reflex_alert, guide, status(예약/현재 미발행, §6.2), stt_audio, nav_route, realtime_gps, distance_probe_sample, fixed_point_probe_sample, detection_control, dial_action, heartbeat, heartbeat_ack, network_probe, network_probe_ack, error. 부가: guidance_log_event, latency_event, deviation_alert, guidance_audio, route_success, route_error, image_url, console_guide_audio - 상세는 각 섹션 참조) |
 | `event_id` | 이벤트 추적 식별자. 단말 detection 프레임은 `event-{device_id}-{stream}-{epoch_ms}` 형식(**2026-07-11 구조화** - 기존 `event-{epoch_ms}`는 반사/인지 타이머가 같은 ms에 발화하면 충돌해 DB UNIQUE 중복 방지 로직이 두 번째 로그를 유실), 서버 발신은 `stt-`/`nav-` 접두 또는 UUID |
 | `device_id` | 단말 식별자 |
 | `ts` | 타임스탬프 (epoch ms) |
@@ -259,38 +259,46 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 {
   "type": "reflex_alert",
   "event_id": "uuid",
-  "alert_id": "high_car_front",
+  "alert_id": "high_obstacle",
+  "alert_source": "reflex_gate",
   "direction": "front",
   "risk_level": "high",
   "clip": "reflex_clips/high_front.wav",
   "haptic": true,
   "panning": 0.0,
   "distance": 1.0,
+  "estimated_distance_m": 1.0,
   "beep_interval_ms": 250,
   "haptic_pattern": "double",
   "ts": 1719216000000,
   "track_id": 101,
   "class_name": "car",
   "hit_count": 5,
-  "distance_band": "medium"
+  "distance_band": "medium",
+  "event_state": "active",
+  "policy_version": "p0-1"
 }
 ```
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `alert_id` | 알림 식별자(중복 억제 키). **2026-07-09 정정**: `reflex_gate.py`는 클래스명을 포함한 동적 값(`high_{class_name}_{direction}`, 예: `high_car_front`)을 생성한다 — 클립 선택에는 쓰이지 않고 60초 억제 키로만 쓰인다. **2026-07-17 P0-1 정정**: 억제 키는 `high_obstacle:{track_id}:{distance_band}` 조합으로 분리되어 새 객체/거리 악화 시 재발화 |
+| `alert_id` | 알림 식별자(중복 억제 키). **2026-07-18 class-agnostic 정정**: `reflex_gate.py`는 `"high_obstacle"` 고정 문자열(`SUPPRESS_ALERT_ID`)을 생성한다 — 방향·클래스 불문 동일. 클립 선택에는 쓰이지 않고 억제 키로만 쓰인다. **2026-07-17 P0-1 정정**: 억제 키는 `high_obstacle:{track_id}:{distance_band}` 조합으로 분리되어 새 객체/거리 악화 시 재발화 |
+| `alert_source` | **2026-07-20 정합 반영.** 발화 게이트 식별자(`reflex_gate` \| `surface_gate` \| `head_level_gate`). 단말/콘솔 소비는 선택 |
 | `direction` | 방향 (`front`, `front-left`, `front-right`) |
 | `risk_level` | `high` (반사 경로 전용) |
 | `clip` | 단말 번들 사전합성 클립 경로(`client/assets/sounds/reflex_clips/`, basename 매칭). **2026-07-09 정정**: 클래스와 무관하게 방향/유형 기준으로 고정되며, 확장자는 `.wav`(인코더 제약으로 mp3 대신 채택) |
 | `haptic` | 햅틱 동시 출력 여부 |
 | `panning` | 스테레오 사운드 좌우 지향 밸런스 값 (-1.0 ~ 1.0). 클라이언트는 5단계 버킷(`-1.0/-0.5/0.0/0.5/1.0`)으로 반올림해 재생한다 |
 | `distance` | 역산된 장애물 거리 (0.4m ~ 1.5m) |
+| `estimated_distance_m` | **2026-07-20 정합 반영.** `distance`와 동일 출처의 추정 거리(m). 거리 정책 SSOT(`distance_policy.py`) 산출값. 단말/콘솔 소비는 선택 |
 | `beep_interval_ms` | 비프음 주기 (ms, 0은 연속 경고음) |
 | `haptic_pattern` | 진동 패턴 (`short` \| `double` \| `continuous` \| `light`) |
 | `track_id` | ByteTrack 객체 트랙 식별자 (로깅 및 모니터링 추적용, null 가능) |
 | `class_name` | 탐지된 장애물의 클래스명 (null 가능) |
 | `hit_count` | 해당 트랙 객체의 연속 누적 프레임 탐지 횟수 (null 가능) |
 | `distance_band` | **2026-07-17 신규 (P0-1).** 억제 재무장 정책용 거리 밴드 (`near` \| `medium` \| `far`). near(<=0.6m)는 TTL 억제 제외 500ms 스로틀만, non-near는 동일키 5s TTL + device 1.5s 쿨다운 + 밴드 악화 재발화 |
+| `event_state` | **2026-07-20 정합 반영.** 경보 상태(`active` \| `cleared`). `cleared`는 반사 해제(`ReflexClear`) 시 송신. 단말/콘솔 소비는 선택 |
+| `policy_version` | **2026-07-20 정합 반영.** 거리 정책 버전 태그(예: `p0-1`). 디버그·모니터링용 |
 
 선점 규칙: 반사 음성은 인지 음성을 중단시키고 재생합니다. **2026-07-17 P0-1 정정**: 중복 억제는 `setex(suppress:{device_id}:high_obstacle:{track_id}:{distance_band}, REFLEX_SUPPRESS_TTL_S=5)`로 처리하며, 동일 키 TTL(5s) + device 단위 최소 쿨다운(1.5s) + 거리 밴드 악화 시 재발화를 적용합니다.
 
@@ -371,6 +379,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
   "clock_direction": "10시",
   "distance_class": "near",
   "object_ko": "전동 킥보드",
+  "source": "cognitive",
   "audio_codec": "wav",
   "duration_ms": 4820.5,
   "transport": "binary",
@@ -394,7 +403,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 | `duration_ms` | 합성된 오디오 재생 길이(ms). 서버가 다음 guide 전송까지의 쿨다운을 이 값 기반으로 동적 산정(`server/detection/consumer.py`)하는 데 사용, 클라이언트는 참고용 |
 | `transport` | `"binary"`(이 메시지 직후 오디오 바이너리 프레임이 이어짐) 또는 `"none"`(서버 TTS 합성 실패, 클라이언트는 `guidance_text`로 단말 내장 TTS 폴백) |
 | `sources` | RAG 근거 인용 (선택) |
-| `source` | 발화 출처 식별자 (선택). STT 대기 안내는 `"stt-wait-notice"`, 내비게이션은 `"nav-*"`, STT 브릿지는 `bridge_source` 값과 대응. 클라이언트는 `event_id`/`source`로 STT 상호작용 중 뮤트·에코 방어에 활용 |
+| `source` | 발화 출처 식별자 (선택). **인지 경로 탐지 안내**는 `"cognitive"`(`DetectionConsumer._send_cognitive_guide`, 2026-07-20 정합). STT 대기 안내는 `"stt-wait-notice"`, 내비게이션은 `"nav-*"`, STT 브릿지는 `bridge_source` 값과 대응. 클라이언트는 `event_id`/`source`로 STT 상호작용 중 뮤트·에코 방어에 활용 |
 
 > **비고 (2026-07-16) - STT 대기 안내**: 경로 검색(TMAP POI)·convenience RAG·LLM 자유 대화 등 Whisper 전사 **이후** 후속 처리가 길어질 때, 서버(`ws_router._send_stt_wait_notice`)가 본 절 `guide` 형식으로 `guidance_text: "잠시만 기다려주세요!"`를 **최대 1회** 선행 전송한다. `event_id`는 `stt-wait-{device_id}-{ts}` 접두, `source`는 `"stt-wait-notice"`. 전사 전에도 `NavigationManager`가 목적지 대기(`WAITING_FOR_DESTINATION`) 또는 질문 답변 대기(`awaiting_free_question`) 상태이면 동일 안내를 보낸다(`stt_to_llm_bridge.should_play_stt_wait_notice`). 본 응답은 STT 에코 감지 메모리(`_record_guidance`)에 넣지 않는다.
 
@@ -404,7 +413,9 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 > 문제였다. 자세한 경위는 `docs/stage-guides/stage7_tts_design.md` §TTS 엔진, `docs/changelogs/kb.md`
 > 참조. 바이너리 전송 전환 자체는 페이로드 최적화 목적으로 유지한다.
 
-### 6.2 status (서버 → 단말, 진행 알림)
+### 6.2 status (서버 → 단말, 진행 알림 — 예약/현재 미발행)
+
+> **2026-07-20 정합 정리**: 본 `status` 메시지는 설계 단계에서 예약됐으나 **현재 서버 코드 어디에서도 발행되지 않는 dead contract**입니다. 실시간 진행 상황은 `server_detection`(§3)과 `latency_event`(§4.3)가 대신 담당합니다. 아래 스키마는 향후 활성화 시를 대비한 예약 명세로 유지합니다.
 
 ```json
 {
@@ -434,7 +445,7 @@ person, bicycle, car, motorcycle, bus, truck, skateboard, pothole, caution
 {
   "type": "stt_audio",
   "audio_b64": "UklGRi...",
-  "model_name": "faster-whisper-medium"
+  "model_name": "faster-whisper-small"
 }
 ```
 
@@ -1002,6 +1013,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.29** | **2026-07-19** | **§4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 서버가 단말에 보내는 guide WAV와 동일 바이너리를 관제 콘솔 `/ws/console/live-feed`에도 브로드캐스트하고, 반사 비프 클립 5종을 `console/public/reflex_clips/`로 정적 복사해 단말과 동일 파일 재생. 햅틱은 청각 재현 불가하므로 시각 펄스로 근사 표현** |
 | **v0.4.31** | **2026-07-19** | **§8.7 `/ws/console/live-feed` 관리자 JWT 인증을 최초 도입. v0.4.32에서 URL 전달 방식은 폐기됨. 단말/콘솔 거리 구역 오버레이를 좌·우 끝까지 이어지는 SVG 호(NEAR/MED) + 라벨로 갱신** |
 | **v0.4.32** | **2026-07-19** | **SSE·프레임·콘솔 WS의 URL 쿼리 토큰 제거. Authorization 헤더/WS 최초 auth 메시지로 전환하고 Origin 검증·인증 제한시간 추가. §8.8 최초 관리자 1회 부트스트랩, RBAC, 로그인 제한, 단말 JWT 발급 계약 신설** |
+| **v0.4.35** | **2026-07-20** | **코드-문서 정합: §4.1 reflex_alert에 `alert_source`/`event_state`/`estimated_distance_m`/`policy_version` 4개 필드 추가, `alert_id`를 class-agnostic `high_obstacle` 고정값으로 정정. §6.1 인지 guide에 `source:"cognitive"` 필드 명시. §6.2 `status` 메시지를 dead contract(예약/미발행)로 표기. §1 type 목록에서 폐기된 `contact_save` 제거. §4.3 latency_event `latency_alert`/`latency_threshold_ms`를 반사/인지 필수·STT 선택으로 한정. §6.3 STT 예시 model_name을 기본값 `faster-whisper-small`로 정정** |
 | **v0.4.34** | **2026-07-20** | **§6.3 STT 목적지 파서를 위치기반 조사/명령어미 제거로 교체(전역 replace 결함 수정), WAITING_FOR_POI_CONFIRMATION 상태·명령 어휘 신설(동명 POI 음성 확인), TMAP 키 누락 시 helper_search_poi/helper_search_nearest_poi/helper_fetch_route fail-closed 전환** |
 | **v0.4.33** | **2026-07-20** | **§6.5 realtime_gps→콘솔 HUD 브로드캐스트·단말 connected 후 즉시 GPS 전송 계약. §8.5 Detection Guidance Log 목록 썸네일 bbox 오버레이·반사/노면-only bbox 저장·pipeline_debug 폴백** |
 | **v0.4.30** | **2026-07-19** | **§6.4 `server_detection` `detections[].effective_distance_zone` 필드 추가(`object_detection`에 한해 `near`/`medium`/`far` 소문자 송신, `segmentation`은 빈 문자열). 콘솔 BBox를 거리 구역별 색상(빨강/주황/파랑)으로 도식화하고 Near/Med/Far 경계선 오버레이 추가. 단말 `CameraView.tsx` 기존 소실점 사다리꼴 ROI 오버레이를 3구역 경계선으로 교체** |
@@ -1037,8 +1049,8 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | :--- | :--- |
 | `stream_type` | `reflex` \| `cognitive` |
 | `latency` | 스테이지별 지연 (ms). 반사: `decode_ms`/`inference_ms`/`queue_wait_ms`/`total_ms`. 인지: 추가로 `rag_ms`/`llm_ms`/`tts_ms` |
-| `latency_alert` | **2026-07-17 신규 (P2-2).** `total_ms`가 임계 초과 시 `true`. 반사 `REFLEX_LATENCY_ALERT_MS=300`, 인지 `COGNITIVE_LATENCY_ALERT_MS=3000` |
-| `latency_threshold_ms` | **2026-07-17 신규 (P2-2).** 적용된 지연 임계(ms). 콘솔이 alert 기준 표시용 |
+| `latency_alert` | **2026-07-17 신규 (P2-2).** `total_ms`가 임계 초과 시 `true`. 반사 `REFLEX_LATENCY_ALERT_MS=300`, 인지 `COGNITIVE_LATENCY_ALERT_MS=3000`. **반사/인지 경로 필수, STT 경로는 미포함 가능** |
+| `latency_threshold_ms` | **2026-07-17 신규 (P2-2).** 적용된 지연 임계(ms). 콘솔이 alert 기준 표시용. **반사/인지 경로 필수, STT 경로는 미포함 가능** |
 | `queue_wait_ms` | **2026-07-17 신규 (P0-2).** 큐 대기 시간(ms). `processed.ts` 기반 산출, ts=0이면 0 |
 
 ### 4.4 console_guide_audio (서버 → 콘솔, 2026-07-19 신설)

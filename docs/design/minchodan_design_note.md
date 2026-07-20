@@ -3,8 +3,8 @@
 > **이 문서는?** 5인 MVP 팀의 7단계 파이프라인 표준 양식이다. 네 개의 초안을 통합했다 — **문서2(구현 상세)를 본문 백본**으로, **문서1**의 인터페이스·예외 계약, **문서3**의 선택 근거·분업·MVP 스코프, **문서4**의 완료 기준을 각 단계에 이식했다.
 > **전제:** 비전 설계서 **v1.1**(이중 경로 / Yolo 26N - Object Detection·Yolo 26N - Segmentation / 클래스 분리)을 오버레이로 반영하되, GPU 런타임은 보안 수정 기준인 PyTorch 2.13 + cu130으로 갱신한다. 충돌 시 현재 의존성 명세가 우선한다.
 > **작성일**: 2026-06-23
-> **수정일**: 2026-07-19 (RTX 5090 최대 사양과 Ubuntu·Windows·macOS별 PyTorch 2.13 가속 경로 정합화)
-> **버전**: v0.2.3
+> **수정일**: 2026-07-20 (7단계 TTS 구현체 정합: Kokoro/Coqui → Supertonic 3, edge-tts 추가. §3 노면 4클래스 확정 및 Reflex/Surface Gate를 `risk_ssot_contract.md` 기준 class-agnostic으로 갱신)
+> **버전**: v0.2.4
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
@@ -97,8 +97,8 @@
   2. **Yolo 26N - Object Detection**(서버 기동 시 1회 로드) `predict(conf=0.35)` 클래스·bbox 파싱
   3. **Yolo 26N - Segmentation** 노면 의미 분할 마스크
   4. **ByteTrack** `update()` Track ID 부여, Redis에 Track별 30초 컨텍스트(`hset`+TTL=30) 접근/이탈·속도 산출
-  5. **Reflex Risk Gate(룰베이스, LLM 미경유):** 고위험 클래스 && 근접(면적·하단) 즉시 `alert_id`+방향 (8단계 사전합성 음성)
-  6. **Surface Fast-Alert Gate(룰베이스):** P0 노면(횡단보도/맨홀/계단/그레이팅/점자블록파손) 하단 검출 즉시 `alert_id`
+  5. **Reflex Risk Gate(룰베이스, LLM 미경유, class-agnostic):** `AGNOSTIC_MIN_CONFIDENCE=0.35` + 중앙 40% 회랑(`CENTER_X_MIN=0.30 / CENTER_X_MAX=0.70`) + `MIN_HIT_COUNT=3` 연속 히트. `distance_policy.evaluate_distance()`가 부착한 `route=="reflex"`(near 구역)일 때만 통과. `alert_id`는 `"high_obstacle"` 고정(방향 제외, 8단계 사전합성 음성). 상세 임계값·SSOT 계약은 [`risk_ssot_contract.md`](risk_ssot_contract.md) §2-B/§2-C 참조.
+  6. **Surface Fast-Alert Gate(룰베이스):** P0 노면 세그먼트 클래스 집합 `{caution, stair_down, manhole}`이 하단(centroid_y > frame_height*0.6)·전방 밴드 내에서 검출 시 즉시 `alert_id`
   7. mid/low만 `redis_bus.xadd("risk.events", …)`로 인지 경로에 발행
 - **활용 스택·핵심 함수:** Ultralytics Yolo 26N - Object Detection, Yolo 26N - Segmentation, ByteTrack, OpenCV, Redis / `YOLO(...).predict()`, `result.boxes.xyxy/conf/cls`, `result.masks`, `tracker.update()`, `xadd()`
 - **데이터 인터페이스:** In 이미지 bytes Out `{event_id, detections:[{class_name, confidence, bbox, track_id}], surface:[{class_name, mask|centroid}], risk_hint, inference_ms}`
@@ -109,9 +109,9 @@
 - **완료 기준:** 킥보드 추론 `conf≈0.87, track_id` 출력, **Detection 추론 < 80ms**; 30초 후 Redis ctx 키 자동 삭제(TTL 동작).
 - ** v1.1 반영:**
   - 모델: YOLOv8에서 **Yolo 26N - Object Detection**(NMS-free, sm_120, 소형객체 최적화) + **Yolo 26N - Segmentation**으로 전환. RT-DETR은 occlusion 백로그.
-  - **이중 게이트 신설**: Reflex(Detection) + Surface(Seg). 둘 다 LLM·RAG·실시간 TTS 미경유, 사전합성 음성.
-  - **노면 클래스 분리(C2)**: `braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk` vs `roadway`, caution(stairs/manhole/grating)를 **독립 클래스로 분리**(같은 class로 묶으면 파손 학습 불가). 상세는 v1.1 §5.2/§6.2.
-  - KPI: occlusion recall(데이터 ~54% 가림), `braille_damaged`/`crosswalk` mIoU.
+  - **이중 게이트 신설**: Reflex(Detection, class-agnostic) + Surface(Seg). 둘 다 LLM·RAG·실시간 TTS 미경유, 사전합성 음성. Reflex Gate는 위험 클래스 분기 없이 confidence+회랑+히트수+거리 구역으로 발화하며(`risk_ssot_contract.md` §2-B/§2-C), 거리 판정은 `distance_policy.py` SSOT로 이관.
+  - **노면 4클래스 확정(C2, 2026-07-07 실측)**: v1.1 초기 8클래스 분리안(`braille normal/damaged`, `sidewalk normal/damaged`, `crosswalk`, `roadway`, `caution` 계열)은 데이터 수급 한계로 4클래스로 축소 확정 — `sidewalk_normal`, `caution`(계단/맨홀/그레이팅 통합), `roadway`, `braille_normal`. 학습 config [`training/configs/aihub_yolo_segmentation.yaml`](../../training/configs/aihub_yolo_segmentation.yaml), 검증 보고서 [`ops/model_class_validation_report.md`](../ops/model_class_validation_report.md) 참조.
+  - KPI: occlusion recall(데이터 ~54% 가림), `caution` mIoU.
 
 ---
 
@@ -170,9 +170,9 @@
 - **주제 / 키워드:** TTS 출력 / 반사=사전합성, 인지=실시간 합성
 - **목표·목적:** 최종 가이드를 한글 음성으로 변환·재생. 화면을 못 보는 사용자에게 귀로 전달.
 - **선택 이유:** 서버 합성으로 단말 부담·배터리 절감. 로컬 TTS로 클라우드 요금 제거, 로컬망에서도 끊김 없음.
-- **핵심 절차:** **(인지)** 로컬 TTS(Kokoro/Coqui) `generate(guidance_text, voice="ko")` base64 MP3 WS 스트리밍 단말 Web Audio 재생. **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생. 중복 억제 `setex(suppress:…, 60)`. 햅틱·접근성(`announceForAccessibility`) 연동.
-- **활용 스택·핵심 함수:** Kokoro-82M/Coqui(서버), Web Audio, expo-av, expo-haptics / `local_tts.generate()`, `decodeAudioData()` — _TTSService 추상화, 출력은 MP3/WAV로 규격 통일_
-- **데이터 인터페이스:** In 가이드 문장(String) / `alert_id`(반사) Out 오디오 bytes(ArrayBuffer)
+- **핵심 절차:** **(인지)** 로컬 TTS(**Supertonic 3** 기본, ONNX, 99M 파라미터) `generate(guidance_text, voice="F2")` raw **WAV**(PCM16 44.1kHz) bytes → WS **바이너리 프레임** 전송, 단말 `expo-audio` 재생(2026-07-09 Piper에서 Supertonic으로 교체, 2026-07-13 edge-tts 보조 추가). **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생. 중복 억제 `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)`. 햅틱·접근성(`announceForAccessibility`) 연동.
+- **활용 스택·핵심 함수:** Supertonic(기본)/Piper/pyttsx3/edge-tts(`TTSService` 추상화, 4종 핫스왑), expo-audio, expo-haptics / `tts_service.generate()`, `AudioPlayer` — _출력은 WAV로 규격 통일_
+- **데이터 인터페이스:** In 가이드 문장(String) / `alert_id`(반사) Out 오디오 bytes(ArrayBuffer, WAV)
 - **의존성·예외:** 선행=6단계(인지) / 3단계 게이트(반사). 파이프라인 종착. **필수 가드:** TTS 호출 실패/타임아웃 시 기기 내장 TTS로 우회(시스템 중단 금지).
 - **분업:** 모바일 1명이 수신·재생, 전체 지연 측정.
 - **MVP 스코프:** '위험물+행동' 핵심만 짧게.
@@ -180,6 +180,7 @@
 - ** v1.1 반영:**
   - **반사 음성 = 사전합성 고정 클립**(앱 번들). 실시간 TTS 합성 금지 — 즉시 경보의 핵심.
   - **선점(preempt):** 반사 음성은 인지 음성을 중단시키고 재생. WS에서 반사 이벤트는 별도 고우선 타입.
+  - **인지 TTS 엔진 정합(2026-07-09)**: 초기 계획 Kokoro/Coqui에서 **Supertonic 3**(ONNX 로컬, MIT)으로 구현 확정. 2026-07-13 edge-tts 보조 엔진 추가. Piper/pyttsx3는 `TTSService` 추상화 하에서 핫스왑 폴백으로 보존. 단말 재생 계층은 Web Audio가 아닌 **expo-audio**(2026-07-09).
   - **Whisper는 STT 전용**이며 본 7단계(가이드 출력)에 등장하지 않는다. 사용자 음성 명령(STT) 경로는 별도 — 본 골격 범위 밖.
 
 ---
@@ -200,7 +201,7 @@
 | L2 LLM         | gemma4-e4b        | gpt-4o-mini           |
 | On-device 추론 | 없음(thin client) | 반사 레이어(post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis | WebRTC/gRPC 등        |
-| TTS            | Kokoro/Coqui      | OpenAI TTS            |
+| TTS            | Supertonic(Piper/pyttsx3/edge-tts 핫스왑, 2026-07-09 확정) | Kokoro/Coqui(초기 계획, 미구현) |
 | RDB            | 비동기 SQLAlchemy | MariaDB/PostgreSQL    |
 
 > **On-device 추론 Post-MVP 상세 설계서**: [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0) — 하이브리드 엣지-클라우드 이중 루프, `yolo26n` CoreML/TFLite 포팅, `Frame Processor` 병행 구조, 점진적 전환 4단계(포스트 A~D) 청사진.

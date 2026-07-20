@@ -1,7 +1,7 @@
 # 6단계 설계서 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 > **작성일**: 2026-06-26
-> **버전**: v0.2.2 (2026-07-20 패스트 레인 안내 템플릿을 `N시 방향 {객체} 주의하세요` / `전방 {객체}, N시로 우회하세요`로 통일, `avoid_clock_direction` 추가)
+> **버전**: v0.2.3 (2026-07-20 7단계 TTS 서술 정합: Kokoro/Coqui→Supertonic WAV 바이너리. 기존 v0.2.2: 패스트 레인 안내 템플릿·`avoid_clock_direction`)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 6단계, [`docs/architecture.md`](architecture.md) 5.6절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 11, 12, 14, 17.2
 > **스킬 참조**: [`.agents/skills/llm-guidance-orchestrator/SKILL.md`](../.agents/skills/llm-guidance-orchestrator/SKILL.md)
@@ -48,7 +48,7 @@ graph LR
     end
 
     subgraph Stage7 ["7단계: 음성 출력"]
-        TTS["실시간 TTS<br/>(Kokoro/Coqui)"]
+        TTS["실시간 TTS<br/>(Supertonic 기본)"]
     end
 
     Det -->|"high"| Gate
@@ -196,7 +196,7 @@ def retrieve_rag_context(class_name: str, k: int = 5) -> str:
 | ---- | -------- | ---- | ---- |
 | Out | `guidance_text` | `str` | 20자 이내 한국어 1문장, 방향 포함 |
 
-7단계 실시간 TTS는 `guidance_text`를 수신하여 Kokoro/Coqui로 음성 합성 후 base64 MP3로 WebSocket 전송합니다.
+7단계 실시간 TTS는 `guidance_text`를 수신하여 **Supertonic**(기본, Piper/pyttsx3/edge-tts 핫스왑)으로 음성 합성 후 raw **WAV** bytes를 WebSocket **바이너리 프레임**으로 전송합니다.
 
 ---
 
