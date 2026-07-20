@@ -3603,3 +3603,17 @@
 - **관련 파일**: `client/src/services/audioEngine.ts`
 - **검증 결과**: `cd client && npx tsc --noEmit -p .` 통과(오류 0건). ESLint 설정 부재로 스킵.
 - **비고**: 빌드/실기기 재생 순서 확인은 미실시 — Metro 리로드 후 실기기에서 우선순위 혼합 상황(예: 측면 저위험 다건 + 정면 near) 재생 순서 실측 권장.
+
+---
+
+### 2026-07-20 | 문서·7단계 | 반사 오디오 명세서 §5.2 우선순위 모델 문서 동기화 (auto-publish-work Step 2 후속)
+
+- **배경**: 직전 커밋(대기열 위험도순 폐기 전환)에서 `auto-publish-work` 스킬 Step 2(문서 교차 검증)를 건너뛰었다는 지적을 받고 확인. `docs/design/reflex_audio_specification.md` §5.2 "T3-C 통합 오디오 우선순위 모델(2026-07-18)"이 3단(P1/P2/P3) 모델로 남아있어, 실제 코드의 4단 모델(`guidePriority.ts`, 2026-07-19 전환)과 이미 어긋나 있었고 대기열 정책(FIFO/최신 1건) 서술도 이번 변경으로 완전히 stale해짐을 확인.
+- **변경 내용**:
+  - §5.2를 실제 코드 기준 4단(OTHER=1/FRONT_MED=2/FRONT_NEAR=3/STT=4)으로 정정하고, "거리보다 12시 정면 여부가 먼저 걸리는 하드 게이트"라는 비직관적 동작을 명시.
+  - 대기열 정책 절 신설: `GUIDE_PENDING_MAX=6`, 선점 시 하위 큐 전량 폐기(유지), 6개 초과 시 최하위 우선순위 폐기(신규), 자연 종료 시 최고 우선순위 1건 드레인(신규) 및 각각의 이전 동작(FIFO/최신 1건) 대비.
+  - 문서 버전 헤더 v1.3.1 → v1.3.2.
+  - `docs/design/api_specification.md`는 WS 메시지 스키마(`clock_direction`/`distance_class` 필드) 변경이 없어 확인만 하고 미수정. `docs/mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md`는 특정 시점 감사 기록(C-09 등)이라 갱신 대상에서 제외.
+- **관련 파일**: `docs/design/reflex_audio_specification.md`
+- **검증 결과**: 문서만 수정(코드 변경 없음). 목차·인접 절(§5.1, §5.3) 번호·앵커 정합 확인.
+- **비고**: HEURISTIC 문서의 `HIGH_DANGER_INTERVAL_MS`(250ms→100ms, 2026-07-19 정정) 관련 서술도 별도로 stale하나 이번 작업 범위 밖으로 남겨둠.
