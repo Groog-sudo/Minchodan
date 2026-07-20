@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-09
-> **버전**: v1.1.0 (2026-07-13 §3 WiFi/USB 이중 접속 안내 추가)
+> **버전**: v1.1.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
 > **설명**: Android 온디바이스 TFLite 추론 패키징 설정 및 Tailscale 기반 실기기 연동 테스트 종합 지침서
 
 ---
@@ -52,11 +52,12 @@ PC와 Android 실기기를 같은 Tailscale tailnet에 연결하여 LTE/5G 환�
   ```
 
 #### 3단계: 모바일 앱 설정 변경
-- `client/.env`에 서버의 Tailscale IP 또는 MagicDNS 이름을 설정합니다.
+- `client/.env`에 Tailscale Serve 인증서와 일치하는 서버 MagicDNS 이름을 설정합니다.
   ```ini
   EXPO_PUBLIC_NETWORK_MODE=tailscale
-  EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
-  EXPO_PUBLIC_SERVER_PORT=8000
+  EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+  EXPO_PUBLIC_SERVER_PORT=443
+  EXPO_PUBLIC_WS_SCHEME=wss
   ```
 
 #### 4단계: GPU 백엔드 서버 구동

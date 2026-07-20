@@ -1,7 +1,7 @@
 # Minchodan 배포 가이드
 
 > **작성일**: 2026-06-27
-> **버전**: v0.5.6 (2026-07-19 보안 보강 및 RTX 5090 최대 사양·3개 OS PyTorch 2.13 경로 정합화)
+> **버전**: v0.5.7 (2026-07-19 Linux Compose 고정 게이트웨이·Ollama UFW 최소 허용 규칙 반영)
 > **설계 기준**: [`../design/architecture.md`](../design/architecture.md) 2절(기술 스택)·13절(MCP 연동)
 > **환경 변수 기준**: [`environment_variables.md`](environment_variables.md)
 > **코딩 패턴 기준**: [`../dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.3(경로)·3.4(.env)
@@ -43,13 +43,14 @@ graph TD
 
 | 컨테이너 | 이미지 | 포트 | 볼륨 마운트 | 역할 |
 | :--- | :--- | :--- | :--- | :--- |
-| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능, `.env` 읽기 전용 | 비루트 사용자 FastAPI + WebSocket/SSE. 외부 단말은 Tailscale Serve의 TLS 종단을 경유 |
+| **fastapi** | `minchodan-server:latest` (로컬 빌드) | `127.0.0.1:${WS_PORT:-8000}:8000` | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능 | 비루트 사용자 FastAPI + WebSocket/SSE. `.env`는 `env_file`로 주입하며 외부 단말은 Tailscale Serve의 TLS 종단을 경유 |
 | **redis** | `redis:7-alpine` (공식) | `127.0.0.1:6379:6379` | `redis_data:/data` | `REDIS_PASSWORD` 필수, AOF 영속화, Redis Streams + 컨텍스트 TTL |
 | **mariadb** | `mariadb:11.4` (공식) | 미노출(주석 처리, 2026-07-17) | `mariadb_data:/var/lib/mysql`, `Minchodan DB.session.sql:/docker-entrypoint-initdb.d/01_minchodan_schema.sql` | 공유 GPU 서버 로컬 3306 포트 충돌 방지를 위해 호스트 포트 노출을 비활성화. 원격 DB(`DB_HOST`) 기본 연결 유지, 로컬 노출이 필요하면 `docker-compose.macos.yml` 사용 |
 | **console** | `minchodan-console:latest` (로컬 빌드) | `127.0.0.1:${CONSOLE_PORT:-5174}:5174` | `./console:/app`, `/app/node_modules` | 권한 제한 `node` 사용자로 Vite 콘솔 실행. 외부 공개가 필요하면 인증된 TLS 프록시를 별도로 사용 |
 
 > Ollama는 Compose 서비스가 아닙니다. 호스트에서 `ollama serve`로 실행하고, FastAPI 컨테이너는 `COMPOSE_OLLAMA_BASE_URL` 값을 통해 호스트 Ollama에 접속합니다.
 > WSL2/Linux처럼 `systemd`가 동작하지 않는 환경에서는 `docker/linux_docker_start.sh`가 `ollama serve`를 백그라운드 실행합니다. 기본은 `127.0.0.1:11434`이며, Docker 컨테이너 접근을 위해 전체 인터페이스 바인딩이 필요할 때만 `MINCHODAN_EXPOSE_OLLAMA=1`과 `OLLAMA_HOST=0.0.0.0:11434`를 명시합니다.
+> Linux Compose는 브리지 서브넷과 게이트웨이를 `172.18.0.0/16`, `172.18.0.1`로 고정합니다. 전체 인터페이스에 바인딩한 Ollama는 다음 최소 UFW 규칙으로 Compose 대역에서만 접근을 허용합니다: `sudo ufw allow from 172.18.0.0/16 to 172.18.0.1 port 11434 proto tcp`.
 
 ### 2.2 GPU 접근 가드레일
 
@@ -255,7 +256,7 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 
 ### 7.3 네트워크
 
-모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유합니다. Redis는 인증 URL을 사용하고, MariaDB는 루트 `.env`의 원격 `DB_HOST`를 기본 유지하되 로컬 Compose DB가 필요할 때만 `COMPOSE_DB_HOST=mariadb`로 전환합니다. 호스트 공개 포트는 루프백에만 바인딩하며, Tailscale 외부 단말은 Tailscale Serve의 HTTPS/WSS 역방향 프록시를 통해 접근합니다.
+모든 컨테이너는 `minchodan-net`이라는 브리지 네트워크를 공유합니다. Linux Compose는 UFW 규칙과 호스트 별칭이 재생성 후에도 일치하도록 서브넷 `172.18.0.0/16`, 게이트웨이 `172.18.0.1`을 고정하고 `host.docker.internal`을 해당 게이트웨이에 매핑합니다. Redis는 인증 URL을 사용하고, MariaDB는 루트 `.env`의 원격 `DB_HOST`를 기본 유지하되 로컬 Compose DB가 필요할 때만 `COMPOSE_DB_HOST=mariadb`로 전환합니다. 호스트 공개 포트는 루프백에만 바인딩하며, Tailscale 외부 단말은 Tailscale Serve의 HTTPS/WSS 역방향 프록시를 통해 접근합니다.
 
 > 주의: Compose는 FastAPI의 `REDIS_URL`과 `OLLAMA_BASE_URL`을 컨테이너·호스트 연결 기준으로 재설정합니다. DB는 공동 Raspberry Pi MariaDB 사용 시 루트 `.env` 값을 유지하고, 로컬 Compose DB가 필요한 경우에만 `COMPOSE_DB_HOST`, `COMPOSE_DB_PORT`, `COMPOSE_DB_NAME`, `COMPOSE_DB_USER`로 재정의합니다.
 >
@@ -277,6 +278,26 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 | **컨테이너 권한** | FastAPI와 콘솔을 비루트 사용자로 실행하고 모든 서비스에 `no-new-privileges` 적용 |
 | **Tailscale 공개** | iOS ATS 전역 예외 없이 `wss`를 사용하도록 Tailscale Serve 또는 동등한 TLS 종단 필요 |
 
+Tailscale Serve는 FastAPI의 루프백 포트를 tailnet 전용 HTTPS/WSS 종단으로 프록시합니다. 최초 1회 tailnet 관리자 승인과 로컬 운영자 지정이 필요합니다.
+
+```bash
+# 최초 1회: 출력되는 승인 URL에서 Serve 활성화 후 현재 사용자에게 운영 권한 부여
+sudo tailscale set --operator="$USER"
+
+# FastAPI HTTP와 /ws/detect WebSocket을 동일한 TLS 종단으로 프록시
+tailscale serve --bg http://127.0.0.1:8000
+tailscale serve status
+```
+
+클라이언트 로컬 `client/.env`는 인증서가 일치하는 MagicDNS 이름과 HTTPS 표준 포트를 사용합니다.
+
+```dotenv
+EXPO_PUBLIC_NETWORK_MODE=tailscale
+EXPO_PUBLIC_TAILSCALE_HOST=<서버_MagicDNS_이름>.ts.net
+EXPO_PUBLIC_SERVER_PORT=443
+EXPO_PUBLIC_WS_SCHEME=wss
+```
+
 ---
 
 ## 8. .dockerignore 명세
@@ -287,7 +308,7 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 | :--- | :--- | :--- |
 | Python 캐시 | `__pycache__/`, `*.pyc` | 불필요 |
 | 가상환경 | `.venv/`, `venv/` | 컨테이너 내 별도 설치 |
-| 환경 변수 | `.env` | 볼륨 마운트로 전달 (보안) |
+| 환경 변수 | `.env` | 빌드 컨텍스트에서 제외하고 Compose `env_file`로 런타임 주입 |
 | Git | `.git/` | 불필요 |
 | 테스트 캐시 | `.pytest_cache/` | 불필요 |
 | IDE 설정 | `.vscode/`, `.idea/` | 불필요 |
@@ -338,7 +359,7 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 
 | 증상 | 원인 | 해결 방법 |
 | :--- | :--- | :--- |
-| FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동, `127.0.0.1`로만 바인딩, 또는 `COMPOSE_OLLAMA_BASE_URL`이 현재 Docker 런타임과 맞지 않음 | Linux/WSL은 `bash docker/linux_docker_start.sh`로 자동 기동합니다. Docker 컨테이너 접근까지 필요하면 신뢰할 수 있는 로컬망에서만 `MINCHODAN_EXPOSE_OLLAMA=1`, `OLLAMA_HOST=0.0.0.0:11434`를 설정합니다. Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`로 설정 |
+| FastAPI 컨테이너가 Ollama에 연결 불가 | 호스트 Ollama 미기동, `127.0.0.1`로만 바인딩, 또는 Linux UFW 규칙 누락 | Linux/WSL은 `bash docker/linux_docker_start.sh`로 자동 기동합니다. Docker 컨테이너 접근 시 `MINCHODAN_EXPOSE_OLLAMA=1`, `OLLAMA_HOST=0.0.0.0:11434`를 설정하고 `sudo ufw allow from 172.18.0.0/16 to 172.18.0.1 port 11434 proto tcp`를 적용합니다. Docker Desktop/Windows/Linux는 `http://host.docker.internal:11434`, macOS Colima는 `http://host.lima.internal:11434`를 사용합니다. |
 | FastAPI 컨테이너가 Redis에 연결 불가 | Redis 인증 URL 불일치 | `REDIS_PASSWORD`와 `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379`의 일치 여부 확인 |
 | FastAPI 컨테이너가 MariaDB에 연결 불가 | 기존 원격 `DB_HOST` 또는 선택적 `COMPOSE_DB_HOST`가 의도한 대상을 가리키지 않거나 MariaDB healthcheck 실패 | 원격 DB 유지 시 `.env`의 `DB_HOST`, 로컬 컨테이너 사용 시 `COMPOSE_DB_HOST=mariadb`, 공통으로 `DB_PORT=3306` 적용 여부를 확인 |
 | MariaDB 컨테이너가 시작되지 않음 | `COMPOSE_DB_PASSWORD` 또는 `COMPOSE_DB_ROOT_PASSWORD` 누락 | `.env` 값 확인 (2026-07-17부터 `docker-compose.yml`은 호스트 포트를 노출하지 않아 3306 충돌은 발생하지 않음. macOS 변형에서 포트 충돌 시 `DB_HOST_PORT`를 빈 포트로 변경) |

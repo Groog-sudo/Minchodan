@@ -1,7 +1,7 @@
 # 안드로이드 스마트폰 연동 실행 가이드
 
 > **작성일**: 2026-07-09
-> **버전**: v2.0.0
+> **버전**: v2.0.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
 > **대상**: Minchodan 프로젝트 Android 실기기 테스트 담당자 (입문자 기준)
 > **목적**: iOS 스마트폰과 PC 연동 구동 방식과 동일하게 Android 스마트폰과 PC를 연동하여 Minchodan 프로그램을 실행하기
 
@@ -59,11 +59,10 @@ DATABASE_URL=sqlite+aiosqlite:///./data/minchodan_temp.db
    - 하드웨어 선택 프롬프트가 뜨면 **`2`** (CPU Only Mode) 입력 후 엔터
    - 완료 후 브라우저에서 `http://localhost:8000/docs` 접속하여 Swagger 화면 확인
 
-3. **Ollama AI 모델 컨테이너 내부 다운로드**:
+3. **호스트 Ollama 모델 다운로드**:
    ```bash
-   docker exec -it minchodan-ollama ollama pull gemma4:e4b
-   docker exec -it minchodan-ollama ollama pull llava
-   docker exec -it minchodan-ollama ollama pull nomic-embed-text
+   ollama pull gemma4:e4b
+   ollama pull nomic-embed-text
    ```
 
 4. **RAG 데이터베이스(ChromaDB) 빌드** (venv 활성화 상태에서):
@@ -94,8 +93,9 @@ tailscale ip -4
 
 ```ini
 EXPO_PUBLIC_NETWORK_MODE=tailscale
-EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_TAILSCALE_IP_OR_MAGICDNS]
-EXPO_PUBLIC_SERVER_PORT=8000
+EXPO_PUBLIC_TAILSCALE_HOST=[SERVER_MAGICDNS_NAME].ts.net
+EXPO_PUBLIC_SERVER_PORT=443
+EXPO_PUBLIC_WS_SCHEME=wss
 ```
 
 ---
@@ -373,10 +373,10 @@ docker restart minchodan-fastapi
 ### 오류 M: Tailscale 연결 실패로 인한 무한 "연결 중" 현상
 
 - **원인**:
-  - 단말 Tailscale VPN이 꺼졌거나, 서버와 단말이 다른 tailnet에 연결됐거나, FastAPI가 `0.0.0.0:8000`에 바인딩되지 않음.
+  - 단말 Tailscale VPN이 꺼졌거나, 서버와 단말이 다른 tailnet에 연결됐거나, Tailscale Serve가 비활성 상태임.
 - **해결**:
   1. 서버에서 `tailscale status`, `tailscale ip -4`와 `http://127.0.0.1:8000/health`를 확인합니다.
-  2. 단말 브라우저에서 `http://[SERVER_TAILSCALE_IP_OR_MAGICDNS]:8000/health`를 엽니다.
+  2. 단말 브라우저에서 `https://[SERVER_MAGICDNS_NAME]/health`를 엽니다.
   3. 실패가 계속되면 USB 직접 연결로 전환합니다.
   2. Metro 번들러 실행 포트와 WebSocket 포트를 단말에 재할당합니다:
      ```powershell
@@ -431,15 +431,15 @@ docker restart minchodan-fastapi
 USB 케이블 연결을 완전히 분리한 상태에서, LAN Wi-Fi망을 경유해 무선으로 Metro 컴파일러와 백엔드 서버를 연동하는 최종 동작 수칙입니다.
 
 #### 1단계: 서버 LAN IP 확인 및 config 설정
-* PC의 LAN IP 주소를 확인한 뒤 [client/src/config/index.ts](file:///d:/2025_langchain_ydg/TeamProject/Minchodan/client/src/config/index.ts)의 `WS_URL`에 반영합니다:
+* PC의 LAN IP 주소를 확인한 뒤 [client/src/config/index.ts](../../client/src/config/index.ts)의 `WS_URL`에 반영합니다:
   ```typescript
-  export const WS_URL = "ws://192.168.0.136:8000/ws/detect";
+  export const WS_URL = "ws://[PC_LAN_IP]:8000/ws/detect";
   ```
 
 #### 2단계: 스마트폰 개발자 메뉴 내 번들러 서버 지정
 1. 스마트폰과 PC가 **동일한 와이파이(LAN)망**에 물려 있는지 확인합니다.
 2. 스마트폰 앱 기동 후 기기를 흔들어 Expo 개발자 메뉴를 띄운 뒤, **[Change Bundle Location]** (또는 Configure Bundler)을 터치합니다.
-3. PC 호스트 IP 주소와 포트 번호인 **`192.168.0.136:8081`** 을 정확히 입력하고 확인을 누릅니다.
+3. PC 호스트 IP 주소와 포트 번호인 **`[PC_LAN_IP]:8081`** 을 정확히 입력하고 확인을 누릅니다.
 4. 개발자 메뉴의 **[Reload]**를 눌러 무선 번들 다운로드를 완료합니다.
 
 #### 3단계: USB 해제 및 가동

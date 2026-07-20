@@ -100,7 +100,7 @@ class MCPManager:
                 socket_timeout=10.0,
                 socket_connect_timeout=5.0,
             )
-            logger.info(f"[MCP MANAGER] Redis Connection Successful: {url}")
+            logger.info("[MCP MANAGER] Redis Connection Successful")
         except Exception as e:
             logger.error(f"[MCP MANAGER] Redis Connection Failed: {e!s}")
             return

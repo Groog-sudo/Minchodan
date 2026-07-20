@@ -1,5 +1,5 @@
 > **작성일**: 2026-07-05
-> **버전**: v1.1.2 (2026-07-18 §5.4 Tailscale Metro 팀 표준·개발 PC IP 각자 덮어쓰기 안내 + 이전 v1.1.1: lap 고정 + 이전 v1.1.0: 바이너리 전송)
+> **버전**: v1.1.3 (2026-07-19 FastAPI WSS MagicDNS/443와 Metro Tailscale IP 역할 분리)
 > **설계 기준**: docs/design/minchodan_design_note.md (비전 설계서 v1.1)
 
 # 실기기 무선 연동 테스트 및 Docker 환경 가이드
@@ -26,12 +26,12 @@ graph TD
         subgraph Docker ["Docker Compose (docker-compose.macos.yml)"]
             FastAPI["FastAPI Container<br/>(minchodan-fastapi)"]
             Redis["Redis Container<br/>(minchodan-redis)"]
-            Ollama["Ollama Container<br/>(minchodan-ollama)"]
         end
+        Ollama["Host Local Ollama<br/>(gemma4:e4b)"]
     end
 
-    App -->|1. ws WebSocket 접속| Tunnel
-    Tunnel -->|2. Tailscale 주소 8000| FastAPI
+    App -->|1. wss WebSocket 접속| Tunnel
+    Tunnel -->|2. Tailscale Serve 443| FastAPI
     FastAPI -->|3. 프레임 버스 XADD| Redis
     FastAPI -->|4. L2/RAG 추론 요청| Ollama
 ```
@@ -40,24 +40,26 @@ graph TD
 
 ## 2. Docker 컨테이너 구성 및 역할
 
-로컬 개발 환경에서는 macOS CPU Fallback 및 Windows PC 환경(GPU 유무에 따른 분기)을 고려하여 컨테이너들을 띄웁니다.
-- **NVIDIA GPU 탑재 PC (Windows/WSL2/Linux)**: [docker-compose.yml](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/docker/docker-compose.yml)을 참조하여 GPU 가속을 활용해 추론을 수행합니다.
-- **GPU 미탑재 PC 및 macOS**: [docker-compose.macos.yml](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/docker/docker-compose.macos.yml)을 참조하여 CPU Fallback 모드로 추론을 수행합니다.
-- **윈도우 실행 배치 스크립트**: [windows_docker_start.bat](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/Minchodan/docker/windows_docker_start.bat) 실행 시 터미널창에서 `[1] GPU Mode` 와 `[2] CPU Only Mode` 중 하드웨어에 맞게 선택하여 자동으로 기동할 수 있습니다.
+로컬 개발 환경에서는 macOS CPU Fallback 및 Windows/Linux GPU 환경 분기를 고려하여 컨테이너를 기동합니다.
+- **NVIDIA GPU 탑재 PC (Windows/WSL2/Linux)**: [`docker/docker-compose.yml`](../../docker/docker-compose.yml)을 사용합니다.
+- **GPU 미탑재 PC 및 macOS**: [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml)을 사용합니다.
+- **윈도우 실행 배치 스크립트**: [`docker/windows_docker_start.bat`](../../docker/windows_docker_start.bat)에서 하드웨어에 맞는 실행 모드를 선택합니다.
 
-설정에 따라 총 3개의 컨테이너가 긴밀하게 맞물려 구동됩니다.
+Compose 서비스 4개와 호스트 로컬 Ollama가 함께 동작합니다. MariaDB 컨테이너는 원격 Raspberry Pi DB를 사용할 수 없을 때의 로컬 폴백입니다.
 
 | 컨테이너 이름 | 이미지 / 포트 | 주요 기능 및 역할 | 데이터 볼륨 마운트 |
 | :--- | :--- | :--- | :--- |
-| **`minchodan-fastapi`** | `minchodan-server:latest`<br/>**`8000:8000`** | **WebSocket Gateway** (/ws/detect)<br/>**YOLO26n Detection / Segmentation** 추론<br/>ByteTrack 객체 추적기 탑재<br/>Kokoro-82M TTS 한글 음성 합성 | `./server:/app/server`<br/>`./data:/app/data`<br/>`./.env:/app/.env` |
-| **`minchodan-redis`** | `redis:7-alpine`<br/>**`6379:6379`** | **메시지 버스** (Redis Streams) 중계 계층<br/>`risk.events` 스트림 발행 및 컨텍스트 보존<br/>위험도 햅틱/비프 연산 TTL 세션 스토리지 | `redis_data:/data` |
-| **`minchodan-ollama`** | `ollama/ollama:latest`<br/>**`11434:11434`** | **로컬 LLM 및 임베딩 추론 엔진**<br/>gemma4:e4b (L2 안내 문장 생성)<br/>llava (4단계 오프라인 이미지 캡셔닝)<br/>nomic-embed-text (RAG용 768차원 임베딩) | `ollama_data:/root/.ollama` |
+| **`minchodan-fastapi`** | `minchodan-server:latest`<br/>`127.0.0.1:8000:8000` | WebSocket Gateway, YOLO 추론, ByteTrack, Supertonic TTS | `server/scripts/tests` 읽기 전용, `data` 쓰기 가능 |
+| **`minchodan-redis`** | `redis:7-alpine`<br/>`127.0.0.1:6379:6379` | Redis Streams 및 컨텍스트 TTL | `redis_data:/data` |
+| **`minchodan-mariadb`** | `mariadb:11.4` | 원격 Raspberry Pi DB 장애 시 로컬 폴백 | `mariadb_data:/var/lib/mysql` |
+| **`minchodan-console`** | `minchodan-console:latest`<br/>`127.0.0.1:5174:5174` | 운영자 모니터링 콘솔 | `console` 소스, 컨테이너 전용 `node_modules` |
+| **호스트 Ollama** | 호스트 프로세스<br/>`11434` | `gemma4:e4b`, `nomic-embed-text` 로컬 추론 | 호스트 Ollama 모델 저장소 |
 
 ---
 
 ## 3. Tailscale 네트워크 및 포트 바인딩 명세
 
-실외 LTE망 테스트 환경에서는 단말과 개발 PC를 같은 tailnet에 연결하고, 개발 PC의 Tailscale IP 또는 MagicDNS 이름으로 접속합니다.
+실외 LTE망 테스트에서는 단말과 개발 PC를 같은 tailnet에 연결합니다. FastAPI/WSS는 MagicDNS 이름과 Serve 443을 사용하고 Metro만 개발 PC의 Tailscale IP와 8081을 사용합니다.
 
 ### 3.1 터널 바인딩 테이블
 
@@ -109,7 +111,7 @@ graph TD
 ### 5.4 Tailscale Metro가 다른 PC / Finding Dev Servers에 붙는 경우
 - **현상**: iOS Debug 앱이 Metro를 못 찾거나, 본인 Mac이 아닌 다른 팀원 호스트로 붙는다.
 - **원인**: 로컬 `METRO_BUNDLER_HOST`가 없거나 현재 개발 PC의 MagicDNS/주소와 다를 수 있다.
-- **해결**: **개발 PC IP는 각자 덮어쓰기**. `METRO_BUNDLER_HOST`·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`·`client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST`를 `tailscale ip -4` 결과로 교체한다. 상세 표는 [`environment_variables.md`](environment_variables.md) §2.11.
+- **해결**: Metro용 `METRO_BUNDLER_HOST`·`DEV_CLIENT_DEFAULT_LAUNCHER_URL`은 `tailscale ip -4` 결과로 각자 덮어씁니다. FastAPI용 `client/.env`는 Tailscale Serve 인증서와 일치하는 MagicDNS 이름, 포트 `443`, 스킴 `wss`를 사용합니다. 상세 표는 [`environment_variables.md`](environment_variables.md) §2.12를 참조합니다.
 
 ### 5.3 이미지 대용량으로 인한 무선 네트워크 병목 및 소켓 끊김 현상
 - **현상**: 단말기 구동 중 화면에 연결 끊김 경보가 자주 표시되며, Metro 번들러 콘솔에 `[WS] 연결 종료`와 `연결 시도 주소` 로그가 무한 반복 출력되는 경우.

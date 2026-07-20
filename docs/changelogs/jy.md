@@ -668,3 +668,108 @@
   - 패치가 없는 ChromaDB 임베디드 모드 취약점(`CVE-2026-45829`/`PYSEC-2026-311`)과 데이터베이스 개인정보 컬럼의 애플리케이션 계층 암호화는 별도 마이그레이션 과제로 유지합니다.
 
 ---
+
+### 2026-07-19 | 배포/인프라/클라이언트/문서 | 로컬 GPU 서버 Docker 재배포 및 Mac·iOS Tailscale WSS 연결 구성
+
+- **커밋**: (이번 커밋)
+- **작업 목표**:
+  - 현재 프로젝트 소스 변경분을 Docker 이미지에 다시 반영하고 FastAPI·Redis·MariaDB·운영 콘솔을 로컬 GPU 서버에서 실행합니다.
+  - Ollama는 Docker 컨테이너로 중복 기동하지 않고 호스트 로컬 프로세스로 유지하며, FastAPI 컨테이너가 `gemma4:e4b`와 `nomic-embed-text`를 호출하도록 연결합니다.
+  - MariaDB와 중앙 미디어 저장 API는 기존 Raspberry Pi Tailscale 서비스를 유지하고, Mac에서 빌드한 iOS 앱은 Tailscale Serve의 유효한 TLS 인증서를 통해 `wss`로 GPU FastAPI에 연결하도록 구성합니다.
+  - 비밀값은 루트 `.env`와 `client/.env`에만 보관하고, Git 추적 문서·Compose 출력·애플리케이션 로그에는 원문을 남기지 않습니다.
+
+- **로컬 환경 변수 정합화**:
+  - 루트 `.env`에서 LLM 공급자를 Ollama, L2 모델을 `gemma4:e4b`, 임베딩 모델을 `nomic-embed-text`로 유지하고 Compose 전용 Ollama 주소를 `http://host.docker.internal:11434`로 설정했습니다.
+  - Docker 브리지에서 호스트 Ollama에 접근할 수 있도록 로컬 실행 환경의 `OLLAMA_HOST=0.0.0.0:11434`, `MINCHODAN_EXPOSE_OLLAMA=1` 구성을 사용하되, 전체 로컬망에 무제한 공개하지 않고 별도 UFW 최소 허용 규칙을 적용했습니다.
+  - 미구현 `kokoro` 값으로 인해 서버 기동마다 Supertonic으로 폴백하던 경고를 제거하기 위해 `TTS_ENGINE=supertonic`으로 정정했습니다.
+  - 루트 `.env` 권한은 `600`으로 유지하고 Git 제외 상태를 재확인했습니다.
+  - 클라이언트 로컬 `client/.env`는 `EXPO_PUBLIC_NETWORK_MODE=tailscale`, 서버 MagicDNS 이름, `EXPO_PUBLIC_SERVER_PORT=443`, `EXPO_PUBLIC_WS_SCHEME=wss` 조합으로 변경했습니다.
+  - 단말 ID와 단말 토큰은 서버 등록값과 일치하는 로컬 값으로 유지했으며, 본 변경 이력에는 실제 값을 기록하지 않았습니다.
+
+- **Docker 빌드·Compose 구성 변경**:
+  - 루트 `.dockerignore`와 `docker/.dockerignore`에 가상환경, 도구 캐시, 대용량 `data/` 경로를 제외해 Docker 빌드 컨텍스트를 약 `13.35MB`로 축소했습니다.
+  - FastAPI 이미지 빌드에서 Python 3.13, PyTorch `2.13.0+cu130`, CUDA 13.0 경로와 NVIDIA GPU 인식을 확인했습니다.
+  - Supertonic 모델 자산과 한국어 음소 변환 바이너리가 이미지 빌드 단계에 캐시된 상태로 FastAPI 이미지를 다시 생성했습니다.
+  - 루트 `.env`가 모드 `600`인 상태에서 비루트 FastAPI 사용자가 `/app/.env` 바인드 마운트를 읽지 못해 발생한 `PermissionError`를 해소하기 위해 `.env` 파일 마운트를 제거했습니다. 환경 변수는 Compose `env_file`로만 런타임에 주입합니다.
+  - FastAPI·Redis·운영 콘솔의 호스트 포트는 각각 `127.0.0.1:8000`, `127.0.0.1:6379`, `127.0.0.1:5174`로 제한하고 MariaDB 호스트 포트는 노출하지 않았습니다.
+  - Linux Compose의 `minchodan-net`을 `172.18.0.0/16`, 게이트웨이 `172.18.0.1`로 고정하고 `host.docker.internal`을 해당 게이트웨이에 명시적으로 매핑했습니다. Docker 네트워크가 재생성돼도 UFW 규칙과 목적지 주소가 바뀌지 않도록 하기 위한 조치입니다.
+  - macOS Compose는 Docker Desktop·Colima의 호스트 별칭 동작을 유지하기 위해 Linux 고정 IPAM을 적용하지 않았습니다.
+  - 운영 콘솔은 `VITE_PROXY_TARGET=http://fastapi:8000`을 사용하도록 하고, Linux inotify 한도 초과(`ENOSPC`)를 회피하기 위해 Chokidar polling과 1초 간격을 적용했습니다.
+  - 콘솔의 익명 `node_modules` 볼륨 권한 문제를 새 볼륨으로 해소하고 Vite 개발 서버가 정상 기동되는 것을 확인했습니다.
+  - Redis URL 전체를 출력하던 MCP 관리자와 내비게이션 Redis 초기화 로그를 일반 연결 성공 메시지로 교체했습니다.
+  - 기존 로그에 Redis 인증 URL이 노출된 이력이 있어 Redis 비밀번호를 로컬에서 재생성하고 관련 컨테이너를 재생성했습니다. 실제 비밀번호는 기록하지 않았습니다.
+
+- **호스트 Ollama 연결 및 방화벽 구성**:
+  - 호스트 Ollama가 `11434` 포트에서 실행되고 `gemma4:e4b`, `nomic-embed-text:latest` 모델이 설치된 것을 확인했습니다.
+  - FastAPI 컨테이너에서 `host.docker.internal`이 Docker 기본 브리지 주소로 해석되어 초기 UFW 규칙의 대상과 일치하지 않던 문제를 확인했습니다.
+  - Linux Compose 게이트웨이를 `172.18.0.1`로 고정한 후 `sudo ufw allow from 172.18.0.0/16 to 172.18.0.1 port 11434 proto tcp` 규칙을 적용했습니다.
+  - FastAPI 컨테이너 내부에서 호스트 Ollama `/api/tags`를 조회해 두 모델을 확인했습니다.
+  - 컨테이너에서 `gemma4:e4b` 실제 생성 요청을 보내 `연결 확인` 응답과 `done=true`를 확인했습니다.
+  - `nomic-embed-text` 실제 임베딩 요청으로 벡터 1개, 차원 768을 확인했습니다.
+
+- **Tailscale Serve 및 Mac·iOS 클라이언트 경로 구성**:
+  - tailnet 관리 콘솔에서 Serve 기능을 1회 활성화하고, Linux 호스트에서 `sudo tailscale set --operator="$USER"`로 현재 사용자에게 Serve 구성 권한을 부여했습니다.
+  - `tailscale serve --bg http://127.0.0.1:8000`을 적용해 서버 MagicDNS의 tailnet 전용 HTTPS/WSS 443 종단을 FastAPI 루프백 8000으로 프록시했습니다.
+  - 실제 MagicDNS 주소와 Tailscale IPv4는 로컬 설정에만 유지하고 본 변경 이력에서는 공개하지 않았습니다.
+  - MagicDNS `/`와 `/health` 요청에서 HTTP 200을 확인했습니다.
+  - 클라이언트 로컬 `.env`의 단말 ID·토큰을 읽되 값은 출력하지 않는 Node WebSocket 스모크를 실행해 `welcome -> hello -> auth_ok` 인증 핸드셰이크를 확인했습니다.
+  - Expo Metro를 `--host lan`으로 독립 백그라운드 세션에서 실행하고 로컬 루프백과 GPU 서버 Tailscale IPv4의 `8081/status`에서 모두 `packager-status:running`을 확인했습니다.
+  - Mac에서 만든 개발 빌드는 동일 tailnet에서 GPU 서버의 Tailscale IPv4 8081을 Metro 주소로 사용할 수 있고, FastAPI는 MagicDNS 443 WSS를 사용하도록 역할을 분리했습니다.
+  - 기존 Mac 빌드에 IP 기반 `wss://...:8000` 값이 번들돼 있다면 최신 `client/.env`를 Mac에 동기화한 뒤 Metro 재번들 또는 iOS 앱 재빌드가 필요함을 명시했습니다.
+  - Release·TestFlight 빌드는 JS 번들이 앱에 포함되므로 Mac의 최신 환경 변수를 반영해 재빌드해야 하며, 실행 시 Metro는 필요하지 않습니다.
+
+- **Raspberry Pi 외부 서비스 재검증**:
+  - FastAPI 컨테이너의 DB 환경 변수가 기존 Raspberry Pi MariaDB를 계속 가리키는 상태에서 읽기 전용 `SELECT 1`을 실행해 결과 `1`을 확인했습니다.
+  - 중앙 미디어 저장 백엔드가 활성 상태임을 확인하고 Raspberry Pi 미디어 API `/health`에서 HTTP 200을 확인했습니다.
+  - 인증이 필요한 미디어 객체 조회 경로는 토큰 원문을 출력하지 않은 상태에서 인증 실패가 아닌 미존재 객체 응답을 확인해 Bearer 인증 경로가 유지됨을 검증했습니다.
+
+- **실행 결과**:
+
+  | 검증 대상 | 결과 |
+  | :--- | :--- |
+  | FastAPI | `127.0.0.1:8000` HTTP 200, Tailscale Serve `/health` HTTP 200 |
+  | Redis | 컨테이너 `healthy`, FastAPI Redis 연결 성공 |
+  | MariaDB 컨테이너 | 컨테이너 `healthy`, 호스트 포트 미노출 |
+  | Raspberry Pi MariaDB | FastAPI 컨테이너에서 `SELECT 1` 성공 |
+  | Raspberry Pi 미디어 API | 원격 저장 활성, `/health` HTTP 200 |
+  | 운영 콘솔 | `127.0.0.1:5174` HTTP 200 |
+  | 호스트 Ollama | `/api/tags` HTTP 200, Gemma 생성 성공, nomic 임베딩 768차원 |
+  | Tailscale Serve | tailnet 전용 HTTPS/WSS 443 활성 |
+  | 클라이언트 WebSocket | 실제 `welcome -> hello -> auth_ok` 성공 |
+  | Expo Metro | 로컬 및 Tailscale IPv4 `8081/status` 응답 정상 |
+  | TTS | `TTS_ENGINE=supertonic`, 모델 로드와 30개 캐시 프리워밍 완료 |
+  | GPU 런타임 | 컨테이너에서 PyTorch cu130 및 CUDA GPU 인식 |
+
+- **검증 명령 및 품질 확인**:
+  - `docker compose --env-file ../.env -f docker-compose.yml config --quiet`: Linux 구성 통과
+  - `docker compose --env-file ../.env -f docker-compose.macos.yml config --quiet`: macOS 구성 통과
+  - `bash -n docker/linux_docker_start.sh`: 통과
+  - `docker ps --filter name=minchodan`: FastAPI·Redis·MariaDB·콘솔 모두 실행 상태 확인
+  - FastAPI 현재 컨테이너 전체 로그에서 `Traceback`, `ERROR`, 지원하지 않는 TTS 엔진 경고가 없음을 확인
+  - `git diff --check`: 통과
+
+- **문서 정합화**:
+  - `docs/ops/deployment_guide.md`와 `docs/ops/environment_variables.md`에 Linux 고정 Docker 서브넷, UFW 최소 허용 범위, `.env`의 `env_file` 주입, Tailscale Serve 초기 권한 설정, MagicDNS/443/WSS 클라이언트 구성을 반영했습니다.
+  - `client/.env.example`을 Tailscale IP·8000 예시에서 MagicDNS·443·`wss` 예시로 변경했습니다.
+  - 무선 테스트, 네트워크 지연 측정, Android 통합·빌드·온디바이스 실행, iOS/Android 분기 계약, 온디바이스 추론 격리 계획, 내비게이션 관제·서버 통합 지침을 같은 MagicDNS/443/WSS 기준으로 교차 갱신했습니다.
+  - 운영 가이드에 남아 있던 `minchodan-ollama` 컨테이너와 `llava` 다운로드 절차를 호스트 Ollama의 `gemma4:e4b`·`nomic-embed-text` 준비 절차로 정정했습니다. 이미지 캡셔닝은 Gemini 경로를 유지합니다.
+  - 과거 changelog와 연구·계획 문서의 역사적 기술 표현은 작업 당시 기록 보존을 위해 일괄 수정하지 않았습니다.
+
+- **관련 추적 파일**:
+  - Docker·환경 예시: `.dockerignore`, `.env.example`, `docker/.dockerignore`, `docker/docker-compose.yml`, `docker/docker-compose.macos.yml`, `docker/linux_docker_start.sh`, `client/.env.example`
+  - 로그 보안: `server/mcp/manager.py`, `server/navigation/server.py`
+  - 운영 문서: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/wireless_test_guide.md`, `docs/ops/network_latency_benchmark.md`, `docs/ops/tailscale_connection_guide.md`, Android 실행·통합 가이드 5종
+  - 모바일·통합 계약: `docs/mobile/ios_android_bifurcation_contract.md`, `docs/mobile/ondevice_inference_engine_isolation_plan.md`, `docs/dev-guides/integration/관제_UI_및_시나리오_연동_지침서.md`, `docs/dev-guides/integration/서버_및_시스템_통합_기술_지침서.md`
+  - 변경 이력: `docs/changelogs/jy.md`
+
+- **로컬 전용 변경 및 외부 런타임 상태**:
+  - 루트 `.env`, `client/.env`, 실제 단말 토큰, Redis·DB·미디어 API 비밀번호와 토큰, 실제 Tailscale IPv4·MagicDNS는 Git 추적 대상에서 제외했습니다.
+  - UFW 규칙, Tailscale Serve 활성화와 operator 지정, 호스트 Ollama 프로세스, 실행 중인 Metro는 호스트 런타임 상태이므로 저장소 checkout만으로 자동 복원되지 않습니다. 배포 가이드의 절차에 따라 새 호스트에서 별도로 적용해야 합니다.
+
+- **잔여 기능 상태**:
+  - 서버 연결과 인증은 완료됐지만 루트 `.env`의 `DETECTOR_TYPE=mock`이므로 서버 YOLO 실제 탐지는 아직 활성화하지 않았습니다.
+  - `data/chroma_db`가 존재하지 않아 RAG 검색 데이터베이스는 아직 구축되지 않았습니다.
+  - Mac에서 빌드한 실제 iOS 앱의 카메라 프레임 전송·TTS 수신까지의 실기기 종단 검증은 Mac 소스와 로컬 환경 변수 동기화 후 별도로 수행해야 합니다.
+  - 현재 Tailscale 피어 연결은 환경에 따라 DERP 릴레이를 사용할 수 있으므로 야외 실측 전 직접 연결 여부와 RTT를 다시 확인해야 합니다.
+
+---

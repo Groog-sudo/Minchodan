@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-20
-> **버전**: v0.4.27 (2026-07-20 Medium 인지 `GUIDANCE_CONTEXT_MODE` 힌트 dict 기본값 추가)
+> **버전**: v0.4.28 (2026-07-20 Medium 인지 GUIDANCE_CONTEXT_MODE 힌트 dict + Linux Compose 고정 Ollama 게이트웨이·UFW 범위 반영)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -29,7 +29,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`LLM_PROVIDER`** | string | 필수 | `ollama` | LLM 공급자 (`ollama` 또는 `openai`). GPU 부하 시 `LLMClientFactory`가 자동 핫스왑 | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
 | **`OLLAMA_BASE_URL`** | string | 필수 | `http://localhost:11434` | Ollama 서버 주소 | [`architecture.md`](architecture.md) 10절 |
-| **`COMPOSE_OLLAMA_BASE_URL`** | string | 선택 | `http://host.docker.internal:11434` | Docker Compose의 FastAPI 컨테이너가 호스트 로컬 Ollama로 접속할 때 `OLLAMA_BASE_URL`로 주입할 주소. macOS Colima에서는 `http://host.lima.internal:11434` 사용 권장 | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
+| **`COMPOSE_OLLAMA_BASE_URL`** | string | 선택 | `http://host.docker.internal:11434` | Docker Compose의 FastAPI 컨테이너가 호스트 로컬 Ollama로 접속할 때 `OLLAMA_BASE_URL`로 주입할 주소. Linux Compose는 `host.docker.internal`을 고정 게이트웨이 `172.18.0.1`로 매핑하므로 `172.18.0.0/16 -> 172.18.0.1:11434/tcp` UFW 허용이 필요합니다. macOS Colima에서는 `http://host.lima.internal:11434` 사용 권장 | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
 | **`OLLAMA_HOST`** | string | 선택 | (코드 기본값) | 임베딩 팩토리 전용 Ollama 호스트 (2026-07-07 추가 — `OLLAMA_BASE_URL`과 별개로 존재) | `server/rag/embedding_engine_factory.py:46` |
 | **`GEMMA_MODEL`** | string | 필수 | `gemma4:e4b` | L2 가이드 생성 모델 (로컬) | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
 | **`LLAVA_MODEL`** | string | 선택 | `llava` | 4단계 오프라인 캡셔닝 모델 (Ollama 로컬 경로 사용 시). Gemini 캡셔닝 선택 시 미사용 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |
@@ -173,7 +173,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 
 ### 2.12 외부망 연결 (Tailscale, 야외 도로 테스트용)
 
-**2026-07-13 변경**: 기존 공인 프록시를 Tailscale P2P VPN으로 전면 교체하고, 서버 측 인증 토큰 변수와 Docker 터널 서비스를 제거했다. 클라이언트 접속 방식은 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다. 실기기는 `client/.env`에 개발 PC의 Tailscale IP 또는 MagicDNS 이름을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다. 서버 측 별도 터널 환경변수는 필요하지 않다.
+**2026-07-13 변경**: 기존 공인 프록시를 Tailscale P2P VPN으로 전면 교체하고, 서버 측 인증 토큰 변수와 Docker 터널 서비스를 제거했다. 클라이언트 접속 방식은 `EXPO_PUBLIC_NETWORK_MODE=tailscale` + `EXPO_PUBLIC_TAILSCALE_HOST` 조합을 팀 표준으로 채택했다. 실기기는 `client/.env`에 개발 PC의 MagicDNS 이름을 설정해 WiFi/LTE/핫스팟 어디서든 동일하게 접속한다. 서버 측 별도 터널 환경변수는 필요하지 않다.
 
 **2026-07-19 보안 정리**: 사용하지 않는 외부 터널 클라이언트 패키지와 바이너리 의존성, 클라이언트 네트워크 모드·도메인 환경변수 폴백을 제거했다. 외부망 연결은 Tailscale만 지원한다.
 
@@ -185,9 +185,9 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 > | :--- | :--- |
 > | Metro JS 번들 (재빌드 최소) | Xcode 스킴 `METRO_BUNDLER_HOST=<본인_Tailscale_IP>:8081` 또는 프로세스 env |
 > | Dev Launcher 기본 URL | 저장소에 고정하지 않으며 Expo Dev Launcher에서 로컬 세션을 선택 |
-> | FastAPI/WS 서버 | `client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST=<본인_또는_서버_Tailscale_IP>` (gitignore, 커밋 금지) |
+> | FastAPI/WS 서버 | `client/.env`의 `EXPO_PUBLIC_TAILSCALE_HOST=<서버_MagicDNS_이름>`, `EXPO_PUBLIC_SERVER_PORT=443`, `EXPO_PUBLIC_WS_SCHEME=wss` (gitignore, 커밋 금지) |
 >
-> Tailscale IP 확인: macOS에서 `tailscale ip -4`. MagicDNS 이름을 쓸 수 있으면 IP 대신 호스트명도 가능하다.
+> MagicDNS 이름 확인: `tailscale status --json | jq -r '.Self.DNSName'`. `wss` 인증서 검증을 위해 FastAPI/WS 주소에는 Tailscale IP가 아닌 MagicDNS 이름을 사용한다.
 
 ### 2.13 데이터베이스 (MariaDB)
 
@@ -223,8 +223,8 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | **`EXPO_PUBLIC_LAN_IP`** | string | 선택 | (WIFI_HOST 폴백) | 구 명칭. 설정 시 `WIFI_HOST`가 없으면 이 값을 WiFi 호스트로 사용 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_USB_HOST`** | string | 선택 | `127.0.0.1` | **개발 USB 모드** + `adb reverse` 호스트 | `client/src/config/index.ts`, [android_wifi_usb_transport.md](android_wifi_usb_transport.md) |
 | **`METRO_BUNDLER_HOST`** | string | 선택 | 없음 | **iOS 네이티브 전용** Debug Metro 호스트. 개인 MagicDNS/주소는 로컬 Xcode 환경에만 설정하고 공유 스킴에 저장하지 않음 | `client/ios/Minchodan/AppDelegate.swift` |
-| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | Tailscale 사용 시 필수 | 없음 | **외부망 Tailscale 모드** FastAPI/WS MagicDNS 호스트. 개인 IP 폴백 없음 | `client/src/config/index.ts`, `client/.env.example` |
-| **`EXPO_PUBLIC_SERVER_PORT`** | string | 선택 | `8000` | 단말이 접속할 FastAPI/WebSocket 포트. 기본 `/ws/detect` 포트와 동일 | `client/src/config/index.ts` |
+| **`EXPO_PUBLIC_TAILSCALE_HOST`** | string | Tailscale 사용 시 필수 | 없음 | **외부망 Tailscale 모드** FastAPI/WS MagicDNS 호스트. `wss` 인증서 검증을 위해 Tailscale IP를 사용하지 않음 | `client/src/config/index.ts`, `client/.env.example` |
+| **`EXPO_PUBLIC_SERVER_PORT`** | string | 선택 | `8000` | 단말이 접속할 FastAPI/WebSocket 포트. Tailscale Serve의 `wss` 종단은 `443`, 로컬 직접 연결은 기본 `8000` 사용 | `client/src/config/index.ts` |
 | **`EXPO_PUBLIC_WS_SCHEME`** | string | 선택 | `wss` | WebSocket 스킴. iOS ATS를 전역 허용하지 않으므로 Tailscale Serve 등 TLS 종단을 사용. USB 루프백만 `ws` 허용 | `client/src/config/index.ts`, `client/ios/Minchodan/Info.plist` |
 | **`EXPO_PUBLIC_DEFAULT_TRANSPORT`** | string | 선택 | `wifi` | 앱 최초 기동 기본 수송(`wifi`/`usb`). 이후 선택은 단말에 영속 | `client/src/config/index.ts`, `client/src/services/serverTransport.ts` |
 | **`EXPO_PUBLIC_NETWORK_BENCHMARK`** | string | 선택 | `false` | `true`이면 iOS/Android 앱이 `network_probe`를 주기적으로 보내 최신 RTT와 최근 30개 평균을 디버그 정보에 표시 | `client/src/config/index.ts`, `client/src/hooks/useWebSocket.ts` |
@@ -334,7 +334,7 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 | 2 | 필수 변수 누락 여부 | `python -c "from dotenv import load_dotenv; load_dotenv(); import os; print(os.getenv('LLM_PROVIDER'))"` | `ollama` |
 | 3 | Redis 연결 | `redis-cli ping` | `PONG` |
 | 4 | Ollama 연결 | `curl $OLLAMA_BASE_URL/api/tags` | 모델 목록 JSON |
-| 5 | Docker 컨테이너의 호스트 Ollama 연결 | `docker exec minchodan-fastapi python -c "import os; print(os.getenv('OLLAMA_BASE_URL'))"` | `COMPOSE_OLLAMA_BASE_URL` 값 |
+| 5 | Docker 컨테이너의 호스트 Ollama 연결 | `docker exec minchodan-fastapi curl -fsS http://host.docker.internal:11434/api/tags` | 모델 목록 JSON |
 | 6 | 가중치 파일 존재 | `Test-Path server/models/yolo26n/det_best_20260705.pt` | `True` |
 | 7 | ChromaDB 경로 존재 | `Test-Path data/chroma_db` | `True` (4단계 빌드 후) |
 | 8 | DB 대상명 확인 | `python -c "from dotenv import load_dotenv; load_dotenv(); import os; print(os.getenv('DB_NAME'))"` | `minchodan_db` |

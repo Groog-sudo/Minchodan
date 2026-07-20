@@ -16,7 +16,6 @@ services:
       - ../data:/app/data
       - ../scripts:/app/scripts:ro
       - ../tests:/app/tests:ro
-      - ../.env:/app/.env:ro
       - ../requirements.txt:/app/requirements.txt:ro
     env_file:
       - ../.env
@@ -30,7 +29,7 @@ services:
       # compose 설정만 봐도 알 수 있도록 명시). docker-compose.macos.yml과 동일 이유.
       - YOLO_AUTOINSTALL=False
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.18.0.1"
     depends_on:
       redis:
         condition: service_healthy
@@ -123,6 +122,8 @@ services:
       - console_node_modules:/app/node_modules
     environment:
       - VITE_PROXY_TARGET=http://fastapi:8000
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
     depends_on:
       - fastapi
     restart: unless-stopped
@@ -139,3 +140,7 @@ volumes:
 networks:
   minchodan-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1
