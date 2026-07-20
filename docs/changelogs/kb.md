@@ -3654,3 +3654,18 @@
 - **관련 파일**: `server/orchestration/avoidance.py`, `server/detection/consumer.py`, `client/src/services/hapticEngine.ts`, `client/src/hooks/useWebSocket.ts`, `tests/test_langgraph.py`
 - **검증 결과**: `pytest tests/test_langgraph.py tests/test_fast_lane.py tests/test_detection.py` → **119 passed**. `ruff check`/`bandit`/`mypy` 이상 없음(기존 무관 오류 2건 제외). `tsc --noEmit` 통과. FastAPI 재기동 후 정상, 실기기 재연결 확인.
 - **비고**: 실기기 라이브 재검증은 사용자 테스트 진행 중(로그 모니터 병행).
+
+---
+
+### 2026-07-20 | STT·네비게이션 | STT 목적지 인식 회귀 분석 보고서 P0 6건 수정
+
+- **배경**: GPT가 작성한 `stt_navigation_destination_accuracy_regression_analysis.md`(jy 브랜치 STT 목적지 인식·경로 안내 회귀 분석)를 코드 실행·git diff 대조로 재검증(확정 결함 3건·회귀 커밋 10건·테스트 공백 주장 전부 100% 재현 확인) 후, P0 권고 6건을 순서대로 구현.
+- **변경 내용**:
+  - `server/stt/stt_to_llm_bridge.py`: `_parse_destination_text()` 신설 - 전역 `.replace("로","")` 치환(`"구로역"`→`"구역"` 훼손) 대신 접두("목적지는")·접미(조사+명령어미) 위치기반 stripping. 단독 "로"/"으로" 제거는 "테헤란로"/"종로" 등 장소명 보호를 위해 의도적으로 제외.
+  - 같은 파일: `_is_exact_gildaeng_reconfirm()` 신설, WAITING_FOR_DESTINATION 분기를 fuzzy wake보다 앞으로 재배치 - "길동역"/"길음역"/"길상사"(편집거리 1 이하로 "길댕"과 유사)가 더 이상 wake로 오인돼 재질문만 반환되지 않음. `_has_explicit_destination_intent()` 신설 - "까지"+이동 표현이 있으면 "어떻게" 같은 질문 힌트가 있어도 목적지로 우선 처리("서울역까지 어떻게 가" 대응).
+  - `server/navigation/server.py`: `helper_resolve_destination_poi()` 신설 - `count=1`/`pois[0]` 고정 대신 후보 5개 이상을 정확명일치→현재 위치 거리 순으로 점수화, 동명 후보 거리 우위가 불분명하면 `ambiguous=True` 신호. `helper_search_poi`/`helper_search_nearest_poi`/`helper_fetch_route`의 TMAP 키 누락 시 고정 가상 좌표(126.8722/37.4590 등) 성공 처리를 제거하고 `None`(실패)로 전환 - `docs/ops/environment_variables.md`에 이미 문서화된 "키 미설정 시 기능 비활성화" 정책과 정합.
+  - `server/navigation/manager.py`: 신규 상태 `WAITING_FOR_POI_CONFIRMATION` 추가, `pending_poi_candidates` 세션 필드와 접근자 메서드 신설. `stt_to_llm_bridge.py`는 동명 POI가 모호하면 자동 확정 대신 "1번/2번..." 음성 확인 질문을 반환하고 다음 발화(순번 선택)로 경로를 확정하도록 신규 분기 추가. 성공 안내도 사용자 검색어 대신 실제 선택된 `end_poi["name"]`을 읽도록 `_setup_route_with_poi()`로 공통화(이전엔 TMAP이 다른 동명 지점을 선택해도 사용자가 알아챌 방법이 없었음).
+  - `tests/test_stt_to_llm_bridge_template.py`, `tests/test_navigation_server_poi_resolver.py`(신규): 보고서 §15 필수 회귀 케이스(장소명 보존 5종, wake 충돌 3종, 질문 의도 우선, 동명 POI 확인·선택 플로우, 키 누락 fail-closed 4종) 커버.
+- **관련 파일**: `server/stt/stt_to_llm_bridge.py`, `server/navigation/server.py`, `server/navigation/manager.py`, `tests/test_stt_to_llm_bridge_template.py`, `tests/test_navigation_server_poi_resolver.py`
+- **검증 결과**: `pytest tests/test_stt_to_llm_bridge_template.py tests/test_ws_router_stt.py tests/test_stt_config_policy.py tests/test_stt_service_template.py tests/test_stt_wait_notice.py tests/test_navigation_server_poi_resolver.py` → **60 passed**. `ruff check` 이상 없음. `bandit`/`mypy` 기존 무관 오류만 잔존(신규 없음).
+- **비고**: P1(녹음 UX 200ms arm, 절단 검사 복원, GPS 전송 큐잉, LineString 지도 전달, facilityType 타입 정합)·P2(관측성 로그)는 이번 범위 밖. 실기기 오디오 절단·AEC 순서는 정적 분석만으로 확정 불가해 별도 실기기 검증 필요(보고서 자체도 명시).
