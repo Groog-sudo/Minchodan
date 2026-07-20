@@ -388,7 +388,9 @@ export function useWebSocket(
             `[LocalReflex][WS] 서버 반사 해제: alert_id=${data.alert_id}, track_id=${data.track_id ?? "-"}, reason=${data.reason ?? "-"}`,
           );
           audioEngine.stopBeep();
-          hapticEngine.stopContinuous();
+          // respectMinimum: Near episode가 300ms 안팎으로 짧게 끝나도 최소 CONTINUOUS_MIN_MS는
+          // 진동이 실제로 느껴지도록 유예한다(2026-07-20, 실기기 필드 테스트 피드백).
+          hapticEngine.stopContinuous({ respectMinimum: true });
         } else if (data.type === "guide") {
           // 인지 경로 가이드 음성은 onmessage에서 직접 재생한다(React 상태를 경유하지 않음).
           // [2026-07-09 변경] 서버가 guide 오디오를 더 이상 audio_mp3_b64(base64 문자열)로

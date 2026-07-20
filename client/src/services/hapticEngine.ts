@@ -13,10 +13,18 @@ export type HapticMockHandler = (pattern: string) => void;
  */
 /** continuous 패턴 최대 지속(ms). 이후 자동 stopContinuous (로드맵 Option A). */
 const CONTINUOUS_MAX_MS = 5000;
+/**
+ * continuous 패턴 최소 보장 지속(ms). reflex_clear가 respectMinimum=true로 stopContinuous를
+ * 호출할 때만 적용된다(2026-07-20, 실기기 필드 테스트: Near 반사 episode가 ~300ms 안팎으로
+ * 짧게 끝나는 경우가 흔해 즉시 정지하면 시작 알림 진동 1회 외엔 거의 못 느끼는 문제 확인).
+ */
+const CONTINUOUS_MIN_MS = 500;
 
 class HapticEngine {
   private continuousTimer: ReturnType<typeof setInterval> | null = null;
   private continuousCapTimer: ReturnType<typeof setTimeout> | null = null;
+  private continuousStartedAt: number | null = null;
+  private pendingStopTimer: ReturnType<typeof setTimeout> | null = null;
   private mockHandler: HapticMockHandler | null = null;
 
   /** Mock 모드 시각 피드백 핸들러 등록 (CameraView 오버레이). */
@@ -58,6 +66,7 @@ class HapticEngine {
         case "continuous":
           // 지속 햅틱은 300ms 간격으로 강한 진동을 연속해서 발생시킵니다.
           // CONTINUOUS_MAX_MS 후 자동 종료해 피로·배터리 고갈을 막는다.
+          this.continuousStartedAt = Date.now();
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           this.continuousTimer = setInterval(() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -76,8 +85,26 @@ class HapticEngine {
 
   /**
    * 지속 진동 타이머를 중지합니다.
+   * @param opts.respectMinimum true면 CONTINUOUS_MIN_MS를 채울 때까지 실제 정지를 유예한다.
+   *   reflex_clear처럼 "이미 시작된 진동을 최소한은 느끼게 하고 싶은" 자동 해제 경로에서만 켠다.
+   *   STT 억제·화면 전환 등 즉시 멈춰야 하는 경로는 기본값(즉시 정지)을 그대로 쓴다.
    */
-  public stopContinuous(): void {
+  public stopContinuous(opts?: { respectMinimum?: boolean }): void {
+    if (this.pendingStopTimer) {
+      clearTimeout(this.pendingStopTimer);
+      this.pendingStopTimer = null;
+    }
+    if (opts?.respectMinimum && this.continuousTimer && this.continuousStartedAt !== null) {
+      const remaining = CONTINUOUS_MIN_MS - (Date.now() - this.continuousStartedAt);
+      if (remaining > 0) {
+        this.pendingStopTimer = setTimeout(() => this.stopContinuousNow(), remaining);
+        return;
+      }
+    }
+    this.stopContinuousNow();
+  }
+
+  private stopContinuousNow(): void {
     if (this.continuousTimer) {
       clearInterval(this.continuousTimer);
       this.continuousTimer = null;
@@ -86,6 +113,7 @@ class HapticEngine {
       clearTimeout(this.continuousCapTimer);
       this.continuousCapTimer = null;
     }
+    this.continuousStartedAt = null;
   }
 }
 

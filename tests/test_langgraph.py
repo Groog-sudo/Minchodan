@@ -324,47 +324,64 @@ class TestAvoidanceFastLane:
             distance_band="medium",
         )
 
-    def test_front_left_suggests_right(self):
-        """왼쪽 장애물 -> 오른쪽으로 우회 제안."""
+    def test_front_left_returns_none(self):
+        """2026-07-20: 12시 회랑 밖(왼쪽 장애물)은 무발화 - 반사 비프·햅틱 방향으로 충분."""
         from server.orchestration.avoidance import build_avoidance_guidance
 
         alert = self._make_alert(direction="front-left")
-        assert build_avoidance_guidance(alert) == "오른쪽으로 비켜주세요"
+        assert build_avoidance_guidance(alert) is None
 
-    def test_front_right_suggests_left(self):
-        """오른쪽 장애물 -> 왼쪽으로 우회 제안."""
+    def test_front_right_returns_none(self):
+        """2026-07-20: 12시 회랑 밖(오른쪽 장애물)은 무발화."""
         from server.orchestration.avoidance import build_avoidance_guidance
 
         alert = self._make_alert(direction="front-right")
-        assert build_avoidance_guidance(alert) == "왼쪽으로 비켜주세요"
+        assert build_avoidance_guidance(alert) is None
 
-    def test_front_center_panning_suggests_stop(self):
-        """정면 중앙 장애물(panning 0) -> 멈추세요."""
+    def test_front_center_panning_no_object_falls_back(self):
+        """정면 중앙 장애물(panning 0), object_ko 미지정 -> 무명사 폴백 문구."""
         from server.orchestration.avoidance import build_avoidance_guidance
 
         alert = self._make_alert(direction="front", panning=0.0)
-        assert build_avoidance_guidance(alert) == "멈추세요"
+        assert build_avoidance_guidance(alert) == "전방 주의하세요"
+
+    def test_front_center_panning_includes_object_noun(self):
+        """2026-07-20: 정면 중앙 장애물은 명사 없는 '멈추세요' 대신 객체명을 포함한다."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.0)
+        assert build_avoidance_guidance(alert, object_ko="볼라드") == "전방 볼라드 있어요"
 
     def test_front_positive_panning_suggests_right(self):
-        """정면 장애물이 오른쪽으로 치우침(panning>0.2) -> 오른쪽으로 우회."""
+        """정면 장애물이 오른쪽으로 치우침(panning>0.2), object_ko 미지정 -> 기존 문구 유지."""
         from server.orchestration.avoidance import build_avoidance_guidance
 
         alert = self._make_alert(direction="front", panning=0.5)
         assert build_avoidance_guidance(alert) == "오른쪽으로 비켜주세요"
 
+    def test_front_positive_panning_includes_object_noun(self):
+        """object_ko 지정 시 우회 안내에도 객체명을 포함한다."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.5)
+        assert (
+            build_avoidance_guidance(alert, object_ko="차량") == "전방 차량, 오른쪽으로 비켜주세요"
+        )
+
     def test_front_negative_panning_suggests_left(self):
-        """정면 장애물이 왼쪽으로 치우침(panning<-0.2) -> 왼쪽으로 우회."""
+        """정면 장애물이 왼쪽으로 치우침(panning<-0.2), object_ko 미지정 -> 기존 문구 유지."""
         from server.orchestration.avoidance import build_avoidance_guidance
 
         alert = self._make_alert(direction="front", panning=-0.5)
         assert build_avoidance_guidance(alert) == "왼쪽으로 비켜주세요"
 
-    def test_stop_direction_suggests_stop(self):
-        """direction=stop -> 멈추세요."""
+    def test_stop_direction_includes_object_noun(self):
+        """direction=stop(정지 표지판 클래스) -> 명사 포함, '멈추세요' 재사용 금지(L2 규칙과 일치)."""
         from server.orchestration.avoidance import build_avoidance_guidance
 
         alert = self._make_alert(direction="stop")
-        assert build_avoidance_guidance(alert) == "멈추세요"
+        assert build_avoidance_guidance(alert) == "전방 정지 표지판 있어요"
+        assert build_avoidance_guidance(alert, object_ko="정지 표지판") == "전방 정지 표지판 있어요"
 
     def test_unknown_direction_returns_none(self):
         """알 수 없는 direction -> None (LangGraph 폴백)."""
@@ -374,13 +391,22 @@ class TestAvoidanceFastLane:
         assert build_avoidance_guidance(alert) is None
 
     def test_can_use_fast_lane_single_object(self):
-        """단일 객체 + 유효 direction -> fast lane 사용 가능."""
+        """단일 객체 + front 방향 -> fast lane 사용 가능(12시 회랑 밖은 더 이상 fast lane 대상 아님)."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is True
+
+    def test_cannot_use_fast_lane_outside_front_corridor(self):
+        """2026-07-20: front-left/front-right는 12시 회랑 밖이라 fast lane 대상에서 제외된다."""
         from server.detection.schemas import BBox, Detection
         from server.orchestration.avoidance import can_use_avoidance_fast_lane
 
         alert = self._make_alert(direction="front-left")
         detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
-        assert can_use_avoidance_fast_lane(alert, detections) is True
+        assert can_use_avoidance_fast_lane(alert, detections) is False
 
     def test_cannot_use_fast_lane_multi_object(self):
         """다중 객체 -> fast lane 불가 (LangGraph 폴백)."""

@@ -3640,3 +3640,17 @@
   - Medium/Near 인지 패스트 레인 안내를 N시 방향 객체 주의하세요 및 전방 객체 N시로 우회하세요 패턴으로 통일하고, avoid_clock_direction과 노면-only 힌트 주입·Fallback 동일 템플릿·stage6 설계서 v0.2.2를 반영한다.
 - **관련 파일**: `ocs/stage-guides/stage6_orchestration_design.md`, `server/detection/consumer.py`, `server/detection/direction.py`, `server/orchestration/nodes/fallback_node.py`, `server/orchestration/nodes/fast_lane.py`, `server/orchestration/nodes/l3_validator.py`, `server/orchestration/state.py`, `tests/test_fast_lane.py`, `tests/test_langgraph.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-20 | 3·6·7단계 | 실기기 필드 테스트 피드백 4건 수정 (12시 밖 TTS·무명사 안내·노면 방향 고정·Near 햅틱)
+
+- **배경**: 통합 테스트 환경(Docker+Metro+실기기) 세션 중 사용자가 실기기로 직접 테스트하며 4가지 문제를 보고. FastAPI/Metro 로그를 대조해 각각 실제 발생 지점을 확인.
+- **변경 내용**:
+  - `server/orchestration/avoidance.py`(P1-1 반사 후속 avoidance fast lane): `direction != "front"`(12시 회랑 밖)는 `None`을 반환해 무발화 처리 - 반사 비프·햅틱의 스테레오 패닝으로 이미 방향이 전달되므로 측면까지 TTS로 중복 안내하지 않음. `build_avoidance_guidance`가 `object_ko`를 받아 모든 분기(정면 중앙 애매, "정지" 표지판 클래스)에서 명사 없는 "멈추세요" 대신 객체명을 포함하도록 변경(L2 프롬프트가 정지 명령을 금지하는 것과 동일한 이유).
+  - `server/detection/consumer.py`: 노면(차도/주의 노면) 전용 인지 안내 분기가 `clock_direction="12시"`/`avoid_clock_direction="2시"`로 무조건 하드코딩되어 있던 것을, 노면 centroid 기반 `estimate_clock_direction`/`estimate_avoid_clock_direction` 재사용으로 교체(계산 불가 시에만 12시/2시 안전 폴백). 실측 로그상 "차도"/"주의 노면" 우회 안내 15건 전부 "2시"로 고정돼 있었음 - 방향이 동적이지 않다는 피드백의 실제 원인.
+  - `client/src/services/hapticEngine.ts`: `stopContinuous({ respectMinimum: true })` 옵션 신설 - 이미 시작된 continuous 진동 패턴을 최소 500ms(`CONTINUOUS_MIN_MS`)까지는 실제 정지를 유예. `client/src/hooks/useWebSocket.ts`의 `reflex_clear` 핸들러에만 적용(다른 13곳의 즉시-정지 호출은 그대로 유지). 실측 로그상 Near 반사 진입~`reflex_clear`까지 약 300ms만에 종료되는 경우가 흔해, 300ms 간격 반복 진동이 시작 알림 1회 외엔 거의 못 느껴지던 문제 대응.
+  - `tests/test_langgraph.py`의 `TestAvoidanceFastLane`을 새 동작(12시 밖 None, 명사 포함 문구)에 맞춰 갱신 및 신규 케이스 추가.
+- **관련 파일**: `server/orchestration/avoidance.py`, `server/detection/consumer.py`, `client/src/services/hapticEngine.ts`, `client/src/hooks/useWebSocket.ts`, `tests/test_langgraph.py`
+- **검증 결과**: `pytest tests/test_langgraph.py tests/test_fast_lane.py tests/test_detection.py` → **119 passed**. `ruff check`/`bandit`/`mypy` 이상 없음(기존 무관 오류 2건 제외). `tsc --noEmit` 통과. FastAPI 재기동 후 정상, 실기기 재연결 확인.
+- **비고**: 실기기 라이브 재검증은 사용자 테스트 진행 중(로그 모니터 병행).

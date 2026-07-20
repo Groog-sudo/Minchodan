@@ -35,7 +35,7 @@ from server.detection.direction import (
     estimate_distance,
 )
 from server.detection.risk_rules import class_name_to_ko
-from server.detection.schemas import Detection, DetectionResult, ReflexAlert, ReflexClear
+from server.detection.schemas import BBox, Detection, DetectionResult, ReflexAlert, ReflexClear
 from server.orchestration import run_orchestrator
 from server.orchestration.llm_client_factory import LLMClientFactory
 from server.rag.guidance_hints import select_guidance_hint
@@ -1270,7 +1270,9 @@ class DetectionConsumer:
 
         preset_guidance: str | None = None
         if can_use_avoidance_fast_lane(alert, detections):
-            preset_guidance = build_avoidance_guidance(alert)
+            preset_guidance = build_avoidance_guidance(
+                alert, class_name_to_ko(detections[0].class_name)
+            )
             logger.info(
                 f"[DetectionConsumer] avoidance fast lane: device_id={device_id}, "
                 f"direction={alert.direction}, guidance='{preset_guidance}'"
@@ -1471,19 +1473,30 @@ class DetectionConsumer:
                         )
                 object_ko = class_name_to_ko(primary_det.class_name)
             elif has_significant_surface:
-                # 노면-only Medium: 객체 힌트 대신 caution/roadway 힌트·전방 방향을 채운다.
-                surface_key = next(
-                    (
-                        s.class_name
-                        for s in result.surface
-                        if s.class_name in ("caution", "roadway")
-                    ),
-                    "",
+                # 노면-only Medium: 객체 힌트 대신 caution/roadway 힌트를 채우고,
+                # 방향은 centroid 기반으로 실측한다(2026-07-20: 12시/2시 고정값이었던
+                # 것을 실기기 필드 테스트에서 "방향이 동적이지 않다"는 피드백으로 수정 -
+                # 객체 탐지(primary_det)와 동일하게 estimate_clock_direction을 재사용).
+                surface_hazard = next(
+                    (s for s in result.surface if s.class_name in ("caution", "roadway")),
+                    None,
                 )
+                surface_key = surface_hazard.class_name if surface_hazard else ""
                 if surface_key and GUIDANCE_CONTEXT_MODE == "hints":
                     rag_context = select_guidance_hint(surface_key, seed=result.event_id)
                 if surface_key:
                     object_ko = class_name_to_ko(surface_key)
+                    centroid = getattr(surface_hazard, "centroid", None)
+                    if frame is not None and centroid and len(centroid) >= 2:
+                        surface_bbox = BBox(
+                            x=float(centroid[0]), y=float(centroid[1]), w=0.0, h=0.0
+                        )
+                        clock_direction = estimate_clock_direction(surface_bbox, frame.shape[1])
+                        if clock_direction == "12시":
+                            avoid_clock_direction = estimate_avoid_clock_direction(
+                                surface_bbox, frame.shape[1]
+                            )
+                    # centroid를 못 구했을 때만(프레임 없음 등) 안전 기본값으로 폴백.
                     clock_direction = clock_direction or "12시"
                     avoid_clock_direction = avoid_clock_direction or "2시"
                     if not distance_class:
