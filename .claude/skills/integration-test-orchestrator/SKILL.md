@@ -11,7 +11,7 @@ description: |
 # 통합 테스트 환경 오케스트레이션 스킬 (iOS 실기기 - Docker - DB)
 
 > **작성일**: 2026-07-18
-> **버전**: v1.3.0 (2026-07-19: 외부 LTE/핫스팟 테스트 시나리오 보완 - §0 결정 항목에 Tailscale 경로 검증 필수 명시, §3-B "Tailscale 네트워크 사전 검증" 절차 신설(호스트↔단말 양방향 ping, EXPO_PUBLIC_TAILSCALE_HOST 일치 검증, FastAPI/Metro Tailscale IP 도달 검증), §5 Metro 백그라운드 실행 안정성 보완(nohup→setsid, localhost+Tailscale IP 이중 헬스체크) - 2026-07-19 실측 사례(Metro가 localhost만 바인딩해 단말이 번들을 받지 못해 흰 화면) 반영 + 이전 v1.2.0: §5-B console 프론트 기동 compose 통합)
+> **버전**: v1.3.1 (2026-07-20: `metro_tailscale.sh`를 Python double-fork+`os.setsid()` detach로 보강 — Cursor 에이전트 셸 종료 후에도 Metro 유지. 이전 v1.3.0: 외부 LTE/핫스팟 Tailscale 사전 검증·Metro 이중 헬스체크·console compose 통합)
 > **설계 기준**: `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
 > **관련 스킬**: [`xcode-build-management`](../xcode-build-management/SKILL.md) (iOS 빌드 세부 절차 전담), 본 스킬은 그 위 계층(Docker+DB+로그/모니터링)까지 포함한 세션 오케스트레이션을 전담
 
@@ -261,8 +261,11 @@ Metro는 빌드/실행 전에 별도 백그라운드 프로세스로 계속 떠 
 >
 > 에이전트는 세션마다 `lsof -ti:8081 | xargs kill`을 하지 않는다. status가 DOWN일 때만 start.
 >
-> **macOS**: `setsid` 없음. 스크립트가 `nohup`+`disown`을 사용한다.
+> **macOS**: bash `setsid` CLI는 없지만, 스크립트가 Python double-fork + `os.setsid()`로
+> 에이전트/터미널 세션과 분리한다(`nohup`만으로는 Cursor 에이전트 셸 종료 시 회수되는 실측).
+> `status`에 `detach: OK (ppid=1)`이 보이면 세션 독립 기동이다.
 > **Expo host**: `--host 0.0.0.0`은 거부된다. `--host lan` + `REACT_NATIVE_PACKAGER_HOSTNAME=<Tailscale IPv4>`.
+> 번들 캐시 클리어가 필요할 때만 `METRO_CLEAR=1 bash scripts/metro_tailscale.sh restart`.
 
 ```bash
 # (레거시) 직접 기동이 필요할 때만 — 가능하면 metro_tailscale.sh 사용
