@@ -94,8 +94,8 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-    ports:
-      - "127.0.0.1:${DB_HOST_PORT:-3306}:3306"
+    # ports:
+    #   - "127.0.0.1:${DB_HOST_PORT:-3306}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     environment:

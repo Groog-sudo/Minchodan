@@ -24,7 +24,7 @@ class PhoneDialBridgeModule(reactContext: ReactApplicationContext) :
             promise.reject("invalid_number", "전화번호가 비어 있습니다")
             return
         }
-        val activity = currentActivity
+        val activity = reactApplicationContext.currentActivity
         if (activity == null) {
             promise.reject("no_activity", "Activity not available")
             return
