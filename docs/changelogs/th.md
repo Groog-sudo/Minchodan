@@ -1011,3 +1011,18 @@
   - **Fix 3** `server/detection/consumer.py`: `_send_cognitive_guide`에 Near 반사 에피소드 활성 중 Medium 존재/접근 안내를 억제하는 가드 추가(`Alert_suppressor.peek_active_near_track`). preset(post_reflex)·보도 이탈·노면 전용은 예외. Near 우선 원칙과 정합하며 억제는 Near episode 생명주기 동안만 유지.
 - **관련 파일**: `server/detection/consumer.py`, `server/detection/bytetrack_tracker.py`, `docs/changelogs/th.md`
 - **검증 결과**: 비라이브 전체 테스트 460 passed(관련 detection/distance/reflex/suppressor/near/track 스위트 포함). 잔여 3건(`test_frame_decode.py::test_singleton_queue_maxsize`, `test_mcp_gpu.py` 2건)은 본 변경 이전부터 실패하는 환경 의존(splitter maxsize/GPU/ollama) 케이스로 stash 대조 확인. 이중 경로 가드레일 준수(반사 게이트 `server/detection/gates/` 무수정), 금지 파일 스테이징 없음, `py_compile`·import 정상. ruff는 로컬 미설치로 스킬 규격에 따라 생략.
+
+---
+
+### 2026-07-21 | 운영/모니터 | 콘솔 MCP 검증 GPU 메모리 0 표시 및 LLM 핫스왑 복귀 결함 수정
+
+- **배경**: 시연 중 운영 콘솔의 "MCP 검증(system_metrics)" 패널에서 GPU 메모리가 항상 0 MB로 표시되고, GPU 부하 핫스왑이 OpenAI로 전환된 뒤 부하가 내려가도 기본 provider로 복귀하지 않는 문제 제보. `test_mcp_gpu.py` 2건도 선재 실패 상태였다.
+- **원인 분석**:
+  - **GPU 메모리 0 (B)**: `GPUMonitorMCP.get_gpu_status()`가 CUDA 실측 경로에서 `torch.cuda.memory_allocated()`(= 현재 파이썬 프로세스의 얼로케이터 통계)를 읽어, YOLO 추론이 별도 스레드풀/컨텍스트에서 도는 서버 프로세스에서는 항상 0으로 나왔다. 사용률도 `50.0` 고정 대표값이었다. 또한 CUDA가 있으면 `MOCK_GPU_*` 환경변수를 무시해, GPU 머신에서 두 핫스왑 테스트가 실패했다.
+  - **핫스왑 복귀 결함**: `LLMClientFactory._monitor_loop`가 매 주기 `mcp_manager.publish_metric`(Redis I/O)을 await했다. Redis 지연·부재·인증 실패로 왕복이 길어지면 루프 주기가 불규칙해져, 부하 정상화 후 ollama/gemini로 복귀하는 판정이 제때 돌지 않았다(복귀 지연).
+- **변경 내용**:
+  - `server/mcp/gpu_monitor.py`: 실측 메모리·사용률을 `nvidia-smi`(디바이스 전체) 기준으로 보고. nvidia-smi 미존재 시 `torch.cuda.mem_get_info`(디바이스 free/total) 폴백. `MOCK_GPU_USAGE_PCT`가 설정되면 CUDA 유무와 무관하게 모의값 강제(테스트/데모 부하 강제). nvidia-smi 호출은 `run_in_executor`로 위임해 실시간 이벤트 루프(반사 경로 포함) 블로킹 방지.
+  - `server/orchestration/llm_client_factory.py`: 핫스왑 판정(I/O 없음)을 매 주기 즉시 수행하고, 콘솔 메트릭 발행은 별도 in-flight 가드 태스크(`_metric_task`)로 분리해 루프 주기를 막지 않게 함. 발행 예외는 삼켜 판정에 영향 없음.
+  - `docker/docker-compose.subnet-override.local.yml`(로컬 override, 커밋 제외): 콘솔을 Tailscale에서 열도록 `100.89.91.40:5174` 게시 추가(base는 127.0.0.1 전용).
+- **관련 파일**: `server/mcp/gpu_monitor.py`, `server/orchestration/llm_client_factory.py`, `docs/changelogs/th.md`
+- **검증 결과**: 비라이브 테스트 462 passed(이전 GPU/핫스왑 2건 실패 → 통과). 잔여 1건(`test_frame_decode.py::test_singleton_queue_maxsize`)은 무관한 splitter maxsize 선재 실패. 라이브 컨테이너 재기동 후 GPU 실측(`memory_used_mb≈1782, gpu_usage_pct=37`) 확인, 콘솔 Tailscale `100.89.91.40:5174` HTTP 200, dev-001 재연결 확인.

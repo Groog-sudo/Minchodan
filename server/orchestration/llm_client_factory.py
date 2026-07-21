@@ -222,6 +222,9 @@ class LLMClientFactory:
     # 시연/운영 기본 gemini(상용 API). start_gpu_monitor가 LLM_PROVIDER로 덮어쓴다.
     _current_provider: str = ""
     _monitor_task: asyncio.Task = None
+    # 2026-07-21: 메트릭 발행(Redis I/O)을 핫스왑 판정 루프와 분리하기 위한 in-flight 태스크.
+    # 직전 발행이 진행 중이면 이번 주기 발행은 건너뛰어(최신 상태만 중요) 루프 주기를 지킨다.
+    _metric_task: asyncio.Task = None
     _gpu_monitor = None
 
     @classmethod
@@ -277,11 +280,22 @@ class LLMClientFactory:
         # 기본 provider를 환경변수에서 설정 (시연/운영 기본 gemini)
         cls._current_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
 
+        async def _publish_metric_safe(payload: dict):
+            """메트릭 발행을 best-effort로 수행한다. Redis 지연/부재/인증 실패가 핫스왑 판정
+            루프의 주기를 막지 않도록(복귀 지연 방지) 별도 태스크로 돌리고 예외는 삼킨다."""
+            try:
+                from server.mcp.manager import mcp_manager
+
+                await mcp_manager.publish_metric("system_metrics", payload)
+            except Exception as e:
+                logger.debug(f"[MCP HOTSWAP] system_metrics 발행 실패(무시): {e!s}")
+
         async def _monitor_loop():
             while True:
                 try:
                     status = await cls._gpu_monitor.get_gpu_status()
                     should_fallback = status.get("should_fallback", False)
+                    # 1) 핫스왑 판정: I/O 없이 매 주기 즉시 수행한다.
                     if should_fallback and cls._current_provider == "ollama":
                         cls._current_provider = "openai"
                         logger.warning(
@@ -296,20 +310,21 @@ class LLMClientFactory:
                                 f"[MCP HOTSWAP] GPU 부하 정상 복구로 인해 {default_provider}로 복귀합니다."
                             )
 
-                    # 관제 콘솔에 실시간 GPU 및 시스템 상태 브로드캐스트 (Redis Streams 발행)
-                    from server.mcp.manager import mcp_manager
-
-                    await mcp_manager.publish_metric(
-                        "system_metrics",
-                        {
-                            "gpu_usage_pct": status.get("gpu_usage_pct", 0.0),
-                            "memory_used_mb": status.get("memory_used_mb", 0.0),
-                            "current_provider": cls._current_provider.upper(),
-                            "network_rtt_ms": 12,
-                            "queue_depth": 0,
-                            "dropped_frames": 0,
-                        },
-                    )
+                    # 2) 관제 콘솔용 메트릭 발행은 루프 주기를 막지 않도록 분리한다. 직전 발행이
+                    #    아직 진행 중(Redis 지연)이면 이번 주기는 건너뛴다(최신 상태만 중요).
+                    if cls._metric_task is None or cls._metric_task.done():
+                        cls._metric_task = asyncio.create_task(
+                            _publish_metric_safe(
+                                {
+                                    "gpu_usage_pct": status.get("gpu_usage_pct", 0.0),
+                                    "memory_used_mb": status.get("memory_used_mb", 0.0),
+                                    "current_provider": cls._current_provider.upper(),
+                                    "network_rtt_ms": 12,
+                                    "queue_depth": 0,
+                                    "dropped_frames": 0,
+                                }
+                            )
+                        )
                 except Exception as e:
                     logger.error(f"[MCP HOTSWAP] GPU 모니터 루프 예외 발생: {e!s}")
                 await asyncio.sleep(interval_seconds)
