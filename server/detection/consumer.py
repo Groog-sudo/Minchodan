@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 import time
+from typing import Any
 
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
@@ -1839,7 +1840,8 @@ class DetectionConsumer:
                 }
             else:
                 orch_result = await run_orchestrator(orch_input)
-            guidance_text = orch_result.get("guidance_text", "")
+            orch: dict[str, Any] = orch_result
+            guidance_text = orch.get("guidance_text", "")
             if not guidance_text:
                 logger.warning(
                     f"[DetectionConsumer] guidance_text 없음: event_id={result.event_id}"
@@ -1854,8 +1856,8 @@ class DetectionConsumer:
             )
             await self._broadcast_ai_pipeline_status(
                 llm_provider=LLMClientFactory.get_current_provider(),
-                llm_verified=bool(orch_result.get("verified", False)),
-                llm_retry_count=int(orch_result.get("retry_count", 0)),
+                llm_verified=bool(orch.get("verified", False)),
+                llm_retry_count=int(orch.get("retry_count", 0) or 0),
                 rag_query=rag_query,
                 tts_engine=os.getenv("TTS_ENGINE", "supertonic"),
                 reflex_bypass=False,
@@ -1998,7 +2000,7 @@ class DetectionConsumer:
                 "decode_ms": round(decode_ms, 1),
                 "inference_ms": round(result.inference_ms, 1),
                 "rag_ms": round(rag_ms, 1),
-                "llm_ms": round(orch_result.get("total_latency_ms", 0.0), 1),
+                "llm_ms": round(float(orch.get("total_latency_ms", 0.0) or 0.0), 1),
                 "tts_ms": round(tts_ms, 1),
                 "queue_wait_ms": round(queue_wait_ms, 1),
             }
