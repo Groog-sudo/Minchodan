@@ -145,6 +145,7 @@
 | auto-publish-work | - | `.agents/skills/auto-publish-work/` |
 | react-doctor | - | `.agents/skills/react-doctor/` |
 | integration-test-orchestrator | - | `.agents/skills/integration-test-orchestrator/` |
+| rpi-network-profile-switcher | - | `.agents/skills/rpi-network-profile-switcher/` |
 
 > 스킬 정본은 `.agents/skills/`(Git 추적). `.claude/skills/`는 동일 내용 사본(미러). 수정 시 정본 우선, 사본에 동일 반영.
 

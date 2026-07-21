@@ -1,8 +1,8 @@
 # Minchodan 환경 변수 명세서
 
 > **작성일**: 2026-06-27
-> **수정일**: 2026-07-20
-> **버전**: v0.4.34 (2026-07-20 kb 병합: YOLO 추론 전용 스레드풀 분리 - YOLO_INFERENCE_WORKERS 신규(기본 asyncio 스레드풀을 TTS/STT/RAG/파일 저장과 공유하지 않도록 분리, CPU 경합 완화). 기존 v0.4.33 이력 유지: 실기기 장시간 테스트 기반 데이터 정리 결함 수정 - REDIS_STREAM_MAXLEN 신규(risk.events 무제한 누적 트리밍), EVENT_FRAME_CLEANUP_INTERVAL_S 신규(기동 시 1회→주기 정리 전환). 기존 v0.4.32 이력 유지: 실외 재테스트 기반 2차 반사 억제 재조정. 기존 v0.4.31 이력 유지: 필드 DB 분석 기반 1차 반사 억제 재조정, REFLEX_NEAR_TRACK_MIN_GAP_S 신규, jy 병합. 기존 v0.4.29 이력 유지: 코드-문서 정합 누락 변수 13종 일괄 등재, EDGE_TTS_SAMPLE_RATE 기본값 22050 정정, LLAVA_MODEL 폐기 표시)
+> **수정일**: 2026-07-21
+> **버전**: v0.4.35 (2026-07-21 온디바이스 CoreML/TFLite와 서버 가중치 기준선 통일 - YOLO26N_OBJECT_DET/SEG 기본값을 object_detection260714.pt·segmentation260714.pt로 정정, segbest/det_best_20260705는 레거시. 기존 v0.4.34 이력 유지: YOLO 추론 전용 스레드풀 분리 - YOLO_INFERENCE_WORKERS 신규. 기존 v0.4.33 이력 유지: REDIS_STREAM_MAXLEN·EVENT_FRAME_CLEANUP_INTERVAL_S. 기존 v0.4.32~v0.4.29 이력 유지)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -120,8 +120,8 @@
 | **`SPEECH_FRONT_BAND_MEDIUM_LO`** / **`SPEECH_FRONT_BAND_MEDIUM_HI`** | float | 선택 | `0.40` / `0.60` | **2026-07-20 신규.** 안내용 12시 회랑(정규화 x, Medium). 인지 TTS 허용 조건 | `server/detection/direction.py` |
 | **`SURFACE_ZONE_NEAR_Y_RATIO`** | float | 선택 | `0.6` | 노면 Y좌표 기반 near 거리 구역 비율. centroid_y > frame_height*이 값이면 near로 판정 | `server/detection/consumer.py:99` |
 | **`SURFACE_ZONE_MEDIUM_Y_RATIO`** | float | 선택 | `0.35` | 노면 Y좌표 기반 medium 거리 구역 비율 | `server/detection/consumer.py:100` |
-| **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/det_best_20260705.pt` | Yolo 26N - Object Detection 가중치 경로 (Git 추적). **2026-07-08 정정**: `.env` 미설정 시 코드 기본값이 커스텀 학습이 안 된 COCO 스톡 모델(`object_detection.pt`)을 가리키던 결함을 실제 학습 가중치 경로로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
-| **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segbest.pt` | Yolo 26N - Segmentation 가중치 경로 (Git 추적). **2026-07-08 정정**: 위와 동일한 사유로 `segmentation.pt`(스톡) → `segbest.pt`(학습 완료, 4클래스)로 수정 | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절 |
+| **`YOLO26N_OBJECT_DET`** | path | 선택 | `server/models/yolo26n/object_detection260714.pt` | Yolo 26N - Object Detection 가중치. **서버·온디바이스 공통 기준선**(CoreML/TFLite는 본 `.pt`에서 export). `object_detection.pt`는 동일 해시 별칭. 레거시: `det_best_20260705.pt` | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절, `scripts/export_mobile.py` |
+| **`YOLO26N_SEG`** | path | 선택 | `server/models/yolo26n/segmentation260714.pt` | Yolo 26N - Segmentation 가중치. **서버·온디바이스 공통 기준선**. `segmentation.pt`는 동일 해시 별칭. 레거시: `segbest.pt`(온디바이스와 불일치) | [`stage3_detection_design.md`](stage3_detection_design.md) 12.3절, `scripts/export_mobile.py` |
 | **`YOLO_AUTOINSTALL`** | bool | 선택 | `False` | **2026-07-19 신규.** ultralytics 자체 환경변수(`YOLO_AUTOINSTALL`, Minchodan 접두사 아님). 모델 로드/추론마다 체크포인트 내장 requirements를 현재 설치본과 비교해 불일치 시 런타임 `pip install`을 시도하는 AutoUpdate 기능을 제어. `True`(ultralytics 기본값)면 방금 갱신된 패키지와 이미 임포트된 모듈이 어긋나 `'Conv' object has no attribute 'bn'` 추론 오류가 재발한다(실측 확인). `docker/Dockerfile`에 `ENV`로 기본값 고정, `docker-compose*.yml`에도 명시 | `docker/Dockerfile`, `docker/docker-compose*.yml` |
 
 ### 2.7 TTS (7단계 음성 출력)

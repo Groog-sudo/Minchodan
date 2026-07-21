@@ -1,0 +1,15 @@
+---
+description: Raspberry Pi DB·미디어 API 네트워크 프로필(demo/test) 전환 및 검증
+globs: scripts/switch_rpi_network.sh,docker/scripts/db_tailscale_proxy.sh,.env.network.*
+alwaysApply: false
+---
+
+# Raspberry Pi 네트워크 프로필 전환
+
+`scripts/switch_rpi_network.sh`, `docker/scripts/db_tailscale_proxy.sh`, `.env.network.demo`/`.env.network.test`를 다루거나 시연 내부망-Tailscale 테스트망 전환이 필요할 때는 `.agents/skills/rpi-network-profile-switcher/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- 네트워크 전환에 `docker compose build`를 실행하지 않는다(기존 이미지 재사용).
+- `docker compose down -v`, DB DDL/DROP/TRUNCATE, 볼륨 삭제를 실행하지 않는다.
+- `.env` 전체 또는 Compose 렌더링 결과 전체를 출력하지 않는다.

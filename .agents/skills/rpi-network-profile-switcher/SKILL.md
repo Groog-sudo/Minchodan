@@ -6,9 +6,10 @@ description: Raspberry Pi의 MariaDB·미디어 API 접속 경로를 시연 내�
 # Raspberry Pi 네트워크 프로필 전환
 
 > **작성일**: 2026-07-20
-> **버전**: v1.0.0
+> **버전**: v1.0.1 (2026-07-21 지원 에이전트 매니페스트 존재 명시)
 > **관련 문서**: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`
 > **관련 스킬**: 전체 Docker·iOS 실기기 통합 검증은 [`integration-test-orchestrator`](../integration-test-orchestrator/SKILL.md)를 이어서 사용한다.
+> **지원 에이전트**: Claude Code 등은 본 `SKILL.md`를 직접 읽어 호출한다. OpenAI Codex 계열은 `agents/openai.yaml`(스킬 인터페이스 정의: `display_name`/`short_description`/`default_prompt`)을 통해 동일 스킬을 먼저 인식·호출한다. 다른 스킬 폴더에는 `agents/` 서브폴더가 없으며, 이는 본 스킬만의 예외다.
 
 ---
 

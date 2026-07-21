@@ -3820,3 +3820,26 @@
 - **관련 파일**: `server/detection/detection_pipeline.py`, `.env.example`, `docs/ops/environment_variables.md`, `tests/test_detection.py`
 - **검증 결과**: `pytest tests/` 전체 456 passed(신규 1건 - 추론이 `yolo-inference` 스레드에서 실행됨을 스레드명으로 검증, 기존 무관 실패 7건 동일 유지). Ruff/mypy/Bandit OK.
 - **비고**: 프레임 내부(det→seg)는 기존대로 순차 실행 유지. 워커 수(3)는 반사·인지 두 스트림의 동시 제출량만 고려해 소수로 제한(OMP_NUM_THREADS=4와 곱해도 14코어 호스트를 과도하게 넘지 않도록).
+
+---
+
+### 2026-07-21 | 문서 | YOLO26N 가중치 기본값 문서-코드 정합 정정
+
+- **배경**: `docs/ops/environment_variables.md`의 `YOLO26N_OBJECT_DET`/`YOLO26N_SEG` 기본값 설명이 2026-07-14 커밋(`3b0bc05`, 온디바이스 CoreML 연동을 위한 260714 가중치 전환)에서 실제 `.env.example`/`.env`가 `object_detection260714.pt`/`segmentation260714.pt`로 바뀐 뒤에도 갱신되지 않고 이전 값(`det_best_20260705.pt`/`segbest.pt`)을 그대로 설명하고 있던 정합성 누락을 발견해 정정.
+- **변경 내용**:
+  - `docs/ops/environment_variables.md`: 두 변수 설명을 실제 기본값(`object_detection260714.pt`/`segmentation260714.pt`)으로 정정하고, 서버·온디바이스(CoreML/TFLite) 공통 기준선임과 레거시 파일(`det_best_20260705.pt`/`segbest.pt`) 관계를 명시. 버전 v0.4.34→v0.4.35.
+- **관련 파일**: `docs/ops/environment_variables.md`
+- **검증 결과**: `server/models/yolo26n/` 내 `object_detection260714.pt`/`segmentation260714.pt` 실존 확인, `.env.example`·`.env` 값과 일치 확인.
+
+---
+
+### 2026-07-21 | 문서 | 다중 에이전트 스킬 노출 정합 - rpi-network-profile-switcher
+
+- **배경**: 팀원이 GPT(Codex 계열) 기반으로 만든 `rpi-network-profile-switcher` 스킬을 팀 공용으로 쓸 수 있는지 점검. `dev` 병합·SKILLS.md/AGENTS.md 인덱스 등재·`.claude/skills` 미러까지는 정상이었으나, 이 스킬만 `agents/openai.yaml`(Codex 계열 스킬 인터페이스 매니페스트)을 갖고 있어 다른 10개 스킬과 폴더 구조가 다른 점, 그리고 이 사실이 `SKILL.md`에 드러나지 않는 점을 확인. 이어서 팀이 실제 사용하는 Claude Code/Codex/Antigravity/opencode/Cursor/ZCode 전체에 이 스킬이 노출되는지 점검한 결과 두 가지 누락 발견: (1) `.antigravity/rules.md`(12,000자 캡 대응 요약본)의 스킬 인덱스 표에 신규 스킬이 반영되지 않아 Antigravity가 스킬 존재 자체를 인지할 수 없었음, (2) 다른 스킬들과 달리 `.cursor/rules/`에 glob 기반 자동 첨부 규칙 파일이 없어 Cursor가 관련 파일 작업 시 자동으로 안내받지 못함.
+- **변경 내용**:
+  - `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`: 메타데이터 블록에 "지원 에이전트" 줄 추가 - `agents/openai.yaml` 존재와 역할, 다른 스킬 폴더와의 구조 차이를 명시. 버전 v1.0.0→v1.0.1.
+  - `.antigravity/rules.md`: §10 스킬 인덱스 표에 `rpi-network-profile-switcher` 행 추가(6,310자, 12,000자 캡 이내).
+  - `.cursor/rules/12-rpi-network-profile-switcher.mdc` 신규: `scripts/switch_rpi_network.sh`, `docker/scripts/db_tailscale_proxy.sh`, `.env.network.*` glob 트리거, 핵심 금지 행위(빌드 금지, DDL/볼륨 삭제 금지, `.env` 전체 출력 금지) 요약.
+- **관련 파일**: `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `.antigravity/rules.md`, `.cursor/rules/12-rpi-network-profile-switcher.mdc`
+- **검증 결과**: `python scripts/validate_agent_rules.py` 6/6 PASS(`.antigravity/rules.md` 캡 여유 5,690자 포함). `diff -rq .agents/skills/rpi-network-profile-switcher .claude/skills/rpi-network-profile-switcher` 완전 일치 확인.
+- **비고**: Codex가 `agents/openai.yaml`을 실제 네이티브로 인식해 스킬로 호출하는지는 이 세션에서 검증 불가 - 원작성 팀원의 Codex 세션에서 직접 확인 필요.
