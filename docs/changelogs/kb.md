@@ -3993,3 +3993,46 @@
 - **관련 파일**: `scripts/switch_rpi_network.sh`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `docs/ops/demo_test_device_inventory.md`, `docs/ops/environment_variables.md`, `docs/README.md`
 - **검증 결과**: `bash -n scripts/switch_rpi_network.sh` 통과. `python scripts/validate_agent_rules.py` 6/6 PASS. `diff -rq .agents/skills/rpi-network-profile-switcher .claude/skills/rpi-network-profile-switcher` 완전 일치. 실제 Mac mini LAN 연결·Ollama LAN 바인딩은 시연 현장에서 실측 필요(미완료).
 - **비고**: 이 커밋 시점에도 `docs/changelogs/kb.md`를 포함해 다른 세션에서 Near/Medium 오디오 관련 작업(WIP)이 동시에 진행 중이었다. 작업 트리 충돌을 피하기 위해 `git hash-object`/`git update-index`로 이 changelog 항목만 커밋 시점의 HEAD(`e272449`) 위에 직접 이어붙여 인덱스에 스테이징했고, 실제 작업 트리 파일(`docs/changelogs/kb.md` 등)은 전혀 건드리지 않았다. 그 외 무관 WIP 파일(`audioEngine.ts`/`consumer.py`/`test_detection.py`/`reflex_audio_specification.md`)도 이번 커밋에 포함하지 않았다.
+
+---
+
+### 2026-07-21 | 7단계 | Near 안내 완주 우선 + gap 정합
+
+- **배경**: 안내가 들릴 때/안 들릴 때 혼재. 서버 쿨다운 생략·짧은 enter flash 외에, 단말에서 enter 반사 클립이 FRONT_NEAR guide를 0초대에 `stopGuideAudio` 하는 조기 중단이 실측됨.
+- **변경 내용**:
+  - **B 단말**: FRONT_MED+ 재생 중 반사 클립 생략(완주). 동일/하위 우선은 선점 금지, 대기열 최신 1건만(`GUIDE_PENDING_MAX=1`). STT만 선점.
+  - **A 서버**: Near guide gap = max(2.0, 직전길이+1.0s). device별 delayed guide는 최신 태스크만 유지(이전 cancel).
+  - `reflex_audio_specification.md` v1.3.9.
+- **관련 파일**: `client/src/services/audioEngine.ts`, `server/detection/consumer.py`, `tests/test_detection.py`, `docs/design/reflex_audio_specification.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `TestApproachingCooldownShortcut` 통과. FastAPI 재시작·Metro reload 후 Near 연속 진입 시 말 완주 실측 필요.
+
+---
+
+### 2026-07-21 | 6·7단계 | Near 완주 후 Medium 1회 (쿨다운 슬롯 분리)
+
+- **배경**: Medium 인지 안내는 동작하나 Near post_reflex·공유 쿨다운·동일서명 30초에 막혀 체감 무발화. Near 직후 Medium 1회가 필요.
+- **변경 내용**:
+  - 서버: Near/Medium **밴드별** guide ts·duration 슬롯. Near가 Medium을 막지 않음. 서명에 `dist:` 포함.
+  - 단말: Near 재생 중 Medium은 대기 유지(동일 우선만 교체). Near 완주 후 Medium 재생(OTHER만 drain 시 폐기). `GUIDE_PENDING_MAX=2`.
+- **관련 파일**: `server/detection/consumer.py`, `client/src/services/audioEngine.ts`, `tests/test_detection.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `TestApproachingCooldownShortcut`+`TestUtteranceValueGate` 15 passed.
+
+---
+
+### 2026-07-21 | 3·7단계 | Near update가 delayed TTS를 cancel하던 P0 수정
+
+- **배경**: Near는 초반에만 말이 나오고 체류·시간이 지나면 비프만 남음. update마다 800ms delayed guide를 재예약·cancel한 것이 원인.
+- **변경 내용**:
+  - `_should_schedule_post_reflex_guide` — `event_state=update` 및 노면 반사는 delayed TTS 미예약. enter(·head_level)만 예약. update는 in-flight enter 안내를 끊지 않음.
+- **관련 파일**: `server/detection/consumer.py`, `tests/test_detection.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `TestPostReflexGuideSchedule` 3 passed.
+
+---
+
+### 2026-07-21 | 7단계 | near_medium_guide_completion
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Near 완주·Medium 쿨다운 슬롯 분리 및 update delayed TTS cancel 방지
+- **관련 파일**: `lient/src/services/audioEngine.ts`, `docs/changelogs/kb.md`, `docs/design/reflex_audio_specification.md`, `server/detection/consumer.py`, `tests/test_detection.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

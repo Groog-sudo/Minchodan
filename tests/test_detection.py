@@ -1543,9 +1543,9 @@ class TestApproachingCooldownShortcut:
         assert gap >= 8.0
 
     def test_near_post_reflex_uses_short_gap(self):
-        """Near post_reflex는 8초가 아니라 재생길이+마진(최소 2.5s)만 보장."""
+        """Near post_reflex는 8초가 아니라 재생길이+1.0s(최소 2.0s)만 보장."""
         consumer = DetectionConsumer()
-        consumer._last_guide_duration_sec["dev1"] = 2.2
+        consumer._last_guide_duration_by_band["dev1"] = {"near": 2.2}
         det = Detection(
             class_name="car",
             confidence=0.9,
@@ -1556,8 +1556,119 @@ class TestApproachingCooldownShortcut:
         )
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         gap = consumer._required_guide_gap_sec("dev1", det, frame, "near")
-        assert gap == 2.2 + 1.5
+        assert gap == 2.2 + 1.0
         assert gap < 8.0
+
+    def test_medium_slot_not_blocked_by_recent_near(self):
+        """Near 직후에도 Medium 밴드 슬롯은 독립이라 쿨다운에 걸리지 않는다."""
+        import time
+
+        consumer = DetectionConsumer()
+        now = time.monotonic()
+        consumer._last_guide_ts_by_band["dev1"] = {"near": now}
+        consumer._last_guide_duration_by_band["dev1"] = {"near": 2.2}
+        det = Detection(
+            class_name="person",
+            confidence=0.9,
+            bbox=BBox(x=240.0, y=200.0, w=160.0, h=200.0),
+            track_id="T-0002",
+            direction="approaching",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        assert not consumer._is_guide_band_cooling("dev1", det, frame, "medium")
+        # Near 슬롯은 여전히 쿨링
+        assert consumer._is_guide_band_cooling("dev1", det, frame, "near")
+
+    def test_signature_includes_distance_band(self):
+        near_sig = DetectionConsumer._compute_cognitive_signature(
+            DetectionResult(
+                event_id="e1",
+                detections=[
+                    Detection(
+                        class_name="car",
+                        confidence=0.9,
+                        bbox=BBox(x=100.0, y=100.0, w=40.0, h=40.0),
+                    )
+                ],
+                surface=[],
+                risk_hint="high",
+                inference_ms=1.0,
+            ),
+            False,
+            "near",
+        )
+        med_sig = DetectionConsumer._compute_cognitive_signature(
+            DetectionResult(
+                event_id="e2",
+                detections=[
+                    Detection(
+                        class_name="car",
+                        confidence=0.9,
+                        bbox=BBox(x=100.0, y=100.0, w=40.0, h=40.0),
+                    )
+                ],
+                surface=[],
+                risk_hint="mid",
+                inference_ms=1.0,
+            ),
+            False,
+            "medium",
+        )
+        assert near_sig != med_sig
+        assert "dist:near" in near_sig
+        assert "dist:medium" in med_sig
+
+
+class TestPostReflexGuideSchedule:
+    """2026-07-21 P0: delayed 인지 TTS는 enter만, update는 비프만."""
+
+    def test_enter_schedules(self):
+        alert = ReflexAlert(
+            event_id="e1",
+            alert_id="high_obstacle",
+            direction="front",
+            clip="reflex_clips/high_front.wav",
+            haptic=True,
+            panning=0.0,
+            distance=0.5,
+            ts=0.0,
+            track_id="T-1",
+            alert_source="object",
+            event_state="enter",
+        )
+        assert DetectionConsumer._should_schedule_post_reflex_guide(alert) is True
+
+    def test_update_does_not_schedule(self):
+        alert = ReflexAlert(
+            event_id="e2",
+            alert_id="high_obstacle",
+            direction="front",
+            clip="reflex_clips/high_front.wav",
+            haptic=True,
+            panning=0.0,
+            distance=0.5,
+            ts=0.0,
+            track_id="T-1",
+            alert_source="object",
+            event_state="update",
+        )
+        assert DetectionConsumer._should_schedule_post_reflex_guide(alert) is False
+
+    def test_surface_does_not_schedule(self):
+        alert = ReflexAlert(
+            event_id="e3",
+            alert_id="surface_caution",
+            direction="front",
+            clip="",
+            haptic=True,
+            panning=0.0,
+            distance=0.5,
+            ts=0.0,
+            alert_source="surface",
+            event_state="enter",
+        )
+        assert DetectionConsumer._should_schedule_post_reflex_guide(alert) is False
 
 
 class TestSttActiveCognitiveSuppression:
