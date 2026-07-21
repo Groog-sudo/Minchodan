@@ -99,8 +99,17 @@ export function useWebSocket(
   token: string = TOKEN,
   /** WiFi/USB 토글에 따라 CameraView가 넘긴다. 기본은 config.WS_URL(WiFi). */
   wsBaseUrl: string = WS_URL,
+  /**
+   * 2026-07-21 P0: detection ack의 server_busy / suggest_reflex_interval_ms 백프레셔.
+   * 연결 재생성 없이 최신 콜백을 쓰기 위해 내부 ref로 보관한다.
+   */
+  onServerLoad?: (info: { busy: boolean; suggestIntervalMs?: number }) => void,
 ): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
+  const onServerLoadRef = useRef(onServerLoad);
+  useEffect(() => {
+    onServerLoadRef.current = onServerLoad;
+  }, [onServerLoad]);
   const reconnectCount = useRef(0);
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const networkProbeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -140,6 +149,11 @@ export function useWebSocket(
   const pendingGuideEventIdRef = useRef<string | null>(null);
   // 2026-07-19: 바이너리 WAV에 넘길 해석된 우선순위(JSON guide에서 계산).
   const pendingGuidePriorityRef = useRef<GuidePriority>(GUIDE_PRIORITY.OTHER);
+  // 2026-07-21: Near track당 클립 1회.
+  const nearClipPlayedTracksRef = useRef<Set<string>>(new Set());
+  // transport=binary인데 WAV가 안 오면 단말 TTS로 폴백(무음 방지).
+  const guideBinaryFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const GUIDE_BINARY_FALLBACK_MS = 1200;
   // onclose/AppState 타이머가 항상 최신 connect를 호출하도록 한다.
   const connectRef = useRef<() => void>(() => {});
 
@@ -298,23 +312,34 @@ export function useWebSocket(
       // guide 오디오 바이너리 프레임: 직전 "guide" JSON 메시지(transport:"binary")에
       // 이어 도착하는 원본 WAV 바이트다. base64 인코딩을 완전히 우회한다(2026-07-09).
       // T3-C (2026-07-18): audioEngine 우선순위 조정자에 STT/인지 구분을 전달한다.
-      if (event.data instanceof ArrayBuffer) {
+      const playIncomingGuideBytes = (buf: ArrayBuffer) => {
+        if (guideBinaryFallbackTimerRef.current) {
+          clearTimeout(guideBinaryFallbackTimerRef.current);
+          guideBinaryFallbackTimerRef.current = null;
+        }
         const isStt = String(pendingGuideEventIdRef.current ?? "").startsWith("stt-");
         const priority = pendingGuidePriorityRef.current;
         console.log(
-          `[Cognitive] guide 오디오 바이너리 수신: bytes=${event.data.byteLength}, isStt=${isStt}, priority=${priority}`,
+          `[Cognitive] guide 오디오 바이너리 수신: bytes=${buf.byteLength}, isStt=${isStt}, priority=${priority}`,
         );
-        void audioEngine.playGuideAudioBytes(
-          new Uint8Array(event.data),
-          priority,
-          () => {
-            // STT 응답 종료 시 결정론적으로 상태 해제
-            if (isStt) {
-              audioEngine.setSttActive(false);
-              clearSttSafetyRelease();
-            }
-          },
-        );
+        void audioEngine.playGuideAudioBytes(new Uint8Array(buf), priority, () => {
+          if (isStt) {
+            audioEngine.setSttActive(false);
+            clearSttSafetyRelease();
+          }
+        });
+      };
+
+      if (event.data instanceof ArrayBuffer) {
+        playIncomingGuideBytes(event.data);
+        return;
+      }
+      // 일부 RN/폴리필은 Blob으로 올 수 있다 - ArrayBuffer로 변환 후 동일 경로.
+      if (typeof Blob !== "undefined" && event.data instanceof Blob) {
+        void (event.data as Blob).arrayBuffer().then((buf) => {
+          if (wsRef.current !== ws) return;
+          playIncomingGuideBytes(buf);
+        });
         return;
       }
 
@@ -357,40 +382,60 @@ export function useWebSocket(
           const ackKey = `${data.event_id ?? ""}:${data.frame_id ?? ""}`;
           pendingFrames.current.delete(ackKey);
           setInFlightFrameCount(pendingFrames.current.size);
+          if (data.server_busy === true) {
+            const suggest =
+              typeof data.suggest_reflex_interval_ms === "number"
+                ? data.suggest_reflex_interval_ms
+                : undefined;
+            onServerLoadRef.current?.({ busy: true, suggestIntervalMs: suggest });
+          }
         } else if (data.type === "reflex_alert") {
           setLastMessage(data);
-          // 입체 비프음 및 햅틱 연동 실행 (docs/reflex_audio_specification.md 준수)
-          // 채널 분기 (접근성 UX, 2026-07-13):
-          // - 긴급(Critical/High, interval<=100): 핑퐁 비프만. 음성 클립은 반응을 방해하고
-          //   기계음 피로를 키우므로 재생하지 않는다.
-          // - 여유(Mid/Low, interval>100): 방향 음성 클립(+비프). 상세 안내는 인지 guide TTS.
+          // 채널 분기 (2026-07-21):
+          // - Mid/Low: 매 반사 클립.
+          // - Near 긴급: track당 클립 1회(event_state=enter 또는 해당 track 첫 알림).
+          //   서버 enter 누락·억제 후 update만 와도 행동 단서가 나가게 한다.
           const panning = typeof data.panning === "number" ? data.panning : 0.0;
           const beepInterval = typeof data.beep_interval_ms === "number" ? data.beep_interval_ms : 250;
           const hapticPattern = typeof data.haptic_pattern === "string" ? data.haptic_pattern : "double";
-          const isUrgentBeepOnly = beepInterval <= 100;
+          const isUrgent = beepInterval <= 100;
+          const trackKey = String(data.track_id ?? data.alert_id ?? "unknown");
+          const isNearEnter = data.event_state === "enter";
+          const trackNeedsClip = !nearClipPlayedTracksRef.current.has(trackKey);
+          const playEnterClip =
+            isUrgent && Boolean(data.clip) && (isNearEnter || trackNeedsClip);
+          const playMidClip = Boolean(data.clip) && !isUrgent;
+          const channel = playEnterClip
+            ? "enter-clip+beep"
+            : playMidClip
+              ? "voice+beep"
+              : "beep-only";
 
           if (!audioEngine.isGuidePlaying) {
             console.log(
-              `[LocalReflex][WS] 서버 반사 알림: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}, channel=${isUrgentBeepOnly ? "beep-only" : "voice+beep"}`,
+              `[LocalReflex][WS] 서버 반사 알림: id=${data.alert_id}, panning=${panning}, interval=${beepInterval}ms, pattern=${hapticPattern}, channel=${channel}, event_state=${data.event_state ?? "-"}, track=${trackKey}`,
             );
           }
           audioEngine.playBeep(panning, beepInterval);
-          // 2026-07-20: STT 중에도 Near 반사 햅틱은 유지(비프와 동일 정책).
           hapticEngine.trigger(hapticPattern, { allowDuringStt: true });
-          if (data.clip && !isUrgentBeepOnly) {
-            void audioEngine.playReflexClip(data.clip);
+          if (playEnterClip || playMidClip) {
+            if (playEnterClip) {
+              nearClipPlayedTracksRef.current.add(trackKey);
+            }
+            void audioEngine.playReflexClip(data.clip as string);
           }
         } else if (data.type === "reflex_clear") {
-          // 2026-07-18 거리 정책 SSOT: Near episode 종료(이탈 또는 track 소실) 통지.
-          // 서버가 명시적으로 종료를 알려주므로, 단말은 지금 재생 중인 반사 비프·햅틱을
-          // 즉시 정지한다(다음 reflex_alert가 올 때까지 새 episode를 기다림).
           setLastMessage(data);
           console.log(
             `[LocalReflex][WS] 서버 반사 해제: alert_id=${data.alert_id}, track_id=${data.track_id ?? "-"}, reason=${data.reason ?? "-"}`,
           );
+          const clearKey = String(data.track_id ?? data.alert_id ?? "");
+          if (clearKey) {
+            nearClipPlayedTracksRef.current.delete(clearKey);
+          } else {
+            nearClipPlayedTracksRef.current.clear();
+          }
           audioEngine.stopBeep();
-          // respectMinimum: Near episode가 300ms 안팎으로 짧게 끝나도 최소 CONTINUOUS_MIN_MS는
-          // 진동이 실제로 느껴지도록 유예한다(2026-07-20, 실기기 필드 테스트 피드백).
           hapticEngine.stopContinuous({ respectMinimum: true });
         } else if (data.type === "guide") {
           // 인지 경로 가이드 음성은 onmessage에서 직접 재생한다(React 상태를 경유하지 않음).
@@ -435,13 +480,33 @@ export function useWebSocket(
               data.guidance_text,
               priority,
               () => {
-                // STT 응답 종료 시 결정론적으로 상태 해제
                 if (isStt) {
                   audioEngine.setSttActive(false);
                   clearSttSafetyRelease();
                 }
               },
             );
+          } else if (data.transport === "binary" && data.guidance_text) {
+            // 서버는 guide JSON 직후 WAV를 보내지만, 유실·지연 시 무음이 된다.
+            // 1.2s 내 바이너리가 없으면 단말 TTS로 동일 문구를 재생한다.
+            if (guideBinaryFallbackTimerRef.current) {
+              clearTimeout(guideBinaryFallbackTimerRef.current);
+            }
+            const fallbackText = data.guidance_text;
+            const fallbackPriority = priority;
+            const fallbackIsStt = isStt;
+            guideBinaryFallbackTimerRef.current = setTimeout(() => {
+              guideBinaryFallbackTimerRef.current = null;
+              console.warn(
+                `[WS] guide binary 미도착(${GUIDE_BINARY_FALLBACK_MS}ms) - speakFallback: "${fallbackText}"`,
+              );
+              audioEngine.speakFallback(fallbackText, fallbackPriority, () => {
+                if (fallbackIsStt) {
+                  audioEngine.setSttActive(false);
+                  clearSttSafetyRelease();
+                }
+              });
+            }, GUIDE_BINARY_FALLBACK_MS);
           }
           setLastMessage(data as WSMessage);
         } else if (data.type === "nav_route") {

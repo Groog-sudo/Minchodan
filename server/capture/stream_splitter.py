@@ -41,6 +41,22 @@ class StreamSplitter:
         self.reflex_queue = reflex_queue
         self.cognitive_queue = cognitive_queue
         self.bus = bus
+        # 2026-07-21: 디코드 전 스킵·ack 백프레셔용 적체/드롭 계측
+        self.queue_drop_count: dict[str, int] = {"reflex": 0, "cognitive": 0}
+        self.ingest_skip_count: dict[str, int] = {"reflex": 0, "cognitive": 0}
+
+    def queue_depth(self, stream: str) -> int:
+        queue = self._select_queue(stream if stream in VALID_STREAMS else "cognitive")
+        return queue.qsize()
+
+    def is_ingest_busy(self, stream: str) -> bool:
+        """소비자가 따라가지 못해 큐가 가득이면 True (디코드 전 스킵 판단용)."""
+        queue = self._select_queue(stream if stream in VALID_STREAMS else "cognitive")
+        return queue.full()
+
+    def note_ingest_skip(self, stream: str) -> None:
+        key = stream if stream in VALID_STREAMS else "cognitive"
+        self.ingest_skip_count[key] = self.ingest_skip_count.get(key, 0) + 1
 
     async def route_frame(self, processed: ProcessedFrame) -> None:
         """스트림 타입에 따라 asyncio.Queue로 분기하고 Redis에 메타데이터 발행.
@@ -71,6 +87,8 @@ class StreamSplitter:
             try:
                 queue.get_nowait()
                 queue.put_nowait(processed)
+                stream = processed.stream if processed.stream in VALID_STREAMS else "cognitive"
+                self.queue_drop_count[stream] = self.queue_drop_count.get(stream, 0) + 1
                 logger.warning(
                     f"[StreamSplitter] 큐 가득참, 오래된 프레임 drop: "
                     f"event_id={processed.event_id}, stream={processed.stream}"

@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.7 (2026-07-20 §6.3 필드 DB 분석 기반 반사 억제 재조정: 동일 track_id near 재발동 최소 간격 `REFLEX_NEAR_TRACK_MIN_GAP_S=1.2`초 신규, 노면 억제 TTL/최소 간격 상향(15→30s / 8.0→15.0s). 기존 v1.3.6: §2.1 안내용 12시 회랑 `SPEECH_FRONT_BAND`/`is_speech_front` 분리. 기존 v1.3.5: §5.2 STT 중 Near 비프·햅틱 병행. 기존 v1.3.4: STT 안전 상한. 기존 v1.3.3: alert_id `high_obstacle`)
+> **버전**: v1.3.8 (2026-07-21 Near episode `event_state=enter` 시 사전합성 클립 1회 재생 + 비프 덕킹. 긴급 update는 기존 beep-only 유지. 기존 v1.3.7: §6.3 필드 DB 분석 기반 반사 억제 재조정. 기존 v1.3.6~v1.3.3 이력 유지)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -118,7 +118,11 @@ graph TD
 - **주기 제어**: `beep_interval_ms`가 `0`이면 볼륨을 `1.0`으로 고정해 끊김 없는 연속음을 낸다. `0`이 아니면 `setInterval(..., intervalMs)`로 위 펄스를 반복한다.
 - **`panning`(좌우 밸런스) 구현 완료 (2026-07-09)**: WS로 수신한 `panning` 값(-1.0~1.0 연속값)은 `nearestPanBucket()`으로 5단계 버킷(`DebugTriggerPanel.tsx`의 `PAN_PRESETS`와 동일 단계) 중 가장 가까운 값에 매핑되고, 해당 버킷의 스테레오 플레이어만 볼륨 스위칭되며 나머지 4개는 `0.0`으로 묵음 유지된다. 방향이 바뀌면 이전 버킷을 즉시 묵음 처리하고 새 버킷으로 전환한다. 버킷별 WAV는 등파워 패닝(equal-power panning, `left_gain=cos(θ)`, `right_gain=sin(θ)`, `θ=(panning+1)·π/4`)으로 프리렌더링돼 있어 하드좌측/하드우측 버킷은 반대쪽 채널 진폭이 정확히 0이다(파형 레벨로 검증 완료). §1의 "방향성 입체 비프음(Stereo Panning Beep)" 목표가 실현됐다.
 - **정지 규칙**: `stopBeep()`은 500~600ms 쿨다운 타이머 후 현재 활성 버킷의 볼륨을 `0.0`으로 되돌리며(널뛰기 방지), `stopAllActiveAudio()`는 즉시 무음 처리한다.
-- **반사 음성 클립 (채널 분기, 2026-07-13)**: `reflex_alert.clip`은 항상 페이로드에 실을 수 있으나, 단말(`useWebSocket`)은 **`beep_interval_ms > 100`(Mid/Low, 여유)** 일 때만 `playReflexClip()`을 호출한다. **Critical/High(`<=100`)는 핑퐁 비프(+햅틱)만** 재생해 긴급 반응을 방해하지 않는다. 인지 경로 `guide` TTS는 mid/low risk 상세 안내용으로 그대로 유지한다. 클립 파일은 `assets/sounds/reflex_clips/`에 번들되며, 서버는 경로 문자열만 전달한다(§2.1 참조).
+- **반사 음성 클립 (채널 분기, 2026-07-13, 2026-07-21 enter 예외)**: `reflex_alert.clip`은 항상 페이로드에 실을 수 있다. 단말(`useWebSocket`) 정책:
+  - **`beep_interval_ms > 100`(Mid/Low)**: `playReflexClip()` 호출(voice+beep).
+  - **`beep_interval_ms <= 100`이고 `event_state=enter`**: Near episode 시작 시 클립 **1회**(enter-clip+beep). 시각장애인에게 햅틱만으로 부족한 “다음 행동 단서”를 제공한다. 클립 재생 중 비프는 `DUCKED_BEEP_VOLUME`으로 덕킹.
+  - **`beep_interval_ms <= 100`이고 `event_state=update`**: 핑퐁 비프(+햅틱)만(beep-only). 음성 스팸·반응 방해 방지.
+  - 인지 경로 `guide` TTS는 mid/low risk 상세 안내용으로 유지한다. 클립 파일은 `assets/sounds/reflex_clips/`에 번들되며, 서버는 경로 문자열만 전달한다(§2.1 참조).
 
 ---
 
@@ -126,7 +130,7 @@ graph TD
 
 ### 5.1 반사-인지 선점 (기존)
 
-1. **오디오 채널 선점**: 긴급 반사(`beep_interval_ms<=100`) 발생 시 인지 TTS를 즉각 중단하고 핑퐁 비프를 우선 송출한다. 여유 단계(`>100`)는 음성 클립/인지 안내를 허용하되, 비프는 가이드 재생 중 덕킹될 수 있다(`audioEngine` HIGH_DANGER 정책).
+1. **오디오 채널 선점**: 긴급 반사(`beep_interval_ms<=100`) 발생 시 MED/기타 인지 TTS를 즉각 중단하고 핑퐁 비프를 우선 송출한다. **단, episode `enter`에서는 사전합성 클립 1회를 허용**하고 그 동안 비프를 덕킹한다. 여유 단계(`>100`)는 음성 클립/인지 안내를 허용하되, 비프는 가이드 재생 중 덕킹될 수 있다(`audioEngine` HIGH_DANGER 정책).
 2. **햅틱 동시성**: 비프음이 울리는 매 프레임마다 모바일 기기의 진동 모터를 연동 구동시켜 청각장애 동반 시각장애인 또는 시끄러운 실외 환경에서도 위험을 직감하도록 보장합니다.
 3. **독립성 유지**: 반사 오디오 생성과 햅틱 제어 로직은 단말 내부에서 로컬 연산으로 완결되며, 어떠한 경우에도 외부 API 호출이나 LLM/RAG 연산 결과에 대기하지 않는 비동기 병렬 구조를 취합니다.
 

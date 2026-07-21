@@ -42,6 +42,9 @@ YOLO_INFERENCE_WORKERS = int(os.getenv("YOLO_INFERENCE_WORKERS", "3"))
 _inference_executor = ThreadPoolExecutor(
     max_workers=YOLO_INFERENCE_WORKERS, thread_name_prefix="yolo-inference"
 )
+# 2026-07-21 P1: 반사 스트림에서 seg를 N프레임마다 1회만 수행(macOS CPU det+seg 이중 추론 완화).
+# 1이면 매 프레임(기존과 동일). 인지 스트림은 항상 seg 수행.
+REFLEX_SEG_EVERY_N = max(1, int(os.getenv("REFLEX_SEG_EVERY_N", "3")))
 
 # =========================================================================
 # 👨‍💻 HARD CODE 영역 시작: 인지 경로 mid risk 객체·노면·머리높이 격상 분리 👨‍💻
@@ -53,29 +56,19 @@ _inference_executor = ThreadPoolExecutor(
 # 올리지 않습니다. server/orchestration/nodes/l1_classifier.py의 MID_RISK_CLASSES와
 # 동일하게 유지할 것(tests/test_langgraph.py::TestRiskClassifierConsistency 참조).
 #
-# HEAD_LEVEL_ESCALATION_CLASSES는 인지 mid와 별도입니다. 상체 높이(화면 상단 40%) 돌출물은
-# LLM 지연 전에 head_level_gate가 반사 경로로 격상해야 하므로 18종 정적 장애물 목록을 유지합니다.
+# HEAD_LEVEL_ESCALATION_CLASSES는 인지 mid와 별도입니다. 상체 높이 돌출물은
+# LLM 지연 전에 head_level_gate가 반사 경로로 격상합니다.
+# 2026-07-21: 지면 고정물(pole/bollard/tree_trunk 등)은 원근으로 화면 상단에만 잡혀
+# "머리위" 오안내가 나므로 목록에서 제외. 돌출·상단 설비 위주로 축소.
 MID_RISK_CLASSES: set[str] = set()
 
 HEAD_LEVEL_ESCALATION_CLASSES = {
     "barricade",
-    "bench",
-    "bicycle",
-    "bollard",
     "carrier",
-    "chair",
-    "fire_hydrant",
     "kiosk",
     "movable_signage",
-    "parking_meter",
-    "pole",
-    "potted_plant",
     "power_controller",
-    "stroller",
-    "table",
     "traffic_light_controller",
-    "tree_trunk",
-    "wheelchair",
 }
 
 # =========================================================================
@@ -109,6 +102,8 @@ class DetectionPipeline:
         self.tracker = tracker
         self.producer = producer
         self.redis_bus = redis_bus
+        self._reflex_frame_count = 0
+        self._last_reflex_surfaces: list[SurfaceResult] = []
 
     async def run(
         self,
@@ -149,13 +144,24 @@ class DetectionPipeline:
             logger.error(f"[Pipeline] Detector 추론 실패: {e}")
             detections = []
 
-        try:
-            surfaces = await loop.run_in_executor(
-                _inference_executor, self.segmentor.predict, frame
-            )
-        except Exception as e:
-            logger.error(f"[Pipeline] Segmentor 추론 실패: {e}")
-            surfaces = []
+        # 반사: det는 매 프레임, seg는 REFLEX_SEG_EVERY_N마다. 인지: 항상 det+seg.
+        run_seg = True
+        if stream == "reflex":
+            self._reflex_frame_count += 1
+            # 1, N+1, 2N+1… 번째에 seg (첫 프레임부터 노면 게이트 가능)
+            run_seg = ((self._reflex_frame_count - 1) % REFLEX_SEG_EVERY_N) == 0
+
+        surfaces: list[SurfaceResult] = []
+        if run_seg:
+            try:
+                surfaces = await loop.run_in_executor(
+                    _inference_executor, self.segmentor.predict, frame
+                )
+            except Exception as e:
+                logger.error(f"[Pipeline] Segmentor 추론 실패: {e}")
+                surfaces = []
+            if stream == "reflex" and surfaces:
+                self._last_reflex_surfaces = surfaces
 
         detections = await self.tracker.update(
             detections, self.redis_bus, frame_width=width, frame_height=height
@@ -247,13 +253,15 @@ class DetectionPipeline:
                 logger.info(f"[Pipeline] 반사 경로(머리 높이 격상): {head_level_alert.alert_id}")
                 return head_level_alert, detections, surfaces
 
-            surface_alert = self._evaluate_surface(surfaces, height, width)
+            # seg 간헐 프레임에서는 직전 유효 노면 결과로 surface 게이트만 평가
+            surfaces_for_gate = surfaces if surfaces else self._last_reflex_surfaces
+            surface_alert = self._evaluate_surface(surfaces_for_gate, height, width)
             if surface_alert is not None:
                 surface_alert.event_id = event_id
                 surface_alert.ts = time.time()
                 surface_alert.inference_ms = (time.time() - start_ts) * 1000
                 logger.info(f"[Pipeline] 반사 경로: {surface_alert.alert_id}")
-                return surface_alert, detections, surfaces
+                return surface_alert, detections, surfaces_for_gate
 
             # 반사 스트림에서 안전 게이트가 하나도 발동하지 않으면 인지 후보를 만들지
             # 않고(risk_hint="none") BBox 오버레이용 원시 탐지 정보만 반환한다.
@@ -351,29 +359,29 @@ class DetectionPipeline:
         frame_height: float,
         frame_width: float,
     ) -> ReflexAlert | None:
-        """중위험(mid) 클래스가 화면 상단 40%(머리 높이)에 있으면 고위험으로 격상한다.
+        """상단 돌출 후보가 Near·12시 회랑·머리높이 기하를 만족하면 고위험으로 격상한다.
 
         docs/design/behavior_and_risk_insight.md 제안 반영(2026-07-09 구현):
         발밑 근접만 보는 reflex_gate와 달리, 흰지팡이로 감지 불가능한 상체 높이
-        돌출 장애물(나뭇가지, 개방된 적재함 등)을 조기에 반사 경로로 격상한다.
+        돌출 장애물(표지판·개방 적재함·제어기함 등)을 조기에 반사 경로로 격상한다.
 
-        2026-07-20: far head_level 스팸이 Near 비프 UX를 잠식하는 DB 실측을 반영해
-        near/medium 모두 안내용 12시 회랑(is_speech_front)만 허용한다(far는 화면/인지만).
+        2026-07-20: far head_level 스팸 차단 + 안내용 12시 회랑(is_speech_front).
+        2026-07-21: medium도 제외(near만). 필드에서 medium pole이 "머리위 위험"으로
+        반복 오안내된 실측을 반영. 지면 고정 클래스는 HEAD_LEVEL_ESCALATION_CLASSES에서 제거.
         """
         escalation_classes = frozenset(HEAD_LEVEL_ESCALATION_CLASSES)
         for det in detections:
             zone = getattr(det, "effective_distance_zone", "") or ""
-            if zone == "far":
-                continue
-            if zone in ("near", "medium"):
-                if not is_speech_front(det.bbox, frame_width, zone):
-                    continue
-            elif getattr(det, "route", "") != "reflex":
-                # zone 미부착: route=reflex(near) + speech_front만 허용
-                continue
-            else:
+            if zone == "near":
                 if not is_speech_front(det.bbox, frame_width, "near"):
                     continue
+            elif getattr(det, "route", "") == "reflex":
+                # zone 미부착이지만 route=reflex(near)인 레거시/부분 부착 경로
+                if not is_speech_front(det.bbox, frame_width, "near"):
+                    continue
+            else:
+                # far/medium/미부착·비반사: head_level 미발동
+                continue
             alert = head_level_gate(det, frame_height, frame_width, escalation_classes)
             if alert is not None:
                 return alert

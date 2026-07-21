@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-21
-> **버전**: v0.4.35 (2026-07-21 온디바이스 CoreML/TFLite와 서버 가중치 기준선 통일 - YOLO26N_OBJECT_DET/SEG 기본값을 object_detection260714.pt·segmentation260714.pt로 정정, segbest/det_best_20260705는 레거시. 기존 v0.4.34 이력 유지: YOLO 추론 전용 스레드풀 분리 - YOLO_INFERENCE_WORKERS 신규. 기존 v0.4.33 이력 유지: REDIS_STREAM_MAXLEN·EVENT_FRAME_CLEANUP_INTERVAL_S. 기존 v0.4.32~v0.4.29 이력 유지)
+> **버전**: v0.4.36 (2026-07-21 P0/P1 과부하 완화 - SERVER_BUSY_SUGGEST_INTERVAL_MS·REFLEX_SEG_EVERY_N 신규. 기존 v0.4.35 이력 유지: 온디바이스·서버 가중치 기준선 통일. 기존 v0.4.34~v0.4.29 이력 유지)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -78,6 +78,7 @@
 | **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | `/navigation` 서브앱(콘솔 GPS HUD·OperatorLiveMap iframe) 마운트. **production** 에서는 `true` 일 때만 열고, **development**(`APP_ENV!=production`)에서는 플래그와 무관하게 기본 마운트한다(관제 지도 404 방지, 2026-07-19). | `server/main.py` |
 | **`CONSOLE_PORT`** | int | 선택 | `5174` | 운영자 콘솔 컨테이너 호스트 노출 포트. `docker-compose*.yml` `${CONSOLE_PORT:-5174}:5174` | `docker/docker-compose.yml`, `docker/docker-compose.macos.yml` |
 | **`CONSOLE_RELAY_MIN_INTERVAL_S`** | float | 선택 | `0.2` | 콘솔 Live Feed 프레임 릴레이 스로틀 간격(초, 기본 5fps). 단말 프레임을 콘솔에 중계할 때 최소 간격 | `server/api/ws_router.py:921` |
+| **`SERVER_BUSY_SUGGEST_INTERVAL_MS`** | int | 선택 | `250` | **2026-07-21 신규 (P0).** detection ack `server_busy=true`일 때 단말이 적용할 반사 캡처 간격 힌트(ms, ≈4fps). 디코드 전 스킵·큐 적체 백프레셔와 연동 | `server/api/ws_router.py` |
 | **`ACCESS_TOKEN_EXPIRE_HOURS`** | int | 선택 | `8` | 관리자 JWT 액세스 토큰 만료 시간(시간) | `server/db/security.py:27` |
 | **`DEVICE_TOKEN_EXPIRE_DAYS`** | int | 선택 | `30` | 단말 JWT 만료 일수(일). §8.8 단말 토큰 발급 계약과 연동 | `server/api/auth.py:58` |
 
@@ -92,6 +93,7 @@
 | **`REFLEX_FPS`** | int | 필수 | `10` | 반사 캡처 목표 fps (8~10fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`COGNITIVE_FPS`** | int | 필수 | `2` | 인지 캡처 목표 fps (1~2fps 권장) | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.2절 |
 | **`YOLO_INFERENCE_WORKERS`** | int | 선택 | `3` | **2026-07-20 신규.** YOLO 탐지/분할 추론 전용 `ThreadPoolExecutor` 워커 수. 기존에는 `asyncio.to_thread()`가 기본 스레드풀(워커 18개)을 TTS/STT/RAG/이벤트 프레임 저장과 공유해, 느린 TTS 합성 뒤에 추론이 큐잉되며 CPU 경합·체감 지연이 누적되던 문제를 실기기 장시간 테스트로 확인 후 분리 | `server/detection/detection_pipeline.py` |
+| **`REFLEX_SEG_EVERY_N`** | int | 선택 | `3` | **2026-07-21 신규 (P1).** 반사 스트림에서 segmentation을 N프레임마다 1회 수행(1=매 프레임). det는 매 프레임. 노면 게이트는 직전 seg 결과로 평가. 인지 스트림은 항상 seg | `server/detection/detection_pipeline.py` |
 | **`REFLEX_QUEUE_MAXSIZE`** | int | 선택 | `2` | **2026-07-17 신규 (P0-2).** 반사 asyncio.Queue 최대 깊이. latest-frame-wins로 얕게 잡아 큐 적체로 인한 지연 드리프트 방지. 큐 가득 시 oldest drop | `server/capture/stream_splitter.py` |
 | **`COGNITIVE_QUEUE_MAXSIZE`** | int | 선택 | `4` | **2026-07-17 신규 (P0-2).** 인지 asyncio.Queue 최대 깊이. 1~2fps 특성상 소량 버퍼면 충분 | `server/capture/stream_splitter.py` |
 | **`REFLEX_MAX_AGE_S`** | float | 선택 | `0.4` | **2026-07-17 신규 (P0-2).** 반사 프레임 신선도 임계(초). 소비 시각 기준 프레임 ts가 이 값을 초과하면 추론 없이 드롭. ts=0(클라이언트 미전송)이면 검사 건너뜀 | `server/detection/consumer.py` |

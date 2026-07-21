@@ -221,18 +221,26 @@ class DetectionConsumer:
     ) -> float:
         """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다.
 
-        T1-b (2026-07-18): 12시 회랑 접근 객체가 근접/중거리면 쿨다운을 단축해 신규 위험에
+        T1-b (2026-07-18): 12시 회랑 접근 객체가 중거리면 쿨다운을 단축해 신규 위험에
         빠르게 반응한다. 단, 이전 안내가 아직 재생 중이면 그 길이만큼은 기다려야 한다.
+
+        2026-07-21: post_reflex Near 안내는 반사 비프와 달리 말 안내가 필요하므로,
+        near도 재생 길이+마진(최소 2.5s)만 보장한다. 8초 고정이면 비프만 반복되고
+        "전방 차량 있어요"가 장시간 침묵한다(실측).
         """
         prev_duration_sec = self._last_guide_duration_sec.get(device_id, 0.0)
         base_gap = max(
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
 
-        # T1-b: 안내용 12시 회랑 + approaching + medium이면 쿨다운을 3초로 단축
-        # (near는 반사 전담이므로 인지 쿨다운 단축 대상에서 제외)
         if not distance_class and primary_det is not None and frame is not None:
             distance_class = self._resolve_distance_class(primary_det, frame)
+
+        # post_reflex Near: 직전 WAV가 끝난 뒤 바로 다음 Near enter 안내를 허용.
+        if distance_class == "near":
+            return max(2.5, prev_duration_sec + self._guide_cooldown_margin_sec)
+
+        # T1-b: 안내용 12시 회랑 + approaching + medium이면 쿨다운을 3초로 단축
         if (
             primary_det is not None
             and frame is not None
@@ -1287,7 +1295,8 @@ class DetectionConsumer:
             logger.info(
                 f"[DetectionConsumer] 반사 알림 전송: "
                 f"device_id={device_id}, alert_id={alert.alert_id}, "
-                f"track_id={alert.track_id}, band={alert.distance_band}"
+                f"track_id={alert.track_id}, band={alert.distance_band}, "
+                f"event_state={alert.event_state}, beep_ms={alert.beep_interval_ms}"
             )
             # 반사 경로 latency_json에는 decode/inference/total만 존재한다(LLM/RAG/TTS 미경유
             # 원칙이 그대로 데이터에 반영됨 - rag_ms/llm_ms/tts_ms 키 자체가 생기지 않는다).
@@ -1582,8 +1591,14 @@ class DetectionConsumer:
         # TTS 합성 생략. 새 객체/표면 변화/보도 이탈/쿨다운 경과 시에만 발화.
         # [면접 대비 주석] 인지 가이드는 LangGraph+RAG+TTS로 수 초 소요되므로, 동일 상황 반복을
         # 사전 차단해 CPU 점유와 중복 안내를 동시에 줄인다(S5/S6).
-        if not self._has_utterance_value(device_id, result, departure_confirmed):
-            logger.debug(
+        #
+        # 2026-07-21: post_reflex(preset)는 반사 enter마다 이미 1회만 예약되므로
+        # 30초 동일서명 억제를 적용하지 않는다. 적용 시 비프만 반복되고 말 안내가 침묵함.
+        # 오디오 겹침은 아래 guide gap(near=재생길이+마진)으로만 막는다.
+        if preset_guidance_text is None and not self._has_utterance_value(
+            device_id, result, departure_confirmed
+        ):
+            logger.info(
                 f"[DetectionConsumer] 인지 가이드 발화 가치 없음(동일 상황 반복) - "
                 f"TTS 합성 생략: device_id={device_id}"
             )
@@ -1596,8 +1611,9 @@ class DetectionConsumer:
         if time.monotonic() - self._last_guide_ts.get(
             device_id, 0.0
         ) < self._required_guide_gap_sec(device_id, primary_det, frame, distance_class):
-            logger.debug(
-                f"[DetectionConsumer] 인지 가이드 쿨다운 중 - 전송 생략: device_id={device_id}"
+            logger.info(
+                f"[DetectionConsumer] 인지 가이드 쿨다운 중 - 전송 생략: device_id={device_id}, "
+                f"distance={distance_class or '-'}"
             )
             _abort_surface_pending()
             return
@@ -1729,14 +1745,22 @@ class DetectionConsumer:
         try:
             if preset_guidance_text is not None:
                 # P1-1 (2026-07-17): avoidance fast lane - LangGraph 우회, preset 텍스트로 즉시 합성.
+                # 2026-07-21: 단말 우선순위가 OTHER로 떨어지면 Near 비프에 묻히므로
+                # post_reflex는 12시+near로 고정해 FRONT_NEAR로 재생되게 한다.
+                if not clock_direction:
+                    clock_direction = "12시"
+                if not distance_class or distance_class == "far":
+                    distance_class = "near"
                 orch_result = {
                     "guidance_text": preset_guidance_text,
                     "verified": True,
-                    "used_fast_lane": False,
+                    "used_fast_lane": True,
                     "retry_count": 0,
                     "total_latency_ms": 0.0,
                     "risk_level": "high",
                     "direction": preset_guidance_text,
+                    "clock_direction": clock_direction,
+                    "distance": distance_class,
                 }
             else:
                 orch_result = await run_orchestrator(orch_input)
@@ -1842,7 +1866,10 @@ class DetectionConsumer:
             if braille_key and braille_pending_open:
                 self._commit_braille_cognitive_episode(device_id, braille_key)
             logger.info(
-                f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}"
+                f"[DetectionConsumer] guide 전송: device_id={device_id}, event_id={result.event_id}, "
+                f"transport={payload['transport']}, duration_ms={duration_ms}, "
+                f"text='{guidance_text}', clock={payload.get('clock_direction')}, "
+                f"dist={payload.get('distance_class')}"
             )
             detected_classes_str = ", ".join(orch_input["detected_classes"]) or "(없음)"
             logger.info(

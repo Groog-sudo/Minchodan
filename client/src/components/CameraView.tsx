@@ -509,20 +509,6 @@ export function CameraView() {
   }, []);
   const wsBaseUrl = wsUrlFor(serverTransport);
   const {
-    status,
-    send,
-    sendBinary,
-    sendDetectionFrame,
-    lastMessage,
-    navRoute,
-    networkRttMs,
-    networkRttAvgMs,
-  } = useWebSocket(
-    DEVICE_ID,
-    TOKEN,
-    transportReady ? wsBaseUrl : wsUrlFor(DEFAULT_SERVER_TRANSPORT),
-  );
-  const {
     cameraRef,
     device,
     hasPermission,
@@ -536,9 +522,25 @@ export function CameraView() {
     setRequiresFloat32,
     requestCameraPermission,
     reportInferenceLatency,
+    reportServerLoad,
     useStreamCapture,
     frameProcessor,
   } = useCamera(REFLEX_FPS, COGNITIVE_FPS);
+  const {
+    status,
+    send,
+    sendBinary,
+    sendDetectionFrame,
+    lastMessage,
+    navRoute,
+    networkRttMs,
+    networkRttAvgMs,
+  } = useWebSocket(
+    DEVICE_ID,
+    TOKEN,
+    transportReady ? wsBaseUrl : wsUrlFor(DEFAULT_SERVER_TRANSPORT),
+    reportServerLoad,
+  );
   const { isModelsLoaded, segLoaded, detLoaded, detShapeLog, requiresFloat32, detectFrame } =
     useOnDeviceDetection();
   const { requestLocationPermission, getCurrentCoords, startWatching, stopWatching } =

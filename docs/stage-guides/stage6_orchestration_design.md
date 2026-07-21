@@ -254,7 +254,9 @@ graph TD
 
 | 클래스 | 동작 |
 | ------ | ---- |
-| `barricade`, `bench`, `bicycle`, `bollard`, `carrier`, `chair`, `fire_hydrant`, `kiosk`, `movable_signage`, `parking_meter`, `pole`, `potted_plant`, `power_controller`, `stroller`, `table`, `traffic_light_controller`, `tree_trunk`, `wheelchair` | 화면 상단 40% + confidence/hit_count 통과 시 `head_level_gate` → 반사 경로 |
+| `barricade`, `carrier`, `kiosk`, `movable_signage`, `power_controller`, `traffic_light_controller` | Near·12시 회랑 + 상단 40% + bbox 하단이 지면까지 닿지 않음(`BOTTOM_MAX_RATIO`) + 최소 면적 → `head_level_gate` 반사 |
+
+> **2026-07-21**: 지면 고정물(`pole`/`bollard`/`tree_trunk` 등)과 medium 구역 발화를 제거. 필드에서 `head_level_pole`+"머리위 위험" 오안내 실측 반영. 클립 문구는 "앞에 높은 장애물 조심하세요."
 
 > **2026-07-17 정정**: 이전 §7.1의 `kickboard`/`pothole`/`manhole`/`construction_cone`는 29클래스 모델에 존재하지 않는 stale 명칭이었다. 2026-07-14 객체 mid 폐지 및 head-level 격상 분리를 반영했다.
 

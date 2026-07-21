@@ -60,6 +60,11 @@ export interface WSMessage {
   frame_id?: number;
   // 서버 ack 메시지는 decode_ms를 payload가 아닌 최상위 필드로 전송한다 (server/api/ws_router.py 참조)
   decode_ms?: number;
+  // 서버 ack 최상위 백프레셔 필드 (2026-07-21 P0)
+  server_busy?: boolean;
+  reflex_qsize?: number;
+  skipped_decode?: boolean;
+  suggest_reflex_interval_ms?: number;
   alert_id?: string;
   direction?: Direction;
   risk_level?: RiskLevel;
@@ -123,6 +128,11 @@ export interface AckPayload {
   event_id: string;
   frame_id: number;
   decode_ms: number;
+  /** 2026-07-21: 서버 추론/큐 적체 시 true. 단말이 반사 fps를 낮춘다. */
+  server_busy?: boolean;
+  reflex_qsize?: number;
+  skipped_decode?: boolean;
+  suggest_reflex_interval_ms?: number;
 }
 
 export interface DetectionEvent {

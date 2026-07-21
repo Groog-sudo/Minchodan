@@ -65,27 +65,42 @@ MAX_STT_BASE64_CHARS = ((MAX_STT_AUDIO_BYTES + 2) // 3) * 4 + 4
 _WS_STT_SEMAPHORE = asyncio.Semaphore(max(1, int(os.getenv("STT_MAX_CONCURRENT_REQUESTS", "2"))))
 
 
+# 2026-07-21: 서버 busy 시 단말이 반사 fps를 낮추도록 ack에 힌트(ms).
+# 기본 캡처 간격(REFLEX ~120ms)보다 커야 효과가 있다. 250ms ≈ 4fps.
+_SERVER_BUSY_SUGGEST_INTERVAL_MS = int(os.getenv("SERVER_BUSY_SUGGEST_INTERVAL_MS", "250"))
+
+
 async def _send_detection_ack(
     ws: WebSocket,
     event_id: str,
     frame_id: int,
     decode_ms: float,
+    *,
+    server_busy: bool = False,
+    reflex_qsize: int = 0,
+    skipped_decode: bool = False,
 ) -> None:
     """탐지 ack를 즉시 보낸다.
 
     HeartbeatManager가 다른 태스크에서 동시에 타임아웃 close를 걸 수 있어(레이스),
     ack 전송 실패가 세션 전체를 죽이지 않도록 여기서 흡수한다. 소켓이 실제로
     끊겼다면 메인 루프의 다음 ws.receive()가 WebSocketDisconnect로 정상 정리한다.
+
+    2026-07-21: server_busy / suggest_reflex_interval_ms 로 단말 반사 fps 백프레셔.
     """
+    payload: dict = {
+        "type": "ack",
+        "event_id": event_id,
+        "frame_id": frame_id,
+        "decode_ms": round(decode_ms, 2),
+        "server_busy": server_busy,
+        "reflex_qsize": reflex_qsize,
+        "skipped_decode": skipped_decode,
+    }
+    if server_busy:
+        payload["suggest_reflex_interval_ms"] = _SERVER_BUSY_SUGGEST_INTERVAL_MS
     with contextlib.suppress(Exception):
-        await ws.send_json(
-            {
-                "type": "ack",
-                "event_id": event_id,
-                "frame_id": frame_id,
-                "decode_ms": round(decode_ms, 2),
-            }
-        )
+        await ws.send_json(payload)
 
 
 async def _route_detection_frame(
@@ -971,6 +986,28 @@ async def ws_detect(
                     meta = {**meta, "device_id": device_id}
                 event_id = meta.get("event_id", "unknown")
                 frame_id = meta.get("frame_id", 0)
+                stream = meta.get("stream", "reflex")
+                reflex_qsize = splitter.queue_depth("reflex")
+
+                # 2026-07-21 P0: 추론/큐 적체 시 디코드 전에 스킵(CPU·OpenCV 낭비 제거).
+                # ack에 server_busy를 실어 단말이 반사 fps를 낮추도록 백프레셔.
+                ingest_busy = route_sem.locked() or splitter.is_ingest_busy(stream)
+                if ingest_busy:
+                    splitter.note_ingest_skip(stream)
+                    await _send_detection_ack(
+                        ws,
+                        event_id,
+                        frame_id,
+                        0.0,
+                        server_busy=True,
+                        reflex_qsize=reflex_qsize,
+                        skipped_decode=True,
+                    )
+                    relay_now = time.perf_counter()
+                    if relay_now - last_console_relay_ts >= console_relay_interval_s:
+                        last_console_relay_ts = relay_now
+                        await manager.broadcast_to_consoles(raw_bytes)
+                    continue
 
                 decode_start = time.perf_counter()
                 processed = await decode_frame_binary(raw_bytes, meta)
@@ -981,7 +1018,14 @@ async def ws_detect(
                 # 단말의 in-flight 프레임 제한(A2)이 동작하지 못하고 버퍼링이 누적됐다.
                 # ACK는 단말과의 계약이므로 콘솔 relay 상태와 독립되어야 한다.
                 # 콘솔 중계는 이제 session_manager의 latest-only 큐로 분리되어 논블로킹이다.
-                await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+                await _send_detection_ack(
+                    ws,
+                    event_id,
+                    frame_id,
+                    decode_ms,
+                    server_busy=False,
+                    reflex_qsize=splitter.queue_depth("reflex"),
+                )
 
                 # 임시: data/seg_compare/.enable 파일이 있으면 cognitive JPEG를
                 # 최대 N장 덤프. 검은/빈 프레임(실측 7KB대)은 제외하고 실사만 저장.
@@ -1102,6 +1146,22 @@ async def ws_detect(
 
                 # 구버전 호환 경로: base64 JPEG가 payload에 직접 포함된 단일 메시지
                 payload = {**payload, "device_id": payload.get("device_id") or device_id}
+                stream = payload.get("stream", "reflex")
+                reflex_qsize = splitter.queue_depth("reflex")
+                ingest_busy = route_sem.locked() or splitter.is_ingest_busy(stream)
+                if ingest_busy:
+                    splitter.note_ingest_skip(stream)
+                    await _send_detection_ack(
+                        ws,
+                        event_id,
+                        frame_id,
+                        0.0,
+                        server_busy=True,
+                        reflex_qsize=reflex_qsize,
+                        skipped_decode=True,
+                    )
+                    continue
+
                 decode_start = time.perf_counter()
                 processed = await decode_frame(payload)
                 decode_ms = (time.perf_counter() - decode_start) * 1000
@@ -1117,7 +1177,14 @@ async def ws_detect(
                                 b64_for_decode = parts[1]
                         raw_bytes = base64.b64decode(b64_for_decode)
                 # 2026-07-17: ACK를 콘솔 중계보다 먼저 (P0). 바이너리 경로와 동일한 순서.
-                await _send_detection_ack(ws, event_id, frame_id, decode_ms)
+                await _send_detection_ack(
+                    ws,
+                    event_id,
+                    frame_id,
+                    decode_ms,
+                    server_busy=False,
+                    reflex_qsize=splitter.queue_depth("reflex"),
+                )
                 if raw_bytes is not None:
                     await manager.broadcast_to_consoles(raw_bytes)
                 task = asyncio.create_task(

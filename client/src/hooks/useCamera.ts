@@ -41,16 +41,18 @@ import {
 
 export type { FrameData };
 
-// 동적 FPS 조절 파라미터 (온디바이스 추론 지연 기준)
+// 동적 FPS 조절 파라미터 (온디바이스 추론 지연 + 서버 백프레셔)
 // - 지연이 현재 간격의 90%를 넘으면(따라잡지 못함) 간격을 늘려 fps를 낮춘다.
 // - 지연이 현재 간격의 50% 미만으로 안정되면 기본 간격까지 서서히 되돌린다.
 const OVERLOAD_LATENCY_RATIO = 0.9;
 const RECOVERY_LATENCY_RATIO = 0.5;
 const INTERVAL_INCREASE_STEP_MS = 50;
 const INTERVAL_DECREASE_STEP_MS = 20;
-// 최저 5fps: 1fps까지 떨어지면 콘솔 Live Feed가 끊겨 보인다.
-// 온디바이스 추론 과부하는 detectingRef 게이트로 계속 완화한다.
+// 온디바이스 과부하 상한(~5fps). 서버 busy 힌트가 오면 이보다 더 낮출 수 있다.
 const MAX_REFLEX_INTERVAL_MS = 200;
+// 2026-07-21 P0: 서버 busy ack의 suggest_reflex_interval_ms 상한(~3.3fps).
+const MAX_SERVER_BUSY_INTERVAL_MS = 300;
+const SERVER_BUSY_HOLD_MS = 1500;
 
 export interface UseCameraReturn {
   cameraRef: React.RefObject<Camera | null>;
@@ -73,6 +75,14 @@ export interface UseCameraReturn {
   requestCameraPermission: () => Promise<boolean>;
   /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
   reportInferenceLatency: (latencyMs: number) => void;
+  /**
+   * 서버 ack 백프레셔(server_busy / suggest_reflex_interval_ms)를 반영한다.
+   * 2026-07-21 P0: 야외 과부하 시 단말 반사 송신률을 낮춰 큐 drop·늦은 판정을 줄인다.
+   */
+  reportServerLoad: (info: {
+    busy: boolean;
+    suggestIntervalMs?: number;
+  }) => void;
   /** true면 <Camera>가 photo 대신 frameProcessor(연속 스트림)로 구동돼야 한다. */
   useStreamCapture: boolean;
   /** useStreamCapture가 true일 때만 값이 있다. <Camera frameProcessor={...}>에 그대로 전달한다. */
@@ -107,6 +117,8 @@ export function useCamera(
   const baseIntervalRef = useRef(Math.floor(1000 / reflexFps));
   const currentIntervalRef = useRef(baseIntervalRef.current);
   const [currentReflexFps, setCurrentReflexFps] = useState(reflexFps);
+  // 서버 busy 힌트가 유효한 시각(이 시각 전까지는 온디바이스 복구로 간격을 줄이지 않음)
+  const serverBusyUntilRef = useRef(0);
 
   // 프레임 프로세서(worklet) 경로용 SharedValue. worklet(별도 JS 컨텍스트)과 메인
   // JS 스레드 간 상태 공유는 SharedValue로만 안전하다(일반 useRef는 worklet에서
@@ -114,29 +126,60 @@ export function useCamera(
   const intervalSharedValue = useSharedValue(currentIntervalRef.current);
   const lastCaptureTsShared = useSharedValue(0);
 
-  const reportInferenceLatency = useCallback((latencyMs: number) => {
-    if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
-    const base = baseIntervalRef.current;
-    const cur = currentIntervalRef.current;
-    let next = cur;
-
-    if (latencyMs > cur * OVERLOAD_LATENCY_RATIO) {
-      // 추론이 캡처 간격을 따라가지 못함 - fps를 낮춰 부하 경감 (SIGKILL 재발 방지)
-      next = Math.min(MAX_REFLEX_INTERVAL_MS, cur + INTERVAL_INCREASE_STEP_MS);
-    } else if (latencyMs < cur * RECOVERY_LATENCY_RATIO && cur > base) {
-      // 여유가 충분하면 기본 fps까지 서서히 복구
-      next = Math.max(base, cur - INTERVAL_DECREASE_STEP_MS);
-    }
-
-    if (next !== cur) {
+  const applyReflexInterval = useCallback(
+    (next: number, reason: string) => {
+      const cur = currentIntervalRef.current;
+      if (next === cur) return;
       currentIntervalRef.current = next;
       intervalSharedValue.value = next;
       setCurrentReflexFps(Math.round(1000 / next));
-      console.log(
-        `[Camera] 동적 FPS 조절: 반사 간격 ${cur}ms -> ${next}ms (추론 지연=${latencyMs.toFixed(1)}ms)`,
+      console.log(`[Camera] 동적 FPS 조절: 반사 간격 ${cur}ms -> ${next}ms (${reason})`);
+    },
+    [intervalSharedValue],
+  );
+
+  const reportInferenceLatency = useCallback(
+    (latencyMs: number) => {
+      if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+      const base = baseIntervalRef.current;
+      const cur = currentIntervalRef.current;
+      let next = cur;
+
+      if (latencyMs > cur * OVERLOAD_LATENCY_RATIO) {
+        next = Math.min(MAX_REFLEX_INTERVAL_MS, cur + INTERVAL_INCREASE_STEP_MS);
+      } else if (
+        latencyMs < cur * RECOVERY_LATENCY_RATIO &&
+        cur > base &&
+        Date.now() >= serverBusyUntilRef.current
+      ) {
+        next = Math.max(base, cur - INTERVAL_DECREASE_STEP_MS);
+      }
+
+      if (next !== cur) {
+        applyReflexInterval(next, `추론 지연=${latencyMs.toFixed(1)}ms`);
+      }
+    },
+    [applyReflexInterval],
+  );
+
+  const reportServerLoad = useCallback(
+    (info: { busy: boolean; suggestIntervalMs?: number }) => {
+      if (!info.busy) return;
+      const suggested =
+        typeof info.suggestIntervalMs === "number" && Number.isFinite(info.suggestIntervalMs)
+          ? info.suggestIntervalMs
+          : MAX_SERVER_BUSY_INTERVAL_MS;
+      const target = Math.min(
+        MAX_SERVER_BUSY_INTERVAL_MS,
+        Math.max(currentIntervalRef.current, Math.round(suggested)),
       );
-    }
-  }, [intervalSharedValue]);
+      serverBusyUntilRef.current = Date.now() + SERVER_BUSY_HOLD_MS;
+      if (target > currentIntervalRef.current) {
+        applyReflexInterval(target, `서버 busy suggest=${suggested}ms`);
+      }
+    },
+    [applyReflexInterval],
+  );
 
   const effectivePermission = isMockMode ? true : hasPermission;
 
@@ -363,6 +406,7 @@ export function useCamera(
     setRequiresFloat32,
     requestCameraPermission,
     reportInferenceLatency,
+    reportServerLoad,
     useStreamCapture,
     frameProcessor: useStreamCapture
       ? (captureProvider.frameProcessor as ReturnType<typeof useFrameProcessor>)

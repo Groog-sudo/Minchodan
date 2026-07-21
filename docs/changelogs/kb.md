@@ -3881,3 +3881,88 @@
   - `docs/mobile/android_handoff_kb_to_dg.md`: R-00=B, 기준 커밋 `bf2c0eb` 기록.
 - **관련 파일**: `client/src/components/CameraView.tsx`, `docs/mobile/android_handoff_kb_to_dg.md`, `docs/changelogs/kb.md`
 - **검증 결과**: `git diff bf2c0eb -- client/src/components/CameraView.tsx` 로직 본문 일치(기준선 주석 1줄만 추가).
+
+---
+
+### 2026-07-21 | 3단계 | head_level 오안내 완화 - 발화조건·클립 문구
+
+- **배경**: 외부 실측에서 `head_level_pole`(medium)이 반복되며 고정 클립 "머리위 위험 조심하세요"가 전봇대·지면 고정물에 부적절하게 들림.
+- **변경 내용**:
+  - `HEAD_LEVEL_ESCALATION_CLASSES`를 돌출·상단 설비 6종으로 축소(`pole`/`bollard` 등 지면 고정물 제외).
+  - `_evaluate_head_level`: **near만** 허용(medium/far 제외), 12시 회랑 유지.
+  - `head_level_gate`: bbox 하단 `BOTTOM_MAX_RATIO=0.55` 초과 시 제외, `MIN_AREA_RATIO=0.02`.
+  - 클립 문구를 "앞에 높은 장애물 조심하세요."로 재합성(`client`/`console` wav).
+  - 테스트·api_specification·stage6·behavior 문서 동기화.
+- **관련 파일**: `server/detection/gates/head_level_gate.py`, `server/detection/detection_pipeline.py`, `tests/test_detection.py`, `client/assets/sounds/reflex_clips/head_level_warning.wav`, `console/public/reflex_clips/head_level_warning.wav`, `docs/design/api_specification.md`, `docs/stage-guides/stage6_orchestration_design.md`, `docs/design/behavior_and_risk_insight.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 컨테이너 `pytest -k head_level` 7 passed. FastAPI restart 후 health 200.
+
+---
+
+### 2026-07-21 | 1·2·3·7단계 | P0/P1 과부하 백프레셔·추론 절감·guide drop
+
+- **배경**: 야외 실측에서 macOS CPU YOLO 포화 + `[StreamSplitter] 큐 가득참` drop이 누적되고, 디코드 후 route busy drop·늦은 인지 음성이 UX를 악화시킴. 처리량 자체보다 **신선한 소수 프레임**·CPU 낭비 제거·늦은 OTHER 안내 억제가 목표.
+- **변경 내용**:
+  - **P0 디코드 전 busy 스킵**: `route_sem` 잠금 또는 스트림 큐 full이면 OpenCV 디코드/라우팅을 건너뛰고 ack만 응답(`skipped_decode`).
+  - **P0 서버→단말 백프레셔**: ack에 `server_busy`/`suggest_reflex_interval_ms`(기본 250ms). 단말 `reportServerLoad`가 반사 캡처 간격을 상향(최대 300ms), busy hold 1.5s 동안 온디바이스 복구 억제.
+  - **P1 반사 seg 간헐**: `REFLEX_SEG_EVERY_N=3`(기본). det는 매 프레임, seg는 N마다. 노면 게이트는 `_last_reflex_surfaces`로 평가. 인지는 항상 seg.
+  - **P1 guide 대기열**: `GUIDE_PENDING_MAX` 6→2. 재생 중 OTHER는 대기열 미적재·즉시 drop.
+- **관련 파일**: `server/api/ws_router.py`, `server/capture/stream_splitter.py`, `server/detection/detection_pipeline.py`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `client/src/types/detection.ts`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `.venv`에서 `pytest tests/test_frame_decode.py tests/test_detection.py` 128 passed.
+- **비고**: fps↓는 장당 모델 정확도 하락이 아님. surface 반사는 주기 seg+캐시에 의존하므로 실측 확인 권장. 서버/단말 재기동·Metro reload 후 busy ack·동적 fps 로그 확인.
+
+---
+
+### 2026-07-21 | 7단계 | Near enter 시 행동 음성 클립 1회
+
+- **배경**: Near 반사가 beep-only(`beep_interval_ms<=100`)라 햅틱/비프만 나가고, 시각장애인 입장에서 다음 행동 단서(음성)가 없음. 인지 guide는 Near 비프에 선점되어 더 늦거나 끊김.
+- **변경 내용**:
+  - `useWebSocket`: 긴급이어도 `event_state=enter`이면 `playReflexClip` 1회(`enter-clip+beep`). `update`는 기존 beep-only.
+  - `audioEngine.playReflexClip`: 클립 재생 중 비프 덕킹(최대 3.5s 안전 타임아웃).
+  - `reflex_audio_specification.md` v1.3.8 채널 분기 갱신.
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/services/audioEngine.ts`, `docs/design/reflex_audio_specification.md`, `docs/changelogs/kb.md`
+- **검증 결과**: Metro reload 후 실기기 Near 진입 시 클립 1회 + 연속 비프/햅틱 확인 권장.
+
+---
+
+### 2026-07-21 | 7단계 | Near 행동 안내 미재생 수정
+
+- **배경**: 반사 탐지·햅틱은 되나 행동 음성이 안 들림. (1) enter만 클립이라 update만 오면 무음 (2) Near 비프 update가 후속 guide TTS를 stop (3) post_reflex 우선순위가 OTHER로 떨어져 묻힘.
+- **변경 내용**:
+  - 단말: track당 클립 1회(enter 또는 첫 알림), clear 시 리셋.
+  - 단말: Near 비프가 가이드를 stop하지 않고 덕킹만.
+  - 서버: 반사 전송 로그에 `event_state`/`beep_ms` 추가. post_reflex preset에 `clock_direction=12시`·`distance=near` 고정.
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/services/audioEngine.ts`, `server/detection/consumer.py`, `docs/changelogs/kb.md`
+- **검증 결과**: FastAPI restart + Metro reload 후 Near 진입 시 클립·후속 안내 실측 필요.
+
+---
+
+### 2026-07-21 | 7단계 | guide 단말 무음 수정 (비프 덕킹·binary 폴백)
+
+- **배경**: 서버 로그에 `전방 이동형 표지판 있어요` + `guide 전송`까지 있는데 단말에서 안 들림. Near 연속 비프(interval=0)가 가이드 시작 후에도 볼륨 1.0 고정, binary WAV 유실 시 폴백 없음.
+- **변경 내용**:
+  - 가이드/폴백 TTS 시작 시 Near 비프 즉시 덕킹, 종료 시 복구.
+  - `transport=binary`인데 1.2s 내 WAV 미도착 시 `speakFallback`로 동일 문구 재생.
+  - Blob 바이너리 수신 지원. 서버 guide 로그에 transport/text/clock/dist 추가.
+- **관련 파일**: `client/src/services/audioEngine.ts`, `client/src/hooks/useWebSocket.ts`, `server/detection/consumer.py`, `docs/changelogs/kb.md`
+
+### 2026-07-21 | 7단계 | Near 말 안내 침묵(비프만) 수정
+
+- **배경**: 실측에서 Near 비프/햅틱은 들리는데 `전방 차량 있어요` 말 안내가 거의 안 들림. 서버는 `avoidance fast lane`만 찍고 `guide 전송`이 생략됨.
+- **원인**: (1) 동일 `obj:car` 서명 30초 발화가치 억제가 post_reflex에도 적용 (2) 인지 guide gap 최소 8초 (3) Near 연속 비프 덕킹 볼륨 0.25가 말을 덮음 (4) preset 경로 `used_fast_lane=False`로 느린 TTS 경로.
+- **변경 내용**:
+  - post_reflex(preset)는 30초 동일서명 억제 생략. 오디오 겹침만 near=재생길이+1.5s(최소 2.5s)로 제한.
+  - `used_fast_lane=True`로 즉시 합성. 억제/쿨다운 로그 INFO.
+  - 단말 `DUCKED_BEEP_VOLUME` 0.25→0.08.
+- **관련 파일**: `server/detection/consumer.py`, `client/src/services/audioEngine.ts`, `tests/test_detection.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `TestApproachingCooldownShortcut` 3 passed. FastAPI 재시작 후 Near 재진입 시 guide 전송·단말 말 안내 실측 필요.
+
+
+---
+
+### 2026-07-21 | 3단계 | near_guide_speech_and_busy_backpressure
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Near 말안내 쿨다운·비프 덕킹 수정 및 P0/P1 과부하 백프레셔·seg 간헐 적용
+- **관련 파일**: `env.example`, `client/assets/sounds/reflex_clips/head_level_warning.wav`, `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/services/audioEngine.ts`, `client/src/types/detection.ts`, `console/public/reflex_clips/head_level_warning.wav`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `docs/design/behavior_and_risk_insight.md`, `docs/design/reflex_audio_specification.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage6_orchestration_design.md`, `server/api/ws_router.py`, `server/capture/stream_splitter.py`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `server/detection/gates/head_level_gate.py`, `tests/test_detection.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

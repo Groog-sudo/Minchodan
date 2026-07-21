@@ -25,9 +25,11 @@ const PAN_BUCKETS: readonly number[] = [-1.0, -0.5, 0.0, 0.5, 1.0];
 const HIGH_DANGER_INTERVAL_MS = 100;
 // 가이드 재생 중 저위험(3~4단계) 비프의 덕킹 볼륨. 0으로 완전히 죽이지 않고
 // 존재감만 남겨, 방향성 안내 자체는 계속 인지할 수 있게 한다.
-const DUCKED_BEEP_VOLUME = 0.25;
+/** 가이드/클립 재생 중 Near 연속 비프 볼륨. 0.25는 말 안내를 덮어 실측에서 비프만 들림. */
+const DUCKED_BEEP_VOLUME = 0.08;
 /** Near/인지 음성 안내 대기열 상한. 초과 시 최하위 우선순위 항목을 drop한다(동률이면 오래된 쪽). */
-const GUIDE_PENDING_MAX = 6;
+/** 2026-07-21 P1: 6→2로 축소해 늦은 OTHER 안내 적체를 줄인다. */
+const GUIDE_PENDING_MAX = 2;
 /**
  * setSttActive(true) 이후 응답 콜백이 끝내 오지 않을 경우의 안전 상한(ms).
  * useWebSocket.ts의 STT_INTERACTION_TIMEOUT_MS와 동일 값을 쓴다 - 두 백스톱이
@@ -92,6 +94,14 @@ class AudioEngine {
    * 활성 중에는 위험 안내(NEAR 포함)·비프·반사 클립을 막아 질문/길찾기를 방해하지 않는다.
    */
   private sttActive = false;
+  /**
+   * 2026-07-21: Near enter 반사 클립 재생 중이면 비프를 DUCKED_BEEP_VOLUME으로 낮춘다.
+   * 말이 비프에 가려지지 않게 하기 위함. 클립 종료 또는 안전 타임아웃으로 해제.
+   */
+  private reflexClipDucking = false;
+  private reflexClipDuckTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 클립 didJustFinish 미도착 대비 덕킹 최대 유지(ms). */
+  private static readonly REFLEX_CLIP_DUCK_MAX_MS = 3500;
   /**
    * 2026-07-20: setSttActive(true) 호출 지점(CameraView.tsx 녹음 시작, useWebSocket.ts
    * 응답 수신)과 무관하게 일괄 적용되는 안전 상한 타이머. 이전에는 useWebSocket.ts의
@@ -283,24 +293,15 @@ class AudioEngine {
     this.currentPanning = panning;
     this.activeBucket = bucket;
 
-    // Near/고위험 비프(2순위)는 STT가 아닐 때만 MED/기타 가이드를 선점한다.
-    // STT(1순위) 재생 중에는 절대 stopGuideAudio 하지 않는다(위에서 early-return).
+    // 2026-07-21: Near 비프 update가 후속 행동 안내(post_reflex guide)를 끊지 않게 한다.
+    // 긴급 비프는 덕킹만 하고, STT가 아닌 가이드 음성은 유지한다(선점 stop 제거).
     const isHighDanger = intervalMs <= HIGH_DANGER_INTERVAL_MS;
     const wasGuidePlaying = this.isGuidePlaying;
     const activePri = this.activeGuidePriority;
-    if (isHighDanger && wasGuidePlaying && activePri > 0 && activePri < GUIDE_PRIORITY.FRONT_NEAR) {
-      // Near 비프가 MED/기타 음성보다 우선. Near 음성(동급)은 덕킹만.
-      this.stopGuideAudio();
-    }
-    const peakVolume =
-      !isHighDanger && this.isGuidePlaying
-        ? DUCKED_BEEP_VOLUME
-        : isHighDanger && this.isGuidePlaying && this.activeGuidePriority >= GUIDE_PRIORITY.FRONT_NEAR
-          ? DUCKED_BEEP_VOLUME
-          : 1.0;
-    if (wasGuidePlaying) {
+    const peakVolume = this.resolveBeepPeakVolume(isHighDanger);
+    if (wasGuidePlaying || this.reflexClipDucking) {
       console.log(
-        `[AudioEngine][DEBUG] 비프-가이드 우선순위: intervalMs=${intervalMs}, isHighDanger=${isHighDanger}, activePri=${activePri}, peak=${peakVolume}`,
+        `[AudioEngine][DEBUG] 비프-가이드 덕킹: intervalMs=${intervalMs}, isHighDanger=${isHighDanger}, activePri=${activePri}, peak=${peakVolume}, clipDuck=${this.reflexClipDucking}`,
       );
     }
 
@@ -326,12 +327,8 @@ class AudioEngine {
 
         this.beepTimer = setInterval(() => {
           if (this.activeBucket === bucket) {
-            // 매 펄스마다 가이드 재생 상태가 바뀌었을 수 있어 그때그때 볼륨을 재계산한다.
-            const pulseVolume =
-              this.isGuidePlaying &&
-              (this.activeGuidePriority >= GUIDE_PRIORITY.FRONT_NEAR || !isHighDanger)
-                ? DUCKED_BEEP_VOLUME
-                : 1.0;
+            // 매 펄스마다 가이드/클립 재생 상태가 바뀌었을 수 있어 볼륨을 재계산한다.
+            const pulseVolume = this.resolveBeepPeakVolume(isHighDanger);
             player.volume = pulseVolume; // 삐-
             setTimeout(() => {
               if (this.currentBeepInterval === intervalMs && this.activeBucket === bucket) {
@@ -344,6 +341,62 @@ class AudioEngine {
     } catch (err) {
       console.error("[AudioEngine] 비프음 재생 실패:", err);
     }
+  }
+
+  /**
+   * 비프 피크 볼륨. 반사 클립 덕킹 또는 가이드 재생 중이면 DUCKED_BEEP_VOLUME.
+   */
+  private resolveBeepPeakVolume(isHighDanger: boolean): number {
+    if (this.reflexClipDucking) {
+      return DUCKED_BEEP_VOLUME;
+    }
+    // 2026-07-21: Near 비프 중에도 post_reflex/인지 안내가 들리도록 가이드 재생 시 항상 덕킹.
+    if (this.isGuidePlaying) {
+      return DUCKED_BEEP_VOLUME;
+    }
+    void isHighDanger;
+    return 1.0;
+  }
+
+  private beginReflexClipDucking(): void {
+    this.setBeepDucked(true);
+    if (this.reflexClipDuckTimer) {
+      clearTimeout(this.reflexClipDuckTimer);
+      this.reflexClipDuckTimer = null;
+    }
+    this.reflexClipDuckTimer = setTimeout(() => {
+      this.endReflexClipDucking();
+    }, AudioEngine.REFLEX_CLIP_DUCK_MAX_MS);
+  }
+
+  private endReflexClipDucking(): void {
+    if (this.reflexClipDuckTimer) {
+      clearTimeout(this.reflexClipDuckTimer);
+      this.reflexClipDuckTimer = null;
+    }
+    // 가이드 음성이 아직 재생 중이면 덕킹 유지(가이드 종료 시 unduck).
+    if (this.isGuidePlaying) return;
+    this.setBeepDucked(false);
+  }
+
+  /** 가이드/클립 재생 중 Near 연속 비프를 즉시 낮춘다(재생 시작 시점 볼륨 고정 문제 해소). */
+  private setBeepDucked(ducked: boolean): void {
+    this.reflexClipDucking = ducked;
+    const player = this.panPlayers.get(this.activeBucket);
+    if (!player || this.currentBeepInterval < 0) return;
+    if (this.currentBeepInterval === 0) {
+      player.volume = ducked ? DUCKED_BEEP_VOLUME : this.resolveBeepPeakVolume(true);
+    }
+  }
+
+  /** 가이드 음성 시작 시 호출 - 연속 Near 비프가 안내를 덮지 않게 한다. */
+  private duckBeepForGuideSpeech(): void {
+    this.setBeepDucked(true);
+  }
+
+  private unduckBeepAfterGuideSpeech(): void {
+    if (this.reflexClipDuckTimer) return; // 클립 덕킹 타이머가 관리 중
+    this.setBeepDucked(false);
   }
 
   /**
@@ -518,7 +571,8 @@ class AudioEngine {
   /**
    * Near/인지 음성을 대기열에 넣거나 즉시 재생한다.
    * - 재생 중 + 상위 우선순위: 선점 즉시 재생(큐의 하위 우선순위는 정리)
-   * - 재생 중 + 동일/하위 우선순위: 대기열(최대 6, 초과 시 최하위 우선순위부터 drop)
+   * - 재생 중 + 동일/하위 우선순위: 대기열(최대 GUIDE_PENDING_MAX, 초과 시 최하위부터 drop)
+   * - 재생 중 + OTHER: 대기열에 넣지 않고 즉시 drop(늦은 음성 어긋남 완화, 2026-07-21 P1)
    * - 유휴: 즉시 재생
    * 재생 종료 시 대기열에서 최고 우선순위 1건만 재생하고 나머지는 폐기.
    */
@@ -532,6 +586,14 @@ class AudioEngine {
       if (item.priority > this.activeGuidePriority) {
         this.discardPendingGuidesBelow(item.priority);
         void this.playGuideImmediate(item);
+        return;
+      }
+      // 늦은 인지 안내(OTHER)는 대기열에 쌓이지 않게 즉시 폐기한다.
+      if (item.priority <= GUIDE_PRIORITY.OTHER) {
+        console.log(
+          `[AudioEngine] 재생 중 OTHER 안내 즉시 폐기 kind=${item.kind} priority=${item.priority}`,
+        );
+        item.onComplete?.();
         return;
       }
       this.pendingGuides.push(item);
@@ -586,6 +648,7 @@ class AudioEngine {
     if (epoch !== this.guideEpoch) return;
     this.isGuidePlaying = false;
     this.clearGuidePriority();
+    this.unduckBeepAfterGuideSpeech();
     onComplete?.();
     this.drainHighestPriorityPendingGuide();
   }
@@ -691,6 +754,7 @@ class AudioEngine {
     // 선점: 단말 TTS가 재생 중이면 중단. 웜 플레이어는 replace()로 소스만 교체.
     Speech.stop();
     await this.ensureSession();
+    this.duckBeepForGuideSpeech();
 
     // [2026-07-09 실측 수정] Paths.cache 대신 Paths.document 사용 - 사유는
     // playGuideAudio()의 동일 수정 주석 참조(재생 도중 시스템의 캐시 정리로
@@ -758,6 +822,7 @@ class AudioEngine {
       console.error("[AudioEngine] 가이드 음성(bytes) 재생 실패:", err);
       this.isGuidePlaying = false;
       this.clearGuidePriority();
+      this.unduckBeepAfterGuideSpeech();
       try {
         file.delete();
       } catch {
@@ -867,6 +932,7 @@ class AudioEngine {
 
       this.isGuidePlaying = true;
       this.setGuidePriority(priority);
+      this.duckBeepForGuideSpeech();
       Speech.speak(text, {
         language: "ko-KR",
         voice,
@@ -894,6 +960,7 @@ class AudioEngine {
           if (playEpoch !== this.guideEpoch) return;
           this.isGuidePlaying = false;
           this.clearGuidePriority();
+          this.unduckBeepAfterGuideSpeech();
           onComplete?.();
         },
         onError: (err) => {
@@ -979,8 +1046,10 @@ class AudioEngine {
    * 반사 경로 사전합성 음성 클립을 1회 재생한다(비프/햅틱과 별개 채널).
    * clipPath는 서버 reflex_alert 페이로드의 clip 필드(예: "reflex_clips/high_front.wav").
    *
-   * 호출측(useWebSocket)이 긴급(beep_interval_ms<=100)일 때는 호출하지 않는다:
-   * 긴급은 핑퐁 비프만, 여유가 있을 때만 음성 클립/인지 TTS를 쓴다.
+   * 호출측(useWebSocket) 정책 (2026-07-21):
+   * - Mid/Low(beep_interval_ms>100): 매 반사마다 클립.
+   * - Near 긴급(<=100) update: 클립 없음(비프+햅틱만).
+   * - Near episode enter: 클립 1회(다음 행동 단서). 재생 중 비프는 덕킹.
    */
   public async playReflexClip(clipPath: string): Promise<void> {
     if (this.sttActive) {
@@ -1005,15 +1074,18 @@ class AudioEngine {
       ) {
         this.stopGuideAudio();
       }
+      this.beginReflexClipDucking();
       const clipPlayer = createAudioPlayer(uri);
       clipPlayer.volume = 1.0;
       clipPlayer.addListener("playbackStatusUpdate", (status) => {
         if (status.didJustFinish) {
           clipPlayer.remove();
+          this.endReflexClipDucking();
         }
       });
       clipPlayer.play();
     } catch (err) {
+      this.endReflexClipDucking();
       console.error("[AudioEngine] 반사 클립 재생 실패:", err);
     }
   }

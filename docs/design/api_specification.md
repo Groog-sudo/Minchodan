@@ -239,13 +239,20 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
   "type": "ack",
   "event_id": "uuid",
   "frame_id": 42,
-  "decode_ms": 12
+  "decode_ms": 12,
+  "server_busy": false,
+  "reflex_qsize": 0,
+  "skipped_decode": false
 }
 ```
 
 | 필드 | 설명 |
 | :--- | :--- |
-| `decode_ms` | 서버 수신·디코딩 소요 시간 (ms) |
+| `decode_ms` | 서버 수신·디코딩 소요 시간 (ms). 디코드 전 스킵 시 `0` |
+| `server_busy` | **2026-07-21 P0.** 추론 세마포어 잠금 또는 스트림 큐 full이면 `true`. 단말은 반사 fps를 낮춘다 |
+| `reflex_qsize` | 반사 asyncio.Queue 현재 깊이 (관측용) |
+| `skipped_decode` | 디코드·라우팅을 건너뛴 경우 `true` |
+| `suggest_reflex_interval_ms` | `server_busy=true`일 때만. 단말이 적용할 반사 캡처 간격 힌트(ms, 기본 250≈4fps). 환경변수 `SERVER_BUSY_SUGGEST_INTERVAL_MS` |
 
 ---
 
@@ -312,7 +319,7 @@ Tailscale, ngrok, LAN 등 네트워크 경로별 순수 WebSocket RTT를 비교�
 | `high_front-left.wav` | front-left | 고위험 객체 발밑 근접, 좌측 회랑 | `reflex_gate.py` |
 | `high_front-right.wav` | front-right | 고위험 객체 발밑 근접, 우측 회랑 | `reflex_gate.py` |
 | `surface_caution.wav` | front | 노면 P0 클래스(`caution`, 계단/맨홀/그레이팅 통합) 하단 검출 | `surface_gate.py` |
-| `head_level_warning.wav` | 탐지 방향 | 중위험 클래스가 화면 상단 40%(머리 높이)에서 검출돼 고위험으로 격상. **2026-07-09 신규** | `head_level_gate.py` |
+| `head_level_warning.wav` | 탐지 방향 | Near·12시 회랑에서 상단 돌출 후보(표지판·제어기함 등) 검출 시. 문구: "앞에 높은 장애물 조심하세요." (**2026-07-21**: 지면 고정물 pole/bollard 제외, medium 제외, bbox 하단 지접촉 제외. 구 문구 "머리위 위험" 폐기) | `head_level_gate.py` |
 
 ---
 

@@ -1355,17 +1355,17 @@ class TestSpeechWorthyFilter:
     def test_head_level_skips_far_zone(self):
         """far 구역 head_level은 반사 격상하지 않는다(2026-07-20)."""
         far_det = Detection(
-            class_name="bollard",
+            class_name="movable_signage",
             confidence=0.9,
-            bbox=BBox(x=280.0, y=20.0, w=40.0, h=80.0),
+            bbox=BBox(x=280.0, y=20.0, w=80.0, h=100.0),
             track_id="T-far",
             hit_count=5,
             effective_distance_zone="far",
         )
         near_det = Detection(
-            class_name="bollard",
+            class_name="movable_signage",
             confidence=0.9,
-            bbox=BBox(x=280.0, y=20.0, w=40.0, h=80.0),
+            bbox=BBox(x=280.0, y=20.0, w=80.0, h=100.0),
             track_id="T-near",
             hit_count=5,
             effective_distance_zone="near",
@@ -1373,14 +1373,51 @@ class TestSpeechWorthyFilter:
         assert DetectionPipeline._evaluate_head_level([far_det], 480.0, 640.0) is None
         alert = DetectionPipeline._evaluate_head_level([near_det], 480.0, 640.0)
         assert alert is not None
-        assert alert.alert_id == "head_level_bollard"
+        assert alert.alert_id == "head_level_movable_signage"
+
+    def test_head_level_skips_medium_zone(self):
+        """medium은 head_level 미발동(2026-07-21, pole 오안내 실측)."""
+        med_det = Detection(
+            class_name="movable_signage",
+            confidence=0.9,
+            bbox=BBox(x=280.0, y=20.0, w=80.0, h=100.0),
+            track_id="T-med",
+            hit_count=5,
+            effective_distance_zone="medium",
+        )
+        assert DetectionPipeline._evaluate_head_level([med_det], 480.0, 640.0) is None
+
+    def test_head_level_skips_ground_anchored_pole(self):
+        """지면 고정 클래스(pole)는 목록에서 제외되어 격상하지 않는다."""
+        pole_det = Detection(
+            class_name="pole",
+            confidence=0.9,
+            bbox=BBox(x=280.0, y=20.0, w=40.0, h=80.0),
+            track_id="T-pole",
+            hit_count=5,
+            effective_distance_zone="near",
+        )
+        assert DetectionPipeline._evaluate_head_level([pole_det], 480.0, 640.0) is None
+
+    def test_head_level_skips_bbox_reaching_lower_frame(self):
+        """bbox 하단이 화면 하단부까지 닿으면 상단 돌출로 보지 않는다."""
+        tall_det = Detection(
+            class_name="movable_signage",
+            confidence=0.9,
+            # center는 상단 40% 안이지만 bottom > 0.55
+            bbox=BBox(x=280.0, y=10.0, w=80.0, h=280.0),
+            track_id="T-tall",
+            hit_count=5,
+            effective_distance_zone="near",
+        )
+        assert DetectionPipeline._evaluate_head_level([tall_det], 480.0, 640.0) is None
 
     def test_head_level_skips_near_outside_speech_front(self):
         """near여도 안내용 12시 회랑 밖이면 head_level 미발동."""
         side_det = Detection(
-            class_name="bollard",
+            class_name="movable_signage",
             confidence=0.9,
-            bbox=BBox(x=20.0, y=20.0, w=40.0, h=80.0),
+            bbox=BBox(x=20.0, y=20.0, w=80.0, h=100.0),
             track_id="T-side",
             hit_count=5,
             effective_distance_zone="near",
@@ -1504,6 +1541,23 @@ class TestApproachingCooldownShortcut:
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         gap = consumer._required_guide_gap_sec("dev1", det, frame, "medium")
         assert gap >= 8.0
+
+    def test_near_post_reflex_uses_short_gap(self):
+        """Near post_reflex는 8초가 아니라 재생길이+마진(최소 2.5s)만 보장."""
+        consumer = DetectionConsumer()
+        consumer._last_guide_duration_sec["dev1"] = 2.2
+        det = Detection(
+            class_name="car",
+            confidence=0.9,
+            bbox=BBox(x=300.0, y=200.0, w=80.0, h=100.0),
+            track_id="T-0010",
+            direction="unknown",
+            hit_count=4,
+        )
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        gap = consumer._required_guide_gap_sec("dev1", det, frame, "near")
+        assert gap == 2.2 + 1.5
+        assert gap < 8.0
 
 
 class TestSttActiveCognitiveSuppression:

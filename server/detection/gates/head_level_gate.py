@@ -26,11 +26,16 @@ from server.detection.schemas import Detection, ReflexAlert
 # 인지 경로(mid, 수 초 지연되는 LLM 안내)로만 흘러가 충돌 전에 경보가 늦을 수 있다.
 # =========================================================================
 
-# 화면 상단 이 비율 이내에 물체 중심이 있으면 "머리 위" 후보로 본다.
+# 화면 상단 이 비율 이내에 물체 중심이 있으면 상단(머리·어깨 높이) 후보로 본다.
 # 너무 보수적으로 잡으면 천장/표지판까지 과경보가 나고, 너무 좁히면 실제 상체 위험을 놓친다.
 TOP_REGION_RATIO = 0.40
 # 오탐 방지를 위한 최소 confidence (reflex_gate.py의 HIGH_RISK_CLASSES 수준과 동일하게 보수적으로).
 MIN_CONFIDENCE = 0.5
+# 2026-07-21: bbox 하단이 이 비율을 넘으면 지면 접촉 객체(전봇대·볼라드 등)로 보고 제외.
+# 진짜 상단 돌출은 화면 하단에 닿지 않는 경우가 많다(원근으로 "위에만 보이는" 지면 물체 오탐 차단).
+BOTTOM_MAX_RATIO = 0.55
+# Near에서 너무 작은 상단 박스(원경 오탐) 제외.
+MIN_AREA_RATIO = 0.02
 
 
 def head_level_gate(
@@ -39,10 +44,14 @@ def head_level_gate(
     frame_width: float,
     escalation_classes: frozenset[str],
 ) -> ReflexAlert | None:
-    """중위험(mid) 클래스 객체가 화면 상단 40% 영역(머리 높이)에 위치하면 고위험으로 격상한다.
+    """상단 돌출 후보 클래스가 머리·어깨 높이 기하를 만족하면 고위험으로 격상한다.
 
     escalation_classes: 격상 대상 클래스 집합. 호출측(detection_pipeline)이
     HEAD_LEVEL_ESCALATION_CLASSES를 전달한다(인지 mid MID_RISK_CLASSES와 분리).
+
+    2026-07-21: 지면 고정물(pole/bollard 등)이 원근으로 화면 상단에만 잡혀
+    "머리위 위험"으로 오안내되던 필드 오탐을 막기 위해, bbox 하단이 화면 하단부까지
+    닿으면 제외하고 최소 면적비도 요구한다.
     """
     # 💡 [면접 대비 주석]
     # 격상 대상 클래스를 이 파일에 또 따로 하드코딩하지 않고 detection_pipeline에서 주입받는 이유:
@@ -58,7 +67,11 @@ def head_level_gate(
     if detection.hit_count < MIN_HIT_COUNT:
         return None
 
-    if frame_height <= 0:
+    if frame_height <= 0 or frame_width <= 0:
+        return None
+
+    area_ratio = (detection.bbox.w * detection.bbox.h) / (frame_width * frame_height)
+    if area_ratio < MIN_AREA_RATIO:
         return None
 
     center_y = detection.bbox.y + detection.bbox.h / 2
@@ -66,9 +79,13 @@ def head_level_gate(
     if center_y_ratio > TOP_REGION_RATIO:
         return None
 
+    bottom_ratio = (detection.bbox.y + detection.bbox.h) / frame_height
+    if bottom_ratio > BOTTOM_MAX_RATIO:
+        return None
+
     direction = estimate_direction(detection.bbox, frame_width, distance_class="near")
     center_x = detection.bbox.x + detection.bbox.w / 2
-    panning = (center_x / frame_width) * 2 - 1.0 if frame_width > 0 else 0.0
+    panning = (center_x / frame_width) * 2 - 1.0
     panning = max(-1.0, min(1.0, panning))
 
     return ReflexAlert(

@@ -65,7 +65,7 @@
 | 위험 등급 (Risk Level) | 보행이론적 정의 및 영향 | 대상 탐지 클래스 및 세그먼트 | 시스템 액션 및 타임 필드 |
 | :--- | :--- | :--- | :--- |
 | **🚨 고위험<br>(High / Reflex)** | - 직접적인 신체 충돌 위협이 존재함.<br>- 낙상, 낭떠러지 추락 등 즉각적인 상해 유발 환경. | (실제 구현, `reflex_gate.py`/`surface_gate.py` 기준) 전방 이동체 `car, truck, bus, motorcycle, scooter`.<br>- 노면 P0: `caution`(계단/맨홀/그레이팅 통합 클래스). | **반사 경로(Reflex Path) 가동**<br>- LLM 및 실시간 TTS 절대 경유 금지.<br>- RTT/지연 최소화하여 사전합성 고정 클립 즉시 재생 (`< 300ms`). |
-| **⚠️ 중위험<br>(Mid / Cognitive)** | - 직접 충돌은 아니나 **보행 경로 수정**(보도 이탈·노면 위험)을 음성으로 안내해야 하는 환경. | (2026-07-14~) L1 `MID_RISK_CLASSES`는 **공집합** — 객체 mid 없음. `is_departing_confirmed` 또는 노면 `caution`(P0 미도달)/`roadway`만 mid. 정적 장애물 18종은 `HEAD_LEVEL_ESCALATION_CLASSES`(상체 격상 반사 전용). | **인지 경로(Cognitive Path) 가동**<br>- 노면 이탈·비P0 노면 또는 반사 후 800ms 지연 인지·패스트 레인.<br>- LangGraph L1/L2/L3 및 RAG 거쳐 TTS 송출. |
+| **⚠️ 중위험<br>(Mid / Cognitive)** | - 직접 충돌은 아니나 **보행 경로 수정**(보도 이탈·노면 위험)을 음성으로 안내해야 하는 환경. | (2026-07-14~) L1 `MID_RISK_CLASSES`는 **공집합** — 객체 mid 없음. `is_departing_confirmed` 또는 노면 `caution`(P0 미도달)/`roadway`만 mid. 상단 돌출 후보는 `HEAD_LEVEL_ESCALATION_CLASSES`(2026-07-21: 6종, near·기하 조건). | **인지 경로(Cognitive Path) 가동**<br>- 노면 이탈·비P0 노면 또는 반사 후 800ms 지연 인지·패스트 레인.<br>- LangGraph L1/L2/L3 및 RAG 거쳐 TTS 송출. |
 | **ℹ️ 저위험/단서<br>(Low / Clue)** | - 안전 보행의 **단서(Positive Clues)** 및 공간 정의를 돕는 **랜드마크(Landmark)** 역할.<br>- 보행 정위(Orientation)의 보조 지표. | - 정상 **점자블록(Braille Block, `braille_normal`)**.<br>- 안전한 보도 인도면(`sidewalk_normal`).<br>- 정보성 클래스(`person, cat, dog, traffic_light, traffic_sign, stop`). | **인지 경로 가이드 강화**<br>- 보행 정렬 보정 정보 전송.<br>- 랜드마크 도달 시 확인 피드백 제공 (예: "점자블록 유도선 상에 진입했습니다"). |
 
 > **2026-07-07 정정 및 버그 수정**: 최초 제안 시점에는 킥보드/오토바이/차량/이동 중인 사람을 고위험으로, 가로수·소화전·보행로 적치물을 중위험으로, 횡단보도를 저위험(랜드마크)으로 구상했다. 실제 구현을 조사한 결과 `surface_gate.py`의 P0 노면 클래스명이 실제 4클래스 모델과 전혀 안 맞아 **노면 즉시경보가 한 번도 발동하지 않았고**, `l1_classifier.py`/`detection_pipeline.py`의 중위험 분류기 2개도 서로 다른 어휘(COCO 잔재, `kickboard`/`pothole`/`manhole`/`construction_cone` 등 실재하지 않는 클래스명)를 쓰며 어긋나 있던 **실제 코드 결함**임을 확인하고, 위 표를 실제 코드 기준으로 수정 완료했다(가로수/소화전/보행로 적치물도 이제 중위험으로 정상 반영됨). `tests/test_langgraph.py::TestRiskClassifierConsistency`가 재발을 방지한다.
@@ -78,7 +78,7 @@
 
 1. **상체 보호법 (Upper Body Protection) 보완**
    - **이론**: 머리나 어깨 등 상체 높이에 있는 나뭇가지, 열려 있는 트럭 적재함 등은 흰지팡이로 감지하기 힘들어 충돌 사고 위험이 매우 높습니다.
-   - **AI 대응(구현됨, 2026-07-09~)**: `server/detection/gates/head_level_gate.py` — `HEAD_LEVEL_ESCALATION_CLASSES` 18종이 화면 상단 40%에 있으면 `head_level_warning` 반사 클립 즉시 재생.
+   - **AI 대응(구현됨, 2026-07-09~, 2026-07-21 강화)**: `head_level_gate.py` — 상단 돌출 후보 6종이 Near·12시 회랑·상단 기하(하단 지면 미접촉)를 만족하면 `head_level_warning` 반사 클립("앞에 높은 장애물 조심하세요.") 재생. 지면 고정물(pole/bollard 등)·medium은 제외.
    - **2026-07-07 현황(구)**: Y축 격상 미구현 → **2026-07-09 구현 완료**. 2026-07-17 Option A로 인지 mid 객체 목록과 격상 목록 분리.
 2. **햅틱(Haptic) 패턴 이중화**
    - 보행지도사 이론 상 시각장애인은 촉각에 고도로 의존합니다.
