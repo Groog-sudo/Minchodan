@@ -3966,3 +3966,15 @@
   - Near 말안내 쿨다운·비프 덕킹 수정 및 P0/P1 과부하 백프레셔·seg 간헐 적용
 - **관련 파일**: `env.example`, `client/assets/sounds/reflex_clips/head_level_warning.wav`, `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/hooks/useWebSocket.ts`, `client/src/services/audioEngine.ts`, `client/src/types/detection.ts`, `console/public/reflex_clips/head_level_warning.wav`, `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `docs/design/behavior_and_risk_insight.md`, `docs/design/reflex_audio_specification.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage6_orchestration_design.md`, `server/api/ws_router.py`, `server/capture/stream_splitter.py`, `server/detection/consumer.py`, `server/detection/detection_pipeline.py`, `server/detection/gates/head_level_gate.py`, `tests/test_detection.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-21 | 문서 | 시연/테스트 장비 제원 인벤토리 신설 및 rpi-network-profile-switcher 관련 문서 링크 추가
+
+- **배경**: 이전 항목(다중 에이전트 노출 정합, 커밋 `1a51c31`)에 이어, 시연 테스트 기기 체크를 위해 팀이 사용 중인 4개 장비(LLM/GPU 추론 서버, Mac mini 개발 머신, iPhone 16 Pro Max 클라이언트, Raspberry Pi 5B DB) 제원을 한곳에 모아달라는 요청. 이어서 이 제원을 `rpi-network-profile-switcher` 스킬에 반영해야 하는지 검토 요청 - 스킬의 실행 경계(Raspberry Pi 네트워크 프로필 전환)를 벗어나는 서버·Mac mini·iPhone 제원까지 스킬 본문에 넣는 건 범위 확장이자 단일 출처 원칙 위반이라 판단해, 스킬 본문에는 제원을 복사하지 않고 인벤토리 문서로 링크만 연결하기로 결정.
+- **변경 내용**:
+  - `docs/ops/demo_test_device_inventory.md` 신규: 서버(Windows i9-13950HX+RTX 4090)·Mac mini(M4 Pro)는 실측 스펙 기록, iPhone 16 Pro Max(칩/RAM/저장용량 미기록)·Raspberry Pi 5B(SSD 용량·OS 버전은 `db_tailscale_guide/README.md`의 의도적 비공개 정책)는 미확인 항목을 명시적으로 구분해 기록. `docs/README.md` 인덱스에 등재(v0.14.4→v0.14.5).
+  - `.agents/skills/rpi-network-profile-switcher/SKILL.md`(+`.claude/skills/` 미러): "관련 문서"에 `demo_test_device_inventory.md` 링크 1줄만 추가(v1.0.1→v1.0.2). 장비 제원 본문은 스킬에 중복 기재하지 않고 단일 출처(인벤토리 문서)만 유지.
+- **관련 파일**: `docs/ops/demo_test_device_inventory.md`, `docs/README.md`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`
+- **검증 결과**: `python scripts/validate_agent_rules.py` 6/6 PASS. `diff -rq .agents/skills/rpi-network-profile-switcher .claude/skills/rpi-network-profile-switcher` 완전 일치.
+- **비고**: iPhone 16 Pro Max 하드웨어 제원(칩/RAM/저장용량)·Raspberry Pi SSD 정확한 용량은 담당자 확인 후 인벤토리 문서에 채워 넣어야 함. 이 커밋 시점에 작업 트리에 있던 별도 미검증 작업(Near/Medium 오디오 완주 우선순위 수정 - `audioEngine.ts`/`consumer.py`/`test_detection.py`/`reflex_audio_specification.md`)은 무관한 작업이라 이번 커밋에서 의도적으로 제외하고 `git stash`로 보존함(추후 별도 검증·커밋 필요).
