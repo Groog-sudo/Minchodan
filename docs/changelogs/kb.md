@@ -4036,3 +4036,34 @@
   - Near 완주·Medium 쿨다운 슬롯 분리 및 update delayed TTS cancel 방지
 - **관련 파일**: `lient/src/services/audioEngine.ts`, `docs/changelogs/kb.md`, `docs/design/reflex_audio_specification.md`, `server/detection/consumer.py`, `tests/test_detection.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-21 | 콘솔 | Live Feed 2계층 거리/통로 오버레이
+
+- **배경**: area_ratio SSOT와 원근 호·통로 ROI가 한 겹으로 섞여 "미디엄 지역인데 FAR 태그" 오해가 생김. 권장 2계층(L1 PATH ROI + L2 거리 호 근사)을 콘솔에 우선 반영.
+- **변경 내용**:
+  - `LiveCameraFeed.tsx`: L1 단말과 동일 PATH ROI 사다리꼴(점선 cyan), L2 `heuristic_m=0.22/sqrt(a)` 경계(~0.7m/~1.3m)로 접촉 Y를 맞춘 Near/Med 호, 라벨에 SSOT/근사 구분. (등면적 참조 박스는 불필요로 제거)
+  - BBox 색·태그는 기존처럼 `effective_distance_zone` 유지(판정 정본).
+- **관련 파일**: `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: IDE 린트 이상 없음. 콘솔 Live Feed에서 L1/L2 표시 실측 필요.
+
+---
+
+### 2026-07-21 | 클라이언트 | CameraView 2계층 거리/통로 오버레이 (콘솔 정합)
+
+- **배경**: 콘솔 Live Feed에 반영한 L1 PATH ROI + L2 거리 호 도식을 단말에도 동일 적용.
+- **변경 내용**:
+  - `CameraView.tsx` `DistanceZoneOverlay`: PATH ROI 사다리꼴(점선 cyan) + heuristic_m(~0.7m/~1.3m) 접촉 Y 호, SSOT/근사 구분 라벨. 등면적 박스는 콘솔과 같이 미포함. 반사 ROI 필터 로직은 유지.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: Metro reload 후 탐지 ON 시 L1/L2 표시 실측 필요.
+
+---
+
+### 2026-07-21 | 2단계 | dual_layer_distance_overlay
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 콘솔·앱 Live Feed에 L1 PATH ROI와 L2 거리 호 2계층 도식 정합
+- **관련 파일**: `lient/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
