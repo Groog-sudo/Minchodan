@@ -1,7 +1,7 @@
 # 시연/테스트 장비 제원 인벤토리
 
 > **작성일**: 2026-07-21
-> **버전**: v1.1.0 (2026-07-21 네트워크 토폴로지 확정 반영: LLM을 GPU 서버에서 Mac mini로 분리, 서버-LLM-DB LAN 연결 + 아이폰-서버 Tailscale 연결. 이전 v1.0.0 이력 유지: 4개 장비 제원 최초 기록)
+> **버전**: v1.1.1 (2026-07-21 Mac mini Ollama 시연 전 keepalive 스크립트 등재. 이전 v1.1.0 이력 유지: 네트워크 토폴로지 확정 반영: LLM을 GPU 서버에서 Mac mini로 분리, 서버-LLM-DB LAN 연결 + 아이폰-서버 Tailscale 연결. 이전 v1.0.0 이력 유지: 4개 장비 제원 최초 기록)
 > **목적**: 시연·통합 테스트에 실제 사용하는 4개 장비(GPU 추론 서버, LLM 호스트 겸 macOS 개발 머신, iOS 클라이언트 단말, DB·미디어 저장 Raspberry Pi)의 제원과 네트워크 연결 방식을 한 곳에 모아, 신규 시연 장비 도입 시 성능·호환성을 비교하는 기준선으로 사용한다.
 > **관련 문서**: [`ai_model_hardware_setup.md`](ai_model_hardware_setup.md), [`db_tailscale_guide/README.md`](../db_tailscale_guide/README.md), [`ondevice_coreml_benchmark.md`](ondevice_coreml_benchmark.md)
 > **관련 스킬**: [`rpi-network-profile-switcher`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md)(Raspberry Pi 네트워크 프로필 전환), [`integration-test-orchestrator`](../../.agents/skills/integration-test-orchestrator/SKILL.md)(전 계층 통합 테스트 오케스트레이션)
@@ -111,6 +111,7 @@ Metal Support  : Metal 4
 - `docs/ops/ai_model_hardware_setup.md` §1.1 기준으로 macOS는 Apple MPS 우선, 미지원 시 CPU 폴백 경로이며 CUDA 서버로 분류하지 않는다.
 - 시리얼 넘버·Hardware UUID·Provisioning UDID는 기기 식별 정보라 이 문서에는 기록하지 않는다(`integration-test-orchestrator` 스킬 안전 가드레일과 동일 원칙).
 - **LLM 호스트 역할(2026-07-21 신규)**: 이 장비에서 Ollama(`gemma4:e4b`, `nomic-embed-text`)를 구동하고, 서버(Windows)의 FastAPI 컨테이너가 LAN으로 접속한다. 데모 시연 시 `OLLAMA_HOST=0.0.0.0`로 바인딩하고 방화벽에서 `11434/tcp`를 서버 LAN 대역에 허용해야 한다(§2 참조).
+- **시연 전 모델 상주**: 기본 `keep_alive`로 인한 콜드 로드(수 초)를 막으려면 Mac mini에서 `bash scripts/ollama_demo_keepalive.sh`를 실행한다(`rpi-network-profile-switcher` 스킬 전제조건).
 
 ---
 
