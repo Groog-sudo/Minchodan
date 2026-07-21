@@ -3848,6 +3848,7 @@
 
 ### 2026-07-21 | 문서 | Android-iOS 정합 체크리스트·Gemini 작업 지시서 등재
 
+- **커밋**: `d8b5474`
 - **배경**: Mac/iOS 중심 통합 테스트 환경에서 Android 정합 상태를 분석한 결과, Frame Processor·TFLite·AEC 모듈은 코드상 상당 부분 존재하나 로컬 반사 정책·실기기 검증·계약서 stale(§4.5 미착수 표기)·문서 인덱스가 부족해 Gemini/Android 담당 에이전트에 넘길 단일 실행 기준이 필요했다.
 - **변경 내용**:
   - `docs/mobile/android_ios_parity_checklist.md` 신규(v1.0.0): Gemini 복붙 지시문, P0~P2 체크리스트(모델·캡처·반사 정책·인지·오디오·네트워크), A-S1~A-S10 검증 매트릭스, 권장 실행 순서, 명시적 제외 항목.
@@ -3856,14 +3857,3 @@
 - **관련 파일**: `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 문서 링크 경로 존재 확인. 구현 코드는 본 세션에서 변경하지 않음(문서 전용).
 - **비고**: Android 구현은 dg 계열 에이전트/담당자가 체크리스트 §0 지시문으로 착수. 서버 YOLO `*260714` 정합은 로컬 `.env`에서 이미 적용됨(커밋 대상 아님).
-
-
----
-
-### 2026-07-21 | 2단계 | android_ios_parity_checklist
-
-- **커밋**: `(자동 커밋 완료)`
-- **변경 내용**:
-  - Android-iOS 정합 체크리스트와 Gemini 작업 지시서를 등재하고 이원화 계약서 stale를 정정한다
-- **관련 파일**: `ocs/README.md`, `docs/changelogs/kb.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/mobile/android_ios_parity_checklist.md`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
