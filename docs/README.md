@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-19
-> **버전**: v0.14.2 (2026-07-19 ops/reports에 발표 대본 전면 정합성 검사·템플릿 캐시 검토 보고서 등재 + 기존 v0.14.1 이력 유지: Medium 인지 짧은 힌트 Dict 전환 계획서 등재)
+> **버전**: v0.14.3 (2026-07-21 Android-iOS 정합 체크리스트·Gemini 작업 지시서 등재 + 기존 v0.14.2 이력 유지: ops/reports 발표 대본 정합성·템플릿 캐시 검토 보고서)
 
 ## 문서 목록
 
@@ -33,6 +33,7 @@
 | 6단계 오케스트레이션 설계서 | [stage-guides/stage6_orchestration_design.md](stage-guides/stage6_orchestration_design.md) | 6단계 종합 회피 가이드 생성 설계 (LangGraph, LLM 핫스왑, 가드레일) |
 | **Post-MVP 하이브리드 로드맵** | [research/post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
 | **iOS/Android 이원화 통합 계약서** | [mobile/ios_android_bifurcation_contract.md](mobile/ios_android_bifurcation_contract.md) | **파일 소유권·인터페이스 계약·인프라 거버넌스로 병합 충돌 방지 (kb/dg2 병합 시뮬레이션 근거)** |
+| **Android-iOS 정합 체크리스트** | [mobile/android_ios_parity_checklist.md](mobile/android_ios_parity_checklist.md) | **Android를 iOS 계약에 맞추기 위한 P0~P2 체크리스트·검증 매트릭스·Gemini/Android 에이전트 작업 지시** |
 | **휴리스틱 거리 구역 알림 라우팅 구현 계획서** | [mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md](mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md) | **Near/Medium/Far 거리 구역 기반 반사·인지 알림 라우팅, 억제, 서버·단말 계약 구현 계획** |
 | 보행이론 인사이트 보고서 | [design/behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
@@ -113,6 +114,7 @@ docs/
 | Android 구현 설계서 | [mobile_android_implementation_plan.md](mobile/mobile_android_implementation_plan.md) | Android 전용 1+2단계 구현 설계 |
 | 온디바이스 추론 엔진 격리 설계서 | [ondevice_inference_engine_isolation_plan.md](mobile/ondevice_inference_engine_isolation_plan.md) | YOLO26n + CoreML 이중 전략 기반 플랫폼별 추론 엔진 격리 (Post-MVP) |
 | 휴리스틱 거리 구역 알림 라우팅 구현 계획서 | [HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md](mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md) | Near/Medium/Far 거리 구역 기반 반사·인지 알림 라우팅, 억제, 서버·단말 계약 구현 계획 |
+| **Android-iOS 정합 체크리스트** | [android_ios_parity_checklist.md](mobile/android_ios_parity_checklist.md) | **P0~P2 정합 항목·A-S 검증 매트릭스·Gemini/Android 에이전트 복붙 지시문** |
 
 ---
 

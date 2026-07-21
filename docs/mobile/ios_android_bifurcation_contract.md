@@ -1,8 +1,9 @@
 # iOS/Android 클라이언트 이원화 및 서버 정합성 통합 계약서
 
 > **작성일**: 2026-07-10
-> **버전**: v1.1.9 (2026-07-19 Tailscale Serve WSS MagicDNS/443 외부망 계약 반영)
-> **설계 기준**: [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](ondevice_inference_engine_isolation_plan.md)(추론 계층 격리, 본 문서의 §5는 이 문서를 계승·확정한다), [`docs/design/api_specification.md`](../design/api_specification.md)(WS 프로토콜 단일 명세)
+> **버전**: v1.2.0 (2026-07-21 Android Frame Processor 구현 상태 정정 + Android-iOS 정합 체크리스트 링크. 기존 v1.1.9 이력 유지: Tailscale Serve WSS MagicDNS/443 외부망 계약 반영)
+> **설계 기준**: [`docs/mobile/ondevice_inference_engine_isolation_plan.md`](ondevice_inference_engine_isolation_plan.md)(추론 계층 격리, 본 문서의 §5는 이 문서를 계승·확정한다), [`docs/design/api_specification.md`](../design/api_specification.md)(WS 프로토콜 단일 명세), [`android_ios_parity_checklist.md`](android_ios_parity_checklist.md)(Android 실기기 정합 P0~P2·에이전트 지시)
+> **Android 정합 실행 문서**: 구현·검증 체크리스트는 [`android_ios_parity_checklist.md`](android_ios_parity_checklist.md)가 단일 실행 기준이다. 본 문서는 소유권·비협상 원칙의 정본을 유지한다.
 > **근거**: kb 브랜치(iOS 작업, `bbfe812` 기준) ↔ dg2 브랜치(Android 작업, `249f51a` 기준) `git merge-tree` 실병합 시뮬레이션 결과 (2026-07-10 분석)
 > **적용 대상**: iOS 작업자(kb 계열 브랜치)와 Android 작업자(dg2 계열 브랜치)는 신규 작업 착수 전 본 문서를 먼저 읽고, 본 문서가 정의한 파일 소유권과 인터페이스 계약을 벗어나는 변경을 하지 않는다.
 
@@ -67,7 +68,7 @@ kb와 dg2는 같은 조상 커밋(`62b5aa4`)에서 독립적으로 분기해, iO
 
 ## 4. 카메라 캡처 계층 재설계 (신규, 최우선)
 
-> **진행 상태 (2026-07-10)**: §4.1~§4.4(iOS 측)는 kb 브랜치에 구현·실기기 회귀 테스트 완료. §4.5(Android 네이티브 Frame Processor 플러그인)는 미착수 — 실제 구현 파일명은 문서 초안(`frameCapture.ios.ts` 등)과 달리 `frameCaptureProvider*.ts`로 확정됐다. 아래 내용은 실제 구현에 맞춰 갱신했다.
+> **진행 상태 (2026-07-21)**: §4.1~§4.4(iOS) 완료. §4.5 Android Frame Processor는 **코드 구현됨**(실기기 잔여 검증은 [`android_ios_parity_checklist.md`](android_ios_parity_checklist.md)). 구현 파일명은 `frameCaptureProviderSelect.*.ts`.
 
 ### 4.1 현재 문제 (해결됨)
 
@@ -80,7 +81,7 @@ graph TD
     Hook["useCamera.ts<br/>(공통) 타이머·동적 FPS·Mock 분기<br/>오케스트레이션만 담당"]
     Interface["frameCaptureProvider.ts<br/>공통 타입 FrameCaptureController<br/>+ 공용 takePhoto 크롭 로직"]
     IOSImpl["frameCaptureProviderSelect.ios.ts<br/>useFrameProcessor + reflexFrameCapture 플러그인"]
-    AndroidImpl["frameCaptureProviderSelect.android.ts<br/>(과도기) takePhoto 기반<br/>(목표) Kotlin Frame Processor 플러그인"]
+    AndroidImpl["frameCaptureProviderSelect.android.ts<br/>Frame Processor + takePhoto 폴백<br/>(실기기 검증: 정합 체크리스트)"]
 
     Hook -->|"useFrameCaptureProvider(params)"| Interface
     Interface -->|"Metro .ios 확장자"| IOSImpl
@@ -141,13 +142,13 @@ export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 - `supportsStream`은 네이티브 플러그인 등록 여부(`VisionCameraProxy.initFrameProcessorPlugin(...) != null`)로 자동 판정된다(고정값이 아님 - 개발 빌드 미동기화 등으로 플러그인이 없으면 자동으로 `capturePhoto()` 경로로 폴백).
 - 실기기 회귀 테스트 완료(2026-07-10): LAN 직결 기준 반사/인지 프레임 정상 수신, 에러 0건, 반사 경보 정상 전송.
 
-### 4.5 Android 구현 지침 (미착수)
+### 4.5 Android 구현 지침 (코드 구현됨 · 실기기 검증은 정합 체크리스트)
 
-**과도기 (구현 완료, kb 브랜치)**: `frameCaptureProviderSelect.android.ts`는 `supportsStream = false`로 선언하고 `takePhoto()` 기반 `capturePhoto()`를 사용한다. dg2 브랜치에서 확인된 크롭/파일읽기 우회(Android 실기기의 `File.bytes()` rejected 에러 우회 - `FileSystem.readAsStringAsync` + 수동 base64 디코드)를 이 파일에 이미 반영해뒀다. dg2의 `Image.getSize()` 기반 크롭 좌표 재계산(orientation 메타데이터 대신 실측 해상도 사용)은 아직 포팅하지 않았다 — 필요 시 Android 작업자가 이 파일 안에서 추가한다.
+**2026-07-21 상태 정정**: `ReflexFrameProcessorPlugin.kt`와 `frameCaptureProviderSelect.android.ts`(Frame Processor + takePhoto 폴백)는 코드베이스에 **이미 존재**한다. 아래 "미착수/신규 작성" 서술은 2026-07-10 시점 stale이다. 잔여 작업(실기기 스모크, 방향/크롭, 로컬 반사 정책 통일, TFLite 260714 shape 재검증)은 [`android_ios_parity_checklist.md`](android_ios_parity_checklist.md) §4·§5·§10을 단일 기준으로 따른다.
 
-**목표 (Android 작업자 담당)**: `client/android/app/src/main/java/.../ReflexFrameProcessorPlugin.kt`를 신규 작성해 iOS의 `ReflexFrameProcessorPlugin.swift`와 동일한 이름(`reflexFrameCapture`)·동일한 반환 계약(JPEG base64 문자열)으로 등록한다. 완료되면 `frameCaptureProviderSelect.android.ts`를 iOS 파일과 동일한 훅 구조(`useFrameProcessor` + `VisionCameraProxy`)로 교체하면 된다. react-native-vision-camera의 Android Frame Processor 플러그인 작성 가이드를 따른다(Kotlin, `FrameProcessorPlugin` 상속).
+**현행 동작**: Android는 iOS와 동일한 플러그인 이름(`reflexFrameCapture`)으로 스트림을 받을 수 있으며, 미등록/실패 시 takePhoto 폴백을 사용한다. 크롭은 orientation 메타 대신 `Image.getSize()`·경계 가드 등 Android 실측 우회가 포함돼 있다.
 
-**주의 (2026-07-12, iOS 방향 버그 발견)**: iOS 실기기(손 피사체로 반복 확인)에서 저장 프레임이 실제 폰 방향 대비 180도 뒤집혀 나오는 결함을 발견했다. 원인은 `react-native-vision-camera` 4.7.3의 가속도계 기반 방향 판정(`CMAccelerometerData+deviceOrientation.swift`)이 이 기기 조합에서 반대로 보고되는 것으로 추정되며, `ReflexFrameProcessorPlugin.swift`(반사)와 `frameCaptureProvider.ts`의 `captureViaTakePhoto`(인지, `applyIosOrientationFix=true`로 iOS에서만 호출)에 각각 180도 보정 회전을 추가해 해결했다. `CMAccelerometerData`는 iOS/CoreMotion 전용 API이므로 Android는 완전히 다른 방향 판정 경로를 쓴다 - **동일 버그가 있다고 가정하지 말 것**. Android 네이티브 플러그인·`captureViaTakePhotoAndroid` 구현 후 반드시 손 피사체(손가락 위로) 실기기 테스트로 방향을 직접 검증한다. 이 버그는 콘솔 갤러리 표시뿐 아니라 서버 YOLO 탐지 입력 자체에 영향을 주므로(탐지 정확도 저하 가능) 우선순위 높음.
+**주의 (2026-07-12, iOS 방향 버그 — Android 별도 검증)**: iOS 실기기에서 저장 프레임 180도 뒤집힘 이슈가 있었고 CoreMotion 경로로 보정했다. Android는 다른 방향 판정 경로를 쓰므로 **동일 버그를 가정하지 말고**, 손 피사체(손가락 위) 실기기 테스트로 방향을 직접 검증한다(정합 체크리스트 C-02, A-S10).
 
 ### 4.6 useCamera.ts 리팩터링 (완료)
 
@@ -161,16 +162,16 @@ export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 
 ## 5. 온디바이스 추론 포맷 계약 확정
 
-`docs/mobile/ondevice_inference_engine_isolation_plan.md` TC-INF-003은 이미 `object_detection` 출력 포맷을 `[1,300,6]`(NMS 내장)으로 목표 스펙에 못박아 두었다. dg2가 `tfliteDetector.ts`의 `attrsPerBox`를 `33`→`6`으로 바꾼 것은 이 기존 설계와 방향이 일치한다 — 문제는 **번들 자산(`client/assets/models/yolo26n/object_detection.tflite`)이 재수출되지 않아 여전히 33채널 raw(NMS-free) 출력을 낸다**는 것뿐이다.
+`docs/mobile/ondevice_inference_engine_isolation_plan.md` TC-INF-003은 `object_detection` 출력 포맷을 `[1,300,6]`(NMS 내장)으로 목표 스펙에 못박았다. **2026-07-21 코드 실측**: `tfliteDetector.ts`는 `attrsPerBox=6`을 사용한다. 번들 `object_detection.tflite`(07-15, `*260714` export 계열)와 shape가 실제 기기에서 일치하는지는 [`android_ios_parity_checklist.md`](android_ios_parity_checklist.md) M-02에서 재검증한다. 불일치 시 **자산 재export와 파서 변경을 같은 커밋**에 넣는다(§2 원칙 5).
 
-| 항목 | 현재 상태 | 목표 (기존 설계 §4.2 폴백 전략과 별개, TC-INF-003 기준) |
+| 항목 | 현재 상태 (2026-07-21) | 목표 |
 | --- | --- | --- |
-| 거리 필드 | `DetectionResult.distanceMeters?`, `distanceSource?`, `depthSampleCount?`, `depthAccuracy?` optional 계약 추가. iOS LiDAR 값이 있으면 CameraView가 우선 표시·반사 판정하고, 없으면 bbox 휴리스틱으로 fallback | Android/TFLite 및 서버 결과는 필드를 생략할 수 있다. 필드가 생략된 경우 앱은 기존 휴리스틱 동작을 유지한다 |
-| 코드 (`tfliteDetector.ts`) | `attrsPerBox: 33` (kb 현재) / `6`(dg2) | `6` (`[1,300,6]`: x1,y1,x2,y2,score,classId) |
-| 자산 (`object_detection.tflite`) | 33채널 raw, NMS-free 익스포트 | `yolo export ... nms=True` 로 재수출한 `[1,300,6]` |
-| `segmentation.tflite` | 변경 없음 (`attrsPerBox=38`) | 변경 없음 — TC-INF-003이 seg는 `[1,300,38]`로 별도 명시, dg2도 이 부분은 건드리지 않음 |
+| 거리 필드 | `DetectionResult.distanceMeters?` 등 optional. iOS LiDAR 우선, 없으면 휴리스틱 | Android는 필드 생략 가능, 휴리스틱 유지 |
+| 코드 (`tfliteDetector.ts`) | `attrsPerBox: 6` (NMS-enabled 가정) | 번들 tflite 실측 shape와 일치 |
+| 자산 (`object_detection.tflite`) | `*260714` 계열 export(07-15). 기기에서 shape 재확인 | M-02 Pass |
+| `segmentation.tflite` | dense/`260714` 계열. 코드에 `[1,40,8400]` 주석 | M-03 Pass |
 
-**액션 아이템**: `scripts/export_tflite.py`에 `nms=True` 옵션을 추가해 `object_detection.tflite`를 재수출하고, 재수출된 자산과 `attrsPerBox=6`으로의 코드 변경을 **같은 커밋**에 넣는다. 이 작업 전까지는 코드를 `33`으로 유지한다(현재 서버가 실제로 사용하는 `det_best_20260705.pt` 커스텀 가중치도 NMS-free 아키텍처이므로 서버 추론 로직과의 정합성도 함께 고려해야 한다 — 서버는 자체 NMS를 python에서 수행하므로 클라이언트 온디바이스 자산만 별도 재수출 대상이다).
+**액션 아이템**: Android 에이전트는 정합 체크리스트 M-01~M-04를 먼저 닫는다. 구버전 서술(코드 33 / 자산 미재수출)은 2026-07-10 시점 이슈이며, 현행은 6 + 260714 자산 기준으로 검증한다.
 
 ---
 

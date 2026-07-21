@@ -3843,3 +3843,27 @@
 - **관련 파일**: `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `.antigravity/rules.md`, `.cursor/rules/12-rpi-network-profile-switcher.mdc`
 - **검증 결과**: `python scripts/validate_agent_rules.py` 6/6 PASS(`.antigravity/rules.md` 캡 여유 5,690자 포함). `diff -rq .agents/skills/rpi-network-profile-switcher .claude/skills/rpi-network-profile-switcher` 완전 일치 확인.
 - **비고**: Codex가 `agents/openai.yaml`을 실제 네이티브로 인식해 스킬로 호출하는지는 이 세션에서 검증 불가 - 원작성 팀원의 Codex 세션에서 직접 확인 필요.
+
+---
+
+### 2026-07-21 | 문서 | Android-iOS 정합 체크리스트·Gemini 작업 지시서 등재
+
+- **배경**: Mac/iOS 중심 통합 테스트 환경에서 Android 정합 상태를 분석한 결과, Frame Processor·TFLite·AEC 모듈은 코드상 상당 부분 존재하나 로컬 반사 정책·실기기 검증·계약서 stale(§4.5 미착수 표기)·문서 인덱스가 부족해 Gemini/Android 담당 에이전트에 넘길 단일 실행 기준이 필요했다.
+- **변경 내용**:
+  - `docs/mobile/android_ios_parity_checklist.md` 신규(v1.0.0): Gemini 복붙 지시문, P0~P2 체크리스트(모델·캡처·반사 정책·인지·오디오·네트워크), A-S1~A-S10 검증 매트릭스, 권장 실행 순서, 명시적 제외 항목.
+  - `docs/mobile/ios_android_bifurcation_contract.md` v1.2.0: §4.5를 "코드 구현됨·실기기 검증은 정합 체크리스트"로 정정하고 실행 문서 링크 추가.
+  - `docs/README.md` v0.14.3: 문서 인덱스·mobile/ 표에 정합 체크리스트 등재.
+- **관련 파일**: `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 링크 경로 존재 확인. 구현 코드는 본 세션에서 변경하지 않음(문서 전용).
+- **비고**: Android 구현은 dg 계열 에이전트/담당자가 체크리스트 §0 지시문으로 착수. 서버 YOLO `*260714` 정합은 로컬 `.env`에서 이미 적용됨(커밋 대상 아님).
+
+
+---
+
+### 2026-07-21 | 2단계 | android_ios_parity_checklist
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Android-iOS 정합 체크리스트와 Gemini 작업 지시서를 등재하고 이원화 계약서 stale를 정정한다
+- **관련 파일**: `ocs/README.md`, `docs/changelogs/kb.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/mobile/android_ios_parity_checklist.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
