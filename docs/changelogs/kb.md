@@ -4080,3 +4080,11 @@
 - **관련 파일**: `server/tts/korean_g2p.py`, `server/stt/stt_service.py`, `server/navigation/manager.py`, `server/navigation/server.py`, `server/detection/consumer.py`, `server/rag/embedding_engine_factory.py`
 - **검증 결과**: `mypy server/` 오류 0건
 - **비고**: `ac777d8` push 후 GitHub Actions Code Quality Pipeline mypy 6건 실패 대응
+
+### 2026-07-21 | CI | jscpd를 npx로 설치해 Lint 워크플로 보완
+
+- **커밋**: `fix(ci): jscpd를 npx로 실행하도록 Lint 워크플로 수정`
+- **변경 내용**: GitHub Actions에 Node setup + `npx jscpd` 추가(기존 `jscpd` 미설치로 exit 127)
+- **관련 파일**: `.github/workflows/lint.yml`
+- **검증 결과**: 로컬 mypy 통과 후 CI 재실행 예정
+- **비고**: mypy 수정 커밋 이후 드러난 후속 게이트 실패
