@@ -682,5 +682,18 @@
     - 번들 TFLite shape: `object_detection.tflite` `[1, 300, 6]` (attrsPerBox=6 일치), `segmentation.tflite` `[1, 40, 8400]`
     - Android CameraView 로컬 반사 정책(R-00): 1197행 "서버 연결 시 로컬 반사 억제, 타임아웃/Disconnected 시 로컬 백업 경보" 분기 확인
   - 코드 정정: `client/src/services/audioSessionBridge.ts` 상단의 "Android no-op" stale 주석을 Android 네이티브 모듈(`AudioSessionBridgeModule.kt`) 지원 명시로 수정 (A-01).
-- **관련 파일**: `client/src/services/audioSessionBridge.ts`, `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`
+- **관련 파일**: `client/src/services/audioSessionBridge.ts`, `client/src/components/CameraView.tsx`, `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`
 - **검증 결과**: TFLite 260714 export 스펙(`EXPORT_SOURCE_260714.txt`)과 `attrsPerBox` 6 정합성, OD 29클래스 / SEG 4클래스 서버-클라이언트 라벨 일치, C-01~C-06/R-00~R-06/G-01~G-04/A-01~A-02/N-01~N-08 P0 항목 전수 검증 통과 (P0 마감).
+
+---
+
+### 2026-07-21 | 모바일 | CameraView.tsx 로컬 반사 억제·백업 정책(R-00) 공통 파이프라인 통일
+
+- **커밋**: `refactor: unify local reflex suppression and fallback policy in CameraView`
+- **변경 내용**:
+  - 공유 컴포넌트 `client/src/components/CameraView.tsx` 내에 개별적으로 분기되어 있던 `Platform.OS === "android"` vs `iOS` 로컬 반사 처리 블록을 단일 공통 구조로 통합 (R-00, R-01, R-02).
+  - 정책 통일:
+    - 서버 연결 정상(!isServerTimeout) 시: 이중 경보 방지를 위해 플랫폼 공통으로 온디바이스 반사 경보 억제 및 사운드 회수
+    - 서버 disconnect / >300ms 타임아웃 시: 통로 분석(`pathObstacleDetector`) 및 로컬 백업 경보 / 회피 음성 가이드(`speakFallback`)를 플랫폼 공통 실행
+- **관련 파일**: `client/src/components/CameraView.tsx`, `docs/mobile/android_ios_parity_checklist.md`
+- **검증 결과**: 플랫폼별 코드 이원화를 공유 파일 내부에서 제거하여 이원화 계약서 §2 준수 및 실기기 통신 검증 통과.
