@@ -4088,3 +4088,14 @@
 - **관련 파일**: `.github/workflows/lint.yml`
 - **검증 결과**: 로컬 mypy 통과 후 CI 재실행 예정
 - **비고**: mypy 수정 커밋 이후 드러난 후속 게이트 실패
+
+### 2026-07-21 | 시연 | Ollama 모델 상주 스크립트 등재
+
+- **커밋**: `feat(demo): Ollama keepalive 스크립트 및 시연 스킬 전제조건 반영`
+- **변경 내용**:
+  - `scripts/ollama_demo_keepalive.sh` 추가 (LAN 바인딩 + gemma4/nomic keep_alive=-1)
+  - `rpi-network-profile-switcher`·`integration-test-orchestrator` 시연 전 실행 안내
+  - `demo_test_device_inventory.md` Mac mini 절에 상주 절차 링크
+- **관련 파일**: `scripts/ollama_demo_keepalive.sh`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/` 미러, `docs/ops/demo_test_device_inventory.md`
+- **검증 결과**: 스크립트 실행으로 워밍 지연 ~1초대 확인(콜드 ~6초 제거)
+- **비고**: Mac 재부팅·Ollama 종료 후 시연 전 재실행 필요

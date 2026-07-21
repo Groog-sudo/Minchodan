@@ -6,7 +6,7 @@ description: Raspberry Pi의 MariaDB·미디어 API, 그리고 별도 LAN 호스
 # 시연/테스트 백엔드 네트워크 프로필 전환 (Raspberry Pi DB·Mac mini LLM)
 
 > **작성일**: 2026-07-20
-> **버전**: v1.1.0 (2026-07-21 범위 확장: LLM(Mac mini) LAN 연결을 demo 프로필에 통합. 이전 v1.0.2 이력 유지: 관련 문서에 시연/테스트 장비 제원 인벤토리 추가)
+> **버전**: v1.1.1 (2026-07-21: 시연 전 Mac mini Ollama 모델 상주 스크립트 `scripts/ollama_demo_keepalive.sh` 등재. 이전 v1.1.0 이력 유지: LLM(Mac mini) LAN 연결을 demo 프로필에 통합)
 > **관련 문서**: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, [`docs/ops/demo_test_device_inventory.md`](../../../docs/ops/demo_test_device_inventory.md)(Raspberry Pi 등 시연 장비 제원 및 네트워크 토폴로지)
 > **관련 스킬**: 전체 Docker·iOS 실기기 통합 검증은 [`integration-test-orchestrator`](../integration-test-orchestrator/SKILL.md)를 이어서 사용한다.
 > **지원 에이전트**: Claude Code 등은 본 `SKILL.md`를 직접 읽어 호출한다. OpenAI Codex 계열은 `agents/openai.yaml`(스킬 인터페이스 정의: `display_name`/`short_description`/`default_prompt`)을 통해 동일 스킬을 먼저 인식·호출한다. 다른 스킬 폴더에는 `agents/` 서브폴더가 없으며, 이는 본 스킬만의 예외다.
@@ -25,6 +25,13 @@ Raspberry Pi의 MariaDB·미디어 API, 그리고 Mac mini에서 별도로 도�
 **실행 위치**: 이 스크립트는 FastAPI/Docker가 실제로 도는 서버 장비에서 실행한다. 현재 시연 구성은 서버=Windows(GPU 추론)이므로, `docker-compose.yml`(Linux/GPU 변형)이 이미 전제하는 대로 **WSL2 안에서(bash)** 실행한다(Windows 네이티브 cmd/PowerShell/Git Bash에서는 `uname -s`가 `Linux`/`Darwin` 어느 쪽도 아니라서 스크립트가 `unsupported OS`로 종료된다). macOS에서 FastAPI를 직접 띄우는 개발/검증 환경이면 그대로 Darwin 분기(`docker-compose.macos.yml` + `socat` 프록시)를 쓴다.
 
 **전제조건(LLM/Mac mini)**: `demo` 프로필로 전환하려면 Mac mini의 Ollama가 `OLLAMA_HOST=0.0.0.0`로 LAN에 바인딩돼 있어야 하고(기본값 `127.0.0.1`은 외부에서 접속 불가), Mac mini 방화벽이 `11434/tcp`를 서버 장비의 LAN 대역에서 허용해야 한다. 이 전제조건은 이 스킬이 원격으로 설정할 수 없으므로, 실패 시 Mac mini 담당자에게 직접 확인을 요청한다.
+
+**시연 전 Mac mini에서 필수 (모델 상주)**: Ollama 기본 `keep_alive`(~5분)면 유휴 후 모델이 언로드되어 다음 LLM 호출에 **수 초 콜드 로드**가 붙는다(2026-07-21 실측: ~5~6초). 시연 직전 Mac mini에서 아래를 실행해 `gemma4:e4b`·`nomic-embed-text`를 메모리 상주(`keep_alive=-1`)시킨다. Ollama 앱 종료·Mac 재부팅 후에는 다시 실행한다.
+
+```bash
+# Mac mini (LLM 호스트)에서만 실행
+bash scripts/ollama_demo_keepalive.sh
+```
 
 사용자가 상태 확인이나 진단만 요청하면 읽기 전용 검사까지만 수행한다. 설정·전환·복구를 요청한 경우에만 해당 범위의 변경을 수행한다. 커밋·푸시는 별도 요청이 있을 때만 수행한다.
 
@@ -103,6 +110,7 @@ MINCHODAN_SWITCH_CHECK_ONLY=1 bash scripts/switch_rpi_network.sh test
 | `DB TCP preflight failed` | 프로필 주소, MariaDB listen, UFW, Tailscale 상태 |
 | `media health preflight failed` | 미디어 서비스, `0.0.0.0` 바인딩, UFW, `/health` |
 | `Ollama LAN preflight failed` | Mac mini `OLLAMA_HOST=0.0.0.0` 바인딩 여부, Mac mini 방화벽의 `11434/tcp` 허용, 서버-Mac mini 간 LAN 라우팅 |
+| 시연 중 LLM만 간헐적으로 수 초 지연 | Mac mini에서 `bash scripts/ollama_demo_keepalive.sh` 미실행(콜드 로드). 상주 후 워밍 지연은 ~1초 전후가 정상 |
 | `socat not installed` | macOS에서 `brew install socat` |
 | `FastAPI health timeout` | 컨테이너 로그와 컨테이너 내부 `/health`; 호스트 포트 충돌을 분리 확인 |
 
@@ -158,7 +166,7 @@ Pi 설정이 이미 정상이라면 재적용하지 않는다. 드리프트가 �
 | 프로필 | `demo`, `test` check-only 모두 통과 |
 | DB | 선택 프로필에서 `SELECT 1=True` |
 | 미디어 | 선택 프로필에서 `/health` HTTP 200 |
-| LLM(Mac mini, demo만 해당) | `COMPOSE_OLLAMA_BASE_URL`이 있으면 `/api/tags` 정상 응답 |
+| LLM(Mac mini, demo만 해당) | `COMPOSE_OLLAMA_BASE_URL`이 있으면 `/api/tags` 정상 응답. 시연 전 `scripts/ollama_demo_keepalive.sh`로 모델 상주 |
 | Docker | 기존 이미지 재사용, MariaDB·Redis 보존 |
 | 보안 | 프로필·비밀값 Git-ignore, UFW 최소 허용 |
 | 원격 관리 | 새 `ssh minchodan-rpi-db` 세션 성공 |
