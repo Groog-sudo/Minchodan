@@ -993,3 +993,21 @@
 - **관련 파일**: `console/src/api/useLiveFeed.ts`, `console/src/components/ConsoleAudioMirror.tsx`, `docs/changelogs/th.md`
 - **검증 결과**: 이중 경로·금지 파일 가드레일 통과. API/설계 문서 계약 변경 없음(콘솔 UX 수정). 서버 guide WAV 송신 로그(`transport=binary`)와 콘솔 클립 `200` 확인 후 재생 경로만 수정.
 
+
+---
+
+### 2026-07-21 | 3단계 | Medium→Near 반사 누락·중복 안내·추적기 스트림 공유 3종 수정
+
+- **배경**: 실기기에서 (1) Medium으로 탐지되던 객체가 Near로 접근하면 비프·햅틱이 나오지 않고, (2) 안내 메시지가 2번 나오며, (3) "탐지 데이터가 쌓여 생기는 문제 아니냐"는 제보를 분석. iOS 반사 경보는 서버 연결 중에는 서버 `reflex_alert`에만 의존하므로(온디바이스 반사는 `CameraView.tsx`에서 억제), 원인은 서버 반사 발동 조건에 있었다.
+- **원인 분석**:
+  - **근본 원인(Fix 1)**: 반사(8~10fps)·인지(1~2fps) 두 스트림이 단일 `DetectionPipeline`의 detector(`model.track(persist=True)`)와 tracker를 공유해, 서로 다른 fps의 프레임이 같은 ByteTrack 상태에 뒤섞여(추론 스레드풀에서 동시 실행 포함) track_id가 튀었다. track_id가 바뀌면 Redis hit_count가 1로 리셋되어 `reflex_gate`(hit_count>=3)가 Near에서 발동하지 못하고, prev_zone 히스테리시스도 풀려 near↔medium이 깜빡이며 `reflex_clear` 채터가 나 비프가 끊겼다.
+  - **사각지대(Fix 2)**: Near 진입 경계는 area_ratio 0.10(≈0.70m)인데 `_send_reflex_alert`의 `is_near`가 0.6m 컷이라, 0.6~0.70m 구간에서 near 진입 반사가 non-near device 갭(1.5s)+TTL(5s) 경로로 빠져 진입 직후 비프 1회 뒤 침묵했다.
+  - **중복 안내(Fix 3)**: 2026-07-21 Near/Medium 쿨다운 슬롯 분리 이후, 전환 구간에서 인지 스트림의 Medium 안내와 반사 후속 post_reflex Near 안내가 서로 다른 밴드라 상호 억제되지 않아 한 접근에 안내가 두 번 나갔다.
+  - **데이터 누적 가설**: 큐·Redis·DB는 모두 TTL(트랙 컨텍스트 30s)·백프레셔(in-flight 상한, stale 드롭)로 제한되어 원인이 아니며, 실제 "누적"은 추적기 track_id 튐(세션 경과에 따른 연관 악화)이었다.
+- **변경 내용**:
+  - **Fix 1** `server/detection/consumer.py`: 단일 `_pipeline`을 스트림별 독립 파이프라인(`_pipelines`)으로 분리. 반사·인지가 각자 detector(독립 `model.track` 상태)와 tracker를 가져 서로의 추적 상태를 오염시키지 않는다. 주입 파이프라인(테스트)은 기존처럼 공유해 하위호환 유지.
+  - **Fix 1** `server/detection/bytetrack_tracker.py`: `ByteTrackTracker(context_ns=...)` 추가. 스트림별 detector가 같은 "T-0001"을 내도 Redis 트랙 컨텍스트 키를 `ctx:{stream}:{track_id}`로 네임스페이스해 hit_count·prev_zone 교차 오염을 차단. `context_ns=""` 기본값으로 기존 호출부·테스트 호환.
+  - **Fix 2** `server/detection/consumer.py`: `_send_reflex_alert`의 `is_near` 판정을 raw 0.6m 컷에서 거리 정책 SSOT의 `distance_band == "near"`로 정합(object 반사는 route=="reflex"로만 생성되므로 밴드 기준과 일치, head_level/surface 무영향).
+  - **Fix 3** `server/detection/consumer.py`: `_send_cognitive_guide`에 Near 반사 에피소드 활성 중 Medium 존재/접근 안내를 억제하는 가드 추가(`Alert_suppressor.peek_active_near_track`). preset(post_reflex)·보도 이탈·노면 전용은 예외. Near 우선 원칙과 정합하며 억제는 Near episode 생명주기 동안만 유지.
+- **관련 파일**: `server/detection/consumer.py`, `server/detection/bytetrack_tracker.py`, `docs/changelogs/th.md`
+- **검증 결과**: 비라이브 전체 테스트 460 passed(관련 detection/distance/reflex/suppressor/near/track 스위트 포함). 잔여 3건(`test_frame_decode.py::test_singleton_queue_maxsize`, `test_mcp_gpu.py` 2건)은 본 변경 이전부터 실패하는 환경 의존(splitter maxsize/GPU/ollama) 케이스로 stash 대조 확인. 이중 경로 가드레일 준수(반사 게이트 `server/detection/gates/` 무수정), 금지 파일 스테이징 없음, `py_compile`·import 정상. ruff는 로컬 미설치로 스킬 규격에 따라 생략.
