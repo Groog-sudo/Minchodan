@@ -3978,3 +3978,18 @@
 - **관련 파일**: `docs/ops/demo_test_device_inventory.md`, `docs/README.md`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`
 - **검증 결과**: `python scripts/validate_agent_rules.py` 6/6 PASS. `diff -rq .agents/skills/rpi-network-profile-switcher .claude/skills/rpi-network-profile-switcher` 완전 일치.
 - **비고**: iPhone 16 Pro Max 하드웨어 제원(칩/RAM/저장용량)·Raspberry Pi SSD 정확한 용량은 담당자 확인 후 인벤토리 문서에 채워 넣어야 함. 이 커밋 시점에 작업 트리에 있던 별도 미검증 작업(Near/Medium 오디오 완주 우선순위 수정 - `audioEngine.ts`/`consumer.py`/`test_detection.py`/`reflex_audio_specification.md`)은 무관한 작업이라 이번 커밋에서 의도적으로 제외하고 `git stash`로 보존함(추후 별도 검증·커밋 필요).
+
+---
+
+### 2026-07-21 | 인프라 | 시연 테스트 환경 구축 - rpi-network-profile-switcher에 LLM(Mac mini) LAN 연결 통합
+
+- **배경**: "시연 테스트 환경 구축 스킬을 만드는 것"이 맞는지 확인 후, 실제 시연 네트워크 토폴로지를 확정: 아이폰↔서버(Windows)는 Tailscale 유지, 서버(Windows)↔LLM(Mac mini)·DB(Raspberry Pi)는 LAN으로 분리. 기존 `rpi-network-profile-switcher`는 Raspberry Pi DB·미디어망만 다뤄서, 서버-LLM 간 LAN 연결(기존에는 같은 장비에서 Ollama를 함께 띄우던 것을 Mac mini로 분리)이 스킬 범위 밖이었던 것을 확인하고 통합.
+- **변경 내용**:
+  - `scripts/switch_rpi_network.sh`: `.env.network.<profile>`에서 `COMPOSE_OLLAMA_BASE_URL`을 선택적으로 읽어, 존재하면 전환 전 Ollama `/api/tags` 도달성 사전검사를 DB TCP·미디어 `/health` 검사와 같은 자리에 추가. 값이 없으면 기존처럼 스킵(`test` 프로필은 동일 호스트 Ollama 가정 그대로 하위 호환).
+  - `.agents/skills/rpi-network-profile-switcher/SKILL.md`(+`.claude/skills/` 미러): "목적과 실행 경계"에 LLM(Mac mini) LAN 스코프와 실행 위치(서버는 WSL2에서 실행, `docker-compose.yml`이 Linux/GPU 변형 전제) 명시. "정본과 보안 규칙" 표에 `COMPOSE_OLLAMA_BASE_URL` 행 추가. 워크플로우의 예시 dotenv·실패 메시지 표·완료 기준 표에 LLM 사전검사 반영. Mac mini의 `OLLAMA_HOST=0.0.0.0` 바인딩·방화벽 전제조건 명시. 버전 v1.0.2→v1.1.0.
+  - `docs/ops/demo_test_device_inventory.md`: "2. 네트워크 토폴로지" 섹션 신규(아이폰↔서버=Tailscale, 서버↔LLM(Mac mini)=LAN, 서버↔DB(RPi)=LAN). 장비 개요 표의 역할 라벨 정정(LLM/GPU 통합 서버 → GPU 서버와 LLM 호스트 분리). "7. 미확인 항목"에 Mac mini LAN IP 항목 추가. 버전 v1.0.0→v1.1.0.
+  - `docs/ops/environment_variables.md`: `COMPOSE_OLLAMA_BASE_URL` 설명에 demo 프로필의 Mac mini LAN 분리 용도·전제조건·사전검사 문구 보강. 버전 v0.4.36→v0.4.37.
+  - `docs/README.md`: 인벤토리 문서 설명에 네트워크 토폴로지 반영 문구 추가. 버전 v0.14.5→v0.14.6.
+- **관련 파일**: `scripts/switch_rpi_network.sh`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `docs/ops/demo_test_device_inventory.md`, `docs/ops/environment_variables.md`, `docs/README.md`
+- **검증 결과**: `bash -n scripts/switch_rpi_network.sh` 통과. `python scripts/validate_agent_rules.py` 6/6 PASS. `diff -rq .agents/skills/rpi-network-profile-switcher .claude/skills/rpi-network-profile-switcher` 완전 일치. 실제 Mac mini LAN 연결·Ollama LAN 바인딩은 시연 현장에서 실측 필요(미완료).
+- **비고**: 이 커밋 시점에도 `docs/changelogs/kb.md`를 포함해 다른 세션에서 Near/Medium 오디오 관련 작업(WIP)이 동시에 진행 중이었다. 작업 트리 충돌을 피하기 위해 `git hash-object`/`git update-index`로 이 changelog 항목만 커밋 시점의 HEAD(`e272449`) 위에 직접 이어붙여 인덱스에 스테이징했고, 실제 작업 트리 파일(`docs/changelogs/kb.md` 등)은 전혀 건드리지 않았다. 그 외 무관 WIP 파일(`audioEngine.ts`/`consumer.py`/`test_detection.py`/`reflex_audio_specification.md`)도 이번 커밋에 포함하지 않았다.

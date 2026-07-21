@@ -86,6 +86,7 @@ db_port="$(read_env_value "$PROFILE_ENV_FILE" DB_PORT || true)"
 db_port="${db_port:-$DEFAULT_DB_PORT}"
 media_base_url="$(read_env_value "$PROFILE_ENV_FILE" IMAGE_SERVER_BASE_URL || true)"
 network_env_file="$(read_env_value "$PROFILE_ENV_FILE" NETWORK_ENV_FILE || true)"
+ollama_base_url="$(read_env_value "$PROFILE_ENV_FILE" COMPOSE_OLLAMA_BASE_URL || true)"
 if [[ -z "$db_host" || -z "$media_base_url" || -z "$network_env_file" ]]; then
   echo "[switch] ERROR: profile requires NETWORK_ENV_FILE, DB_HOST, IMAGE_SERVER_BASE_URL"
   exit 1
@@ -128,6 +129,9 @@ compose_args=(
 echo "[switch] profile=$PROFILE"
 echo "[switch] DB target=${db_host}:${db_port}"
 echo "[switch] media target=$media_base_url"
+if [[ -n "$ollama_base_url" ]]; then
+  echo "[switch] LLM target=$ollama_base_url"
+fi
 
 if ! check_tcp "$db_host" "$db_port"; then
   echo "[switch] ERROR: DB TCP preflight failed"
@@ -136,6 +140,11 @@ fi
 
 if ! curl -fsS --max-time 5 "$media_base_url/health" >/dev/null; then
   echo "[switch] ERROR: media health preflight failed"
+  exit 1
+fi
+
+if [[ -n "$ollama_base_url" ]] && ! curl -fsS --max-time 5 "$ollama_base_url/api/tags" >/dev/null; then
+  echo "[switch] ERROR: Ollama LAN preflight failed (COMPOSE_OLLAMA_BASE_URL=$ollama_base_url)"
   exit 1
 fi
 

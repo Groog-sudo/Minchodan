@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-06-27
 > **수정일**: 2026-07-21
-> **버전**: v0.4.36 (2026-07-21 P0/P1 과부하 완화 - SERVER_BUSY_SUGGEST_INTERVAL_MS·REFLEX_SEG_EVERY_N 신규. 기존 v0.4.35 이력 유지: 온디바이스·서버 가중치 기준선 통일. 기존 v0.4.34~v0.4.29 이력 유지)
+> **버전**: v0.4.37 (2026-07-21 COMPOSE_OLLAMA_BASE_URL을 demo 프로필의 LLM(Mac mini) LAN 분리 용도로 보강 설명. 기존 v0.4.36 이력 유지: P0/P1 과부하 완화 - SERVER_BUSY_SUGGEST_INTERVAL_MS·REFLEX_SEG_EVERY_N 신규. 기존 v0.4.35~v0.4.29 이력 유지)
 > **기준 파일**: [`.env.example`](../../.env.example) (단일 기준)
 > **설계 기준**: [`docs/design/architecture.md`](../design/architecture.md) 10절·13.4절, [`docs/design/pipeline_stage_design.md`](../design/pipeline_stage_design.md)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) 3.4(.env 로드)
@@ -29,7 +29,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`LLM_PROVIDER`** | string | 필수 | `ollama` | LLM 공급자 (`ollama` 또는 `openai`). GPU 부하 시 `LLMClientFactory`가 자동 핫스왑 | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
 | **`OLLAMA_BASE_URL`** | string | 필수 | `http://localhost:11434` | Ollama 서버 주소 | [`architecture.md`](architecture.md) 10절 |
-| **`COMPOSE_OLLAMA_BASE_URL`** | string | 선택 | `http://host.docker.internal:11434` | Docker Compose의 FastAPI 컨테이너가 호스트 로컬 Ollama로 접속할 때 `OLLAMA_BASE_URL`로 주입할 주소. Linux Compose는 `host.docker.internal`을 고정 게이트웨이 `172.18.0.1`로 매핑하므로 `172.18.0.0/16 -> 172.18.0.1:11434/tcp` UFW 허용이 필요합니다. macOS Colima에서는 `http://host.lima.internal:11434` 사용 권장 | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml) |
+| **`COMPOSE_OLLAMA_BASE_URL`** | string | 선택 | `http://host.docker.internal:11434` | Docker Compose의 FastAPI 컨테이너가 Ollama로 접속할 때 `OLLAMA_BASE_URL`로 주입할 주소. Linux Compose는 `host.docker.internal`을 고정 게이트웨이 `172.18.0.1`로 매핑하므로 `172.18.0.0/16 -> 172.18.0.1:11434/tcp` UFW 허용이 필요합니다. macOS Colima에서는 `http://host.lima.internal:11434` 사용 권장. **2026-07-21 추가**: 시연(`demo`) 프로필에서 LLM을 별도 LAN 호스트(Mac mini)로 분리할 때는 `http://<Mac mini LAN IP>:11434`로 설정(`.env.network.demo`, Git-ignore 대상). 이때 Mac mini의 Ollama는 `OLLAMA_HOST=0.0.0.0`로 LAN 바인딩돼 있어야 합니다. `scripts/switch_rpi_network.sh`가 전환 시 `/api/tags`로 사전검사합니다 | [`docker/docker-compose.macos.yml`](../../docker/docker-compose.macos.yml), [`docker/docker-compose.yml`](../../docker/docker-compose.yml), [`.agents/skills/rpi-network-profile-switcher/SKILL.md`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md) |
 | **`OLLAMA_HOST`** | string | 선택 | (코드 기본값) | 임베딩 팩토리 전용 Ollama 호스트 (2026-07-07 추가 — `OLLAMA_BASE_URL`과 별개로 존재) | `server/rag/embedding_engine_factory.py:46` |
 | **`GEMMA_MODEL`** | string | 필수 | `gemma4:e4b` | L2 가이드 생성 모델 (로컬) | [`stage6_orchestration_design.md`](stage6_orchestration_design.md) 9.3절 |
 | **`LLAVA_MODEL`** | string | 선택(잔재) | `llava` | **2026-07-07 폐기**: 4단계 캡셔닝을 Llava에서 Gemini API로 전환하면서 코드에서 더 이상 소비되지 않는 잔재 변수. `.env.example`에도 "미사용" 주석 처리됨. 제거 대상이나 하위 호환 표시로 잔존 | [`pipeline_stage_design.md`](pipeline_stage_design.md) 5.4절 |

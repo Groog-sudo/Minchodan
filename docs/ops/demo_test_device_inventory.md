@@ -1,8 +1,8 @@
 # 시연/테스트 장비 제원 인벤토리
 
 > **작성일**: 2026-07-21
-> **버전**: v1.0.0
-> **목적**: 시연·통합 테스트에 실제 사용하는 4개 장비(LLM/GPU 추론 서버, macOS 개발 머신, iOS 클라이언트 단말, DB·미디어 저장 Raspberry Pi)의 제원을 한 곳에 모아, 신규 시연 장비 도입 시 성능·호환성을 비교하는 기준선으로 사용한다.
+> **버전**: v1.1.0 (2026-07-21 네트워크 토폴로지 확정 반영: LLM을 GPU 서버에서 Mac mini로 분리, 서버-LLM-DB LAN 연결 + 아이폰-서버 Tailscale 연결. 이전 v1.0.0 이력 유지: 4개 장비 제원 최초 기록)
+> **목적**: 시연·통합 테스트에 실제 사용하는 4개 장비(GPU 추론 서버, LLM 호스트 겸 macOS 개발 머신, iOS 클라이언트 단말, DB·미디어 저장 Raspberry Pi)의 제원과 네트워크 연결 방식을 한 곳에 모아, 신규 시연 장비 도입 시 성능·호환성을 비교하는 기준선으로 사용한다.
 > **관련 문서**: [`ai_model_hardware_setup.md`](ai_model_hardware_setup.md), [`db_tailscale_guide/README.md`](../db_tailscale_guide/README.md), [`ondevice_coreml_benchmark.md`](ondevice_coreml_benchmark.md)
 > **관련 스킬**: [`rpi-network-profile-switcher`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md)(Raspberry Pi 네트워크 프로필 전환), [`integration-test-orchestrator`](../../.agents/skills/integration-test-orchestrator/SKILL.md)(전 계층 통합 테스트 오케스트레이션)
 
@@ -12,14 +12,28 @@
 
 | 역할 | 장비 | 담당 |
 | :--- | :--- | :--- |
-| LLM/GPU 추론 서버 | Windows (i9-13950HX + RTX 4090 Laptop) | 서버 담당 |
-| macOS 개발 머신 | Mac mini (Apple M4 Pro) | kb |
+| GPU 추론 서버 (FastAPI/Docker) | Windows (i9-13950HX + RTX 4090 Laptop) | 서버 담당 |
+| LLM(Ollama) 호스트 + macOS 개발 머신 | Mac mini (Apple M4 Pro) | kb |
 | iOS 클라이언트 단말 | iPhone 16 Pro Max | th |
 | DB·미디어 저장 서버 | Raspberry Pi 5 Model B | Pi 운영 담당자 |
 
 ---
 
-## 2. LLM/GPU 추론 서버 (Windows)
+## 2. 네트워크 토폴로지 (2026-07-21 확정)
+
+시연 테스트 환경에서는 4개 장비가 아래와 같이 연결된다. 전환·검증 절차는 [`rpi-network-profile-switcher`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md) 스킬을 참조한다.
+
+| 연결 | 방식 | 비고 |
+| :--- | :--- | :--- |
+| iPhone 16 Pro Max ↔ 서버(Windows) | Tailscale | 통합 테스트 때와 동일하게 유지. 단말이 시연 장소 LAN에 없어도 접속 가능 |
+| 서버(Windows) ↔ LLM(Mac mini) | LAN | `COMPOSE_OLLAMA_BASE_URL=http://<Mac mini LAN IP>:11434`. Mac mini의 Ollama가 `OLLAMA_HOST=0.0.0.0`로 바인딩돼 있어야 함 |
+| 서버(Windows) ↔ DB·미디어(Raspberry Pi) | LAN | `.env.network.demo`의 `DB_HOST`/`IMAGE_SERVER_BASE_URL`을 Pi의 LAN 주소로 설정 |
+
+**변경 이력**: 기존에는 GPU 추론(YOLO)과 LLM(Ollama)이 같은 장비(Windows)에서 함께 돌았으나, 이번 시연 구성부터 LLM을 Mac mini로 분리해 GPU 서버의 VRAM/연산 경합을 줄인다. `switch_rpi_network.sh demo` 실행 시 서버(Windows)는 **WSL2 안에서** 스크립트를 실행해야 한다(`docker-compose.yml`이 Linux/GPU 변형을 전제하므로).
+
+---
+
+## 3. GPU 추론 서버 (Windows)
 
 ```
 ===== CPU =====
@@ -58,7 +72,7 @@ AdapterRAM     : 1073741824
 
 ---
 
-## 3. macOS 개발 머신 (Mac mini)
+## 4. LLM(Ollama) 호스트 + macOS 개발 머신 (Mac mini)
 
 ```
 ===== 기기 =====
@@ -96,10 +110,11 @@ Metal Support  : Metal 4
 
 - `docs/ops/ai_model_hardware_setup.md` §1.1 기준으로 macOS는 Apple MPS 우선, 미지원 시 CPU 폴백 경로이며 CUDA 서버로 분류하지 않는다.
 - 시리얼 넘버·Hardware UUID·Provisioning UDID는 기기 식별 정보라 이 문서에는 기록하지 않는다(`integration-test-orchestrator` 스킬 안전 가드레일과 동일 원칙).
+- **LLM 호스트 역할(2026-07-21 신규)**: 이 장비에서 Ollama(`gemma4:e4b`, `nomic-embed-text`)를 구동하고, 서버(Windows)의 FastAPI 컨테이너가 LAN으로 접속한다. 데모 시연 시 `OLLAMA_HOST=0.0.0.0`로 바인딩하고 방화벽에서 `11434/tcp`를 서버 LAN 대역에 허용해야 한다(§2 참조).
 
 ---
 
-## 4. iOS 클라이언트 단말 (iPhone 16 Pro Max)
+## 5. iOS 클라이언트 단말 (iPhone 16 Pro Max)
 
 | 항목 | 내용 | 출처 |
 | :--- | :--- | :--- |
@@ -112,7 +127,7 @@ Metal Support  : Metal 4
 
 ---
 
-## 5. DB·미디어 저장 서버 (Raspberry Pi)
+## 6. DB·미디어 저장 서버 (Raspberry Pi)
 
 | 항목 | 내용 | 출처 |
 | :--- | :--- | :--- |
@@ -122,16 +137,18 @@ Metal Support  : Metal 4
 | 저장 용량 | **의도적 비공개** | `docs/db_tailscale_guide/README.md` 39행 |
 | OS/서비스 버전 | **의도적 비공개** | `docs/db_tailscale_guide/README.md` 39행 |
 | 구동 서비스 | MariaDB 11.4(팀 공동 DB), 미디어 저장 API(FastAPI, 이벤트 프레임 JPEG·STT 원본 음성) | `docs/db_tailscale_guide/README.md` |
-| 네트워크 | Tailscale 사설망 경유, 시연 시 내부망/Tailscale 테스트망 전환 가능 | `.agents/skills/rpi-network-profile-switcher/SKILL.md` |
+| 네트워크(test 프로필) | Tailscale 사설망 경유 | `.agents/skills/rpi-network-profile-switcher/SKILL.md` |
+| 네트워크(demo 프로필) | 시연 장소 내부망(LAN), 서버(Windows)와 직접 라우팅 | `.agents/skills/rpi-network-profile-switcher/SKILL.md`, §2 |
 
 - `docs/db_tailscale_guide/README.md` 39행은 "공개 문서에는 실제 호스트명, Tailscale IP, 서비스 버전, 현재 가동 상태, 디스크 용량을 기록하지 않는다"고 명시한다. 이는 문서 누락이 아니라 팀의 의도적 보안 정책이므로, 정확한 디스크 용량·OS 버전이 필요하면 Pi 운영 담당자에게 내부 채널로만 확인한다.
 - 시연/테스트망 전환 절차는 `rpi-network-profile-switcher` 스킬을 참조한다.
 
 ---
 
-## 6. 미확인 항목 요약
+## 7. 미확인 항목 요약
 
 | 장비 | 미확인 항목 | 확인 방법 |
 | :--- | :--- | :--- |
 | iPhone 16 Pro Max | 칩, RAM, 저장 용량, iOS 버전 | 담당자(th) 실기기 확인 |
 | Raspberry Pi 5B | SSD 정확한 용량, OS/서비스 버전, 호스트명 | Pi 운영 담당자에게 내부 채널로 확인 (공개 문서 기록 금지 정책 유지) |
+| Mac mini | 시연 장소 LAN IP(`COMPOSE_OLLAMA_BASE_URL`에 필요), `OLLAMA_HOST=0.0.0.0` 바인딩 여부 | 시연 장소 도착 후 실측, `.env.network.demo`에 기록(Git-ignore 대상이라 문서에는 값을 남기지 않음) |

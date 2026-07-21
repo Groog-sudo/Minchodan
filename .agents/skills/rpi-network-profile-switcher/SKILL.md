@@ -1,13 +1,13 @@
 ---
 name: rpi-network-profile-switcher
-description: Raspberry Pi의 MariaDB·미디어 API 접속 경로를 시연 내부망(demo)과 Tailscale 테스트망(test) 사이에서 Docker 이미지 재빌드 없이 전환하고 검증한다. Minchodan에서 DB_HOST, IMAGE_SERVER_BASE_URL, .env.network.demo/test, NETWORK_ENV_FILE, ssh minchodan-rpi-db, socat DB 프록시, UFW 또는 양쪽 네트워크 연결을 설정·점검·복구하거나 네트워크 프로필 전환을 자동화할 때 사용한다.
+description: Raspberry Pi의 MariaDB·미디어 API, 그리고 별도 LAN 호스트(Mac mini)의 Ollama LLM 접속 경로를 시연 내부망(demo)과 Tailscale 테스트망(test) 사이에서 Docker 이미지 재빌드 없이 전환하고 검증한다. Minchodan에서 DB_HOST, IMAGE_SERVER_BASE_URL, COMPOSE_OLLAMA_BASE_URL, .env.network.demo/test, NETWORK_ENV_FILE, ssh minchodan-rpi-db, socat DB 프록시, UFW, 또는 서버-LLM-DB 백엔드 네트워크 연결을 설정·점검·복구하거나 시연 테스트 환경으로 네트워크 프로필 전환을 자동화할 때 사용한다.
 ---
 
-# Raspberry Pi 네트워크 프로필 전환
+# 시연/테스트 백엔드 네트워크 프로필 전환 (Raspberry Pi DB·Mac mini LLM)
 
 > **작성일**: 2026-07-20
-> **버전**: v1.0.2 (2026-07-21 관련 문서에 시연/테스트 장비 제원 인벤토리 추가)
-> **관련 문서**: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, [`docs/ops/demo_test_device_inventory.md`](../../../docs/ops/demo_test_device_inventory.md)(Raspberry Pi 등 시연 장비 제원)
+> **버전**: v1.1.0 (2026-07-21 범위 확장: LLM(Mac mini) LAN 연결을 demo 프로필에 통합. 이전 v1.0.2 이력 유지: 관련 문서에 시연/테스트 장비 제원 인벤토리 추가)
+> **관련 문서**: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, [`docs/ops/demo_test_device_inventory.md`](../../../docs/ops/demo_test_device_inventory.md)(Raspberry Pi 등 시연 장비 제원 및 네트워크 토폴로지)
 > **관련 스킬**: 전체 Docker·iOS 실기기 통합 검증은 [`integration-test-orchestrator`](../integration-test-orchestrator/SKILL.md)를 이어서 사용한다.
 > **지원 에이전트**: Claude Code 등은 본 `SKILL.md`를 직접 읽어 호출한다. OpenAI Codex 계열은 `agents/openai.yaml`(스킬 인터페이스 정의: `display_name`/`short_description`/`default_prompt`)을 통해 동일 스킬을 먼저 인식·호출한다. 다른 스킬 폴더에는 `agents/` 서브폴더가 없으며, 이는 본 스킬만의 예외다.
 
@@ -15,12 +15,16 @@ description: Raspberry Pi의 MariaDB·미디어 API 접속 경로를 시연 내�
 
 ## 목적과 실행 경계
 
-같은 Raspberry Pi의 MariaDB와 미디어 API를 아래 두 런타임 프로필로 전환한다. 이미지 생성은 네트워크 설정과 분리하고 기존 `minchodan-server:latest`를 재사용한다.
+Raspberry Pi의 MariaDB·미디어 API, 그리고 Mac mini에서 별도로 도는 Ollama LLM 접속 경로를 아래 두 런타임 프로필로 함께 전환한다. 이미지 생성은 네트워크 설정과 분리하고 기존 `minchodan-server:latest`를 재사용한다.
 
-| 프로필 | 접속 경로 | 로컬 설정 파일 | 실행 명령 |
-| :--- | :--- | :--- | :--- |
-| **`demo`** | 시연 장소 내부망 | `.env.network.demo` | `bash scripts/switch_rpi_network.sh demo` |
-| **`test`** | Tailscale 외부망 | `.env.network.test` | `bash scripts/switch_rpi_network.sh test` |
+| 프로필 | DB·미디어(Raspberry Pi) | LLM(Mac mini) | 로컬 설정 파일 | 실행 명령 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`demo`** | 시연 장소 내부망(LAN) | 시연 장소 내부망(LAN, `COMPOSE_OLLAMA_BASE_URL`) | `.env.network.demo` | `bash scripts/switch_rpi_network.sh demo` |
+| **`test`** | Tailscale 외부망 | 동일 호스트(Docker 컨테이너 기본값, `host.docker.internal`) | `.env.network.test` | `bash scripts/switch_rpi_network.sh test` |
+
+**실행 위치**: 이 스크립트는 FastAPI/Docker가 실제로 도는 서버 장비에서 실행한다. 현재 시연 구성은 서버=Windows(GPU 추론)이므로, `docker-compose.yml`(Linux/GPU 변형)이 이미 전제하는 대로 **WSL2 안에서(bash)** 실행한다(Windows 네이티브 cmd/PowerShell/Git Bash에서는 `uname -s`가 `Linux`/`Darwin` 어느 쪽도 아니라서 스크립트가 `unsupported OS`로 종료된다). macOS에서 FastAPI를 직접 띄우는 개발/검증 환경이면 그대로 Darwin 분기(`docker-compose.macos.yml` + `socat` 프록시)를 쓴다.
+
+**전제조건(LLM/Mac mini)**: `demo` 프로필로 전환하려면 Mac mini의 Ollama가 `OLLAMA_HOST=0.0.0.0`로 LAN에 바인딩돼 있어야 하고(기본값 `127.0.0.1`은 외부에서 접속 불가), Mac mini 방화벽이 `11434/tcp`를 서버 장비의 LAN 대역에서 허용해야 한다. 이 전제조건은 이 스킬이 원격으로 설정할 수 없으므로, 실패 시 Mac mini 담당자에게 직접 확인을 요청한다.
 
 사용자가 상태 확인이나 진단만 요청하면 읽기 전용 검사까지만 수행한다. 설정·전환·복구를 요청한 경우에만 해당 범위의 변경을 수행한다. 커밋·푸시는 별도 요청이 있을 때만 수행한다.
 
@@ -31,8 +35,8 @@ description: Raspberry Pi의 MariaDB·미디어 API 접속 경로를 시연 내�
 | 대상 | 역할 |
 | :--- | :--- |
 | 루트 `.env` | DB 계정·비밀번호, 미디어 토큰 등 공통 비밀값과 기본 `NETWORK_ENV_FILE` |
-| `.env.network.demo` | 내부망의 `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` |
-| `.env.network.test` | Tailscale의 `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` |
+| `.env.network.demo` | 내부망의 `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL`, (선택) `COMPOSE_OLLAMA_BASE_URL=http://<Mac mini LAN IP>:11434` |
+| `.env.network.test` | Tailscale의 `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` (`COMPOSE_OLLAMA_BASE_URL`은 보통 생략 - 동일 호스트 Ollama 기본값 사용) |
 | `scripts/switch_rpi_network.sh` | 사전검사, Compose 전환, 런타임 검증 정본 |
 | `docker/scripts/db_tailscale_proxy.sh` | macOS Docker에서 Raspberry Pi DB로 연결하는 `socat` 프록시 |
 
@@ -44,7 +48,7 @@ description: Raspberry Pi의 MariaDB·미디어 API 접속 경로를 시연 내�
 4. 기존 사용자 변경을 보존하고, 네트워크 전환 파일만 명시적으로 스테이징한다.
 5. `docker compose down -v`, DB DDL, `DROP`, `TRUNCATE`, 볼륨 삭제를 실행하지 않는다.
 6. 네트워크 전환에 `docker compose build`를 실행하지 않는다.
-7. `tailscale ping` 성공만으로 완료 판정하지 않는다. DB `SELECT 1`과 미디어 `/health`까지 확인한다.
+7. `tailscale ping` 성공만으로 완료 판정하지 않는다. DB `SELECT 1`, 미디어 `/health`, (LLM을 분리한 프로필이면) Ollama `/api/tags`까지 확인한다.
 
 ---
 
@@ -67,9 +71,11 @@ NETWORK_ENV_FILE=../.env.network.<demo-or-test>
 DB_HOST=<PROFILE_DB_HOST>
 DB_PORT=3306
 IMAGE_SERVER_BASE_URL=http://<PROFILE_MEDIA_HOST>:<MEDIA_PORT>
+# demo 프로필에서 LLM(Ollama)을 Mac mini로 분리했을 때만 추가(선택)
+COMPOSE_OLLAMA_BASE_URL=http://<MAC_MINI_LAN_IP>:11434
 ```
 
-주소는 사용자 지시 또는 기존 로컬 프로필에서 가져온다. 루트 `.env`의 기본 프로필을 변경해 달라는 요청이 있으면 중복 키를 확인하고 `NETWORK_ENV_FILE` 한 줄만 최소 수정한다.
+주소는 사용자 지시 또는 기존 로컬 프로필에서 가져온다. 루트 `.env`의 기본 프로필을 변경해 달라는 요청이 있으면 중복 키를 확인하고 `NETWORK_ENV_FILE` 한 줄만 최소 수정한다. `COMPOSE_OLLAMA_BASE_URL`을 생략하면 기존처럼 동일 호스트 Ollama(`host.docker.internal:11434`)를 그대로 사용한다.
 
 ### 2. Raspberry Pi 도달성과 서비스 상태 확인
 
@@ -96,6 +102,7 @@ MINCHODAN_SWITCH_CHECK_ONLY=1 bash scripts/switch_rpi_network.sh test
 | :--- | :--- |
 | `DB TCP preflight failed` | 프로필 주소, MariaDB listen, UFW, Tailscale 상태 |
 | `media health preflight failed` | 미디어 서비스, `0.0.0.0` 바인딩, UFW, `/health` |
+| `Ollama LAN preflight failed` | Mac mini `OLLAMA_HOST=0.0.0.0` 바인딩 여부, Mac mini 방화벽의 `11434/tcp` 허용, 서버-Mac mini 간 LAN 라우팅 |
 | `socat not installed` | macOS에서 `brew install socat` |
 | `FastAPI health timeout` | 컨테이너 로그와 컨테이너 내부 `/health`; 호스트 포트 충돌을 분리 확인 |
 
@@ -107,10 +114,10 @@ bash scripts/switch_rpi_network.sh <demo|test>
 
 스크립트가 다음 작업을 수행하도록 유지한다.
 
-1. DB TCP와 미디어 `/health` 사전검사
+1. DB TCP, 미디어 `/health`, (프로필에 `COMPOSE_OLLAMA_BASE_URL`이 있으면) Ollama `/api/tags` 사전검사
 2. Linux 또는 macOS Compose 선택과 구성 검증
 3. macOS `socat` 프록시의 DB 목적지 교체
-4. `--no-build --no-deps --force-recreate fastapi`로 FastAPI만 재생성
+4. `--no-build --no-deps --force-recreate fastapi`로 FastAPI만 재생성(`COMPOSE_OLLAMA_BASE_URL`이 있으면 `OLLAMA_BASE_URL`도 함께 갱신됨)
 5. 컨테이너 내부 FastAPI `/health` 확인
 6. 원격 DB `SELECT 1`과 미디어 `/health` 확인
 
@@ -151,6 +158,7 @@ Pi 설정이 이미 정상이라면 재적용하지 않는다. 드리프트가 �
 | 프로필 | `demo`, `test` check-only 모두 통과 |
 | DB | 선택 프로필에서 `SELECT 1=True` |
 | 미디어 | 선택 프로필에서 `/health` HTTP 200 |
+| LLM(Mac mini, demo만 해당) | `COMPOSE_OLLAMA_BASE_URL`이 있으면 `/api/tags` 정상 응답 |
 | Docker | 기존 이미지 재사용, MariaDB·Redis 보존 |
 | 보안 | 프로필·비밀값 Git-ignore, UFW 최소 허용 |
 | 원격 관리 | 새 `ssh minchodan-rpi-db` 세션 성공 |
