@@ -954,3 +954,31 @@
 - **관련 파일**: `docs/ops/reports/presentation_script_consistency_check.md`, `docs/README.md`, `docs/changelogs/th.md`
 - **검증 결과**: 서버·클라이언트 코드 무수정(읽기 전용). 대조 근거: suppressor/llm_client_factory/graph/gates/direction/risk_rules/stt_config/tts_service/stream_splitter/distance_policy/audioEngine/config 및 pipeline_stage_design·model_class_validation_report·wireless_test_guide.
 
+---
+
+### 2026-07-21 | 문서화 | YOLO26n 듀얼헤드 탐지·분할 종합 정리 문서 작성
+
+- **배경**: 발표·정합성 reports와 클래스 검증 보고서에 흩어진 Object Detection 29 / Segmentation 4 관련 사실을 한 문서로 재정리해 달라는 요청.
+- **변경 내용**:
+  - `docs/ops/reports/yolo_segmentation_overview.md` 신규: 듀얼헤드 구조, 29+4 클래스표, 게이트·실측 KPI, 패스트 레인 연결, 온디바이스 서술 정정, 발표·면접 멘트, 코드 맵 수록.
+  - `.gitignore`에 해당 보고서 Git 추적 예외(`!docs/ops/reports/yolo_segmentation_overview.md`) 추가.
+  - `docs/README.md` §8 ops/reports 표 등재 및 버전 v0.14.6→v0.14.7 갱신.
+- **관련 파일**: `docs/ops/reports/yolo_segmentation_overview.md`, `.gitignore`, `docs/README.md`, `docs/changelogs/th.md`
+- **검증 결과**: 서버·클라이언트 코드 무수정. 소스: presentation_final_script_30min / presentation_script_consistency_check / presentation_template_cache_code_review / model_class_validation_report.
+
+---
+
+### 2026-07-21 | 인프라/시연 | Windows GPU 서버 demo 프로필 기동·로컬 아티팩트 gitignore 보강
+
+- **배경**: 시연 토폴로지(LAN: LLM–FastAPI–DB, Tailscale: 실기기)로 Windows GPU 서버를 기동하면서, 로컬 전용 설정·토큰 맵이 커밋되지 않도록 ignore를 보강.
+- **변경 내용**:
+  - `.gitignore`에 로컬 전용 항목 추가: `.device_tokens_local.txt`, `docker/docker-compose.subnet-override.local.yml`, `.env.network.demo`, `.env.network.test`(명시적 보강, `.env.*`와 중복이어도 가독성 목적).
+  - 런타임(커밋 제외)에서 수행·검증한 시연 기동 요약:
+    - Tailscale Serve: MagicDNS `443` → FastAPI `127.0.0.1:8000`
+    - demo 프로필: DB/미디어 Pi LAN `192.168.0.174`, LLM Mac mini `192.168.0.227:11434`
+    - `DEVICE_STATIC_TOKENS`에 아이폰용 `dev-001`/`dev-002` 등록(원문은 로컬만)
+    - FastAPI Docker 이미지 `minchodan-server:latest` 재빌드(`lap==0.5.13` 포함), ByteTrack `lap` 폴백 해소
+    - 검증: FastAPI `/health`, DB `SELECT 1`, 미디어 `/health`, Ollama `/api/tags`
+- **관련 파일**: `.gitignore`, `docs/changelogs/th.md`
+- **검증 결과**: 비밀값·실 IP 프로필 파일은 Git 미추적. 이미지 빌드 `exit=0`, demo 전환 후 컨테이너 env가 LAN DB/LLM을 가리킴을 확인.
+

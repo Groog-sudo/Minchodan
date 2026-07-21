@@ -230,6 +230,7 @@ reports/
 docs/ops/reports/*
 !docs/ops/reports/presentation_template_cache_code_review.md
 !docs/ops/reports/presentation_script_consistency_check.md
+!docs/ops/reports/yolo_segmentation_overview.md
 
 # ==========================================
 # Cache
@@ -380,3 +381,15 @@ scratch/
 
 # Local PyTorch CUDA wheel cache (multi-GB)
 .wheel_cache/
+
+# local demo device token map (do not commit)
+.device_tokens_local.txt
+
+
+# local docker subnet override (host collision)
+docker/docker-compose.subnet-override.local.yml
+
+
+.env.network.demo
+.env.network.test
+

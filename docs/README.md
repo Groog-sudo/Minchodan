@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
-> **작성일**: 2026-07-19
-> **버전**: v0.14.6 (2026-07-21 시연/테스트 장비 제원 인벤토리에 네트워크 토폴로지 반영 + 기존 v0.14.5 이력 유지: 시연/테스트 장비 제원 인벤토리 신규 등재, Android 인수인계서 등재, Android-iOS 정합 체크리스트·Gemini 작업 지시서)
+> **작성일**: 2026-07-21
+> **버전**: v0.14.7 (2026-07-21 ops/reports에 YOLO26n 듀얼헤드 탐지·분할 종합 정리 등재 + 기존 v0.14.6 이력 유지: 시연/테스트 장비 제원 인벤토리·네트워크 토폴로지, Android 인수인계·정합 체크리스트)
 
 ## 문서 목록
 
@@ -200,6 +200,7 @@ docs/
 | :--- | :--- | :--- |
 | **발표 대본 템플릿 캐시 서술 코드 검토** | [presentation_template_cache_code_review.md](ops/reports/presentation_template_cache_code_review.md) | **"프롬프트 템플릿 캐시+탐지 객체 치환" 발표 추가 제안을 코드 실측으로 검증. 패스트 레인·사전합성 클립 캐시가 실체이며 용어 정정과 반영 문안 제시** |
 | **발표 대본 전면 정합성 검사** | [presentation_script_consistency_check.md](ops/reports/presentation_script_consistency_check.md) | **발표 대본 18개 슬라이드 전 기술 주장을 현행 코드·문서와 전수 대조. 슬라이드 9·10·11·17의 부분 불일치와 발표 전 체크리스트 수록** |
+| **YOLO26n 듀얼헤드 탐지·분할 종합 정리** | [yolo_segmentation_overview.md](ops/reports/yolo_segmentation_overview.md) | **reports·검증 보고서에 흩어진 Detection 29 + Segmentation 4 사실을 발표·면접용으로 재정리(게이트·실측·패스트 레인·온디바이스)** |
 
 ---
 
