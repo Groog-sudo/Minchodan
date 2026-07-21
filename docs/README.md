@@ -1,7 +1,7 @@
 # Minchodan 문서 인덱스
 
 > **작성일**: 2026-07-19
-> **버전**: v0.14.3 (2026-07-21 Android-iOS 정합 체크리스트·Gemini 작업 지시서 등재 + 기존 v0.14.2 이력 유지: ops/reports 발표 대본 정합성·템플릿 캐시 검토 보고서)
+> **버전**: v0.14.4 (2026-07-21 Android 인수인계서 등재 + 기존 v0.14.3 이력 유지: Android-iOS 정합 체크리스트·Gemini 작업 지시서)
 
 ## 문서 목록
 
@@ -34,6 +34,7 @@
 | **Post-MVP 하이브리드 로드맵** | [research/post_mvp_hybrid_roadmap.md](research/post_mvp_hybrid_roadmap.md) | **하이브리드 온디바이스-서버 아키텍처 청사진 (post-MVP), 엣지 반사+클라우드 인지 이중 루프** |
 | **iOS/Android 이원화 통합 계약서** | [mobile/ios_android_bifurcation_contract.md](mobile/ios_android_bifurcation_contract.md) | **파일 소유권·인터페이스 계약·인프라 거버넌스로 병합 충돌 방지 (kb/dg2 병합 시뮬레이션 근거)** |
 | **Android-iOS 정합 체크리스트** | [mobile/android_ios_parity_checklist.md](mobile/android_ios_parity_checklist.md) | **Android를 iOS 계약에 맞추기 위한 P0~P2 체크리스트·검증 매트릭스·Gemini/Android 에이전트 작업 지시** |
+| **Android 작업 인수인계서 (kb→dg)** | [mobile/android_handoff_kb_to_dg.md](mobile/android_handoff_kb_to_dg.md) | **실기기 검증 결과·미푸시 커밋·iOS 영향(CameraView)·P0 잔여·인수 직후 체크리스트** |
 | **휴리스틱 거리 구역 알림 라우팅 구현 계획서** | [mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md](mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md) | **Near/Medium/Far 거리 구역 기반 반사·인지 알림 라우팅, 억제, 서버·단말 계약 구현 계획** |
 | 보행이론 인사이트 보고서 | [design/behavior_and_risk_insight.md](design/behavior_and_risk_insight.md) | 보행지도사 이론 기반 행동 패턴 및 위험도 게이트 정의              |
 | **변경 사항 기록**   | [changelogs/README.md](changelogs/README.md)           | 팀원별 작업 내역, 날짜순 changelog 목록                           |
@@ -115,6 +116,7 @@ docs/
 | 온디바이스 추론 엔진 격리 설계서 | [ondevice_inference_engine_isolation_plan.md](mobile/ondevice_inference_engine_isolation_plan.md) | YOLO26n + CoreML 이중 전략 기반 플랫폼별 추론 엔진 격리 (Post-MVP) |
 | 휴리스틱 거리 구역 알림 라우팅 구현 계획서 | [HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md](mobile/HEURISTIC_DISTANCE_ALERT_ROUTING_IMPLEMENTATION_PLAN.md) | Near/Medium/Far 거리 구역 기반 반사·인지 알림 라우팅, 억제, 서버·단말 계약 구현 계획 |
 | **Android-iOS 정합 체크리스트** | [android_ios_parity_checklist.md](mobile/android_ios_parity_checklist.md) | **P0~P2 정합 항목·A-S 검증 매트릭스·Gemini/Android 에이전트 복붙 지시문** |
+| **Android 작업 인수인계서 (kb→dg)** | [android_handoff_kb_to_dg.md](mobile/android_handoff_kb_to_dg.md) | **kb 세션 실측·제미나이 미푸시 커밋·CameraView iOS 영향·인수 실행 순서** |
 
 ---
 

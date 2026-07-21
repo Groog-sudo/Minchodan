@@ -3857,3 +3857,16 @@
 - **관련 파일**: `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 문서 링크 경로 존재 확인. 구현 코드는 본 세션에서 변경하지 않음(문서 전용).
 - **비고**: Android 구현은 dg 계열 에이전트/담당자가 체크리스트 §0 지시문으로 착수. 서버 YOLO `*260714` 정합은 로컬 `.env`에서 이미 적용됨(커밋 대상 아님).
+
+---
+
+### 2026-07-21 | 문서 | Android 작업자 인수인계서 작성
+
+- **배경**: Samsung SM-S938N 실기기 검증에서 TFLite 네이티브 로드는 확인됐으나 Wi‑Fi/Tailscale 미도달·Metro 번들 미로드로 A-S1~S7 종단은 미검증. 제미나이 로컬 커밋 2개(`959c256`, `239d5b0`)는 `origin/kb`에 미푸시이며, `CameraView` 로컬 반사 공통화는 iOS 런타임에 영향. Android 담당자에게 상태·위험·잔여 작업을 넘기기 위한 단일 인수인계서가 필요했다.
+- **변경 내용**:
+  - `docs/mobile/android_handoff_kb_to_dg.md` 신규(v1.0.0): Git/미푸시 커밋, 실측 표, iOS 영향·R-00 옵션, 인수 직후 체크리스트, 함정, 보고 템플릿, 참고 명령.
+  - `docs/mobile/android_ios_parity_checklist.md`: 인수인계 링크 및 §0 복붙 지시문에 인수인계서·P0 기각 주의 추가.
+  - `docs/README.md` v0.14.3→v0.14.4: 인덱스·mobile/ 표에 인수인계서 등재.
+- **관련 파일**: `docs/mobile/android_handoff_kb_to_dg.md`, `docs/mobile/android_ios_parity_checklist.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 문서 경로·상호 링크 존재 확인. 코드/런타임 변경 없음.
+- **비고**: 제미나이 2커밋 푸시·CameraView 승인/롤백은 인수자(dg)·kb 합의 후 진행. 본 항목은 문서만.

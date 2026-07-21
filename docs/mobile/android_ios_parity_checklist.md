@@ -4,6 +4,7 @@
 > **버전**: v1.0.0
 > **작성 브랜치**: kb (문서 기준선) / **구현 담당**: Android (dg 계열 권장)
 > **설계 기준**: [`ios_android_bifurcation_contract.md`](ios_android_bifurcation_contract.md), [`ondevice_inference_engine_isolation_plan.md`](ondevice_inference_engine_isolation_plan.md), [`../design/api_specification.md`](../design/api_specification.md), [`../ops/environment_variables.md`](../ops/environment_variables.md), [`../ops/wireless_test_guide.md`](../ops/wireless_test_guide.md)
+> **인수인계**: [`android_handoff_kb_to_dg.md`](android_handoff_kb_to_dg.md) (2026-07-21 실기기 검증·미푸시 커밋·iOS 영향·잔여 P0)
 > **모델 기준선**: 서버·온디바이스 공통 `object_detection260714.pt` / `segmentation260714.pt` (iOS=CoreML export, Android=TFLite export)
 > **목적**: Mac/iOS 중심 검증과 동등한 Android 실기기 종단 품질을 확보하기 위한 P0~P2 체크리스트와, Gemini 등 Android 담당 에이전트용 실행 지시
 
@@ -19,12 +20,14 @@
 
 1) AGENTS.md, SKILLS.md
 2) docs/mobile/ios_android_bifurcation_contract.md (파일 소유권·비협상 원칙)
-3) docs/mobile/android_ios_parity_checklist.md (본 문서, 단일 작업 기준)
-4) docs/design/api_specification.md (WS 계약)
-5) docs/ops/environment_variables.md 의 YOLO26N_* / EXPO_PUBLIC_* 관련 절
+3) docs/mobile/android_handoff_kb_to_dg.md (kb 인수인계: 실측 실패 원인·미푸시 커밋·CameraView iOS 영향)
+4) docs/mobile/android_ios_parity_checklist.md (본 문서, 단일 작업 기준)
+5) docs/design/api_specification.md (WS 계약)
+6) docs/ops/environment_variables.md 의 YOLO26N_* / EXPO_PUBLIC_* 관련 절
 
 작업 브랜치: dg (또는 팀 합의된 Android 개인 브랜치). main 직접 push 금지.
 기준선: 최신 origin/dev 를 먼저 merge/rebase 한 뒤 작업한다. stale dg2 위에 단독 작업하지 않는다.
+주의: 인수인계서의 "P0 통과" 주장은 기각됨. 네트워크(Tailscale/Wi-Fi)·Metro 번들부터 복구한 뒤 A-S1~S7을 다시 실측한다.
 
 목표: Android 실기기가 iOS와 같은 서버·모델·이중경로·오디오 우선순위 계약을 만족하도록
 본 문서 §2~§9 의 P0 항목을 닫는다. P1/P2는 P0 완료 보고 후 진행.
