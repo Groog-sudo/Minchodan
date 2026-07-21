@@ -118,6 +118,69 @@ function getZoneTag(zone: string): string {
   return "";
 }
 
+// ---------------------------------------------------------------------------
+// 2계층 오버레이 기하 (도식만, 판정 SSOT 아님)
+// L1 PATH ROI: 단말 CameraView PATH_ROI_* 와 동일 사다리꼴 (좌우 통로)
+// L2 거리 호: distance_policy area_ratio → heuristic_m 경계의 사람 기준 원근 근사
+// SSOT 판정은 BBox effective_distance_zone / area_ratio 태그·색상만 사용
+// ---------------------------------------------------------------------------
+const PATH_ROI_MID_Y = 0.5;
+const PATH_ROI_NEAR_BAND = [0.2, 0.8] as const;
+const PATH_ROI_FAR_BAND = [0.38, 0.62] as const;
+
+/** distance_policy: heuristic_m ≈ 0.22 / sqrt(area_ratio) */
+const HEURISTIC_COEFF = 0.22;
+const NEAR_ENTER_AREA_RATIO = 0.1;
+const MEDIUM_ENTER_AREA_RATIO = 0.03;
+const NEAR_HEURISTIC_M = HEURISTIC_COEFF / Math.sqrt(NEAR_ENTER_AREA_RATIO); // ≈0.70m
+const MED_HEURISTIC_M = HEURISTIC_COEFF / Math.sqrt(MEDIUM_ENTER_AREA_RATIO); // ≈1.27m
+
+/**
+ * 지면 접촉 Y 근사: 수평선(PATH_ROI_MID_Y) + 역비례 깊이.
+ * k는 Near(≈0.70m) 접촉이 y≈0.78이 되도록 맞춤(기존 호와 연속).
+ */
+const GROUND_HORIZON_Y = PATH_ROI_MID_Y;
+const GROUND_CALIB_K =
+  (0.78 - GROUND_HORIZON_Y) * NEAR_HEURISTIC_M / (1 - GROUND_HORIZON_Y);
+
+function contactYForHeuristicMeters(meters: number): number {
+  if (meters <= 0) return 1;
+  const y =
+    GROUND_HORIZON_Y +
+    (1 - GROUND_HORIZON_Y) * (GROUND_CALIB_K / meters);
+  return Math.min(0.98, Math.max(GROUND_HORIZON_Y + 0.02, y));
+}
+
+function pathRoiPolygonPoints(W: number, H: number): string {
+  const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
+  const [farLo, farHi] = PATH_ROI_FAR_BAND;
+  const yTop = PATH_ROI_MID_Y * H;
+  const yBottom = H;
+  const pts: [number, number][] = [
+    [farLo * W, yTop],
+    [farHi * W, yTop],
+    [nearHi * W, yBottom],
+    [nearLo * W, yBottom],
+  ];
+  return pts.map(([x, y]) => `${x},${y}`).join(" ");
+}
+
+function edgeArcPath(
+  W: number,
+  H: number,
+  edgeYRatio: number,
+  apexYRatio = 0.22,
+): { d: string; edgeY: number } {
+  const apexX = W / 2;
+  const apexY = H * apexYRatio;
+  const edgeY = H * edgeYRatio;
+  const r = Math.sqrt(apexX ** 2 + (edgeY - apexY) ** 2);
+  return {
+    d: `M 0 ${edgeY} A ${r} ${r} 0 0 1 ${W} ${edgeY}`,
+    edgeY,
+  };
+}
+
 export function LiveCameraFeed({
   imageUrl,
   latestDetections,
@@ -223,7 +286,7 @@ export function LiveCameraFeed({
           </div>
         </div>
         <span className="panel-kicker">
-          실기기 카메라 화면 (실시간 BBox 및 GPS HUD 오버레이)
+          실기기 카메라 (BBox=area_ratio SSOT · L1 통로 ROI · L2 거리 호 근사 · GPS HUD)
         </span>
       </div>
 
@@ -292,10 +355,12 @@ export function LiveCameraFeed({
                 );
               })}
 
-            {/* 2026-07-19: Near/Medium/Far 거리 구역 호 오버레이 (SVG).
-                호 끝점을 좌·우 화면 가장자리(x=0, x=W)에 고정. 측면선은 제거. */}
+            {/* 2026-07-21: 2계층 도식 오버레이 (판정 SSOT 아님).
+                L1 PATH ROI = 단말과 동일 사다리꼴(좌우 통로).
+                L2 거리 호 = area_ratio→heuristic_m 경계의 사람 기준 원근 근사. */}
             {naturalSize && (
               <svg
+                className="feed-dual-layer-overlay"
                 width="100%"
                 height="100%"
                 viewBox={`0 0 ${naturalSize.w} ${naturalSize.h}`}
@@ -313,34 +378,108 @@ export function LiveCameraFeed({
                   const H = naturalSize.h;
                   const apexX = W / 2;
                   const apexY = H * 0.22;
-                  const edgeArc = (edgeYRatio: number) => {
-                    const edgeY = H * edgeYRatio;
-                    const r = Math.sqrt(apexX ** 2 + (edgeY - apexY) ** 2);
-                    return {
-                      d: `M 0 ${edgeY} A ${r} ${r} 0 0 1 ${W} ${edgeY}`,
-                      edgeY,
-                    };
-                  };
-                  const nearArc = edgeArc(0.78);
-                  const medArc = edgeArc(0.52);
+                  const fontPx = Math.max(10, Math.round(Math.min(W, H) * 0.018));
+                  const strokeScale = Math.max(1.5, Math.min(W, H) * 0.003);
+
+                  const nearY = contactYForHeuristicMeters(NEAR_HEURISTIC_M);
+                  const medY = contactYForHeuristicMeters(MED_HEURISTIC_M);
+                  const nearArc = edgeArcPath(W, H, nearY);
+                  const medArc = edgeArcPath(W, H, medY);
+
                   return (
                     <>
-                      <path d={nearArc.d} fill="none" stroke="#EF4444" strokeWidth={2} strokeOpacity={0.75} />
-                      <path d={medArc.d} fill="none" stroke="#F59E0B" strokeWidth={2} strokeOpacity={0.75} />
-                      {/* 12시 방향 중심선 (Near/Med 호 유지, cyan 추가) */}
+                      {/* L1: PATH ROI (통로) */}
+                      <polygon
+                        points={pathRoiPolygonPoints(W, H)}
+                        fill="rgba(34, 211, 238, 0.06)"
+                        stroke="#22D3EE"
+                        strokeWidth={strokeScale}
+                        strokeOpacity={0.85}
+                        strokeDasharray={`${strokeScale * 4} ${strokeScale * 3}`}
+                      />
+                      <text
+                        x={apexX}
+                        y={PATH_ROI_MID_Y * H + fontPx + 2}
+                        fill="#22D3EE"
+                        fontSize={fontPx}
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        opacity={0.9}
+                      >
+                        L1 PATH ROI
+                      </text>
+
+                      {/* L2: 거리 호 (사람 기준 원근 근사) */}
+                      <path
+                        d={nearArc.d}
+                        fill="none"
+                        stroke="#EF4444"
+                        strokeWidth={strokeScale}
+                        strokeOpacity={0.8}
+                      />
+                      <path
+                        d={medArc.d}
+                        fill="none"
+                        stroke="#F59E0B"
+                        strokeWidth={strokeScale}
+                        strokeOpacity={0.8}
+                      />
                       <line
                         x1={apexX}
                         y1={apexY}
                         x2={apexX}
                         y2={H}
                         stroke="#22D3EE"
-                        strokeWidth={3}
+                        strokeWidth={strokeScale * 1.4}
                         strokeOpacity={0.95}
                       />
-                      <text x={W - 44} y={nearArc.edgeY - 6} fill="#EF4444" fontSize={11} fontWeight="bold">NEAR</text>
-                      <text x={W - 40} y={medArc.edgeY - 6} fill="#F59E0B" fontSize={11} fontWeight="bold">MED</text>
-                      <text x={apexX + 8} y={apexY - 4} fill="#3B82F6" fontSize={11} fontWeight="bold">FAR</text>
-                      <text x={apexX + 8} y={H * 0.38} fill="#22D3EE" fontSize={11} fontWeight="bold">12시</text>
+                      <text
+                        x={W - 8}
+                        y={nearArc.edgeY - 4}
+                        fill="#EF4444"
+                        fontSize={fontPx}
+                        fontWeight="bold"
+                        textAnchor="end"
+                      >
+                        {`NEAR ~${NEAR_HEURISTIC_M.toFixed(1)}m (a≥${NEAR_ENTER_AREA_RATIO})`}
+                      </text>
+                      <text
+                        x={W - 8}
+                        y={medArc.edgeY - 4}
+                        fill="#F59E0B"
+                        fontSize={fontPx}
+                        fontWeight="bold"
+                        textAnchor="end"
+                      >
+                        {`MED ~${MED_HEURISTIC_M.toFixed(1)}m (a≥${MEDIUM_ENTER_AREA_RATIO})`}
+                      </text>
+                      <text
+                        x={apexX + 8}
+                        y={apexY - 4}
+                        fill="#3B82F6"
+                        fontSize={fontPx}
+                        fontWeight="bold"
+                      >
+                        FAR
+                      </text>
+                      <text
+                        x={apexX + 8}
+                        y={H * 0.38}
+                        fill="#22D3EE"
+                        fontSize={fontPx}
+                        fontWeight="bold"
+                      >
+                        12시
+                      </text>
+                      <text
+                        x={8}
+                        y={H - 8}
+                        fill="#94A3B8"
+                        fontSize={fontPx}
+                        fontWeight="bold"
+                      >
+                        L2 거리호=사람근사 · 태그/색=SSOT
+                      </text>
                     </>
                   );
                 })()}

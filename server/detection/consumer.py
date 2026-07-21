@@ -141,13 +141,20 @@ class DetectionConsumer:
         self._log_tasks: set[asyncio.Task] = set()
         # 반사 경보 후 800ms 지연 인지 가이드도 동일한 이유로 참조를 들고 있어야 한다.
         self._delayed_guide_tasks: set[asyncio.Task] = set()
+        # device별 최신 delayed guide만 유지(이전 enter의 미실행 태스크는 cancel).
+        self._delayed_guide_by_device: dict[str, asyncio.Task] = {}
         # device_id별 마지막 인지 가이드 전송 시각(초)과 그 오디오 재생 길이(초).
         # 이전 안내 음성이 끝나기 전에 다음 안내가 겹쳐 재생을 끊는 문제를 막기 위한
         # 간격 쿨다운. 고정값 하나로는 문장 길이에 따라 달라지는 실제 WAV 재생 시간을
         # 반영하지 못해(짧은 문장엔 과잉 대기, 긴 문장엔 재생 중 짤림) 직전 오디오의
         # 실측 길이 기반으로 동적 산정한다(비협상 아님, 튜닝값).
+        #
+        # 2026-07-21: Near/Medium 슬롯 분리. Near 직후 Medium 1회가 막히지 않게 하고,
+        # 단말은 Near 완주 후 대기 Medium을 재생한다(공유 쿨다운이 Medium을 삼키던 실측).
         self._last_guide_ts: dict[str, float] = {}
         self._last_guide_duration_sec: dict[str, float] = {}
+        self._last_guide_ts_by_band: dict[str, dict[str, float]] = {}
+        self._last_guide_duration_by_band: dict[str, dict[str, float]] = {}
         # P1-2 (2026-07-17): device_id별 직전 인지 안내의 상황 서명(객체+표면).
         # 동일 서명 + 쿨다운 이내 재발화를 TTS 합성 생략으로 차단.
         self._last_guide_signature: dict[str, str] = {}
@@ -212,6 +219,32 @@ class DetectionConsumer:
             primary_det.class_name,
         )
 
+    @staticmethod
+    def _guide_band(distance_class: str) -> str:
+        """가이드 쿨다운 슬롯. near/medium만 분리하고 나머지는 other."""
+        if distance_class == "near":
+            return "near"
+        if distance_class == "medium":
+            return "medium"
+        return "other"
+
+    def _band_last_guide_ts(self, device_id: str, band: str) -> float:
+        return self._last_guide_ts_by_band.get(device_id, {}).get(band, 0.0)
+
+    def _band_last_guide_duration_sec(self, device_id: str, band: str) -> float:
+        return self._last_guide_duration_by_band.get(device_id, {}).get(band, 0.0)
+
+    def _mark_guide_sent(
+        self, device_id: str, band: str, send_now: float, duration_sec: float
+    ) -> None:
+        by_ts = self._last_guide_ts_by_band.setdefault(device_id, {})
+        by_dur = self._last_guide_duration_by_band.setdefault(device_id, {})
+        by_ts[band] = send_now
+        by_dur[band] = duration_sec
+        # 레거시(전역) 슬롯: 발화가치 30초 타이머·관측용. 밴드 억제에는 쓰지 않는다.
+        self._last_guide_ts[device_id] = send_now
+        self._last_guide_duration_sec[device_id] = duration_sec
+
     def _required_guide_gap_sec(
         self,
         device_id: str,
@@ -219,26 +252,26 @@ class DetectionConsumer:
         frame: np.ndarray | None = None,
         distance_class: str = "",
     ) -> float:
-        """직전 안내 오디오의 실측 재생 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다.
+        """밴드(near/medium)별 직전 안내 길이 + 여유 마진과 최소 쿨다운 중 큰 값을 반환한다.
 
         T1-b (2026-07-18): 12시 회랑 접근 객체가 중거리면 쿨다운을 단축해 신규 위험에
         빠르게 반응한다. 단, 이전 안내가 아직 재생 중이면 그 길이만큼은 기다려야 한다.
 
-        2026-07-21: post_reflex Near 안내는 반사 비프와 달리 말 안내가 필요하므로,
-        near도 재생 길이+마진(최소 2.5s)만 보장한다. 8초 고정이면 비프만 반복되고
-        "전방 차량 있어요"가 장시간 침묵한다(실측).
+        2026-07-21: Near/Medium 쿨다운 슬롯 분리. Near 직후에도 Medium 슬롯은 독립이라
+        Medium 1회가 서버에서 막히지 않는다. 단말은 Near 완주 후 대기 Medium을 재생.
+        near gap = max(2.0, 해당 밴드 직전길이+1.0s).
         """
-        prev_duration_sec = self._last_guide_duration_sec.get(device_id, 0.0)
+        if not distance_class and primary_det is not None and frame is not None:
+            distance_class = self._resolve_distance_class(primary_det, frame)
+        band = self._guide_band(distance_class)
+        prev_duration_sec = self._band_last_guide_duration_sec(device_id, band)
         base_gap = max(
             self._min_guide_cooldown_sec, prev_duration_sec + self._guide_cooldown_margin_sec
         )
 
-        if not distance_class and primary_det is not None and frame is not None:
-            distance_class = self._resolve_distance_class(primary_det, frame)
-
-        # post_reflex Near: 직전 WAV가 끝난 뒤 바로 다음 Near enter 안내를 허용.
+        # post_reflex Near: 직전 Near WAV 종료 직후 다음 Near enter 안내 허용.
         if distance_class == "near":
-            return max(2.5, prev_duration_sec + self._guide_cooldown_margin_sec)
+            return max(2.0, prev_duration_sec + 1.0)
 
         # T1-b: 안내용 12시 회랑 + approaching + medium이면 쿨다운을 3초로 단축
         if (
@@ -252,6 +285,20 @@ class DetectionConsumer:
                 return max(3.0, prev_duration_sec + self._guide_cooldown_margin_sec)
 
         return base_gap
+
+    def _is_guide_band_cooling(
+        self,
+        device_id: str,
+        primary_det: Detection | None,
+        frame: np.ndarray | None,
+        distance_class: str,
+    ) -> bool:
+        """해당 거리 밴드 슬롯만 쿨다운 중이면 True. Near가 Medium을 막지 않는다."""
+        if not distance_class and primary_det is not None and frame is not None:
+            distance_class = self._resolve_distance_class(primary_det, frame)
+        band = self._guide_band(distance_class)
+        gap = self._required_guide_gap_sec(device_id, primary_det, frame, distance_class)
+        return time.monotonic() - self._band_last_guide_ts(device_id, band) < gap
 
     @staticmethod
     def _hazard_surface_key(surfaces: list) -> str:
@@ -488,14 +535,18 @@ class DetectionConsumer:
         self._braille_cognitive_pending[device_id] = None
 
     @staticmethod
-    def _compute_cognitive_signature(result: DetectionResult, departure_confirmed: bool) -> str:
-        """P1-2: 인지 가이드 상황 서명(객체+표면+이탈) 산출.
+    def _compute_cognitive_signature(
+        result: DetectionResult,
+        departure_confirmed: bool,
+        distance_class: str = "",
+    ) -> str:
+        """P1-2: 인지 가이드 상황 서명(객체+표면+이탈+거리밴드) 산출.
 
         # [면접 대비 주석]
         # 발화 가치 게이트의 핵심: "같은 상황의 반복 안내는 억제, 상황이 바뀌면 즉시 안내".
-        # 서명 = 정렬된 객체 클래스 목록 + 정렬된 표면 클래스 목록 + 이탈 여부.
-        # 동일 서명이면 같은 상황으로 간주해 쿨다운 내 TTS 합성을 생략해 CPU/중복 안내를 줄인다.
-        # 객체/표면이 하나라도 바뀌면 서명이 달라져 즉시 발화한다.
+        # 서명 = 정렬된 객체 클래스 목록 + 정렬된 표면 클래스 목록 + 이탈 여부 + 거리 밴드.
+        # 2026-07-21: dist 밴드를 넣어 Near 직후 동일 객체의 Medium 안내가 30초 서명
+        # 억제에 먹히지 않게 한다(Near 완주 후 Medium 1회 정책).
         #
         # 2026-07-19: 노면 서명은 caution|roadway만 사용. sidewalk_normal/braille 마스크
         # 흔들림으로 쿨다운이 리셋되지 않게 거친 키로 고정한다.
@@ -503,23 +554,28 @@ class DetectionConsumer:
         objects_key = ",".join(sorted({d.class_name for d in result.detections}))
         surface_key = DetectionConsumer._hazard_surface_key(result.surface)
         departure_key = "departure" if departure_confirmed else ""
-        return f"obj:{objects_key}|surf:{surface_key}|dep:{departure_key}"
+        dist_key = distance_class if distance_class in ("near", "medium", "far") else "-"
+        return f"obj:{objects_key}|surf:{surface_key}|dep:{departure_key}|dist:{dist_key}"
 
     def _has_utterance_value(
-        self, device_id: str, result: DetectionResult, departure_confirmed: bool
+        self,
+        device_id: str,
+        result: DetectionResult,
+        departure_confirmed: bool,
+        distance_class: str = "",
     ) -> bool:
         """P1-2: 인지 가이드 발화 가치 판정.
 
         발화 조건(OR):
             1. 보도 이탈 확정 (departure_confirmed) - 안전상 항상 가치.
-            2. 상황 서명 변화 (새 객체/표면 변화) - 직전과 다른 상황.
+            2. 상황 서명 변화 (새 객체/표면/거리밴드) - 직전과 다른 상황.
             3. 직전 안내로부터 COGNITIVE_UTTERANCE_COOLDOWN_S 경과 - 동일 상황도 주기적 갱신.
                단, 노면만(객체 없음)인 동일 에피소드는 주기 갱신 금지(이탈 후 재진입만).
         위 모두 거짓이면 동일 상황 반복이므로 TTS 합성 생략.
         """
         if departure_confirmed:
             return True
-        current_sig = self._compute_cognitive_signature(result, departure_confirmed)
+        current_sig = self._compute_cognitive_signature(result, departure_confirmed, distance_class)
         prev_sig = self._last_guide_signature.get(device_id)
         if prev_sig != current_sig:
             return True
@@ -930,29 +986,37 @@ class DetectionConsumer:
             # 후속 인지 태스크를 예약하지 않는다. 이전에는 성공 여부와 무관하게 항상
             # 800ms 후 인지 가이드를 예약해, 억제된 반사에도 불필요한 RAG/LLM/TTS 부하가
             # 발생했다(C-05).
-            if sent_ok:
-                # 2026-07-19: Near 노면 반사(비프/햅틱)만. 같은 노면에 인지 TTS를 연쇄하지 않음.
-                if getattr(result, "alert_source", "") == "surface" or str(
-                    result.alert_id
-                ).startswith("surface_"):
-                    logger.debug(
-                        f"[DetectionConsumer] 노면 반사만 - 후속 인지 TTS 생략: "
-                        f"device_id={processed.device_id}, alert_id={result.alert_id}"
+            # 11.1 결함 수정 (2026-07-18): 반사가 억제되었거나 전송 실패(연결 끊김 등)면
+            # 후속 인지 태스크를 예약하지 않는다. 이전에는 성공 여부와 무관하게 항상
+            # 800ms 후 인지 가이드를 예약해, 억제된 반사에도 불필요한 RAG/LLM/TTS 부하가
+            # 발생했다(C-05).
+            if sent_ok and self._should_schedule_post_reflex_guide(result):
+                prev_delayed = self._delayed_guide_by_device.get(processed.device_id)
+                if prev_delayed is not None and not prev_delayed.done():
+                    prev_delayed.cancel()
+                delayed_guide_task = asyncio.create_task(
+                    self._trigger_delayed_cognitive_guide(
+                        device_id=processed.device_id,
+                        alert=result,
+                        detections=detections,
+                        surfaces=surfaces,
+                        frame=frame,
+                        decode_ms=processed.processing_time_ms,
+                        pipeline_start=pipeline_start,
                     )
-                else:
-                    delayed_guide_task = asyncio.create_task(
-                        self._trigger_delayed_cognitive_guide(
-                            device_id=processed.device_id,
-                            alert=result,
-                            detections=detections,
-                            surfaces=surfaces,
-                            frame=frame,
-                            decode_ms=processed.processing_time_ms,
-                            pipeline_start=pipeline_start,
-                        )
-                    )
-                    self._delayed_guide_tasks.add(delayed_guide_task)
-                    delayed_guide_task.add_done_callback(self._delayed_guide_tasks.discard)
+                )
+                device_id_for_cb = processed.device_id
+
+                def _on_delayed_done(
+                    task: asyncio.Task, *, _device_id: str = device_id_for_cb
+                ) -> None:
+                    self._delayed_guide_tasks.discard(task)
+                    if self._delayed_guide_by_device.get(_device_id) is task:
+                        self._delayed_guide_by_device.pop(_device_id, None)
+
+                self._delayed_guide_by_device[processed.device_id] = delayed_guide_task
+                self._delayed_guide_tasks.add(delayed_guide_task)
+                delayed_guide_task.add_done_callback(_on_delayed_done)
         elif isinstance(result, DetectionResult):
             self._last_status.update(
                 {
@@ -1395,6 +1459,21 @@ class DetectionConsumer:
             logger.error(f"[DetectionConsumer] 반사 알림 전송 실패: device_id={device_id}, {e}")
             return False
 
+    @staticmethod
+    def _should_schedule_post_reflex_guide(alert: ReflexAlert) -> bool:
+        """반사 성공 후 800ms delayed 인지 TTS를 예약할지 판정.
+
+        2026-07-21 P0: Near `update`는 비프/햅틱만. update마다 delayed를 재예약·cancel하면
+        체류 중 TTS가 끊겨 "초반만 말, 이후 비프만"이 된다(실측). enter(및 episode 없는
+        head_level 등)만 예약한다. 노면 반사는 인지 TTS 연쇄 금지.
+        """
+        if getattr(alert, "alert_source", "") == "surface" or str(
+            getattr(alert, "alert_id", "")
+        ).startswith("surface_"):
+            return False
+        # update는 비프만. enter(또는 episode 없는 head_level 등)만 예약.
+        return getattr(alert, "event_state", "") != "update"
+
     async def _trigger_delayed_cognitive_guide(
         self,
         device_id: str,
@@ -1596,7 +1675,7 @@ class DetectionConsumer:
         # 30초 동일서명 억제를 적용하지 않는다. 적용 시 비프만 반복되고 말 안내가 침묵함.
         # 오디오 겹침은 아래 guide gap(near=재생길이+마진)으로만 막는다.
         if preset_guidance_text is None and not self._has_utterance_value(
-            device_id, result, departure_confirmed
+            device_id, result, departure_confirmed, distance_class
         ):
             logger.info(
                 f"[DetectionConsumer] 인지 가이드 발화 가치 없음(동일 상황 반복) - "
@@ -1605,15 +1684,11 @@ class DetectionConsumer:
             _abort_surface_pending()
             return
 
-        # 쿨다운 사전 검사(빠른 경로): 직전 "전송"으로부터 얼마 지나지 않았다면 굳이
-        # 오케스트레이션/TTS(수 초 소요)를 새로 돌리지 않고 조기 반환한다. 실제 간격
-        # 보장은 아래 전송 직전 재검사에서 확정하므로 여기서는 슬롯을 갱신하지 않는다.
-        if time.monotonic() - self._last_guide_ts.get(
-            device_id, 0.0
-        ) < self._required_guide_gap_sec(device_id, primary_det, frame, distance_class):
+        # 쿨다운 사전 검사: Near/Medium 밴드 슬롯만 본다(Near가 Medium을 막지 않음).
+        if self._is_guide_band_cooling(device_id, primary_det, frame, distance_class):
             logger.info(
                 f"[DetectionConsumer] 인지 가이드 쿨다운 중 - 전송 생략: device_id={device_id}, "
-                f"distance={distance_class or '-'}"
+                f"distance={distance_class or '-'}, band={self._guide_band(distance_class)}"
             )
             _abort_surface_pending()
             return
@@ -1802,20 +1877,24 @@ class DetectionConsumer:
             # 확인/갱신해 클라이언트에서 이전 안내 음성이 끝나기 전에 새 안내가 도착하는
             # 것을 막는다(_required_guide_gap_sec가 직전 오디오 실측 길이를 반영).
             send_now = time.monotonic()
-            if send_now - self._last_guide_ts.get(device_id, 0.0) < self._required_guide_gap_sec(
-                device_id
-            ):
+            send_distance = str(orch_result.get("distance") or distance_class or "")
+            if self._is_guide_band_cooling(device_id, primary_det, frame, send_distance):
                 logger.debug(
                     f"[DetectionConsumer] 인지 가이드 전송 직전 쿨다운 재검사 - 생략: "
-                    f"device_id={device_id}, event_id={result.event_id}"
+                    f"device_id={device_id}, event_id={result.event_id}, "
+                    f"band={self._guide_band(send_distance)}"
                 )
                 _abort_surface_pending()
                 return
-            self._last_guide_ts[device_id] = send_now
-            self._last_guide_duration_sec[device_id] = duration_ms / 1000.0
+            self._mark_guide_sent(
+                device_id,
+                self._guide_band(send_distance),
+                send_now,
+                duration_ms / 1000.0,
+            )
             # P1-2: 발화 가치 게이트용 상황 서명 갱신 (다음 동일 상황 판정 기준).
             self._last_guide_signature[device_id] = self._compute_cognitive_signature(
-                result, departure_confirmed
+                result, departure_confirmed, send_distance
             )
 
             # [2026-07-09 도입] guide 오디오(WAV)를 base64 문자열로 JSON에 실어 보내는

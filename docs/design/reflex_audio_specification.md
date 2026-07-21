@@ -1,7 +1,7 @@
 # 반사 경로 오디오 및 햅틱 피드백 기술 명세서
 
 > **작성일**: 2026-07-01
-> **버전**: v1.3.8 (2026-07-21 Near episode `event_state=enter` 시 사전합성 클립 1회 재생 + 비프 덕킹. 긴급 update는 기존 beep-only 유지. 기존 v1.3.7: §6.3 필드 DB 분석 기반 반사 억제 재조정. 기존 v1.3.6~v1.3.3 이력 유지)
+> **버전**: v1.3.9 (2026-07-21 FRONT_MED+ 말 안내 재생 중 반사 클립 생략·완주 우선. 기존 v1.3.8: Near enter 클립 1회+비프 덕킹. 기존 v1.3.7~v1.3.3 이력 유지)
 > **기준 문서**: `docs/design/architecture.md`, `docs/design/api_specification.md`
 
 ---
@@ -121,6 +121,7 @@ graph TD
 - **반사 음성 클립 (채널 분기, 2026-07-13, 2026-07-21 enter 예외)**: `reflex_alert.clip`은 항상 페이로드에 실을 수 있다. 단말(`useWebSocket`) 정책:
   - **`beep_interval_ms > 100`(Mid/Low)**: `playReflexClip()` 호출(voice+beep).
   - **`beep_interval_ms <= 100`이고 `event_state=enter`**: Near episode 시작 시 클립 **1회**(enter-clip+beep). 시각장애인에게 햅틱만으로 부족한 “다음 행동 단서”를 제공한다. 클립 재생 중 비프는 `DUCKED_BEEP_VOLUME`으로 덕킹.
+  - **인지/Near 말 안내(`FRONT_MED`+) 재생 중 enter**: 반사 클립은 **생략**(안내 완주 우선). 비프·햅틱만 유지. 실측에서 enter 클립이 guide를 0초대에 끊던 문제를 방지(2026-07-21).
   - **`beep_interval_ms <= 100`이고 `event_state=update`**: 핑퐁 비프(+햅틱)만(beep-only). 음성 스팸·반응 방해 방지.
   - 인지 경로 `guide` TTS는 mid/low risk 상세 안내용으로 유지한다. 클립 파일은 `assets/sounds/reflex_clips/`에 번들되며, 서버는 경로 문자열만 전달한다(§2.1 참조).
 

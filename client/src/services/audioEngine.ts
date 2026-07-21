@@ -27,8 +27,11 @@ const HIGH_DANGER_INTERVAL_MS = 100;
 // 존재감만 남겨, 방향성 안내 자체는 계속 인지할 수 있게 한다.
 /** 가이드/클립 재생 중 Near 연속 비프 볼륨. 0.25는 말 안내를 덮어 실측에서 비프만 들림. */
 const DUCKED_BEEP_VOLUME = 0.08;
-/** Near/인지 음성 안내 대기열 상한. 초과 시 최하위 우선순위 항목을 drop한다(동률이면 오래된 쪽). */
-/** 2026-07-21 P1: 6→2로 축소해 늦은 OTHER 안내 적체를 줄인다. */
+/**
+ * Near/인지 음성 안내 대기열 상한.
+ * 2026-07-21: Near 완주 후 Medium 1회를 위해 2슬롯(동시 near pending + med pending).
+ * 동일 우선순위는 최신만, 종료 시 OTHER만 폐기하고 FRONT_MED는 유지.
+ */
 const GUIDE_PENDING_MAX = 2;
 /**
  * setSttActive(true) 이후 응답 콜백이 끝내 오지 않을 경우의 안전 상한(ms).
@@ -570,11 +573,11 @@ class AudioEngine {
 
   /**
    * Near/인지 음성을 대기열에 넣거나 즉시 재생한다.
-   * - 재생 중 + 상위 우선순위: 선점 즉시 재생(큐의 하위 우선순위는 정리)
-   * - 재생 중 + 동일/하위 우선순위: 대기열(최대 GUIDE_PENDING_MAX, 초과 시 최하위부터 drop)
-   * - 재생 중 + OTHER: 대기열에 넣지 않고 즉시 drop(늦은 음성 어긋남 완화, 2026-07-21 P1)
+   * - 재생 중 + 상위 우선순위(STT 등): 선점 즉시 재생
+   * - 재생 중 + 동일/하위: 선점 금지(완주). 동일 우선은 최신으로 교체, 다른 밴드는 유지
+   *   (Near 재생 중 Medium 1건 보존 → Near 완주 후 Medium 재생)
+   * - 재생 중 + OTHER: 즉시 drop
    * - 유휴: 즉시 재생
-   * 재생 종료 시 대기열에서 최고 우선순위 1건만 재생하고 나머지는 폐기.
    */
   private enqueueGuide(item: PendingGuideItem): void {
     if (!this.canStartGuide(item.priority)) {
@@ -588,7 +591,6 @@ class AudioEngine {
         void this.playGuideImmediate(item);
         return;
       }
-      // 늦은 인지 안내(OTHER)는 대기열에 쌓이지 않게 즉시 폐기한다.
       if (item.priority <= GUIDE_PRIORITY.OTHER) {
         console.log(
           `[AudioEngine] 재생 중 OTHER 안내 즉시 폐기 kind=${item.kind} priority=${item.priority}`,
@@ -596,18 +598,32 @@ class AudioEngine {
         item.onComplete?.();
         return;
       }
-      this.pendingGuides.push(item);
+      // 동일 우선순위만 최신으로 교체. FRONT_NEAR 재생 중 FRONT_MED는 별도 슬롯 유지.
+      const kept: PendingGuideItem[] = [];
+      let replaced = 0;
+      for (const old of this.pendingGuides) {
+        if (old.priority === item.priority) {
+          old.onComplete?.();
+          replaced += 1;
+        } else {
+          kept.push(old);
+        }
+      }
+      kept.push(item);
+      this.pendingGuides = kept;
       while (this.pendingGuides.length > GUIDE_PENDING_MAX) {
         const dropped = this.evictLowestPriorityPendingGuide();
         if (dropped) {
           console.log(
-            `[AudioEngine] 대기열 초과(${GUIDE_PENDING_MAX}) - 최하위 우선순위 안내 폐기 kind=${dropped.kind} priority=${dropped.priority}`,
+            `[AudioEngine] 대기열 초과(${GUIDE_PENDING_MAX}) - 안내 폐기 kind=${dropped.kind} priority=${dropped.priority}`,
           );
           dropped.onComplete?.();
         }
       }
       console.log(
-        `[AudioEngine] 가이드 대기열 적재: ${this.pendingGuides.length}/${GUIDE_PENDING_MAX} kind=${item.kind} priority=${item.priority}`,
+        `[AudioEngine] 가이드 완주 대기 activePri=${this.activeGuidePriority} ` +
+          `queued=${item.kind}/pri=${item.priority} samePriReplaced=${replaced} ` +
+          `pending=${this.pendingGuides.length}`,
       );
       return;
     }
@@ -616,8 +632,8 @@ class AudioEngine {
   }
 
   /**
-   * 자연 종료 후 대기열에서 최고 우선순위 1건만 재생하고 나머지는 폐기한다.
-   * 우선순위가 같으면 가장 최근에 들어온 쪽을 선택한다(오래된 상황 정보 배제).
+   * 자연 종료 후 대기열에서 최고 우선순위 1건만 재생한다.
+   * OTHER만 폐기하고 FRONT_MED 등은 남겨, Near 완주 후 Medium 1회가 이어지게 한다.
    */
   private drainHighestPriorityPendingGuide(): void {
     if (this.pendingGuides.length === 0) return;
@@ -628,13 +644,22 @@ class AudioEngine {
       }
     }
     const [best] = this.pendingGuides.splice(bestIndex, 1);
-    const discarded = this.pendingGuides.splice(0);
-    for (const item of discarded) {
-      item.onComplete?.();
+    const leftover = this.pendingGuides.splice(0);
+    const kept: PendingGuideItem[] = [];
+    let discarded = 0;
+    for (const item of leftover) {
+      if (item.priority <= GUIDE_PRIORITY.OTHER) {
+        item.onComplete?.();
+        discarded += 1;
+      } else {
+        kept.push(item);
+      }
     }
-    if (discarded.length > 0) {
+    this.pendingGuides = kept;
+    if (discarded > 0 || kept.length > 0) {
       console.log(
-        `[AudioEngine] 대기 ${discarded.length}건 폐기, 최고 우선순위만 재생 kind=${best.kind} priority=${best.priority}`,
+        `[AudioEngine] 대기 재생 kind=${best.kind} pri=${best.priority} ` +
+          `kept=${kept.length} discardedOther=${discarded}`,
       );
     } else {
       console.log(
@@ -1066,12 +1091,21 @@ class AudioEngine {
 
     try {
       await this.ensureSession();
-      // STT보다 낮은 안내만 선점. STT 답변 재생 중에는 끊지 않음.
+      // 2026-07-21: 인지/Near 말 안내 재생 중에는 반사 클립이 안내를 끊지 않는다.
+      // (실측: enter 클립이 FRONT_NEAR guide를 0초대에 stop → "안 들림").
+      // 비프·햅틱은 useWebSocket에서 그대로 유지. STT만 상위 선점.
+      if (this.isGuidePlaying && this.activeGuidePriority >= GUIDE_PRIORITY.FRONT_MED) {
+        console.log(
+          `[AudioEngine] 가이드 재생 중(pri=${this.activeGuidePriority}) - 반사 클립 생략(완주 우선)`,
+        );
+        return;
+      }
       if (
         this.isGuidePlaying &&
         this.activeGuidePriority > 0 &&
-        this.activeGuidePriority < GUIDE_PRIORITY.STT
+        this.activeGuidePriority < GUIDE_PRIORITY.FRONT_MED
       ) {
+        // OTHER 온보딩 등만 반사 클립이 선점 가능
         this.stopGuideAudio();
       }
       this.beginReflexClipDucking();

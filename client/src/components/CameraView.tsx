@@ -12,7 +12,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Dimensions, Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Camera } from "react-native-vision-camera";
-import Svg, { Line, Path, Text as SvgText } from "react-native-svg";
+import Svg, { Line, Path, Polygon, Text as SvgText } from "react-native-svg";
 
 import { ConnectionStatus } from "./ConnectionStatus";
 import { DebugTriggerPanel } from "./DebugTriggerPanel";
@@ -1457,9 +1457,9 @@ export function CameraView() {
           </View>
         )}
         {hapticFlash && <View style={styles.hapticFlash} />}
-        {/* 2026-07-19: 기존 소실점 사다리꼴 ROI 오버레이를 제거하고 Near/Medium/Far
-            3구역 거리 경계선으로 교체. 시각적 도식화만 변경하고 반사 후보 필터링
-            로직(roiPolygon/pointInPolygon)은 그대로 유지한다. */}
+        {/* 2026-07-21: 콘솔 LiveCameraFeed와 동일 2계층 도식.
+            L1 PATH ROI 사다리꼴 + L2 거리 호(사람 기준 heuristic_m 근사).
+            판정 SSOT는 BBox area_ratio 태그/색. 반사 필터(roiPolygon) 로직은 유지. */}
         {detectionEnabled && !depthMode && <DistanceZoneOverlay />}
         {/* BBox 오버레이: 콘솔 server_detection 계약과 동일한 표시 기하 */}
         <BBoxOverlay detections={overlayDetections} />
@@ -1833,10 +1833,26 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
 }
 
 /**
- * 콘솔 LiveCameraFeed와 동일 기하:
- * Near/Med 부채꼴 호 + 12시 중심선 (react-native-svg).
+ * 콘솔 LiveCameraFeed와 동일 2계층 도식 (판정 SSOT 아님).
+ * L1 PATH ROI: 위 PATH_ROI_* 사다리꼴 (좌우 통로)
+ * L2 거리 호: area_ratio→heuristic_m 경계의 사람 기준 원근 근사
  * 네이티브 RNSVG가 링크된 Debug 빌드에서만 정상 표시된다.
  */
+const HEURISTIC_COEFF = 0.22;
+const NEAR_ENTER_AREA_RATIO = 0.1;
+const MEDIUM_ENTER_AREA_RATIO = 0.03;
+const NEAR_HEURISTIC_M = HEURISTIC_COEFF / Math.sqrt(NEAR_ENTER_AREA_RATIO);
+const MED_HEURISTIC_M = HEURISTIC_COEFF / Math.sqrt(MEDIUM_ENTER_AREA_RATIO);
+const GROUND_HORIZON_Y = PATH_ROI_MID_Y;
+const GROUND_CALIB_K =
+  ((0.78 - GROUND_HORIZON_Y) * NEAR_HEURISTIC_M) / (1 - GROUND_HORIZON_Y);
+
+function contactYForHeuristicMeters(meters: number): number {
+  if (meters <= 0) return 1;
+  const y = GROUND_HORIZON_Y + (1 - GROUND_HORIZON_Y) * (GROUND_CALIB_K / meters);
+  return Math.min(0.98, Math.max(GROUND_HORIZON_Y + 0.02, y));
+}
+
 function DistanceZoneOverlay() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const W = size.width;
@@ -1845,9 +1861,9 @@ function DistanceZoneOverlay() {
   const NEAR_COLOR = "#EF4444";
   const MED_COLOR = "#F59E0B";
   const FAR_COLOR = "#3B82F6";
-  const CLOCK12_COLOR = "#22D3EE";
+  const PATH_COLOR = "#22D3EE";
   const STROKE_W = 2;
-  const STROKE_OPACITY = 0.75;
+  const STROKE_OPACITY = 0.8;
 
   if (W === 0 || H === 0) {
     return (
@@ -1861,6 +1877,16 @@ function DistanceZoneOverlay() {
 
   const apexX = W / 2;
   const apexY = H * 0.22;
+  const fontPx = Math.max(10, Math.round(Math.min(W, H) * 0.018));
+
+  const [nearLo, nearHi] = PATH_ROI_NEAR_BAND;
+  const [farLo, farHi] = PATH_ROI_FAR_BAND;
+  const pathPoints = [
+    `${farLo * W},${PATH_ROI_MID_Y * H}`,
+    `${farHi * W},${PATH_ROI_MID_Y * H}`,
+    `${nearHi * W},${H}`,
+    `${nearLo * W},${H}`,
+  ].join(" ");
 
   const edgeArc = (edgeYRatio: number) => {
     const edgeY = H * edgeYRatio;
@@ -1871,8 +1897,8 @@ function DistanceZoneOverlay() {
     };
   };
 
-  const nearArc = edgeArc(0.78);
-  const medArc = edgeArc(0.52);
+  const nearArc = edgeArc(contactYForHeuristicMeters(NEAR_HEURISTIC_M));
+  const medArc = edgeArc(contactYForHeuristicMeters(MED_HEURISTIC_M));
 
   return (
     <View
@@ -1881,6 +1907,25 @@ function DistanceZoneOverlay() {
       onLayout={(e) => setSize(e.nativeEvent.layout)}
     >
       <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
+        <Polygon
+          points={pathPoints}
+          fill="rgba(34, 211, 238, 0.06)"
+          stroke={PATH_COLOR}
+          strokeWidth={STROKE_W}
+          strokeOpacity={0.85}
+          strokeDasharray="8 6"
+        />
+        <SvgText
+          x={apexX}
+          y={PATH_ROI_MID_Y * H + fontPx + 2}
+          fill={PATH_COLOR}
+          fontSize={fontPx}
+          fontWeight="bold"
+          textAnchor="middle"
+          opacity={0.9}
+        >
+          L1 PATH ROI
+        </SvgText>
         <Path
           d={nearArc.d}
           fill="none"
@@ -1900,21 +1945,38 @@ function DistanceZoneOverlay() {
           y1={apexY}
           x2={apexX}
           y2={H}
-          stroke={CLOCK12_COLOR}
+          stroke={PATH_COLOR}
           strokeWidth={3}
           strokeOpacity={0.95}
         />
-        <SvgText x={W - 44} y={nearArc.edgeY - 6} fill={NEAR_COLOR} fontSize={11} fontWeight="bold">
-          NEAR
+        <SvgText
+          x={W - 8}
+          y={nearArc.edgeY - 4}
+          fill={NEAR_COLOR}
+          fontSize={fontPx}
+          fontWeight="bold"
+          textAnchor="end"
+        >
+          {`NEAR ~${NEAR_HEURISTIC_M.toFixed(1)}m (a≥${NEAR_ENTER_AREA_RATIO})`}
         </SvgText>
-        <SvgText x={W - 40} y={medArc.edgeY - 6} fill={MED_COLOR} fontSize={11} fontWeight="bold">
-          MED
+        <SvgText
+          x={W - 8}
+          y={medArc.edgeY - 4}
+          fill={MED_COLOR}
+          fontSize={fontPx}
+          fontWeight="bold"
+          textAnchor="end"
+        >
+          {`MED ~${MED_HEURISTIC_M.toFixed(1)}m (a≥${MEDIUM_ENTER_AREA_RATIO})`}
         </SvgText>
-        <SvgText x={apexX + 8} y={apexY - 4} fill={FAR_COLOR} fontSize={11} fontWeight="bold">
+        <SvgText x={apexX + 8} y={apexY - 4} fill={FAR_COLOR} fontSize={fontPx} fontWeight="bold">
           FAR
         </SvgText>
-        <SvgText x={apexX + 8} y={H * 0.38} fill={CLOCK12_COLOR} fontSize={11} fontWeight="bold">
+        <SvgText x={apexX + 8} y={H * 0.38} fill={PATH_COLOR} fontSize={fontPx} fontWeight="bold">
           12시
+        </SvgText>
+        <SvgText x={8} y={H - 8} fill="#94A3B8" fontSize={fontPx} fontWeight="bold">
+          L2 거리호=사람근사 · 태그/색=SSOT
         </SvgText>
       </Svg>
     </View>
