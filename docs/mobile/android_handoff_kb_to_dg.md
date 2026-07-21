@@ -135,13 +135,11 @@
 
 ### 4.1 `239d5b0` 전후 차이
 
-| 상황 | 이전 iOS | 통일 후 (현재 로컬) |
+| 상황 | bf2c0eb iOS 기준 | `239d5b0` 통일 시 (롤백 대상) |
 | :--- | :--- | :--- |
-| 서버 정상 (`!isServerTimeout`) | 로컬 반사 억제·비프 회수 | **동일** (공통 억제) |
-| 서버 타임아웃 + 실내 씬 | (별도 실내 억제 없음, area reflex 가능) | **실내면 로컬 경보 억제** (신규) |
-| 서버 타임아웃 + 실외 | `applyLocalAreaReflex`만 | `pathObstacleDetector` STOP/BLOCKED/CAUTION + area fallback + **`speakFallback` TTS** (Android 정책 이식) |
-
-결론: **서버 끊김/지연 시 iOS 사용자 체감이 바뀐다.** 이중 경로의 반사 게이트 코드를 깨지는 않지만, 공유 클라이언트 정책 변경이다.
+| 서버 정상 (`!isServerTimeout`) | 로컬 반사 억제·비프 회수 | 동일 억제(공통) |
+| 서버 타임아웃 + 실내 씬 | area reflex 가능 | 실내 전면 억제 |
+| 서버 타임아웃 + 실외 | `applyLocalAreaReflex`만 | pathObstacle + `speakFallback` |
 
 ### 4.2 인수자 결정 옵션 (R-00)
 
@@ -151,7 +149,7 @@
 | **B. 롤백 후 Android만** | `CameraView`를 플랫폼 분기 복구하거나 `.android` 쪽으로 정책 이동 | iOS 변경을 당장 원하지 않을 때 |
 | **C. 계약 위반 회피 리팩터** | 공유 파일 내부 `Platform.OS` 확대를 피하고, 정책을 공통 함수 + 얇은 플랫폼 진입으로 재배치 | 중기 권장 (계약서 §2 원칙 1) |
 
-제미나이 changelog의 “이원화 계약서 §2 준수”는 **공유 파일에서 분기를 없앤 것**이지, “iOS 무영향”이 아니다.
+**결정 (2026-07-21 kb)**: **옵션 B 채택.** iOS 로컬 반사 기준선 = **`bf2c0eb`** (`Merge branch 'kb' into dev`, 2026-07-20). Android pathObstacle·speakFallback은 `Platform.OS === "android"`에만 유지.
 
 ---
 

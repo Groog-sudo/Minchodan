@@ -3870,3 +3870,14 @@
 - **관련 파일**: `docs/mobile/android_handoff_kb_to_dg.md`, `docs/mobile/android_ios_parity_checklist.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 문서 경로·상호 링크 존재 확인. 코드/런타임 변경 없음.
 - **비고**: 제미나이 2커밋 푸시·CameraView 승인/롤백은 인수자(dg)·kb 합의 후 진행. 본 항목은 문서만.
+
+---
+
+### 2026-07-21 | 클라이언트 | iOS 로컬 반사를 bf2c0eb 기준으로 복구 (R-00=B)
+
+- **배경**: `239d5b0`가 Android pathObstacle·speakFallback·실내 억제 정책을 iOS에까지 공통 적용해, 실내 Near 폴백 소실·오프라인 Near 전용 정책 충돌·로컬 TTS 선점 간섭이 확인됨. iOS 담당 기준선은 **`bf2c0eb`**(2026-07-20 `Merge branch 'kb' into dev`)로 확정.
+- **변경 내용**:
+  - `client/src/components/CameraView.tsx`: `Platform.OS` 분기 복구. iOS = bf2c0eb와 동일(서버 정상 억제 / 타임아웃 시 Near `applyLocalAreaReflex`). Android 정책은 android 분기에만 유지.
+  - `docs/mobile/android_handoff_kb_to_dg.md`: R-00=B, 기준 커밋 `bf2c0eb` 기록.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `docs/mobile/android_handoff_kb_to_dg.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `git diff bf2c0eb -- client/src/components/CameraView.tsx` 로직 본문 일치(기준선 주석 1줄만 추가).
