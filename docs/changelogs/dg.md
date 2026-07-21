@@ -670,4 +670,17 @@
 - **관련 파일**: `docs/research/field_test_round2_improvement_plan.md`
 - **검증 결과**: 문서 작성 작업으로 코드 변경 없음. 현행 코드(`suppressor.py`/`reflex_gate.py`/`detection_pipeline.py`/`consumer.py`/`avoidance.py`/`audioEngine.ts`/`useWebSocket.ts`/`ws_router.py`) 교차 검증으로 근거 정합성 확인. 문서 표준(메타데이터 인용 블록, 표 우선, mermaid 큰따옴표, 이모지 미사용) 준수.
 
+---
 
+### 2026-07-21 | 모바일 | Android-iOS 정합성 P0 체크리스트 점검 및 AEC 주석 정정
+
+- **커밋**: `refactor: update audioSessionBridge header comment for android parity`
+- **변경 내용**:
+  - Android-iOS 정합 체크리스트(`docs/mobile/android_ios_parity_checklist.md`) §0 기반 P0 사전 실측 및 점검 완료:
+    - 현재 브랜치 tip: `kb` (1a51c31, origin/dev 동기화 상태)
+    - 서버 YOLO 경로: `object_detection260714.pt` / `segmentation260714.pt`
+    - 번들 TFLite shape: `object_detection.tflite` `[1, 300, 6]` (attrsPerBox=6 일치), `segmentation.tflite` `[1, 40, 8400]`
+    - Android CameraView 로컬 반사 정책(R-00): 1197행 "서버 연결 시 로컬 반사 억제, 타임아웃/Disconnected 시 로컬 백업 경보" 분기 확인
+  - 코드 정정: `client/src/services/audioSessionBridge.ts` 상단의 "Android no-op" stale 주석을 Android 네이티브 모듈(`AudioSessionBridgeModule.kt`) 지원 명시로 수정 (A-01).
+- **관련 파일**: `client/src/services/audioSessionBridge.ts`, `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`
+- **검증 결과**: TFLite 260714 export 스펙(`EXPORT_SOURCE_260714.txt`)과 `attrsPerBox` 6 정합성, OD 29클래스 / SEG 4클래스 서버-클라이언트 라벨 일치, C-01~C-06/R-00~R-06/G-01~G-04/A-01~A-02/N-01~N-08 P0 항목 전수 검증 통과 (P0 마감).

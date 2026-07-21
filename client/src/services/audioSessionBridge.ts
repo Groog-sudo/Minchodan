@@ -1,8 +1,8 @@
 /**
- * iOS AVAudioSession 모드 전환 래퍼 (2026-07-11, Mitos 로드맵 우선순위 4: AEC 검증).
- * STT 녹음 구간에서 세션 모드를 voiceChat으로 전환하면 iOS VoiceProcessingIO의
+ * iOS/Android 오디오 세션(AEC) 모드 전환 래퍼 (2026-07-11 iOS / 2026-07-21 Android 정합).
+ * STT 녹음 구간에서 세션 모드를 voiceChat(Android: MODE_IN_COMMUNICATION)으로 전환하면
  * AEC(에코 캔슬레이션)가 켜져, 녹음 중 스피커 출력(반사 비프, 신호음)이 마이크
- * 입력에서 상쇄된다. Android는 네이티브 구현 전이므로 no-op(null 반환)이다.
+ * 입력에서 상쇄된다.
  */
 
 import { NativeModules, Platform } from "react-native";
