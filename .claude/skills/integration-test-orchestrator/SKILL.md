@@ -183,6 +183,8 @@ curl -sf "${OLLAMA_BASE_URL:-http://localhost:11434}/api/tags" | head -c 300
 docker compose exec fastapi sh -lc 'echo "OLLAMA_BASE_URL=$OLLAMA_BASE_URL"'
 ```
 
+**시연(demo)에서 Mac mini가 LLM 전용 호스트일 때**: Windows FastAPI는 LAN으로 Mac Ollama에 붙는다. 시연 직전 Mac mini에서 `bash scripts/ollama_demo_keepalive.sh`를 실행해 모델 상주(`keep_alive=-1`)를 확보한다. 상세는 [`rpi-network-profile-switcher`](../rpi-network-profile-switcher/SKILL.md) 전제조건을 참조한다.
+
 ### 3-B. Tailscale 네트워크 사전 검증 (외부 LTE/핫스팟 테스트 시 필수)
 
 > **2026-07-19 신설**: `EXPO_PUBLIC_NETWORK_MODE=tailscale` 일 때 단말이 호스트의 Tailscale IP로

@@ -4067,3 +4067,35 @@
   - 콘솔·앱 Live Feed에 L1 PATH ROI와 L2 거리 호 2계층 도식 정합
 - **관련 파일**: `lient/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/kb.md`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+### 2026-07-21 | CI | kb→dev mypy 실패 항목 수정
+
+- **커밋**: `fix: CI mypy 오류 수정 (kb→dev Lint 게이트)`
+- **변경 내용**:
+  - `korean_g2p.py`: tuple 변환을 명시적 3-tuple로 정합
+  - `stt_service.py`: WhisperModel optional 바인딩 타입 정리
+  - `navigation/manager.py`, `server.py`: ImportError 폴백 `no-redef` ignore
+  - `detection/consumer.py`: orch 결과 `dict[str, Any]`로 고정 후 int/float 캐스트
+  - `embedding_engine_factory.py`: 임베딩 벡터 float 정규화 타입 정합
+- **관련 파일**: `server/tts/korean_g2p.py`, `server/stt/stt_service.py`, `server/navigation/manager.py`, `server/navigation/server.py`, `server/detection/consumer.py`, `server/rag/embedding_engine_factory.py`
+- **검증 결과**: `mypy server/` 오류 0건
+- **비고**: `ac777d8` push 후 GitHub Actions Code Quality Pipeline mypy 6건 실패 대응
+
+### 2026-07-21 | CI | jscpd를 npx로 설치해 Lint 워크플로 보완
+
+- **커밋**: `fix(ci): jscpd를 npx로 실행하도록 Lint 워크플로 수정`
+- **변경 내용**: GitHub Actions에 Node setup + `npx jscpd` 추가(기존 `jscpd` 미설치로 exit 127)
+- **관련 파일**: `.github/workflows/lint.yml`
+- **검증 결과**: 로컬 mypy 통과 후 CI 재실행 예정
+- **비고**: mypy 수정 커밋 이후 드러난 후속 게이트 실패
+
+### 2026-07-21 | 시연 | Ollama 모델 상주 스크립트 등재
+
+- **커밋**: `feat(demo): Ollama keepalive 스크립트 및 시연 스킬 전제조건 반영`
+- **변경 내용**:
+  - `scripts/ollama_demo_keepalive.sh` 추가 (LAN 바인딩 + gemma4/nomic keep_alive=-1)
+  - `rpi-network-profile-switcher`·`integration-test-orchestrator` 시연 전 실행 안내
+  - `demo_test_device_inventory.md` Mac mini 절에 상주 절차 링크
+- **관련 파일**: `scripts/ollama_demo_keepalive.sh`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/` 미러, `docs/ops/demo_test_device_inventory.md`
+- **검증 결과**: 스크립트 실행으로 워밍 지연 ~1초대 확인(콜드 ~6초 제거)
+- **비고**: Mac 재부팅·Ollama 종료 후 시연 전 재실행 필요

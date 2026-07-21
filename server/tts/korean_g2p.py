@@ -300,7 +300,7 @@ def _apply_phonology(syllables: list[tuple[str, str, str]]) -> list[tuple[str, s
     if result:
         result[-1][2] = _FINAL_REPRESENTATIVE[result[-1][2]]
 
-    return [tuple(s) for s in result]
+    return [(s[0], s[1], s[2]) for s in result]
 
 
 # ============================================================

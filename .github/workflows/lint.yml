@@ -42,8 +42,14 @@ jobs:
       - name: mypy Type Check
         run: mypy server/
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: jscpd Duplication Check
-        run: jscpd
+        # jscpd는 npm 패키지(Python requirements에 없음). npx로 실행한다.
+        run: npx --yes jscpd@4.0.5
 
       - name: pip-audit CVE Scan
         # ChromaDB는 수정 릴리스가 없고 로컬 PersistentClient만 사용한다.
