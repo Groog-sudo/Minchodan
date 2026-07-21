@@ -1,10 +1,10 @@
 # 시연/테스트 장비 제원 인벤토리
 
 > **작성일**: 2026-07-21
-> **버전**: v1.1.1 (2026-07-21 Mac mini Ollama 시연 전 keepalive 스크립트 등재. 이전 v1.1.0 이력 유지: 네트워크 토폴로지 확정 반영: LLM을 GPU 서버에서 Mac mini로 분리, 서버-LLM-DB LAN 연결 + 아이폰-서버 Tailscale 연결. 이전 v1.0.0 이력 유지: 4개 장비 제원 최초 기록)
+> **버전**: v1.1.2 (2026-07-21 시연 스킬에 서버 기동(Docker·Ollama·Metro·console·Pi) 체크리스트 편입 반영. 이전 v1.1.1: Mac mini Ollama keepalive. 이전 v1.1.0: 토폴로지 확정 — LLM Mac mini 분리, 서버-LLM-DB LAN + 아이폰-서버 Tailscale)
 > **목적**: 시연·통합 테스트에 실제 사용하는 4개 장비(GPU 추론 서버, LLM 호스트 겸 macOS 개발 머신, iOS 클라이언트 단말, DB·미디어 저장 Raspberry Pi)의 제원과 네트워크 연결 방식을 한 곳에 모아, 신규 시연 장비 도입 시 성능·호환성을 비교하는 기준선으로 사용한다.
 > **관련 문서**: [`ai_model_hardware_setup.md`](ai_model_hardware_setup.md), [`db_tailscale_guide/README.md`](../db_tailscale_guide/README.md), [`ondevice_coreml_benchmark.md`](ondevice_coreml_benchmark.md)
-> **관련 스킬**: [`rpi-network-profile-switcher`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md)(Raspberry Pi 네트워크 프로필 전환), [`integration-test-orchestrator`](../../.agents/skills/integration-test-orchestrator/SKILL.md)(전 계층 통합 테스트 오케스트레이션)
+> **관련 스킬**: [`rpi-network-profile-switcher`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md)(시연 서버 기동 + 네트워크 프로필 전환), [`integration-test-orchestrator`](../../.agents/skills/integration-test-orchestrator/SKILL.md)(iOS 빌드·설치·세션 로그 등 통합 테스트 세부)
 
 ---
 
@@ -21,7 +21,7 @@
 
 ## 2. 네트워크 토폴로지 (2026-07-21 확정)
 
-시연 테스트 환경에서는 4개 장비가 아래와 같이 연결된다. 전환·검증 절차는 [`rpi-network-profile-switcher`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md) 스킬을 참조한다.
+시연 테스트 환경에서는 4개 장비가 아래와 같이 연결된다. **서버 기동(역할별)과** 네트워크 전환·검증 절차는 [`rpi-network-profile-switcher`](../../.agents/skills/rpi-network-profile-switcher/SKILL.md) 스킬을 참조한다.
 
 | 연결 | 방식 | 비고 |
 | :--- | :--- | :--- |

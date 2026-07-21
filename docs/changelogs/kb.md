@@ -4099,3 +4099,13 @@
 - **관련 파일**: `scripts/ollama_demo_keepalive.sh`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/` 미러, `docs/ops/demo_test_device_inventory.md`
 - **검증 결과**: 스크립트 실행으로 워밍 지연 ~1초대 확인(콜드 ~6초 제거)
 - **비고**: Mac 재부팅·Ollama 종료 후 시연 전 재실행 필요
+
+---
+
+### 2026-07-21 | 1단계 | demo_skill_server_bringup
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 시연 스킬에 Pi·Ollama·FastAPI·console·Metro 기동 체크리스트 편입
+- **관련 파일**: `agents/skills/integration-test-orchestrator/SKILL.md`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.agents/skills/rpi-network-profile-switcher/agents/openai.yaml`, `.claude/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/agents/openai.yaml`, `.cursor/rules/12-rpi-network-profile-switcher.mdc`, `AGENTS.md`, `SKILLS.md`, `docs/ops/demo_test_device_inventory.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
