@@ -79,6 +79,15 @@ export function ConsoleAudioMirror({ guideAudioEvent, reflexAlertEvent }: Consol
   const guideAudioRef = useRef<HTMLAudioElement | null>(null);
   const reflexAudioRef = useRef<HTMLAudioElement | null>(null);
   const hapticTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioUnlockedRef = useRef(false);
+  const mutedRef = useRef(false);
+
+  useEffect(() => {
+    audioUnlockedRef.current = audioUnlocked;
+  }, [audioUnlocked]);
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
 
   const toggleCognitive = () => {
     setCognitiveEnabled((prev) => {
@@ -119,24 +128,63 @@ export function ConsoleAudioMirror({ guideAudioEvent, reflexAlertEvent }: Consol
       await silent.play();
       silent.pause();
     } catch {
-      // ignore
+      // 제스처 없이 호출되면 실패할 수 있음. 아래 상태만 갱신하고 다음 재생에서 재시도.
     }
+    audioUnlockedRef.current = true;
     setAudioUnlocked(true);
     setPlayBlockedHint(false);
   };
 
   const playElement = async (audio: HTMLAudioElement, label: string) => {
-    if (!audioUnlocked || muted) return;
-    try {
-      audio.currentTime = 0;
-      await audio.play();
-      setPlayBlockedHint(false);
-    } catch (err) {
-      console.warn(`[ConsoleAudioMirror] ${label} 재생 차단:`, err);
-      setPlayBlockedHint(true);
-      setAudioUnlocked(false);
+    if (!audioUnlockedRef.current || mutedRef.current) return;
+    const tryPlay = async () => {
+      if (!audioUnlockedRef.current || mutedRef.current) return;
+      try {
+        audio.currentTime = 0;
+        await audio.play();
+        setPlayBlockedHint(false);
+      } catch (err) {
+        const name = err instanceof DOMException || err instanceof Error ? err.name : "";
+        // 새 src로 교체되며 이전 play()가 취소된 경우 - 자동재생 차단이 아님.
+        if (name === "AbortError") return;
+        console.warn(`[ConsoleAudioMirror] ${label} 재생 차단:`, err);
+        if (name === "NotAllowedError") {
+          setPlayBlockedHint(true);
+          audioUnlockedRef.current = false;
+          setAudioUnlocked(false);
+        }
+      }
+    };
+
+    if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      await tryPlay();
+      return;
     }
+
+    await new Promise<void>((resolve) => {
+      const onReady = () => {
+        audio.removeEventListener("loadeddata", onReady);
+        audio.removeEventListener("error", onReady);
+        resolve();
+      };
+      audio.addEventListener("loadeddata", onReady, { once: true });
+      audio.addEventListener("error", onReady, { once: true });
+    });
+    await tryPlay();
   };
+
+  // 브라우저 자동재생 정책: 첫 클릭/키 입력으로 AudioContext 잠금 해제.
+  useEffect(() => {
+    const onGesture = () => {
+      void unlockAudio();
+    };
+    window.addEventListener("pointerdown", onGesture, { once: true, capture: true });
+    window.addEventListener("keydown", onGesture, { once: true, capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", onGesture, true);
+      window.removeEventListener("keydown", onGesture, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!cognitiveEnabled) return;
@@ -240,7 +288,7 @@ export function ConsoleAudioMirror({ guideAudioEvent, reflexAlertEvent }: Consol
             fontSize: "0.75rem",
           }}
         >
-          브라우저 자동재생 정책으로 소리가 막혀 있습니다. &quot;오디오 활성화&quot;를 한 번 눌러 주세요.
+          브라우저 자동재생 정책으로 소리가 막혀 있습니다. 화면을 한 번 클릭하거나 &quot;오디오 활성화&quot;를 눌러 주세요.
         </div>
       )}
       <div className="panel-content" style={{ display: "flex", gap: "1rem", alignItems: "stretch", flexWrap: "wrap" }}>
