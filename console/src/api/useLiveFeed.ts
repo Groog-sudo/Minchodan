@@ -14,6 +14,31 @@ const MAX_LIVE_LATENCY_EVENTS = 30;
 const MAX_LIVE_LOG_ROWS = 50;
 const RECONNECT_MS = 1500;
 
+/** CONNECTING 중 close() 시 Chrome이 내는 "closed before established" 경고를 피한다. */
+function safeCloseWebSocket(ws: WebSocket): void {
+  try {
+    ws.onmessage = null;
+    ws.onerror = null;
+    ws.onclose = null;
+    if (ws.readyState === WebSocket.CONNECTING) {
+      ws.onopen = () => {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+      };
+      return;
+    }
+    ws.onopen = null;
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.close();
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export interface ConsoleGuideAudioEvent {
   event_id: string;
   device_id: string;
@@ -127,15 +152,7 @@ export function useLiveFeed(token: string | null = null) {
       const prev = wsRef.current;
       if (prev) {
         wsRef.current = null;
-        try {
-          prev.onopen = null;
-          prev.onmessage = null;
-          prev.onerror = null;
-          prev.onclose = null;
-          prev.close();
-        } catch {
-          // ignore
-        }
+        safeCloseWebSocket(prev);
       }
 
       const myGen = ++generation;
@@ -335,11 +352,7 @@ export function useLiveFeed(token: string | null = null) {
       ws.onerror = () => {
         if (disposed || myGen !== generation || wsRef.current !== ws) return;
         // onclose에서 재연결한다.
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
+        safeCloseWebSocket(ws);
       };
     };
 
@@ -359,15 +372,7 @@ export function useLiveFeed(token: string | null = null) {
       const ws = wsRef.current;
       wsRef.current = null;
       if (ws) {
-        try {
-          ws.onopen = null;
-          ws.onmessage = null;
-          ws.onerror = null;
-          ws.onclose = null;
-          ws.close();
-        } catch {
-          // ignore
-        }
+        safeCloseWebSocket(ws);
       }
       revokePrevUrl();
       if (prevAudioUrlRef.current) {

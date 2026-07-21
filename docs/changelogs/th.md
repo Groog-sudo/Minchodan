@@ -982,3 +982,14 @@
 - **관련 파일**: `.gitignore`, `docs/changelogs/th.md`
 - **검증 결과**: 비밀값·실 IP 프로필 파일은 Git 미추적. 이미지 빌드 `exit=0`, demo 전환 후 컨테이너 env가 LAN DB/LLM을 가리킴을 확인.
 
+---
+
+### 2026-07-21 | 7단계 | 콘솔 live-feed WS 조기 close 경고 및 오디오 미러 재생 안정화
+
+- **배경**: 관제 콘솔에서 `useLiveFeed` WebSocket이 CONNECTING 중 `close()`되어 Chrome 경고가 발생하고, 단말 오디오 미러가 자동재생 정책·AbortError로 unlock이 풀려 무음이 되는 문제를 시연 중 확인.
+- **변경 내용**:
+  - `console/src/api/useLiveFeed.ts`: `safeCloseWebSocket` 추가. CONNECTING 상태에서는 open 이후에만 닫아 "closed before established" 경고를 제거.
+  - `console/src/components/ConsoleAudioMirror.tsx`: 첫 pointerdown/keydown으로 오디오 unlock, `loadeddata` 이후 재생, `AbortError`는 unlock 유지·`NotAllowedError`만 재잠금.
+- **관련 파일**: `console/src/api/useLiveFeed.ts`, `console/src/components/ConsoleAudioMirror.tsx`, `docs/changelogs/th.md`
+- **검증 결과**: 이중 경로·금지 파일 가드레일 통과. API/설계 문서 계약 변경 없음(콘솔 UX 수정). 서버 guide WAV 송신 로그(`transport=binary`)와 콘솔 클립 `200` 확인 후 재생 경로만 수정.
+
