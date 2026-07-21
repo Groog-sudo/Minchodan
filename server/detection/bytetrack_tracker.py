@@ -32,7 +32,22 @@ class ByteTrackTracker:
     P0-3 (2026-07-17): Approach-Lost 보정 추가. 동일 track_id가 1초 이내 재탐지되고
     이전 hit_count가 MIN_HIT_COUNT를 충족했으면 reacquired=True로 복원해 reflex_gate가
     MIN_HIT_COUNT 재충족 대기 없이 즉시 발동하도록 한다.
+
+    2026-07-21 (Fix 1): 반사·인지 스트림이 각자 독립 detector(model.track persist=True)를
+    쓰도록 파이프라인을 분리하면서, 두 스트림의 track_id가 Redis 트랙 컨텍스트 키에서
+    충돌하지 않도록 context_ns로 네임스페이스를 부여한다. 각 detector의 model.track ID
+    카운터가 독립이라 두 스트림이 같은 "T-0001"을 낼 수 있는데, ctx 키를 공유하면
+    hit_count가 이중 증가하고 prev_zone이 서로 덮여 히스테리시스가 다시 풀린다.
+    det.track_id 원본은 그대로 두고 Redis 키에만 접두어를 붙인다(reflex_gate/suppressor/
+    단말은 계속 원본 track_id를 본다). context_ns가 비면 기존과 동일하게 원본을 키로 쓴다.
     """
+
+    def __init__(self, context_ns: str = "") -> None:
+        self._context_ns = context_ns
+
+    def _context_key(self, track_id: str) -> str:
+        """Redis 트랙 컨텍스트 조회/저장에 쓸 스트림 네임스페이스 키를 만든다."""
+        return f"{self._context_ns}:{track_id}" if self._context_ns else track_id
 
     async def update(
         self,
@@ -66,14 +81,15 @@ class ByteTrackTracker:
                     )
                     continue
 
-                prev = await redis_bus.get_track_context(det.track_id)
+                ctx_key = self._context_key(det.track_id)
+                prev = await redis_bus.get_track_context(ctx_key)
                 speed, direction = self._compute_motion(prev, det.bbox)
                 hit_count, reacquired = self._compute_hit_count_with_reacquire(prev)
                 prev_zone = prev.get("effective_zone") if prev else None
                 policy_update = self._evaluate_policy(det, frame_width, frame_height, prev_zone)
 
                 await redis_bus.set_track_context(
-                    det.track_id,
+                    ctx_key,
                     {
                         "last_pos": json.dumps(det.bbox.model_dump()),
                         "speed": str(speed),

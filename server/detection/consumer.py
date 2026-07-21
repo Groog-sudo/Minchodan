@@ -133,7 +133,16 @@ class DetectionConsumer:
         pipeline: DetectionPipeline | None = None,
     ):
         self.splitter = splitter or get_default_splitter()
-        self._pipeline: DetectionPipeline | None = pipeline
+        # 2026-07-21 (Fix 1): 반사·인지 스트림이 하나의 detector(model.track persist=True)와
+        # tracker를 공유하면, 서로 다른 fps(8~10 vs 1~2)의 프레임이 같은 ByteTrack 상태에
+        # 뒤섞여(때로는 추론 스레드풀에서 동시에) 들어가 track_id가 튀었다. track_id가 바뀌면
+        # hit_count가 1로 리셋되어 reflex_gate(hit_count>=3)가 Near에서 발동하지 못하고,
+        # prev_zone 히스테리시스도 풀려 near<->medium이 깜빡이며 reflex_clear 채터가 났다
+        # (= Medium 접근 시 비프·햅틱 누락의 근본 원인). 스트림별 독립 파이프라인(독립
+        # detector/tracker)을 두어 각 스트림이 자기 자신의 단일 연속 영상만 추적하게 한다.
+        # 주입 파이프라인(테스트)은 기존 동작 보존을 위해 모든 스트림이 공유한다.
+        self._injected_pipeline: DetectionPipeline | None = pipeline
+        self._pipelines: dict[str, DetectionPipeline] | None = None
         self._reflex_task: asyncio.Task | None = None
         self._cognitive_task: asyncio.Task | None = None
         self._running = False
@@ -716,29 +725,44 @@ class DetectionConsumer:
         except Exception as e:
             logger.debug(f"[DetectionConsumer] ai_pipeline 상태 브로드캐스트 실패: {e}")
 
-    async def _ensure_pipeline(self) -> DetectionPipeline:
-        if self._pipeline is None:
+    async def _ensure_pipelines(self) -> dict[str, DetectionPipeline]:
+        """스트림별 독립 파이프라인(반사/인지)을 지연 초기화한다.
+
+        각 스트림은 자기 detector(model.track persist=True)와 tracker(스트림 네임스페이스)를
+        가져, 서로 다른 fps의 프레임이 같은 ByteTrack 상태에 섞이지 않는다(Fix 1). 주입
+        파이프라인이 있으면(테스트) 모든 스트림이 공유해 기존 동작을 보존한다.
+        """
+        if self._pipelines is None:
             await redis_bus.connect()
-            self._pipeline = DetectionPipeline(
-                detector=get_detector(),
-                segmentor=get_segmentor(),
-                tracker=ByteTrackTracker(),
-                producer=RiskEventProducer(bus=redis_bus),
-                redis_bus=redis_bus,
-            )
-            logger.info("[DetectionConsumer] pipeline 초기화 완료")
-        return self._pipeline
+            if self._injected_pipeline is not None:
+                self._pipelines = {
+                    "reflex": self._injected_pipeline,
+                    "cognitive": self._injected_pipeline,
+                }
+            else:
+                self._pipelines = {
+                    stream: DetectionPipeline(
+                        detector=get_detector(),
+                        segmentor=get_segmentor(),
+                        tracker=ByteTrackTracker(context_ns=stream),
+                        producer=RiskEventProducer(bus=redis_bus),
+                        redis_bus=redis_bus,
+                    )
+                    for stream in ("reflex", "cognitive")
+                }
+            logger.info("[DetectionConsumer] 스트림별 pipeline 초기화 완료 (reflex/cognitive)")
+        return self._pipelines
 
     async def start(self) -> None:
         if self._running:
             return
         self._running = True
         try:
-            await self._ensure_pipeline()
+            await self._ensure_pipelines()
         except Exception as e:
             logger.error(f"[DetectionConsumer] pipeline 초기화 실패: {e}")
             logger.warning("[DetectionConsumer] 폴백 모드로 시작 (pipeline 없이 큐만 소비)")
-            self._pipeline = None
+            self._pipelines = None
         self._reflex_task = asyncio.create_task(self._consume_loop("reflex"))
         self._cognitive_task = asyncio.create_task(self._consume_loop("cognitive"))
         logger.info("[DetectionConsumer] 큐 컨슘 시작: reflex + cognitive")
@@ -858,7 +882,8 @@ class DetectionConsumer:
         return self.splitter.cognitive_queue
 
     async def _process_frame(self, processed, stream: str) -> None:
-        if self._pipeline is None:
+        pipeline = None if self._pipelines is None else self._pipelines.get(stream)
+        if pipeline is None:
             logger.debug(
                 f"[DetectionConsumer] pipeline 미초기화, skip: "
                 f"event_id={processed.event_id}, stream={stream}"
@@ -898,7 +923,7 @@ class DetectionConsumer:
         # 반사/인지 전송 완료까지를 측정한다. decode_ms + 이 구간이 WS 수신~단말 전송 총 지연이다.
         pipeline_start = time.perf_counter()
         try:
-            result, detections, surfaces = await self._pipeline.run(
+            result, detections, surfaces = await pipeline.run(
                 frame=frame,
                 stream=stream,
                 event_id=processed.event_id,
@@ -1295,7 +1320,14 @@ class DetectionConsumer:
         반환값: 실제로 전송(억제되지 않고 WebSocket send 성공)했으면 True. 호출부는
         이 값이 True일 때만 800ms 후속 인지 태스크를 예약한다(11.1 결함 수정).
         """
-        is_near = alert.distance <= 0.6
+        # 2026-07-21 (Fix 2, 임계값 정합): is_near를 raw 0.6m 컷이 아니라 거리 정책 SSOT의
+        # near 밴드(distance_band == "near")로 맞춘다. Near 진입 경계는 area_ratio 0.10
+        # ≈ 0.70m인데 기존 0.6m 컷과 사이에 사각지대가 있어, Near 진입 직후(0.6~0.70m)
+        # 반사가 near 스로틀(0.5s) 경로가 아니라 non-near device 갭(1.5s) + TTL(5s) 경로로
+        # 빠져 "진입 시 비프 1회 후 최대 5초 침묵"이 발생했다. object 반사는 route == "reflex"
+        # (= near)로만 생성되므로 밴드 기준이 SSOT와 일치한다. head_level은 distance_band
+        # 기본값이 "medium"이라 무영향이고, surface는 위 alert_source 분기에서 먼저 처리된다.
+        is_near = alert.distance_band == "near"
         if not await Alert_suppressor.should_emit_reflex(
             device_id=device_id,
             track_id=alert.track_id,
@@ -1606,6 +1638,28 @@ class DetectionConsumer:
         frame_width = float(frame.shape[1]) if frame is not None else 0.0
         primary_det = select_primary_detection(result.detections, frame_width)
         distance_class = self._resolve_distance_class(primary_det, frame)
+
+        # 2026-07-21 (Fix 3, 전환 구간 중복 안내 억제): 동일 device에 Near 반사 에피소드가
+        # 열려 있는 동안에는 같은 접근 상황에 대한 Medium 존재/접근 안내를 억제한다. Near
+        # 비프·햅틱과 post_reflex 회피 안내가 이미 상황을 전달하므로, 인지 스트림(1~2fps)이
+        # 전환 지연으로 여전히 Medium으로 보고 안내를 또 내보내면 "안내가 두 번" 들린다
+        # (Near/Medium 쿨다운 슬롯이 분리되어 서로를 막지 못하는 것이 근본 원인). preset
+        # (post_reflex)·보도 이탈·노면 전용(primary 없음)은 예외로 통과시킨다. Near 우선
+        # 원칙과 정합하며, 억제는 Near episode 생명주기(_reconcile_near_episode 종료) 동안만
+        # 유지된다. 이 시점엔 surface pending을 아직 열지 않아 별도 정리가 필요 없다.
+        if (
+            preset_guidance_text is None
+            and not departure_confirmed
+            and primary_det is not None
+            and distance_class == "medium"
+            and Alert_suppressor.peek_active_near_track(device_id) is not None
+        ):
+            logger.info(
+                "[DetectionConsumer] Near 반사 활성 중 - Medium 인지 안내 억제(중복 방지): "
+                f"device_id={device_id}"
+            )
+            return
+
         surface_in_front = self._surface_hazard_in_front(
             result.surface, frame, surface_zone or "medium"
         )
