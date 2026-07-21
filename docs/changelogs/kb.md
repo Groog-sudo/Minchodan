@@ -4067,3 +4067,16 @@
   - 콘솔·앱 Live Feed에 L1 PATH ROI와 L2 거리 호 2계층 도식 정합
 - **관련 파일**: `lient/src/components/CameraView.tsx`, `console/src/components/LiveCameraFeed.tsx`, `docs/changelogs/kb.md`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+### 2026-07-21 | CI | kb→dev mypy 실패 항목 수정
+
+- **커밋**: `fix: CI mypy 오류 수정 (kb→dev Lint 게이트)`
+- **변경 내용**:
+  - `korean_g2p.py`: tuple 변환을 명시적 3-tuple로 정합
+  - `stt_service.py`: WhisperModel optional 바인딩 타입 정리
+  - `navigation/manager.py`, `server.py`: ImportError 폴백 `no-redef` ignore
+  - `detection/consumer.py`: orch 결과 `dict[str, Any]`로 고정 후 int/float 캐스트
+  - `embedding_engine_factory.py`: 임베딩 벡터 float 정규화 타입 정합
+- **관련 파일**: `server/tts/korean_g2p.py`, `server/stt/stt_service.py`, `server/navigation/manager.py`, `server/navigation/server.py`, `server/detection/consumer.py`, `server/rag/embedding_engine_factory.py`
+- **검증 결과**: `mypy server/` 오류 0건
+- **비고**: `ac777d8` push 후 GitHub Actions Code Quality Pipeline mypy 6건 실패 대응

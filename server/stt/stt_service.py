@@ -7,14 +7,6 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, ClassVar
 
-try:
-    from faster_whisper import WhisperModel
-
-    FASTER_WHISPER_AVAILABLE = True
-except Exception:
-    WhisperModel = None  # type: ignore[assignment]
-    FASTER_WHISPER_AVAILABLE = False
-
 from .stt_config import (
     DEFAULT_REQUEST_MODEL,
     MODEL_NAME_MAP,
@@ -27,6 +19,15 @@ from .stt_config import (
 )
 from .stt_runtime import validate_stt_runtime_config
 from .stt_schema import SegmentOut, SttTranscribeResult
+
+try:
+    from faster_whisper import WhisperModel as _WhisperModel
+
+    WhisperModel: Any = _WhisperModel
+    FASTER_WHISPER_AVAILABLE = True
+except Exception:
+    WhisperModel = None
+    FASTER_WHISPER_AVAILABLE = False
 
 # ============================================================
 # STT 서비스 파일

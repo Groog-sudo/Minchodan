@@ -17,7 +17,7 @@ try:
 except ImportError:
     # server/navigation/server.py를 독립 스크립트로 직접 실행하는 경우
     # (해당 스크립트가 자신의 디렉토리를 sys.path에 추가함)
-    from navigation_filter import NavigationFilter
+    from navigation_filter import NavigationFilter  # type: ignore[no-redef]
 
 try:
     from server.detection.risk_rules import class_name_to_ko

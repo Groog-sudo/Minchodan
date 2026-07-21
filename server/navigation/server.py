@@ -46,7 +46,7 @@ try:
 except ImportError:
     # 이 파일을 독립 스크립트로 직접 실행하는 경우
     # (모듈 상단에서 자신의 디렉토리를 sys.path에 추가함)
-    from manager import nav_manager
+    from manager import nav_manager  # type: ignore[no-redef]
 
 
 async def redis_stream_listener():

@@ -112,9 +112,9 @@ class MockEmbeddingEngine(Embeddings):
         seed = sum(ord(c) for c in target_keyword)
         random.seed(seed)
         vec = [random.gauss(0, 1) for _ in range(768)]
-        norm = np.linalg.norm(vec)
+        norm = float(np.linalg.norm(vec))
         if norm > 0:
-            vec = [v / norm for v in vec]
+            vec = [float(v) / norm for v in vec]
         return vec
 
     def embed_documents(self, texts):
