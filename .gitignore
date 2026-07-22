@@ -2,6 +2,9 @@
 # Python
 # ==========================================
 
+# ngrok local config (authtoken 포함, 절대 커밋 금지)
+ngrok.yml
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -34,6 +37,8 @@ venv/
 env/
 ENV/
 .venv/
+.venv*/
+.tools/
 
 # ==========================================
 # Environment Variables
@@ -42,6 +47,9 @@ ENV/
 .env
 .env.*
 !.env.example
+
+# 실제 내부 인프라 식별자가 포함된 로컬 팀 문서
+docs/db_tailscale_guide/README.internal.md
 
 # API Key 파일
 secrets.json
@@ -145,10 +153,66 @@ tmp/
 
 # 이미지 파일
 *.png
+!console/public/apple-touch-icon.png
+!console/public/favicon-16x16.png
+!console/public/favicon-32x32.png
 *.jpg
 *.jpeg
 
+# 텍스트 파일 (YOLO 라벨 등 대용량 텍스트 무시)
+*.txt
+!requirements.txt
 
+# JSON 파일 (AI Hub BBox/Polygon 등 대용량 원본 데이터 무시)
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.*.json
+!app.json
+!babel.config.json
+!.eslintrc.json
+!.prettierrc.json
+!skills.json
+!manifest.json
+
+# 위 미디어 확장자 차단 규칙(*.wav/*.mp3/*.m4a/*.png/*.jpg/*.jpeg)은 학습/업로드용
+# 대용량 데이터(data/ 등)를 겨냥한 것이나, React Native 클라이언트 앱 번들 자산까지
+# 의도치 않게 git 추적에서 제외시키고 있었다(2026-07-09 발견: beep.wav, 반사 클립,
+# 앱 아이콘 PNG 등이 로컬에만 존재하고 한 번도 커밋된 적이 없어 리포를 새로 clone하면
+# 앱 자체가 빌드/실행 불가능한 상태였음). client/assets, client/ios, client/android는
+# 예외로 추적한다.
+!client/assets/**
+!client/ios/**
+!client/android/**
+
+# 2026-07-19: !client/ios/** 예외가 Xcode DerivedData/로컬 빌드 산출물까지
+# 미추적으로 끌어올려 Cursor/git status에 수천~수만 파일이 잡힘.
+# Release/Debug 로컬 빌드 산출물은 절대 추적하지 않는다.
+client/ios/build/
+client/ios/build-release/
+client/ios/**/DerivedData/
+client/ios/**/CompilationCache.noindex/
+client/ios/**/ModuleCache.noindex/
+client/ios/**/SDKStatCaches.noindex/
+client/ios/**/Index.noindex/
+client/ios/**/Logs/
+client/ios/**/*.xcuserstate
+
+# 2026-07-19: 관제 콘솔 단말 오디오 미러용 반사 비프 클립 정적 자산.
+# client/assets/sounds/reflex_clips/와 동일 파일 5종을 복사해 둔 것으로,
+# 단말 번들과 동일 파일이므로 "동일"에 가장 근접한 재생을 위해 추적한다.
+!console/public/reflex_clips/**
+
+# 2026-07-13: 안드로이드 바이너리 데모/샘플 리소스는 로컬만 유지(git 미추적).
+# - index.android.bundle: 디버그 빌드 번들(빌드 시 재생성)
+# - assets_samples_frame_*.jpg: TFLite 추론 데모용 샘플 프레임
+# - res/raw/*.tflite, *.wav: 온디바이스 모델/반사 클립(빌드 자산이 아닌 로컬 리소스)
+# - keep.xml은 빌드 보존 설정(텍스트)이라 추적한다.
+client/android/app/src/main/assets/*.bundle
+client/android/app/src/main/res/drawable-mdpi/assets_samples_*.jpg
+client/android/app/src/main/res/raw/*.tflite
+client/android/app/src/main/res/raw/*.wav
 
 
 # ==========================================
@@ -159,6 +223,14 @@ outputs/
 results/
 generated/
 reports/
+
+# docs/ops/reports는 자동 생성물이 아닌 수기 검토 보고서만 선별 추적
+# (무시된 디렉토리 내부 파일은 직접 재포함 불가하므로 3단 패턴 사용)
+!docs/ops/reports/
+docs/ops/reports/*
+!docs/ops/reports/presentation_template_cache_code_review.md
+!docs/ops/reports/presentation_script_consistency_check.md
+!docs/ops/reports/yolo_segmentation_overview.md
 
 # ==========================================
 # Cache
@@ -180,7 +252,8 @@ transformers_cache/
 # ChromaDB
 # ==========================================
 
-chroma_db/
+**/chroma_db/
+!**/chroma_db/.gitkeep
 chromadb/
 
 # ==========================================
@@ -189,6 +262,31 @@ chromadb/
 
 vector_store/
 vectordb/
+
+# ==========================================
+# AI Hub Raw Samples / Model Weights
+# ==========================================
+
+# Demo/sample images are copied locally only. Do not commit raw AI Hub data.
+data/raw/aihub_walk_sample/*.jpg
+data/raw/aihub_walk_sample/*.jpeg
+data/raw/aihub_walk_sample/*.png
+
+# Custom training weights and exported engines stay local.
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Generated local training datasets/configs must not be committed.
+training/datasets/detection/aihub_*/
+training/datasets/segmentation/aihub_*/
+training/configs/aihub_yolo_detection.yaml
+training/runs/
+
+# Keep agreed baseline pretrained weights trackable.
+!server/models/yolo26n/object_detection.pt
+!server/models/yolo26n/segmentation.pt
 
 # ==========================================
 # LangChain / LangGraph
@@ -214,6 +312,15 @@ langgraph_checkpoints/
 *.old
 
 # ==========================================
+# Repository structure placeholders
+# ==========================================
+
+# Keep scaffold directories that otherwise match generated-data rules.
+!server/rag/build/
+!server/rag/build/.gitkeep
+!data/chroma_db/.gitkeep
+!training/datasets/detection/images/.gitkeep
+!training/datasets/segmentation/images/.gitkeep
 # 기타 등등...
 # ==========================================
 
@@ -221,3 +328,68 @@ langgraph_checkpoints/
 # 단 .master_agents/ 와 .contexty/ 는 제외
 **/.master_agents/
 .contexty/
+
+# Temporary Smoke Test Outputs
+temp_smoke_*
+
+# Node.js
+node_modules/
+.expo/
+
+# ==========================================
+# Custom Trained Model Weights (git-ignore)
+# ==========================================
+server/models/yolo26n/segbest.pt
+server/models/yolo26n/segbest.tflite
+# 커스텀 파인튜닝 산출물 (*.pt는 상단 *.pt 규칙으로 이미 무시).
+# mlpackage는 *.pt 예외가 없으므로 명시적으로 제외한다.
+server/models/yolo26n/det_best_*/
+server/models/yolo26n/det_best_*
+
+# TTS 서버 기동 시 자동 생성되는 런타임 호환 설정 (server/tts/tts_service.py)
+server/models/piper/*.runtime.compat.json
+
+# Unused alternative model weights (post-MVP 배제 안)
+yolo11n.pt
+yolov8n.pt
+
+# ==========================================
+# AI Agent / IDE Local Artifacts
+# ==========================================
+.zcode/
+# .claude/ 로컬 아티팩트(settings, worktrees 등)는 ignore.
+# 단 skills/ 는 Claude Code·Cursor(Claude skills 임포트) 공유 정본이므로 Git 추적.
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+# .antigravity/ 로컬 아티팩트는 ignore하되, rules.md(workspace rules, 팀 공유)는 추적.
+.antigravity/*
+!.antigravity/rules.md
+scripts/agent_tasks/
+scripts/launch_agents.sh
+
+# ==========================================
+# Local private config copies
+#   - See docs/ops/local_private_config_guide.md
+#   - Personal paths, device IDs, tokens, and local-only settings
+# ==========================================
+**/Copy_*
+
+# IDE scan and diagnostic scratch files
+project_scan_summary.json
+scratch/
+
+# Local PyTorch CUDA wheel cache (multi-GB)
+.wheel_cache/
+
+# local demo device token map (do not commit)
+.device_tokens_local.txt
+
+
+# local docker subnet override (host collision)
+docker/docker-compose.subnet-override.local.yml
+
+
+.env.network.demo
+.env.network.test
+

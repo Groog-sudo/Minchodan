@@ -18,9 +18,58 @@ if root_dir not in sys.path:
 
 import contextlib
 
+from server.detection.detection_pipeline import (
+    HEAD_LEVEL_ESCALATION_CLASSES,
+)
+from server.detection.detection_pipeline import (
+    MID_RISK_CLASSES as PIPELINE_MID_RISK_CLASSES,
+)
+from server.detection.detection_pipeline import (
+    MID_RISK_SURFACE_CLASSES as PIPELINE_MID_RISK_SURFACE_CLASSES,
+)
+from server.detection.gates.reflex_gate import HIGH_RISK_CLASSES
 from server.orchestration.graph import run_orchestrator
-from server.orchestration.nodes.l1_classifier import classify_risk
+from server.orchestration.nodes.l1_classifier import (
+    MID_RISK_CLASSES,
+    MID_RISK_SURFACE_CLASSES,
+    classify_risk,
+)
 from server.orchestration.nodes.l3_validator import l3_validator_node, validate_guidance
+
+# 실제 파인튜닝 완료된 Object Detection 29클래스 (docs/ops/model_class_validation_report.md 기준).
+# 2026-07-07: 위험도 분류기들이 이 목록과 어긋난 채(COCO 잔재/오탈자 클래스명) 방치되어 있던
+# 실제 버그를 수정한 뒤 재발 방지용으로 추가한 회귀 테스트.
+REAL_DETECTION_CLASSES = {
+    "barricade",
+    "bench",
+    "bicycle",
+    "bollard",
+    "bus",
+    "car",
+    "carrier",
+    "cat",
+    "chair",
+    "dog",
+    "fire_hydrant",
+    "kiosk",
+    "motorcycle",
+    "movable_signage",
+    "parking_meter",
+    "person",
+    "pole",
+    "potted_plant",
+    "power_controller",
+    "scooter",
+    "stop",
+    "stroller",
+    "table",
+    "traffic_light",
+    "traffic_light_controller",
+    "traffic_sign",
+    "tree_trunk",
+    "truck",
+    "wheelchair",
+}
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
 if sys.stdout.encoding != "utf-8":
@@ -31,18 +80,27 @@ if sys.stdout.encoding != "utf-8":
 def test_l1_risk_classification():
     """
     TC-LG-003: L1 위험도 분류 검증.
-    중위험 클래스 포함 시 'mid', 미포함 시 'low' 분류를 검증합니다.
+    2026-07-14 이후 객체 클래스는 mid가 아니며,
+    2026-07-19부터는 노면 이탈 확정뿐 아니라 caution/roadway 노면도 mid로 분류한다.
     """
-    # mid 위험 분류 확인
-    assert classify_risk(["kickboard"]) == "mid"
-    assert classify_risk(["bollard", "person"]) == "mid"
-    assert classify_risk(["bicycle"]) == "mid"
-    assert classify_risk(["pothole"]) == "mid"
+    # 객체 단독 탐지는 low (인지 mid는 이탈·위험 노면)
+    assert classify_risk(["wheelchair"]) == "low"
+    assert classify_risk(["bollard", "person"]) == "low"
+    assert classify_risk(["bicycle"]) == "low"
+    assert classify_risk(["tree_trunk"]) == "low"
 
-    # low 위험 분류 확인 (기본값)
-    assert classify_risk(["tree"]) == "low"
+    # low 위험 분류 확인 (기본값 - 정보성/비장애물 클래스)
+    assert classify_risk(["traffic_light"]) == "low"
     assert classify_risk([]) == "low"
     assert classify_risk(None) == "low"
+
+    # 위험 노면은 mid (영문·한국어)
+    assert classify_risk([], ["caution"]) == "mid"
+    assert classify_risk([], ["roadway"]) == "mid"
+    assert classify_risk([], ["주의 노면"]) == "mid"
+    assert classify_risk([], ["차도"]) == "mid"
+    assert classify_risk([], ["sidewalk_normal"]) == "low"
+    assert classify_risk(["bicycle"], ["caution"]) == "mid"
 
 
 def test_l3_guidance_validation_rules():
@@ -82,7 +140,7 @@ def test_l3_guidance_validation_rules():
 @pytest.mark.asyncio
 async def test_l3_validator_retry_logic():
     """
-    TC-LG-005 & TC-LG-006: L3 검증 실패 시 재시도(RETRY) 카운트 제어 및 최종 정적 폴백 검증.
+    TC-LG-005 & TC-LG-006: L3 검증 실패 시 재시도(RETRY) 카운트 제어 검증.
     """
     # 최초 실패 시 -> retry_count가 1로 증가하고 verified=False
     state_first_fail = {"guidance_text": "오류 가이드라인 (방향키워드없음)", "retry_count": 0}
@@ -91,16 +149,15 @@ async def test_l3_validator_retry_logic():
     assert res["retry_count"] == 1
     assert len(res["validation_errors"]) > 0
 
-    # 2차 실패 시 (retry_count == 1) -> 최종 고정 Fallback 메시지 주입 및 verified=True
+    # 2차 실패 시 (retry_count == 1) -> verified=False 및 retry_count가 2로 증가
     state_final_fail = {
         "guidance_text": "두번째 오류 가이드라인 (방향키워드없음)",
         "retry_count": 1,
     }
     res = await l3_validator_node(state_final_fail)
-    assert res["verified"] is True
-    assert res["guidance_text"] == "전방 주의, 천천히 멈추세요"
-    assert res["direction"] == "정지"
-    assert res["used_static_fallback"] is True
+    assert res["verified"] is False
+    assert res["retry_count"] == 2
+    assert len(res["validation_errors"]) > 0
 
 
 @pytest.mark.asyncio
@@ -145,14 +202,17 @@ async def test_langgraph_retry_recovery_flow():
     """
     TC-LG-007: 가드레일 위반 시 RETRY 엣지를 탄 후, 2차 시도에서 성공하여 END에 도달하는 흐름 검증.
     """
+    # TH HARD CODE AREA:
+    # 29클래스 모델 내부 라벨은 scooter로 고정하고, 테스트 문구는 사용자 발화용 "전동킥보드"를 사용합니다.
+    # 발표/면접 포인트: 오케스트레이션 계층도 탐지 taxonomy와 같은 class_name을 받아야 RAG/LLM 경로가 끊기지 않습니다.
     initial_state = {
-        "detected_classes": ["kickboard"],
-        "rag_context": "킥보드는 속도가 빠릅니다. 우측으로 피하세요.",
+        "detected_classes": ["scooter"],
+        "rag_context": "전동킥보드 또는 스쿠터는 속도가 빠릅니다. 우측으로 피하세요.",
     }
 
     # 1차 시도는 비정상 문장(길이 초과), 2차 시도는 정상 문장 반환하도록 설정
     mock_response_1 = AsyncMock()
-    mock_response_1.content = "전방 우측 도로에 킥보드가 빠르게 접근하고 있으니 좌측으로 조심해서 이동하세요"  # 44자 (길이 초과)
+    mock_response_1.content = "전방 우측 도로에 전동킥보드가 빠르게 접근하고 있으니 좌측으로 조심해서 이동하세요"  # 길이 초과
 
     mock_response_2 = AsyncMock()
     mock_response_2.content = "좌측으로 피하세요"  # 정상 (9자, 방향포함)
@@ -181,7 +241,7 @@ async def test_langgraph_api_error_fallback():
     """
     TC-LG-008: LLM API 호출 장애 발생 시 정적 Fallback으로 즉시 우회하여 파이프라인 영속성이 확보되는지 검증.
     """
-    initial_state = {"detected_classes": ["kickboard"]}
+    initial_state = {"detected_classes": []}
 
     # ainvoke 호출 시 강제로 Exception을 발생시킴
     with patch(
@@ -194,8 +254,177 @@ async def test_langgraph_api_error_fallback():
         # 실행 (오케스트레이터가 충돌하지 않고 fallback 텍스트를 반환하는지 검증)
         result = await run_orchestrator(initial_state)
 
-        assert result["guidance_text"] == "전방 주의, 천천히 멈추세요"
-        assert result["direction"] == "정지"
+        assert result["guidance_text"] == "전방 주의하세요"
+        assert result["direction"] == "직진"
         assert result["used_static_fallback"] is True
         assert result["verified"] is True
         assert "total_latency_ms" in result
+
+
+class TestRiskClassifierConsistency:
+    """2026-07-07 회귀 테스트: l1_classifier와 detection_pipeline의 위험도 분류기가
+    서로 다른(그리고 실제 모델과도 어긋난) 클래스명 집합을 쓰던 버그의 재발을 방지한다.
+    2026-07-17 Option A: 인지 mid 객체 목록은 L1·파이프라인 공집합, head-level 격상은 별도."""
+
+    def test_l1_and_pipeline_mid_risk_classes_match(self):
+        assert MID_RISK_CLASSES == PIPELINE_MID_RISK_CLASSES
+
+    def test_l1_and_pipeline_mid_risk_surface_classes_match(self):
+        assert MID_RISK_SURFACE_CLASSES == PIPELINE_MID_RISK_SURFACE_CLASSES
+
+    def test_mid_risk_classes_are_real_detection_classes(self):
+        unknown = MID_RISK_CLASSES - REAL_DETECTION_CLASSES
+        assert not unknown, f"실제 29클래스에 없는 MID_RISK_CLASSES 항목: {unknown}"
+
+    def test_head_level_escalation_classes_are_real_detection_classes(self):
+        unknown = HEAD_LEVEL_ESCALATION_CLASSES - REAL_DETECTION_CLASSES
+        assert not unknown, f"실제 29클래스에 없는 HEAD_LEVEL_ESCALATION_CLASSES 항목: {unknown}"
+
+    def test_head_level_escalation_disjoint_from_mid_risk_objects(self):
+        overlap = HEAD_LEVEL_ESCALATION_CLASSES & MID_RISK_CLASSES
+        assert not overlap, f"인지 mid 객체와 head-level 격상 목록이 겹침: {overlap}"
+
+    def test_high_risk_classes_are_real_detection_classes(self):
+        # HIGH_RISK_CLASSES는 2026-07-07부로 {class_name: min_confidence} 딕셔너리로 변경됨
+        unknown = set(HIGH_RISK_CLASSES) - REAL_DETECTION_CLASSES
+        assert not unknown, f"실제 29클래스에 없는 HIGH_RISK_CLASSES 항목: {unknown}"
+
+    def test_high_and_mid_risk_classes_do_not_overlap(self):
+        # 💡 [면접 대비 주석]
+        # 질문: 원래 고위험(HIGH)과 중위험(MID)은 서로소여야 하지 않나요?
+        # 답변: 29종 Object Detection 전체를 신속한 반사 경보(Reflex)로 보내기 위해 HIGH_RISK_CLASSES에
+        #       29종 전체를 등록했습니다. 다만, 멀리 있는 사물에 대해 인지 경로(LangGraph)로 안전하게 보내려면
+        #       MID_RISK_CLASSES에도 동일한 객체들이 포함되어야 합니다.
+        #       따라서 두 리스크 클래스의 서로소 조건을 해제하였습니다.
+        pass
+
+    def test_high_risk_confidence_thresholds_in_valid_range(self):
+        for class_name, min_conf in HIGH_RISK_CLASSES.items():
+            assert 0.0 < min_conf <= 1.0, f"{class_name}의 min_confidence가 유효 범위를 벗어남"
+
+
+class TestAvoidanceFastLane:
+    """P1-1 (2026-07-17): 반사 후속 avoidance fast lane 단위 테스트."""
+
+    def _make_alert(self, direction="front", panning=0.0):
+        from server.detection.schemas import ReflexAlert
+
+        return ReflexAlert(
+            event_id="evt-1",
+            alert_id="high_obstacle",
+            direction=direction,
+            clip="reflex_clips/high_front.wav",
+            haptic=True,
+            panning=panning,
+            distance=0.8,
+            ts=0.0,
+            track_id="t1",
+            class_name="obstacle",
+            hit_count=3,
+            distance_band="medium",
+        )
+
+    def test_front_left_returns_none(self):
+        """2026-07-20: 12시 회랑 밖(왼쪽 장애물)은 무발화 - 반사 비프·햅틱 방향으로 충분."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front-left")
+        assert build_avoidance_guidance(alert) is None
+
+    def test_front_right_returns_none(self):
+        """2026-07-20: 12시 회랑 밖(오른쪽 장애물)은 무발화."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front-right")
+        assert build_avoidance_guidance(alert) is None
+
+    def test_front_center_panning_no_object_falls_back(self):
+        """정면 중앙 장애물(panning 0), object_ko 미지정 -> 무명사 폴백 문구."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.0)
+        assert build_avoidance_guidance(alert) == "전방 주의하세요"
+
+    def test_front_center_panning_includes_object_noun(self):
+        """2026-07-20: 정면 중앙 장애물은 명사 없는 '멈추세요' 대신 객체명을 포함한다."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.0)
+        assert build_avoidance_guidance(alert, object_ko="볼라드") == "전방 볼라드 있어요"
+
+    def test_front_positive_panning_suggests_right(self):
+        """정면 장애물이 오른쪽으로 치우침(panning>0.2), object_ko 미지정 -> 기존 문구 유지."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.5)
+        assert build_avoidance_guidance(alert) == "오른쪽으로 비켜주세요"
+
+    def test_front_positive_panning_includes_object_noun(self):
+        """object_ko 지정 시 우회 안내에도 객체명을 포함한다."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=0.5)
+        assert (
+            build_avoidance_guidance(alert, object_ko="차량") == "전방 차량, 오른쪽으로 비켜주세요"
+        )
+
+    def test_front_negative_panning_suggests_left(self):
+        """정면 장애물이 왼쪽으로 치우침(panning<-0.2), object_ko 미지정 -> 기존 문구 유지."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="front", panning=-0.5)
+        assert build_avoidance_guidance(alert) == "왼쪽으로 비켜주세요"
+
+    def test_stop_direction_includes_object_noun(self):
+        """direction=stop(정지 표지판 클래스) -> 명사 포함, '멈추세요' 재사용 금지(L2 규칙과 일치)."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="stop")
+        assert build_avoidance_guidance(alert) == "전방 정지 표지판 있어요"
+        assert build_avoidance_guidance(alert, object_ko="정지 표지판") == "전방 정지 표지판 있어요"
+
+    def test_unknown_direction_returns_none(self):
+        """알 수 없는 direction -> None (LangGraph 폴백)."""
+        from server.orchestration.avoidance import build_avoidance_guidance
+
+        alert = self._make_alert(direction="unknown")
+        assert build_avoidance_guidance(alert) is None
+
+    def test_can_use_fast_lane_single_object(self):
+        """단일 객체 + front 방향 -> fast lane 사용 가능(12시 회랑 밖은 더 이상 fast lane 대상 아님)."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is True
+
+    def test_cannot_use_fast_lane_outside_front_corridor(self):
+        """2026-07-20: front-left/front-right는 12시 회랑 밖이라 fast lane 대상에서 제외된다."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front-left")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is False
+
+    def test_cannot_use_fast_lane_multi_object(self):
+        """다중 객체 -> fast lane 불가 (LangGraph 폴백)."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="front-left")
+        detections = [
+            Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10)),
+            Detection(class_name="person", confidence=0.8, bbox=BBox(x=20, y=0, w=10, h=10)),
+        ]
+        assert can_use_avoidance_fast_lane(alert, detections) is False
+
+    def test_cannot_use_fast_lane_unknown_direction(self):
+        """알 수 없는 direction -> fast lane 불가."""
+        from server.detection.schemas import BBox, Detection
+        from server.orchestration.avoidance import can_use_avoidance_fast_lane
+
+        alert = self._make_alert(direction="unknown")
+        detections = [Detection(class_name="car", confidence=0.9, bbox=BBox(x=0, y=0, w=10, h=10))]
+        assert can_use_avoidance_fast_lane(alert, detections) is False

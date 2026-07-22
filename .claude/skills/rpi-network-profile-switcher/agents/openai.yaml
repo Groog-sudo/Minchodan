@@ -1,0 +1,4 @@
+interface:
+  display_name: "시연 환경 기동·네트워크 프로필"
+  short_description: "시연용 서버(Pi·Ollama·FastAPI·console·Metro) 기동과 demo/test 네트워크 전환을 수행합니다."
+  default_prompt: "$rpi-network-profile-switcher를 사용해 시연에 필요한 서버를 기동·점검하고, Raspberry Pi DB·미디어·Mac mini LLM 네트워크 프로필을 전환·검증해 주세요."

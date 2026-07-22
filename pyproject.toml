@@ -1,5 +1,5 @@
 # Minchodan - Python 프로젝트 설정 (Ruff + mypy + bandit)
-# 기준 문서: docs/code_quality_guide.md
+# 기준 문서: docs/ops/code_quality_guide.md
 
 [build-system]
 requires = ["setuptools>=68.0"]
@@ -16,7 +16,7 @@ packages = ["server"]
 
 # ==========================================
 # Ruff (Linter + Formatter)
-# 기준: docs/course_codebase_guide.md 3.2/3.3/17.2
+# 기준: docs/dev-guides/course_codebase_guide.md 3.2/3.3/17.2
 # ==========================================
 [tool.ruff]
 target-version = "py313"
@@ -51,6 +51,7 @@ ignore = [
     "S101",  # assert 사용 (tests/에서 pytest assert 허용, per-file에서 제어)
     "S104",  # 0.0.0.0 바인딩 (FastAPI 개발 서버에서 허용)
     "B008",  # 함수 호출 기본값 (FastAPI Depends() 패턴 허용)
+    "UP009",  # UTF-8 선언(coding comment) - docs/dev-guides/course_codebase_guide.md 3.1이 명시적으로 요구
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -59,6 +60,10 @@ ignore = [
     "S106",  # 하드코딩 비밀번호 (테스트 fixture)
     "S108",  # /tmp 경로 (테스트 임시 파일)
     "E402",  # sys.path 조작 후 로컬 import (guide 3.3 패턴)
+    "PT011", # raises ValueError too broad
+    "S110",  # try-except-pass
+    "SIM105", # try-except-pass (suppress)
+    "SIM117", # nested with
 ]
 "scripts/**/*.py" = [
     "S404",  # subprocess import 허용 (모델 다운로드)
@@ -73,6 +78,9 @@ ignore = [
 "server/main.py" = [
     "E402",  # sys.path 조작 후 로컬 import (guide 3.3 패턴)
 ]
+"server/db/schemas.py" = [
+    "S105",  # OAuth2 표준 응답 필드 token_type="bearer" 오탐 (최신 ruff 0.15.x 기준)
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["server"]
@@ -84,7 +92,7 @@ line-ending = "lf"
 
 # ==========================================
 # mypy (정적 타입 검사 - 점진적 적용)
-# 기준: docs/code_quality_guide.md 5.3
+# 기준: docs/ops/code_quality_guide.md 5.3
 # ==========================================
 [tool.mypy]
 python_version = "3.13"
@@ -137,7 +145,7 @@ ignore_missing_imports = true
 
 # ==========================================
 # bandit (보안 심층 스캔)
-# 기준: docs/code_quality_guide.md 5.2
+# 기준: docs/ops/code_quality_guide.md 5.2
 # ==========================================
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "data", "models", "client", "console", "training"]
@@ -150,4 +158,8 @@ recursive = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "ollama: 로컬 Ollama 서버가 필요한 테스트",
+    "live_server: 실행 중인 uvicorn 서버가 필요한 통합 테스트",
+]
 python_files = ["test_*.py"]

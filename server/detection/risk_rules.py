@@ -1,0 +1,235 @@
+import sys
+from typing import Literal, TypedDict
+
+from server.detection.gates.reflex_gate import HIGH_RISK_CLASSES
+from server.detection.schemas import Detection, ReflexAlert
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+
+MessageHintId = Literal["OBSTACLE", "STAIR_DOWN", "ROAD", "RED_LIGHT", "CURB", "STOP"]
+MessageHintType = Literal["REFLEX", "COGNITIVE"]
+RiskLevel = Literal["high", "medium", "low"]
+
+
+class MessageHint(TypedDict):
+    id: MessageHintId
+    type: MessageHintType
+    text: str
+
+
+# =========================================================================
+# 👨‍💻 HARD CODE 영역 시작 (위험도 및 한글 텍스트 매핑 테이블) 👨‍💻
+# 💡 [면접 대비 주석]
+# 질문: 29종(AI Hub) 도심 보행 데이터 클래스별로 어떻게 위험도(High/Medium/Low)와 음성 안내 텍스트를 분류했나요?
+# 답변: 1. 단말기(TTS)에서 재생될 한글 명칭은 직관적이고 짧게(예: '전력제어기' -> '제어기') 매핑하여 지연을 줄였습니다.
+#       2. 시각장애인 보행에 직접적인 충돌/걸림돌 위험이 큰 객체(차량, 자전거, 킥보드, 볼라드, 바리케이드 등)를 DANGER_CLASSES로 묶어 거리에 따라 즉각적인 Reflex 발동이 가능하도록 설계했습니다.
+# 💡 [추가 면접 꿀팁 - 하이브리드 데이터셋 융합]
+# 질문: AI Hub 원본 데이터에서 누락된 '계단(Stairs)'이나 정답률이 40% 미만이었던 '킥보드', '캐리어', 그리고 실내 오탐을 유발한 '의자' 등은 어떻게 해결했나요?
+# 답변: Open Images 등 외부 API를 연동하여 취약 클래스 이미지를 직접 수집한 후, AI Hub 원본 데이터와 융합(Fusion)하는 전처리 파이프라인(merge_external_dataset.py)을 구축했습니다.
+#       이를 통해 라벨을 29종 규격으로 자동 재매핑(Remapping)하여 모델의 약점을 하드 마이닝(Hard Example Mining) 방식으로 근본적으로 보완했습니다.
+# 💡 [추가 면접 꿀팁]
+# 질문: 왜 고양이나 강아지 같은 동물은 DANGER_CLASSES에 넣지 않았나요?
+# 답변: 동물은 스스로 사람을 피하는 동적 객체이고 물리적 충돌로 인한 중상 위험도가 낮기 때문에, 잦은 경보로 인한 사용자의 피로도를 낮추고자 일반 장애물(인지 경로)로 분류했습니다.
+# =========================================================================
+
+# 담당자님, 여기에 AI Hub 29종 클래스에 맞추어 아래 3개의 딕셔너리를 직접 채워주세요!
+# CLASS_NAMES = ["barricade", "bench", "bicycle", "bollard", "bus", "car", "carrier", "cat", "chair", "dog", "fire_hydrant", "kiosk", "motorcycle", "movable_signage", "parking_meter", "person", "pole", "potted_plant", "power_controller", "scooter", "stop", "stroller", "table", "traffic_light", "traffic_light_controller", "traffic_sign", "tree_trunk", "truck", "wheelchair"]
+
+CLASS_TO_HINT_ID: dict[str, MessageHintId] = {
+    # 예: "stop": "STOP"
+    "stop": "STOP",  # 정지 표지판은 즉각 정지 명령
+    "barricade": "STOP",  # 바리케이드는 집입 불가이므로 정지 명령
+    "bollard": "CURB",  # 볼라드는 보통 보도블록 끝(연석)에 있으므로 연석으로 취급가능 (선택사항)
+}
+
+DANGER_CLASSES = {
+    # 예: "car", "motorcycle", "scooter", "bollard", "barricade" 등 위험 객체 문자열
+    "car",
+    "truck",
+    "bus",  # 대형 / 고속 차량류
+    "motorcycle",
+    "scooter",
+    "bicycle",  # 갑자기 튀어나오는 이륜차류
+    "bollard",
+    "pole",  # 정강이나 머리를 부딪치기 쉬운 기동류
+    "barricade",
+    "movable_signage",  # 길을 갑자기 막고 있 구조물
+}
+
+DIRECTION_TEXT = {
+    "left": "왼쪽",
+    "front-left": "왼쪽 앞",
+    "front": "정면",
+    "center": "화면 중앙",
+    "right": "오른쪽",
+    "front-right": "오른쪽 앞",
+    "stop": "정지",
+    "unknown": "방향 미상",
+}
+
+CLASS_TEXT = {
+    # 예: "scooter": "킥보드", "car": "차량" 등 29종의 한글 이름
+    "barricade": "바리케이드",
+    "bench": "벤치",
+    "bicycle": "자전거",
+    "bollard": "볼라드",
+    "bus": "버스",
+    "car": "차량",
+    "carrier": "운반구",
+    "cat": "고양이",
+    "chair": "의자",
+    "dog": "개",
+    "fire_hydrant": "소화전",
+    "kiosk": "키오스크",
+    "motorcycle": "오토바이",
+    "movable_signage": "이동형 표지판",
+    "parking_meter": "주차 미터기",
+    "person": "사람",
+    "pole": "기둥",
+    "potted_plant": "화분",
+    "power_controller": "전력 제어기",
+    "scooter": "전동 킥보드",
+    "stop": "정지 표지판",
+    "stroller": "유모차",
+    "table": "테이블",
+    "traffic_light": "신호등",
+    "traffic_light_controller": "신호등 제어기",
+    "traffic_sign": "교통 표지판",
+    "tree_trunk": "나무 줄기",
+    "truck": "트럭",
+    "wheelchair": "휠체어",
+    # segmentation 4클래스 (인지 안내 문장용)
+    "sidewalk_normal": "일반 보도",
+    "caution": "주의 노면",
+    "roadway": "차도",
+    "braille_normal": "점자블록",
+}
+
+# Phase 2 SSoT: 인지 경로(L2/fallback/guide) 한국어 객체명은 본 테이블만 사용한다.
+
+
+def class_name_to_ko(class_name: str) -> str:
+    """영어 class_name을 한국어 표시명으로 변환. 미등록 시 입력값 그대로 반환."""
+    if not class_name:
+        return "장애물"
+    return CLASS_TEXT.get(class_name, class_name)
+
+
+# 👨‍💻 HARD CODE 영역 끝
+# =========================================================================
+
+
+def build_message_hint(
+    detection: Detection,
+    direction: str,
+    distance: str,
+    risk_level: str,
+) -> MessageHint | None:
+    """기존 Detection 위에 단말 TTS용 message_hint 계약을 얹는다."""
+    # center/unknown은 안내 키에서 제외(정면으로 위장하지 않음).
+    if direction in ("center", "unknown"):
+        return None
+
+    hint_id = _hint_id_for_class(detection.class_name)
+    hint_type: MessageHintType = _hint_type_for_risk(detection.class_name, risk_level)
+
+    # Reflex Path 규칙: 측면이거나 멀리 있는 객체는 Reflex 침묵 (Cognitive 위임)
+    if hint_type == "REFLEX":
+        if distance == "far" or direction != "front":
+            return None
+
+        if distance == "near" and direction == "front":
+            text = "정지, 전방 장애물"
+            if hint_id == "STAIR_DOWN":
+                text = "정지, 전방 계단"
+            elif hint_id == "ROAD":
+                text = "정지, 전방 차도"
+            elif hint_id == "RED_LIGHT":
+                text = "정지, 빨간불"
+            elif hint_id == "CURB":
+                text = "정지, 전방 연석"
+            return {"id": "STOP", "type": "REFLEX", "text": text}
+
+        if distance in ("near", "medium") and direction == "front":
+            text = build_message_text(detection.class_name, direction, hint_id)
+            return {"id": hint_id, "type": "REFLEX", "text": text}
+
+        return None
+
+    text = build_message_text(detection.class_name, direction, hint_id)
+    return {"id": hint_id, "type": hint_type, "text": text}
+
+
+def estimate_risk_level(class_name: str, direction: str, distance: str) -> RiskLevel:
+    """데모용 문장 생성 전에 사용할 결정적 위험도 규칙."""
+    normalized = class_name.strip().lower()
+
+    # 측면·미확정(center/unknown)은 Reflex 발동을 막기 위해 위험도 하향
+    if direction != "front":
+        return "low"
+
+    if distance == "near" and normalized in DANGER_CLASSES:
+        return "high"
+    if distance == "medium" and normalized in DANGER_CLASSES:
+        return "medium"
+    if normalized in HIGH_RISK_CLASSES:
+        return "medium"
+    return "low"
+
+
+def build_reflex_message_hint(alert: ReflexAlert) -> MessageHint:
+    """ReflexAlert를 단말 TTS용 message_hint로 변환한다."""
+    hint_id = _hint_id_for_alert(alert)
+    direction = alert.direction or "front"
+    if direction in ("center", "unknown"):
+        direction = "front"
+    text = "정지하세요" if hint_id == "STOP" else build_message_text("obstacle", direction, hint_id)
+    return {"id": hint_id, "type": "REFLEX", "text": text}
+
+
+def build_message_text(class_name: str, direction: str, hint_id: MessageHintId) -> str:
+    if direction in ("center", "unknown"):
+        direction_text = DIRECTION_TEXT.get(direction, "방향 미상")
+    else:
+        direction_text = DIRECTION_TEXT.get(direction, "정면")
+    if hint_id == "STAIR_DOWN":
+        return f"{direction_text} 계단 주의"
+    if hint_id == "ROAD":
+        return f"{direction_text} 차도 주의"
+    if hint_id == "RED_LIGHT":
+        return "빨간불 정지"
+    if hint_id == "CURB":
+        return f"{direction_text} 연석 주의"
+    if hint_id == "STOP":
+        return "정지하세요"
+
+    object_text = CLASS_TEXT.get(class_name, "장애물")
+    return f"{direction_text} {object_text} 주의"
+
+
+def _hint_id_for_class(class_name: str) -> MessageHintId:
+    return CLASS_TO_HINT_ID.get(class_name, "OBSTACLE")
+
+
+def _hint_type_for_risk(class_name: str, risk_level: str) -> MessageHintType:
+    if risk_level == "high" or class_name in HIGH_RISK_CLASSES:
+        return "REFLEX"
+    return "COGNITIVE"
+
+
+def _hint_id_for_alert(alert: ReflexAlert) -> MessageHintId:
+    if alert.alert_id == "high_stop" or alert.direction == "stop":
+        return "STOP"
+    # P2-1(b) (2026-07-17): surface_caution(계단/맨홀/그레이팅 통합 클래스)을 STAIR_DOWN 힌트로 매핑.
+    # [면접 대비 주석] caution은 계단뿐 아니라 맨홀/그레이팅도 포함하지만, 현재 MessageHintId에
+    # CAUTION 전용 힌트가 없어 가장 가까운 STAIR_DOWN(낙상 위험)으로 매핑. 인지 가이드에서
+    # 세부 클래스 설명을 담당하므로 반사 message_hint는 위험 카테고리만 전달.
+    if "stair" in alert.alert_id or "caution" in alert.alert_id:
+        return "STAIR_DOWN"
+    if "road" in alert.alert_id:
+        return "ROAD"
+    if "curb" in alert.alert_id:
+        return "CURB"
+    return "OBSTACLE"

@@ -1,0 +1,300 @@
+"""
+Minchodan DB 클라이언트 요청/응답 검증용 Pydantic V2 DTO 스키마.
+Create 스키마와 Response 스키마를 분리합니다.
+
+AI(Vibe) 위임 영역:
+- 이 파일은 클라이언트 요청/응답 형태를 검증하는 반복 DTO 정의입니다.
+- 핵심 DB 연관 관계는 `models.py`에서 설명하고, 이 파일은 API 경계의 데이터 모양만 관리합니다.
+- 발표 때는 각 DTO가 "생성 입력"인지 "응답 출력"인지, Response에 `from_attributes=True`가 왜 필요한지만 설명하면 됩니다.
+"""
+
+from __future__ import annotations
+
+import sys
+from datetime import UTC, date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from server.db.models import (
+    ANON_PHONE_PREFIX,
+    AdminAccountStatus,
+    AdminRole,
+    DevicePlatform,
+    StreamType,
+    UserStatus,
+)
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+
+def _assume_utc_if_naive(value: datetime) -> datetime:
+    """MariaDB DATETIME 컬럼은 타임존을 저장하지 않아, 저장 시 UTC-aware였던
+    값(datetime.now(UTC))도 재조회하면 naive(오프셋 없음)로 돌아온다. Pydantic이
+    이를 그대로 JSON 직렬화하면 오프셋 없는 ISO 문자열이 되어, 브라우저의
+    new Date(...)가 UTC를 로컬(KST)로 오인식해 9시간이 밀린다(now_iso()/SSE
+    timestamp와 같은 계열의 버그, 2026-07-12 발견). 이 프로젝트는 저장 시점에
+    항상 UTC를 쓰므로(datetime.now(UTC)) naive 값은 UTC로 간주해 오프셋을 붙인다.
+    """
+    if isinstance(value, datetime) and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+class AppUserCreate(BaseModel):
+    """앱 사용자 생성 요청 DTO."""
+
+    name: str = Field(..., min_length=1, max_length=50)
+    phone: str = Field(..., min_length=1, max_length=30)
+    disability_severity: str = Field(..., min_length=1, max_length=30)
+    birth_date: date | None = Field(default=None)
+    guardian_phone: str | None = Field(default=None, max_length=30)
+    address: str | None = Field(default=None, max_length=255)
+    status: UserStatus = UserStatus.ACTIVE
+
+
+class AppUserResponse(BaseModel):
+    """앱 사용자 응답 DTO."""
+
+    # ORM 객체를 Pydantic 응답 모델로 변환하기 위한 Pydantic V2 설정입니다.
+    # 예: AppUser ORM 인스턴스 -> AppUserResponse
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: int
+    name: str
+    phone: str
+    disability_severity: str
+    birth_date: date | None
+    guardian_phone: str | None
+    address: str | None
+    status: UserStatus
+
+
+class UserDeviceCreate(BaseModel):
+    """사용자 단말 생성 요청 DTO."""
+
+    user_id: int = Field(..., ge=1)
+    device_uuid: str = Field(..., min_length=1, max_length=100)
+    platform: DevicePlatform = DevicePlatform.UNKNOWN
+    is_active: bool = True
+
+
+class UserDeviceResponse(BaseModel):
+    """사용자 단말 응답 DTO."""
+
+    # Response 스키마는 DB에서 조회한 ORM 객체를 그대로 응답 형태로 바꿀 수 있어야 합니다.
+    model_config = ConfigDict(from_attributes=True)
+
+    device_id: int
+    user_id: int
+    device_uuid: str
+    platform: DevicePlatform
+    is_active: bool
+
+
+class MemberRegisterRequest(BaseModel):
+    """관리자 콘솔의 회원 등록/전환 요청 DTO.
+
+    device_uuid가 이미 등록돼 있으면(주로 익명 자동등록 상태) 그 소유 회원 정보를
+    실명으로 갱신(전환)하고, 없으면 새 회원+기기를 등록한다(server/services/user_service.py
+    UserService.register_or_convert_member 참조).
+    """
+
+    device_uuid: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=50)
+    phone: str = Field(..., min_length=1, max_length=30)
+    disability_severity: str = Field(..., min_length=1, max_length=30)
+    birth_date: date | None = Field(default=None)
+    guardian_phone: str | None = Field(default=None, max_length=30)
+    address: str | None = Field(default=None, max_length=255)
+    platform: DevicePlatform = DevicePlatform.UNKNOWN
+
+
+class AppUserWithDevicesResponse(AppUserResponse):
+    """관리자 회원 목록 조회 응답 DTO. 기본 AppUserResponse에 등록 기기 목록과
+    "익명 자동등록 상태인지" 판별 플래그를 더한다(콘솔이 전환 대상 행을 강조 표시)."""
+
+    devices: list[UserDeviceResponse]
+    is_anonymous: bool = False
+
+    @model_validator(mode="after")
+    def _compute_is_anonymous(self) -> AppUserWithDevicesResponse:
+        self.is_anonymous = self.phone.startswith(ANON_PHONE_PREFIX)
+        return self
+
+
+class AdminAccountCreate(BaseModel):
+    """관리자 계정 생성 요청 DTO."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    employee_no: str = Field(..., min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
+    name: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=12, max_length=72)
+    role: AdminRole = AdminRole.OPERATOR
+    status: AdminAccountStatus = AdminAccountStatus.ACTIVE
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_strength(cls, value: str) -> str:
+        groups = (
+            any(char.islower() for char in value),
+            any(char.isupper() for char in value),
+            any(char.isdigit() for char in value),
+            any(not char.isalnum() for char in value),
+        )
+        if sum(groups) < 3:
+            raise ValueError(
+                "비밀번호는 영문 대·소문자, 숫자, 특수문자 중 3종 이상을 포함해야 합니다."
+            )
+        return value
+
+
+class AdminBootstrapCreate(BaseModel):
+    """최초 최고관리자 1회 생성 요청 DTO."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    employee_no: str = Field(..., min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
+    name: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=12, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_strength(cls, value: str) -> str:
+        return AdminAccountCreate._validate_password_strength(value)
+
+
+class AdminAccountResponse(BaseModel):
+    """관리자 계정 응답 DTO. 비밀번호 해시는 응답에 노출하지 않습니다."""
+
+    # password_hash는 생성에는 필요하지만 응답에는 포함하지 않습니다.
+    # 발표 포인트: API 응답 DTO는 DB 컬럼 전체를 그대로 노출하는 파일이 아닙니다.
+    model_config = ConfigDict(from_attributes=True)
+
+    admin_id: int
+    employee_no: str
+    name: str
+    role: AdminRole
+    status: AdminAccountStatus
+
+
+class AdminLoginAuditCreate(BaseModel):
+    """관리자 로그인 감사 로그 생성 요청 DTO."""
+
+    employee_no: str = Field(..., min_length=1, max_length=50)
+    success: bool = False
+
+
+class AdminLoginAuditResponse(BaseModel):
+    """관리자 로그인 감사 로그 응답 DTO."""
+
+    # 감사 로그 조회 결과도 ORM 객체에서 바로 변환할 수 있게 합니다.
+    model_config = ConfigDict(from_attributes=True)
+
+    audit_id: int
+    employee_no: str
+    success: bool
+    created_at: datetime
+
+    _normalize_created_at = field_validator("created_at", mode="before")(_assume_utc_if_naive)
+
+
+class DetectionGuidanceLogCreate(BaseModel):
+    """탐지/안내 로그 생성 요청 DTO."""
+
+    event_id: str | None = Field(default=None, max_length=64)
+    user_id: int | None = Field(default=None, ge=1)
+    device_id: int | None = Field(default=None, ge=1)
+    detected_at: datetime
+    stream_type: StreamType = StreamType.UNKNOWN
+    detected_objects_json: str = Field(..., min_length=2)
+    tts_text: str = Field(..., min_length=1)
+    frame_path: str | None = Field(default=None, max_length=255)
+    false_positive: bool | None = Field(default=None)
+    latency_json: str | None = Field(default=None)
+    pipeline_debug_json: str | None = Field(default=None)
+    event_source: str = Field(default="unknown", max_length=20)
+    stt_transcript_text: str | None = Field(default=None)
+    stt_audio_path: str | None = Field(default=None, max_length=255)
+    stt_audio_storage_status: str = Field(default="not_applicable", max_length=30)
+    stt_audio_format: str | None = Field(default=None, max_length=10)
+    stt_audio_size_bytes: int | None = Field(default=None, ge=0)
+    stt_audio_duration_ms: int | None = Field(default=None, ge=0)
+    stt_audio_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    stt_audio_error_code: str | None = Field(default=None, max_length=64)
+    stt_audio_consent_at: datetime | None = Field(default=None)
+    stt_audio_expires_at: datetime | None = Field(default=None)
+    writer_instance_id: str | None = Field(default=None, max_length=100)
+
+
+class DetectionGuidanceLogResponse(BaseModel):
+    """탐지/안내 로그 응답 DTO."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    log_id: int
+    event_id: str | None
+    user_id: int | None
+    device_id: int | None
+    detected_at: datetime
+    stream_type: StreamType
+    detected_objects_json: str
+    tts_text: str
+    frame_path: str | None
+    false_positive: bool | None
+    latency_json: str | None
+    pipeline_debug_json: str | None
+    created_at: datetime
+    event_source: str
+    stt_transcript_text: str | None
+    stt_audio_path: str | None
+    stt_audio_storage_status: str
+    stt_audio_format: str | None
+    stt_audio_size_bytes: int | None
+    stt_audio_duration_ms: int | None
+    stt_audio_sha256: str | None
+    stt_audio_error_code: str | None
+    stt_audio_consent_at: datetime | None
+    stt_audio_expires_at: datetime | None
+    writer_instance_id: str | None
+
+    _normalize_dates = field_validator(
+        "detected_at",
+        "created_at",
+        "stt_audio_consent_at",
+        "stt_audio_expires_at",
+        mode="before",
+    )(_assume_utc_if_naive)
+
+
+class FalsePositiveUpdateRequest(BaseModel):
+    """오탐 여부 업데이트 요청 DTO."""
+
+    false_positive: bool | None
+
+
+class TokenResponse(BaseModel):
+    """OAuth2 액세스 토큰 응답 DTO."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
+__all__ = [
+    "AdminAccountCreate",
+    "AdminAccountResponse",
+    "AdminBootstrapCreate",
+    "AdminLoginAuditCreate",
+    "AdminLoginAuditResponse",
+    "AppUserCreate",
+    "AppUserResponse",
+    "AppUserWithDevicesResponse",
+    "DetectionGuidanceLogCreate",
+    "DetectionGuidanceLogResponse",
+    "FalsePositiveUpdateRequest",
+    "MemberRegisterRequest",
+    "TokenResponse",
+    "UserDeviceCreate",
+    "UserDeviceResponse",
+]

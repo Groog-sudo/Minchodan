@@ -1,0 +1,15 @@
+---
+description: 반사 경로 이중 게이트 임포트 금지 강제
+globs: server/detection/gates/**
+alwaysApply: false
+---
+
+# 반사 경로 임포트 금지 (비협상)
+
+`server/detection/gates/`(반사 게이트) 코드는 다음을 절대 임포트하지 않는다.
+
+- `server/orchestration/`의 LangGraph 노드
+- `server/rag/`의 벡터 검색/임베딩 모듈
+- `server/tts/`의 실시간 TTS 합성 경로 (사전합성 클립 전송 코드는 예외)
+
+반사 경로는 사전합성 고정 오디오 클립(alert_id 매핑)만 재생하며 목표 지연은 <300ms이다. 이 경로에 LLM/RAG 호출이나 실시간 TTS 합성을 추가하지 않는다. 현재는 코드 리뷰로만 강제되며 후속 커스텀 Ruff 룰이 예정되어 있다(`AGENTS.md` 참조).

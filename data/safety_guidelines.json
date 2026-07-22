@@ -1,0 +1,723 @@
+[
+  {
+    "caption": "보도 위에 방치된 전동 킥보드나 자전거는 보행 흐름을 방해하고 충돌 위험을 유발합니다. 보행 안전 가이드에 따라 장애물이 탐지된 반대 방향인 좌측 또는 우측의 안전 공간으로 우회하여 지나가야 합니다.",
+    "objects": ["scooter"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "전방 방치물 검출, 안전한 우회 공간으로 천천히 비켜서 진행하십시오."
+  },
+  {
+    "caption": "횡단보도 진입부 및 인도 경계에 설치된 차량 진입 억제용 볼라드입니다. 시각장애인 편의시설 매뉴얼에 의거하여 볼라드 조우 시 차도로 떨어지지 않도록 경계석 안쪽 보도 라인을 지팡이로 확인하며 서행 우회합니다.",
+    "objects": ["bollard"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "전방 볼라드 주의, 차도 경계석 안쪽으로 안전하게 우회하십시오."
+  },
+  {
+    "caption": "시각장애인 유도용 황색 점자블록이 파손되거나 유실된 구간입니다. 보행 안전 매뉴얼에 따라 발끝 걸림으로 인한 낙상을 예방하기 위해 보폭을 좁히고 발을 살짝 올려 안전하게 통과하십시오.",
+    "objects": [],
+    "scene_type": "caution",
+    "risk_level": "mid",
+    "guidance": "점자블록 파손 감지, 보폭을 좁히고 서행하며 통과하십시오."
+  },
+  {
+    "caption": "인도 경계에 주차된 오토바이 또는 차량이 보행 경로를 가로막고 있습니다. 시각장애인 보행 매뉴얼에 따라 넓은 차량 회피 공간을 확보하고, 엔진 열기나 튀어나온 사이드미러 접촉에 주의하며 우회합니다.",
+    "objects": ["car", "motorcycle"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "인도 위 주차 차량 주의, 엔진 돌출부 접촉에 조심하며 우회하십시오."
+  },
+  {
+    "caption": "보도 위에 철제 배수구 그레이팅이나 공사중 맨홀이 위치하고 있습니다. 흰지팡이 끝이 쇠창살 틈새에 끼어 부러지거나 넘어질 수 있으므로, 지팡이 팁을 평소보다 가볍게 올려 스캔하며 서행합니다.",
+    "objects": ["manhole"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "배수구 틈새 주의, 지팡이 끝 끼임에 유의하며 조심히 이동하십시오."
+  },
+  {
+    "caption": "지면 높낮이가 변하는 계단 또는 수직 단차 구간입니다. 보행지도 O&M 표준 매뉴얼에 따라 계단 진입 전 첫 번째 계단 디딤판 앞에서 일시 정지하여 단차 높이를 흰지팡이로 측정한 뒤 서행 진입합니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "mid",
+    "guidance": "단차 및 계단 감지, 진입 전 잠시 멈추고 지팡이로 디딤판을 확인하십시오."
+  },
+  {
+    "caption": "보행 안내 경로 상에 차도 경계라인 및 아스팔트 차도가 감지되었습니다. 시각장애인 이동편의 매뉴얼에 의거하여 보도 턱을 지팡이로 쓸어내리며 차도로 침범하지 않도록 좌측 또는 우측 안쪽 보도로 경로를 신속히 전환합니다.",
+    "objects": [],
+    "scene_type": "roadway",
+    "risk_level": "mid",
+    "guidance": "차도 경계선 인접, 도로 바깥쪽인 인도 내부로 한 발 이동하여 서행하십시오."
+  },
+  {
+    "caption": "공사용 안전 고깔, 차단막 등 임시 방해물이 보행로를 침범하고 있습니다. 공공 안전 가이드라인에 의거하여 예기치 않은 낙하물이나 자재 돌출에 대비해 지팡이 탐색 반경을 좁히고 차단벽 우측 통로로 서행하여 우회해야 합니다.",
+    "objects": ["caution"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "공사 가림막 및 임시 방해물 감지, 안전거리를 유지하고 우회하십시오."
+  },
+  {
+    "caption": "자전거 및 개인형 이동장치 겸용 인도 구간입니다. 자전거 통행 가이드에 따라 돌발적인 자전거 근접 및 스치듯 지나가는 위험에 대비하기 위해 보행 경로의 가장자리(우측 벽면)로 바짝 밀착하여 서행 보행합니다.",
+    "objects": ["bicycle"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "자전거 겸용 도로 진입, 보도 우측 가장자리에 밀착하여 서행하십시오."
+  },
+  {
+    "caption": "보행로 전방에 배회하는 다른 동물 또는 방해물이 감지되었습니다. 안내견 보행지도 에티켓에 따라 유도 중인 안내견의 집중을 흐트러뜨리지 않기 위해 동물과의 직접 접촉을 피하고 좌측 방향으로 경로를 전환하여 이동합니다.",
+    "objects": ["dog"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "동물 조우 주의, 안내견의 시선을 분산시키지 않도록 멀리 떨어져 통과하십시오."
+  },
+  {
+    "caption": "앞서 이동하는 수동 휠체어, 유모차 등 교통약자 보조기기가 주행 중입니다. 추돌 방지 및 안전거리 확보 요령에 의거하여 급속히 추월하지 않고 최소 2미터의 충분한 차간 거리를 유지하며 뒤따라 서행 보행합니다.",
+    "objects": ["stroller", "wheelchair"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "전방 유모차 및 교통약자 주행 중, 서행하며 안전거리를 확보하십시오."
+  },
+  {
+    "caption": "횡단보도 진입 대기 지점인 점형 점자블록에 도달하였습니다. 교통약자 보행 요령에 따라 횡단 전 일시 정지하고 우측 기둥에 부착된 시각장애인 음향신호기 버튼을 작동하여 청각 신호 안내에 따라 안전하게 건넙니다.",
+    "objects": [],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "횡단보도 진입 전 대기, 음향신호기를 조작하고 안내음에 따라 횡단하십시오."
+  },
+  {
+    "caption": "보도 노면의 보도블록 파손으로 생긴 포트홀 및 침하 지점입니다. 행정안전부 재난안전 지침에 따라 발목 접지름이나 발 빠짐 사고를 방지하기 위해 지팡이 팁으로 깊이를 스캔하고 파손부의 우측 안전한 노면으로 딛습니다.",
+    "objects": ["pothole"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "노면 파임 감지, 발목 접지름 예방을 위해 우측 안전 노면으로 서행하십시오."
+  },
+  {
+    "caption": "버스 정류장 대기 구역 및 버스 승하차 안전 블록 인근입니다. 국토교통부 버스 정류장 승하차 매뉴얼에 따라 진입하는 버스 차체나 사이드미러에 충돌하는 위험을 방지하기 위해 안전블록 안쪽에서 반 보 뒤로 물러서 대기합니다.",
+    "objects": ["bus", "truck"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "버스 승하차 구역 접근, 진입 차량 충돌 방지를 위해 대기선 안쪽으로 물러서십시오."
+  },
+  {
+    "caption": "보도 중앙에 불법 방치된 종이 상자 또는 적치 박스입니다. 보도 안전 가이드에 따라 포장 끈에 걸리거나 칼날 돌출 위험을 회피하기 위해 상자 우측의 통행 가능한 보도로 서행 통과합니다.",
+    "objects": ["box"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "인도 위 무단 적치 상자 주의, 우측 통로를 이용해 조심히 이동하십시오."
+  },
+  {
+    "caption": "인도 중앙에 돌출되어 위치한 적색 원통형 지상 소화전입니다. 편의시설 충돌방지 수칙에 따라 배관 밸브에 옷이나 가방이 걸리는 사고를 예방하기 위해 소화전 좌측으로 안전거리를 유지하며 우회합니다.",
+    "objects": ["fire_hydrant"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "지상 소화전 감지, 돌출 배관 접촉을 피해 좌측으로 우회하십시오."
+  },
+  {
+    "caption": "인도 내에 설치된 공공 쓰레기통 또는 불법 폐기통입니다. 위생 및 보행 저해물 감지에 따라 악취 및 미끄러짐 오염 위험을 방지하기 위해 쓰레기통 우측 1미터 라인으로 우회하여 통과합니다.",
+    "objects": ["trash_can"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "인도 쓰레기통 주의, 우측 안전 공간으로 서행 통과하십시오."
+  },
+  {
+    "caption": "인도 한가운데 심어진 가로수 또는 펜스 구역입니다. 시각장애인 보행 매뉴얼에 따라 흙 턱 단차 및 튀어나온 나무뿌리에 발이 걸리지 않도록 나무 둥치 좌측 방향으로 비켜서 보행합니다.",
+    "objects": ["tree"],
+    "scene_type": "sidewalk",
+    "risk_level": "low",
+    "guidance": "가로수 돌출 뿌리 주의, 나무 좌측의 평평한 보도로 서행하십시오."
+  },
+  {
+    "caption": "보도 경계에 설치된 가로수 펜스 및 안전 난간대입니다. 시각장애인 보행 가이드에 따라 지팡이 팁으로 난간의 연속성을 추적(Trailing)하며 보도의 바깥 경계를 인지하고 정위치 보행을 유지합니다.",
+    "objects": ["barrier"],
+    "scene_type": "sidewalk",
+    "risk_level": "low",
+    "guidance": "인도 가드레일 감지, 난간을 따라 정위치 보행 방향을 유지하십시오."
+  },
+  {
+    "caption": "보행로 중앙에 마련된 쉼터 벤치 구역입니다. 보행 장애 수칙에 따라 벤치 다리 프레임 접촉 시의 부상을 예방하기 위해 흰지팡이로 벤치 범위를 확인하고 벤치 좌측 보도로 진입하여 서행합니다.",
+    "objects": ["bench"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "보도 벤치 구역 인접, 벤치 다리에 유의하며 좌측 통로로 이동하십시오."
+  },
+  {
+    "caption": "보행자가 끌고 가는 바퀴 달린 여행용 캐리어 또는 대형 가방입니다. 시각장애인 보행 에티켓에 따라 캐리어 손잡이 끈에 지팡이가 걸려 넘어지는 사고를 피하기 위해 뒤에서 안전거리를 확보하며 서행합니다.",
+    "objects": ["carrier"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "앞 차량식 캐리어 주행 주의, 바퀴 끈 안전거리를 확보하십시오."
+  },
+  {
+    "caption": "상가 대기 구역 및 보도 내에 기둥식으로 설치된 주차 요금 징수기입니다. 머리 및 어깨 높이의 기계 돌출부 충돌에 유의하여 지팡이를 지면에서 가볍게 흔들며 요금기 좌측 통로로 빠져나갑니다.",
+    "objects": ["parking_meter"],
+    "scene_type": "sidewalk",
+    "risk_level": "low",
+    "guidance": "지상 주차 요금기 감지, 기기 돌출부를 피해 좌측으로 통과하십시오."
+  },
+  {
+    "caption": "인도 상에 설치된 신호등 철제 지주 및 제어 박스입니다. 보행 지주물 안전 가이드에 따라 머리 높이의 제어기함 모서리 충돌을 예방하기 위해 기둥 하단 점형블록을 스캔하고 기둥 우측으로 통과합니다.",
+    "objects": ["traffic_light"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "신호등 철제 지주 주의, 제어기 박스를 피해 우측으로 서행하십시오."
+  },
+  {
+    "caption": "보도 경계면 또는 도로 합류 구역에 위치한 가로등 지주 및 기둥입니다. 지팡이 접촉 시 지주 하단 콘크리트 베이스에 발이 걸리지 않도록 지팡이로 기둥 위치를 파악하고 좌측으로 우회합니다.",
+    "objects": ["street_lamp"],
+    "scene_type": "sidewalk",
+    "risk_level": "low",
+    "guidance": "가로등 기둥 주의, 지주 하단 콘크리트 턱을 피해 좌측으로 우회하십시오."
+  },
+  {
+    "caption": "보도 중앙에 설치된 전신주 또는 교통 표지판 철제 기둥입니다. 어깨 높이 표지판 판넬 모서리 충돌에 유의하여 지팡이 스윙을 통해 기둥 위치를 조기에 인지하고 기둥 우측으로 넓게 비껴 진행합니다.",
+    "objects": ["pole"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "전신주 기둥 주의, 머리 높이 돌출 표지판을 피해 우측으로 우회하십시오."
+  },
+  {
+    "caption": "대형 마트 입구 보도 상에 주차된 철제 쇼핑 카트 무리입니다. 충돌 시 카트 모서리 부상 방지 및 끼임 방지를 위해 1미터 이상의 안전 회피 반경을 잡고 카트 우측 안전 보도로 크게 돌아서 진행합니다.",
+    "objects": ["shopping_cart"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "불법 주차 카트 주의, 카트 모서리 충돌을 피해 우측으로 우회하십시오."
+  },
+  {
+    "caption": "인도 상에서 빠른 속도로 이동하는 스케이트보드 또는 세그웨이 탑승자입니다. 보행 주행 안전 요령에 의거하여 돌발 충돌을 피하도록 보행을 잠시 멈추거나 인도 우측 가장자리 벽면 라인으로 붙어 서행합니다.",
+    "objects": ["segway", "skateboard"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "스케이트보드 주행 차량 주의, 우측 벽면에 밀착하여 서행하십시오."
+  },
+  {
+    "caption": "보행로에 군집하여 이동하거나 서 있는 다수의 보행자 무리입니다. 시각장애인 보행 에티켓에 의거하여 지팡이 접촉 시 타인의 다리에 걸리지 않도록 지팡이 스윙 폭을 좁히고 흐름에 맞춰 서행 통과합니다.",
+    "objects": ["person"],
+    "scene_type": "sidewalk",
+    "risk_level": "low",
+    "guidance": "전방 보행자 군집 주의, 보폭과 지팡이 폭을 좁히고 천천히 직진하십시오."
+  },
+  {
+    "caption": "보도 경계면 또는 주택가 골목길 어귀에 놓인 소형 플라스틱 주황색 라바콘입니다. 밟았을 때 미끄러지거나 쉽게 넘어져 다칠 수 있으므로 라바콘의 접촉을 감지한 뒤 좌측 평평한 노면으로 서행합니다.",
+    "objects": ["traffic_cone"],
+    "scene_type": "sidewalk",
+    "risk_level": "low",
+    "guidance": "바닥 주황색 러버콘 감지, 미끄러짐 방지를 위해 좌측으로 비켜 가십시오."
+  },
+  {
+    "caption": "지팡이 스캔 영역(지면 위 68.5cm 이하)을 빗겨나 가슴 및 얼굴 높이로 돌출된 벽면 소화전, 전화부스 등의 상단 장애물입니다. 미국 ADA 장애인법 접근성 가이드라인에 의거하여, 돌출물을 우회하기 위해 지팡이 경사 스크리닝 스캔을 즉각 높이고 장애물 반경 바깥 좌측이나 우측으로 1미터 이상 충분한 거리를 유지하며 우회합니다.",
+    "objects": ["fire_hydrant", "pole"],
+    "scene_type": "sidewalk",
+    "risk_level": "mid",
+    "guidance": "상단 돌출 장애물 인접 주의, 충돌 방지를 위해 최소 1미터 이상 안전 우회하십시오."
+  },
+  {
+    "caption": "인도와 차도의 구분이 모호하여 보행자와 주행 차량이 혼재되어 작동하는 영국의 공유 공간(Shared Space) 도로 환경입니다. 영국 RNIB 이동성 표준 가이드에 의거하여, 주행 차량의 경로 이탈로부터 본체를 방어하기 위해 보도 가장자리 벽면 또는 고정 난간대를 지팡이로 연속 쓸어가는 트레일링(Trailing) 보행법을 적용하여 일직선으로 보행을 지속합니다.",
+    "objects": [],
+    "scene_type": "roadway",
+    "risk_level": "mid",
+    "guidance": "보차 혼재 공유도로 진입, 보도 우측 벽면에 밀착해 스캔하며 일직선 보행하십시오."
+  },
+  {
+    "caption": "보행 지주물 및 포트홀 단차, 계단 등 급격한 높낮이 변화가 감지된 경계 지점입니다. 미국 시각장애인재단(AFB) 표준 O&M 보행요령에 의거하여, 단차 앞에서 몸의 위치 감각과 일직선성을 유지하기 위해 흰지팡이 끝을 경계석 단면에 90도 직각으로 밀착시키는 직각정렬(Squaring Off) 기법을 취하여 정방향을 세팅한 후 전진합니다.",
+    "objects": ["pothole"],
+    "scene_type": "caution",
+    "risk_level": "mid",
+    "guidance": "노면 단차 조우, 정렬 스위핑으로 진행 방향을 90도 직각으로 일치시킨 뒤 전진하십시오."
+  },
+  {
+    "caption": "보행 횡단보도 신호등의 음향신호기가 고장 났거나 신호 대기 구역의 정보 접근이 불가한 비상 횡단 지점입니다. 영국 RNIB 및 미국 AFB 합동 청각정렬 표준에 의거하여, 주행 중인 교차로 차량 소음 흐름(Traffic Flow)을 귀로 면밀히 청취한 뒤, 차량 통행이 끊어지는 무소음 교통 간격(Gap) 타이밍을 포착해 직진 횡단합니다.",
+    "objects": [],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "무신호 대기 상황 주의, 주변 차량 통행 무음 간격(Gap) 타이밍에 맞춰 안전 횡단하십시오."
+  },
+  {
+    "caption": "보도 가장자리에 전동킥보드 또는 스쿠터가 비스듬히 넘어져 보행 동선을 가로막고 있습니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "전방에 전동킥보드 또는 스쿠터가 있습니다. 우측 여유 공간을 확인하며 반 보씩 서행 우회하십시오."
+  },
+  {
+    "caption": "점자 유도블록 위에 주차된 전동킥보드 또는 스쿠터가 감지되어 지팡이 진행선이 끊기는 상황입니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "점자블록 진입 전 전동킥보드 또는 스쿠터 위치를 확인하고 블록 바깥으로 안전하게 회피하십시오."
+  },
+  {
+    "caption": "골목 출구 인도 구간에 전동킥보드 또는 스쿠터 두 대가 연속 배치되어 우회 공간이 좁아졌습니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "연속 전동킥보드 또는 스쿠터 구간입니다. 지팡이 스캔 폭을 좁혀 좌측으로 천천히 우회하십시오."
+  },
+  {
+    "caption": "버스정류장 인접 보도에서 전동킥보드 또는 스쿠터가 손잡이 방향으로 돌출되어 충돌 위험이 큽니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "손잡이 돌출 접촉 주의, 상체를 보호하며 전동킥보드 또는 스쿠터 외곽으로 이동하십시오."
+  },
+  {
+    "caption": "상가 앞 보행로에 쓰러진 전동킥보드 또는 스쿠터가 바퀴를 노면 쪽으로 노출하고 있습니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "바퀴 및 발판 걸림 주의, 발끝을 높여 짧은 보폭으로 통과하십시오."
+  },
+  {
+    "caption": "횡단보도 진입 직전 보도 경계에 전동킥보드 또는 스쿠터가 방치되어 보폭 조절이 필요한 상태입니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "횡단보도 진입 전 잠시 멈추고 전동킥보드 또는 스쿠터 반대 방향으로 회피 후 진행하십시오."
+  },
+  {
+    "caption": "야간 저조도 환경에서 전동킥보드 또는 스쿠터 실루엣이 늦게 식별되는 구간이 감지되었습니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "저조도 구간이므로 지팡이 전방 탐색을 늘리고 전동킥보드 또는 스쿠터를 넓게 우회하십시오."
+  },
+  {
+    "caption": "인도 중앙 전동킥보드 또는 스쿠터 적치로 인해 보행자 흐름과 충돌 가능성이 증가한 상태입니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "보행자 혼잡 구간입니다. 전동킥보드 또는 스쿠터와 사람 사이 안전거리 1미터를 유지하십시오."
+  },
+  {
+    "caption": "공사 가림막 옆 통로에 전동킥보드 또는 스쿠터가 겹쳐 놓여 우측 회피선이 제한됩니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "통로 폭이 좁습니다. 벽면 기준선을 따라 전동킥보드 또는 스쿠터를 피해 이동하십시오."
+  },
+  {
+    "caption": "우천 후 젖은 노면 위 전동킥보드 또는 스쿠터가 미끄럼 위험과 함께 장애물로 작동하고 있습니다.",
+    "objects": ["scooter"],
+    "scene_type": "scooter",
+    "risk_level": "mid",
+    "guidance": "젖은 노면 주의, 전동킥보드 또는 스쿠터 주변을 피하고 미끄럼이 적은 구간으로 서행하십시오."
+  },
+  {
+    "caption": "인도 중앙 볼라드가 연속 배치되어 직진 보행선이 끊기는 구간입니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "볼라드 감지, 경계석 안쪽 기준을 유지하며 좌측으로 서행 우회하십시오."
+  },
+  {
+    "caption": "횡단보도 대기선 앞 볼라드가 경계석과 가깝게 설치되어 회피 폭이 좁습니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "대기선 전방 볼라드 주의, 반 보 후퇴 후 여유 통로로 진입하십시오."
+  },
+  {
+    "caption": "상업지구 보행로에 저높이 볼라드가 다수 설치되어 무릎 충돌 위험이 있습니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "저높이 볼라드 구간입니다. 지팡이 하단 스캔으로 위치를 확인하십시오."
+  },
+  {
+    "caption": "야간 조도 저하로 볼라드 식별이 늦어지는 보도 구간이 감지되었습니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "야간 구간이므로 속도를 줄이고 볼라드 외곽 1미터를 유지하십시오."
+  },
+  {
+    "caption": "공사 임시 가림막과 볼라드가 겹쳐 통로가 지그재그로 형성된 상태입니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "지그재그 통로 주의, 직진보다 짧은 회피 동작으로 단계적으로 이동하십시오."
+  },
+  {
+    "caption": "버스정류장 주변 볼라드가 탑승 대기열과 겹쳐 보행 밀집 위험이 큽니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "혼잡 구간입니다. 사람 흐름이 지난 뒤 볼라드를 우회하십시오."
+  },
+  {
+    "caption": "점자블록 인접 볼라드로 인해 지팡이 진행선 변경이 필요한 상황입니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "점자블록 연속성을 확인하고 볼라드 반대 측으로 안전하게 통과하십시오."
+  },
+  {
+    "caption": "차도 경계 볼라드가 빗물 고임과 함께 미끄럼 위험을 동반하고 있습니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "빗물 고임 주의, 미끄럼이 적은 면을 선택해 볼라드를 피하십시오."
+  },
+  {
+    "caption": "골목 입구의 비대칭 볼라드 배치로 우측 회피선이 불규칙합니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "비대칭 배치 구간입니다. 지팡이 좌우 스윙을 넓혀 통로를 확인하십시오."
+  },
+  {
+    "caption": "경사 보도 상단의 볼라드 근처에서 보행 방향 정렬이 어려운 상태입니다.",
+    "objects": ["bollard"],
+    "scene_type": "bollard",
+    "risk_level": "mid",
+    "guidance": "경사로 상단 볼라드 주의, 몸 중심을 낮춰 천천히 방향을 정렬하십시오."
+  },
+  {
+    "caption": "점자블록 돌기 마모가 심해 방향 정보가 약해진 구간이 감지되었습니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "점자블록 파손 고위험, 즉시 속도를 낮추고 지팡이로 노면을 재확인하십시오."
+  },
+  {
+    "caption": "점자블록 일부가 유실되어 단차와 파편이 혼재된 위험 상태입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "유실 구간입니다. 파편 접촉을 피하며 평탄한 보도면으로 우회하십시오."
+  },
+  {
+    "caption": "횡단보도 연결 점자블록이 끊겨 안내선 추적이 어려운 구간입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "연결선이 끊긴 구간이므로 잠시 정지 후 방향을 다시 정렬하십시오."
+  },
+  {
+    "caption": "파손된 점자블록 틈새에 물이 고여 미끄럼 위험이 함께 존재합니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "미끄럼 동반 구간입니다. 발을 들어 짧은 보폭으로 천천히 이동하십시오."
+  },
+  {
+    "caption": "보도 공사 이후 점자블록 높이 불균형으로 발끝 걸림 가능성이 높습니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "높이 불균형 주의, 단차를 확인한 뒤 한 발씩 안정적으로 전진하십시오."
+  },
+  {
+    "caption": "점자블록 경계가 깨져 지팡이 팁이 틈새에 걸릴 수 있는 상태입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "지팡이 끼임 위험이 있습니다. 팁 각도를 낮춰 천천히 스캔하십시오."
+  },
+  {
+    "caption": "노후 점자블록 표면 박리로 촉지 정보가 불규칙하게 감지됩니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "촉지 정보가 불규칙합니다. 벽면 또는 난간 기준선으로 보조 이동하십시오."
+  },
+  {
+    "caption": "유도블록 교차 지점 파손으로 진행 방향 판단이 모호한 상황입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "교차 지점 파손 구간, 직진보다 안전한 우회선을 우선 선택하십시오."
+  },
+  {
+    "caption": "점형 블록과 선형 블록 구분이 손상되어 보행 판단 부담이 증가했습니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "블록 유형 구분이 어려우므로 음향 신호와 주변 기준점을 함께 활용하십시오."
+  },
+  {
+    "caption": "블록 파편이 주변 보도면에 퍼져 발목 염좌 위험이 높은 구간입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "파편 산재 구간입니다. 발목 보호를 위해 보폭을 줄이고 서행 통과하십시오."
+  },
+  {
+    "caption": "보도 진행선 전방에 하향 계단 시작점이 갑자기 나타나는 구간입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "계단 고위험 구간입니다. 첫 단 앞에서 멈추고 높이를 확인하십시오."
+  },
+  {
+    "caption": "상가 진입부 계단과 평지 경계가 모호해 단차 인지가 어려운 상태입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "경계가 모호한 계단입니다. 지팡이로 단차를 탐지 후 진입하십시오."
+  },
+  {
+    "caption": "지하보도 입구 계단의 첫 단 높이가 높아 낙상 위험이 있습니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "첫 단이 높습니다. 손잡이 위치를 확인하고 천천히 내려가십시오."
+  },
+  {
+    "caption": "빗물로 젖은 계단면이 미끄럽고 손잡이 접근이 어려운 구간입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "젖은 계단 주의, 발바닥 접지 후 다음 단으로 이동하십시오."
+  },
+  {
+    "caption": "파손된 계단 모서리로 발끝 걸림 위험이 증가한 환경입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "모서리 파손 구간입니다. 발끝을 높여 단차를 넘으십시오."
+  },
+  {
+    "caption": "좁은 골목 계단에서 맞은편 보행자와의 교차 위험이 감지되었습니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "교차 보행자 주의, 한쪽으로 비켜 안정 구간에서 대기하십시오."
+  },
+  {
+    "caption": "야간 계단 구간으로 시인성이 낮아 단차 판별이 어려운 상태입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "저조도 계단입니다. 지팡이 탐색 간격을 늘리고 서행하십시오."
+  },
+  {
+    "caption": "계단 상단 플랫폼이 짧아 방향 전환 여유가 부족한 구간입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "상단 공간이 좁습니다. 몸 방향을 정렬한 뒤 한 단씩 이동하십시오."
+  },
+  {
+    "caption": "연속 계단과 경사로가 교차해 보행 동선 판단이 복잡한 환경입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "동선 혼합 구간입니다. 계단 진행을 우선하고 급회전을 피하십시오."
+  },
+  {
+    "caption": "계단 하단에 장애물이 있어 착지 공간이 제한된 상태입니다.",
+    "objects": ["caution"],
+    "scene_type": "caution",
+    "risk_level": "high",
+    "guidance": "착지 공간 제한 구간입니다. 하단 장애물을 확인 후 마지막 단을 내려오십시오."
+  },
+  {
+    "caption": "횡단보도 진입부에서 차량 회전 소음이 가까워 대기 판단이 필요한 상황입니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "횡단 전 정지하고 차량 흐름이 멈춘 뒤 신호에 맞춰 이동하십시오."
+  },
+  {
+    "caption": "점형 점자블록 주변에 대기 인원이 많아 진입 동선이 혼잡합니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "혼잡 횡단 구간입니다. 점자블록 가장자리에서 진입 타이밍을 기다리십시오."
+  },
+  {
+    "caption": "우회전 차량이 연속 통과하는 교차로로 청각 판단 부담이 커진 환경입니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "우회전 차량 소리에 주의하며 차량 정지 확인 후 출발하십시오."
+  },
+  {
+    "caption": "신호 주기 변경으로 보행 가능 시간이 짧아진 횡단 구간입니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "보행 시간이 짧습니다. 출발 지연 없이 곧바로 직진 횡단하십시오."
+  },
+  {
+    "caption": "횡단보도 도색 마모로 경계 인지가 어려운 상태가 감지되었습니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "도색 마모 구간입니다. 지팡이와 청각 신호를 함께 사용하십시오."
+  },
+  {
+    "caption": "음향신호기 방향과 실제 횡단 방향이 어긋난 듯한 소음 환경입니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "음향 방향 혼선 주의, 교차로 직진 축을 재확인하고 이동하십시오."
+  },
+  {
+    "caption": "빗길 횡단 구간에서 제동 소음과 물 튐으로 집중이 분산됩니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "빗길 미끄럼 주의, 보폭을 줄여 일정 속도로 횡단하십시오."
+  },
+  {
+    "caption": "중앙분리대가 있는 이단 횡단보도로 중간 대기 지점 확인이 필요합니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "이단 횡단보도입니다. 중앙분리대에서 방향을 재정렬하십시오."
+  },
+  {
+    "caption": "대형 차량 통행 비율이 높아 엔진 소음이 큰 횡단 구간입니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "대형차 소음 구간입니다. 신호 확인 전에는 진입하지 마십시오."
+  },
+  {
+    "caption": "골목형 신호 교차로로 보행자와 차량 진입 시점이 겹치는 환경입니다.",
+    "objects": ["crosswalk"],
+    "scene_type": "crosswalk",
+    "risk_level": "mid",
+    "guidance": "골목 교차로 주의, 차량 정지와 보행 신호를 동시에 확인하십시오."
+  },
+  {
+    "caption": "보도 중앙 맨홀 뚜껑이 노면보다 낮아 발목 꺾임 위험이 있습니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "맨홀 단차 주의, 발을 높여 평탄한 면으로 옮겨 이동하십시오."
+  },
+  {
+    "caption": "빗물 고임 맨홀 주변이 미끄러워 지팡이 팁 제어가 어려운 구간입니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "젖은 맨홀 구간입니다. 미끄럼이 적은 우측 면으로 우회하십시오."
+  },
+  {
+    "caption": "공사 후 임시 맨홀 덮개가 흔들려 접지 안정성이 떨어진 상태입니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "임시 덮개 주의, 하중을 싣기 전 지팡이로 접지 상태를 확인하십시오."
+  },
+  {
+    "caption": "맨홀 테두리 파손으로 틈새에 지팡이 팁이 걸릴 가능성이 있습니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "테두리 틈새 주의, 지팡이 팁 각도를 조절해 천천히 통과하십시오."
+  },
+  {
+    "caption": "경사 보도 하단 맨홀 위치가 보행선 중앙에 겹치는 환경입니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "경사 맨홀 구간입니다. 몸 중심을 유지하며 반 보씩 이동하십시오."
+  },
+  {
+    "caption": "야간 구간에서 맨홀 반사광이 약해 식별 지연이 발생할 수 있습니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "저조도 환경 주의, 맨홀 전방 탐색을 늘리고 속도를 줄이십시오."
+  },
+  {
+    "caption": "버스정류장 인근 맨홀 주변 보행자 정체로 회피 동선이 제한됩니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "혼잡 구간입니다. 보행자 흐름이 지난 뒤 맨홀을 우회하십시오."
+  },
+  {
+    "caption": "연속 맨홀 구간으로 발 디딤 위치를 자주 조정해야 하는 상황입니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "연속 맨홀 구간에서는 보폭을 일정하게 줄여 안정적으로 이동하십시오."
+  },
+  {
+    "caption": "맨홀 주변 아스팔트 균열이 확장되어 단차 위험이 커졌습니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "균열 단차 구간입니다. 균열 바깥 평탄면으로 경로를 수정하십시오."
+  },
+  {
+    "caption": "보도 가장자리 맨홀 위치가 차도 경계와 가까워 주의가 필요합니다.",
+    "objects": ["manhole"],
+    "scene_type": "manhole",
+    "risk_level": "mid",
+    "guidance": "차도 경계 인접 맨홀 주의, 인도 안쪽으로 한 발 이동하십시오."
+  },
+  {
+    "caption": "철제 그레이팅 틈 간격이 넓어 지팡이 팁 끼임 위험이 있는 구간입니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "그레이팅 끼임 주의, 팁을 가볍게 들어 틈새를 피해 이동하십시오."
+  },
+  {
+    "caption": "배수로 그레이팅이 보행선과 평행해 발끝 미끄럼 가능성이 증가했습니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "틈 방향과 보행선이 겹칩니다. 보폭을 줄여 직각으로 통과하십시오."
+  },
+  {
+    "caption": "우천 후 그레이팅 표면이 젖어 접지력이 낮은 상태입니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "젖은 금속면 주의, 미끄럼이 적은 보도면으로 우회하십시오."
+  },
+  {
+    "caption": "그레이팅 경계가 들떠 있어 단차와 금속 모서리 노출이 감지됩니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "들뜬 경계 주의, 모서리 접촉을 피하며 천천히 통과하십시오."
+  },
+  {
+    "caption": "보도 폭이 좁은 구간의 연속 그레이팅으로 회피 여유가 적습니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "좁은 폭 구간입니다. 한 줄 보행으로 균형을 유지하십시오."
+  },
+  {
+    "caption": "점자블록 옆 그레이팅 설치로 유도선 추적과 회피가 동시에 필요한 상태입니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "점자블록 인접 구간, 유도선 확인 후 그레이팅 바깥으로 이동하십시오."
+  },
+  {
+    "caption": "야간 조도 저하로 그레이팅 시작점을 늦게 인지할 수 있는 환경입니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "저조도 환경입니다. 지팡이 전방 탐색 길이를 늘리십시오."
+  },
+  {
+    "caption": "공사 구간 임시 그레이팅이 흔들려 발 디딤 안정성이 낮습니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "임시 그레이팅 주의, 하중을 분산하며 짧은 보폭으로 이동하십시오."
+  },
+  {
+    "caption": "경사 배수로 위 그레이팅이 보행 흐름과 직각으로 배치되어 있습니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "경사 배수로 구간입니다. 몸 중심을 낮춰 천천히 통과하십시오."
+  },
+  {
+    "caption": "그레이팅 주변 파손 블록으로 인해 연속 단차가 형성된 구간입니다.",
+    "objects": ["grating"],
+    "scene_type": "grating",
+    "risk_level": "mid",
+    "guidance": "연속 단차 구간입니다. 발끝을 높여 안전한 면으로 이동하십시오."
+  }
+]

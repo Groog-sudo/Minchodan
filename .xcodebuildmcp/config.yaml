@@ -1,0 +1,22 @@
+schemaVersion: 1
+
+# xcodebuildmcp 로컬 실행 기본값 템플릿입니다.
+# 아래 값은 각 개발자 Mac 환경에 맞게 로컬에서 바꿔 사용합니다.
+# 개인 절대경로, 시뮬레이터/실기기 UDID 등 개인 환경값을 그대로 커밋하지 마십시오.
+sessionDefaults:
+  # Xcode workspace 절대경로를 입력합니다.
+  # 예: /Users/<user>/path/to/Minchodan/client/ios/Minchodan.xcworkspace
+  workspacePath: "<YOUR_PROJECT_ROOT>/client/ios/Minchodan.xcworkspace"
+
+  # Xcode scheme 이름입니다. 별도 변경이 없으면 Minchodan을 사용합니다.
+  scheme: Minchodan
+
+  # 빌드/실행 대상 시뮬레이터 또는 실기기 UDID를 입력합니다.
+  # 확인 명령: xcrun simctl list devices available
+  deviceId: "<YOUR_IOS_SIMULATOR_OR_DEVICE_UDID>"
+
+  # 실행 플랫폼입니다. iOS 앱 검증 시 iOS를 사용합니다.
+  platform: iOS
+
+  # 앱 번들 식별자입니다. Xcode 프로젝트 설정과 일치해야 합니다.
+  bundleId: com.minchodan.app.kwanbum

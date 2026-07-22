@@ -9,9 +9,9 @@ description: |
 # WebSocket Gateway (1단계: 서버와 실시간 통신망 연결)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 1단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16.3, 17.2, 17.3
+> **버전**: v0.2.2 (2026-07-11 송신 성공 boolean·연결 상태 가드·반사 경보 억제 조건 반영)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 1단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 8, 16.3, 17.2, 17.3
 
 ## 개요
 
@@ -161,7 +161,7 @@ if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
 class WSMessage(BaseModel):
-    type: str                        # "hello" | "ping" | "pong" | "detection" | "welcome" | "ack" | "alert_reflex" | "guide"
+    type: str                        # "hello" | "ping" | "pong" | "detection" | "welcome" | "ack" | "reflex_alert" | "guide"
     device_id: Optional[str] = None
     token: Optional[str] = None
     session_id: Optional[str] = None
@@ -189,6 +189,7 @@ import logging
 import sys
 from typing import Dict
 from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
@@ -211,16 +212,31 @@ class SessionManager:
             del self.active_connections[device_id]
             logger.info(f"[해제] device_id={device_id}, 현재 접속: {len(self.active_connections)}명")
 
-    async def send_json(self, device_id: str, data: dict):
+    async def send_json(self, device_id: str, data: dict) -> bool:
+        # WebSocketState.CONNECTED 가드: WS 종료 후 consumer 태스크가 독립 실행 중일 때
+        # send 시도로 "Cannot call send once a close message has been sent" 에러 스팸 방지.
         ws = self.active_connections.get(device_id)
-        if ws:
-            await ws.send_json(data)
+        if not ws or ws.application_state != WebSocketState.CONNECTED:
+            return False
+        await ws.send_json(data)
+        return True
+
+    async def send_bytes(self, device_id: str, data: bytes) -> bool:
+        ws = self.active_connections.get(device_id)
+        if not ws or ws.application_state != WebSocketState.CONNECTED:
+            return False
+        await ws.send_bytes(data)
+        return True
 
     def is_connected(self, device_id: str) -> bool:
-        return device_id in self.active_connections
+        ws = self.active_connections.get(device_id)
+        return ws is not None and ws.application_state == WebSocketState.CONNECTED
 
 manager = SessionManager()
 ```
+
+반사 경보 호출부는 `send_json()`이 `True`를 반환한 경우에만 중복 억제 상태를 기록합니다.
+연결 종료 경쟁 구간에서 `False`가 반환되면 경보를 전송 완료로 간주하지 않습니다.
 
 ### 단계 1-6. auth.py — 디바이스 토큰 검증
 
@@ -414,6 +430,12 @@ uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 
 ### useWebSocket.ts
 
+> **2026-07-11 정정**: 아래 예시의 재연결 로직은 초기 구현 기준이다. 실제 구현
+> (`client/src/hooks/useWebSocket.ts`)은 재연결을 포기하지 않고 **지수 백오프(1s에서
+> 2배씩, 최대 30s)로 무한 재시도**하며, `MAX_RECONNECT`(3회)는 중단 횟수가 아니라
+> **폴백 모드 전환 + 음성 고지 문턱값**이다. 폴백 상태는 백그라운드 재시도 중에도
+> 유지되고, welcome 수신 시 해제되며 복구 음성 고지가 나간다.
+
 ```typescript
 // client/src/hooks/useWebSocket.ts
 import { useRef, useCallback, useEffect, useState } from 'react';
@@ -454,7 +476,7 @@ export function useWebSocket(deviceId: string, token: string) {
         case 'pong': break;
         case 'ping': ws.send(JSON.stringify({ type: 'pong', ts: Date.now() })); break;
         case 'ack': break;
-        case 'alert_reflex': handleAlertReflex(data); break;
+        case 'reflex_alert': handleAlertReflex(data); break;
         case 'guide': handleGuide(data); break;
       }
     };
@@ -500,8 +522,8 @@ export function useWebSocket(deviceId: string, token: string) {
 | Out (auth_ok) | `{type:"auth_ok", device_id}` |
 | In (detection) | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream, thumbnail_jpeg_b64}}` |
 | Out (ack) | `{type:"ack", event_id, received_at}` |
-| Out (alert_reflex) | `{type:"alert_reflex", event_id, alert_id, direction, risk_level, clip, haptic, ts}` |
-| Out (guide) | `{type:"guide", event_id, risk_level, guidance_text, audio_mp3_b64, ts}` |
+| Out (reflex_alert) | `{type:"reflex_alert", event_id, alert_id, direction, risk_level, clip, haptic, ts}` |
+| Out (guide) | `{type:"guide", event_id, risk_level, guidance_text, transport, ts}` + `transport:"binary"`일 때 직후 WS 바이너리 프레임(raw WAV bytes, 2026-07-09부터 `audio_mp3_b64` 필드 폐기) |
 
 ## 테스트 체크리스트
 
@@ -511,7 +533,7 @@ export function useWebSocket(deviceId: string, token: string) {
 | hello/인증 | auth_ok 응답 | 토큰 일치 시 성공 |
 | 하트비트 | pingpong 왕복 | 5초 간격, RTT < 100ms |
 | 메시지 echo | 앱서버앱 왕복 | **RTT < 100ms** |
-| 연결 끊김 복구 | 자동 재연결 | 3회 이내 성공 |
+| 연결 끊김 복구 | 무한 백오프 자동 재연결 | 3회 연속 실패 시 폴백 전환 + 음성 고지, 서버 복구 시 재접속 + 복구 고지 |
 | Redis 발행 | xadd 성공 | 메시지 ID 반환 |
 | WebSocketDisconnect | 소켓 close + 리소스 해제 | 예외 없이 정리 |
 
@@ -528,6 +550,6 @@ export function useWebSocket(deviceId: string, token: string) {
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md)
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)
 - FastAPI WebSocket 공식 문서: https://fastapi.tiangolo.com/advanced/websockets/
 - Redis Streams 공식 문서: https://redis.io/docs/data-types/streams/

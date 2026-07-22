@@ -1,5 +1,5 @@
 # Minchodan pre-commit 훅 설정
-# 기준: docs/code_quality_guide.md 7절 (실행 흐름)
+# 기준: docs/ops/code_quality_guide.md 7절 (실행 흐름)
 # 실행 시점 분리:
 #   pre-commit (빠름): Ruff format + Ruff check + Bandit
 #   pre-push   (느림): CI 전용 (GitHub Actions에서 실행)
@@ -14,7 +14,7 @@ repos:
   # pre-commit stage (빠른 검사, 커밋 시 실행)
   # ==========================================
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
+    rev: v0.15.20
     hooks:
       - id: ruff-format
         name: Ruff Format

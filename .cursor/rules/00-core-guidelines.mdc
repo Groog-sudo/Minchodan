@@ -1,0 +1,33 @@
+---
+description: Minchodan 프로젝트 핵심 규칙 (항상 적용)
+alwaysApply: true
+---
+
+# Minchodan 핵심 규칙
+
+이 프로젝트에서 작업하기 전 아래를 준수합니다. 상세 내용은 루트 `AGENTS.md`(규칙 정본, 단일 진실 원천)와 `SKILLS.md`를 참조합니다. `CLAUDE.md`/`GEMINI.md`는 모두 `AGENTS.md`를 가리키는 얇은 진입점(thin pointer/symlink)이므로 규칙 편집은 `AGENTS.md`에서만 합니다.
+
+## 이중 경로 원칙 (비협상)
+
+- 반사 경로(즉시 경보)에는 LLM/RAG/실시간 TTS를 절대 경유시키지 않는다. 반사 음성은 사전합성 고정 클립만 사용한다. 상세 규칙은 `01-reflex-path-guard.mdc` 참조.
+- 인지 경로(상세 가이드)만 LangGraph/RAG/실시간 TTS를 사용한다.
+
+## 코딩 규칙
+
+- 모든 Python 파일은 `docs/dev-guides/course_codebase_guide.md`의 코딩 패턴을 따른다(UTF-8 헤더, 표준→외부→로컬 임포트 순서, `os.path.dirname(os.path.abspath(__file__))` 기반 절대 경로, `load_dotenv()` + `os.getenv` 패턴, 방어적 코딩, Router→Service→Repository 계층 분리).
+- 코드 주석·커밋 메시지·문서에 이모지 사용 금지.
+- 간결하게 작성한다. 요청 범위를 벗어난 리팩터링·추상화·주석을 추가하지 않는다.
+- 프레임 버퍼/디코딩 결과가 None이면 반드시 가드레일 처리하고, 무탐지 시 에러 없이 빈 리스트를 반환한다(파이프라인 영속성).
+
+## 커뮤니케이션
+
+- 모든 대화 응답과 아티팩트(Plan, Task, Walkthrough)는 한국어로 작성한다(코드/변수명 제외).
+
+## Git
+
+- 브랜치는 `main`/`dev`/개인 이니셜(`dg`, `jh`, `jy`, `kb`, `th`) 3계층 구조를 따른다. `main`에 직접 push 금지.
+- 주요 작업 완료 후 `docs/changelogs/[이니셜].md`에 changelog 엔트리를 추가한다(`11-auto-publish-work.mdc` 참조).
+
+## 단계별 스킬
+
+이 저장소는 7단계 파이프라인 + 보조 스킬로 구성된다. 스킬 정본은 `.agents/skills/`이며 `.claude/skills/`는 동일 내용 사본(둘 다 Git 추적, 미러). 작업 경로에 따라 `.cursor/rules/`의 stage별 규칙이 자동 첨부되며, 필요 시 해당 `.agents/skills/<skill>/SKILL.md` 전체를 읽는다. 다중 에이전트 진입점 아키텍처와 검증 스크립트는 `docs/dev-guides/multi_agent_setup.md` 참조.

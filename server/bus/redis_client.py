@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 DEFAULT_TRACK_TTL = 30
+# 2026-07-20: xadd에 maxlen이 없어 risk.events가 29시간 만에 236,529건까지 무제한
+# 누적된 것을 실기기 장시간 테스트에서 확인. approximate=True(~)는 정확한 길이 유지
+# 대신 라디스 내부 매크로 노드 단위로 트리밍해 xadd당 O(1)에 가까운 저비용으로 동작한다.
+REDIS_STREAM_MAXLEN = int(os.getenv("REDIS_STREAM_MAXLEN", "5000"))
 
 
 class RedisBus:
@@ -50,7 +54,9 @@ class RedisBus:
         if self._redis is None:
             return None
         try:
-            message_id = await self._redis.xadd(stream, payload)
+            message_id = await self._redis.xadd(
+                stream, payload, maxlen=REDIS_STREAM_MAXLEN, approximate=True
+            )
             return message_id
         except Exception as e:
             logger.warning(f"[RedisBus] xadd 실패({stream}): {e}")

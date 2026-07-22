@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIP Assistant AI - 길안내 전용 시뮬레이터</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
+    <!-- Leaflet.js Maps Library -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --bg-color: #0c0e12;
+            --card-bg: rgba(19, 23, 31, 0.8);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary-glow: #00ffaa;
+            --secondary-glow: #00e5ff;
+            --danger-glow: #ff0055;
+            --text-color: #f0f4f8;
+            --text-muted: #8a99ad;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Outfit', 'Noto Sans KR', sans-serif;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* Glassmorphism Wrapper */
+        .app-container {
+            width: 100%;
+            max-width: 550px;
+            background: var(--card-bg);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        header {
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+        }
+
+        header h1 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary-glow), var(--secondary-glow));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        header p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Status Header */
+        .status-panel {
+            display: flex;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 0.8rem;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #555;
+        }
+
+        .status-dot.active {
+            background-color: var(--primary-glow);
+            box-shadow: 0 0 8px var(--primary-glow);
+        }
+
+        .status-dot.danger {
+            background-color: var(--danger-glow);
+            box-shadow: 0 0 8px var(--danger-glow);
+        }
+
+        /* 🧭 GPS Navigation Panel */
+        .panel {
+            background: rgba(0, 255, 170, 0.04);
+            border: 1px solid rgba(0, 255, 170, 0.15);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .panel-title {
+            font-size: 0.85rem;
+            font-weight: 800;
+            color: var(--primary-glow);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .search-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(0, 0, 0, 0.4);
+            color: white;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--secondary-glow);
+        }
+
+        .btn {
+            border: none;
+            border-radius: 10px;
+            padding: 12px 18px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary-glow);
+            color: #0d0f12;
+            box-shadow: 0 4px 12px rgba(0, 255, 170, 0.2);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 4px 18px rgba(0, 255, 170, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--secondary-glow);
+            color: #0d0f12;
+        }
+
+        .btn-voice {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px;
+        }
+
+        .btn-voice.recording {
+            background: var(--danger-glow);
+            color: white;
+            box-shadow: 0 0 15px var(--danger-glow);
+            animation: pulse 1.5s infinite;
+        }
+
+        /* 🗺️ Leaflet Map styling */
+        #map-container {
+            position: relative;
+            width: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        #map {
+            width: 100%;
+            height: 300px;
+            background: #111;
+            /* Invert styling to create a premium custom dark mode map */
+            filter: invert(90%) hue-rotate(180deg) brightness(95%) contrast(90%);
+            z-index: 1;
+        }
+
+        /* Custom User Marker with Glowing directional cone */
+        .user-marker-container {
+            position: relative;
+            width: 40px;
+            height: 40px;
+        }
+
+        .user-core-dot {
+            width: 14px;
+            height: 14px;
+            background: #00ffaa;
+            border: 2.5px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #00ffaa, 0 0 16px #00ffaa;
+            position: absolute;
+            top: 13px;
+            left: 13px;
+            z-index: 10;
+        }
+
+        .user-direction-cone {
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-bottom: 50px solid rgba(0, 255, 229, 0.4);
+            transform-origin: 20px 50px;
+            top: -37px;
+            left: 0px;
+            filter: drop-shadow(0 0 6px rgba(0, 255, 229, 0.5));
+            z-index: 5;
+        }
+
+        /* Developer Testing Control Panel */
+        .test-panel {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-label span.value {
+            color: var(--secondary-glow);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--secondary-glow);
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--secondary-glow);
+        }
+
+        .direction-buttons {
+            display: grid;
+            grid-template-cols: repeat(4, 1fr);
+            gap: 6px;
+        }
+
+        .btn-direction {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 6px;
+            font-size: 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-direction:active {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .simulation-controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
+        }
+
+        /* Checkbox Switch styling */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        /* Voice Panel */
+        .voice-panel {
+            background: linear-gradient(135deg, rgba(0, 255, 170, 0.05), rgba(0, 229, 255, 0.05));
+            border: 1px dashed rgba(0, 255, 170, 0.2);
+            border-radius: 16px;
+            padding: 18px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .voice-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .voice-text {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #ffffff;
+            min-height: 2.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.15);
+        }
+
+        .voice-text.alert {
+            color: var(--danger-glow);
+            text-shadow: 0 0 10px rgba(255, 0, 85, 0.3);
+        }
+
+        /* Logs Console */
+        .console-wrapper {
+            background: #06080b;
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .console-header {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .console-logs {
+            height: 120px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.75rem;
+            line-height: 1.45;
+            color: var(--primary-glow);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            text-align: left;
+        }
+
+        .console-logs::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .console-logs::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
+        .log-line {
+            opacity: 0.9;
+        }
+
+        .log-line.system { color: #8a99ad; }
+        .log-line.danger { color: #ff0055; font-weight: bold; }
+        .log-line.warning { color: #ffaa00; }
+        .log-line.success { color: #00ffaa; }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 임베디드(embed=true) 맵 전용 모드 스타일 */
+        body.embedded-mode {
+            padding: 0 !important;
+            margin: 0 !important;
+            background: transparent !important;
+            overflow: hidden !important;
+            width: 100vw !important;
+            height: 100vh !important;
+        }
+
+        body.embedded-mode .app-container {
+            max-width: none !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            gap: 0 !important;
+        }
+
+        body.embedded-mode header,
+        body.embedded-mode .status-panel,
+        body.embedded-mode .panel,
+        body.embedded-mode .test-panel,
+        body.embedded-mode .voice-panel,
+        body.embedded-mode .console-wrapper {
+            display: none !important;
+        }
+
+        body.embedded-mode #map-container {
+            width: 100vw !important;
+            height: 100vh !important;
+            border-radius: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        body.embedded-mode #map {
+            width: 100vw !important;
+            height: 100vh !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <header>
+            <h1>VIP Assistant Navigation</h1>
+            <p>시각장애인 보행 길안내 특화 시뮬레이터</p>
+        </header>
+
+        <!-- Status Header Bar -->
+        <div class="status-panel">
+            <div class="status-item">
+                <div id="gpsDot" class="status-dot"></div>
+                <span id="gpsText">GPS 센서 연결 대기</span>
+            </div>
+            <div class="status-item">
+                <div id="serverDot" class="status-dot"></div>
+                <span id="serverText">서버 연결 상태: 오프라인</span>
+            </div>
+        </div>
+
+        <!-- 🧭 GPS Navigation Panel -->
+        <div class="panel">
+            <div class="panel-title">🧭 목적지 안내 설정</div>
+            <div class="search-row">
+                <input type="text" id="textSearchInput" placeholder="목적지 입력 (예: 숭례문, 남산타워)">
+                <button id="textSearchBtn" class="btn btn-secondary">검색</button>
+            </div>
+            <button id="voiceSearchBtn" class="btn btn-voice">
+                🎤 목적지 음성으로 말하기
+            </button>
+            <div id="routeStatusText" style="font-size: 0.8rem; font-weight: bold; color: var(--text-muted); text-align: center;">
+                출발지는 현재 GPS 내 위치로 자동 지정됩니다.
+            </div>
+        </div>
+
+        <!-- 🗺️ Interactive Map Display -->
+        <div id="map-container">
+            <div id="map"></div>
+        </div>
+
+        <!-- Developer Testing Panel -->
+        <div class="test-panel">
+            <div class="panel-title">⚙️ 개발자 테스트 컨트롤</div>
+
+            <!-- Manual Heading Slider -->
+            <div class="control-group">
+                <div class="control-label">
+                    <span>바라보는 방향 (Manual Heading)</span>
+                    <span id="headingVal" class="value">0° (북쪽)</span>
+                </div>
+                <input type="range" id="headingSlider" min="0" max="359" value="0">
+                <div class="direction-buttons">
+                    <button class="btn-direction" onclick="setManualHeading(0)">북 (0°)</button>
+                    <button class="btn-direction" onclick="setManualHeading(90)">동 (90°)</button>
+                    <button class="btn-direction" onclick="setManualHeading(180)">남 (180°)</button>
+                    <button class="btn-direction" onclick="setManualHeading(270)">서 (270°)</button>
+                </div>
+            </div>
+
+            <!-- Auto-align / Auto-scroll Options -->
+            <div style="display: flex; justify-content: space-between;">
+                <label class="toggle-container">
+                    <input type="checkbox" id="autoAlignCheckbox" checked>
+                    <span>자동 Heading 정렬 (보행 방향)</span>
+                </label>
+                <label class="toggle-container">
+                    <input type="checkbox" id="autoCenterCheckbox" checked>
+                    <span>지도 중심 동기화 (Auto-Center)</span>
+                </label>
+            </div>
+
+            <!-- Walk Simulator Controls -->
+            <div class="simulation-controls">
+                <button id="simWalkBtn" class="btn btn-primary" style="flex: 1; padding: 10px;" disabled>
+                    보행 시뮬레이션 시작
+                </button>
+                <div class="control-group" style="width: 140px; gap: 4px;">
+                    <div class="control-label" style="font-size: 0.75rem;">
+                        <span>시뮬레이션 배속</span>
+                        <span id="simSpeedVal" class="value">1x</span>
+                    </div>
+                    <input type="range" id="simSpeedSlider" min="1" max="5" value="1" style="height: 4px;">
+                </div>
+            </div>
+        </div>
+
+        <!-- TTS Voice panel -->
+        <div class="voice-panel">
+            <div class="voice-title">실시간 TTS 음성 가이드</div>
+            <div id="voiceText" class="voice-text">보행 안내 대기 중</div>
+        </div>
+
+        <!-- Logs Terminal Console -->
+        <div class="console-wrapper">
+            <div class="console-header">
+                <span>시스템 로그 모니터</span>
+                <span id="coordDisplay">GPS: 미수신</span>
+            </div>
+            <div id="consoleLogs" class="console-logs">
+                <div class="log-line system">[SYSTEM] 스마트폰 GPS 수신 대기 및 골전도 이어폰 연결 권장.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const textSearchInput = document.getElementById('textSearchInput');
+        const textSearchBtn = document.getElementById('textSearchBtn');
+        const voiceSearchBtn = document.getElementById('voiceSearchBtn');
+        const routeStatusText = document.getElementById('routeStatusText');
+
+        const headingSlider = document.getElementById('headingSlider');
+        const headingVal = document.getElementById('headingVal');
+
+        const autoAlignCheckbox = document.getElementById('autoAlignCheckbox');
+        const autoCenterCheckbox = document.getElementById('autoCenterCheckbox');
+
+        const simWalkBtn = document.getElementById('simWalkBtn');
+        const simSpeedSlider = document.getElementById('simSpeedSlider');
+        const simSpeedVal = document.getElementById('simSpeedVal');
+
+        const voiceText = document.getElementById('voiceText');
+        const consoleLogs = document.getElementById('consoleLogs');
+        const coordDisplay = document.getElementById('coordDisplay');
+
+        const gpsDot = document.getElementById('gpsDot');
+        const gpsText = document.getElementById('gpsText');
+        const serverDot = document.getElementById('serverDot');
+        const serverText = document.getElementById('serverText');
+
+        // State variables
+        let currentLat = null;
+        let currentLon = null;
+        let currentHeading = 0; // Degrees (0-359)
+        let gpsWatcherId = null;
+        let ws = null;
+
+        // Leaflet Map objects
+        let map = null;
+        let userMarker = null;
+        let routePolyline = null;
+        let activeWaypointMarker = null;
+        let waypointMarkers = [];
+
+        // Simulation walking state
+        let isSimulating = false;
+        let routeCoordinates = []; // [[lat, lon], ...]
+        let routeWaypoints = [];
+        let simCurrentCoordIdx = 0;
+        let simIntervalId = null;
+        let simSpeed = 1.0; // Speed multiplier (1x = 1.2 m/s)
+
+        // Browser TTS Speech Synthesis
+        const synth = window.speechSynthesis;
+
+        // Map directions labels
+        const directionLabels = ["북", "북동", "동", "남동", "남", "남서", "서", "북서"];
+        function getDirectionLabel(degree) {
+            const index = Math.round(degree / 45) % 8;
+            return directionLabels[index];
+        }
+
+        // Initialize Map
+        function initMap() {
+            if (map) return;
+
+            // 가짜 사용자 위치(서울역)로 마커를 찍지 않는다.
+            // GPS 수신 전에는 한반도 overview만 보여 주고, 실좌표 도착 시 마커를 올린다.
+            const overviewLat = 36.5;
+            const overviewLon = 127.8;
+
+            map = L.map('map').setView([overviewLat, overviewLon], 7);
+
+            // OpenStreetMap
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        // Custom marker drawing
+        function updateUserMarkerOnMap(lat, lon, heading) {
+            if (!map) return;
+
+            const htmlContent = `
+                <div class="user-marker-container">
+                    <div class="user-direction-cone" style="transform: rotate(${heading}deg);"></div>
+                    <div class="user-core-dot"></div>
+                </div>
+            `;
+
+            const customIcon = L.divIcon({
+                className: 'custom-user-marker',
+                html: htmlContent,
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
+
+            if (userMarker) {
+                userMarker.setLatLng([lat, lon]);
+                userMarker.setIcon(customIcon);
+            } else {
+                userMarker = L.marker([lat, lon], {icon: customIcon}).addTo(map);
+            }
+
+            if (autoCenterCheckbox.checked) {
+                map.setView([lat, lon]);
+            }
+        }
+
+        // Initialize GPS
+        function initGPS() {
+            initMap();
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const isEmbed = urlParams.get('embed') === 'true';
+
+            // postMessage 주입: 콘솔 상위 페이지(iframe 부모)에서 앱 GPS 좌표를 전달할 수 있다.
+            // 메시지 형식: { type: 'inject_gps', lat: number, lon: number, heading?: number }
+            // PC 브라우저 GPS 부정확 문제를 우회하기 위해 콘솔이 앱으로부터 받은 realtime_gps
+            // 이벤트 좌표를 이 채널로 주입하면 지도가 실기기 위치로 갱신된다.
+            window.addEventListener('message', (event) => {
+                if (!event.data || event.data.type !== 'inject_gps') return;
+                const injectedLat = parseFloat(event.data.lat);
+                const injectedLon = parseFloat(event.data.lon);
+                const injectedHeading = parseFloat(event.data.heading ?? 0);
+                if (isNaN(injectedLat) || isNaN(injectedLon)) return;
+                currentLat = injectedLat;
+                currentLon = injectedLon;
+                currentHeading = injectedHeading || currentHeading;
+                gpsDot.className = "status-dot active";
+                gpsText.innerText = "GPS 앱 연동 (실기기 위치)";
+                coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
+                updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                // embed 모드에서는 브라우저 geolocation WS 대신 주입만으로 동작한다.
+                if (isEmbed && typeof connectWebSocket === 'function') {
+                    // 중복 연결은 connectWebSocket 내부 가드에 맡긴다.
+                    try { connectWebSocket(); } catch (_) { /* ignore */ }
+                }
+            });
+
+            // 콘솔 iframe(embed): 브라우저 GPS/서울역 폴백을 쓰지 않는다.
+            // 앱 → 서버 realtime_gps → 콘솔 postMessage 경로만 신뢰한다.
+            if (isEmbed) {
+                gpsDot.className = "status-dot";
+                gpsText.innerText = "앱 GPS 대기 중...";
+                coordDisplay.innerText = "GPS: (실기기 좌표 대기)";
+                logMessage("warning", "[GPS EMBED] 서울역 임시좌표 폴백을 비활성화했습니다. 앱 realtime_gps 주입을 대기합니다.");
+                return;
+            }
+
+            // 단독 네비 페이지: 브라우저 GPS 사용. 실패해도 가짜 서울역 좌표는 넣지 않는다.
+            if ("geolocation" in navigator) {
+                gpsText.innerText = "GPS 신호를 검색 중...";
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        currentLat = position.coords.latitude;
+                        currentLon = position.coords.longitude;
+                        gpsDot.className = "status-dot active";
+                        gpsText.innerText = "GPS 정상 수신 중";
+                        coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
+                        logMessage("success", `[GPS READY] 위치 감지 성공: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`);
+
+                        updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                        connectWebSocket();
+                        startGPSTracking();
+                    },
+                    (error) => {
+                        logMessage("danger", `[GPS ERROR] 위치 획득 실패: ${error.message}. 가짜 좌표를 사용하지 않습니다.`);
+                        gpsDot.className = "status-dot danger";
+                        gpsText.innerText = "GPS 사용 불가 (좌표 없음)";
+                        coordDisplay.innerText = "GPS: (수신 실패)";
+                    },
+                    { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+                );
+            } else {
+                gpsText.innerText = "GPS 지원하지 않는 브라우저";
+                logMessage("danger", "[GPS ERROR] 이 브라우저는 GPS 위치정보를 지원하지 않습니다.");
+            }
+        }
+
+        // Real-time GPS tracker
+        function startGPSTracking() {
+            if (gpsWatcherId) navigator.geolocation.clearWatch(gpsWatcherId);
+
+            gpsWatcherId = navigator.geolocation.watchPosition(
+                (position) => {
+                    // 시뮬레이션 작동 중에는 실제 GPS 업데이트 무시
+                    if (isSimulating) return;
+
+                    currentLat = position.coords.latitude;
+                    currentLon = position.coords.longitude;
+                    coordDisplay.innerText = `GPS: ${currentLat.toFixed(5)}, ${currentLon.toFixed(5)}`;
+
+                    updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                    sendGPSUpdateToServer();
+                },
+                (error) => {
+                    console.error("GPS Tracking error:", error);
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        }
+
+        // Web Compass integration via DeviceOrientation API
+        function initCompass() {
+            if (window.DeviceOrientationEvent) {
+                // For iOS 13+ devices
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    document.body.addEventListener('click', function requestPermissionHandler() {
+                        DeviceOrientationEvent.requestPermission()
+                            .then(response => {
+                                if (response === 'granted') {
+                                    window.addEventListener('deviceorientation', handleOrientation, true);
+                                    logMessage("system", "[나침반] 스마트폰 자이로 센서 권한이 허용되었습니다.");
+                                }
+                                document.body.removeEventListener('click', requestPermissionHandler);
+                            })
+                            .catch(console.error);
+                    });
+                } else {
+                    window.addEventListener('deviceorientation', handleOrientation, true);
+                }
+            }
+        }
+
+        function handleOrientation(event) {
+            // 시뮬레이션 중에는 수동/자동안동이 우선이므로 실제 센서 방향 무시
+            if (isSimulating) return;
+
+            let heading = null;
+            if (event.webkitCompassHeading) {
+                // iOS
+                heading = event.webkitCompassHeading;
+            } else if (event.alpha) {
+                // Android
+                heading = 360 - event.alpha;
+            }
+
+            if (heading !== null) {
+                currentHeading = Math.round(heading);
+                headingVal.innerText = `${currentHeading}° (${getDirectionLabel(currentHeading)}쪽)`;
+                headingSlider.value = currentHeading;
+                updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                sendGPSUpdateToServer();
+            }
+        }
+
+        // WebSocket Connection
+        function connectWebSocket() {
+            // 2026-07-18: 가드 부재로 GPS 주입(postMessage)마다 새 WebSocket이 무조건
+            // 생성돼 연결이 무한정 쌓이는 버그를 실측 확인(초당 여러 건). 이미 열려 있거나
+            // 연결 중이면 재사용한다 - 호출부 주석("중복 연결은 내부 가드에 맡긴다")이
+            // 가리키던, 실제로는 존재하지 않았던 가드.
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+            // 마운트 경로(/navigation 등)를 동적으로 반영하여 WebSocket 엔드포인트 계산
+            let path = window.location.pathname;
+            if (!path.endsWith('/')) {
+                path += '/';
+            }
+            const wsUri = `${protocol}//${window.location.host}${path}ws`;
+
+            ws = new WebSocket(wsUri);
+
+            ws.onopen = () => {
+                serverDot.className = "status-dot active";
+                serverText.innerText = "서버 연결 완료 (온라인)";
+                logMessage("success", "[SYSTEM] 길안내 백엔드 서버와 실시간 웹소켓 통신 연결 수립.");
+                sendGPSUpdateToServer();
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+
+                // 1. 경로 수립 완료 이벤트
+                if (data.type === "route_success") {
+                    const startName = data.start_name;
+                    const endName = data.end_name;
+                    routeCoordinates = data.coordinates; // [[lat1, lon1], [lat2, lon2], ...]
+                    routeWaypoints = data.waypoints || [];
+
+                    logMessage("success", `[경로탐색 성공] ${startName} ➔ ${endName}`);
+                    logMessage("system", `  경로 라인 노드 수: ${routeCoordinates.length}개, 웨이포인트 지점 수: ${routeWaypoints.length}개`);
+
+                    routeStatusText.innerText = `안내 중: ${endName}`;
+                    speakTTS(`${endName}까지의 보행 경로 안내가 시작되었습니다.`, false);
+
+                    // polyline 드로잉
+                    if (routePolyline) map.removeLayer(routePolyline);
+                    routePolyline = L.polyline(routeCoordinates, {
+                        color: '#00cc88',
+                        weight: 6,
+                        opacity: 0.85,
+                        lineJoin: 'round'
+                    }).addTo(map);
+
+                    // 지도 뷰 맞춤
+                    map.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
+
+                    // 기존 웨이포인트 마커들 삭제
+                    waypointMarkers.forEach(m => map.removeLayer(m));
+                    waypointMarkers = [];
+
+                    // 웨이포인트들 지도상 마커 그리기
+                    routeWaypoints.forEach(wp => {
+                        const markerColor = wp.facility_type ? '#ff0055' : '#00aaff';
+                        const dotIcon = L.divIcon({
+                            className: 'wp-dot',
+                            html: `<div style="width: 10px; height: 10px; background-color: ${markerColor}; border: 1.5px solid white; border-radius: 50%;"></div>`,
+                            iconSize: [10, 10],
+                            iconAnchor: [5, 5]
+                        });
+                        const m = L.marker([wp.lat, wp.lon], {icon: dotIcon}).addTo(map)
+                            .bindPopup(`<b>${wp.index}. ${wp.description}</b><br>시설코드: ${wp.facility_type || '없음'}`);
+                        waypointMarkers.push(m);
+                    });
+
+                    // 시뮬레이션 버튼 활성화
+                    simWalkBtn.disabled = false;
+                    simWalkBtn.innerText = "보행 시뮬레이션 시작";
+                    isSimulating = false;
+                    simCurrentCoordIdx = 0;
+                    if (simIntervalId) clearInterval(simIntervalId);
+
+                    // 시뮬레이션을 위해 출발 위치로 좌표 순간이동
+                    if (routeCoordinates.length > 0) {
+                        currentLat = routeCoordinates[0][0];
+                        currentLon = routeCoordinates[0][1];
+                        updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                    }
+                }
+
+                // 2. 경로 검색 에러
+                else if (data.type === "route_error") {
+                    const errMsg = data.message;
+                    routeStatusText.innerText = "검색 실패";
+                    speakTTS(errMsg, true);
+                    logMessage("danger", `[경로탐색 에러] ${errMsg}`);
+                }
+
+                // 3. 실시간 음성 안내 TTS 이벤트
+                else if (data.type === "guidance_audio") {
+                    const txt = data.text;
+                    const isDanger = data.is_danger;
+                    const activeWpIdx = data.active_waypoint_idx;
+
+                    voiceText.innerText = txt;
+                    voiceText.classList.remove('alert');
+                    speakTTS(txt, isDanger);
+                    logMessage("success", `[안내 음성] ${txt}`);
+
+                    // 활성 웨이포인트 지도상 강조 표시
+                    highlightActiveWaypoint(activeWpIdx);
+                }
+
+                // 4. 경로 이탈 경고 알림 이벤트
+                else if (data.type === "deviation_alert") {
+                    const txt = data.text;
+                    voiceText.innerText = txt;
+                    voiceText.classList.add('alert');
+                    speakTTS(txt, true);
+                    logMessage("danger", `🚨 [이탈 경고] ${txt}`);
+
+                    if (navigator.vibrate) {
+                        navigator.vibrate([200, 100, 200, 100, 200]);
+                    }
+                }
+            };
+
+            ws.onclose = () => {
+                serverDot.className = "status-dot danger";
+                serverText.innerText = "서버 연결 종료 (오프라인)";
+                logMessage("danger", "[SYSTEM] 웹소켓 연결이 닫혔습니다. 3초 후 재연동을 시도합니다.");
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        function highlightActiveWaypoint(idx) {
+            if (!routeWaypoints || routeWaypoints.length === 0) return;
+
+            // 인덱스 범위 보정
+            if (idx >= 0 && idx < routeWaypoints.length) {
+                const wp = routeWaypoints[idx];
+
+                if (activeWaypointMarker) {
+                    activeWaypointMarker.setLatLng([wp.lat, wp.lon]);
+                } else {
+                    const starIcon = L.divIcon({
+                        className: 'active-wp-star',
+                        html: `<div style="width: 16px; height: 16px; background-color: yellow; border: 2px solid red; border-radius: 50%; box-shadow: 0 0 10px yellow; animation: pulse 1s infinite;"></div>`,
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    });
+                    activeWaypointMarker = L.marker([wp.lat, wp.lon], {icon: starIcon}).addTo(map);
+                }
+            }
+        }
+
+        // Send Location update to backend
+        function sendGPSUpdateToServer() {
+            if (ws && ws.readyState === WebSocket.OPEN && currentLat !== null && currentLon !== null) {
+                ws.send(JSON.stringify({
+                    type: "realtime_gps",
+                    lat: currentLat,
+                    lon: currentLon,
+                    heading: currentHeading
+                }));
+            }
+        }
+
+        // HTML5 Speech synthesis Korean Voice Speak
+        function speakTTS(text, isDanger) {
+            if (!synth) return;
+
+            // 즉시 이전 말하기 차단 (딜레이 없는 가이드 전달용)
+            synth.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ko-KR';
+            utterance.rate = 1.0; // 시각장애인 청각 마비 예방 최적 편안 속도
+            utterance.volume = 1.0;
+
+            if (isDanger) {
+                // 스마트폰 브라우저 비프 사운드
+                playWebBeep(1000, 0.2);
+            }
+
+            synth.speak(utterance);
+        }
+
+        // Web Audio beep sound
+        let audioCtx = null;
+        function playWebBeep(frequency, duration) {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.error("Beep generator error:", e);
+            }
+        }
+
+        // Log printing to UI console
+        function logMessage(type, msg) {
+            const div = document.createElement('div');
+            div.className = `log-line ${type}`;
+            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            consoleLogs.appendChild(div);
+            consoleLogs.scrollTop = consoleLogs.scrollHeight;
+        }
+
+        // A. Manual heading slider adjustment
+        headingSlider.addEventListener('input', (e) => {
+            currentHeading = parseInt(e.target.value);
+            headingVal.innerText = `${currentHeading}° (${getDirectionLabel(currentHeading)}쪽)`;
+            updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+            sendGPSUpdateToServer();
+        });
+
+        // Set manual heading from buttons
+        function setManualHeading(deg) {
+            currentHeading = deg;
+            headingVal.innerText = `${currentHeading}° (${getDirectionLabel(currentHeading)}쪽)`;
+            headingSlider.value = currentHeading;
+            updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+            sendGPSUpdateToServer();
+        }
+
+        // Keyboard arrow controls for Heading adjustment (testing convenience)
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                setManualHeading((currentHeading - 5 + 360) % 360);
+            } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                setManualHeading((currentHeading + 5) % 360);
+            }
+        });
+
+        // Sim Speed Slider adjustment
+        simSpeedSlider.addEventListener('input', (e) => {
+            simSpeed = parseInt(e.target.value);
+            simSpeedVal.innerText = `${simSpeed}x`;
+            logMessage("system", `[시뮬레이터] 보행 속도가 ${simSpeed}배속으로 변경되었습니다.`);
+        });
+
+        // B. Dynamic Route Search triggers
+        function triggerSearch() {
+            const keyword = textSearchInput.value.trim();
+            if (!keyword) {
+                alert("목적지를 입력해 주세요.");
+                return;
+            }
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                routeStatusText.innerText = "경로 계산 중...";
+                ws.send(JSON.stringify({
+                    type: "search_route",
+                    start: `${currentLat}, ${currentLon}`,
+                    end: keyword
+                }));
+                logMessage("system", `[경로요청] 현재지 ➔ 목적지: "${keyword}"`);
+            } else {
+                alert("백엔드 서버와 연결이 불안정합니다. 잠시 후 시도해 주세요.");
+            }
+        }
+
+        textSearchBtn.addEventListener('click', triggerSearch);
+        textSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') triggerSearch();
+        });
+
+        // Speech Recognition STT integration
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'ko-KR';
+
+            recognition.onstart = () => {
+                voiceSearchBtn.innerText = "🎙️ 음성을 듣고 있습니다... 말씀하세요";
+                voiceSearchBtn.classList.add('recording');
+                if (navigator.vibrate) navigator.vibrate(50);
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript.replace(/\.$/g, '').trim();
+
+                // 음성 명령어 파싱 규칙 (명령어 패턴 매칭 및 목적지 키워드 정제)
+                const patterns = [
+                    /(.+)로\s+안내해줘/,
+                    /(.+)으로\s+안내해줘/,
+                    /(.+)가자/,
+                    /(.+)\s+가자/,
+                    /목적지\s+(.+)/,
+                    /(.+)목적지\s+설정/
+                ];
+
+                let keyword = transcript;
+                for (let pattern of patterns) {
+                    const match = transcript.match(pattern);
+                    if (match) {
+                        keyword = match[1].trim();
+                        break;
+                    }
+                }
+
+                textSearchInput.value = keyword;
+                logMessage("system", `[STT 음성인식] 명령어: "${transcript}" -> 추출된 목적지: "${keyword}"`);
+                triggerSearch();
+            };
+
+            recognition.onerror = (e) => {
+                logMessage("danger", `[STT 에러] 음성 인식 실패: ${e.error}`);
+                speakTTS("목적지를 제대로 듣지 못했습니다. 다시 말씀해 주세요.", true);
+            };
+
+            recognition.onend = () => {
+                voiceSearchBtn.innerText = "🎤 목적지 음성으로 말하기";
+                voiceSearchBtn.classList.remove('recording');
+            };
+
+            voiceSearchBtn.addEventListener('click', () => {
+                speakTTS("목적지를 말씀해 주세요.", false);
+                setTimeout(() => {
+                    try {
+                        recognition.start();
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }, 1400);
+            });
+        } else {
+            voiceSearchBtn.style.opacity = 0.5;
+            voiceSearchBtn.innerText = "🎤 음성 인식 미지원 브라우저";
+            voiceSearchBtn.addEventListener('click', () => {
+                alert("이 브라우저에서는 SpeechRecognition STT를 지원하지 않습니다. 텍스트 입력을 사용해 주세요.");
+            });
+        }
+
+        // C. Constant Speed Walking Simulation Engine
+        // Calculates smooth step movement on each tick
+        function startSimulationWalk() {
+            if (routeCoordinates.length === 0) return;
+
+            isSimulating = true;
+            simWalkBtn.innerText = "보행 시뮬레이션 중지";
+            simWalkBtn.classList.add('running');
+            logMessage("system", `[시뮬레이터] ${simSpeed}배속으로 가상 보행을 시작합니다.`);
+
+            simCurrentCoordIdx = 0;
+            // 초기 위치 지정
+            currentLat = routeCoordinates[0][0];
+            currentLon = routeCoordinates[0][1];
+
+            // 200ms 주기로 타이머 스텝 구동
+            const tickRateMs = 200;
+            let lastTickTime = Date.now();
+
+            simIntervalId = setInterval(() => {
+                if (simCurrentCoordIdx >= routeCoordinates.length - 1) {
+                    // 목적지 완전 도달
+                    clearInterval(simIntervalId);
+                    isSimulating = false;
+                    simWalkBtn.innerText = "보행 시뮬레이션 시작";
+                    simWalkBtn.classList.remove('running');
+
+                    currentLat = routeCoordinates[routeCoordinates.length - 1][0];
+                    currentLon = routeCoordinates[routeCoordinates.length - 1][1];
+                    updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                    sendGPSUpdateToServer();
+
+                    logMessage("success", "[시뮬레이터] 목적지에 무사히 도달하여 시뮬레이션을 완료했습니다.");
+                    speakTTS("목적지에 무사히 도착했습니다. 안내를 종료합니다.", false);
+                    return;
+                }
+
+                const now = Date.now();
+                const dt = (now - lastTickTime) / 1000.0;
+                lastTickTime = now;
+
+                // 보행 속도 기준: 1.2 m/s * 배속 * 경과 시간(dt)
+                const targetWalkSpeedMps = 1.2;
+                let stepDistanceMeters = targetWalkSpeedMps * simSpeed * dt;
+
+                // 타겟 노드 이동 반복 판단
+                while (stepDistanceMeters > 0 && simCurrentCoordIdx < routeCoordinates.length - 1) {
+                    const nextCoord = routeCoordinates[simCurrentCoordIdx + 1];
+                    const distToNext = haversineDistance(currentLat, currentLon, nextCoord[0], nextCoord[1]);
+
+                    if (distToNext <= stepDistanceMeters) {
+                        // 다음 좌표를 넘어가므로 스냅(Snap) 후 잔여 거리로 재이동
+                        currentLat = nextCoord[0];
+                        currentLon = nextCoord[1];
+                        simCurrentCoordIdx++;
+                        stepDistanceMeters -= distToNext;
+                    } else {
+                        // 보폭 거리만큼 선을 따라 일부만 전진 (보간 보강)
+                        const ratio = stepDistanceMeters / distToNext;
+                        currentLat = currentLat + (nextCoord[0] - currentLat) * ratio;
+                        currentLon = currentLon + (nextCoord[1] - currentLon) * ratio;
+                        stepDistanceMeters = 0;
+                    }
+                }
+
+                // Auto-align heading
+                if (autoAlignCheckbox.checked && simCurrentCoordIdx < routeCoordinates.length - 1) {
+                    const nextNode = routeCoordinates[simCurrentCoordIdx + 1];
+                    const nextBearing = calculateBearing(currentLat, currentLon, nextNode[0], nextNode[1]);
+                    currentHeading = Math.round(nextBearing);
+
+                    headingSlider.value = currentHeading;
+                    headingVal.innerText = `${currentHeading}° (${getDirectionLabel(currentHeading)}쪽)`;
+                }
+
+                updateUserMarkerOnMap(currentLat, currentLon, currentHeading);
+                sendGPSUpdateToServer();
+
+            }, tickRateMs);
+        }
+
+        function stopSimulationWalk() {
+            isSimulating = false;
+            simWalkBtn.innerText = "보행 시뮬레이션 시작";
+            simWalkBtn.classList.remove('running');
+            if (simIntervalId) {
+                clearInterval(simIntervalId);
+                simIntervalId = null;
+            }
+            logMessage("system", "[시뮬레이터] 가상 보행을 일시정지했습니다.");
+        }
+
+        simWalkBtn.addEventListener('click', () => {
+            if (isSimulating) {
+                stopSimulationWalk();
+            } else {
+                startSimulationWalk();
+            }
+        });
+
+        // Helper: 두 좌표 간 거리 계산 (Haversine 공식)
+        function haversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000; // 지구 반지름 (m)
+            const phi1 = lat1 * Math.PI / 180;
+            const phi2 = lat2 * Math.PI / 180;
+            const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+            const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+            const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                      Math.cos(phi1) * Math.cos(phi2) *
+                      Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        // Helper: 방위각 계산
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            const lat1Rad = lat1 * Math.PI / 180;
+            const lat2Rad = lat2 * Math.PI / 180;
+            const dLonRad = (lon2 - lon1) * Math.PI / 180;
+
+            const y = Math.sin(dLonRad) * Math.cos(lat2Rad);
+            const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+                      Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLonRad);
+
+            const brng = Math.atan2(y, x);
+            return (brng * 180 / Math.PI + 360) % 360;
+        }
+
+        // Initialize GPS, Compass and Map load
+        window.addEventListener('DOMContentLoaded', () => {
+            // URL 파라미터 감지하여 임베드 모드 분기 처리
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('embed') === 'true') {
+                document.body.classList.add('embedded-mode');
+            }
+            initGPS();
+            initCompass();
+        });
+    </script>
+</body>
+</html>

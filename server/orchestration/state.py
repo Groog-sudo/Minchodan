@@ -21,14 +21,39 @@ class OrchState(TypedDict, total=False):
 
     event: dict
     detected_classes: list[str]
+    # 2026-07-19: caution/roadway 등 노면 클래스를 L1 mid 분류·L2 프롬프트에 전달.
+    surface_classes: list[str]
+    surface_classes_ko: list[str]
     risk_level: Literal["high", "mid", "low"]
     rag_context: str
+    navigation_guidance: str
     positions: list[str]
+    # 2026-07-13 추가: 보도 이탈 히스테리시스 확정 여부와 점자블록 추종 보정 방향.
+    # server/detection/surface_departure.py의 판정 결과를 인지 경로 문장 생성에 전달한다.
+    is_departing_confirmed: bool
+    braille_direction: str
+    # 2026-07-13 추가: 주 탐지 객체의 실제 화면 위치를 12시(정면) 기준 9시~3시 시계
+    # 방향으로 환산한 값("2시" 등). L2가 "좌측/우측" 대신 이 값을 문장에 반영한다.
+    clock_direction: str
+    # 2026-07-20: 전방(12시) 장애물일 때 우회 제안 시각("10시"|"2시").
+    # 패스트 레인 "전방 볼라드, 2시로 우회하세요" 패턴용.
+    avoid_clock_direction: str
+    # 2026-07-16 Phase 2: 인지 경로 구조화 필드 (guide WS / 패스트 레인 캐시 키용).
+    # near/medium/far — 반사 경로의 미터 단위 distance와 별개.
+    distance: str
+    object_ko: str
+    # 2026-07-16 Phase 3: 패스트 레인(LLM 생략) 경로 플래그 및 사전합성 TTS 캐시 키.
+    used_fast_lane: bool
+    fast_lane_cache_key: str
     guidance_text: str
-    direction: Literal["좌", "우", "직진", "정지", ""]
+    # 2026-07-13: extract_direction()이 "N시" 시계 방향을 우선 추출하도록 바뀌어
+    # 좌/우/직진/정지 외에 "9시"~"3시" 값도 들어올 수 있다.
+    direction: str
     verified: bool
     retry_count: int
     validation_errors: list[str]
     used_fallback_llm: bool
     used_static_fallback: bool
     total_latency_ms: float
+    # L3 재시도 전 거절된 L2 초안 문장 누적(관리자 콘솔 pipeline_debug용).
+    l2_drafts: list[str]

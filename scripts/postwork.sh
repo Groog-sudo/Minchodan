@@ -30,9 +30,9 @@ get_test_cmd() {
         2) echo "python tests/test_frame_decode.py" ;;
         3) echo "python scripts/verify_gpu.py && python tests/test_detection.py" ;;
         4) echo "python scripts/eval_hitrate.py" ;;
-        5) echo "python tests/test_rag_retrieval.py" ;;
+        5) echo "python tests/test_retriever.py" ;;
         6) echo "python tests/test_langgraph.py" ;;
-        7) echo "python tests/test_tts_reflex.py" ;;
+        7) echo "python tests/test_reflex_and_nav.py" ;;
     esac
 }
 

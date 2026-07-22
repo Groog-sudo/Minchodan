@@ -3,13 +3,16 @@ graph.py
 LangGraph StateGraph를 조립하고 컴파일된 실행 객체(싱글톤)를 반환하는 오케스트레이터 모듈입니다.
 """
 
+import asyncio
 import contextlib
+import logging
 import sys
 import time
 
 from langgraph.graph import END, StateGraph
 
 from server.orchestration.nodes.fallback_node import fallback_node
+from server.orchestration.nodes.fast_lane import can_use_fast_lane, fast_lane_node
 from server.orchestration.nodes.l1_classifier import l1_classifier_node
 from server.orchestration.nodes.l2_generator import l2_generator_node
 from server.orchestration.nodes.l3_validator import l3_validator_node
@@ -19,15 +22,39 @@ from server.orchestration.state import OrchState
 if sys.stdout.encoding != "utf-8":
     with contextlib.suppress(AttributeError):
         sys.stdout.reconfigure(encoding="utf-8")
+_background_tasks = set()
+
+logger = logging.getLogger(__name__)
+
+
+def route_after_l1(state: dict) -> str:
+    """L1 직후 단일 객체+구조화 필드가 갖춰지면 패스트 레인, 아니면 L2 LLM."""
+    if can_use_fast_lane(state):
+        logger.info("[OrchGraph] 패스트 레인 분기 (단일 객체 + clock + distance)")
+        return "fast_lane"
+    logger.info("[OrchGraph] L2 LLM 분기 (복합/예외/필드 누락)")
+    return "l2_generate"
 
 
 def route_after_l3(state: dict) -> str:
     """
     L3 검증 노드 이후의 조건부 라우팅 판단 함수.
-    검증이 통과되었거나 최종 폴백에 도달하면 END로, 그렇지 않으면 L2(생성) 노드로 회귀합니다.
+    검증이 통과되면 END로, 재시도 한계(MAX_RETRY=1)를 초과하면 fallback 노드로 분기하며,
+    그렇지 않은 경우 L2(생성) 노드로 돌아가 재성공을 시도합니다.
     """
+    retry_count = state.get("retry_count", 0)
+    validation_errors = state.get("validation_errors", [])
     if state.get("verified"):
+        logger.info(f"[OrchGraph] L3 검증 통과 (retry_count: {retry_count})")
         return "end"
+
+    logger.info(
+        f"[OrchGraph] L3 검증 실패 - 에러: {validation_errors} (retry_count: {retry_count})"
+    )
+    if retry_count > 1:
+        logger.info("[OrchGraph] 재시도 한도 초과 -> Fallback 노드로 분기")
+        return "fallback"
+    logger.info("[OrchGraph] L2 재성공 시도 (l2_generate)")
     return "l2_generate"
 
 
@@ -39,6 +66,7 @@ def build_graph() -> StateGraph:
 
     # 노드 등록
     workflow.add_node("l1_classify", l1_classifier_node)
+    workflow.add_node("fast_lane", fast_lane_node)
     workflow.add_node("l2_generate", l2_generator_node)
     workflow.add_node("l3_validate", l3_validator_node)
     workflow.add_node("fallback", fallback_node)
@@ -46,14 +74,31 @@ def build_graph() -> StateGraph:
     # 진입점 설정
     workflow.set_entry_point("l1_classify")
 
-    # 엣지 연결
-    workflow.add_edge("l1_classify", "l2_generate")
+    # L1 직후 패스트 레인 / L2 분기
+    workflow.add_conditional_edges(
+        "l1_classify",
+        route_after_l1,
+        {
+            "fast_lane": "fast_lane",
+            "l2_generate": "l2_generate",
+        },
+    )
+    workflow.add_edge("fast_lane", END)
     workflow.add_edge("l2_generate", "l3_validate")
 
     # 조건부 엣지 정의
     workflow.add_conditional_edges(
-        "l3_validate", route_after_l3, {"l2_generate": "l2_generate", "end": END}
+        "l3_validate",
+        route_after_l3,
+        {
+            "l2_generate": "l2_generate",
+            "fallback": "fallback",
+            "end": END,
+        },
     )
+
+    # fallback 노드에서 최종 END로 종료 처리
+    workflow.add_edge("fallback", END)
 
     return workflow.compile()
 
@@ -94,4 +139,22 @@ async def run_orchestrator(state: dict) -> dict:
 
     # 결과 상태 갱신
     result["total_latency_ms"] = latency_ms
+
+    # LangSmith Trace MCP를 사용하여 노드 전이 및 지연 추적 (비동기 아웃오브밴드)
+    from server.mcp.langsmith_tracer import langsmith_tracer
+
+    if result.get("used_fast_lane"):
+        to_node = "fast_lane"
+    elif result.get("used_static_fallback"):
+        to_node = "fallback"
+    else:
+        to_node = "end"
+    task = asyncio.create_task(
+        langsmith_tracer.log_node_transition(
+            from_node="l1_classify", to_node=to_node, latency_ms=latency_ms
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
     return result

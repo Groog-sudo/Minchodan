@@ -2,16 +2,22 @@
 name: camera-frame-capture
 description: |
   스마트폰 카메라 실시간 프레임 캡처 및 서버 전송 파이프라인 구현.
-  React Native vision-camera로 이중 캡처(반사 8~10fps / 인지 1~2fps), base64 인코딩 후 WebSocket 전송,
+  React Native vision-camera로 이중 캡처(반사 8~10fps / 인지 1~2fps), 바이너리(raw JPEG) WebSocket 전송(base64는 구버전 폴백),
   서버에서 OpenCV 디코딩 및 Redis Streams 발행까지의 전체 흐름을 다룬다.
 ---
 
 # Camera Frame Capture (2단계: 카메라 화면 전송)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 9, 16, 17.2
+> **버전**: v0.5.0 (2026-07-10 카메라 캡처 계층을 iOS/Android 물리 분리 구조로 리팩터링 - CAPTURE_ENGINE 전역 플래그 제거, FrameCaptureProvider 인터페이스 도입)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 2단계 (v1.1 이중 스트림 반영), [`docs/mobile/ios_android_bifurcation_contract.md`](../../../docs/mobile/ios_android_bifurcation_contract.md) §4(카메라 캡처 계층 재설계)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 9, 16, 17.2
+
+> **2026-07-10 정정 (파일 구조 변경)**: `client/src/config/capture.ts`의 `CAPTURE_ENGINE` 전역 상수가 **삭제**됐다. 카메라 하드웨어 접근은 `client/src/hooks/useCamera.ts`에서 완전히 분리되어 `client/src/services/frameCaptureProvider.ts`(공통 인터페이스 `FrameCaptureController` + `takePhoto()` 공용 크롭 로직 `captureViaTakePhoto`)와 Metro 플랫폼 확장자 분기 파일(`frameCaptureProviderSelect.ios.ts`/`.android.ts`/`.ts`)로 이동했다. `useCamera.ts`는 타이머·동적 FPS·Mock 분기 등 플랫폼 무관 오케스트레이션만 담당한다. iOS는 `frameCaptureProviderSelect.ios.ts`가 아래 §2026-07-09 정정의 Frame Processor 경로를 그대로 구현하고, Android는 네이티브 Frame Processor 플러그인이 아직 없어 `frameCaptureProviderSelect.android.ts`가 `takePhoto()` 과도기 구현(Android 실기기의 `File.bytes()` 실패 우회 포함)을 담당한다. 상세 설계와 파일 소유권 규칙은 [`docs/mobile/ios_android_bifurcation_contract.md`](../../../docs/mobile/ios_android_bifurcation_contract.md) §4 참조.
+
+> **2026-07-09 정정 (중요, 캡처 메커니즘 자체 변경)**: 반사 캡처가 `cameraRef.current.takePhoto()`(정지사진 반복 촬영)를 쓰던 방식에서 **VisionCamera Frame Processor**(`AVCaptureVideoDataOutput` 기반 연속 비디오 스트림)로 전환됐다(iOS 기본 경로). 근본 원인: 실기기 시스템 로그(`log collect --device`) 분석 결과, iOS의 `AVCapturePhotoOutput.capturePhoto()`가 `enableShutterSound:false`로도 촬영마다 `AVAudioSessionInterruption`을 유발해(반사 fps 간격과 정확히 일치하는 ~300~400ms 주기, 3분간 80회) 동시 재생 중인 TTS 안내 음성을 순간 끊는 것이 확인됐다. `photo={true}` 대신 `video={true} frameProcessor={...}`로 `<Camera>`를 구동해 `AVCapturePhotoOutput`을 세션에서 완전히 배제한다. 아래 본문의 `takePhoto()` 기반 코드 예시(단계 2-1)는 **2026-07-10부로 `client/src/services/frameCaptureProviderSelect.android.ts`(Android 과도기 경로) 및 `frameCaptureProviderSelect.ts`(기본 폴백)로 이관**됐다. 신규 파일: `client/ios/ReflexFrameProcessorPlugin.swift`(+`.m`, 등록명 `reflexFrameCapture`) - CVPixelBuffer를 기존과 동일한 규칙(중앙 정사각형 크롭+640x640 리사이즈+JPEG quality 0.5)으로 가공해 base64 반환, 기존 `CoreMLInferenceBridge.detectFrame(base64)`는 무변경 재사용. 신규 의존성 `react-native-worklets-core`. 상세: `docs/changelogs/kb.md`(2026-07-09, 2026-07-10), `docs/design/api_specification.md`.
+
+> **2026-07-07 정정**: detection 프레임 전송 규격이 **바이너리(raw JPEG 바이트) 전송을 기본**으로 전환됐다(2단 전송: `transport:"binary"` 메타 JSON 텍스트 → 곧바로 raw JPEG 바이너리 프레임). 아래 본문의 base64(`thumbnail_jpeg_b64`) 방식은 **구버전 호환·Mock 경로용 폴백**으로만 유지된다. 클라이언트는 `File(uri).bytes()`로 raw `Uint8Array`를 읽어 `sendBinary()`로 보내고, 서버는 `decode_frame_binary()`로 디코딩한다. 하트비트/핑퐁 등 제어 메시지는 여전히 JSON 텍스트다. 상세: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)(v0.4.0), [`docs/stage-guides/stage2_capture_design.md`](../../../docs/stage-guides/stage2_capture_design.md).
 
 ## 개요
 
@@ -66,7 +72,7 @@ description: |
 
 | 구분 | 기술 | 용도 |
 |------|------|------|
-| 모바일 카메라 | react-native-vision-camera v4 | 후면 카메라 이중 캡처 |
+| 모바일 카메라 | react-native-vision-camera v4 | 후면 카메라 이중 캡처. **2026-07-09**: 기본 캡처 경로는 Frame Processor(`useFrameProcessor`, `react-native-worklets-core` 필요) - `AVCapturePhotoOutput` 미사용 |
 | 이미지 인코딩 | base64 (JPEG) | 바이너리텍스트 변환 (WS 전송용) |
 | 서버 이미지 처리 | OpenCV (cv2) + NumPy | JPEG 디코딩 + 리사이징 |
 | 전송 프로토콜 | WebSocket (1단계 연결 재사용) | 프레임 데이터 전송 |
@@ -81,9 +87,12 @@ client/src/
 │   └── CameraView.tsx          # 카메라 컴포넌트 (UI)
 ├── hooks/
 │   ├── useWebSocket.ts         # 1단계에서 구현한 WS 훅
-│   ├── useCamera.ts            # 이중 캡처 타이머 훅
+│   ├── useCamera.ts            # 타이머·동적 FPS·Mock 분기 오케스트레이션 (플랫폼 무관)
 ├── services/
-│   └── frameCapture.ts         # takePhoto  base64  send
+│   ├── frameCaptureProvider.ts            # 공통 인터페이스 + takePhoto() 공용 크롭 로직
+│   ├── frameCaptureProviderSelect.ios.ts  # iOS: Frame Processor 스트림 캡처
+│   ├── frameCaptureProviderSelect.android.ts # Android: takePhoto 과도기 캡처
+│   └── frameCaptureProviderSelect.ts      # tsc 정적 분석용 기본 폴백 (Metro는 미사용)
 ├── utils/
 │   └── haptics.ts              # Haptics + 접근성
 └── types/
@@ -106,7 +115,14 @@ server/capture/
 
 ## 핵심 구현 절차 (React Native 앱 측)
 
-### 단계 2-1. useCamera.ts — 이중 캡처 타이머
+### 단계 2-1. useCamera.ts — 단일 캡처 타이머 + 스트림 분할
+
+> **구현 개선 (2026-07-04)**: 초기 설계는 반사·인지 **독립 두 타이머**(`setInterval(1000/reflexFps)` + `setInterval(1000/cognitiveFps)`)를 가정했으나, 실기기 검증 결과 **두 `takePhoto` 호출이 직렬 대기하며 하드웨어 경합**을 유발해 반사 경로 지연이 목표(캡처수신 < 50ms)를 초과하는 문제가 확인되었다. 이에 **단일 타이머 단일 캡처 + 프레임 분할** 구조로 개선되었다.
+>
+> 핵심 차이:
+> - **캡처 호출**: 반사 fps 기준 **단일 `setInterval`** 로 `takePhoto` 1회만 호출 (하드웨어 경합 제거).
+> - **스트림 분할**: 매 `floor(reflexFps / cognitiveFps)` 번째 프레임을 **동일 프레임**을 `stream: 'cognitive'` 로 마킹하여 추가 전달 (재캡처 비용 0).
+> - **이중 경로 분리 원칙 유지**: `stream` 필드로 reflex/cognitive를 여전히 분기하므로 서버 `stream_splitter` 계약과 이중 경로 물리 분리 원칙은 그대로 준수된다.
 
 ```typescript
 // client/src/hooks/useCamera.ts
@@ -118,15 +134,18 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
   const device = useCameraDevice('back');
   const cameraRef = useRef<Camera>(null);
   const reflexTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const cognitiveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isCapturingRealFrame = useRef(false); // 중복 캡처 방지 가드레일
+  const onFrameRef = useRef<((frame: FrameData) => void) | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
-  const captureFrame = useCallback(async (stream: 'reflex' | 'cognitive'): Promise<string | null> => {
+  const captureFrame = useCallback(async (stream: StreamType): Promise<FrameData | null> => {
     if (!cameraRef.current) return null;
+    if (isCapturingRealFrame.current) return null; // 진행 중 캡처는 drop
+    isCapturingRealFrame.current = true;
     try {
       const photo: PhotoFile = await cameraRef.current.takePhoto({
         qualityPrioritization: 'speed',
@@ -134,36 +153,44 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
         enableShutterSound: false,
       });
       const base64 = await photo.toBase64();
-      return base64;
+      const float32 = decodeBase64JpegToChw(base64); // 온디바이스 추론용 CHW 텐서
+      return { float32, stream, base64 };
     } catch (error) {
       console.error(`[캡처] ${stream} 프레임 오류:`, error);
       return null;
+    } finally {
+      isCapturingRealFrame.current = false;
     }
   }, []);
 
-  const startCapture = useCallback(() => {
+  const startCapture = useCallback((onFrame: (frame: FrameData) => void) => {
     if (isCapturing) return;
+    onFrameRef.current = onFrame;
     setIsCapturing(true);
 
     const reflexInterval = Math.floor(1000 / reflexFps);
-    const cognitiveInterval = Math.floor(1000 / cognitiveFps);
+    const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
+    const frameCounter = { current: 0 };
 
+    // 단일 타이머: 반사 fps로 1회 캡처 후 reflex 전달, 매 ratio번째 프레임을 cognitive 로도 전달
     reflexTimerRef.current = setInterval(async () => {
+      frameCounter.current++;
       const frame = await captureFrame('reflex');
-      if (frame) sendFrame(frame, 'reflex');
+      if (!frame || !onFrameRef.current) return;
+
+      onFrameRef.current(frame); // 반사 경로 즉시 전달
+
+      if (frameCounter.current % ratio === 0) {
+        // 동일 프레임을 인지 경로로 추가 전달 (재캡처 없음)
+        onFrameRef.current({ ...frame, stream: 'cognitive' });
+      }
     }, reflexInterval);
 
-    cognitiveTimerRef.current = setInterval(async () => {
-      const frame = await captureFrame('cognitive');
-      if (frame) sendFrame(frame, 'cognitive');
-    }, cognitiveInterval);
-
-    console.log(`[캡처] 이중 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps`);
+    console.log(`[캡처] 통합 단일 루프 시작: 반사 ${reflexFps}fps / 인지 ${cognitiveFps}fps (분할비 1:${ratio})`);
   }, [reflexFps, cognitiveFps, isCapturing, captureFrame]);
 
   const stopCapture = useCallback(() => {
     if (reflexTimerRef.current) { clearInterval(reflexTimerRef.current); reflexTimerRef.current = null; }
-    if (cognitiveTimerRef.current) { clearInterval(cognitiveTimerRef.current); cognitiveTimerRef.current = null; }
     setIsCapturing(false);
     console.log('[캡처] 루프 중지');
   }, []);
@@ -174,39 +201,34 @@ export function useCamera(reflexFps: number = 10, cognitiveFps: number = 2) {
 }
 ```
 
-### 단계 2-2. frameCapture.ts — 프레임 전송
+### 단계 2-2. frameCaptureProvider — 프레임 캡처 계층
+
+> **2026-07-15 정정**: 레거시 `frameCapture.ts`(`generateEventId`/`buildDetectionEvent`/`sendFrame`)는 삭제됐다.
+> 캡처는 `frameCaptureProvider*`가, WS 전송 조립은 `useCamera`/`CameraView`가 담당한다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `client/src/services/frameCaptureProvider.ts` | `FrameData`/`FrameCaptureController` 인터페이스, `captureViaTakePhoto` 공용 크롭 |
+| `frameCaptureProviderSelect.ts` | Metro 진입점 (`.ios`/`.android`로 자동 분기) |
+| `frameCaptureProviderSelect.ios.ts` | Frame Processor 연속 캡처 (`supportsStream=true`) |
+| `frameCaptureProviderSelect.android.ts` | takePhoto 과도기 (`supportsStream=false`) |
 
 ```typescript
-// client/src/services/frameCapture.ts
-let frameCounter = 0;
-
-export function generateEventId(): string {
-  const ts = Date.now();
-  const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `evt-${ts}-${rand}`;
+// client/src/services/frameCaptureProvider.ts (요약)
+export interface FrameData {
+  float32: Float32Array;
+  stream: StreamType;
+  base64: string | null;
+  jpegBytes: Uint8Array | null;
 }
 
-export function buildDetectionEvent(base64: string, deviceId: string, stream: 'reflex' | 'cognitive') {
-  frameCounter += 1;
-  return {
-    type: 'detection',
-    payload: {
-      event_id: generateEventId(),
-      device_id: deviceId,
-      timestamp: new Date().toISOString(),
-      frame_id: frameCounter,
-      stream: stream,
-      thumbnail_jpeg_b64: base64,
-      detections: [],
-    },
-  };
+export interface FrameCaptureController {
+  readonly supportsStream: boolean;
+  readonly frameProcessor: unknown | undefined;
+  capturePhoto(stream: StreamType): Promise<FrameData | null>;
 }
 
-export function sendFrame(base64: string, stream: 'reflex' | 'cognitive', deviceId: string, send: (data: object) => void) {
-  const event = buildDetectionEvent(base64, deviceId, stream);
-  send(event);
-  console.log(`[전송] stream=${stream}, frame_id=${frameCounter}, size≈${Math.round(base64.length * 0.75 / 1024)}KB`);
-}
+export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 ```
 
 ### 단계 2-3. CameraView.tsx
@@ -218,12 +240,11 @@ import { StyleSheet, View, Text } from 'react-native';
 import { Camera } from 'react-native-vision-camera';
 import { useCamera } from '../hooks/useCamera';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { sendFrame } from '../services/frameCapture';
 
 interface CameraViewProps { deviceId: string; token: string; }
 
 export function CameraView({ deviceId, token }: CameraViewProps) {
-  const { status, send } = useWebSocket(deviceId, token);
+  const { status, send, sendBinary } = useWebSocket(deviceId, token);
   const { cameraRef, device, hasPermission, isCapturing, startCapture, stopCapture } = useCamera(10, 2);
 
   useEffect(() => {
@@ -231,8 +252,8 @@ export function CameraView({ deviceId, token }: CameraViewProps) {
     else if (status !== 'connected' && isCapturing) stopCapture();
   }, [status, isCapturing, startCapture, stopCapture]);
 
-  // frameCapture 서비스에서 sendFrame 호출 시 send 함수 전달
-  // 실제 구현에서는 useCamera 내부에서 send를 받거나 별도 훅으로 연결
+  // 프레임 획득 후 CameraView/useCamera에서 meta JSON + jpegBytes 바이너리로 WS 전송
+  // (레거시 sendFrame/base64-only 경로는 사용하지 않음)
 
   if (!hasPermission) return <View><Text>카메라 권한이 필요합니다.</Text></View>;
   if (!device) return <View><Text>카메라를 찾을 수 없습니다.</Text></View>;
@@ -360,7 +381,7 @@ async def route_frame(processed: ProcessedFrame):
 
 | 방향 | 페이로드 |
 | --- | --- |
-| In | 비디오 프레임 (이중 타이머 캡처) |
+| In | 비디오 프레임 (단일 타이머 캡처 + 스트림 분할) |
 | Out | `{type:"detection", payload:{event_id, device_id, ts, frame_id, stream:"reflex"\|"cognitive", thumbnail_jpeg_b64}}` |
 
 ## 의존성·예외
@@ -375,8 +396,9 @@ async def route_frame(processed: ProcessedFrame):
 |------|-----------|-----------|
 | 카메라 권한 요청 | 승인 다이얼로그 | Android/iOS 모두 |
 | 후면 카메라 활성화 | isActive=true | device !== null |
-| 반사 캡처 8~10fps | setInterval 주기 확인 | ±100ms 오차 |
-| 인지 캡처 1~2fps | setInterval 주기 확인 | ±100ms 오차 |
+| 반사 캡처 8~10fps | Frame Processor worklet throttle 주기 확인 | ±100ms 오차 |
+| 인지 캡처 1~2fps | Frame Processor worklet throttle 주기 확인 | ±100ms 오차 |
+| **오디오 세션 인터럽션 없음 (2026-07-09 신규)** | `log collect --device`로 3분+ 캡처 중 `AVAudioSessionInterruption` 카운트 | **0건** (구 `takePhoto()` 경로는 80회/3분) |
 | base64 변환 | JPEG base64 문자열 | 30~50KB 범위 |
 | 서버 수신 | 프레임 디코딩 성공 | frame.shape == (640, 640, 3) |
 | **캡처수신 지연** | 전체 파이프라인 | **< 50ms** |
@@ -386,5 +408,5 @@ async def route_frame(processed: ProcessedFrame):
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md)
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md)
 - react-native-vision-camera 공식 문서: https://react-native-vision-camera.com/

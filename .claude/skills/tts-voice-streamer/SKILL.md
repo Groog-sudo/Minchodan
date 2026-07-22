@@ -2,17 +2,32 @@
 name: tts-voice-streamer
 description: |
   6단계 LangGraph에서 생성된 최종 안내문을 이중 채널로 출력한다.
-  인지 경로: 로컬 TTS(Kokoro/Coqui)로 한글 음성 합성 후 base64 MP3로 WebSocket 전송.
+  인지 경로: 로컬 TTS(Supertonic, 기본)로 한글 음성 합성 후 WS 바이너리 프레임(raw WAV bytes)으로 전송.
   반사 경로: 사전합성 고정 클립을 alert_id로 즉시 재생(선점, 실시간 합성 금지).
-  TTSService 추상화로 출력 규격을 통일하고 gpt-4o-mini 핫스왑을 지원한다.
+  TTSService 추상화로 출력 규격을 통일한다(Piper는 핫스왑 폴백으로 보존). 클라이언트 재생은 expo-audio.
 ---
 
 # TTS Voice Streamer (7단계: 음성 안내 출력, 이중 채널)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 8, 16, 17.2
+> **버전**: v0.4.1 (2026-07-19 단말 TTS 백업 `react-native-tts`→`expo-speech` 정정 + 이전 v0.4.0 이력 유지: 2026-07-09 실기기 TTS 절단 근본 원인 규명에 따른 전면 정정: 인지 TTS 엔진 Piper→Supertonic 교체, `audio_mp3_b64`→WS 바이너리 프레임 전환, iOS Hearing Protection 우회용 가이드 상시 재생 플레이어 도입)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 7단계 (v1.1 이중 채널 반영)
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 8, 16, 17.2
+
+> **2026-07-09 정정 요약 (중요, 엔진·전송 방식 모두 변경)**: 실기기 청취 검증 결과 Piper(pygoruut/자체
+> 규칙 기반 G2P/espeak 음소화 모두 시도)가 흔한 음절을 발음에서 통째로 누락시키는 모델 자체 한계가
+> 확인되어, **인지 TTS 기본 엔진을 Supertonic 3**(`SupertonicTTSService`, supertone-inc, MIT
+> 라이선스, 99M 파라미터 ONNX)로 교체했다. `PiperTTSService`는 삭제하지 않고 `TTS_ENGINE=piper`로
+> 즉시 되돌릴 수 있는 핫스왑 폴백으로 코드에 보존된다. 오디오 전송도 `audio_mp3_b64`(base64 JSON
+> 필드)를 폐기하고, 카메라 프레임(client→server)에 이미 쓰이던 메타+바이너리 2단계 WS 프로토콜을
+> 반대 방향(server→client)에 적용했다 - JSON 메타(`transport:"binary"`) 직후 raw WAV 바이트가
+> 별도 바이너리 프레임으로 전송된다. 추가로 iOS Hearing Protection이 재생 "시작" 이벤트마다 볼륨을
+> 제한하는 것을 우회하기 위해, 클라이언트는 매번 새 플레이어를 만들지 않고 무음 placeholder를 상시
+> 재생 중인 단일 플레이어(`guideWarmPlayer`)의 소스만 `player.replace()`로 교체하는 방식으로
+> 전환됐다(반사 비프 상시 루프 플레이어와 동일 원칙). 상세: `docs/changelogs/kb.md`(2026-07-09),
+> [`docs/stage-guides/stage7_tts_design.md`](../../../docs/stage-guides/stage7_tts_design.md).
+
+> **2026-07-07 정정 요약**: 최초 계획의 인지 TTS 엔진 Kokoro/Coqui는 **실제로 구현되지 않았다**(위 2026-07-09 정정으로 Piper도 핫스왑 폴백으로 격하됨). 클라이언트 재생 계층은 Web Audio API가 아니라 **`expo-audio`**(`createAudioPlayer`, `client/src/services/audioEngine.ts`)이다. 입체 음향(panning)은 **2026-07-09 구현 완료**(등파워 패닝, 버킷별 프리렌더링 스테레오 WAV 5종 전환 방식) - 이 절의 "저장만 되고 미적용" 서술은 구버전 정보였다. 상세: [`docs/stage-guides/stage7_tts_design.md`](../../../docs/stage-guides/stage7_tts_design.md), [`docs/design/reflex_audio_specification.md`](../../../docs/design/reflex_audio_specification.md) §4.
 
 ## 개요
 
@@ -32,13 +47,13 @@ description: |
 
 ```
 [6단계 LangGraph]  guidance_text
-        
-[7-인지] 로컬 TTS(Kokoro/Coqui) generate()  base64 MP3  WS 스트리밍  단말 Web Audio 재생
+
+[7-인지] 로컬 TTS(Supertonic, 기본/Piper 핫스왑) generate()  WAV bytes  WS 바이너리 프레임(transport:"binary")  단말 expo-audio 재생(상시 재생 웜 플레이어)
 
 [3단계 Gate]  alert_id
-        
+
 [7-반사] 단말 사전합성 고정 클립 즉시 재생 (선점, 실시간 TTS 미경유)
-        
+
 중복 억제: setex(suppress:alert_id, 60)
 햡틱: Haptics + announceForAccessibility
 ```
@@ -47,12 +62,12 @@ description: |
 
 | 구분 | 스택 | 용도 |
 |------|------|------|
-| 로컬 TTS (인지) | Kokoro-82M / Coqui | 실시간 한글 음성 합성 |
-| 사전합성 클립 (반사) | MP3 파일 (앱 번들) | 즉시 재생 |
+| 로컬 TTS (인지) | **Supertonic 3**(기본, MIT, 99M 파라미터 ONNX) / **Piper**(piper-kss-korean.onnx, 핫스왑 폴백) | 실시간 한글 음성 합성 (Kokoro/Coqui는 미구현) |
+| 사전합성 클립 (반사) | WAV 파일 (앱 번들) | 즉시 재생 |
 | 서버 프레임워크 | FastAPI + Uvicorn | WebSocket |
 | 메시지 버스 | Redis SETEX | 중복 억제 (60초) |
-| 모바일 오디오 | Web Audio API | 인지 음성 재생 |
-| 모바일 TTS 백업 | react-native-tts | 서버 TTS 실패 시 우회 |
+| 모바일 오디오 | **expo-audio** (`createAudioPlayer`) | 인지 음성·반사 비프 재생 (Web Audio API 아님) |
+| 모바일 TTS 백업 | expo-speech | 서버 TTS 실패 시 우회 |
 | 접근성 | AccessibilityInfo | VoiceOver/TalkBack |
 | 햅틱 | expo-haptics | 위험도 기반 진동 |
 
@@ -60,14 +75,14 @@ description: |
 
 ```
 server/tts/
-├── realtime_tts.py           # 인지 경로: Kokoro/Coqui generate()  base64 MP3
-├── reflex_clip_sender.py     # 반사 경로: alert_id  사전합성 클립 WS 고우선 전송
+├── realtime_tts.py           # 인지 경로: TTSService.generate()  base64 WAV(→ consumer.py가 바이너리 프레임으로 재전송)
+├── reflex_clip_sender.py     # 정정: 실제로는 어디서도 호출되지 않는 죽은 코드 (server/detection/consumer.py의 _send_reflex_alert()가 담당)
 ├── suppressor.py             # Redis setex(suppress:…, 60) 중복 억제
-└── tts_service.py            # TTSService 추상화, MP3/WAV 규격 통일
+├── korean_g2p.py             # 2026-07-09 신규(현재 미사용): Piper용 표준 발음법 G2P, 핫스왑 대비 보존
+└── tts_service.py            # TTSService 추상화(SupertonicTTSService 기본 + PiperTTSService 핫스왑), WAV 출력
 
 client/src/services/
-├── audioPlayer.ts            # decodeAudioData() Web Audio 재생 (인지)
-├── reflexClipPlayer.ts       # 반사 클립 즉시 재생 (선점 로직)
+├── audioEngine.ts            # expo-audio createAudioPlayer 재생 (인지 음성 + 반사 비프 통합)
 client/src/utils/
 └── haptics.ts                # Haptics + announceForAccessibility
 client/assets/reflex_clips/   # 사전합성 클립 앱 번들 (server/data와 동기화)
@@ -76,6 +91,8 @@ client/assets/reflex_clips/   # 사전합성 클립 앱 번들 (server/data와 �
 ## 핵심 구현 절차 (서버 측)
 
 ### 단계 7-1. 인지 경로: 실시간 TTS 합성
+
+> **정정(2026-07-09, 이전 2026-07-07 정정 갱신)**: 아래 코드는 최초 계획(Kokoro) 기준 설계 스케치다. **실제 구현 기본값은 Supertonic**(`server/tts/tts_service.py`의 `SupertonicTTSService`, ONNX 상주 세션)이며, `PiperTTSService`(`piper-kss-korean.onnx`, 상주 `PiperVoice` 세션)는 `TTS_ENGINE=piper` 지정 시 쓰이는 핫스왑 폴백으로 코드에 남아있다. 함수 시그니처·엔진 초기화부는 실제 소스를 기준으로 삼는다.
 
 ```python
 # -*- coding: utf-8 -*-
@@ -152,7 +169,7 @@ async def send_reflex_clip(websocket, device_id, alert_id: str, direction: str, 
         return
 
     message = {
-        "type": "alert_reflex",
+        "type": "reflex_alert",
         "event_id": f"reflex-{device_id}-{alert_id}",
         "alert_id": alert_id,
         "direction": direction,
@@ -204,11 +221,15 @@ class TTSService(Protocol):
     async def generate(self, text: str, voice: str, speed: float) -> str: ...
     def get_format(self) -> str: ...
 
-class KokoroService:
-    async def generate(self, text, voice="ko", speed=0.9): ...
-    def get_format(self): return "mp3"
+# 실제 구현체는 SupertonicTTSService(기본)와 PiperTTSService(핫스왑) 2종이다
+# (KokoroService/CoquiService는 미구현 계획안).
+class SupertonicTTSService:
+    """Supertonic 3 ONNX 모델 기반 한국어 TTS (server/tts/tts_service.py, 기본 엔진)"""
+    async def generate(self, text, voice="ko", speed=1.0): ...
+    def get_format(self): return "wav"  # WS 전송 시 base64가 아니라 바이너리 프레임(2026-07-09)
 
-class CoquiService:
+class PiperTTSService:
+    """Piper ONNX 모델 기반 한국어 TTS (server/tts/tts_service.py, 핫스왑 폴백)"""
     async def generate(self, text, voice="ko", speed=0.9): ...
     def get_format(self): return "wav"
 
@@ -220,53 +241,42 @@ class OpenAITTSService:
 
 ## 핵심 구현 절차 (React Native 앱 측)
 
-### 단계 7-5. 인지 경로: Web Audio 재생
+### 단계 7-5. 인지 경로: expo-audio 재생
+
+> **정정(2026-07-07)**: React Native에는 브라우저 `AudioContext`/`decodeAudioData`/`createStereoPanner`가 없다. 아래 Web Audio API 예시는 **미채택**이며, 실제 재생은 `expo-audio`의 `createAudioPlayer`로 구현돼 있다(`client/src/services/audioEngine.ts`). **입체 음향(panning)은 현재 실제 좌우 밸런스에 적용되지 않는다**(값은 저장되나 미사용) — [`docs/design/reflex_audio_specification.md`](../../../docs/design/reflex_audio_specification.md) 참조.
 
 ```typescript
-// client/src/services/audioPlayer.ts
-import { Buffer } from 'buffer';
+// client/src/services/audioEngine.ts (실제 구현 요지)
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 
-export class AudioPlayer {
-  private audioContext: AudioContext | null = null;
-
-  async initialize() {
-    this.audioContext = new AudioContext({ sampleRate: 24000 });
-  }
-
-  async play(audioBase64: string, panning: number = 0) {
-    if (!this.audioContext) await this.initialize();
-    const arrayBuffer = Buffer.from(audioBase64, 'base64').buffer;
-    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-    const panner = this.audioContext.createStereoPanner();
-    panner.pan.value = panning;
-    const source = this.audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(panner).connect(this.audioContext.destination);
-    source.start();
-  }
-}
+// base64 오디오 또는 번들 WAV 소스를 createAudioPlayer로 로드해 재생한다.
+// AudioContext/StereoPanner는 사용하지 않으며, panning은 미구현이다.
+const player = createAudioPlayer(sourceUri);
+player.volume = 1.0;
+player.play();
 ```
 
 ### 단계 7-6. 반사 경로: 사전합성 클립 선점 재생
 
+> **오디오 API (2026-07-04)**: 클라이언트 오디오 재생 계층은 `expo-av` 대신 **`expo-audio`**(Expo SDK 56+ 차세대 API)로 통일되었다. `createAudioPlayer()` 동기 팩토리 + `player` 프로퍼티(`volume`, `pan`, `loop`) 기반. 현재 반사 비프음은 `client/src/services/audioEngine.ts`에 이미 expo-audio로 구현되어 있다.
+
 ```typescript
 // client/src/services/reflexClipPlayer.ts
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 
 export class ReflexClipPlayer {
-  private currentSound: Audio.Sound | null = null;
+  private currentPlayer: AudioPlayer | null = null;
 
   async playPreempt(alertId: string, clipPath: string) {
     // 선점: 현재 재생 중인 인지 음성 중단
-    if (this.currentSound) {
-      await this.currentSound.stopAsync();
-      await this.currentSound.unloadAsync();
-      this.currentSound = null;
+    if (this.currentPlayer) {
+      this.currentPlayer.stop();
+      this.currentPlayer.release?.();
+      this.currentPlayer = null;
     }
     // 사전합성 클립 즉시 재생 (실시간 TTS 미경유)
-    const { sound } = await Audio.Sound.createAsync({ uri: clipPath });
-    this.currentSound = sound;
-    await sound.playAsync();
+    this.currentPlayer = createAudioPlayer({ uri: clipPath });
+    this.currentPlayer.play();
   }
 }
 ```
@@ -300,7 +310,7 @@ export function announceForAccessibility(text: string) {
 ## 선점 규칙 (비협상)
 
 - 반사 음성은 인지 음성을 **중단시키고 재생**합니다.
-- WS에서 반사 이벤트는 **별도 고우선 타입**(`alert_reflex`)으로 전송합니다.
+- WS에서 반사 이벤트는 **별도 고우선 타입**(`reflex_alert`)으로 전송합니다.
 - 반사 음성은 **실시간 TTS 합성을 금지**하며 사전합성 고정 클립만 사용합니다.
 
 ## 데이터 인터페이스
@@ -309,7 +319,7 @@ export function announceForAccessibility(text: string) {
 | --- | --- |
 | In (인지) | 가이드 문장(String) |
 | In (반사) | `alert_id` |
-| Out (인지) | 오디오 bytes(ArrayBuffer) — base64 MP3 WS |
+| Out (인지) | 오디오 bytes — raw WAV, WS 바이너리 프레임(2026-07-09, JSON 메타의 `transport:"binary"` 직후) |
 | Out (반사) | 사전합성 클립 경로 — WS 고우선 타입 |
 
 ## 의존성·예외
@@ -321,8 +331,8 @@ export function announceForAccessibility(text: string) {
 
 | 항목 | 기대 결과 | 합격 기준 |
 |------|-----------|-----------|
-| 실시간 TTS 합성 | Kokoro/Coqui generate()  base64 MP3 | TTFB < 200ms |
-| 단말 재생 성공 | Web Audio decodeAudioData() 재생 | 재생 확인 |
+| 실시간 TTS 합성 | Supertonic generate()  WAV bytes(WS 바이너리 프레임) | TTFB < 200ms |
+| 단말 재생 성공 | expo-audio 상시 재생 웜 플레이어(`playGuideAudioBytes`) 재생 | 재생 확인 |
 | **반사 클립 선점 재생** | 인지 음성 중단 후 반사 재생 | 선목 동작 |
 | high 햅틱 동시 출력 | Haptics 동시 동작 | 진동 확인 |
 | 중복 억제 | setex(suppress:…, 60) 60초 | 60초 내 재전송 없음 |
@@ -332,5 +342,5 @@ export function announceForAccessibility(text: string) {
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- API 명세서: [`docs/api_specification.md`](../../../docs/api_specification.md) 4·5절
-- 아키텍처 설계서: [`docs/architecture.md`](../../../docs/architecture.md) 5.7절
+- API 명세서: [`docs/design/api_specification.md`](../../../docs/design/api_specification.md) 4·5절
+- 아키텍처 설계서: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 5.7절

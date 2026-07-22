@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import sys
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -10,7 +11,13 @@ from server.capture.frame_decoder import ProcessedFrame
 
 logger = logging.getLogger(__name__)
 
-QUEUE_MAXSIZE = 100
+# P0-2 (2026-07-17): 반사 큐는 latest-frame-wins로 얕게 잡아 지연 드리프트 방지.
+# 큐가 가득 차면 _push_to_queue가 oldest를 drop하므로 maxsize=2면 매 프레임 latest가 유지됨.
+# 인지는 1~2fps 특성상 소량 버퍼(4)로 충분. 환경변수로 오버라이드 가능.
+REFLEX_QUEUE_MAXSIZE = int(os.getenv("REFLEX_QUEUE_MAXSIZE", "2"))
+COGNITIVE_QUEUE_MAXSIZE = int(os.getenv("COGNITIVE_QUEUE_MAXSIZE", "6"))
+# 하위 호환: 기존 QUEUE_MAXSIZE 참조 유지 (두 분리 상수의 최댓값)
+QUEUE_MAXSIZE = max(REFLEX_QUEUE_MAXSIZE, COGNITIVE_QUEUE_MAXSIZE)
 VALID_STREAMS = {"reflex", "cognitive"}
 
 
@@ -34,6 +41,22 @@ class StreamSplitter:
         self.reflex_queue = reflex_queue
         self.cognitive_queue = cognitive_queue
         self.bus = bus
+        # 2026-07-21: 디코드 전 스킵·ack 백프레셔용 적체/드롭 계측
+        self.queue_drop_count: dict[str, int] = {"reflex": 0, "cognitive": 0}
+        self.ingest_skip_count: dict[str, int] = {"reflex": 0, "cognitive": 0}
+
+    def queue_depth(self, stream: str) -> int:
+        queue = self._select_queue(stream if stream in VALID_STREAMS else "cognitive")
+        return queue.qsize()
+
+    def is_ingest_busy(self, stream: str) -> bool:
+        """소비자가 따라가지 못해 큐가 가득이면 True (디코드 전 스킵 판단용)."""
+        queue = self._select_queue(stream if stream in VALID_STREAMS else "cognitive")
+        return queue.full()
+
+    def note_ingest_skip(self, stream: str) -> None:
+        key = stream if stream in VALID_STREAMS else "cognitive"
+        self.ingest_skip_count[key] = self.ingest_skip_count.get(key, 0) + 1
 
     async def route_frame(self, processed: ProcessedFrame) -> None:
         """스트림 타입에 따라 asyncio.Queue로 분기하고 Redis에 메타데이터 발행.
@@ -64,6 +87,8 @@ class StreamSplitter:
             try:
                 queue.get_nowait()
                 queue.put_nowait(processed)
+                stream = processed.stream if processed.stream in VALID_STREAMS else "cognitive"
+                self.queue_drop_count[stream] = self.queue_drop_count.get(stream, 0) + 1
                 logger.warning(
                     f"[StreamSplitter] 큐 가득참, 오래된 프레임 drop: "
                     f"event_id={processed.event_id}, stream={processed.stream}"
@@ -107,7 +132,7 @@ def get_default_splitter() -> StreamSplitter:
     global _default_splitter
     if _default_splitter is None:
         _default_splitter = StreamSplitter(
-            reflex_queue=asyncio.Queue(maxsize=QUEUE_MAXSIZE),
-            cognitive_queue=asyncio.Queue(maxsize=QUEUE_MAXSIZE),
+            reflex_queue=asyncio.Queue(maxsize=REFLEX_QUEUE_MAXSIZE),
+            cognitive_queue=asyncio.Queue(maxsize=COGNITIVE_QUEUE_MAXSIZE),
         )
     return _default_splitter

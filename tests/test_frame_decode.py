@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import sys
 import time
@@ -11,16 +12,27 @@ import numpy as np
 import pytest
 
 from server.bus.redis_client import RedisBus
-from server.capture import ProcessedFrame, StreamSplitter, decode_frame, get_default_splitter
+from server.capture import (
+    ProcessedFrame,
+    StreamSplitter,
+    decode_frame,
+    decode_frame_binary,
+    get_default_splitter,
+)
 from server.capture.stream_splitter import VALID_STREAMS
+
+
+def make_jpeg_bytes(width: int = 640, height: int = 480) -> bytes:
+    """테스트용 raw JPEG 바이트 생성."""
+    frame = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    assert ok, "JPEG 인코딩 실패"
+    return buf.tobytes()
 
 
 def make_jpeg_b64(width: int = 640, height: int = 480) -> str:
     """테스트용 JPEG base64 문자열 생성."""
-    frame = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
-    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    assert ok, "JPEG 인코딩 실패"
-    return base64.b64encode(buf.tobytes()).decode("ascii")
+    return base64.b64encode(make_jpeg_bytes(width, height)).decode("ascii")
 
 
 def make_oversized_jpeg_b64() -> str:
@@ -50,6 +62,23 @@ def make_payload(
         "frame_id": 1,
         "stream": stream,
         "thumbnail_jpeg_b64": b64,
+    }
+
+
+def make_meta(
+    stream: str = "cognitive",
+    event_id: str = "evt-test",
+    device_id: str = "dev-test",
+    ts: int = 1719216000000,
+) -> dict:
+    """바이너리 전송 경로의 메타데이터 (thumbnail_jpeg_b64 없음, transport=binary)."""
+    return {
+        "event_id": event_id,
+        "device_id": device_id,
+        "ts": ts,
+        "frame_id": 1,
+        "stream": stream,
+        "transport": "binary",
     }
 
 
@@ -91,6 +120,17 @@ class TestDecodeFrame:
         assert result.stream == "cognitive"
         assert result.ts == 1719216000000
         assert result.original_size == (480, 640)
+        assert result.is_outdoor is None
+
+    @pytest.mark.asyncio
+    async def test_is_outdoor_parsed_from_payload(self):
+        """클라이언트 온디바이스 씬 분류 결과(is_outdoor)가 전달되면 그대로 보존돼야 한다
+        (2026-07-13 실내 오탐 게이팅용, server/detection/detection_pipeline.py 참조)."""
+        payload = make_payload(make_jpeg_b64())
+        payload["is_outdoor"] = False
+        result = await decode_frame(payload)
+        assert result is not None
+        assert result.is_outdoor is False
 
     @pytest.mark.asyncio
     async def test_timestamp_fallback(self):
@@ -160,6 +200,85 @@ class TestDecodeFrame:
         result = await decode_frame(payload)
         assert result is not None
         assert result.stream == "unknown"
+
+
+class TestDecodeFrameBinary:
+    """바이너리 WS 프레임(raw JPEG 바이트, base64 미경유) 디코딩 경로 검증.
+
+    decode_frame(base64 경로)과 동일한 가드레일/출력을 공유하는지 확인한다
+    (server/capture/frame_decoder.py의 _build_processed_frame 공통 로직).
+    """
+
+    @pytest.mark.asyncio
+    async def test_valid_frame(self):
+        """유효 raw JPEG 바이트 디코딩 - base64 경로와 동일한 결과 형태."""
+        jpeg_bytes = make_jpeg_bytes()
+        meta = make_meta()
+        result = await decode_frame_binary(jpeg_bytes, meta)
+        assert result is not None
+        assert result.frame.shape == (640, 640, 3)
+        assert result.event_id == "evt-test"
+        assert result.device_id == "dev-test"
+        assert result.stream == "cognitive"
+        assert result.ts == 1719216000000
+        assert result.original_size == (480, 640)
+        assert result.is_outdoor is None
+
+    @pytest.mark.asyncio
+    async def test_is_outdoor_parsed_from_meta(self):
+        """바이너리 경로(메타 JSON)에서도 is_outdoor가 base64 경로와 동일하게 파싱돼야 한다."""
+        meta = make_meta()
+        meta["is_outdoor"] = True
+        result = await decode_frame_binary(make_jpeg_bytes(), meta)
+        assert result is not None
+        assert result.is_outdoor is True
+
+    @pytest.mark.asyncio
+    async def test_empty_bytes(self):
+        """빈 바이트 처리 -> None."""
+        result = await decode_frame_binary(b"", make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_oversized_frame(self):
+        """500KB 초과 -> None (base64 경로와 동일 임계치)."""
+        jpeg_bytes = make_jpeg_bytes(width=2000, height=2000)
+        result = await decode_frame_binary(jpeg_bytes, make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_undersized_frame(self):
+        """1KB 미만 -> None."""
+        result = await decode_frame_binary(b"\x00" * 512, make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_corrupt_bytes_returns_none(self):
+        """JPEG가 아닌 임의 바이트(1KB 이상) -> cv2.imdecode 실패로 None."""
+        result = await decode_frame_binary(b"\xff" * 2048, make_meta())
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_reflex_stream_passthrough(self):
+        """stream 필드가 ProcessedFrame에 그대로 전달되는지 확인."""
+        result = await decode_frame_binary(make_jpeg_bytes(), make_meta(stream="reflex"))
+        assert result is not None
+        assert result.stream == "reflex"
+
+    @pytest.mark.asyncio
+    async def test_binary_and_base64_paths_agree(self):
+        """동일 원본 프레임을 base64 경로와 바이너리 경로로 각각 디코딩했을 때 shape/size 일치."""
+        jpeg_bytes = make_jpeg_bytes()
+        b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+
+        via_binary = await decode_frame_binary(jpeg_bytes, make_meta(event_id="evt-bin"))
+        via_b64 = await decode_frame(make_payload(b64, event_id="evt-b64"))
+
+        assert via_binary is not None
+        assert via_b64 is not None
+        assert via_binary.frame.shape == via_b64.frame.shape
+        assert via_binary.original_size == via_b64.original_size
+        assert abs(via_binary.size_kb - via_b64.size_kb) < 0.01
 
 
 class TestStreamSplitter:
@@ -316,9 +435,9 @@ class TestDualPathDiscipline:
             "ChatOllama",
         ]
         for pattern in forbidden_patterns:
-            assert (
-                pattern not in module_source
-            ), f"금지된 모듈 참조 발견: '{pattern}' in stream_splitter.py"
+            assert pattern not in module_source, (
+                f"금지된 모듈 참조 발견: '{pattern}' in stream_splitter.py"
+            )
 
     def test_valid_streams_constant(self):
         """VALID_STREAMS 상수가 reflex/cognitive만 포함하는지 확인."""
@@ -341,7 +460,85 @@ class TestGetDefaultSplitter:
         assert splitter.cognitive_queue is not None
 
     def test_singleton_queue_maxsize(self):
-        """큐 maxsize가 100인지 확인 (백프레셔 정책)."""
-        from server.capture.stream_splitter import QUEUE_MAXSIZE
+        """큐 maxsize가 분리 상수(REFLEX=2, COGNITIVE=4) 기반인지 확인 (P0-2)."""
+        from server.capture.stream_splitter import (
+            COGNITIVE_QUEUE_MAXSIZE,
+            QUEUE_MAXSIZE,
+            REFLEX_QUEUE_MAXSIZE,
+        )
 
-        assert QUEUE_MAXSIZE == 100
+        assert REFLEX_QUEUE_MAXSIZE == 2
+        assert COGNITIVE_QUEUE_MAXSIZE == 4
+        # 하위 호환: QUEUE_MAXSIZE는 두 분리 상수의 최댓값
+        assert max(REFLEX_QUEUE_MAXSIZE, COGNITIVE_QUEUE_MAXSIZE) == QUEUE_MAXSIZE
+        splitter = get_default_splitter()
+        assert splitter.reflex_queue.maxsize == REFLEX_QUEUE_MAXSIZE
+        assert splitter.cognitive_queue.maxsize == COGNITIVE_QUEUE_MAXSIZE
+
+
+class TestP0QueueFreshness:
+    """P0-2 (2026-07-17): 반사 큐 최신성 보장(latest-frame-wins) + 신선도 검사 단위 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_reflex_queue_keeps_latest_on_full(self, mock_redis_bus: RedisBus):
+        """reflex 큐 maxsize=2에서 3개 프레임 넣으면 oldest drop, 최신 2개 유지."""
+        splitter = StreamSplitter(
+            reflex_queue=asyncio.Queue(maxsize=2),
+            cognitive_queue=asyncio.Queue(maxsize=4),
+            bus=mock_redis_bus,
+        )
+        for i in range(3):
+            processed = ProcessedFrame(
+                event_id=f"evt-{i}",
+                device_id="dev",
+                stream="reflex",
+                frame=np.zeros((640, 640, 3), dtype=np.uint8),
+                original_size=(640, 640),
+                size_kb=10.0,
+                processing_time_ms=1.0,
+                ts=int(time.time() * 1000) + i,
+            )
+            await splitter.route_frame(processed)
+
+        # 큐에는 최신 2개(evt-1, evt-2)만 남아야 함
+        assert splitter.reflex_queue.qsize() == 2
+        remaining = []
+        while not splitter.reflex_queue.empty():
+            remaining.append(splitter.reflex_queue.get_nowait())
+        assert [f.event_id for f in remaining] == ["evt-1", "evt-2"]
+
+    @pytest.mark.asyncio
+    async def test_cognitive_queue_keeps_latest_on_full(self, mock_redis_bus: RedisBus):
+        """cognitive 큐 maxsize=4에서 5개 프레임 넣으면 oldest drop, 최신 4개 유지."""
+        splitter = StreamSplitter(
+            reflex_queue=asyncio.Queue(maxsize=2),
+            cognitive_queue=asyncio.Queue(maxsize=4),
+            bus=mock_redis_bus,
+        )
+        for i in range(5):
+            processed = ProcessedFrame(
+                event_id=f"cog-{i}",
+                device_id="dev",
+                stream="cognitive",
+                frame=np.zeros((640, 640, 3), dtype=np.uint8),
+                original_size=(640, 640),
+                size_kb=10.0,
+                processing_time_ms=1.0,
+                ts=int(time.time() * 1000) + i,
+            )
+            await splitter.route_frame(processed)
+
+        assert splitter.cognitive_queue.qsize() == 4
+        remaining = []
+        while not splitter.cognitive_queue.empty():
+            remaining.append(splitter.cognitive_queue.get_nowait())
+        assert [f.event_id for f in remaining] == ["cog-1", "cog-2", "cog-3", "cog-4"]
+
+    def test_reflex_max_age_constant_loaded(self):
+        """REFLEX_MAX_AGE_S / COGNITIVE_MAX_AGE_S 환경변수가 consumer에 로드되는지 확인."""
+        from server.detection.consumer import COGNITIVE_MAX_AGE_S, REFLEX_MAX_AGE_S
+
+        assert REFLEX_MAX_AGE_S == 0.4
+        assert COGNITIVE_MAX_AGE_S == 2.0
+        # 반사가 인지보다 짧은 임계(즉시성 우선)
+        assert REFLEX_MAX_AGE_S < COGNITIVE_MAX_AGE_S

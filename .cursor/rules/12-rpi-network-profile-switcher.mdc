@@ -1,0 +1,17 @@
+---
+description: 시연용 서버(Pi·Ollama·FastAPI·console·Metro) 기동 및 demo/test 네트워크 프로필 전환·검증
+globs: scripts/switch_rpi_network.sh,scripts/ollama_demo_keepalive.sh,scripts/metro_tailscale.sh,docker/scripts/db_tailscale_proxy.sh,.env.network.*
+alwaysApply: false
+---
+
+# 시연 환경 기동·네트워크 프로필 전환
+
+`scripts/switch_rpi_network.sh`, `scripts/ollama_demo_keepalive.sh`, `scripts/metro_tailscale.sh`, `docker/scripts/db_tailscale_proxy.sh`, `.env.network.demo`/`.env.network.test`를 다루거나 시연 서버 기동·내부망/Tailscale 전환이 필요할 때는 `.agents/skills/rpi-network-profile-switcher/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- 시연 요청 시 역할별 서버 기동(Pi·Mac mini Ollama·GPU Docker·console·Metro)을 스킬의 1차 범위로 수행한다.
+- 네트워크 전환에 `docker compose build`를 실행하지 않는다(기존 이미지 재사용).
+- `docker compose down -v`, DB DDL/DROP/TRUNCATE, 볼륨 삭제를 실행하지 않는다.
+- `.env` 전체 또는 Compose 렌더링 결과 전체를 출력하지 않는다.
+- Metro가 이미 UP이면 불필요하게 `:8081`을 kill하지 않는다.

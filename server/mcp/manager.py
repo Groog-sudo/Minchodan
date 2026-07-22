@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
@@ -57,7 +57,10 @@ class MCPManager:
         """
         event_data = {
             "event_type": event_type,
-            "timestamp": datetime.now().isoformat(),
+            # 2026-07-12 수정: naive(datetime.now())는 오프셋이 없어 브라우저 new Date()가
+            # UTC를 로컬(KST)로 오인식 - 9시간 밀리는 원인이었다(server/api/schemas.py
+            # now_iso()와 동일 버그). UTC 오프셋을 명시해 콘솔이 올바르게 변환하게 한다.
+            "timestamp": datetime.now(UTC).isoformat(),
             "payload": payload,
         }
 
@@ -86,8 +89,18 @@ class MCPManager:
 
         url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
         try:
-            self._redis_client = aioredis.from_url(url, encoding="utf-8", decode_responses=True)
-            logger.info(f"[MCP MANAGER] Redis Connection Successful: {url}")
+            # XREAD를 block=1000(ms)으로 호출하므로, 클라이언트 소켓 타임아웃이 그보다
+            # 짧으면 이벤트 루프가 YOLO 추론/TTS 합성 등 다른 코루틴 처리로 잠깐 지연될
+            # 때마다 서버 응답을 기다리던 소켓이 먼저 타임아웃나 버린다(redis-py의
+            # 흔한 함정). block 시간보다 넉넉한 여유를 두어 오탐 타임아웃을 방지한다.
+            self._redis_client = aioredis.from_url(
+                url,
+                encoding="utf-8",
+                decode_responses=True,
+                socket_timeout=10.0,
+                socket_connect_timeout=5.0,
+            )
+            logger.info("[MCP MANAGER] Redis Connection Successful")
         except Exception as e:
             logger.error(f"[MCP MANAGER] Redis Connection Failed: {e!s}")
             return
@@ -135,8 +148,48 @@ class MCPManager:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._consume_task
         if self._redis_client:
-            await self._redis_client.close()
+            await self._redis_client.aclose()
             logger.info("[MCP MANAGER] Redis connection closed.")
+
+    async def publish_metric(self, event_type: str, payload: dict[str, Any]):
+        """
+        Redis Streams(mcp:metrics)에 메트릭 이벤트를 발행합니다.
+        (메인 루프 RTT 지연 최소화 및 다중 워커 프로세스 간 데이터 브로드캐스트용)
+        """
+        import redis.asyncio as aioredis
+
+        client = self._redis_client
+        close_temp = False
+        if client is None:
+            url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            try:
+                client = aioredis.from_url(
+                    url,
+                    encoding="utf-8",
+                    decode_responses=True,
+                    socket_timeout=5.0,
+                    socket_connect_timeout=2.0,
+                )
+                close_temp = True
+            except Exception as e:
+                logger.error(f"[MCP MANAGER] 임시 Redis 연결 실패: {e}")
+                # 로컬 직접 전파로 폴백
+                await self.broadcast_event(event_type, payload)
+                return
+
+        try:
+            # Redis Stream에 메시지 발행 (payload는 json 직렬화하여 송신)
+            await client.xadd(
+                self.stream_key,
+                {"event_type": event_type, "payload": json.dumps(payload, ensure_ascii=False)},
+            )
+        except Exception as e:
+            logger.error(f"[MCP MANAGER] Redis Stream 메트릭 발행 실패: {e}")
+            # 로컬 직접 전파로 폴백
+            await self.broadcast_event(event_type, payload)
+        finally:
+            if close_temp and client:
+                await client.aclose()
 
 
 # 싱글톤 인스턴스

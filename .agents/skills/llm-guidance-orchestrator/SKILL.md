@@ -1,7 +1,7 @@
 ---
 name: llm-guidance-orchestrator
 description: |
-  LangGraph 3계층 오케스트레이션(L1 룰 분류  L2 gemma4-e4b 문장 생성  L3 가드레일 검증)으로
+  LangGraph 3계층 오케스트레이션(L1 룰 분류  L2 gemma4:e4b 문장 생성  L3 가드레일 검증)으로
   탐지 장애물과 RAG 수칙을 종합하여 20자 이내 한국어 회피 안내 문장을 생성하는 모듈.
   LLMClientFactory로 로컬(Ollama)  상용(gpt-4o-mini) 핫스왑을 지원한다.
 ---
@@ -9,13 +9,15 @@ description: |
 # LLM Guidance Orchestrator (6단계: 종합 회피 가이드 생성)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 6단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 14, 12, 11, 17.2
+> **버전**: v0.2.1 (2026-07-07 실제 LLM 클라이언트·핫스왑 트리거 정정)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 6단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 14, 12, 11, 17.2
+
+> **2026-07-07 정정**: 본문 코드는 LangChain 래퍼 `ChatOllama`/`ChatOpenAI`를 예시로 쓰지만, **실제 구현은 래퍼 없이 raw `ollama.AsyncClient`/`httpx`를 직접 감싼 `SimpleOllamaClient`/`SimpleOpenAIClient`**(`server/orchestration/llm_client_factory.py`)다. 핫스왑 트리거도 "L3 실패율"이 아니라 **GPU 부하 감지(`start_gpu_monitor`)** 기준이다. 로컬 기본 모델은 `gemma4:e4b`(env `GEMMA_MODEL`), 상용 폴백은 `gpt-4o-mini`. 상세: [`docs/stage-guides/stage6_orchestration_design.md`](../../../docs/stage-guides/stage6_orchestration_design.md).
 
 ## 개요
 
-3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 gemma4-e4b 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
+3단계(Yolo 26N - Object Detection)에서 탐지된 장애물 정보와 5단계(RAG)에서 검색된 행동 수칙을 종합하여, **로컬 gemma4:e4b 모델**로 시각장애인이 즉시 이해할 수 있는 **20자 이내 한국어 1문장 회피 안내**를 생성한다.
 
 ## 핵심 가치
 
@@ -31,10 +33,11 @@ description: |
 
 [6단계: LLM 가이드 오케스트레이터]
    ├── L1: 룰 기반 위험도 분류 (high는 이미 반사 경로에서 처리됨, mid/low만 진입)
-   ├── L2: ChatOllama(gemma4-e4b) ainvoke — 20자/방향 포함
+   ├── Fast Lane (2026-07-16): 단일 객체+clock+distance → 템플릿 (<50ms, LLM 생략)
+   ├── L2: ChatOllama(gemma4:e4b) ainvoke — 20자/방향 포함 (복합/예외)
    └── L3: 가드레일 검증, RETRY(최대 1회)
 
-[7단계: 실시간 TTS]  guidance_text
+[7단계: 실시간 TTS]  guidance_text (패스트 레인: data/guide_clips/ 사전합성 우선)
 ```
 
 > **주의**: `high` 위험도는 3단계 Reflex/Surface Gate에서 이미 반사 경로(사전합성 클립)로 처리됩니다. L1은 **mid/low만 진입**시킵니다.
@@ -63,7 +66,7 @@ description: |
 
 | 구성 요소 | 기술 | 버전/모델 |
 |-----------|------|-----------|
-| LLM (기본) | Ollama gemma4-e4b | gemma4-e4b |
+| LLM (기본) | Ollama gemma4:e4b | gemma4:e4b |
 | LLM (Fallback) | OpenAI GPT-4o-mini | gpt-4o-mini |
 | 오케스트레이션 | LangGraph | >= 0.2.x |
 | LLM 래퍼 | LangChain ChatOllama / ChatOpenAI | langchain >= 0.3 |
@@ -78,7 +81,8 @@ server/orchestration/
 ├── llm_client_factory.py      # BaseChatModel Ollama  gpt-4o-mini 핫스왑
 └── nodes/
     ├── l1_classifier.py       # L1: 룰 기반 위험도 분류 (mid/low만 진입)
-    ├── l2_generator.py        # L2: ChatOllama(gemma4-e4b) ainvoke
+    ├── fast_lane.py           # 패스트 레인: 템플릿 안내 (단일 객체+구조화 필드)
+    ├── l2_generator.py        # L2: ChatOllama(gemma4:e4b) ainvoke
     ├── l3_validator.py        # L3: 길이·방향 검증, RETRY(최대 1회)
     └── fallback_node.py       # 최종 실패  고정 문장
 ```
@@ -122,21 +126,28 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding="utf-8")
 
-MID_RISK_CLASSES = {"bicycle", "kickboard", "pothole", "manhole", "construction_cone"}
-# high 위험도는 3단계 게이트에서 이미 반사 경로로 처리됨
+# 2026-07-14 정책: 인지 경로 mid는 노면 이탈(is_departing_confirmed) 전용.
+# 객체 클래스는 mid로 분류하지 않는다. 근접/상체 위험은 3단계 반사·지연 인지·패스트 레인.
+MID_RISK_CLASSES: set[str] = set()
 
 def classify_risk(detected_classes: list) -> str:
+    if not detected_classes:
+        return "low"
     for cls in detected_classes:
-        if cls in MID_RISK_CLASSES: return "mid"
+        if cls in MID_RISK_CLASSES:
+            return "mid"
     return "low"
 
 async def l1_classifier_node(state: dict) -> dict:
     detected_classes = state.get("detected_classes", [])
+    is_departing_confirmed = state.get("is_departing_confirmed", False)
     risk_level = classify_risk(detected_classes)
+    if is_departing_confirmed and risk_level == "low":
+        risk_level = "mid"
     return {"risk_level": risk_level, "retry_count": 0}
 ```
 
-### 단계 6-3. L2 노드 — gemma4-e4b 가이드 생성
+### 단계 6-3. L2 노드 — gemma4:e4b 가이드 생성
 
 ```python
 # -*- coding: utf-8 -*-
@@ -165,7 +176,7 @@ class LLMClientFactory:
     @classmethod
     def get_ollama(cls) -> ChatOllama:
         if cls._ollama is None:
-            cls._ollama = ChatOllama(model="gemma4-e4b", base_url="http://localhost:11434", temperature=0.3, num_predict=50)
+            cls._ollama = ChatOllama(model="gemma4:e4b", base_url="http://localhost:11434", temperature=0.3, num_predict=50)
         return cls._ollama
 
     @classmethod
@@ -322,7 +333,7 @@ def get_orchestrator():
 
 | 조건 | 전환 |
 | --- | --- |
-| 기본 | ChatOllama(gemma4-e4b) 로컬 |
+| 기본 | ChatOllama(gemma4:e4b) 로컬 |
 | L3 실패율 > 10% | gpt-4o-mini 자동 전환 |
 | `LLM_PROVIDER=openai` | gpt-4o-mini 강제 |
 | L3 최종 실패 | 고정 문장("전방 주의, 천천히 멈추세요") |
@@ -346,7 +357,7 @@ def get_orchestrator():
 | bollard 주입 가이드 | 20자 내 안내 정상 적재 | 길이 <= 20 |
 | 방향 키워드 포함 | 좌/우/직진/정지 중 하나 | 키워드 존재 |
 | L1 위험도 분류 | high 제외, mid/low만 진입 | high 진입 안 함 |
-| L2 gemma4-e4b ainvoke | 한국어 1문장 생성 | 한국어 포함 |
+| L2 gemma4:e4b ainvoke | 한국어 1문장 생성 | 한국어 포함 |
 | L3 검증 + RETRY | 위반 시 RETRY(최대 1회) | retry_count <= 1 |
 | Fallback 고정 문장 | 최종 실패 시 "전방 주의, 천천히 멈추세요" | 문장 일치 |
 | 조건부 분기 | StateGraph 엣지 정상 | END 도달 |
@@ -355,4 +366,4 @@ def get_orchestrator():
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- 아키텍처 설계서: [`docs/architecture.md`](../../../docs/architecture.md) 5.6절
+- 아키텍처 설계서: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 5.6절

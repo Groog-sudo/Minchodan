@@ -1,0 +1,188 @@
+# Minchodan 파이프라인 단계 설계
+
+> **작성일**: 2026-06-24
+> **버전**: v0.3.7 (2026-07-20 코드-문서 정합: 7단계 억제 TTL 5초·TTS 4엔진, Medium hints 유지)
+> **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
+> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+
+---
+
+## 1. 개요
+
+Minchodan 파이프라인은 7단계로 구성되며, 각 단계는 독립적인 run mode와 종단 지연 목표를 가집니다. 가장 중요한 설계 원칙은 **이중 경로 물리 분리**(반사=즉시 경보 / 인지=상세 가이드)입니다.
+
+---
+
+## 2. 단계 구조
+
+```mermaid
+graph LR
+    subgraph Reflex ["반사 경로 (목표 <300ms)"]
+        R1["1단계 WS 연결"]
+        R2["2단계 반사 캡처<br/>8~10fps"]
+        R3["3단계 Yolo 26N - Object Detection + Gates<br/>(LLM 미경유)"]
+        R7a["7단계 사전합성 클립<br/>선점 재생"]
+        R1 --> R2 --> R3 --> R7a
+    end
+
+    subgraph Cognitive ["인지 경로 (1~2Hz)"]
+        C1["1단계 WS 연결"]
+        C2["2단계 인지 캡처<br/>1~2fps"]
+        C3["3단계 Yolo 26N - Object Detection + Yolo 26N - Segmentation<br/>mid/low 발행"]
+        C4["4단계 RAG DB<br/>(오프라인)"]
+        C5["5단계 인지 컨텍스트<br/>(hints 기본 / rag 선택)"]
+        C6["6단계 LangGraph<br/>L1/L2/L3"]
+        C7b["7단계 실시간 TTS"]
+        C1 --> C2 --> C3 --> C5
+        C4 -.->|"시드"| C5
+        C5 --> C6 --> C7b
+    end
+```
+
+---
+
+## 3. 단계별 run mode
+
+| 단계 | 이름             | run mode                                      | 실행 환경           | 동기/비동기          |
+| ---- | ---------------- | --------------------------------------------- | ------------------- | -------------------- |
+| 1    | 서버-앱 통신     | `online`                                      | FastAPI 서버        | 비동기 (asyncio)     |
+| 2    | 카메라 캡처 전송 | `online_reflex` / `online_cognitive`          | 단말 + 서버         | 비동기 (이중 타이머) |
+| 3    | 탐지·분할·게이트 | `online_inference`                            | GPU 서버            | 동기 (프레임 단위)   |
+| 4    | RAG DB 구축      | `offline_batch`                               | GPU 서버 (오프라인) | 배치                 |
+| 5    | 인지 컨텍스트    | `online_hints` / `online_retrieval`           | 서버                | 동기 (쿼리 단위)     |
+| 6    | LangGraph 가이드 | `online_orchestration`                        | 서버 (Ollama)       | 비동기 (`ainvoke`)   |
+| 7    | 음성 출력        | `online_reflex_clip` / `online_cognitive_tts` | 서버 + 단말         | 비동기               |
+
+---
+
+## 4. 종단 지연 목표
+
+| 경로 | 흐름                                                        | 목표                        | 비고                      |
+| ---- | ----------------------------------------------------------- | --------------------------- | ------------------------- |
+| 반사 | 캡처 WS Yolo 26N - Object Detection Gate 사전합성 클립 재생 | **<300ms** (Detection 기준) | LLM/RAG/실시간 TTS 미경유 |
+| 인지 | 캡처 WS 탐지 Redis 힌트/RAG LangGraph TTS 재생 | 1~2Hz                       | 상세 가이드               |
+
+단계별 지연 목표:
+
+| 단계 | 항목            | 목표    | 실측(2026-07-12, 실기기 E2E 표본)          |
+| ---- | --------------- | ------- | ------------------------------------------- |
+| 1    | WS RTT          | < 100ms | (미계측 - ack 왕복 별도 측정 필요)          |
+| 2    | 캡처수신        | < 50ms  | 0.8ms (decode_ms)                            |
+| 3    | Detection 추론  | < 80ms  | 235~340ms (목표 미달 - 후속 최적화 필요)     |
+| 5    | 인지 컨텍스트   | hints≈0 / rag < 50ms | hints 기본. rag 모드는 기존 56~78ms 표본 |
+| 6    | L2 `ainvoke`    | (미정)  | 460ms~3.7s (편차 큼 - 표본 축적 후 목표 확정) |
+| 7    | 실시간 TTS 합성 | (미정)  | 0~2.0s (0ms 사례 원인 미확인, 후속 조사)      |
+
+콘솔 운영 콘솔(`http://localhost:5174`)의 "파이프라인 지연 요약" 패널에서 최근 30건 기준 평균/최대치를 실시간으로 확인할 수 있다(`console/src/components/LatencySummaryPanel.tsx`). `detection_guidance_logs.latency_json`에 스테이지별 원시값이 영속 저장되므로 위 표는 표본이 쌓이는 대로 갱신할 것.
+
+---
+
+## 5. 단계별 핵심 절차
+
+### 5.1 1단계 - 서버-앱 실시간 통신
+
+- `FastAPI()` + `CORSMiddleware` `APIRouter().websocket("/ws/detect")`
+- `ws.accept()` welcome hello 검증 5초 ping/pong `WebSocketDisconnect` 정리
+- 출력: WS 엔드포인트 (2단계 공유)
+
+### 5.2 2단계 - 카메라 화면 전송
+
+- **이중 타이머**: 반사 8~10fps / 인지 1~2fps 분리 (v1.1, 충돌 회피)
+- **2026-07-09 정정**: `takePhoto({qualityPrioritization:'speed'})` 방식은 iOS `AVCapturePhotoOutput`이 촬영마다 오디오 세션을 인터럽트해(실기기 로그로 확인) TTS 안내 음성이 끊기는 근본 원인이었다. iOS 기본 경로를 **Frame Processor**(`useFrameProcessor`, `AVCaptureVideoDataOutput` 기반 연속 스트림)로 전환 - `client/ios/ReflexFrameProcessorPlugin.swift`가 CVPixelBuffer를 크롭/리사이즈/JPEG 인코딩해 base64로 반환, 이후 파이프라인은 무변경.
+- **2026-07-10 정정**: 캡처 실구현을 `client/src/services/frameCaptureProvider.ts`(공통 인터페이스) + `frameCaptureProviderSelect.ios.ts`/`.android.ts`(Metro 플랫폼 확장자 분기)로 물리 분리했다(`docs/mobile/ios_android_bifurcation_contract.md` §4). Android는 대응 네이티브 플러그인이 아직 없어 `takePhoto()` 과도기 경로로 동작한다.
+- raw JPEG bytes → WS 바이너리 프레임(`sendBinary()`, base64 미경유, 2026-07-07 전환)
+- 서버: `decode_frame_binary()` `cv2.imdecode` `resize(640,640)` ack
+- 출력: 640x640 프레임 (3단계 입력)
+
+### 5.3 3단계 - AI 장애물 실시간 인식 핵심
+
+- Yolo 26N - Object Detection `predict(conf=0.35)` + Yolo 26N - Segmentation + ByteTrack 추적
+- **이중 게이트 (룰베이스, LLM 미경유)**:
+  - Reflex Gate: 고위험 + 근접 `alert_id`+방향 반사 경로
+  - Surface Gate: P0 노면 하단 `alert_id` 반사 경로
+- mid/low `redis_bus.xadd("risk.events")` 인지 경로
+- **거리 정책 SSOT (2026-07-18)**: `distance_policy.py`가 Near/Medium/Far·`route`를 산출해
+  `Detection.effective_distance_zone`에 부착. `track()` 실패 시(`lap` 미설치·`'Conv'...'bn'` 등)
+  `predict()` 폴백(`yolo_detector.py`).
+- **발화 우선순위 (2026-07-18 정합)**:
+  | 구역 | 경로 | 사용자 출력 |
+  | :--- | :--- | :--- |
+  | **near** | 반사 (`route=reflex`) | 햅틱+사전합성 비프. 인지 TTS 차단 |
+  | **medium** | 인지 (`route=cognitive`) | LangGraph/패스트레인 TTS (회랑·접근 필터 적용) |
+  | **far** | 인지 라우팅이나 무발화 | 탐지·콘솔/단말 BBox만 |
+- 노면 클래스 분리(C2, 실제 학습 완료 모델 기준): `braille_normal`, `sidewalk_normal`, `caution`, `roadway` (4클래스 — `damaged`/`crosswalk` 세분화는 데이터 미확보로 미채택, `docs/ops/model_class_validation_report.md` 참조)
+
+### 5.4 4단계 - RAG DB 구축 (오프라인 배치)
+
+- 영상 1fps 프레임 추출 pHash 중복 제거 Gemini(`gemini-2.5-flash-lite`) 한글 캡셔닝 nomic-embed-text(768d) `Chroma.from_documents(persist_directory)`
+- 메타데이터 `objects`/`scene_type`을 3단계 분리 클래스와 일치
+
+### 5.5 5단계 - 인지 컨텍스트 (힌트 / RAG)
+
+- **기본(`GUIDANCE_CONTEXT_MODE=hints`)**: `server/rag/guidance_hints.py` 인메모리 dict → `state["rag_context"]` (rag_ms≈0)
+- **롤백(`rag`)**: Chroma `similarity_search_with_score(k=5)` → `page_content` 결합
+- STT/생활지원 convenience RAG는 별도 유지
+
+### 5.6 6단계 - 종합 회피 가이드 생성 (LangGraph)
+
+- `StateGraph(OrchState)`:
+  - L1: 룰 기반 위험도 분류 (mid/low만 진입)
+  - L2: `[회피 힌트]` + `[탐지 방향]` 결합, `SimpleOllamaClient`(gemma4-e4b) `ainvoke` (20자)
+  - L3: 검증 + RETRY(최대 1회) → 초과 시 fallback 노드로 라우팅
+  - Fallback: GPU 부하 기반 `SimpleOpenAIClient`(gpt-4o-mini) 핫스왑 또는 고정 문장
+
+### 5.7 7단계 - 음성 안내 출력 (이중 채널)
+
+- **인지**: **2026-07-09 정정** - Supertonic(`TTS_ENGINE=supertonic` 기본값, Piper/pyttsx3/edge-tts 핫스왑, Kokoro/Coqui 미구현) `generate()` **WAV** bytes → WS 바이너리 프레임(base64 미경유) `expo-audio` 상시 재생 웜 플레이어
+- **반사**: 사전합성 고정 클립 `alert_id`로 즉시 재생 (선점, 실시간 합성 금지)
+- 중복 억제 `setex(suppress:{device_id}:{alert_source}:{track_id}:{distance_band}, REFLEX_SUPPRESS_TTL_S=5)` (노면 surface는 `REFLEX_SURFACE_SUPPRESS_TTL_S=15`), 햅틱 연동
+
+---
+
+## 6. 추상화 지점 (핫스왑)
+
+| 추상화     | 기본                               | 대안                 | 위치                                         |
+| ---------- | ---------------------------------- | -------------------- | -------------------------------------------- |
+| Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
+| LLM Client | SimpleOllamaClient(gemma4-e4b)      | SimpleOpenAIClient(gpt-4o-mini) | `server/orchestration/llm_client_factory.py` |
+| Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/embedding_engine_factory.py` (Embeddings 추상) |
+| TTS        | Supertonic (2026-07-09 변경)        | Piper / pyttsx3 / edge-tts 핫스왑 (미구현: OpenAI TTS, Kokoro/Coqui) | `server/tts/tts_service.py`                  |
+
+---
+
+## 7. 데이터 흐름 계약
+
+- 모든 단계 이벤트는 `event_id`로 추적합니다.
+- Redis Streams 채널: `risk.events` (인지), 반사는 WS 고우선 타입으로 우회.
+- 프레임 원본을 Redis에 직접 싣지 않습니다 (참조 키/공유 메모리 사용).
+- Redis Track 컨텍스트: `hset` + TTL=30 (접근/이탈·속도 산출).
+
+---
+
+## 8. 학습 환경 전제 (v1.1 C3)
+
+3·4단계 모델 학습의 팀 최대 사양은 RTX 5090(Blackwell sm_120)입니다. Ubuntu x86_64/Windows amd64 GPU 서버는 PyTorch 2.13 + CUDA 13.0(cu130)과 NVIDIA R580 이상 드라이버를 사용하고, macOS는 PyTorch 2.13 MPS/CPU로 개발·기능 검증합니다. 학습 전 `scripts/verify_gpu.py`로 실제 가속 연산을 검증합니다. TensorRT 엔진은 배포 GPU에서 재빌드합니다(세대 간 전송 불가).
+
+---
+
+## 9. MVP 스코프
+
+| 단계 | MVP 스코프                                             |
+| ---- | ------------------------------------------------------ |
+| 1    | 시작 버튼 연결 echo 왕복, 초기 안정화                  |
+| 2    | 640 해상도 시작, 전송 속도 확보 후 점진 상향           |
+| 3    | 탐지 클래스 3~5개 시작, 사전학습+fine-tuning은 여유 시 |
+| 4    | 10~15개로 작게 시작, 검색 품질 확인 후 확장            |
+| 5    | top_k 3~5 조정하며 품질 확인                           |
+| 6    | temperature 0.2~0.3, 일관·안전 우선                    |
+| 7    | 위험물+행동 핵심만 짧게                                |
+
+---
+
+## 10. post-MVP 백로그
+
+- 단말 on-device 반사 레이어 (셀룰러/실환경, 네트워크 왕복 0)
+- RT-DETR occlusion recall (데이터 ~54% 가림)
+- WebRTC/gRPC 통신 프로토콜 승급
+- `braille_damaged`/`crosswalk` mIoU 고도화
+- 사용자 음성 명령(STT) 경로 (Whisper, 본 골격 범위 밖)

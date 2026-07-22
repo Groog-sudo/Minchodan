@@ -9,9 +9,11 @@ description: |
 # RAG Realtime Search (5단계: 실시간 대처 수칙 검색)
 
 > **작성일**: 2026-06-24
-> **버전**: v0.2.0
-> **설계 기준**: `docs/minchodan_design_note.md` 5단계
-> **코딩 패턴 준수**: [`docs/course_codebase_guide.md`](../../../docs/course_codebase_guide.md) 섹션 13, 17.2, 17.4
+> **버전**: v0.2.1 (2026-07-07 실제 진입점·클래스 명칭 불일치 각주 추가)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 5단계
+> **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 13, 17.2, 17.4
+
+> **2026-07-07 정정**: (1) 실제 검색 진입점은 본문의 `build_search_query`/`OBSTACLE_KR_MAP`이 아니라 **`Retriever.search_guidance(detect_info: dict, k=5)`**(`server/rag/retriever.py`)다. (2) RAG 라벨 정의(`server/rag/shared/labels.py`)와 retriever는 최초 계획 명칭(`kickboard`/`stairs`/`manhole` 등)으로 내부 일관돼 있으나, **실제 파인튜닝 완료 탐지 모델의 29클래스(전동킥보드=`scooter`, `stairs`/`manhole`은 seg `caution`으로 통합)와 어긋난다.** 아래 본문의 `kickboard`/`stair` 예시는 RAG 코드 기준이며, 탐지 결과와 그대로 매칭하려면 명칭 정렬(RAG 재빌드 포함, 담당자 영역)이 필요하다.
 
 ## 개요
 
@@ -27,9 +29,9 @@ description: |
 
 ```
 [3단계: Yolo 26N - Object Detection]  detected_classes
-        
+
 [5단계: RAG 실시간 검색]  ChromaDB (4단계에서 구축)
-        
+
 [6단계: LangGraph 가이드 생성]  rag_context
 ```
 
@@ -253,4 +255,4 @@ def create_vector_store(provider: str = "chroma", **kwargs) -> VectorStore:
 ## 참고 자료
 
 - 상세 구현 알고리즘: [references/implementation_detail.md](./references/implementation_detail.md)
-- 아키텍처 설계서: [`docs/architecture.md`](../../../docs/architecture.md) 5.5절
+- 아키텍처 설계서: [`docs/design/architecture.md`](../../../docs/design/architecture.md) 5.5절

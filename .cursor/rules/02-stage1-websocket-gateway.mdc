@@ -1,0 +1,15 @@
+---
+description: 1단계 WebSocket 게이트웨이 - FastAPI WebSocket, Redis Streams 연동
+globs: server/api/**,server/bus/**
+alwaysApply: false
+---
+
+# 1단계: WebSocket 게이트웨이
+
+`server/api/`(WebSocket `/ws/detect`, 세션/하트비트 관리)나 `server/bus/`(Redis Streams 인터페이스)를 수정할 때는 `.agents/skills/websocket-gateway/SKILL.md`를 먼저 읽는다.
+
+핵심 계약:
+
+- FastAPI + asyncio 기반 실시간 양방향 통신.
+- Redis Streams로 내부 모듈 간 메시지 버스 연동(컨텍스트 TTL 포함).
+- 디바이스 인증은 `server/api/auth.py`의 정적 토큰/JWT 이중 경로를 따르며, production에서는 정적 토큰을 비활성화한다.

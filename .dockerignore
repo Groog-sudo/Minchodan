@@ -1,0 +1,71 @@
+# Minchodan Docker build context ignore
+# Build context is the project root when using docker/Dockerfile from compose.
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+
+# Local development tools and generated runtime data
+.tools/
+data/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# Test caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE settings
+.vscode/
+.idea/
+.xcodebuildmcp/
+
+# Documentation not needed in the runtime image
+docs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Backups
+*.bak
+*.backup
+*.old
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Client and console are not needed by the FastAPI server image
+client/
+console/
+
+# Offline training assets
+training/
+
+# Local archives and generated scan artifacts
+*.zip
+project_scan_summary.json
