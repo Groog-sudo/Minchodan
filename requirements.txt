@@ -95,7 +95,7 @@ pathvalidate==3.3.1
 pillow==12.3.0
 piper-tts==1.4.2
 pluggy==1.6.0
-polars==1.42.0
+polars==1.43.0
 polars-runtime-32==1.42.0
 propcache==0.5.2
 protobuf==7.35.1
