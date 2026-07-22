@@ -26,6 +26,7 @@
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |
 | **dev 통합 개선 실행 계획서** | [ops/dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 기반 P0/P1 개선 순서와 완료 기준** |
 | **Medium 인지 짧은 힌트 Dict 전환 계획서** | [ops/medium_guidance_hint_dict_implementation_plan.md](ops/medium_guidance_hint_dict_implementation_plan.md) | **완성문 RAG → 인메모리 회피 힌트로 Medium 안내 품질·레이턴시 개선** |
+| **노면 알림 내용 기반 중복 억제 기획서** | [ops/surface_content_based_dedup_implementation_plan.md](ops/surface_content_based_dedup_implementation_plan.md) | **시간 쿨다운 → 노면 내용 비교 억제 전환 설계 (구현 전)** |
 | **프로젝트 보완점: Mitos (정정본)** | [research/mitos_improvement_roadmap.md](research/mitos_improvement_roadmap.md) | **실기기 검증 기반 안전성·음성 UX·신뢰성·제품화 보완 로드맵. v0.3.0 코드 대조 검증 기록 포함 (루트에서 이동)** |
 | **백엔드 DB 아키텍처** | [design/backend_db_architecture.md](design/backend_db_architecture.md) | **SQLAlchemy 비동기 엔진 및 3계층 아키텍처 설계** |
 | 2단계 캡처 설계서     | [stage-guides/stage2_capture_design.md](stage-guides/stage2_capture_design.md)   | 2단계 백엔드 FastAPI 구현 설계 (이중 스트림, asyncio.Queue, 디코딩 가드레일) |
@@ -164,6 +165,7 @@ docs/
 | 테스트 명세서 | [test_specification.md](ops/test_specification.md) | 7단계별 완료 기준, 검증 매트릭스, 테스트 파일 매핑 |
 | **dev 통합 개선 실행 계획서** | [dev_8b2f606_improvement_plan.md](ops/dev_8b2f606_improvement_plan.md) | **dev 8b2f606 감사 결과 기반 P0/P1 개선 순서와 완료 기준 (Mitos 로드맵과 교차 참조)** |
 | **Medium 인지 짧은 힌트 Dict 전환 계획서** | [medium_guidance_hint_dict_implementation_plan.md](ops/medium_guidance_hint_dict_implementation_plan.md) | **완성문 RAG → 인메모리 회피 힌트 (품질·레이턴시)** |
+| **노면 알림 내용 기반 중복 억제 기획서** | [surface_content_based_dedup_implementation_plan.md](ops/surface_content_based_dedup_implementation_plan.md) | **시간 쿨다운 → 노면 내용(클래스·centroid) 비교 억제 전환 설계 (구현 전)** |
 
 ---
 

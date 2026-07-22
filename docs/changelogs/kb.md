@@ -4109,3 +4109,14 @@
   - 시연 스킬에 Pi·Ollama·FastAPI·console·Metro 기동 체크리스트 편입
 - **관련 파일**: `agents/skills/integration-test-orchestrator/SKILL.md`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `.agents/skills/rpi-network-profile-switcher/agents/openai.yaml`, `.claude/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/agents/openai.yaml`, `.cursor/rules/12-rpi-network-profile-switcher.mdc`, `AGENTS.md`, `SKILLS.md`, `docs/ops/demo_test_device_inventory.md`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+### 2026-07-22 | 3·7단계 | 노면 내용 기반 중복 억제 기획서 등재
+
+- **커밋**: `docs: 노면 알림 내용 기반 중복 억제 기획서 및 문서 인덱스 반영`
+- **변경 내용**:
+  - `docs/ops/surface_content_based_dedup_implementation_plan.md` 신규: 시간 기반(`REFLEX_SURFACE_MIN_GAP_S`/`SURFACE_REENTER_COOLDOWN_S`) 억제의 한계를 정리하고, 클래스·centroid 내용 비교 전환 설계·테스트·브랜치 작업 순서를 기술.
+  - 추적 설계서(`reflex_audio_specification`, stage3, `environment_variables`) 및 현행 코드(`suppressor`/`surface_gate`/`detection_pipeline`/`consumer`)와 교차검증 표를 문서 상단에 추가.
+  - `docs/README.md` ops·요약 인덱스에 기획서 링크 등록.
+- **관련 파일**: `docs/ops/surface_content_based_dedup_implementation_plan.md`, `docs/README.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 기획서 주장과 추적 코드 상수(45s/20s/seg N=3/`surface_hazard` 고정 키) 일치 확인. 본 커밋은 문서만(구현 코드 변경 없음).
+- **비고**: 구현은 기획서 §11 순서대로 `kb`에서 후속 진행.
