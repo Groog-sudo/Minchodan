@@ -22,7 +22,7 @@ load_dotenv()
 # [하드 코딩 부분 - 핵심] 생활지원 RAG 라우팅 키워드.
 # STT 브릿지가 이 목록에 부분문자열 매칭되면 convenience 컬렉션으로 보내고,
 # 아니면 일반 LLM(장애물 오케스트레이터 우회 대화)으로 보낸다.
-# 기관 약칭(한빛/새봄/푸른나무)과 인물명은 더미 데이터셋 메타와 맞춰 둔다.
+# 기관명과 서비스 약칭은 공식 서울 기관 데이터셋 메타와 맞춰 둔다.
 CONVENIENCE_QUERY_KEYWORDS = [
     "기관",
     "센터",
@@ -47,18 +47,19 @@ CONVENIENCE_QUERY_KEYWORDS = [
     "자립지원",
     "장애인",
     "시각장애",
-    "김도윤",
-    "이정희",
-    "박서준",
-    "정하늘",
-    "최민아",
-    "윤서연",
-    "윤지수",
-    "한빛",
-    "새봄",
-    "푸른나무",
-    "생활안전협회",
-    "보조기기센터",
+    "실로암",
+    "서시복",
+    "노원시각장애인복지관",
+    "성북시각장애인복지관",
+    "한국시각장애인복지관",
+    "한시복",
+    "한국시각장애인연합회",
+    "한시련",
+    "복지콜",
+    "국립장애인도서관",
+    "서울맹학교",
+    "한빛맹학교",
+    "장애인콜택시",
 ]
 
 # [하드 코딩 부분 - 핵심] 음성 TTS용 시스템 프롬프트.
@@ -180,6 +181,27 @@ def _metadata_line(metadata: dict) -> str:
     return ", ".join(f"{key}={_text(value)}" for key, value in metadata.items() if _text(value))
 
 
+def _format_source(source: dict | None) -> str:
+    if not source:
+        return "출처 정보 없음"
+    parts = [
+        f"출처명: {_text(source.get('source_name'))}",
+        f"출처 URL: {_text(source.get('source_url'))}",
+        f"검증일: {_text(source.get('verified_at'))}",
+        f"검증 방법: {_text(source.get('verification_method'))}",
+    ]
+    return " / ".join(part for part in parts if not part.endswith(": "))
+
+
+def _source_metadata(source: dict | None) -> dict[str, str]:
+    source = source or {}
+    return {
+        "source_url": _text(source.get("source_url")),
+        "verified_at": _text(source.get("verified_at")),
+        "verification_method": _text(source.get("verification_method")),
+    }
+
+
 def _build_dataset_overview(dataset_info: dict) -> Document:
     purpose = dataset_info.get("purpose", [])
     page_content = (
@@ -188,7 +210,10 @@ def _build_dataset_overview(dataset_info: dict) -> Document:
         f"언어: {_text(dataset_info.get('language'))}\n"
         f"용도: {_join(purpose)}\n"
         f"데이터 유형: {_text(dataset_info.get('data_type'))}\n"
-        f"개인정보 고지: {_text(dataset_info.get('privacy_notice'))}"
+        f"검증 지역: {_text(dataset_info.get('region'))}\n"
+        f"검증일: {_text(dataset_info.get('verified_at'))}\n"
+        f"개인정보 고지: {_text(dataset_info.get('privacy_notice'))}\n"
+        f"유지보수 고지: {_text(dataset_info.get('maintenance_notice'))}"
     )
     return Document(
         page_content=page_content,
@@ -198,6 +223,7 @@ def _build_dataset_overview(dataset_info: dict) -> Document:
             "title": _text(dataset_info.get("dataset_name"))
             or "시각장애인 생활지원 통합 안내 데이터",
             "category": "dataset_overview",
+            "verified_at": _text(dataset_info.get("verified_at")),
         },
     )
 
@@ -223,6 +249,7 @@ def build_convenience_documents(json_path: str | None = None) -> list[Document]:
         organization_id = _text(organization.get("organization_id"))
         organization_name = _text(organization.get("name"))
         organization_type = _text(organization.get("organization_type_ko"))
+        source = organization.get("source") or {}
         page_content = (
             f"기관명: {organization_name}\n"
             f"기관 구분: {organization_type}\n"
@@ -235,7 +262,8 @@ def build_convenience_documents(json_path: str | None = None) -> list[Document]:
             f"휠체어접근={_text(organization.get('accessibility', {}).get('wheelchair_accessible'))}, "
             f"안내견허용={_text(organization.get('accessibility', {}).get('guide_dog_allowed'))}\n"
             f"키워드: {_join(organization.get('keywords'))}\n"
-            f"대표 안내: {_text(organization.get('rag_text'))}"
+            f"대표 안내: {_text(organization.get('rag_text'))}\n"
+            f"정보 출처: {_format_source(source)}"
         )
         documents.append(
             Document(
@@ -245,6 +273,7 @@ def build_convenience_documents(json_path: str | None = None) -> list[Document]:
                     "source_id": organization_id,
                     "title": organization_name,
                     "category": organization_type,
+                    **_source_metadata(source),
                 },
             )
         )
@@ -262,7 +291,8 @@ def build_convenience_documents(json_path: str | None = None) -> list[Document]:
                 f"기관 주소: {_format_address(organization.get('address'))}\n"
                 f"기관 연락처: {_format_contact(organization.get('contact'))}\n"
                 f"키워드: {_join(organization.get('keywords'))}\n"
-                f"서비스 안내: {_text(service.get('description'))}"
+                f"서비스 안내: {_text(service.get('description'))}\n"
+                f"정보 출처: {_format_source(source)}"
             )
             documents.append(
                 Document(
@@ -273,6 +303,7 @@ def build_convenience_documents(json_path: str | None = None) -> list[Document]:
                         "parent_id": organization_id,
                         "title": service_name,
                         "category": organization_type,
+                        **_source_metadata(source),
                     },
                 )
             )
@@ -626,7 +657,7 @@ if __name__ == "__main__":
         db = build_convenience_database()
         print(f"DB 빌드 성공: {db is not None}")
         service = ConvenienceKnowledgeBase(db)
-        sample_question = "한빛 시각장애인 자립지원센터 보행훈련은 어디서 받을 수 있나요?"
+        sample_question = "실로암시각장애인복지관 전화번호를 알려 주세요."
         print(service.search(sample_question, k=3))
     except Exception as exc:
         print(f"스모크 테스트 실패: {exc}")

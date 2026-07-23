@@ -29,6 +29,7 @@ import {
 import { hapticEngine } from "../services/hapticEngine";
 import { placePhoneCall } from "../services/phoneDialBridge";
 import type { WSMessage, WSStatus } from "../types/detection";
+import { normalizeTextForSpeech } from "../utils/speechText";
 
 /**
  * 현재 전달된 primary URL을 1순위로 두고, config 후보(LAN/Tailscale)를 합친다.
@@ -153,6 +154,8 @@ export function useWebSocket(
   const nearClipPlayedTracksRef = useRef<Set<string>>(new Set());
   // transport=binary인데 WAV가 안 오면 단말 TTS로 폴백(무음 방지).
   const guideBinaryFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 폴백 TTS가 이미 재생을 맡은 event_id. 해당 이벤트의 늦은 WAV는 중복 재생하지 않는다.
+  const fallbackOwnedGuideEventsRef = useRef<Set<string>>(new Set());
   const GUIDE_BINARY_FALLBACK_MS = 1200;
   // onclose/AppState 타이머가 항상 최신 connect를 호출하도록 한다.
   const connectRef = useRef<() => void>(() => {});
@@ -317,8 +320,16 @@ export function useWebSocket(
           clearTimeout(guideBinaryFallbackTimerRef.current);
           guideBinaryFallbackTimerRef.current = null;
         }
-        const isStt = String(pendingGuideEventIdRef.current ?? "").startsWith("stt-");
+        const pendingEventId = pendingGuideEventIdRef.current;
+        const isStt = String(pendingEventId ?? "").startsWith("stt-");
         const priority = pendingGuidePriorityRef.current;
+        pendingGuideEventIdRef.current = null;
+        if (pendingEventId && fallbackOwnedGuideEventsRef.current.delete(pendingEventId)) {
+          console.warn(
+            `[WS] 폴백 재생 중 늦은 guide binary 폐기: event_id=${pendingEventId}, bytes=${buf.byteLength}`,
+          );
+          return;
+        }
         console.log(
           `[Cognitive] guide 오디오 바이너리 수신: bytes=${buf.byteLength}, isStt=${isStt}, priority=${priority}`,
         );
@@ -477,7 +488,7 @@ export function useWebSocket(
           if (data.transport !== "binary" && data.guidance_text) {
             console.log("[WS] -> speakFallback(단말 TTS) 경로 진입");
             audioEngine.speakFallback(
-              data.guidance_text,
+              normalizeTextForSpeech(data.guidance_text),
               priority,
               () => {
                 if (isStt) {
@@ -493,14 +504,19 @@ export function useWebSocket(
               clearTimeout(guideBinaryFallbackTimerRef.current);
             }
             const fallbackText = data.guidance_text;
+            const fallbackSpeechText = normalizeTextForSpeech(fallbackText);
             const fallbackPriority = priority;
             const fallbackIsStt = isStt;
+            const fallbackEventId = data.event_id ?? "";
             guideBinaryFallbackTimerRef.current = setTimeout(() => {
               guideBinaryFallbackTimerRef.current = null;
+              if (fallbackEventId) {
+                fallbackOwnedGuideEventsRef.current.add(fallbackEventId);
+              }
               console.warn(
                 `[WS] guide binary 미도착(${GUIDE_BINARY_FALLBACK_MS}ms) - speakFallback: "${fallbackText}"`,
               );
-              audioEngine.speakFallback(fallbackText, fallbackPriority, () => {
+              audioEngine.speakFallback(fallbackSpeechText, fallbackPriority, () => {
                 if (fallbackIsStt) {
                   audioEngine.setSttActive(false);
                   clearSttSafetyRelease();
@@ -556,6 +572,12 @@ export function useWebSocket(
       setStatus((prev) => (prev === "fallback" ? prev : "disconnected"));
       clearHeartbeat();
       clearNetworkProbe();
+      if (guideBinaryFallbackTimerRef.current) {
+        clearTimeout(guideBinaryFallbackTimerRef.current);
+        guideBinaryFallbackTimerRef.current = null;
+      }
+      pendingGuideEventIdRef.current = null;
+      fallbackOwnedGuideEventsRef.current.clear();
       const closeCode = typeof event?.code === "number" ? event.code : -1;
       const closeReason = typeof event?.reason === "string" ? event.reason : "";
       console.log(`[WS] 연결 종료 code=${closeCode} reason=${closeReason}`);
@@ -730,6 +752,13 @@ export function useWebSocket(
         clearTimeout(sttSafetyReleaseTimerRef.current);
         sttSafetyReleaseTimerRef.current = null;
       }
+
+      if (guideBinaryFallbackTimerRef.current) {
+        clearTimeout(guideBinaryFallbackTimerRef.current);
+        guideBinaryFallbackTimerRef.current = null;
+      }
+      pendingGuideEventIdRef.current = null;
+      fallbackOwnedGuideEventsRef.current.clear();
 
       if (wsRef.current) {
         wsRef.current.onclose = null;
