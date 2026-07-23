@@ -4148,7 +4148,7 @@
 
 ### 2026-07-24 | 6단계 | ollama_lan_keepalive_gpu_monitor
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `94c8505`
 - **변경 내용**:
   - Ollama keepalive LAN CLI 강제 및 gpu_monitor Bandit noqa 보강
 - **관련 파일**: `agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `docs/ops/demo_test_device_inventory.md`, `scripts/ollama_demo_keepalive.sh`, `server/mcp/gpu_monitor.py`
