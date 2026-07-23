@@ -6,7 +6,7 @@ description: 시연(demo)·테스트(test) 환경에서 Raspberry Pi MariaDB·�
 # 시연/테스트 환경 기동·네트워크 프로필 전환 (Raspberry Pi DB·Mac mini LLM·GPU 서버)
 
 > **작성일**: 2026-07-20
-> **버전**: v1.2.0 (2026-07-21: 시연용 서버 기동(역할별 Docker·Ollama·Metro·console·Pi) 체크리스트를 스킬 본범위에 편입. 이전 v1.1.1: `ollama_demo_keepalive.sh` 등재. 이전 v1.1.0: LLM LAN을 demo 프로필에 통합)
+> **버전**: v1.2.1 (2026-07-24: `ollama_demo_keepalive.sh`가 GUI 루프백을 감지하면 CLI/LaunchAgent로 `0.0.0.0:11434` 강제. 이전 v1.2.0: 시연 서버 기동 체크리스트 편입)
 > **관련 문서**: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, [`docs/ops/demo_test_device_inventory.md`](../../../docs/ops/demo_test_device_inventory.md)(시연 장비 제원·네트워크 토폴로지)
 > **관련 스킬**: iOS 실기기 **빌드·설치·실행**과 세션 로그 오케스트레이션 세부 절차는 [`integration-test-orchestrator`](../integration-test-orchestrator/SKILL.md)·[`xcode-build-management`](../xcode-build-management/SKILL.md)를 이어서 사용한다. **시연에 필요한 서버 프로세스 기동·헬스·네트워크 전환은 본 스킬이 1차 담당**한다.
 > **지원 에이전트**: Claude Code 등은 본 `SKILL.md`를 직접 읽어 호출한다. OpenAI Codex 계열은 `agents/openai.yaml`을 통해 동일 스킬을 인식·호출한다.
@@ -74,12 +74,12 @@ ssh minchodan-rpi-db 'systemctl is-active mariadb minchodan-image-server'
 
 ### 2. Mac mini (Ollama LLM)
 
-`demo` 프로필은 Mac mini Ollama가 LAN에 열려 있어야 한다. GUI 앱만 켜면 `127.0.0.1`에만 바인딩되는 경우가 많다. 실패 시 `OLLAMA_HOST=0.0.0.0`으로 `ollama serve`를 재기동한다.
+`demo` 프로필은 Mac mini Ollama가 LAN에 열려 있어야 한다. GUI 앱만 켜면 `127.0.0.1`에만 바인딩되는 경우가 많다. `ollama_demo_keepalive.sh`는 listen이 루프백뿐이면 GUI/잔여 프로세스를 정리하고 CLI 또는 `com.minchodan.ollama-lan` LaunchAgent로 `0.0.0.0:11434`를 강제한다.
 
 ```bash
 # Mac mini에서만
 bash scripts/ollama_demo_keepalive.sh
-# LAN 검증(실 IP는 출력·Git에 남기지 말고 로컬만 확인)
+# 스크립트가 LAN listen OK를 출력해야 함(실 IP는 Git에 남기지 말 것)
 lsof -nP -iTCP:11434 -sTCP:LISTEN   # *:11434 또는 0.0.0.0 이어야 함
 curl -sf --max-time 3 "http://127.0.0.1:11434/api/tags" >/dev/null
 curl -sf --max-time 3 "http://127.0.0.1:11434/api/ps"   # gemma4:e4b, nomic-embed-text 상주

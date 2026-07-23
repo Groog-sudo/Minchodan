@@ -55,7 +55,7 @@ class GPUMonitorMCP:
         if not exe:
             return None
         try:
-            proc = subprocess.run(  # nosec B603
+            proc = subprocess.run(  # noqa: S603 # nosec B603
                 [
                     exe,
                     "--query-gpu=utilization.gpu,memory.used,memory.total",

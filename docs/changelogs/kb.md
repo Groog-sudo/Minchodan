@@ -4143,3 +4143,13 @@
   - Android Gradle 크로스플랫폼 경로 정리 및 det TFLite nms=False 재export와 JS NMS·android-gpu 배선
 - **관련 파일**: `gitignore`, `client/android/app/src/main/AndroidManifest.xml`, `client/android/build.gradle`, `client/android/gradle.properties`, `client/app.json`, `client/assets/models/yolo26n/EXPORT_SOURCE_260714.txt`, `client/assets/models/yolo26n/object_detection.tflite`, `client/src/inference/tfliteDetector.ts`, `docs/changelogs/kb.md`, `docs/design/scene_classifier_gate_guide.md`, `docs/mobile/android_handoff_kb_to_dg.md`, `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/mobile/ondevice_inference_engine_isolation_plan.md`, `docs/ops/android_build_and_wireless_test_guide.md`, `scripts/export_mobile.py`, `scripts/export_tflite.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-24 | 6단계 | ollama_lan_keepalive_gpu_monitor
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Ollama keepalive LAN CLI 강제 및 gpu_monitor Bandit noqa 보강
+- **관련 파일**: `agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `docs/ops/demo_test_device_inventory.md`, `scripts/ollama_demo_keepalive.sh`, `server/mcp/gpu_monitor.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

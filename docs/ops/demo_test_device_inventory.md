@@ -111,7 +111,7 @@ Metal Support  : Metal 4
 - `docs/ops/ai_model_hardware_setup.md` §1.1 기준으로 macOS는 Apple MPS 우선, 미지원 시 CPU 폴백 경로이며 CUDA 서버로 분류하지 않는다.
 - 시리얼 넘버·Hardware UUID·Provisioning UDID는 기기 식별 정보라 이 문서에는 기록하지 않는다(`integration-test-orchestrator` 스킬 안전 가드레일과 동일 원칙).
 - **LLM 호스트 역할(2026-07-21 신규)**: 이 장비에서 Ollama(`gemma4:e4b`, `nomic-embed-text`)를 구동하고, 서버(Windows)의 FastAPI 컨테이너가 LAN으로 접속한다. 데모 시연 시 `OLLAMA_HOST=0.0.0.0`로 바인딩하고 방화벽에서 `11434/tcp`를 서버 LAN 대역에 허용해야 한다(§2 참조).
-- **시연 전 모델 상주**: 기본 `keep_alive`로 인한 콜드 로드(수 초)를 막으려면 Mac mini에서 `bash scripts/ollama_demo_keepalive.sh`를 실행한다(`rpi-network-profile-switcher` 스킬 전제조건).
+- **시연 전 모델 상주**: 기본 `keep_alive`로 인한 콜드 로드(수 초)를 막으려면 Mac mini에서 `bash scripts/ollama_demo_keepalive.sh`를 실행한다(`rpi-network-profile-switcher` 스킬 전제조건). 스크립트는 GUI 루프백 바인딩을 감지하면 CLI/LaunchAgent로 `0.0.0.0:11434`를 강제한다.
 
 ---
 
