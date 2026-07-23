@@ -135,6 +135,7 @@
 | **`SUPERTONIC_VOICE`** | string | 선택 | `F2` | **2026-07-09 신규.** Supertonic 보이스(`F1`~`F5`/`M1`~`M5`). **2026-07-13 접근성**: 기본 `F1`→`F2`(부드러운 안내톤, 기계음 체감 완화) | `server/tts/tts_service.py` |
 | **`SUPERTONIC_MODEL_DIR`** | path | 선택 | (미지정, 라이브러리 기본 `~/.cache/supertonic3`) | **2026-07-09 신규.** 명시적으로 지정하지 않는 것을 권장 - `server/models/` 하위로 지정하면 `docker-compose.yml`의 `../server:/app/server` 볼륨 마운트가 빌드 타임에 받아둔 캐시를 컨테이너 시작 시 호스트 쪽 내용으로 덮어써 버린다(pygoruut와 동일 문제) | `server/tts/tts_service.py` |
 | **`SUPERTONIC_TOTAL_STEPS`** | int | 선택 | `12` | **2026-07-09 신규.** 합성 품질/속도 트레이드오프(5=저품질·고속 ~ 16=고품질·저속). **2026-07-13**: 접근성 기본 `8`→`12` | `server/tts/tts_service.py` |
+| **`SUPERTONIC_USE_CUDA`** | bool | 선택 | `true` | **2026-07-22 신규.** Supertonic ONNX Runtime CUDA EP 사용. `onnxruntime-gpu`가 필요하고 `CUDAExecutionProvider`가 없으면 CPU로 폴백. `false`면 CPU만 | `server/tts/tts_service.py` |
 | **`TTS_DEFAULT_SPEED`** | float | 선택 | `0.85` | **2026-07-13 신규.** 인지 경로 기본 발화 속도(Supertonic/Piper/pyttsx3 공통). 미지정 시 `PIPER_DEFAULT_LENGTH_SCALE` → `0.85` 순 | `server/tts/realtime_tts.py` |
 | **`PIPER_USE_CUDA`** | bool | 선택 | `false` | Piper ONNX 세션 CUDAExecutionProvider 사용 여부(핫스왑 폴백용, `TTS_ENGINE=piper`일 때만 사용). **2026-07-09 정정**: 상주 프로세스화로 `PIPER_BINARY_PATH`(CLI 바이너리 경로)는 제거됨 | `server/tts/tts_service.py` |
 | **`PIPER_LENGTH_SCALE_MIN`** / **`PIPER_LENGTH_SCALE_MAX`** | float | 선택 | `0.5` / `2.0` | Piper 발화 속도(length_scale) 허용 범위(핫스왑 폴백용) | `server/tts/tts_service.py` |

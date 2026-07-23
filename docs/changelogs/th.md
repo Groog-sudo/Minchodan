@@ -1026,3 +1026,61 @@
   - `docker/docker-compose.subnet-override.local.yml`(로컬 override, 커밋 제외): 콘솔을 Tailscale에서 열도록 `100.89.91.40:5174` 게시 추가(base는 127.0.0.1 전용).
 - **관련 파일**: `server/mcp/gpu_monitor.py`, `server/orchestration/llm_client_factory.py`, `docs/changelogs/th.md`
 - **검증 결과**: 비라이브 테스트 462 passed(이전 GPU/핫스왑 2건 실패 → 통과). 잔여 1건(`test_frame_decode.py::test_singleton_queue_maxsize`)은 무관한 splitter maxsize 선재 실패. 라이브 컨테이너 재기동 후 GPU 실측(`memory_used_mb≈1782, gpu_usage_pct=37`) 확인, 콘솔 Tailscale `100.89.91.40:5174` HTTP 200, dev-001 재연결 확인.
+
+---
+
+### 2026-07-22 | 7단계 | Supertonic ONNX Runtime CUDA EP 적용
+
+- **배경**: TTS_ENGINE=supertonic 전환 후 Audio Validator TTFB가 약 2.2~3.0s로 2000ms 임계를 상회. 컨테이너 ORT가 CPU 패키지였고, supertonic==1.3.1이 DEFAULT_ONNX_PROVIDERS=['CPUExecutionProvider']로 고정돼 GPU를 쓰지 않았다.
+- **변경 내용**:
+  - 
+equirements.txt: macOS는 onnxruntime, 그 외는 onnxruntime-gpu==1.27.0 플랫폼 마커 분리.
+  - server/tts/tts_service.py: SUPERTONIC_USE_CUDA(기본 true)일 때 CUDA EP 우선. PyTorch 동봉 
+vidia/cu13·cudnn을 ctypes로 사전 로드. loader가 config 리스트를 이름 바인딩하므로 in-place 갱신 + supertonic.loader 동시 패치.
+  - docker/docker-compose.yml: LD_LIBRARY_PATH에 nvidia cu13/cudnn lib 경로 추가.
+  - .env / .env.example / docs/ops/environment_variables.md: SUPERTONIC_USE_CUDA 문서화.
+- **관련 파일**: server/tts/tts_service.py, 
+equirements.txt, docker/docker-compose.yml, docs/ops/environment_variables.md, .env.example, docs/changelogs/th.md
+- **검증 결과**: 컨테이너 vailable=['TensorrtExecutionProvider','CUDAExecutionProvider','CPUExecutionProvider'], loader 로그 Using ONNX providers: ['CUDAExecutionProvider', 'CPUExecutionProvider']. 프리워밍 TTFB 약 250~400ms(캐시 히트 시 80~200ms), CPU 대비 대폭 개선. 첫 콜드/CUDA 세션 초기화 1회는 약 2.7s. **참고**: 이미지 재빌드 전 recreate 시 pip install onnxruntime-gpu==1.27.0 재설치 필요(requirements는 다음 build에 반영).
+
+
+---
+
+### 2026-07-23 | STT | faster-whisper CPU -> CUDA 전환
+
+- **배경**: 시연 중 15초 발화 STT 전사에 약 16초(CPU int8) 소요, 음성 명령 왕복의 주 병목. TTS(Supertonic ORT CUDA)·YOLO는 GPU를 쓰지만 STT는 stt_config.py에 cpu 고정이었다.
+- **변경 내용**:
+  - server/stt/stt_config.py: WHISPER_DEVICE cpu -> cuda, WHISPER_COMPUTE_TYPE int8 -> float16. 전환 근거 주석 추가.
+  - server/stt/stt_service.py: get_model()의 초기화 후보를 (device, compute_type) 쌍으로 확장. CUDA 초기화 실패 시 cpu int8 계열로 자동 폴백해 GPU 미탑재 환경에서도 STT 유지.
+- **관련 파일**: server/stt/stt_config.py, server/stt/stt_service.py, docs/changelogs/th.md
+- **검증 결과**: 컨테이너 재시작(볼륨 마운트, 재빌드 없음) 후 프리로드 완료. model.device=cuda 확인, 합성 10초 WAV 전사 0.11초. FastAPI 헬스 200. CUDA 초기화 실측 1.5초(cuDNN/cuBLAS는 PyTorch NVIDIA wheel + LD_LIBRARY_PATH 재사용).
+
+---
+
+### 2026-07-23 | STT | CUDA 전사 런타임 결함 수정 (libcublas.so.12 미발견)
+
+- **배경**: STT CUDA 전환 직후 실기기 음성 명령에서 "음성 인식에 실패했습니다" 응답. 로그상 `STT 전사 실패: STT transcribe failed`가 매 요청 발생. 컨테이너 내 재현 결과 실제 원인은 `RuntimeError: Library libcublas.so.12 is not found or cannot be loaded`.
+- **원인 분석**: ctranslate2 4.8.1(faster-whisper CUDA 백엔드)은 CUDA 12용 `libcublas.so.12`를 dlopen하는데, 컨테이너에는 PyTorch cu130 wheel의 CUDA 13(`libcublas.so.13`)만 존재. WhisperModel 초기화는 lazy라 성공하고(기존 CPU 폴백 미발동), 실제 encode 시점에 실패했다. 이전 검증(전사 0.11초)은 VAD가 무음 전 구간을 제거해 encode를 타지 않은 케이스였다.
+- **변경 내용**:
+  - 컨테이너에 `nvidia-cublas-cu12==12.9.2.10` 설치(라이브 exec, 재빌드 시 requirements 반영).
+  - requirements.txt: `nvidia-cublas-cu12==12.9.2.10; linux x86_64` 마커 추가.
+  - server/stt/stt_service.py: `_preload_ct2_cuda_libs()` 추가 - get_model()에서 CUDA 디바이스일 때 `nvidia/cublas/lib`의 `libcublas.so.12`/`libcublasLt.so.12`를 ctypes RTLD_GLOBAL로 사전 로드(LD_LIBRARY_PATH는 프로세스 기동 후 변경 미반영). transcribe 시점 RuntimeError 발생 시 CPU int8 모델로 1회 재시도 후 캐시 교체하는 런타임 폴백 추가.
+  - docker/Dockerfile, docker/docker-compose.yml: LD_LIBRARY_PATH에 `nvidia/cublas/lib` 경로 추가.
+- **관련 파일**: server/stt/stt_service.py, requirements.txt, docker/Dockerfile, docker/docker-compose.yml, docs/changelogs/th.md
+- **검증 결과**: 컨테이너 재시작 후 device=cuda/float16으로 3초 잡음 WAV `transcribe_file` 왕복 0.1초, 예외 없음. **주의**: 이미지 재빌드 전 컨테이너 recreate 시 `pip install nvidia-cublas-cu12` 수동 재설치 필요(restart는 유지됨).
+
+---
+
+### 2026-07-23 | 운영/콘솔 | 콘솔 GPS 위치 미표시 결함 수정 (스냅샷·주기 재전송)
+
+- **배경**: 시연 중 관제 콘솔 HUD 미니맵에 실기기 위치가 잡히지 않는 문제 제보. 서버 로그상 realtime_gps는 간헐 수신되고 있었으나 콘솔에는 표시되지 않았다.
+- **원인 분석**:
+  - GPS 브로드캐스트는 수신 순간 연결된 콘솔에만 전달되는데, 콘솔이 재연결(페이지 새로고침, 서버 재시작)하면 다음 GPS 수신 전까지 위치가 빈다.
+  - 단말이 정지 상태면 iOS expo-location `watchPositionAsync`가 갱신을 거의 주지 않아(`timeInterval`은 Android 전용 옵션) 다음 수신이 수 분간 없을 수 있다. 두 조건이 겹치면 콘솔 위치가 영영 비었다.
+- **변경 내용**:
+  - server/api/ws_router.py: `/ws/console/live-feed` 인증 직후 `NavigationManager` 세션에 남은 디바이스별 마지막 좌표를 동일 `realtime_gps` 형식으로 1회 재전송.
+  - client/src/components/CameraView.tsx: 마지막 GPS 좌표를 보관했다가 5초 주기로 재전송하는 타이머 추가(정지 상태에서도 서버 세션·콘솔 표시 유지).
+  - docs/design/api_specification.md: §6.5 비고와 버전 이력(v0.4.36) 갱신.
+- **관련 파일**: server/api/ws_router.py, client/src/components/CameraView.tsx, docs/design/api_specification.md, docs/changelogs/th.md
+- **검증 결과**: ws_router.py 컨테이너 내 ast 구문 검사 통과, FastAPI 재시작 후 헬스 200·Whisper 프리로드·TTS 프리워밍 30/30 정상. 실기기 앱 리로드 후 콘솔 표시 확인 예정.
+

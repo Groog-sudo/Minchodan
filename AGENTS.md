@@ -13,7 +13,7 @@
 > **버전**: v0.3.9 (2026-07-20 `rpi-network-profile-switcher` 스킬 신규 등재; 기존 v0.3.8의 RTX 5090·PyTorch 2.13·CUDA 13.0/cu130 및 다중 에이전트 규칙 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](docs/dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
-> **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) (Ruff+Bandit+mypy+jscpd+pip-audit 파이프라인)
+> **코드 품질 검증 기준**: [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md) · 실측 정본 `.pre-commit-config.yaml`(로컬 Ruff+Bandit만) / `.github/workflows/lint.yml`(CI: Ruff·Bandit·mypy·jscpd·pip-audit·npm audit·pytest). 로컬 pre-push 훅 없음.
 
 ---
 
@@ -112,11 +112,14 @@
   - **환경 변수 로드** (guide 3.4): `load_dotenv()` + `os.getenv(..., default)` 패턴 적용.
   - **방어적 코딩** (guide 17.2): None 가드레일, API 키 검증, Mock 폴백, 예외 후 루프 유지, 방어적 dict 접근 5종 패턴.
   - **계층 분리** (guide 17.1): Router → Service → Repository 3계층 구조 (FastAPI 프로젝트).
-- **Code Quality Verification**: 코드 품질 검증은 [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md)의 파이프라인을 준수합니다. 커밋·푸시·PR 시 자동 실행됩니다.
-  - **검증 도구**: Ruff(린트+포맷+보안 1차), Bandit(보안 심층 2차), mypy(타입 점진적), jscpd(중복 검출), pip-audit(의존성 CVE).
-  - **실행 시점 분리**: pre-commit(Ruff+Bandit, 빠름) / pre-push(mypy+jscpd+pip-audit, 느림) / GitHub Actions(PR 게이트).
+- **Code Quality Verification**: 코드 품질 검증은 [`docs/ops/code_quality_guide.md`](docs/ops/code_quality_guide.md)와 실제 훅/CI 설정을 준수합니다. 정본은 `.pre-commit-config.yaml`, `.github/workflows/lint.yml`입니다.
+  - **검증 도구**: Ruff(린트+포맷), Bandit(보안), mypy(타입), jscpd(중복), pip-audit(의존성 CVE), npm audit(client/console), pytest(단위).
+  - **실행 시점 분리 (실측)**:
+    - **pre-commit (로컬)**: Ruff format + Ruff check + Bandit (+ trailing-whitespace 등 기본 훅). `.pre-commit-config.yaml`의 모든 훅이 `stages: [pre-commit]`만 사용.
+    - **pre-push (로컬)**: **훅 없음**. mypy/jscpd/pip-audit는 로컬 venv 의존성 문제로 pre-push에서 제거됨(설정 파일 상단 주석). 필요 시 수동: `mypy server/ ; npx jscpd ; pip-audit -r requirements.txt`.
+    - **GitHub Actions** (`.github/workflows/lint.yml`, `pull_request`/`push` → `master`·`main`·`dev`): Ruff format/check + Bandit + mypy + jscpd(`npx`) + pip-audit + client/console `npm audit --audit-level=high` + `pytest -m "not ollama and not live_server"`.
   - **자동 수정 명령**: `ruff format . ; ruff check --fix .` (커밋 전 실행 권장).
-  - **전체 검사 명령**: `ruff check . ; bandit -r server/ scripts/ ; mypy server/ ; jscpd ; pip-audit -r requirements.txt`.
+  - **전체 검사 명령**: `ruff check . ; bandit -c pyproject.toml -r server/ scripts/ ; mypy server/ ; npx jscpd ; pip-audit -r requirements.txt`.
   - **이중 경로 분리 강제**: 반사 경로(`server/detection/gates/`)에서 오케스트레이션/RAG/TTS 모듈 임포트 금지. 현재 코드 리뷰로 강제, 후속 커스텀 Ruff 룰로 자동 탐지 예정.
 - No Emojis: 코드 주석, 커밋 메시지, 문서 내부에서 이모지 사용 금지.
 - Conciseness: 코드와 설명은 핵심 로직 위주로 간결하게 작성. 불필요한 서술 지양.

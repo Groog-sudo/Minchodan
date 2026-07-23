@@ -17,7 +17,17 @@ WORKDIR /app
 
 # Python 의존성 설치 (캐시 최적화)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# chromadb/faster-whisper/supertonic/piper-tts가 onnxruntime(CPU)를 재의존으로
+# 끌어와 onnxruntime-gpu 휠을 덮어쓴다. GPU EP를 쓰려면 CPU 패키지를 제거한 뒤
+# gpu 휠을 강제 재설치해야 한다(둘 다 동일 모듈명 onnxruntime).
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y onnxruntime \
+    && pip install --no-cache-dir --force-reinstall onnxruntime-gpu==1.27.0
+
+# onnxruntime-gpu 1.27(CUDA 13)은 시스템 toolkit 대신 PyTorch NVIDIA wheel의
+# libcudart/cudnn을 찾는다. 빌드 타임 Supertonic 캐시 RUN과 런타임 공통.
+# cublas(cu12)는 ctranslate2(faster-whisper CUDA) dlopen 대상.
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.13/site-packages/nvidia/cu13/lib:/usr/local/lib/python3.13/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.13/site-packages/nvidia/cublas/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 # 런타임 프로세스와 모델 캐시 준비는 권한이 제한된 전용 사용자로 수행한다.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin minchodan \

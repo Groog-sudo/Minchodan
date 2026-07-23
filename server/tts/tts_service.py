@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import logging
@@ -304,13 +305,114 @@ class SupertonicTTSService(TTSService):
         # 확인됐다(내부 파이프라인 버퍼 경합으로 추정). 합성 호출 자체를 직렬화한다.
         self._synthesize_lock = asyncio.Lock()
 
+    @staticmethod
+    def _ensure_nvidia_ort_libs() -> None:
+        """onnxruntime-gpu 1.27이 필요로 하는 CUDA 13 공유 라이브러리를 사전 로드한다.
+
+        컨테이너에는 시스템 CUDA toolkit이 없고 PyTorch NVIDIA wheel(nvidia/cu13, cudnn)만
+        있다. Linux는 프로세스 기동 후 LD_LIBRARY_PATH 변경이 dlopen에 반영되지 않으므로
+        libcudart/cudnn을 ctypes로 RTLD_GLOBAL 로드한 뒤 ORT를 import한다.
+        docker-compose의 LD_LIBRARY_PATH와 함께 쓰는 이중 안전장치다.
+        """
+        try:
+            import ctypes
+            import site
+            from pathlib import Path
+
+            lib_dirs: list[Path] = []
+            for base in site.getsitepackages() + [site.getusersitepackages()]:
+                root = Path(base) / "nvidia"
+                for rel in ("cu13/lib", "cudnn/lib", "cublas/lib", "cufft/lib"):
+                    lib_dir = root / rel
+                    if lib_dir.is_dir():
+                        lib_dirs.append(lib_dir)
+
+            if not lib_dirs:
+                return
+
+            current = os.environ.get("LD_LIBRARY_PATH", "")
+            parts = [p for p in current.split(":") if p]
+            for lib_dir in lib_dirs:
+                path = str(lib_dir)
+                if path not in parts:
+                    parts.insert(0, path)
+            os.environ["LD_LIBRARY_PATH"] = ":".join(parts)
+
+            # 필수 런타임부터 명시 로드(이름 우선순위).
+            preferred = (
+                "libcudart.so.13",
+                "libcudart.so",
+                "libcudnn.so.9",
+                "libcudnn.so",
+            )
+            loaded: set[str] = set()
+            for lib_dir in lib_dirs:
+                for name in preferred:
+                    so_path = lib_dir / name
+                    if not so_path.is_file() or name in loaded:
+                        continue
+                    with contextlib.suppress(OSError):
+                        ctypes.CDLL(str(so_path), mode=ctypes.RTLD_GLOBAL)
+                        loaded.add(name)
+        except Exception as e:
+            logger.debug(f"[SupertonicTTS] NVIDIA lib path 주입 스킵: {e}")
+
+    def _configure_onnx_providers(self) -> list[str]:
+        """Supertonic 기본값이 CPU-only라, GPU ORT가 있으면 CUDA를 우선하도록 패치한다.
+
+        supertonic==1.3.1의 DEFAULT_ONNX_PROVIDERS는 CPUExecutionProvider만 고정한다.
+        TTS() API에 providers 인자가 없어 config를 로드 전에 교체한다.
+        """
+        self._ensure_nvidia_ort_libs()
+        import onnxruntime as ort
+
+        use_cuda = os.getenv("SUPERTONIC_USE_CUDA", "true").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        # CUDA EP DLL 경로를 PyTorch/NVIDIA wheel과 맞춘다(ORT 1.27+).
+        with contextlib.suppress(Exception):
+            ort.preload_dlls(cuda=True, cudnn=True)
+        available = ort.get_available_providers()
+        providers: list[str] = []
+        if use_cuda and "CUDAExecutionProvider" in available:
+            providers.append("CUDAExecutionProvider")
+        providers.append("CPUExecutionProvider")
+        # 요청 provider 중 실제 설치분만 남긴다.
+        providers = [p for p in providers if p in available] or ["CPUExecutionProvider"]
+
+        try:
+            import supertonic.config as supertonic_config
+            import supertonic.loader as supertonic_loader
+
+            # loader는 from config import DEFAULT_ONNX_PROVIDERS로 이름을 바인딩하므로
+            # config 쪽 리스트를 통째로 교체하면 loader는 옛 리스트를 계속 본다.
+            # in-place 갱신 + loader 모듈 속성 동시 패치.
+            cfg_list = supertonic_config.DEFAULT_ONNX_PROVIDERS
+            cfg_list.clear()
+            cfg_list.extend(providers)
+            supertonic_loader.DEFAULT_ONNX_PROVIDERS = cfg_list
+        except Exception as e:
+            logger.warning(f"[SupertonicTTS] ONNX provider 패치 실패, 라이브러리 기본값 사용: {e}")
+
+        logger.info(
+            f"[SupertonicTTS] ONNX providers={providers} "
+            f"(available={available}, SUPERTONIC_USE_CUDA={use_cuda})"
+        )
+        return providers
+
     def _load_sync(self) -> tuple[SupertonicTTS, SupertonicStyle]:
         """블로킹 ONNX 세션 로드 및 보이스 스타일 로드를 동기 함수로 분리한다."""
         from supertonic import TTS
 
+        providers = self._configure_onnx_providers()
         tts = TTS(model_dir=self.model_dir, auto_download=True)
         style = tts.get_voice_style(voice_name=self.voice_name)
-        logger.info(f"[SupertonicTTS] 모델 로드 완료 (voice={self.voice_name})")
+        logger.info(
+            f"[SupertonicTTS] 모델 로드 완료 (voice={self.voice_name}, providers={providers})"
+        )
         return tts, style
 
     async def _ensure_loaded(self) -> tuple[SupertonicTTS, SupertonicStyle]:

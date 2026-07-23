@@ -49,6 +49,35 @@ class SttService:
     _model_cache: ClassVar[dict[str, Any]] = {}
     _model_init_lock: ClassVar[Lock] = Lock()
 
+    @staticmethod
+    def _preload_ct2_cuda_libs() -> None:
+        """CTranslate2(faster-whisper 백엔드)가 요구하는 CUDA 12 라이브러리를 사전 로드한다.
+
+        2026-07-23 실측: ctranslate2 4.8.1은 libcublas.so.12를 dlopen하는데, 컨테이너에는
+        PyTorch cu130 wheel의 CUDA 13 라이브러리만 있어 transcribe() 시점에
+        "Library libcublas.so.12 is not found" RuntimeError가 발생했다(모델 초기화는 성공해
+        CPU 폴백도 발동하지 않음). nvidia-cublas-cu12 wheel의 so를 RTLD_GLOBAL로 명시
+        로드해 해결한다. LD_LIBRARY_PATH는 프로세스 기동 후 변경이 반영되지 않으므로
+        ctypes 로드가 정본 경로다. 라이브러리 부재 시 조용히 스킵(CPU 폴백에 위임).
+        """
+        try:
+            import contextlib
+            import ctypes
+            import site
+
+            names = ("libcublas.so.12", "libcublasLt.so.12")
+            for base in site.getsitepackages() + [site.getusersitepackages()]:
+                lib_dir = Path(base) / "nvidia" / "cublas" / "lib"
+                if not lib_dir.is_dir():
+                    continue
+                for name in names:
+                    so_path = lib_dir / name
+                    if so_path.is_file():
+                        with contextlib.suppress(OSError):
+                            ctypes.CDLL(str(so_path), mode=ctypes.RTLD_GLOBAL)
+        except Exception:
+            pass
+
     @classmethod
     def has_stt_input(cls, text: str) -> bool:
         """
@@ -103,16 +132,22 @@ class SttService:
                 return cls._model_cache[cache_key]
 
             device = WHISPER_DEVICE
-            compute_types = [WHISPER_COMPUTE_TYPE]
+            if device != "cpu":
+                cls._preload_ct2_cuda_libs()
+            candidates: list[tuple[str, str]] = [(device, WHISPER_COMPUTE_TYPE)]
             if device == "cpu":
-                compute_types.extend(["int8_float32", "float32"])
+                candidates.extend([("cpu", "int8_float32"), ("cpu", "float32")])
+            else:
+                # 2026-07-23: CUDA 초기화 실패(드라이버/라이브러리 부재) 시 CPU 폴백.
+                # GPU 미탑재 환경에서도 STT가 죽지 않도록 방어한다.
+                candidates.extend([("cpu", "int8"), ("cpu", "int8_float32"), ("cpu", "float32")])
 
             last_exc: Exception | None = None
-            for compute_type in dict.fromkeys(compute_types):
+            for candidate_device, compute_type in dict.fromkeys(candidates):
                 try:
                     model = WhisperModel(
                         internal_model_name,
-                        device=device,
+                        device=candidate_device,
                         compute_type=compute_type,
                     )
                     break
@@ -120,8 +155,8 @@ class SttService:
                     last_exc = exc
             else:
                 raise RuntimeError(
-                    f"WhisperModel 초기화 중 예외 발생: model={internal_model_name}, device={device}, "
-                    f"compute_types={compute_types}"
+                    f"WhisperModel 초기화 중 예외 발생: model={internal_model_name}, "
+                    f"candidates={candidates}"
                 ) from last_exc
 
             cls._model_cache[cache_key] = model
@@ -157,14 +192,33 @@ class SttService:
             raise KeyError(f"모델명 '{model_name}'이 MODEL_NAME_MAP에 없습니다.") from exc
 
         try:
-            segments_iter, info = model.transcribe(
-                normalized_path,
-                language=TRANSCRIBE_LANGUAGE,
-                beam_size=TRANSCRIBE_BEAM_SIZE,
-                vad_filter=TRANSCRIBE_VAD_FILTER,
-                hotwords=TRANSCRIBE_HOTWORDS,
-            )
-            segments = list(segments_iter)
+            try:
+                segments_iter, info = model.transcribe(
+                    normalized_path,
+                    language=TRANSCRIBE_LANGUAGE,
+                    beam_size=TRANSCRIBE_BEAM_SIZE,
+                    vad_filter=TRANSCRIBE_VAD_FILTER,
+                    hotwords=TRANSCRIBE_HOTWORDS,
+                )
+                segments = list(segments_iter)
+            except RuntimeError:
+                # 2026-07-23: CUDA 모델은 초기화가 lazy라 라이브러리 부재가 transcribe
+                # 시점에 드러난다(예: libcublas.so.12 미발견). get_model의 초기화 폴백이
+                # 발동하지 않으므로 여기서 CPU 모델로 1회 재시도한다.
+                if getattr(getattr(model, "model", None), "device", "") != "cuda":
+                    raise
+                cpu_model = WhisperModel(
+                    MODEL_NAME_MAP[model_name], device="cpu", compute_type="int8"
+                )
+                cls._model_cache[MODEL_NAME_MAP[model_name]] = cpu_model
+                segments_iter, info = cpu_model.transcribe(
+                    normalized_path,
+                    language=TRANSCRIBE_LANGUAGE,
+                    beam_size=TRANSCRIBE_BEAM_SIZE,
+                    vad_filter=TRANSCRIBE_VAD_FILTER,
+                    hotwords=TRANSCRIBE_HOTWORDS,
+                )
+                segments = list(segments_iter)
             full_text = " ".join(segment.text.strip() for segment in segments).strip()
             has_input = cls.has_stt_input(full_text)
             segment_outputs = cls.build_segments_payload(segments)

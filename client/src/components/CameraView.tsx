@@ -709,8 +709,13 @@ export function CameraView() {
     if (isMockMode) return;
     if (status !== "connected") return;
     let cancelled = false;
+    // 2026-07-23: iOS expo-location은 timeInterval을 지원하지 않아(Android 전용)
+    // 정지 상태에서는 watch 콜백이 거의 오지 않는다. 마지막 좌표를 보관했다가
+    // 주기적으로 재전송해 서버/콘솔의 위치 표시가 끊기지 않게 한다.
+    const lastCoordsRef = { current: null as GpsCoords | null };
 
     const pushGps = (coords: GpsCoords) => {
+      lastCoordsRef.current = coords;
       send({
         type: "realtime_gps",
         lat: coords.lat,
@@ -723,6 +728,16 @@ export function CameraView() {
         setMapPos({ lat: coords.lat, lon: coords.lon });
       }
     };
+
+    const resendTimer = setInterval(() => {
+      if (cancelled || !lastCoordsRef.current) return;
+      send({
+        type: "realtime_gps",
+        lat: lastCoordsRef.current.lat,
+        lon: lastCoordsRef.current.lon,
+        heading: lastCoordsRef.current.heading,
+      });
+    }, 5000);
 
     (async () => {
       const granted = await requestLocationPermission();
@@ -740,6 +755,7 @@ export function CameraView() {
 
     return () => {
       cancelled = true;
+      clearInterval(resendTimer);
       stopWatching();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.35 (2026-07-20 코드-문서 정합: §4.1 reflex_alert 4개 필드 추가·alert_id class-agnostic 정정, §6.1 인지 guide source 필드, §6.2 status dead contract 표기, §1 contact_save 제거, §4.3 latency_event 필드 한정, §6.3 STT 예시 model_name 정정. 기존 v0.4.34 이력 유지: §6.3 STT 목적지 파서 위치기반 교체, POI 확인 대기 상태 신설, TMAP 키 누락 fail-closed 전환)
+> **버전**: v0.4.36 (2026-07-23 §6.5 콘솔 GPS 스냅샷 재전송·단말 5초 주기 재전송 계약 추가. 기존 v0.4.35: 2026-07-20 코드-문서 정합: §4.1 reflex_alert 4개 필드 추가·alert_id class-agnostic 정정, §6.1 인지 guide source 필드, §6.2 status dead contract 표기, §1 contact_save 제거, §4.3 latency_event 필드 한정, §6.3 STT 예시 model_name 정정. 기존 v0.4.34 이력 유지: §6.3 STT 목적지 파서 위치기반 교체, POI 확인 대기 상태 신설, TMAP 키 누락 fail-closed 전환)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -674,6 +674,13 @@ STT 경로에서 전화 연결 의도가 감지되면, §6.1 `guide` 확인 멘�
 > 단말은 WS `connected` 이후에만 전송하며, 연결 직후 `getCurrentPosition` 1회로 즉시
 > 좌표를 밀어 넣어 실내 정지 시 HUD가 "앱 GPS 대기"에 고착되지 않게 한다.
 
+> **비고 (2026-07-23) - 콘솔 GPS 스냅샷·주기 재전송**: GPS 브로드캐스트는 수신 순간
+> 연결돼 있는 콘솔에만 전달되므로, 단말이 정지 상태(iOS `watchPositionAsync`는
+> `timeInterval` 미지원, Android 전용 옵션)면 콘솔 재연결 이후 위치가 영영 비는
+> 결함이 있었다(시연 실측). 서버는 콘솔 인증 직후 `NavigationManager` 세션에 남은
+> 디바이스별 마지막 좌표를 동일 `realtime_gps` 형식으로 1회 재전송하고, 단말은
+> 마지막 좌표를 5초 주기로 재전송해 정지 상태에서도 표시를 유지한다.
+
 > **비고 (2026-07-11) - 길안내 무음 결함 수정**: 기존에는 턴바이턴 멘트 조회
 > (`get_combined_guidance`)가 `DetectionConsumer._send_cognitive_guide` 내부에만 있어
 > 카메라 탐지가 없는 빈 장면에서는 NAVIGATING 상태여도 안내가 전혀 발화되지 않았다
@@ -1020,6 +1027,7 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.29** | **2026-07-19** | **§4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 서버가 단말에 보내는 guide WAV와 동일 바이너리를 관제 콘솔 `/ws/console/live-feed`에도 브로드캐스트하고, 반사 비프 클립 5종을 `console/public/reflex_clips/`로 정적 복사해 단말과 동일 파일 재생. 햅틱은 청각 재현 불가하므로 시각 펄스로 근사 표현** |
 | **v0.4.31** | **2026-07-19** | **§8.7 `/ws/console/live-feed` 관리자 JWT 인증을 최초 도입. v0.4.32에서 URL 전달 방식은 폐기됨. 단말/콘솔 거리 구역 오버레이를 좌·우 끝까지 이어지는 SVG 호(NEAR/MED) + 라벨로 갱신** |
 | **v0.4.32** | **2026-07-19** | **SSE·프레임·콘솔 WS의 URL 쿼리 토큰 제거. Authorization 헤더/WS 최초 auth 메시지로 전환하고 Origin 검증·인증 제한시간 추가. §8.8 최초 관리자 1회 부트스트랩, RBAC, 로그인 제한, 단말 JWT 발급 계약 신설** |
+| **v0.4.36** | **2026-07-23** | **§6.5 콘솔 GPS 스냅샷·주기 재전송 - 콘솔 인증 직후 서버가 디바이스별 마지막 좌표 1회 재전송, 단말은 정지 상태에서도 5초 주기 재전송(iOS timeInterval 미지원 대응)** |
 | **v0.4.35** | **2026-07-20** | **코드-문서 정합: §4.1 reflex_alert에 `alert_source`/`event_state`/`estimated_distance_m`/`policy_version` 4개 필드 추가, `alert_id`를 class-agnostic `high_obstacle` 고정값으로 정정. §6.1 인지 guide에 `source:"cognitive"` 필드 명시. §6.2 `status` 메시지를 dead contract(예약/미발행)로 표기. §1 type 목록에서 폐기된 `contact_save` 제거. §4.3 latency_event `latency_alert`/`latency_threshold_ms`를 반사/인지 필수·STT 선택으로 한정. §6.3 STT 예시 model_name을 기본값 `faster-whisper-small`로 정정** |
 | **v0.4.34** | **2026-07-20** | **§6.3 STT 목적지 파서를 위치기반 조사/명령어미 제거로 교체(전역 replace 결함 수정), WAITING_FOR_POI_CONFIRMATION 상태·명령 어휘 신설(동명 POI 음성 확인), TMAP 키 누락 시 helper_search_poi/helper_search_nearest_poi/helper_fetch_route fail-closed 전환** |
 | **v0.4.33** | **2026-07-20** | **§6.5 realtime_gps→콘솔 HUD 브로드캐스트·단말 connected 후 즉시 GPS 전송 계약. §8.5 Detection Guidance Log 목록 썸네일 bbox 오버레이·반사/노면-only bbox 저장·pipeline_debug 폴백** |

@@ -26,7 +26,7 @@
 | 11 | 핵심기술 4 (이중 채널 음성) | **부분 불일치 2건** | 억제 TTL 60초 시제·반사 오디오 최신 구조 (§3.3) |
 | 12 | 보행이론 인사이트 | **일치** | head_level_gate 상단 40%, 클록 포지션 확인 |
 | 13 | GPS 내비·음성 명령 | **일치** | TMAP·NavigationManager·faster-whisper-small 기본 |
-| 14 | 실측 성과 | **일치** | 28/29 클래스, 레이턴시 수치가 문서와 정확 일치 |
+| 14 | 최근 실측 표본 및 검증 현황 | **일치(2026-07-22 갱신 반영)** | 28/29 클래스(구 가중치 명시), 레이턴시 수치에 측정일·유효성 caveat 추가 후 changelog 원본과 일치 |
 | 15 | 실증 테스트 (S1~S8) | **일치** | 재무장 TTL 5초·latest-frame-wins·하단 보조 게이트 코드 확인 |
 | 16 | 개발 프로세스 | **일치** | AGENTS.md 정본 구조 그대로 |
 | 17 | 한계와 향후 계획 | **부분 불일치 2건** | 셀룰러 미검증 단정·온디바이스 부재 단정 (§3.4) |
@@ -91,8 +91,8 @@
 | 12 | 클록 포지션(9시~3시) 자기중심 좌표 | `server/detection/direction.py:78-93` (`CLOCK_HOURS`, `estimate_clock_direction`) |
 | 13 | TMAP 보행자 API + NavigationManager + realtime_gps/nav_route | `server/navigation/manager.py`, AGENTS.md §2 |
 | 13 | faster-whisper-small 기본 | `server/stt/stt_config.py:83` (`DEFAULT_REQUEST_MODEL`) |
-| 14 | 클래스 검증 28/29 성공, stop 클래스 0/3, 세그 4클래스 전부 | `docs/ops/model_class_validation_report.md:100` |
-| 14 | 실측: 캡처 0.8ms / Detection 235~340ms / RAG 56~78ms / LLM 460ms~3.7s | `docs/design/pipeline_stage_design.md:70-73`, `docs/research/outdoor_guidance_refinement_roadmap.md:140-143` (수치 완전 일치) |
+| 14 | 클래스 검증 28/29 성공(구 가중치 det_best_20260705.pt/segbest.pt, 2026-07-06 기준), stop 클래스 0/3, 세그 4클래스 전부 | `docs/ops/model_class_validation_report.md:100` |
+| 14 | 실측(측정일 명시): 서버 JPEG 디코딩 0.8~0.9ms(2026-07-12) / Detection 추론(서버) 200~330ms(2026-07-13, 스레드풀 적용 전) / Chroma RAG 51.7~77.9ms(2026-07-12, 현재 기본 경로 아님) / gemma4:e4b 1.0~2.8초(2026-07-13, Fast Lane 적용 전) | `docs/changelogs/kb.md`(2026-07-12·07-13 항목 원본 수치) — `pipeline_stage_design.md:70-73`은 반올림된 구값(56~78ms 등)이라 changelog 원본으로 대체 |
 | 15 | S2: 억제 재무장, TTL 5초 | `server/tts/suppressor.py:16` (`REFLEX_SUPPRESS_TTL_S=5`) |
 | 15 | S3: 큐 축소 + latest-frame-wins | `server/capture/stream_splitter.py:14`(P0-2), `server/api/session_manager.py:28-33`(maxsize=1) |
 | 15 | S4: 하단 근접 보조 게이트 | `server/detection/distance_policy.py:46-47,134-135` (`BOTTOM_OVERRIDE_*`) |

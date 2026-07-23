@@ -88,8 +88,12 @@ TRANSCRIBE_HOTWORDS = (
     "길댕이 길댕아 길찾아줘 네비게이션 길안내 시작 물어볼게 질문할게 "
     "가까운 근처 주변 지하철역 버스정류장 편의점 화장실 약국 병원 카페 은행 주차장"
 )
-WHISPER_DEVICE = "cpu"
-WHISPER_COMPUTE_TYPE = "int8"
+# 2026-07-23 cpu/int8 -> cuda/float16 전환(실측 근거): GPU 서버(RTX 4090) 배포 후에도
+# CPU 전사가 15초 발화에 약 16초 걸려 STT 왕복의 주 병목이었다. 컨테이너 CUDA 초기화
+# 실측 1.5초, small 모델 VRAM 약 1GB(YOLO·Supertonic과 공유 가능 수준). CPU 전용
+# 환경(macOS Docker 등)으로 되돌릴 때는 "cpu"/"int8"로 복원한다.
+WHISPER_DEVICE = "cuda"
+WHISPER_COMPUTE_TYPE = "float16"
 STT_ORCH_RISK_HINT = "low"
 STT_ORCH_CLASS_NAME = "speech_to_text"
 # 경로 검색·RAG·LLM 등 장시간 STT 후속 처리 전 즉시 안내 멘트(반사 클립 아님, 인지 TTS).

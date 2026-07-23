@@ -34,6 +34,10 @@ services:
       # 2026-07-19: ultralytics 런타임 AutoUpdate 비활성화(Dockerfile ENV로도 이미 기본값이지만
       # compose 설정만 봐도 알 수 있도록 명시). docker-compose.macos.yml과 동일 이유.
       - YOLO_AUTOINSTALL=False
+      # 2026-07-22: onnxruntime-gpu 1.27(CUDA 13)이 PyTorch NVIDIA wheel의 libcudart를 찾도록 함.
+      # nvidia-cuda-*-cu13 pip extra는 아직 배포되지 않아 torch 동봉 nvidia/cu13·cudnn을 사용.
+      # 2026-07-23: ctranslate2(faster-whisper CUDA)용 CUDA 12 cublas 경로 추가.
+      - LD_LIBRARY_PATH=/usr/local/lib/python3.13/site-packages/nvidia/cu13/lib:/usr/local/lib/python3.13/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.13/site-packages/nvidia/cublas/lib
     extra_hosts:
       - "host.docker.internal:172.18.0.1"
     depends_on:

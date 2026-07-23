@@ -776,6 +776,27 @@ async def ws_console_live_feed(
         return
     await manager.connect_console(ws, accept=False)
     await ws.send_json({"type": "auth_ok"})
+    # 2026-07-23: GPS 브로드캐스트는 수신 순간 연결된 콘솔에만 전달되는데, 단말이
+    # 정지 상태면 realtime_gps가 드물어 콘솔 재연결 시 위치 표시가 영영 비었다
+    # (시연 실측). 접속 직후 세션에 남은 마지막 좌표 스냅샷을 1회 재전송한다.
+    with contextlib.suppress(Exception):
+        from server.navigation.manager import nav_manager
+
+        for snap_device_id, snap_session in nav_manager.sessions.items():
+            if snap_session.lat is None or snap_session.lon is None:
+                continue
+            await ws.send_json(
+                {
+                    "type": "realtime_gps",
+                    "lat": float(snap_session.lat),
+                    "lon": float(snap_session.lon),
+                    "heading": float(snap_session.heading)
+                    if snap_session.heading is not None
+                    else 0,
+                    "device_id": snap_device_id,
+                    "ts": now_ts(),
+                }
+            )
     try:
         while True:
             message = await ws.receive()
