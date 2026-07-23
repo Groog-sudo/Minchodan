@@ -76,7 +76,7 @@
 | 캡처 select | `client/src/services/frameCaptureProviderSelect.android.ts` |
 | TFLite 추론 | `client/src/inference/localDetectorSelect.android.ts`, `tfliteDetector.ts` |
 | AEC | `AudioSessionBridgeModule.kt` + `audioSessionBridge.ts` Android 분기 |
-| 모델 자산 | `client/assets/models/yolo26n/*.tflite` (`EXPORT_SOURCE_260714.txt`: det `[1,300,6]`, seg `[1,40,8400]`) |
+| 모델 자산 | `client/assets/models/yolo26n/*.tflite` (`EXPORT_SOURCE_260714.txt`: det `[1,33,8400]` nms=False, seg `[1,40,8400]`) |
 | 패키지 | `com.minchodan.app` (`client/app.json`) |
 
 계약서 §4.5의 “미착수”는 2026-07-21에 **코드 구현됨**으로 정정됨. 잔여는 **실기기 검증**.

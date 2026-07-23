@@ -47,9 +47,11 @@ def export_one(model_name: str) -> str:
     print(f"[INFO] {model_name}: {weights} -> tflite")
     model = YOLO(weights)
     export_kwargs: dict = {"format": "tflite", "imgsz": 640, "int8": False}
-    # detect는 NMS 내장([1,300,6])으로 내보내 서버·CoreML 계약과 맞춘다.
+    # detect는 NMS 미포함([1, 4+nc, 8400] channels-first)으로 보낸다.
+    # NON_MAX_SUPPRESSION_V4 가 NNAPI/GPU delegate와 비호환이라 JS NMS로 후처리한다.
+    # (CoreML iOS 경로는 nms=True 유지 — scripts/export_mobile.py / convert_yolo_to_coreml.py)
     if model_name == "object_detection" and model.task == "detect":
-        export_kwargs["nms"] = True
+        export_kwargs["nms"] = False
     exported_path = str(model.export(**export_kwargs))
     if not os.path.isabs(exported_path):
         exported_path = os.path.join(PROJECT_ROOT, exported_path)

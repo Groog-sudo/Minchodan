@@ -1,5 +1,7 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
+import org.apache.tools.ant.taskdefs.condition.Os
+
 buildscript {
   repositories {
     google()
@@ -21,8 +23,13 @@ allprojects {
 }
 
 // Windows: 프로젝트 경로가 길어도 CMake/NDK 빌드가 되도록 네이티브 캐시만 짧은 경로로 분리
+// macOS/Linux에서는 기본 staging을 유지한다(C:/ 하드코딩이 Unix에서 상대 폴더를 만드는 부작용 방지).
 subprojects { subproject ->
   subproject.afterEvaluate {
+    if (!Os.isFamily(Os.FAMILY_WINDOWS)) {
+      return
+    }
+
     def hasNativePlugin = subproject.plugins.hasPlugin("com.android.library") ||
       subproject.plugins.hasPlugin("com.android.application")
     if (!hasNativePlugin) {

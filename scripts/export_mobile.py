@@ -107,8 +107,13 @@ def export_model(model_key: str, fmt: str, output_dir: str) -> str | None:
     try:
         model = YOLO(weights_path)
         export_kwargs = {"format": fmt}
-        if fmt in ("tflite", "coreml") and model_key == "object_detection":
-            export_kwargs["nms"] = True
+        if model_key == "object_detection":
+            # TFLite: NMS 그래프 제외(Android NNAPI/GPU 호환). JS nonMaxSuppression 후처리.
+            # CoreML: iOS Vision 계약용 nms=True 유지.
+            if fmt == "tflite":
+                export_kwargs["nms"] = False
+            elif fmt == "coreml":
+                export_kwargs["nms"] = True
         export_path = str(model.export(**export_kwargs))
         target_path = target_path_for(model_key, fmt, export_path, output_dir)
         replace_path(export_path, target_path)

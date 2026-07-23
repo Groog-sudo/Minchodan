@@ -1,6 +1,7 @@
 source_weights=object_detection260714.pt / segmentation260714.pt
-exported_at=2026-07-15
+exported_at=2026-07-24
 det_coreml=nms=True
 seg_coreml=nms=False channels-first [1,40,8400]
-det_tflite=nms=True [1,300,6]
+det_tflite=nms=False channels-first [1,33,8400] (JS NMS; NON_MAX_SUPPRESSION_V4 제거로 android-gpu 호환)
 seg_tflite=channels-first [1,40,8400]
+note=2026-07-15 당시 det_tflite=nms=True [1,300,6] 이었으나 Android NNAPI/GPU 비호환으로 2026-07-24 nms=False 재export

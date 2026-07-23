@@ -430,7 +430,7 @@ client/src/
 | --- | --- | --- | --- | --- |
 | `TC-INF-001` | LocalDetector 인터페이스 정합 | 공통 | `detect()` 반환 `DetectionResult[]` 구조가 플랫폼 무관하게 동일 | M1~M5 |
 | `TC-INF-002` | TFLiteDetector 모델 로드 | 공통 | `object_detection.tflite`, `segmentation.tflite` 양쪽 로드 성공. `isLoaded === true` | M2 |
-| `TC-INF-003` | TFLiteDetector NMS 디코딩 | 공통 | `[1,300,6]`(det), `[1,300,38]`(seg) 포맷 정상 파싱. 현행 `runModel()` 출력과 정합 | M2 |
+| `TC-INF-003` | TFLiteDetector NMS 디코딩 | 공통 | det `[1,33,8400]`(nms=False)+JS NMS, seg `[1,40,8400]`. legacy `[1,300,6]` 폴백. 현행 `runModel()` 정합 | M2 |
 | `TC-INF-004` | Android NNAPI delegate 활성 | Android | `["nnapi"]` delegate 로드 성공. API 27+ 기기에서 NPU/GPU 가속 동작 | M3, M6 |
 | `TC-INF-005` | iOS CoreML Delegate 활성 (폴백) | iOS | `$EnableCoreMLDelegate=true` 후 `["core-ml"]` delegate 로드 성공 | M5, M6 |
 | `TC-INF-006` | iOS delegate 실패 시 CPU 폴백 | iOS | `["core-ml"]` 로드 실패 시 `[]`(CPU)로 자동 전환. 앱 크래시 없음 | M5 |

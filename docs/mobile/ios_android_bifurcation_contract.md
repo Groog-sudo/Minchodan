@@ -162,16 +162,16 @@ export { useFrameCaptureProvider } from "./frameCaptureProviderSelect";
 
 ## 5. 온디바이스 추론 포맷 계약 확정
 
-`docs/mobile/ondevice_inference_engine_isolation_plan.md` TC-INF-003은 `object_detection` 출력 포맷을 `[1,300,6]`(NMS 내장)으로 목표 스펙에 못박았다. **2026-07-21 코드 실측**: `tfliteDetector.ts`는 `attrsPerBox=6`을 사용한다. 번들 `object_detection.tflite`(07-15, `*260714` export 계열)와 shape가 실제 기기에서 일치하는지는 [`android_ios_parity_checklist.md`](android_ios_parity_checklist.md) M-02에서 재검증한다. 불일치 시 **자산 재export와 파서 변경을 같은 커밋**에 넣는다(§2 원칙 5).
+`docs/mobile/ondevice_inference_engine_isolation_plan.md` TC-INF-003은 과거 `[1,300,6]`(NMS 내장)을 목표로 적었으나, **2026-07-24** Android NNAPI/GPU 호환을 위해 det TFLite를 `nms=False` `[1,33,8400]` channels-first로 재export하고 JS `nonMaxSuppression`으로 후처리한다. `tfliteDetector.ts`는 dense 경로를 우선하고 legacy `[1,300,6]`만 폴백한다. 불일치 시 **자산 재export와 파서 변경을 같은 커밋**에 넣는다(§2 원칙 5).
 
-| 항목 | 현재 상태 (2026-07-21) | 목표 |
+| 항목 | 현재 상태 (2026-07-24) | 목표 |
 | --- | --- | --- |
 | 거리 필드 | `DetectionResult.distanceMeters?` 등 optional. iOS LiDAR 우선, 없으면 휴리스틱 | Android는 필드 생략 가능, 휴리스틱 유지 |
-| 코드 (`tfliteDetector.ts`) | `attrsPerBox: 6` (NMS-enabled 가정) | 번들 tflite 실측 shape와 일치 |
-| 자산 (`object_detection.tflite`) | `*260714` 계열 export(07-15). 기기에서 shape 재확인 | M-02 Pass |
+| 코드 (`tfliteDetector.ts`) | dense `[1,33,8400]` 우선 + JS NMS; legacy `attrsPerBox: 6` 폴백 | 번들 tflite 실측 shape와 일치 |
+| 자산 (`object_detection.tflite`) | `*260714` nms=False 재export(07-24). shape `[1,33,8400]` | M-02 Pass |
 | `segmentation.tflite` | dense/`260714` 계열. 코드에 `[1,40,8400]` 주석 | M-03 Pass |
 
-**액션 아이템**: Android 에이전트는 정합 체크리스트 M-01~M-04를 먼저 닫는다. 구버전 서술(코드 33 / 자산 미재수출)은 2026-07-10 시점 이슈이며, 현행은 6 + 260714 자산 기준으로 검증한다.
+**액션 아이템**: Android 에이전트는 정합 체크리스트 M-01~M-04를 먼저 닫는다. 실기기에서 `android-gpu` 로드 성공·CPU 폴백 로그·탐지 품질을 확인한다.
 
 ---
 

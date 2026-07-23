@@ -12,8 +12,9 @@ const { SceneClassifyBridgeModule } = NativeModules;
 
 const ACCELERATION_DELEGATES: TensorflowModelDelegate[] = Platform.select({
   ios: ["core-ml"],
-  // android: NNAPI 호환성 문제 우회 - CPU 모드로 강제해 탐지 미작동 원인 조사 (2026-07-14)
-  android: [],
+  // det TFLite를 nms=False([1,33,8400])로 재export해 NON_MAX_SUPPRESSION_V4를 제거함(2026-07-24).
+  // android-gpu 우선, 로드 실패 시 loadModelWithFallback이 CPU([])로 폴백.
+  android: ["android-gpu"],
   default: [],
 }) ?? [];
 
@@ -32,8 +33,10 @@ const AIHUB_CLASS_NAMES = [
   "traffic_sign", "tree_trunk", "truck", "wheelchair"
 ];
 
-const CONF_THRESHOLD = 0.35; // 오탐 방지를 위해 서버와 동일하게 0.35로 상향
-const IOU_THRESHOLD = 0.45; // 중복 박스 제거(NMS) 기준
+const CONF_THRESHOLD = 0.35; // seg 기본 임계값
+const DET_CONF_THRESHOLD = 0.50; // det 오탐 완화 (기존 NMS-enabled 경로와 동일)
+const IOU_THRESHOLD = 0.45; // JS NMS IoU 임계값
+const DENSE_NUM_ANCHORS = 8400; // YOLO26n raw head anchors
 
 function calculateIoU(box1: { x: number, y: number, w: number, h: number }, box2: { x: number, y: number, w: number, h: number }) {
   const x1 = Math.max(box1.x, box2.x);
@@ -116,6 +119,55 @@ export class TFLiteDetector implements LocalDetector {
     }
   }
 
+  /**
+   * channels-first raw head 디코드: [1, 4+nc(+32 mask), 8400]
+   * det(nms=False): [1,33,8400] / seg: [1,40,8400]
+   * 반환 null이면 legacy NMS-enabled([1,300,6]) 경로로 넘긴다.
+   */
+  private decodeChannelsFirst(
+    out: Float32Array,
+    numClasses: number,
+    names: readonly string[],
+    label: "segmentation" | "object_detection",
+  ): DetectionResult[] | null {
+    const boxAttrs = 4 + numClasses;
+    const withMaskAttrs = boxAttrs + 32;
+    if (
+      out.length !== boxAttrs * DENSE_NUM_ANCHORS &&
+      out.length !== withMaskAttrs * DENSE_NUM_ANCHORS
+    ) {
+      return null;
+    }
+
+    const confThreshold =
+      label === "object_detection" ? DET_CONF_THRESHOLD : CONF_THRESHOLD;
+    const results: DetectionResult[] = [];
+    for (let i = 0; i < DENSE_NUM_ANCHORS; i++) {
+      let bestClassId = -1;
+      let bestScore = -1;
+      for (let c = 0; c < numClasses; c++) {
+        const score = out[(4 + c) * DENSE_NUM_ANCHORS + i];
+        if (score > bestScore) {
+          bestScore = score;
+          bestClassId = c;
+        }
+      }
+      if (bestScore < confThreshold || bestClassId < 0) continue;
+      const cx = out[0 * DENSE_NUM_ANCHORS + i] * 640;
+      const cy = out[1 * DENSE_NUM_ANCHORS + i] * 640;
+      const w = out[2 * DENSE_NUM_ANCHORS + i] * 640;
+      const h = out[3 * DENSE_NUM_ANCHORS + i] * 640;
+      if (w <= 1 || h <= 1) continue;
+      results.push({
+        model: label,
+        className: names[bestClassId] ?? `cls_${bestClassId}`,
+        confidence: bestScore,
+        bbox: { x: cx - w / 2, y: cy - h / 2, w, h },
+      });
+    }
+    return nonMaxSuppression(results, IOU_THRESHOLD);
+  }
+
   private async runModel(
     model: TensorflowModel | null,
     attrsPerBox: number,
@@ -128,8 +180,14 @@ export class TFLiteDetector implements LocalDetector {
     try {
       const outputs = await model.run([buffer]);
       let out: Float32Array = new Float32Array(0);
+      const denseLen = (4 + numClasses) * DENSE_NUM_ANCHORS;
+      const denseMaskLen = denseLen + 32 * DENSE_NUM_ANCHORS;
       for (let oi = 0; oi < outputs.length; oi++) {
         const cand = new Float32Array(outputs[oi]);
+        if (cand.length === denseLen || cand.length === denseMaskLen) {
+          out = cand;
+          break;
+        }
         if (cand.length % attrsPerBox === 0 && cand.length >= attrsPerBox) {
           out = cand;
           break;
@@ -139,78 +197,31 @@ export class TFLiteDetector implements LocalDetector {
         out = new Float32Array(outputs[0]);
       }
 
-      // *260714 TFLite segment export: [1, 40, 8400] channels-first
-      // (4 xywh 정규화 + nc class + 32 mask) — end2end [1,300,38] 과 구분한다.
-      const denseSegAttrs = 4 + numClasses + 32;
       if (
-        label === "segmentation" &&
-        (out.length === denseSegAttrs * 8400 || out.length === (4 + numClasses) * 8400)
+        (label === "object_detection" && !TFLiteDetector.detRawLogged) ||
+        (label === "segmentation" && !TFLiteDetector.segRawLogged)
       ) {
-        const numAnchors = 8400;
-        const results: DetectionResult[] = [];
-        for (let i = 0; i < numAnchors; i++) {
-          let bestClassId = -1;
-          let bestScore = -1;
-          for (let c = 0; c < numClasses; c++) {
-            const score = out[(4 + c) * numAnchors + i];
-            if (score > bestScore) {
-              bestScore = score;
-              bestClassId = c;
-            }
-          }
-          if (bestScore < CONF_THRESHOLD || bestClassId < 0) continue;
-          const cx = out[0 * numAnchors + i] * 640;
-          const cy = out[1 * numAnchors + i] * 640;
-          const w = out[2 * numAnchors + i] * 640;
-          const h = out[3 * numAnchors + i] * 640;
-          if (w <= 1 || h <= 1) continue;
-          results.push({
-            model: label,
-            className: names[bestClassId] ?? `cls_${bestClassId}`,
-            confidence: bestScore,
-            bbox: { x: cx - w / 2, y: cy - h / 2, w, h },
-          });
-        }
-        return nonMaxSuppression(results, IOU_THRESHOLD);
+        if (label === "object_detection") TFLiteDetector.detRawLogged = true;
+        else TFLiteDetector.segRawLogged = true;
+        console.log(
+          `[TFLiteDetector DEBUG] ${label} raw output length=${out.length} ` +
+            `(dense=${denseLen}, legacyAttrs=${attrsPerBox})`,
+        );
       }
 
+      const denseDecoded = this.decodeChannelsFirst(out, numClasses, names, label);
+      if (denseDecoded !== null) {
+        return denseDecoded;
+      }
+
+      // legacy: ultralytics nms=True export [1,300,6] = [x1,y1,x2,y2,score,classId] 픽셀 코너
       const numBoxes = Math.floor(out.length / attrsPerBox);
-
-      // 5. 원본 프레임 1장의 raw class id + confidence + bbox 좌표 디버그 로깅
-      if (label === "object_detection" && !TFLiteDetector.detRawLogged) {
-        TFLiteDetector.detRawLogged = true;
-        console.log(`[TFLiteDetector DEBUG] ${label} raw output length=${out.length}, numBoxes=${numBoxes}`);
-        for (let i = 0; i < Math.min(numBoxes, 20); i++) {
-          const off = i * attrsPerBox;
-          if (off + 5 >= out.length) break;
-          const x1 = out[off];
-          const y1 = out[off + 1];
-          const x2 = out[off + 2];
-          const y2 = out[off + 3];
-          const score = out[off + 4];
-          const clsId = out[off + 5];
-          console.log(`  Raw Box ${i}: coords=[${x1.toFixed(1)},${y1.toFixed(1)},${x2.toFixed(1)},${y2.toFixed(1)}], score=${score.toFixed(4)}, classId=${clsId}`);
-        }
-      }
-      if (label === "segmentation" && !TFLiteDetector.segRawLogged) {
-        TFLiteDetector.segRawLogged = true;
-        console.log(`[TFLiteDetector DEBUG] ${label} raw output length=${out.length}, numBoxes=${numBoxes}`);
-        for (let i = 0; i < Math.min(numBoxes, 5); i++) {
-          const off = i * attrsPerBox;
-          if (off + 5 >= out.length) break;
-          const slice = Array.from(out.slice(off, off + 10)).map(v => v.toFixed(2));
-          console.log(`  Raw Seg Box ${i}: off=${off}, slice=[${slice.join(", ")}]...`);
-        }
-      }
-
       const results: DetectionResult[] = [];
 
       for (let i = 0; i < numBoxes; i++) {
         const off = i * attrsPerBox;
         if (off + 5 >= out.length) break;
 
-        // ultralytics nms=True export 출력 포맷은 [x1, y1, x2, y2, confidence, classId]
-        // 코너 좌표(픽셀 단위)이다. xc/yc/w/h 중심좌표가 아니므로 min/max로 정규화해서 계산한다.
         const x1 = Math.min(out[off], out[off + 2]);
         const y1 = Math.min(out[off + 1], out[off + 3]);
         const x2 = Math.max(out[off], out[off + 2]);
@@ -222,7 +233,8 @@ export class TFLiteDetector implements LocalDetector {
         const maxScore = out[off + 4];
         const clsId = Math.round(Math.abs(out[off + 5]));
 
-        const currentConfThreshold = label === "object_detection" ? 0.50 : CONF_THRESHOLD;
+        const currentConfThreshold =
+          label === "object_detection" ? DET_CONF_THRESHOLD : CONF_THRESHOLD;
         if (maxScore < currentConfThreshold || clsId >= numClasses) continue;
         if (w <= 1 || h <= 1) continue;
 
@@ -264,7 +276,7 @@ export class TFLiteDetector implements LocalDetector {
       ),
       this.runModel(
         this.detModel,
-        6, // YOLO 26N NMS-enabled format (4 coords + score + classId = 6)
+        6, // legacy nms=True [1,300,6] 폴백용 (현행 자산은 dense 33ch)
         AIHUB_CLASS_NAMES.length,
         AIHUB_CLASS_NAMES,
         "object_detection",

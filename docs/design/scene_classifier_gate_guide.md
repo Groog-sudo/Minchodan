@@ -1,7 +1,7 @@
 # 씬 분류기 게이트 기법 해설 (팀 학습용)
 
 > **작성일**: 2026-07-07
-> **버전**: v1.0.0 (최초 작성)
+> **버전**: v1.1.0 (2026-07-24: Android ML Kit 씬 게이트 대응 반영)
 > **목적**: `docs/design/indoor_fp_mitigation_design.md` §4에서 설계하고 실제 코드에 반영한 "씬 분류기 게이트" 기법을, 처음 접하는 팀원도 배경부터 코드 위치까지 따라갈 수 있도록 상세히 풀어 쓴 학습용 문서
 > **관련 문서**: [`docs/design/indoor_fp_mitigation_design.md`](indoor_fp_mitigation_design.md)(원본 설계서, 실측 데이터·안전성 검토 포함), [`docs/design/behavior_and_risk_insight.md`](behavior_and_risk_insight.md)
 
@@ -11,7 +11,7 @@
 
 Minchodan의 반사 경로(Reflex Path)는 카메라 프레임을 YOLO26n 탐지·분할 모델에 넣고, 위험하다고 판단되면 즉시 경보(비프음+진동)를 울립니다. 그런데 이 모델은 **AI Hub 한국 인도(실외) 데이터셋만으로 학습**되어 있어서, 실내에서 촬영하면 모델이 "실외라고 가정하고" 엉뚱한 사물을 위험 물체로 착각하는 일이 반복적으로 관측됐습니다(예: 사무실 의자를 `car`로, 사무실 바닥을 `sidewalk_normal`로 오인).
 
-이 문제를 막기 위해 이번에 추가한 것이 **씬 분류기 게이트**입니다. iOS가 기본 제공하는 별도의 이미지 분류 기능을 이용해 "지금 이 프레임이 실내인지 실외인지"를 독립적으로 한 번 더 확인하고, 실내로 판단되면 반사 경보를 억제합니다.
+이 문제를 막기 위해 이번에 추가한 것이 **씬 분류기 게이트**입니다. 플랫폼별 온디바이스 이미지 분류(iOS: Vision `VNClassifyImageRequest`, Android: ML Kit Image Labeling)로 "지금 이 프레임이 실내인지 실외인지"를 독립적으로 한 번 더 확인하고, 실내로 판단되면 반사 경보를 억제합니다.
 
 이 문서는 다음을 다룹니다.
 
@@ -128,13 +128,15 @@ flowchart LR
 
 | 파일 | 역할 |
 | --- | --- |
-| `client/ios/CoreMLInferenceBridge.swift` | `classifyScene()` 함수. `VNClassifyImageRequest`를 실행하고, 4.3절 규칙대로 `isLikelyIndoor`/`confidence`/`topLabels`를 계산해 반환. `outdoorPositiveIdentifiers`/`indoorFalsePositiveIdentifiers` 키워드 집합이 여기 정의돼 있음. |
+| `client/ios/CoreMLInferenceBridge.swift` | iOS `classifyScene()`. `VNClassifyImageRequest`를 실행하고, 4.3절 규칙대로 `isLikelyIndoor`/`confidence`/`topLabels`를 계산해 반환. `outdoorPositiveIdentifiers`/`indoorFalsePositiveIdentifiers` 키워드 집합이 여기 정의돼 있음. |
+| `client/android/.../SceneClassifyBridgeModule.kt` | Android 대응. ML Kit Image Labeling으로 top labels를 얻고, Android taxonomy용 identifier 집합으로 동일 정책(`isLikelyIndoor`)을 산출. |
+| `client/src/inference/tfliteDetector.ts` | `classifySceneAndroid()`가 `SceneClassifyBridgeModule`을 호출해 `scene` 필드를 채움. |
 | `client/src/inference/types.ts` | `SceneClassification` 타입 정의(`isLikelyIndoor`, `confidence`, `topLabels`). |
 | `client/src/inference/localDetectorSelect.ios.ts` | Swift 브릿지 응답(`scene` 필드)을 JS 쪽으로 전달. `[SceneClassify]` 로그도 여기서 출력(디버깅용, top-5 identifier 계속 확인 가능). |
 | `client/src/hooks/useOnDeviceDetection.ts` | `detectFrame()`이 `scene`을 반환값에 포함해 컴포넌트까지 전달. |
-| `client/src/components/CameraView.tsx` | `isOutdoorByScene = scene ? !scene.isLikelyIndoor : true` 계산 후, 기존 `hasOutdoorSurface`(seg 기반)와 AND로 결합해 `validDetections` 필터에 적용. |
+| `client/src/components/CameraView.tsx` | `isOutdoorByScene = scene ? !scene.isLikelyIndoor : true` 계산 후, 기존 `hasOutdoorSurface`(seg 기반)와 AND로 결합해 `validDetections` 필터에 적용. 플랫폼 구분 없이 동일 소비. |
 
-`scene`이 없거나(안드로이드는 이 기능이 없음) 판정 자체가 실패하면 `isOutdoorByScene`을 `true`로 두어, 기존 co-occurrence 게이트만으로 동작하도록 안전하게 폴백합니다. 씬 분류기가 죽어도 전체 파이프라인이 멈추지 않게 하기 위함입니다.
+`scene`이 없거나 판정 자체가 실패하면 `isOutdoorByScene`을 `true`로 두어, 기존 co-occurrence 게이트만으로 동작하도록 안전하게 폴백합니다. 씬 분류기가 죽어도 전체 파이프라인이 멈추지 않게 하기 위함입니다. Apple Vision과 ML Kit taxonomy는 다르므로 identifier 집합·실측 오탐률은 플랫폼별로 별도 검증이 필요합니다(배선 완료 ≠ 품질 동일).
 
 ---
 
@@ -176,7 +178,7 @@ A. 안 됩니다. 실내 오탐(0.51~0.71)과 실외 정탐(0.27~0.66)의 confid
 A. 실측 632건에서 단 한 번도 등장하지 않았습니다. Apple taxonomy에 이 정확한 단어가 우리가 테스트한 장면에서는 나오지 않는 것으로 보이며, 그래서 개념어 조합(지면/초목/도로 vs 천체/조명)으로 추론하는 우회 전략을 씁니다.
 
 **Q. 안드로이드에서는 이 게이트가 동작하나요?**
-A. 아니요. `VNClassifyImageRequest`는 iOS(Vision 프레임워크) 전용 API입니다. 안드로이드에서는 `scene` 필드 자체가 없고, `isOutdoorByScene`이 자동으로 `true`(폴백)가 되어 기존 seg 기반 co-occurrence 게이트만으로 동작합니다.
+A. 예. `SceneClassifyBridgeModule.kt`(ML Kit Image Labeling) + `tfliteDetector.ts`의 `classifySceneAndroid()`로 `scene`을 채우고, `CameraView`의 `isOutdoorByScene` 게이팅은 iOS와 동일하게 소비합니다. 다만 taxonomy·키워드 집합이 Apple Vision과 달라 실측 오탐률 정합은 별도 검증 대상입니다. 브릿지 실패 시에만 `isOutdoorByScene=true` 폴백으로 기존 co-occurrence 게이트만 동작합니다.
 
 **Q. 이 게이트가 오작동하면 앱이 멈추나요?**
 A. 아니요. `classifyScene()` 내부에서 예외가 발생하거나 분류 결과가 비어 있으면 `isLikelyIndoor: false`(허용적 폴백)를 반환하도록 만들어져 있어서, 씬 분류기가 죽어도 기존 게이트만으로 계속 동작합니다(단일 장애점이 되지 않도록 설계).

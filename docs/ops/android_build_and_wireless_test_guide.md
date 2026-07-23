@@ -1,6 +1,14 @@
 > **작성일**: 2026-07-09
-> **버전**: v1.1.1 (2026-07-19 Tailscale Serve WSS MagicDNS/443 반영)
+> **버전**: v1.1.2 (2026-07-24 macOS/Linux Gradle 경로 정리 반영)
 > **설명**: Android 온디바이스 TFLite 추론 패키징 설정 및 Tailscale 기반 실기기 연동 테스트 종합 지침서
+
+---
+
+## 0. 호스트 OS별 Gradle 주의사항 (macOS / Windows / Linux)
+
+- `client/android/gradle.properties`에 `org.gradle.java.home`을 두지 않는다. JDK가 필요하면 `~/.gradle/gradle.properties`(Windows: `%USERPROFILE%\.gradle\gradle.properties`)에 개인 경로만 설정한다.
+- CMake staging을 `C:/AndroidCxx/...`로 옮기는 로직은 **Windows 전용**이다(`client/android/build.gradle`의 `Os.isFamily(WINDOWS)`). macOS/Linux는 기본 staging을 사용한다.
+- `local.properties`(SDK 경로)는 Git 추적하지 않으며, Android Studio/Gradle이 호스트별로 생성한다.
 
 ---
 

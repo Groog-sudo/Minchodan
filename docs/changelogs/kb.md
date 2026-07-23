@@ -1917,7 +1917,7 @@
 
 ### 2026-07-14 | 1단계 | auto_publish_work
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `ffa4bb3`
 - **변경 내용**:
   - Add auto_publish_work script and skill definition for git automation
 - **관련 파일**: `.agents/skills/auto-publish-work/`, `scripts/auto_publish_work.py`
@@ -4120,3 +4120,26 @@
 - **관련 파일**: `docs/ops/surface_content_based_dedup_implementation_plan.md`, `docs/README.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 기획서 주장과 추적 코드 상수(45s/20s/seg N=3/`surface_hazard` 고정 키) 일치 확인. 본 커밋은 문서만(구현 코드 변경 없음).
 - **비고**: 구현은 기획서 §11 순서대로 `kb`에서 후속 진행.
+
+### 2026-07-24 | client/Android | macOS 빌드 경로 정리 + det TFLite nms=False/android-gpu
+
+- **커밋**: `ffa4bb3`
+- **변경 내용**:
+  - Gradle: 윈도우 `org.gradle.java.home` 하드코딩 제거, CMake `C:/AndroidCxx`를 Windows 전용 분기.
+  - det TFLite `nms=False` `[1,33,8400]` 재export + JS NMS (`NON_MAX_SUPPRESSION_V4` 제거).
+  - `tfliteDetector.ts` dense 디코드 우선, Android `["android-gpu"]` + CPU 폴백, Manifest OpenCL 선언.
+  - 씬 게이트·parity·bifurcation·EXPORT_SOURCE 문서 정합.
+- **관련 파일**: `client/android/gradle.properties`, `client/android/build.gradle`, `client/assets/models/yolo26n/object_detection.tflite`, `client/src/inference/tfliteDetector.ts`, `client/app.json`, `scripts/export_tflite.py`, `docs/design/scene_classifier_gate_guide.md`, `docs/mobile/*`, `docs/changelogs/kb.md`
+- **검증 결과**: TFLite shape `[1,33,8400]`·NMS op 없음 확인, `tsc --noEmit` 통과. 실기기 GPU/탐지는 후속.
+- **비고**: iOS CoreML(nms=True) 미변경. Android 네이티브 재빌드 필요.
+
+
+---
+
+### 2026-07-24 | 3단계 | android_tflite_nms_free_gpu
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Android Gradle 크로스플랫폼 경로 정리 및 det TFLite nms=False 재export와 JS NMS·android-gpu 배선
+- **관련 파일**: `gitignore`, `client/android/app/src/main/AndroidManifest.xml`, `client/android/build.gradle`, `client/android/gradle.properties`, `client/app.json`, `client/assets/models/yolo26n/EXPORT_SOURCE_260714.txt`, `client/assets/models/yolo26n/object_detection.tflite`, `client/src/inference/tfliteDetector.ts`, `docs/changelogs/kb.md`, `docs/design/scene_classifier_gate_guide.md`, `docs/mobile/android_handoff_kb_to_dg.md`, `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/ios_android_bifurcation_contract.md`, `docs/mobile/ondevice_inference_engine_isolation_plan.md`, `docs/ops/android_build_and_wireless_test_guide.md`, `scripts/export_mobile.py`, `scripts/export_tflite.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

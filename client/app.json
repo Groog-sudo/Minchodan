@@ -67,7 +67,8 @@
       [
         "react-native-fast-tflite",
         {
-          "enableCoreMLDelegate": true
+          "enableCoreMLDelegate": true,
+          "enableAndroidGpuLibraries": true
         }
       ],
       "expo-splash-screen",

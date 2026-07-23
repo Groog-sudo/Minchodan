@@ -102,11 +102,11 @@ Android 실기기에서 §10 A-S1~A-S7이 Pass이고, 서버 가중치·온디�
 | ID | 항목 | 통과 기준 | 우선 |
 | :--- | :--- | :--- | :--- |
 | M-01 | 원본 가중치 | TFLite는 `object_detection260714.pt` / `segmentation260714.pt`에서 export (`scripts/export_tflite.py` / `export_mobile.py`) | P0 |
-| M-02 | det 출력 포맷 | 번들 `object_detection.tflite` 실측 shape가 코드 `attrsPerBox=6`(NMS-enabled)과 일치. 불일치 시 **자산+코드 동시** 수정 | P0 |
+| M-02 | det 출력 포맷 | 번들 `object_detection.tflite` 실측 shape가 `[1,33,8400]`(nms=False, channels-first)이고 JS NMS와 일치. (legacy `[1,300,6]`는 폴백만). 불일치 시 **자산+코드 동시** 수정 | P0 |
 | M-03 | seg 출력 포맷 | `segmentation.tflite`가 코드의 dense `[1,40,8400]`(또는 문서화된 현행 포맷)과 일치 | P0 |
 | M-04 | 클래스 라벨 | 29 OD + 4 surface 이름·순서가 iOS CoreML / 서버 `CLASS_TEXT`와 동일 | P0 |
 | M-05 | conf / NMS | 온디바이스 conf·IoU가 Near 경보 체감을 iOS·서버와 과도하게 어긋나지 않음 | P1 |
-| M-06 | NNAPI 폴백 | NNAPI 실패 시 CPU 폴백 로그·연속 추론 30s 안정 | P1 |
+| M-06 | GPU/CPU 폴백 | `android-gpu` 로드 실패 시 CPU 폴백 로그(`delegate 로드 실패`)·연속 추론 30s 안정 | P1 |
 | M-07 | 입력 계약 | Frame Processor → Float32/base64 경로가 `requiresFloat32`와 일치, 첫 프레임 추론 성공 | P0 |
 | M-08 | 벤치 로그 | det/seg/total ms 표준 로그 (iOS CoreMLBench와 비교 가능) | P2 |
 
