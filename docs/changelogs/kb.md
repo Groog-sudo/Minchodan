@@ -1917,7 +1917,7 @@
 
 ### 2026-07-14 | 1단계 | auto_publish_work
 
-- **커밋**: `ffa4bb3`
+- **커밋**: `43257a7`
 - **변경 내용**:
   - Add auto_publish_work script and skill definition for git automation
 - **관련 파일**: `.agents/skills/auto-publish-work/`, `scripts/auto_publish_work.py`
@@ -4123,7 +4123,7 @@
 
 ### 2026-07-24 | client/Android | macOS 빌드 경로 정리 + det TFLite nms=False/android-gpu
 
-- **커밋**: `ffa4bb3`
+- **커밋**: `43257a7`
 - **변경 내용**:
   - Gradle: 윈도우 `org.gradle.java.home` 하드코딩 제거, CMake `C:/AndroidCxx`를 Windows 전용 분기.
   - det TFLite `nms=False` `[1,33,8400]` 재export + JS NMS (`NON_MAX_SUPPRESSION_V4` 제거).
