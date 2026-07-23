@@ -13,6 +13,7 @@ import wave
 
 from dotenv import load_dotenv
 
+from server.tts.speech_text import normalize_text_for_speech
 from server.tts.tts_service import extract_llm_text, get_tts_service
 
 logger = logging.getLogger(__name__)
@@ -134,8 +135,12 @@ class RealtimeTTS:
             logger.warning("음성 합성할 텍스트가 비어 있습니다.")
             return None, 0.0
 
+        # 전화번호는 수량으로 읽지 않고 자릿수 단위로 읽는다. 표시·DB 원문은 유지하고
+        # 실제 합성 입력과 캐시 키만 발화용 문자열을 사용한다.
+        speech_text = normalize_text_for_speech(text)
+
         # 동일 문구 재합성 회피: 고정 안내문은 첫 합성 결과를 재사용한다.
-        cache_key = (text, voice, float(speed))
+        cache_key = (speech_text, voice, float(speed))
         cached = self._cache.get(cache_key)
         if cached is not None:
             # 캐시 적중 시에도 관제 콘솔 업데이트를 위해 비동기 검증 이벤트 전송 (0ms 지연)
@@ -147,10 +152,10 @@ class RealtimeTTS:
 
                 # 캐시이므로 TTFB는 0ms로 인지
                 task1 = asyncio.create_task(
-                    audio_validator.validate_and_broadcast(audio_bytes, 0.0, text)
+                    audio_validator.validate_and_broadcast(audio_bytes, 0.0, speech_text)
                 )
                 task2 = asyncio.create_task(
-                    accessibility_simulator.simulate_and_broadcast(text, text)
+                    accessibility_simulator.simulate_and_broadcast(speech_text, speech_text)
                 )
                 _background_tasks.add(task1)
                 _background_tasks.add(task2)
@@ -163,7 +168,7 @@ class RealtimeTTS:
         try:
             start_time = time.perf_counter()
             audio_bytes = await asyncio.wait_for(
-                self.tts.generate(text=text, voice=voice, speed=speed), timeout=15.0
+                self.tts.generate(text=speech_text, voice=voice, speed=speed), timeout=15.0
             )
             ttfb_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -173,14 +178,14 @@ class RealtimeTTS:
                 from server.mcp.audio_validator import audio_validator
 
                 task1 = asyncio.create_task(
-                    audio_validator.validate_and_broadcast(audio_bytes, ttfb_ms, text)
+                    audio_validator.validate_and_broadcast(audio_bytes, ttfb_ms, speech_text)
                 )
 
                 # Accessibility Simulator MCP 비동기 실행 (0ms 지연 가드레일)
                 from server.mcp.accessibility_simulator import accessibility_simulator
 
                 task2 = asyncio.create_task(
-                    accessibility_simulator.simulate_and_broadcast(text, text)
+                    accessibility_simulator.simulate_and_broadcast(speech_text, speech_text)
                 )
                 _background_tasks.add(task1)
                 _background_tasks.add(task2)

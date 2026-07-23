@@ -13,7 +13,7 @@ description: |
 > **작성일**: 2026-07-18
 > **버전**: v1.3.1 (2026-07-20: `metro_tailscale.sh`를 Python double-fork+`os.setsid()` detach로 보강 — Cursor 에이전트 셸 종료 후에도 Metro 유지. 이전 v1.3.0: 외부 LTE/핫스팟 Tailscale 사전 검증·Metro 이중 헬스체크·console compose 통합)
 > **설계 기준**: `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
-> **관련 스킬**: [`xcode-build-management`](../xcode-build-management/SKILL.md) (iOS 빌드 세부 절차 전담), 본 스킬은 그 위 계층(Docker+DB+로그/모니터링)까지 포함한 세션 오케스트레이션을 전담
+> **관련 스킬**: [`xcode-build-management`](../xcode-build-management/SKILL.md) (iOS 빌드 세부 절차 전담), [`rpi-network-profile-switcher`](../rpi-network-profile-switcher/SKILL.md) (시연용 서버 기동·demo/test 네트워크 전환 1차 담당). 본 스킬은 통합 테스트 세션(Docker+DB+Metro+실기기 빌드·로그/모니터링) 오케스트레이션을 전담하며, 시연 토폴로지 기동만 필요하면 시연 스킬을 우선한다.
 
 ---
 
