@@ -4156,7 +4156,7 @@
 
 ### 2026-07-24 | ops | gildang_db_cloud_r2_migration
 
-- **커밋**: `33734ed`
+- **커밋**: `cc20442`
 - **변경 내용**:
   - 클라우드 MariaDB `gildang_db`(3307) 초기화 스크립트와 `cloud` 네트워크 프로필 추가.
   - 이벤트/STT 미디어를 Cloudflare R2(`EVENT_FRAME_STORAGE_BACKEND=r2`)로 저장·조회(presigned 옵션)하도록 백엔드 분기.
