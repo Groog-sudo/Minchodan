@@ -28,6 +28,7 @@
 | iPhone 16 Pro Max ↔ 서버(Windows) | Tailscale | 통합 테스트 때와 동일하게 유지. 단말이 시연 장소 LAN에 없어도 접속 가능 |
 | 서버(Windows) ↔ LLM(Mac mini) | LAN | `COMPOSE_OLLAMA_BASE_URL=http://<Mac mini LAN IP>:11434`. Mac mini의 Ollama가 `OLLAMA_HOST=0.0.0.0`로 바인딩돼 있어야 함 |
 | 서버(Windows) ↔ DB·미디어(Raspberry Pi) | LAN | `.env.network.demo`의 `DB_HOST`/`IMAGE_SERVER_BASE_URL`을 Pi의 LAN 주소로 설정 |
+| 서버 ↔ DB·미디어(클라우드, 선택) | 공인/전용망 | `.env.network.cloud`: MariaDB `gildang_db`:3307 + Cloudflare R2. 절차 [`gildang_cloud_r2_guide.md`](gildang_cloud_r2_guide.md) |
 
 **변경 이력**: 기존에는 GPU 추론(YOLO)과 LLM(Ollama)이 같은 장비(Windows)에서 함께 돌았으나, 이번 시연 구성부터 LLM을 Mac mini로 분리해 GPU 서버의 VRAM/연산 경합을 줄인다. `switch_rpi_network.sh demo` 실행 시 서버(Windows)는 **WSL2 안에서** 스크립트를 실행해야 한다(`docker-compose.yml`이 Linux/GPU 변형을 전제하므로).
 

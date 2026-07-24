@@ -21,6 +21,7 @@
 | **배포 가이드**      | [ops/deployment_guide.md](ops/deployment_guide.md)             | **Docker 컨테이너 구성·배포 절차·TC-SMOKE-004 연동**              |
 | **개인 설정 파일 Git 제외 가이드** | [ops/local_private_config_guide.md](ops/local_private_config_guide.md) | **`Copy_` 접두어 기반 로컬 개인 설정 복사본 제외 규칙** |
 | **시연/테스트 장비 제원 인벤토리** | [ops/demo_test_device_inventory.md](ops/demo_test_device_inventory.md) | **GPU 서버·LLM(Mac mini)·iPhone 16 Pro Max·Raspberry Pi 5B 제원, 네트워크 토폴로지(Tailscale+LAN), 미확인 항목 정리** |
+| **gildang 클라우드 DB·R2 가이드** | [ops/gildang_cloud_r2_guide.md](ops/gildang_cloud_r2_guide.md) | **`gildang_db`:3307 + Cloudflare R2 프로필 전환·초기화** |
 | **DB·미디어 API Tailscale 연결 가이드** | [db_tailscale_guide/README.md](db_tailscale_guide/README.md) | **외부 공개 가능한 플레이스홀더 기반 연결·진단 절차. 실접속 정보 문서는 Git 제외 후 내부 공유** |
 | **LLM 협업 작업 분담 가이드** | [dev-guides/llm_collaboration_workflow.md](dev-guides/llm_collaboration_workflow.md) | **담당자 직접 작성 영역과 LLM 보조 영역 분리 기준** |
 | **YOLO/TTS MVP 다음 작업 계획** | [research/yolo_tts_mvp_next_steps.md](research/yolo_tts_mvp_next_steps.md) | **th 브랜치 다음 세션 작업 순서와 직접 코딩 항목** |

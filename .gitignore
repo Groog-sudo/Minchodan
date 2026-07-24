@@ -47,6 +47,7 @@ ENV/
 .env
 .env.*
 !.env.example
+!.env.network.cloud.example
 
 # 실제 내부 인프라 식별자가 포함된 로컬 팀 문서
 docs/db_tailscale_guide/README.internal.md
@@ -395,3 +396,4 @@ docker/docker-compose.subnet-override.local.yml
 
 .env.network.demo
 .env.network.test
+.env.network.cloud

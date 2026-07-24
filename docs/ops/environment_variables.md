@@ -157,11 +157,18 @@
 | **`EVENT_FRAME_RETENTION_DAYS`** | int | 선택 | `7` | 이벤트 프레임 보존 기간(일). 초과 날짜 폴더는 정리 주기마다 삭제(2026-07-20 이전: 서버 기동 시 1회만). `0` 이하는 정리 비활성. 보행 중 촬영 이미지는 개인정보 포함 가능성으로 기간 한정 보존 | `server/services/event_frame_store.py` |
 | **`EVENT_FRAME_CLEANUP_INTERVAL_S`** | int | 선택 | `21600` | **2026-07-20 신규.** 이벤트 프레임 보존 정리 반복 주기(초, 기본 6시간). 기존에는 기동 시 1회만 정리해 재시작 없이 장기간 구동하면 보존 기간 초과 폴더가 전혀 정리되지 않았음(실기기 장시간 테스트 피드백) | `server/main.py` |
 | **`EVENT_FRAME_JPEG_QUALITY`** | int | 선택 | `80` | 이벤트 프레임 JPEG 품질(용량 통제 우선) | `server/services/event_frame_store.py` |
-| **`EVENT_FRAME_STORAGE_BACKEND`** | string | 선택 | `local` | 이벤트 프레임/STT 원본 음성 파일 저장 백엔드. `local`이면 기존 GPU 서버 로컬 디스크, `remote`이면 Raspberry Pi 중앙 저장 API에 업로드. 구 명칭 `EVENT_FRAME_BACKEND`도 코드에서 폴백 지원 | `server/services/event_frame_store.py`, `server/services/remote_storage_client.py` |
-| **`IMAGE_SERVER_BASE_URL`** | string | 선택(원격 저장 사용 시 필수) | (미설정) | Raspberry Pi 중앙 저장 API 기본 URL. 예: `http://100.x.x.x:8081`. 구 명칭 `EVENT_FRAME_REMOTE_URL`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
-| **`IMAGE_SERVER_TOKEN`** | string | 선택(원격 저장 사용 시 필수) | (미설정) | 중앙 저장 API Bearer 토큰. 서버 `.env`에만 저장하며 클라이언트/콘솔 공개 변수에 넣지 않습니다. 구 명칭 `EVENT_FRAME_REMOTE_TOKEN`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
-| **`IMAGE_UPLOAD_TIMEOUT_SECONDS`** | float | 선택 | `3` | 중앙 저장 API 업로드/조회 HTTP 타임아웃(초). 구 명칭 `EVENT_FRAME_UPLOAD_TIMEOUT_SEC`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
-| **`IMAGE_UPLOAD_MAX_RETRIES`** | int | 선택 | `1` | 중앙 저장 API 업로드 재시도 횟수. 5xx/네트워크/타임아웃 계열만 짧게 재시도합니다. 구 명칭 `EVENT_FRAME_UPLOAD_RETRIES`도 코드에서 폴백 지원 | `server/services/remote_storage_client.py` |
+| **`EVENT_FRAME_STORAGE_BACKEND`** | string | 선택 | `local` | 이벤트 프레임/STT 저장 백엔드. `local`=GPU 로컬 디스크, `remote`=Pi 중앙 저장 API, `r2`(또는 `s3`)=Cloudflare R2. 구 명칭 `EVENT_FRAME_BACKEND` 폴백 | `event_frame_store.py`, `remote_storage_client.py`, `r2_storage_client.py` |
+| **`IMAGE_SERVER_BASE_URL`** | string | 선택(`remote` 시 필수) | (미설정) | Raspberry Pi 중앙 저장 API 기본 URL. 예: `http://100.x.x.x:8081`. 구 명칭 `EVENT_FRAME_REMOTE_URL` 폴백. **cloud/R2 프로필에서는 비움** | `server/services/remote_storage_client.py` |
+| **`IMAGE_SERVER_TOKEN`** | string | 선택(`remote` 시 필수) | (미설정) | 중앙 저장 API Bearer 토큰. `.env`에만 저장. 구 명칭 `EVENT_FRAME_REMOTE_TOKEN` 폴백 | `server/services/remote_storage_client.py` |
+| **`IMAGE_UPLOAD_TIMEOUT_SECONDS`** | float | 선택 | `3` | Pi 중앙 저장 API 업로드/조회 HTTP 타임아웃(초) | `server/services/remote_storage_client.py` |
+| **`IMAGE_UPLOAD_MAX_RETRIES`** | int | 선택 | `1` | Pi 중앙 저장 API 업로드 재시도 횟수 | `server/services/remote_storage_client.py` |
+| **`R2_ACCOUNT_ID`** | string | 선택(`r2` 시, ENDPOINT 없을 때 필수) | (미설정) | Cloudflare Account ID. `R2_ENDPOINT` 미설정 시 `https://{ACCOUNT_ID}.r2.cloudflarestorage.com` 조합 | `server/services/r2_storage_client.py` |
+| **`R2_ACCESS_KEY_ID`** | string | 선택(`r2` 시 필수) | (미설정) | R2 S3 API Access Key. Git 금지 | `server/services/r2_storage_client.py` |
+| **`R2_SECRET_ACCESS_KEY`** | string | 선택(`r2` 시 필수) | (미설정) | R2 S3 API Secret. Git 금지 | `server/services/r2_storage_client.py` |
+| **`R2_BUCKET`** | string | 선택(`r2` 시 필수) | (미설정) | R2 버킷 이름 | `server/services/r2_storage_client.py` |
+| **`R2_ENDPOINT`** | string | 선택(`r2` 시 권장) | (미설정) | S3 API 엔드포인트 URL | `server/services/r2_storage_client.py` |
+| **`R2_PUBLIC_BASE_URL`** | string | 선택 | (미설정) | 공개/커스텀 도메인 base. 있으면 presign 대신 이 URL로 키를 붙임 | `server/services/r2_storage_client.py` |
+| **`R2_REGION`** | string | 선택 | `auto` | R2 서명용 region | `server/services/r2_storage_client.py` |
 | **`WRITER_INSTANCE_ID`** | string | 선택 | `HOSTNAME` 폴백 | 다중 FastAPI writer 식별자. `detection_guidance_logs.writer_instance_id`에 저장되어 어떤 서버가 로그를 썼는지 추적합니다 | `server/services/detection_guidance_log_service.py` |
 
 ### 2.9 Slack Integration (공통 경보)
@@ -242,6 +249,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | :--- | :--- | :--- | :--- |
 | **시연** | `.env.network.demo` | `NETWORK_ENV_FILE`, `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` | Raspberry Pi 내부망 경로 |
 | **테스트** | `.env.network.test` | `NETWORK_ENV_FILE`, `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` | Raspberry Pi Tailscale 경로 |
+| **클라우드** | `.env.network.cloud` | `NETWORK_ENV_FILE`, `DB_HOST`, `DB_PORT=3307`, `DB_NAME=gildang_db`, `EVENT_FRAME_STORAGE_BACKEND=r2`, `R2_*` | 클라우드 MariaDB + Cloudflare R2. 절차는 [`gildang_cloud_r2_guide.md`](gildang_cloud_r2_guide.md) |
 
 ### 2.14 내비게이션 (GPS 경로 안내, 2026-07-10 신설)
 

@@ -1,9 +1,10 @@
 """
-Raspberry Pi 중앙 저장 API 클라이언트.
+원격 이벤트 프레임/STT 저장 파사드.
 
-GPU FastAPI는 이미지/STT 음성 파일을 직접 DB에 넣지 않고, 이 클라이언트로
-Raspberry Pi 저장 API에 업로드한 뒤 응답 object_key만 로그 테이블에 남깁니다.
-토큰은 서버 측 환경 변수에서만 읽고 브라우저/앱에는 노출하지 않습니다.
+- `EVENT_FRAME_STORAGE_BACKEND=remote`: Raspberry Pi 중앙 저장 HTTP API
+- `EVENT_FRAME_STORAGE_BACKEND=r2`: Cloudflare R2 (S3 API, r2_storage_client)
+GPU FastAPI는 바이너리를 DB에 넣지 않고 object_key만 로그 테이블에 남깁니다.
+비밀값(토큰/R2 키)은 서버 `.env`에만 둡니다.
 """
 
 from __future__ import annotations
@@ -59,18 +60,38 @@ def _token() -> str:
     return _first_env("IMAGE_SERVER_TOKEN", "EVENT_FRAME_REMOTE_TOKEN")
 
 
-def is_remote_storage_enabled() -> bool:
-    """중앙 저장소 사용 여부.
+def storage_backend() -> str:
+    """이벤트 프레임 저장 백엔드 식별자: local | remote | r2."""
+    return _first_env("EVENT_FRAME_STORAGE_BACKEND", "EVENT_FRAME_BACKEND").lower() or "local"
 
-    EVENT_FRAME_STORAGE_BACKEND 또는 EVENT_FRAME_BACKEND가 local/disabled이면 끄고,
-    remote 계열이거나 base_url/token이 명시돼 있으면 켭니다.
-    """
-    backend = _first_env("EVENT_FRAME_STORAGE_BACKEND", "EVENT_FRAME_BACKEND").lower()
-    if backend in {"local", "local_file", "disabled", "none", "off"}:
-        return False
+
+def is_r2_backend() -> bool:
+    return storage_backend() in {"r2", "s3", "cloudflare_r2"}
+
+
+def is_pi_remote_backend() -> bool:
+    backend = storage_backend()
     if backend in {"remote", "remote_http", "image_server", "central"}:
         return bool(_base_url() and _token())
+    if backend in {"local", "local_file", "disabled", "none", "off", "r2", "s3", "cloudflare_r2"}:
+        return False
     return bool(_base_url() and _token())
+
+
+def is_remote_storage_enabled() -> bool:
+    """원격 저장소(Pi IMAGE_SERVER 또는 Cloudflare R2) 사용 여부.
+
+    EVENT_FRAME_STORAGE_BACKEND가 local/disabled이면 끄고,
+    r2/s3이거나 remote 계열(또는 base_url/token)이면 켠다.
+    """
+    backend = storage_backend()
+    if backend in {"local", "local_file", "disabled", "none", "off"}:
+        return False
+    if is_r2_backend():
+        from server.services.r2_storage_client import is_r2_configured
+
+        return is_r2_configured()
+    return is_pi_remote_backend()
 
 
 def _timeout_seconds() -> float:
@@ -108,9 +129,12 @@ _shared_client: httpx.AsyncClient | None = None
 
 
 async def create_shared_client() -> None:
-    """FastAPI lifespan startup에서 호출. 공유 httpx.AsyncClient를 생성한다."""
+    """FastAPI lifespan startup에서 호출. Pi remote일 때만 공유 httpx 클라이언트를 생성한다."""
     global _shared_client
     if _shared_client is not None:
+        return
+    if is_r2_backend() or not is_pi_remote_backend():
+        logger.info("[RemoteStorage] Pi httpx 클라이언트 생략 (backend=%s)", storage_backend())
         return
     _shared_client = httpx.AsyncClient(
         base_url=_base_url(),
@@ -182,6 +206,10 @@ async def _put_payload(
 async def upload_event_frame(event_id: str, jpeg_bytes: bytes) -> RemoteStoreResult:
     if not is_remote_storage_enabled():
         return _disabled_result(format_="jpg")
+    if is_r2_backend():
+        from server.services.r2_storage_client import upload_event_frame as r2_upload
+
+        return await r2_upload(event_id, jpeg_bytes)
     if _EVENT_ID_PATTERN.fullmatch(event_id) is None:
         return RemoteStoreResult(None, "upload_failed", "invalid_event_id", format="jpg")
 
@@ -224,6 +252,10 @@ async def upload_stt_audio(
 ) -> RemoteStoreResult:
     if not is_remote_storage_enabled():
         return _disabled_result(format_=format_)
+    if is_r2_backend():
+        from server.services.r2_storage_client import upload_stt_audio as r2_upload_stt
+
+        return await r2_upload_stt(event_id, audio_bytes, content_type, format_)
     if _EVENT_ID_PATTERN.fullmatch(event_id) is None:
         return RemoteStoreResult(None, "upload_failed", "invalid_event_id", format=format_)
 
@@ -271,10 +303,23 @@ def _split_event_frame_key(object_key: str) -> tuple[str, str] | None:
     return date, event_id
 
 
+def resolve_event_frame_url(object_key: str, expires_seconds: int = 300) -> str | None:
+    """R2 백엔드일 때 단기 GET URL(presigned 또는 공개 base). Pi remote는 None."""
+    if not object_key or not is_r2_backend() or not is_remote_storage_enabled():
+        return None
+    from server.services.r2_storage_client import generate_presigned_get_url
+
+    return generate_presigned_get_url(object_key, expires_seconds=expires_seconds)
+
+
 async def fetch_event_frame(object_key: str) -> bytes | None:
     """중앙 저장소에서 이벤트 프레임 JPEG bytes를 조회합니다."""
     if not is_remote_storage_enabled():
         return None
+    if is_r2_backend():
+        from server.services.r2_storage_client import fetch_event_frame as r2_fetch
+
+        return await r2_fetch(object_key)
     split = _split_event_frame_key(object_key)
     if split is None:
         return None

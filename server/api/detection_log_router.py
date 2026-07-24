@@ -15,7 +15,7 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.api.dependencies import get_current_admin, require_operator
@@ -23,7 +23,7 @@ from server.db.connection import get_db
 from server.db.schemas import DetectionGuidanceLogResponse, FalsePositiveUpdateRequest
 from server.services.detection_guidance_log_service import DetectionGuidanceLogService
 from server.services.event_frame_store import is_valid_event_id, resolve_frame_path
-from server.services.remote_storage_client import fetch_event_frame
+from server.services.remote_storage_client import fetch_event_frame, resolve_event_frame_url
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -78,6 +78,11 @@ async def list_detection_logs(
 @router.get("/event-frames/{event_id}")
 async def get_event_frame(
     event_id: str,
+    delivery: str = Query(
+        "proxy",
+        pattern="^(proxy|presigned)$",
+        description="proxy=JPEG 바이트 프록시(기본), presigned=R2 단기 URL로 302",
+    ),
     admin_id: str = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
@@ -85,6 +90,7 @@ async def get_event_frame(
 
     DB에 등록된 frame_path만 서빙하며(임의 파일 접근 차단),
     event_id 형식 검증과 저장소 경로 검증(resolve_frame_path)을 이중으로 거칩니다.
+    R2 백엔드에서 delivery=presigned 이면 GetObject 프록시 대신 단기 URL로 리다이렉트합니다.
     """
     if not is_valid_event_id(event_id):
         raise HTTPException(
@@ -101,6 +107,11 @@ async def get_event_frame(
     file_path = resolve_frame_path(log.frame_path)
     if file_path is not None:
         return FileResponse(file_path, media_type="image/jpeg")
+
+    if delivery == "presigned":
+        url = resolve_event_frame_url(log.frame_path)
+        if url:
+            return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
 
     remote_frame = await fetch_event_frame(log.frame_path)
     if remote_frame is not None:

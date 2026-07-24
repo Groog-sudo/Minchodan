@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# Raspberry Pi MariaDB·미디어 API 네트워크 프로필 전환.
-# demo=내부망, test=Tailscale. Docker 이미지는 재빌드하지 않는다.
+# Raspberry Pi / 클라우드 DB·미디어 네트워크 프로필 전환.
+# demo=Pi 내부망, test=Pi Tailscale, cloud=클라우드 MariaDB(gildang_db)+Cloudflare R2.
+# Docker 이미지는 재빌드하지 않는다.
 
 set -euo pipefail
 
@@ -16,9 +17,10 @@ DB_PROXY_SCRIPT="$PROJECT_ROOT/docker/scripts/db_tailscale_proxy.sh"
 DEFAULT_DB_PORT="3306"
 
 usage() {
-  echo "Usage: bash scripts/switch_rpi_network.sh <demo|test>"
-  echo "  demo: Raspberry Pi LAN profile"
-  echo "  test: Raspberry Pi Tailscale profile"
+  echo "Usage: bash scripts/switch_rpi_network.sh <demo|test|cloud>"
+  echo "  demo:  Raspberry Pi LAN profile"
+  echo "  test:  Raspberry Pi Tailscale profile"
+  echo "  cloud: Cloud MariaDB (gildang_db:3307) + Cloudflare R2"
 }
 
 trim() {
@@ -66,7 +68,30 @@ with socket.create_connection((sys.argv[1], int(sys.argv[2])), timeout=3):
 PY
 }
 
-if [[ "$PROFILE" != "demo" && "$PROFILE" != "test" ]]; then
+check_r2_head_bucket() {
+  # R2 HeadBucket. 비밀값은 출력하지 않는다.
+  .venv/bin/python - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+root = Path(".").resolve()
+sys.path.insert(0, str(root))
+# profile env already exported into process by caller via dotenv-less merge;
+# read from os.environ after switch script exports selected keys.
+from server.services.r2_storage_client import head_bucket_sync, is_r2_configured
+
+if not is_r2_configured():
+    print("[switch] ERROR: R2 env incomplete (R2_ACCESS_KEY_ID/SECRET/BUCKET/ENDPOINT|ACCOUNT_ID)", file=sys.stderr)
+    sys.exit(1)
+if not head_bucket_sync():
+    print("[switch] ERROR: R2 HeadBucket failed", file=sys.stderr)
+    sys.exit(1)
+print("[switch] R2 HeadBucket OK")
+PY
+}
+
+if [[ "$PROFILE" != "demo" && "$PROFILE" != "test" && "$PROFILE" != "cloud" ]]; then
   usage
   exit 2
 fi
@@ -77,7 +102,7 @@ if [[ ! -f "$BASE_ENV_FILE" ]]; then
 fi
 
 if [[ ! -f "$PROFILE_ENV_FILE" ]]; then
-  echo "[switch] ERROR: $PROFILE_ENV_FILE not found"
+  echo "[switch] ERROR: $PROFILE_ENV_FILE not found (cloud: cp .env.network.cloud.example .env.network.cloud)"
   exit 1
 fi
 
@@ -87,9 +112,26 @@ db_port="${db_port:-$DEFAULT_DB_PORT}"
 media_base_url="$(read_env_value "$PROFILE_ENV_FILE" IMAGE_SERVER_BASE_URL || true)"
 network_env_file="$(read_env_value "$PROFILE_ENV_FILE" NETWORK_ENV_FILE || true)"
 ollama_base_url="$(read_env_value "$PROFILE_ENV_FILE" COMPOSE_OLLAMA_BASE_URL || true)"
-if [[ -z "$db_host" || -z "$media_base_url" || -z "$network_env_file" ]]; then
-  echo "[switch] ERROR: profile requires NETWORK_ENV_FILE, DB_HOST, IMAGE_SERVER_BASE_URL"
+storage_backend="$(read_env_value "$PROFILE_ENV_FILE" EVENT_FRAME_STORAGE_BACKEND || true)"
+compose_db_host="$(read_env_value "$PROFILE_ENV_FILE" COMPOSE_DB_HOST || true)"
+compose_db_port="$(read_env_value "$PROFILE_ENV_FILE" COMPOSE_DB_PORT || true)"
+
+if [[ -z "$db_host" || -z "$network_env_file" ]]; then
+  echo "[switch] ERROR: profile requires NETWORK_ENV_FILE, DB_HOST"
   exit 1
+fi
+
+if [[ "$PROFILE" != "cloud" && -z "$media_base_url" ]]; then
+  echo "[switch] ERROR: demo/test profile requires IMAGE_SERVER_BASE_URL"
+  exit 1
+fi
+
+if [[ "$PROFILE" == "cloud" ]]; then
+  storage_backend="${storage_backend:-r2}"
+  if [[ "$storage_backend" != "r2" && "$storage_backend" != "s3" && "$storage_backend" != "cloudflare_r2" ]]; then
+    echo "[switch] ERROR: cloud profile requires EVENT_FRAME_STORAGE_BACKEND=r2"
+    exit 1
+  fi
 fi
 
 expected_network_env_file="../${PROFILE_ENV_FILE}"
@@ -106,12 +148,23 @@ fi
 case "$(uname -s)" in
   Darwin)
     compose_file="docker/docker-compose.macos.yml"
-    export COMPOSE_DB_HOST="host.docker.internal"
-    export COMPOSE_DB_PORT="${COMPOSE_DB_PROXY_PORT:-13306}"
+    if [[ "$PROFILE" == "cloud" ]]; then
+      # 클라우드 DB는 컨테이너에서 직접 접속 (socat Tailscale 프록시 불필요)
+      export COMPOSE_DB_HOST="${compose_db_host:-$db_host}"
+      export COMPOSE_DB_PORT="${compose_db_port:-$db_port}"
+    else
+      export COMPOSE_DB_HOST="host.docker.internal"
+      export COMPOSE_DB_PORT="${COMPOSE_DB_PROXY_PORT:-13306}"
+    fi
     ;;
   Linux)
     compose_file="docker/docker-compose.yml"
-    unset COMPOSE_DB_HOST COMPOSE_DB_PORT
+    if [[ "$PROFILE" == "cloud" ]]; then
+      export COMPOSE_DB_HOST="${compose_db_host:-$db_host}"
+      export COMPOSE_DB_PORT="${compose_db_port:-$db_port}"
+    else
+      unset COMPOSE_DB_HOST COMPOSE_DB_PORT
+    fi
     ;;
   *)
     echo "[switch] ERROR: unsupported OS: $(uname -s)"
@@ -128,7 +181,11 @@ compose_args=(
 
 echo "[switch] profile=$PROFILE"
 echo "[switch] DB target=${db_host}:${db_port}"
-echo "[switch] media target=$media_base_url"
+if [[ "$PROFILE" == "cloud" ]]; then
+  echo "[switch] media target=Cloudflare R2 (EVENT_FRAME_STORAGE_BACKEND=$storage_backend)"
+else
+  echo "[switch] media target=$media_base_url"
+fi
 if [[ -n "$ollama_base_url" ]]; then
   echo "[switch] LLM target=$ollama_base_url"
 fi
@@ -138,9 +195,24 @@ if ! check_tcp "$db_host" "$db_port"; then
   exit 1
 fi
 
-if ! curl -fsS --max-time 5 "$media_base_url/health" >/dev/null; then
-  echo "[switch] ERROR: media health preflight failed"
-  exit 1
+if [[ "$PROFILE" == "cloud" ]]; then
+  # R2 검사용 키만 주입(비밀값 에코 금지)
+  export EVENT_FRAME_STORAGE_BACKEND="$storage_backend"
+  export R2_ACCOUNT_ID="$(read_env_value "$PROFILE_ENV_FILE" R2_ACCOUNT_ID || true)"
+  export R2_ACCESS_KEY_ID="$(read_env_value "$PROFILE_ENV_FILE" R2_ACCESS_KEY_ID || true)"
+  export R2_SECRET_ACCESS_KEY="$(read_env_value "$PROFILE_ENV_FILE" R2_SECRET_ACCESS_KEY || true)"
+  export R2_BUCKET="$(read_env_value "$PROFILE_ENV_FILE" R2_BUCKET || true)"
+  export R2_ENDPOINT="$(read_env_value "$PROFILE_ENV_FILE" R2_ENDPOINT || true)"
+  export R2_REGION="$(read_env_value "$PROFILE_ENV_FILE" R2_REGION || true)"
+  export R2_PUBLIC_BASE_URL="$(read_env_value "$PROFILE_ENV_FILE" R2_PUBLIC_BASE_URL || true)"
+  if ! check_r2_head_bucket; then
+    exit 1
+  fi
+else
+  if ! curl -fsS --max-time 5 "$media_base_url/health" >/dev/null; then
+    echo "[switch] ERROR: media health preflight failed"
+    exit 1
+  fi
 fi
 
 if [[ -n "$ollama_base_url" ]] && ! curl -fsS --max-time 5 "$ollama_base_url/api/tags" >/dev/null; then
@@ -160,7 +232,7 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ "$(uname -s)" == "Darwin" ]]; then
+if [[ "$(uname -s)" == "Darwin" && "$PROFILE" != "cloud" ]]; then
   DB_PROXY_TARGET_HOST="$db_host" \
     DB_PROXY_TARGET_PORT="$db_port" \
     "$DB_PROXY_SCRIPT"
@@ -188,7 +260,8 @@ if [[ "$fastapi_ready" -ne 1 ]]; then
 fi
 
 "${compose_args[@]}" exec -T fastapi sh -lc \
-  'printf "DB_HOST=%s\nDB_PORT=%s\nIMAGE_SERVER_BASE_URL=%s\n" "$DB_HOST" "$DB_PORT" "$IMAGE_SERVER_BASE_URL"'
+  'printf "DB_HOST=%s\nDB_PORT=%s\nEVENT_FRAME_STORAGE_BACKEND=%s\nIMAGE_SERVER_BASE_URL=%s\n" \
+    "$DB_HOST" "$DB_PORT" "${EVENT_FRAME_STORAGE_BACKEND:-}" "${IMAGE_SERVER_BASE_URL:-}"'
 
 "${compose_args[@]}" exec -T fastapi python -c '
 import asyncio
@@ -208,7 +281,13 @@ async def main() -> None:
 asyncio.run(main())
 '
 
-"${compose_args[@]}" exec -T fastapi python -c '
+if [[ "$PROFILE" == "cloud" ]]; then
+  "${compose_args[@]}" exec -T fastapi python -c '
+from server.services.r2_storage_client import head_bucket_sync
+print(f"r2_head_bucket={head_bucket_sync()}")
+'
+else
+  "${compose_args[@]}" exec -T fastapi python -c '
 import os
 import urllib.request
 
@@ -216,5 +295,6 @@ url = os.environ["IMAGE_SERVER_BASE_URL"].rstrip("/") + "/health"
 with urllib.request.urlopen(url, timeout=5) as response:
     print(f"media_health={response.status}")
 '
+fi
 
 echo "[switch] complete: $PROFILE"

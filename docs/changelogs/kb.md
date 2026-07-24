@@ -4153,3 +4153,14 @@
   - Ollama keepalive LAN CLI 강제 및 gpu_monitor Bandit noqa 보강
 - **관련 파일**: `agents/skills/rpi-network-profile-switcher/SKILL.md`, `.claude/skills/rpi-network-profile-switcher/SKILL.md`, `docs/ops/demo_test_device_inventory.md`, `scripts/ollama_demo_keepalive.sh`, `server/mcp/gpu_monitor.py`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+### 2026-07-24 | ops | gildang_db_cloud_r2_migration
+
+- **커밋**: `33734ed`
+- **변경 내용**:
+  - 클라우드 MariaDB `gildang_db`(3307) 초기화 스크립트와 `cloud` 네트워크 프로필 추가.
+  - 이벤트/STT 미디어를 Cloudflare R2(`EVENT_FRAME_STORAGE_BACKEND=r2`)로 저장·조회(presigned 옵션)하도록 백엔드 분기.
+  - `.env.network.cloud.example`, env 명세, 스킬/운영 문서 동기화. 비밀값은 로컬 `.env`만.
+- **관련 파일**: `server/services/r2_storage_client.py`, `server/services/remote_storage_client.py`, `server/services/event_frame_store.py`, `server/api/detection_log_router.py`, `scripts/setup_gildang_cloud_db.py`, `scripts/switch_rpi_network.sh`, `requirements.txt`, `.env.network.cloud.example`, `.env.example`, `docs/ops/gildang_cloud_r2_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/demo_test_device_inventory.md`, `docs/db_tailscale_guide/README.md`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `tests/test_r2_storage_backend.py`, `docs/changelogs/kb.md`
+- **검증 결과**: `pytest tests/test_r2_storage_backend.py` 5 passed. 로컬 ephemeral MariaDB:3307에서 `setup_gildang_cloud_db.py`로 DB/유저/ORM 테이블 생성 확인. `switch_rpi_network.sh cloud` 사전검사는 플레이스홀더 호스트에서 TCP 실패(실호스트·R2 키 기입 후 재실행).
+- **비고**: 실제 클라우드 DB 호스트·R2 자격증명은 사용자 로컬 `.env.network.cloud`에만 기입. Git 금지.

@@ -1,12 +1,12 @@
 ---
 name: rpi-network-profile-switcher
-description: 시연(demo)·테스트(test) 환경에서 Raspberry Pi MariaDB·미디어 API, Mac mini Ollama LLM, Windows GPU FastAPI/Redis/운영 콘솔, Metro 번들러를 역할별로 기동·점검하고, DB_HOST·IMAGE_SERVER_BASE_URL·COMPOSE_OLLAMA_BASE_URL 네트워크 프로필을 Docker 이미지 재빌드 없이 전환·검증한다. Minchodan에서 .env.network.demo/test, NETWORK_ENV_FILE, ssh minchodan-rpi-db, metro_tailscale.sh, ollama_demo_keepalive.sh, socat DB 프록시, UFW, 또는 실기기-서버-LLM-DB 시연 백엔드 기동·연결을 설정·복구할 때 사용한다.
+description: 시연(demo)·테스트(test)·클라우드(cloud) 환경에서 Raspberry Pi 또는 클라우드 MariaDB(gildang_db)·Cloudflare R2·미디어 API, Mac mini Ollama LLM, Windows GPU FastAPI/Redis/운영 콘솔, Metro 번들러를 역할별로 기동·점검하고, DB_HOST·IMAGE_SERVER_BASE_URL·R2_*·COMPOSE_OLLAMA_BASE_URL 네트워크 프로필을 Docker 이미지 재빌드 없이 전환·검증한다. Minchodan에서 .env.network.demo/test/cloud, NETWORK_ENV_FILE, ssh minchodan-rpi-db, metro_tailscale.sh, ollama_demo_keepalive.sh, setup_gildang_cloud_db.py, socat DB 프록시, UFW, 또는 실기기-서버-LLM-DB 시연 백엔드 기동·연결을 설정·복구할 때 사용한다.
 ---
 
 # 시연/테스트 환경 기동·네트워크 프로필 전환 (Raspberry Pi DB·Mac mini LLM·GPU 서버)
 
 > **작성일**: 2026-07-20
-> **버전**: v1.2.1 (2026-07-24: `ollama_demo_keepalive.sh`가 GUI 루프백을 감지하면 CLI/LaunchAgent로 `0.0.0.0:11434` 강제. 이전 v1.2.0: 시연 서버 기동 체크리스트 편입)
+> **버전**: v1.3.0 (2026-07-24: `cloud` 프로필 — `gildang_db`:3307 + Cloudflare R2. 이전 v1.2.1: Ollama keepalive LAN CLI 강제)
 > **관련 문서**: `docs/ops/deployment_guide.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, [`docs/ops/demo_test_device_inventory.md`](../../../docs/ops/demo_test_device_inventory.md)(시연 장비 제원·네트워크 토폴로지)
 > **관련 스킬**: iOS 실기기 **빌드·설치·실행**과 세션 로그 오케스트레이션 세부 절차는 [`integration-test-orchestrator`](../integration-test-orchestrator/SKILL.md)·[`xcode-build-management`](../xcode-build-management/SKILL.md)를 이어서 사용한다. **시연에 필요한 서버 프로세스 기동·헬스·네트워크 전환은 본 스킬이 1차 담당**한다.
 > **지원 에이전트**: Claude Code 등은 본 `SKILL.md`를 직접 읽어 호출한다. OpenAI Codex 계열은 `agents/openai.yaml`을 통해 동일 스킬을 인식·호출한다.
@@ -18,14 +18,15 @@ description: 시연(demo)·테스트(test) 환경에서 Raspberry Pi MariaDB·�
 시연/테스트 때 아래를 한 스킬에서 다룬다.
 
 1. **시연용 서버 기동**: 역할별(Pi / Mac mini / GPU 서버 / Metro·콘솔 호스트)로 필요한 프로세스를 올리고 헬스 확인
-2. **네트워크 프로필 전환**: Raspberry Pi DB·미디어, Mac mini Ollama 접속 경로를 `demo`(시연 LAN) / `test`(Tailscale)로 전환·검증
+2. **네트워크 프로필 전환**: DB·미디어·Mac mini Ollama 접속 경로를 `demo`(시연 LAN) / `test`(Tailscale) / `cloud`(gildang_db:3307 + Cloudflare R2)로 전환·검증
 
 이미지 생성은 네트워크 설정과 분리하고, 전환 시에는 기존 `minchodan-server:latest`를 재사용한다(`docker compose build` 금지). 최초 이미지가 없을 때만 서버 담당자가 별도 빌드한다(기동 섹션 참고).
 
-| 프로필 | DB·미디어(Raspberry Pi) | LLM(Mac mini) | 로컬 설정 파일 | 실행 명령 |
+| 프로필 | DB·미디어 | LLM(Mac mini) | 로컬 설정 파일 | 실행 명령 |
 | :--- | :--- | :--- | :--- | :--- |
-| **`demo`** | 시연 장소 내부망(LAN) | 시연 장소 내부망(LAN, `COMPOSE_OLLAMA_BASE_URL`) | `.env.network.demo` | `bash scripts/switch_rpi_network.sh demo` |
-| **`test`** | Tailscale 외부망 | 동일 호스트(Docker 컨테이너 기본값, `host.docker.internal`) | `.env.network.test` | `bash scripts/switch_rpi_network.sh test` |
+| **`demo`** | Raspberry Pi 시연 LAN | 시연 LAN (`COMPOSE_OLLAMA_BASE_URL`) | `.env.network.demo` | `bash scripts/switch_rpi_network.sh demo` |
+| **`test`** | Raspberry Pi Tailscale | 동일 호스트(Docker 기본) | `.env.network.test` | `bash scripts/switch_rpi_network.sh test` |
+| **`cloud`** | 클라우드 MariaDB `gildang_db`:3307 + Cloudflare R2 | 프로필에 따름(보통 생략) | `.env.network.cloud` | `bash scripts/switch_rpi_network.sh cloud` |
 
 **프로필 전환 실행 위치**: FastAPI/Docker가 도는 서버에서 실행한다. 시연 구성은 서버=Windows(GPU)이므로 **WSL2 안(bash)** 에서 실행한다(Windows 네이티브 cmd/PowerShell/Git Bash는 `unsupported OS`). macOS에서 FastAPI를 띄우는 개발 환경이면 Darwin 분기(`docker-compose.macos.yml` + `socat`)를 쓴다.
 
@@ -156,7 +157,10 @@ bash scripts/metro_tailscale.sh status
 | 루트 `.env` | DB 계정·비밀번호, 미디어 토큰 등 공통 비밀값과 기본 `NETWORK_ENV_FILE` |
 | `.env.network.demo` | 내부망의 `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL`, (선택) `COMPOSE_OLLAMA_BASE_URL=http://<Mac mini LAN IP>:11434` |
 | `.env.network.test` | Tailscale의 `DB_HOST`, `DB_PORT`, `IMAGE_SERVER_BASE_URL` (`COMPOSE_OLLAMA_BASE_URL`은 보통 생략) |
-| `scripts/switch_rpi_network.sh` | 사전검사, Compose 전환, 런타임 검증 정본 |
+| `.env.network.cloud` | `gildang_db`/`DB_PORT=3307`, `EVENT_FRAME_STORAGE_BACKEND=r2`, `R2_*` (템플릿: `.env.network.cloud.example`) |
+| `scripts/switch_rpi_network.sh` | 사전검사, Compose 전환, 런타임 검증 정본 (`demo\|test\|cloud`) |
+| `scripts/setup_gildang_cloud_db.py` | 클라우드에 `gildang_db`·앱 유저·ORM 스키마 생성 |
+| `docs/ops/gildang_cloud_r2_guide.md` | cloud/R2 전환 운영 가이드 |
 | `scripts/ollama_demo_keepalive.sh` | Mac mini Ollama LAN 개방·모델 상주 |
 | `scripts/metro_tailscale.sh` | Metro 기동·상태·실기기 딥링크 |
 | `docker/scripts/db_tailscale_proxy.sh` | macOS Docker에서 Raspberry Pi DB로 연결하는 `socat` 프록시 |

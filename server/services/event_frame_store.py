@@ -147,14 +147,24 @@ def resolve_frame_path(frame_path: str | None) -> Path | None:
 
 
 def cleanup_expired_frames(retention_days: int | None = None) -> int:
-    """보존 기간을 초과한 날짜 폴더를 삭제하고 삭제한 폴더 수를 반환합니다.
+    """보존 기간을 초과한 로컬 날짜 폴더 또는 R2 객체를 삭제하고 건수를 반환합니다.
 
     2026-07-20: 서버 기동 시 1회 + EVENT_FRAME_CLEANUP_INTERVAL_S 주기로 반복
     호출합니다(`server/main.py`). YYYYMMDD 형식 폴더만 대상으로 하며, 형식이
     다른 항목은 안전을 위해 건드리지 않습니다.
     """
     days = RETENTION_DAYS if retention_days is None else retention_days
-    if days <= 0 or not EVENT_FRAMES_DIR.is_dir():
+    if days <= 0:
+        return 0
+
+    from server.services.remote_storage_client import is_r2_backend
+
+    if is_r2_backend():
+        from server.services.r2_storage_client import cleanup_expired_objects_sync
+
+        return cleanup_expired_objects_sync(days)
+
+    if not EVENT_FRAMES_DIR.is_dir():
         return 0
     cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y%m%d")
     removed = 0

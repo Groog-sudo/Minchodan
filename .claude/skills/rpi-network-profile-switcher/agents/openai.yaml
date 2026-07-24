@@ -1,4 +1,4 @@
 interface:
   display_name: "시연 환경 기동·네트워크 프로필"
-  short_description: "시연용 서버(Pi·Ollama·FastAPI·console·Metro) 기동과 demo/test 네트워크 전환을 수행합니다."
-  default_prompt: "$rpi-network-profile-switcher를 사용해 시연에 필요한 서버를 기동·점검하고, Raspberry Pi DB·미디어·Mac mini LLM 네트워크 프로필을 전환·검증해 주세요."
+  short_description: "시연용 서버 기동과 demo/test/cloud 네트워크 전환(Pi 또는 gildang_db+R2)을 수행합니다."
+  default_prompt: "$rpi-network-profile-switcher를 사용해 시연에 필요한 서버를 기동·점검하고, demo/test/cloud 네트워크 프로필(Pi MariaDB·미디어 또는 클라우드 gildang_db+Cloudflare R2, Mac mini LLM)을 전환·검증해 주세요."

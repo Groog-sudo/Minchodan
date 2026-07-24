@@ -1,7 +1,7 @@
 # MariaDB·미디어 저장 API Tailscale 연결 가이드 (외부 공개용)
 
 > **작성일**: 2026-07-17
-> **버전**: v0.3.1
+> **버전**: v0.3.2
 > **공개 범위**: 외부 공유 가능
 > **상태**: 실제 내부 식별자를 제거하고 플레이스홀더로 치환한 공개용 템플릿
 > **내부 문서**: 실접속 정보가 필요한 승인 팀원은 Git에서 제외된 `README.internal.md`를 별도 보안 채널로 전달받습니다.
@@ -582,10 +582,28 @@ server/db/migrations 규칙에 맞는 증분 SQL을 먼저 제안하고 검증�
 
 ---
 
-## 19. 관련 기준 문서
+## 19. cloud 프로필 (gildang_db + Cloudflare R2)
+
+Tailscale/Raspberry Pi 경로와 별도로, DB·미디어만 클라우드로 분리하는 프로필이 있습니다.
+
+| 항목 | 값 |
+| :--- | :--- |
+| 프로필 | `cloud` (`bash scripts/switch_rpi_network.sh cloud`) |
+| DB | 클라우드 MariaDB **`gildang_db`**, 포트 **3307** |
+| 미디어 | Cloudflare R2 (`EVENT_FRAME_STORAGE_BACKEND=r2`) |
+| macOS socat DB 프록시 | **기동하지 않음** (`COMPOSE_DB_HOST`로 직접 연결) |
+| 설정 파일 | `.env.network.cloud` (gitignore, 템플릿은 `.env.network.cloud.example`) |
+
+절차·검증 체크리스트는 [`../ops/gildang_cloud_r2_guide.md`](../ops/gildang_cloud_r2_guide.md)를 정본으로 사용합니다.
+`demo`/`test` 프로필은 롤백용으로 유지합니다.
+
+---
+
+## 20. 관련 기준 문서
 
 | 문서                                                         | 용도                                                  |
 | :----------------------------------------------------------- | :---------------------------------------------------- |
+| [gildang 클라우드 DB·R2 가이드](../ops/gildang_cloud_r2_guide.md) | `cloud` 프로필·`gildang_db`·R2 초기화·전환 절차 |
 | [환경 변수 명세](../ops/environment_variables.md)            | DB·미디어 저장 환경 변수의 타입, 기본값, 참조 코드    |
 | [시스템 아키텍처](../design/architecture.md)                 | 중앙 이벤트 프레임·STT 음성 보존 구조                 |
 | [API 명세](../design/api_specification.md)                   | 관리자 로그 조회, 이벤트 프레임 프록시, STT 저장 계약 |
@@ -597,10 +615,11 @@ server/db/migrations 규칙에 맞는 증분 SQL을 먼저 제안하고 검증�
 
 ---
 
-## 20. 변경 이력
+## 21. 변경 이력
 
 | 날짜           | 버전       | 변경 내용                                                                                                                     |
 | :------------- | :--------- | :---------------------------------------------------------------------------------------------------------------------------- |
 | **2026-07-10** | **v0.1.0** | macOS·Windows 팀원의 MariaDB Tailscale 접속 절차를 최초 작성했습니다.                                                         |
 | **2026-07-17** | **v0.2.0** | 공동 MariaDB와 Raspberry Pi 미디어 저장 API를 하나의 팀 연결 가이드로 통합했습니다.                                           |
 | **2026-07-17** | **v0.3.0** | 실제 Tailscale 주소, DB 식별자, 호스트 상태와 내부 경로를 제거·일반화해 외부 공개용 문서로 전환하고 내부 문서를 분리했습니다. |
+| **2026-07-24** | **v0.3.2** | `cloud` 프로필(`gildang_db`:3307 + Cloudflare R2) 절과 가이드 링크를 추가했습니다. |
