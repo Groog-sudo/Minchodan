@@ -219,7 +219,7 @@ def get_test_cmd(stage):
     py_bin = sys.executable
     test_cmds = {
         1: f"{py_bin} tests/test_ws_echo.py",
-        2: f"{py_bin} tests/test_frame_decode.py",
+        2: f"{py_bin} -m pytest tests/test_frame_decode.py",
         3: f"{py_bin} scripts/verify_gpu.py && {py_bin} tests/test_detection.py",
         4: f"{py_bin} scripts/eval_hitrate.py",
         5: f"{py_bin} tests/test_retriever.py",
@@ -239,8 +239,10 @@ def run_stage_tests(stage):
 
     print_info(f"실행 명령어: {test_cmd}")
     try:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = PROJECT_ROOT
         result = subprocess.run(  # noqa: S602
-            test_cmd, shell=True, cwd=PROJECT_ROOT, capture_output=True, text=True
+            test_cmd, shell=True, cwd=PROJECT_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env
         )  # nosec B602 B603 B607
         print(result.stdout)
         if result.returncode == 0:

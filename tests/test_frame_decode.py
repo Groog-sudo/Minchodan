@@ -468,7 +468,7 @@ class TestGetDefaultSplitter:
         )
 
         assert REFLEX_QUEUE_MAXSIZE == 2
-        assert COGNITIVE_QUEUE_MAXSIZE == 4
+        assert COGNITIVE_QUEUE_MAXSIZE == 6
         # 하위 호환: QUEUE_MAXSIZE는 두 분리 상수의 최댓값
         assert max(REFLEX_QUEUE_MAXSIZE, COGNITIVE_QUEUE_MAXSIZE) == QUEUE_MAXSIZE
         splitter = get_default_splitter()

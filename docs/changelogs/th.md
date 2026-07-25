@@ -1084,3 +1084,28 @@ equirements.txt, docker/docker-compose.yml, docs/ops/environment_variables.md, .
 - **관련 파일**: server/api/ws_router.py, client/src/components/CameraView.tsx, docs/design/api_specification.md, docs/changelogs/th.md
 - **검증 결과**: ws_router.py 컨테이너 내 ast 구문 검사 통과, FastAPI 재시작 후 헬스 200·Whisper 프리로드·TTS 프리워밍 30/30 정상. 실기기 앱 리로드 후 콘솔 표시 확인 예정.
 
+---
+
+### 2026-07-26 | 3단계+DB | 파인튜닝 데이터셋 안내 작성, DB 클론 및 테스트 단정 수정
+
+- **배경**: YOLO 모델 파인튜닝 데이터셋 지침 문서화, 로컬/시연 환경용 MariaDB 더미 시딩 SQL 준비 및 프레임 디코더 테스트 단정 동기화 필요.
+- **변경 내용**:
+  - `DATASET.md`: 원천 데이터 출처, 파인튜닝 결과 경로(`training/runs/`) 및 대표 샘플 10장 관리 지침 신규 작성.
+  - `Minchodan_DB_Clone.sql`: MariaDB 테이블 스키마 덤프 및 초기 데이터 클론 SQL 추가.
+  - `scripts/seed_dummy_data.sql`: 관리자 계정, 앱 사용자 및 테스트 디바이스(`dev-001`) 더미 데이터 시딩 SQL 스크립트 작성.
+  - `scripts/cleanup_datasets.py`: 학습 데이터셋 및 raw 프레임 중 대표 샘플 10개만 유지하고 중간 학습 가중치(`last*.pt`)를 자동 삭제하는 정리 유틸리티 추가.
+  - `tests/test_frame_decode.py`: `COGNITIVE_QUEUE_MAXSIZE` 단정값을 기존 4에서 최신 6으로 동기화 수정.
+- **관련 파일**: `DATASET.md`, `Minchodan_DB_Clone.sql`, `scripts/seed_dummy_data.sql`, `scripts/cleanup_datasets.py`, `tests/test_frame_decode.py`, `docs/changelogs/th.md`
+- **검증 결과**: `venv\Scripts\python.exe -m pytest tests/test_frame_decode.py` 33건 전체 통과. 이중 경로 가드레일 준수, 금지 파일 스테이징 없음.
+
+
+
+---
+
+### 2026-07-26 | 2단계 | dataset_doc_db_clone_and_test_sync
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 파인튜닝 데이터셋 가이드 작성 및 DB 클론, 테스트 단정 수정
+- **관련 파일**: `ocs/changelogs/th.md`, `scripts/auto_publish_work.py`, `tests/test_frame_decode.py`, `DATASET.md`, `Minchodan_DB_Clone.sql`, `scripts/cleanup_datasets.py`, `scripts/seed_dummy_data.sql`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
