@@ -201,13 +201,12 @@ export function LiveCameraFeed({
     lastGpsRef.current = lastGps;
   }, [lastGps]);
 
-  // platform에 따른 동적 회전 각도 결정 (Android는 기본 90도, iOS 및 기타는 0도)
-  const defaultRotate = platform === "android" ? 90 : 0;
-  const [rotateDeg, setRotateDeg] = useState<number>(defaultRotate);
+  // 단말에서 정자세 JPEG를 보내도록 맞춘다(iOS/Android 모두). 콘솔 CSS 회전은
+  // 운영자 수동 보정용이며 플랫폼별 기본값은 0 (2026-07-16 정본, Android 90 하드코딩 제거).
+  const [rotateDeg, setRotateDeg] = useState<number>(0);
 
-  // platform prop이 변경되면 (예: 다른 세션 연결) 기본값으로 재설정
   useEffect(() => {
-    setRotateDeg(platform === "android" ? 90 : 0);
+    setRotateDeg(0);
   }, [platform]);
 
   // 앱 실기기 GPS 좌표를 HUD 미니맵 iframe에 주입한다.

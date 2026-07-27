@@ -15,6 +15,8 @@ if ROOT not in sys.path:
 
 @pytest.fixture(autouse=True)
 def _clear_storage_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 프로세스에 이미 .env / .env.network.cloud 이 export 된 경우에도
+    # 단위 테스트가 격리되도록 비운다(delenv만으로는 재로드 타이밍에 취약).
     for key in (
         "EVENT_FRAME_STORAGE_BACKEND",
         "EVENT_FRAME_BACKEND",
@@ -25,8 +27,10 @@ def _clear_storage_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "R2_SECRET_ACCESS_KEY",
         "R2_BUCKET",
         "R2_ENDPOINT",
+        "R2_PUBLIC_BASE_URL",
     ):
         monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv(key, "")
 
 
 def test_storage_backend_local_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

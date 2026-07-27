@@ -360,8 +360,10 @@ export function useWebSocket(
         if (data.type === "welcome") {
           receivedWelcome = true;
           setLastMessage(data);
-          setStatus("connected");
-          reconnectCount.current = 0;
+          // 연결됨은 auth_ok에서만 표기한다. welcome 직후 auth 전이면 UI가
+          // 연결됨↔연결중으로 깜빡이고, TFLite 로드로 hello가 늦으면 인증 타임아웃과
+          // 겹쳐 상태가 더 흔들린다(2026-07-24 Android 실측).
+          setStatus((prev) => (prev === "fallback" ? prev : "connecting"));
           // 성공한 후보를 다음 재연결의 1순위로 고정한다.
           const working = wsUrlCandidatesRef.current[wsUrlIndexRef.current];
           if (working) {
@@ -374,7 +376,11 @@ export function useWebSocket(
             ];
             wsUrlIndexRef.current = 0;
           }
-          console.log(`[WS] 연결 성공, 세션 ID: ${data.session_id}`);
+          console.log(`[WS] welcome 수신, 인증 대기: session=${data.session_id}`);
+        } else if (data.type === "auth_ok") {
+          setStatus("connected");
+          reconnectCount.current = 0;
+          console.log(`[WS] 연결 성공(auth_ok), device_id=${data.device_id ?? deviceId}`);
           // 폴백 모드 고지 이후의 복구는 사용자에게 반드시 알린다. 사용자는 화면을
           // 볼 수 없으므로 음성 고지가 유일한 상태 전달 수단이다(Mitos 로드맵).
           if (fallbackAnnouncedRef.current) {
@@ -393,7 +399,9 @@ export function useWebSocket(
           const ackKey = `${data.event_id ?? ""}:${data.frame_id ?? ""}`;
           pendingFrames.current.delete(ackKey);
           setInFlightFrameCount(pendingFrames.current.size);
-          if (data.server_busy === true) {
+          // skipped_decode=true 는 YOLO/큐만 드롭한 것. 콘솔 Live Feed용 송신은
+          // 유지해야 하므로 busy 백프레셔를 적용하지 않는다(2026-07-24).
+          if (data.server_busy === true && data.skipped_decode !== true) {
             const suggest =
               typeof data.suggest_reflex_interval_ms === "number"
                 ? data.suggest_reflex_interval_ms
@@ -774,7 +782,10 @@ export function useWebSocket(
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
 
-      if (nextState !== "active") {
+      // inactive(알림/TTS/제어센터 등 짧은 인터럽트)에서는 소켓을 유지한다.
+      // Android에서 온보딩 TTS·오디오 세션 전환이 inactive로 잡혀 WS를 끊고
+      // 연결됨↔연결중이 깜빡이던 실측(2026-07-24). background일 때만 정리.
+      if (nextState === "background") {
         if (reconnectTimer.current) {
           clearTimeout(reconnectTimer.current);
           reconnectTimer.current = null;
@@ -789,7 +800,7 @@ export function useWebSocket(
         return;
       }
 
-      if (previousState !== "active") {
+      if (nextState === "active" && previousState === "background") {
         reconnectCount.current = 0;
         fallbackAnnouncedRef.current = false;
         connectRef.current();

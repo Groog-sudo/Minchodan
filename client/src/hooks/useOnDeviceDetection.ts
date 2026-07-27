@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import { createLocalDetector } from "../inference/localDetector";
 import { DetectionResult, SceneClassification } from "../inference/types";
 import { audioEngine } from "../services/audioEngine";
@@ -42,7 +43,9 @@ export type OnDeviceDetectionResult = DetectionResult;
 export function useOnDeviceDetection() {
   const [segLoaded, setSegLoaded] = useState(false);
   const [detLoaded, setDetLoaded] = useState(false);
-  const [detShapeLog, setDetShapeLog] = useState<string>("CoreML Mode");
+  const [detShapeLog, setDetShapeLog] = useState<string>(
+    Platform.OS === "android" ? "TFLite loading…" : "CoreML loading…",
+  );
   // 로컬 추론 엔진의 입력 계약. iOS CoreML 정상 모드면 false(base64만 사용),
   // TFLite 또는 TFLite 폴백이면 true(float32 필요). 캡처 계층이 이 값으로
   // JS JPEG 디코딩 + 4.7MiB Float32Array 할당을 우회할지 결정한다 (2026-07-17, P0).
@@ -54,10 +57,17 @@ export function useOnDeviceDetection() {
     // 플랫폼별 최적화된 Detector 인스턴스 획득 (iOS=CoreML 우선, Android=TFLite)
     const detector = createLocalDetector();
     detectorRef.current = detector;
+    let cancelled = false;
 
     async function init() {
+      // Android에서 Metro로 대용량 .tflite를 받는 동안 JS/브릿지가 바빠지면
+      // WS hello가 늦어 서버 인증 타임아웃(연결됨↔연결중 깜빡임)이 난다.
+      // 핸드셰이크에 양보한 뒤 모델을 올린다(2026-07-24).
+      await new Promise((r) => setTimeout(r, Platform.OS === "android" ? 1500 : 0));
+      if (cancelled) return;
       console.log("[OnDevice] 로컬 추론 엔진 기동 시도...");
       const success = await detector.load();
+      if (cancelled) return;
       if (success) {
         setSegLoaded(detector.segLoaded);
         setDetLoaded(detector.detLoaded);
@@ -67,9 +77,10 @@ export function useOnDeviceDetection() {
         console.warn("[OnDevice] 로컬 추론 엔진 로드 실패");
       }
     }
-    init();
+    void init();
 
     return () => {
+      cancelled = true;
       if (detectorRef.current) {
         detectorRef.current.dispose();
         detectorRef.current = null;

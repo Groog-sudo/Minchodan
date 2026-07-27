@@ -397,3 +397,6 @@ docker/docker-compose.subnet-override.local.yml
 .env.network.demo
 .env.network.test
 .env.network.cloud
+
+# local admin bootstrap credentials (never commit)
+.admin_bootstrap_credentials.local

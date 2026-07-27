@@ -105,7 +105,9 @@ export class TFLiteDetector implements LocalDetector {
       this.detLoaded = true;
 
       const outShape = this.detModel.outputs?.[0]?.shape;
-      this.detShapeLog = outShape ? `[${outShape.join(",")}]` : "(알 수 없음)";
+      this.detShapeLog = outShape
+        ? `TFLite [${outShape.join(",")}]`
+        : "TFLite (shape unknown)";
       this.isLoaded = true;
 
       console.log(`[TFLiteDetector DEBUG] segmentation inputs: ${JSON.stringify(this.segModel.inputs)}, outputs: ${JSON.stringify(this.segModel.outputs)}`);

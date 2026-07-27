@@ -490,6 +490,9 @@ export function CameraView() {
   // 2026-07-13 th: 상시 캡처/서버 전송이 실기기에서 과부하·캡처 오류를 유발해
   // 기본은 중지, "탐지 시작" 버튼으로만 루프를 켠다(STT press-and-hold와 독립).
   const [detectionEnabled, setDetectionEnabled] = useState(false);
+  // Android: 전체화면 STT Pressable이 zIndex만으로는 하단 버튼을 가로채는 실측.
+  // 조작 도크 높이만큼 STT hit 영역을 비운다.
+  const [controlsDockHeight, setControlsDockHeight] = useState(140);
 
   // 평상시 WiFi / 개발 USB — 둘 다 설정에 두고 토글로 전환 (재시작 후에도 유지).
   const [serverTransport, setServerTransport] = useState<ServerTransport>(DEFAULT_SERVER_TRANSPORT);
@@ -746,13 +749,6 @@ export function CameraView() {
   }, [isMockMode, status]);
 
   // State variables moved to top of Component to avoid block-scope/TDZ errors.
-
-  // 탐지 토글을 서버에 동기화: OFF면 STT가 자유 질문으로 가고, 목적지/인텐트 대기를 푼다.
-  // WS 재연결 후에도 현재 토글 값을 다시 보낸다.
-  useEffect(() => {
-    if (status !== "connected") return;
-    send({ type: "detection_control", enabled: detectionEnabled, ts: Date.now() });
-  }, [status, detectionEnabled, send]);
 
   // 지도 토글은 경로 유무와 무관하게 유지(하단 도구 패널에서 항상 접근).
 
@@ -1041,6 +1037,10 @@ export function CameraView() {
   // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
   const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
     const now = Date.now();
+    // [TEMP DIAG 2026-07-24] handleFrame 실제 호출 간격 계측(원인 격리용, 확인 후 제거)
+    const prevCallTs = (globalThis as any).__lastHandleFrameTs ?? now;
+    (globalThis as any).__lastHandleFrameTs = now;
+    console.log(`[DIAG] handleFrame gap=${now - prevCallTs}ms stream=${frame.stream ?? "reflex"}`);
     // 2026-07-11 event_id 구조화(dev 개선 계획서 §3): 기존 `event-${now}`는 ms 단위라
     // 반사/인지 두 캡처 타이머가 같은 ms에 발화하면 event_id가 충돌했고, 서버 DB의
     // event_id UNIQUE + 중복 저장 방지 로직(detection_guidance_log_service)이 두 번째
@@ -1332,7 +1332,7 @@ export function CameraView() {
     }
     info.push(`캡처: ${isCapturing ? "ON" : "OFF"} (탐지토글 ${detectionEnabled ? "ON" : "OFF"}, 반사 ${currentReflexFps}fps 동적)`);
     info.push(`모델: ${segLoaded ? "seg" : "…"} / ${detLoaded ? "det" : "…"}`);
-    if (detShapeLog) info.push(`det shape: ${detShapeLog}`);
+    if (detShapeLog) info.push(`엔진: ${detShapeLog}`);
     info.push(`추론: ${lastDetect}`);
     setDebugInfo(info);
   }, [isMockMode, permissionStatus, device, status, serverTransport, networkRttMs, networkRttAvgMs, isCapturing, detectionEnabled, currentReflexFps, segLoaded, detLoaded, detShapeLog, lastDetect]);
@@ -1467,9 +1467,13 @@ export function CameraView() {
 
       {/* 2026-07-10 설계: 화면 전체가 STT press-and-hold.
           운영자 버튼은 이 레이어 *위*에 absolute + box-none으로 올린다.
-          (ScrollView box-none 안에 버튼을 두면 STT 제스처 후 버튼이 먹통이 됨 - 2026-07-17 실측) */}
+          (ScrollView box-none 안에 버튼을 두면 STT 제스처 후 버튼이 먹통이 됨 - 2026-07-17 실측)
+          2026-07-24 Android: elevation+하단 도크 제외로 STT가 버튼을 가로채지 않게 함. */}
       <Pressable
-        style={[StyleSheet.absoluteFill, styles.sttFullScreenHitLayer]}
+        style={[
+          styles.sttFullScreenHitLayer,
+          { bottom: Math.max(controlsDockHeight, 96) },
+        ]}
         onPressIn={onSttPressIn}
         onPressOut={onSttPressOut}
         accessibilityRole="button"
@@ -1543,7 +1547,22 @@ export function CameraView() {
           box-none 레이어. none 안에 중첩하면 자식 Pressable이 조상의 none 때문에
           터치를 아예 받지 못한다(2026-07-18 th 병합 회귀 수정 - 탐지 시작 등 버튼
           무반응 버그의 원인). */}
-      <View style={styles.controlsOverlay} pointerEvents="box-none">
+      <View
+        style={styles.controlsOverlay}
+        pointerEvents="box-none"
+        collapsable={false}
+      >
+        <View
+          pointerEvents="box-none"
+          collapsable={false}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (h > 0) {
+              setControlsDockHeight(Math.ceil(h) + 16);
+            }
+          }}
+          style={styles.controlsDock}
+        >
         <View style={styles.confThresholdRow} pointerEvents="box-none">
           <Text style={styles.confThresholdLabel} pointerEvents="none">
             신뢰도 임계값: {(confThreshold * 100).toFixed(0)}%
@@ -1687,6 +1706,7 @@ export function CameraView() {
             {debugPanelExpanded && <DebugTriggerPanel />}
           </View>
         )}
+        </View>
       </View>
     </View>
   );
@@ -2050,10 +2070,13 @@ const styles = StyleSheet.create({
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFill,
-    zIndex: 20,
+    zIndex: 30,
+    elevation: 30,
     justifyContent: "flex-end",
     paddingBottom: 12,
     paddingHorizontal: 12,
+  },
+  controlsDock: {
     gap: 8,
   },
   controlRowDock: {
@@ -2246,9 +2269,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   sttFullScreenHitLayer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    // bottom은 런타임에 controlsDockHeight로 설정(하단 버튼 영역 제외).
     // iOS에서 완전 투명 View는 네이티브 Camera에 터치가 흡수될 수 있어 최소 알파를 둔다.
     backgroundColor: "rgba(0,0,0,0.01)",
     zIndex: 1,
+    elevation: 1,
   },
   sttButton: {
     alignSelf: "stretch",

@@ -77,7 +77,7 @@
 | **`ENABLE_DEBUG_API`** | bool | 선택 | `false` | 비운영 환경에서 최고관리자용 디버그 TTS API를 명시적으로 활성화 | `server/api/debug_router.py` |
 | **`ENABLE_NAVIGATION_SIMULATOR`** | bool | 선택 | `false` | `/navigation` 서브앱(콘솔 GPS HUD·OperatorLiveMap iframe) 마운트. **production** 에서는 `true` 일 때만 열고, **development**(`APP_ENV!=production`)에서는 플래그와 무관하게 기본 마운트한다(관제 지도 404 방지, 2026-07-19). | `server/main.py` |
 | **`CONSOLE_PORT`** | int | 선택 | `5174` | 운영자 콘솔 컨테이너 호스트 노출 포트. `docker-compose*.yml` `${CONSOLE_PORT:-5174}:5174` | `docker/docker-compose.yml`, `docker/docker-compose.macos.yml` |
-| **`CONSOLE_RELAY_MIN_INTERVAL_S`** | float | 선택 | `0.2` | 콘솔 Live Feed 프레임 릴레이 스로틀 간격(초, 기본 5fps). 단말 프레임을 콘솔에 중계할 때 최소 간격 | `server/api/ws_router.py:921` |
+| **`CONSOLE_RELAY_MIN_INTERVAL_S`** | float | 선택 | `0.1` | 콘솔 Live Feed 프레임 릴레이 스로틀 간격(초, 기본 ~10fps). 단말 프레임을 콘솔에 중계할 때 최소 간격. YOLO 스킵과 무관하게 송신률을 유지한다(2026-07-24) | `server/api/ws_router.py` |
 | **`SERVER_BUSY_SUGGEST_INTERVAL_MS`** | int | 선택 | `250` | **2026-07-21 신규 (P0).** detection ack `server_busy=true`일 때 단말이 적용할 반사 캡처 간격 힌트(ms, ≈4fps). 디코드 전 스킵·큐 적체 백프레셔와 연동 | `server/api/ws_router.py` |
 | **`ACCESS_TOKEN_EXPIRE_HOURS`** | int | 선택 | `8` | 관리자 JWT 액세스 토큰 만료 시간(시간) | `server/db/security.py:27` |
 | **`DEVICE_TOKEN_EXPIRE_DAYS`** | int | 선택 | `30` | 단말 JWT 만료 일수(일). §8.8 단말 토큰 발급 계약과 연동 | `server/api/auth.py:58` |

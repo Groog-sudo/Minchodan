@@ -45,6 +45,9 @@ class ReflexFrameProcessorPlugin(proxy: VisionCameraProxy, options: Map<String, 
                 }
 
                 val matrix = Matrix()
+                // vision-camera orientation + iOS와 동일하게 추가 180도 보정.
+                // Xiaomi 등 Android 실기기에서 센서 orientation만 적용하면 콘솔/저장
+                // JPEG가 정확히 180도 뒤집히는 것이 실측됨(2026-07-24).
                 rotationDegrees = when (frame.orientation) {
                     Orientation.PORTRAIT -> 0f
                     Orientation.PORTRAIT_UPSIDE_DOWN -> 180f
@@ -52,6 +55,7 @@ class ReflexFrameProcessorPlugin(proxy: VisionCameraProxy, options: Map<String, 
                     Orientation.LANDSCAPE_RIGHT -> 270f
                     else -> 0f
                 }
+                rotationDegrees = (rotationDegrees + 180f) % 360f
                 if (rotationDegrees != 0f) {
                     matrix.postRotate(rotationDegrees)
                 }
@@ -73,7 +77,8 @@ class ReflexFrameProcessorPlugin(proxy: VisionCameraProxy, options: Map<String, 
                 scaledBitmap = Bitmap.createScaledBitmap(croppedBitmap!!, 640, 640, true)
 
                 val outputStream = ByteArrayOutputStream()
-                scaledBitmap!!.compress(Bitmap.CompressFormat.JPEG, 50, outputStream)
+                // 콘솔 Live Feed 가독성: 50은 640x640에서 ~6KB로 과도하게 뭉개짐
+                scaledBitmap!!.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
                 jpegBytes = outputStream.toByteArray()
             }
 
@@ -120,11 +125,32 @@ class ReflexFrameProcessorPlugin(proxy: VisionCameraProxy, options: Map<String, 
             vBuffer.get(nv21, ySize, vSize)
             uBuffer.get(nv21, ySize + vSize, uSize)
 
+            // 센서 풀해상도(예: 4032x3024)를 quality=100으로 JPEG 인코딩한 뒤 다시
+            // 디코딩하는 왕복 비용이 실측 프레임당 1.4~1.5초까지 걸려 반사 FPS가
+            // 8fps 목표에서 0.7fps로 붕괴하는 원인이었다(2026-07-24, Xiaomi 12).
+            // 최종 출력이 640x640/quality=70뿐이므로: (1) 정사각 중앙 영역만 인코딩해
+            // 여백 화소를 버리고, (2) 중간 품질을 낮추고, (3) inSampleSize로 디코딩
+            // 자체를 다운샘플링해 불필요한 풀해상도 디코딩 비용을 없앤다.
+            val cropSize = minOf(image.width, image.height)
+            val cropLeft = (image.width - cropSize) / 2
+            val cropTop = (image.height - cropSize) / 2
             val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
             val out = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, yuvImage.width, yuvImage.height), 100, out)
+            yuvImage.compressToJpeg(
+                Rect(cropLeft, cropTop, cropLeft + cropSize, cropTop + cropSize),
+                80,
+                out,
+            )
             val imageBytes = out.toByteArray()
-            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, boundsOptions)
+            var sampleSize = 1
+            while (boundsOptions.outWidth / (sampleSize * 2) >= 640) {
+                sampleSize *= 2
+            }
+            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, decodeOptions)
         } catch (e: Exception) {
             Log.e(TAG, "imageToBitmap failed: ${e.message}", e)
             null

@@ -134,13 +134,15 @@ async function captureViaTakePhotoAndroid(
         if (originX + cropSize > width) originX = Math.max(0, width - cropSize);
         if (originY + cropSize > height) originY = Math.max(0, height - cropSize);
 
+        // Frame Processor와 동일: Android 실측 180도 추가 보정(콘솔 상하 반전 해소).
         const manipResult = await manipulateAsync(
           path,
           [
             { crop: { originX, originY, width: cropSize, height: cropSize } },
             { resize: { width: 640, height: 640 } },
+            { rotate: 180 },
           ],
-          { compress: 0.5, format: SaveFormat.JPEG, base64: true },
+          { compress: 0.7, format: SaveFormat.JPEG, base64: true },
         );
 
         const base64 = manipResult.base64 ?? "";

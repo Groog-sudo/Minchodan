@@ -926,24 +926,25 @@ async def ws_detect(
         # (최신성 우선, Live Feed 중계는 이미 끝난 상태).
         route_sem = asyncio.Semaphore(1)
 
-        # 💡 [면접 대비 주석] 콘솔 Live Feed 전용 FPS 분리 (2026-07-17, P0).
-        # 단말은 반사 경로 품질을 위해 5~8fps로 송신하지만, 운영자 모니터링 화면은
-        # 3~5fps로 충분하다. 단말 송신률을 그대로 relay하면 대역폭·브라우저 디코드
-        # 부하가 가중되고, 여러 콘솔 탭이 열린 환경에서 버퍼링이 누적된다.
-        # ACK/YOLO 라우팅은 기존 단말 FPS를 그대로 유지하고, 콘솔 relay만 별도 쓰로틀.
+        # 💡 [면접 대비 주석] 콘솔 Live Feed 전용 FPS 분리 (2026-07-17/24, P0).
+        # 단말 반사 송신(5~8fps)과 YOLO 추론 FPS는 분리한다. 콘솔은 최신 JPEG만
+        # 보여주면 되므로 relay만 별도 쓰로틀(기본 ~10fps). Mac CPU에서 YOLO가
+        # 막혀도 수신 루프·콘솔 중계·단말 송신률은 유지한다.
+        # (이전: busy ack로 단말 FPS를 낮춰 Live Feed까지 ~1fps로 끊김)
         console_relay_interval_s = max(
             0.001,
-            float(os.getenv("CONSOLE_RELAY_MIN_INTERVAL_S", "0.2")),  # 0.2s = 5fps
+            float(os.getenv("CONSOLE_RELAY_MIN_INTERVAL_S", "0.1")),
         )
         last_console_relay_ts: float = 0.0
 
-        async def _route_detection_bg(
-            processed_frame,
+        async def _decode_and_route_bg(
+            bg_raw: bytes,
+            bg_meta: dict,
             route_event_id: str,
             route_frame_id: int,
-            route_decode_ms: float,
             route_b64_len: int = 0,
         ) -> None:
+            """JPEG 디코드+YOLO 라우팅. 수신 루프를 막지 않도록 백그라운드에서만 실행."""
             if route_sem.locked():
                 logger.debug(
                     "[WS] detection route busy - drop event_id=%s frame_id=%s",
@@ -952,12 +953,15 @@ async def ws_detect(
                 )
                 return
             async with route_sem:
+                decode_start = time.perf_counter()
+                processed_frame = await decode_frame_binary(bg_raw, bg_meta)
+                decode_ms = (time.perf_counter() - decode_start) * 1000
                 await _route_detection_frame(
                     splitter,
                     processed_frame,
                     route_event_id,
                     route_frame_id,
-                    route_decode_ms,
+                    decode_ms,
                     route_b64_len,
                 )
 
@@ -989,8 +993,17 @@ async def ws_detect(
                 stream = meta.get("stream", "reflex")
                 reflex_qsize = splitter.queue_depth("reflex")
 
+                # 콘솔 Live Feed는 디코드/YOLO와 무관하게 최신 JPEG만 보여주면 된다.
+                # Mac CPU 디코드가 수신 루프를 막기 전에 먼저 중계한다(2026-07-24).
+                relay_now = time.perf_counter()
+                if relay_now - last_console_relay_ts >= console_relay_interval_s:
+                    last_console_relay_ts = relay_now
+                    await manager.broadcast_to_consoles(raw_bytes)
+
                 # 2026-07-21 P0: 추론/큐 적체 시 디코드 전에 스킵(CPU·OpenCV 낭비 제거).
-                # ack에 server_busy를 실어 단말이 반사 fps를 낮추도록 백프레셔.
+                # 2026-07-24: 스킵 경로에서는 server_busy 백프레셔를 걸지 않는다.
+                # 디코드/YOLO는 이미 드롭됐고 콘솔 중계는 위에서 끝난 상태인데,
+                # 단말 송신률까지 낮추면 Live Feed만 ~1fps로 끊긴다(Mac CPU YOLO 실측).
                 ingest_busy = route_sem.locked() or splitter.is_ingest_busy(stream)
                 if ingest_busy:
                     splitter.note_ingest_skip(stream)
@@ -999,30 +1012,20 @@ async def ws_detect(
                         event_id,
                         frame_id,
                         0.0,
-                        server_busy=True,
+                        server_busy=False,
                         reflex_qsize=reflex_qsize,
                         skipped_decode=True,
                     )
-                    relay_now = time.perf_counter()
-                    if relay_now - last_console_relay_ts >= console_relay_interval_s:
-                        last_console_relay_ts = relay_now
-                        await manager.broadcast_to_consoles(raw_bytes)
                     continue
 
-                decode_start = time.perf_counter()
-                processed = await decode_frame_binary(raw_bytes, meta)
-                decode_ms = (time.perf_counter() - decode_start) * 1000
-
-                # 💡 [면접 대비 주석] ACK를 콘솔 중계보다 먼저 보낸다 (2026-07-17, P0).
-                # 기존 순서(broadcast -> ack)에서는 느린 콘솔 send가 단말 ACK를 지연시켜
-                # 단말의 in-flight 프레임 제한(A2)이 동작하지 못하고 버퍼링이 누적됐다.
-                # ACK는 단말과의 계약이므로 콘솔 relay 상태와 독립되어야 한다.
-                # 콘솔 중계는 이제 session_manager의 latest-only 큐로 분리되어 논블로킹이다.
+                # 💡 [면접 대비 주석] ACK를 디코드보다 먼저 보낸다 (2026-07-17/24, P0).
+                # 단말 in-flight 제한(A2) 해제와 Live Feed 수신 루프 영속성이 우선.
+                # 콘솔 중계는 session_manager latest-only 큐로 논블로킹.
                 await _send_detection_ack(
                     ws,
                     event_id,
                     frame_id,
-                    decode_ms,
+                    0.0,
                     server_busy=False,
                     reflex_qsize=splitter.queue_depth("reflex"),
                 )
@@ -1054,14 +1057,14 @@ async def ws_detect(
                     except Exception as dump_err:
                         logger.warning(f"[SEG_COMPARE] dump failed: {dump_err}")
 
-                # 콘솔 relay FPS 분리(A5): 설정 주기 이내면 relay 건너뛰기(최신 프레임만 유지 목적).
-                relay_now = time.perf_counter()
-                if relay_now - last_console_relay_ts >= console_relay_interval_s:
-                    last_console_relay_ts = relay_now
-                    await manager.broadcast_to_consoles(raw_bytes)
-
                 task = asyncio.create_task(
-                    _route_detection_bg(processed, event_id, frame_id, decode_ms, len(raw_bytes))
+                    _decode_and_route_bg(
+                        raw_bytes,
+                        meta,
+                        event_id,
+                        frame_id,
+                        len(raw_bytes),
+                    )
                 )
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
@@ -1148,6 +1151,7 @@ async def ws_detect(
                 payload = {**payload, "device_id": payload.get("device_id") or device_id}
                 stream = payload.get("stream", "reflex")
                 reflex_qsize = splitter.queue_depth("reflex")
+                # 바이너리 경로와 동일: 스킵 시 단말 FPS 백프레셔 금지(콘솔 Live Feed).
                 ingest_busy = route_sem.locked() or splitter.is_ingest_busy(stream)
                 if ingest_busy:
                     splitter.note_ingest_skip(stream)
@@ -1156,7 +1160,7 @@ async def ws_detect(
                         event_id,
                         frame_id,
                         0.0,
-                        server_busy=True,
+                        server_busy=False,
                         reflex_qsize=reflex_qsize,
                         skipped_decode=True,
                     )
@@ -1168,6 +1172,7 @@ async def ws_detect(
 
                 b64_val = payload.get("thumbnail_jpeg_b64")
                 b64_len = len(b64_val) if b64_val else 0
+                raw_jpeg: bytes | None = None
                 if b64_val:
                     with contextlib.suppress(Exception):
                         b64_for_decode = b64_val
@@ -1175,7 +1180,7 @@ async def ws_detect(
                             parts = b64_for_decode.split(",", 1)
                             if len(parts) == 2:
                                 b64_for_decode = parts[1]
-                        raw_bytes = base64.b64decode(b64_for_decode)
+                        raw_jpeg = base64.b64decode(b64_for_decode)
                 # 2026-07-17: ACK를 콘솔 중계보다 먼저 (P0). 바이너리 경로와 동일한 순서.
                 await _send_detection_ack(
                     ws,
@@ -1185,11 +1190,29 @@ async def ws_detect(
                     server_busy=False,
                     reflex_qsize=splitter.queue_depth("reflex"),
                 )
-                if raw_bytes is not None:
-                    await manager.broadcast_to_consoles(raw_bytes)
-                task = asyncio.create_task(
-                    _route_detection_bg(processed, event_id, frame_id, decode_ms, b64_len)
-                )
+                if raw_jpeg is not None:
+                    await manager.broadcast_to_consoles(raw_jpeg)
+
+                async def _route_legacy_bg(
+                    processed_frame=processed,
+                    route_event_id=event_id,
+                    route_frame_id=frame_id,
+                    route_decode_ms=decode_ms,
+                    route_b64_len=b64_len,
+                ) -> None:
+                    if route_sem.locked():
+                        return
+                    async with route_sem:
+                        await _route_detection_frame(
+                            splitter,
+                            processed_frame,
+                            route_event_id,
+                            route_frame_id,
+                            route_decode_ms,
+                            route_b64_len,
+                        )
+
+                task = asyncio.create_task(_route_legacy_bg())
                 background_tasks.add(task)
                 task.add_done_callback(background_tasks.discard)
 

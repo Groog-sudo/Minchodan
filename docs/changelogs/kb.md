@@ -4164,3 +4164,22 @@
 - **관련 파일**: `server/services/r2_storage_client.py`, `server/services/remote_storage_client.py`, `server/services/event_frame_store.py`, `server/api/detection_log_router.py`, `scripts/setup_gildang_cloud_db.py`, `scripts/switch_rpi_network.sh`, `requirements.txt`, `.env.network.cloud.example`, `.env.example`, `docs/ops/gildang_cloud_r2_guide.md`, `docs/ops/environment_variables.md`, `docs/ops/demo_test_device_inventory.md`, `docs/db_tailscale_guide/README.md`, `.agents/skills/rpi-network-profile-switcher/SKILL.md`, `tests/test_r2_storage_backend.py`, `docs/changelogs/kb.md`
 - **검증 결과**: `pytest tests/test_r2_storage_backend.py` 5 passed. 로컬 ephemeral MariaDB:3307에서 `setup_gildang_cloud_db.py`로 DB/유저/ORM 테이블 생성 확인. `switch_rpi_network.sh cloud` 사전검사는 플레이스홀더 호스트에서 TCP 실패(실호스트·R2 키 기입 후 재실행).
 - **비고**: 실제 클라우드 DB 호스트·R2 자격증명은 사용자 로컬 `.env.network.cloud`에만 기입. Git 금지.
+
+---
+
+### 2026-07-27 | 2·3·7단계+Android | Android 온디바이스 연동 안정화 + 콘솔 Live Feed 백프레셔 분리
+
+- **커밋**: (본 커밋)
+- **변경 내용**:
+  - **WS 상태 깜빡임 수정**(`client/src/hooks/useWebSocket.ts`): `connected`를 `welcome`이 아닌 `auth_ok` 수신 시점에만 표기. Android에서 TFLite 로드로 hello가 늦어 인증 타임아웃과 겹치며 "연결됨↔연결중"이 깜빡이던 문제 해소. `AppState`도 `inactive`(TTS·오디오 세션 전환 등 짧은 인터럽트)에서는 소켓을 유지하고 `background`에서만 정리.
+  - **콘솔 Live Feed 백프레셔 분리**(`server/api/ws_router.py`): 콘솔 relay를 디코드/YOLO보다 먼저 수행하고, 스킵 경로(`skipped_decode`)에서는 `server_busy` 백프레셔를 걸지 않도록 변경. Mac CPU에서 YOLO가 막혀도 콘솔 중계·단말 송신률을 유지(이전엔 Live Feed가 ~1fps로 끊김). `_route_detection_bg`→`_decode_and_route_bg`로 디코드 자체를 백그라운드로 이동. 클라이언트도 `skipped_decode=true`면 busy ack 무시.
+  - **TFLite 로딩 UX**(`useOnDeviceDetection.ts`·`tfliteDetector.ts`): Android는 모델 로드 전 1.5초 핸드셰이크 양보(WS hello 우선), 상태 라벨을 플랫폼별(`TFLite loading…`/`CoreML loading…`)로 표기.
+  - **Android 전화 걸기 브릿지**(`PhoneDialBridgeModule.kt`): RN 0.80+ 대응(`reactApplicationContext.currentActivity`, `Arguments.createMap` 반환).
+  - **Android 매니페스트**: `CAMERA` 권한과 `camera`/`autofocus` feature(required=false) 선언.
+  - **프레임 캡처 보정**(`frameCaptureProviderSelect.android.ts`): takePhoto 폴백에 180도 회전 추가·압축 품질 0.5→0.7(콘솔 상하 반전·가독성).
+  - **콘솔 회전 정본화**(`console/src/components/LiveCameraFeed.tsx`): Android 90도 하드코딩 제거, 단말이 정자세 JPEG를 보내는 정본에 맞춰 기본 회전 0.
+  - **환경 변수 문서**: `CONSOLE_RELAY_MIN_INTERVAL_S` 기본값 0.2→0.1(~10fps) 및 설명 갱신.
+  - `.gitignore`에 `.admin_bootstrap_credentials.local` 추가. `tests/test_r2_storage_backend.py` 보강.
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `server/api/ws_router.py`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/inference/tfliteDetector.ts`, `client/android/app/src/main/java/com/minchodan/app/PhoneDialBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt`, `client/android/app/src/main/AndroidManifest.xml`, `client/src/components/CameraView.tsx`, `client/src/services/frameCaptureProviderSelect.android.ts`, `console/src/components/LiveCameraFeed.tsx`, `docs/ops/environment_variables.md`, `tests/test_r2_storage_backend.py`, `.gitignore`
+- **검증 결과**: `ruff check server/api/ws_router.py` All checks passed, `python -m py_compile` OK, client·console `tsc --noEmit` 타입 오류 0건.
+- **비고**: `CameraView.tsx`에 Android 반사 프레임 간격 계측용 임시 진단 로그(`[DIAG] handleFrame gap`, `[TEMP DIAG 2026-07-24]`)가 남아 있음 - 프레임 병목 원인 규명 완료 후 제거 예정. 개인 파일 `shipping_label.html`(프로젝트 무관)은 커밋에서 제외.
