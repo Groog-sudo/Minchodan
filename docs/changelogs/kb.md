@@ -4183,3 +4183,69 @@
 - **관련 파일**: `client/src/hooks/useWebSocket.ts`, `server/api/ws_router.py`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/inference/tfliteDetector.ts`, `client/android/app/src/main/java/com/minchodan/app/PhoneDialBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt`, `client/android/app/src/main/AndroidManifest.xml`, `client/src/components/CameraView.tsx`, `client/src/services/frameCaptureProviderSelect.android.ts`, `console/src/components/LiveCameraFeed.tsx`, `docs/ops/environment_variables.md`, `tests/test_r2_storage_backend.py`, `.gitignore`
 - **검증 결과**: `ruff check server/api/ws_router.py` All checks passed, `python -m py_compile` OK, client·console `tsc --noEmit` 타입 오류 0건.
 - **비고**: `CameraView.tsx`에 Android 반사 프레임 간격 계측용 임시 진단 로그(`[DIAG] handleFrame gap`, `[TEMP DIAG 2026-07-24]`)가 남아 있음 - 프레임 병목 원인 규명 완료 후 제거 예정. 개인 파일 `shipping_label.html`(프로젝트 무관)은 커밋에서 제외.
+
+---
+
+### 2026-07-27 | 문서·노션 | 노션 포트폴리오 페이지 작성 (R2 이미지 호스팅)
+
+- **커밋**: (본 커밋)
+- **변경 내용**:
+  - **노션 포트폴리오 작성**: 노션 페이지 `Gildang 포트폴리오`(ID `3aa6e291-2776-80d0-9a44-c8cad1bd9885`)에 최종 프로젝트 포트폴리오 작성. 첨부 PDF(최종_프로젝트_(비NCS)랭체인_기반_AI영상객체_플랫폼_구축프로젝트_김관범.pdf)의 7섹션 구조(개요/구조/담당역할/세부구현/문제해결/평가/부록)를 준용하되, 하이브리드(제출+취업) 목적으로 15섹션으로 확장. 총 **190개 블록**(heading 50, paragraph 39, bullet 42, numbered 16, code 7, table 9, image 14, callout 3, divider 10) 추가.
+  - **이미지 14종 R2 호스팅**: Cloudflare R2 버킷 `minchodan-event-frames/portfolio/`에 길당 로고, 앱 아이콘, 샘플 프레임 5종, detection 결과 3종(bollard/scooter/wheelchair), segmentation 결과 4종(caution/roadway/braille/sidewalk)을 boto3(S3 호환 API)로 업로드. R2 퍼블릭 도메인 미활성화 상태라 **presigned URL(7일 유효)** 발급 후 노션 external image 블록으로 임베드(노션이 자체 CDN에 영구 캐싱).
+  - **노션 MCP 설정**: `~/.gemini/antigravity-ide/mcp_config.json`에 보존된 기존 Notion MCP 설정(`@notionhq/notion-mcp-server` + 토큰)을 `.mcp.json`에 추가. **토큰 노출 방지를 위해 `.mcp.json`을 `git rm --cached`로 추적 해제**(`.gitignore` `*.json` 패턴이 이미 ignore 처리). `.mcp.local.json`은 기존부터 git-ignore.
+  - **빌드 스크립트 신설**(`scripts/notion/build_portfolio.py`): 노션 REST API(`PATCH /blocks/{id}/children`)를 직접 호출해 페이지에 블록을 순차 추가. 100블록 청크 자동 분할, 디자인룰(이모지 금지·한국어 존댓말·표 우선·핵심 굵게) 준수. 코드 블록 언어는 노션 지원 목록(bash/python/swift)으로 제한.
+  - **로컬 백업**(`docs/portfolio/notion_portfolio_backup.md`): 섹션 구조·이미지 목록·재빌드 방법 기록.
+  - **PDF 텍스트 추출**: pymupdf로 PDF 8페이지 전체 텍스트 추출(`pymupdf-1.28.0` 설치). 추출 내용을 포트폴리오 작성 근거로 활용.
+- **관련 파일**: `scripts/notion/build_portfolio.py`(신규), `docs/portfolio/notion_portfolio_backup.md`(신규), `.mcp.json`(수정, git-ignore 전환), `.mcp.local.json`(신규, git-ignore)
+- **검증 결과**: 노션 API 응답 200, 총 블록 190개(예상 188±), 이미지 14개 정상 임베드, 테이블 9개 정상 렌더링 확인.
+- **비고**: R2 presigned URL은 7일 후 만료되나, 노션이 한 번 가져간 이미지는 자체 CDN에 영구 보존됨. 노션 페이지 재빌드 시에만 presigned URL 갱신 필요. 노션 토큰은 외부 서비스 전송 대상이나 기존 Antigravity 설정 재사용. `pymupdf`·`boto3`는 `requirements.txt` 미추가(일회성 스크립트용, venv 로컬 설치).
+
+---
+
+### 2026-07-27 | 문서·노션 | 노션 포트폴리오 이미지 박스 정확도 검증 및 부적합 이미지 교체
+
+- **커밋**: (본 커밋)
+- **변경 내용**:
+  - **이미지 박스/마스크 정확도 일괄 검증**: 사용자 피드백으로 `wheelchair`·`braille_normal` 결과 이미지 부적합 지적. 12개 클래스 × 3변형 = 34장을 VLM(analyze_image)으로 분석하여 바운딩 박스/세그멘테이션 마스크 정확도 체계 검증.
+  - **부적합 이미지 제거/교체**:
+    - `wheelchair` (3종 전부 부적합 — 사람에 박스, 지하철 벽면 표지판 오탐지) → 제거 후 `stroller`(유모차, 신뢰도 0.921)로 대체. R2 `portfolio/det-wheelchair.jpg` 삭제, `portfolio/det-stroller.jpg` 업로드.
+    - `braille_normal` (3종 전부 벽면에 잘못 segmentation — 한국 실사 미확보로 해외 대체 이미지 사용) → 제거. R2 `portfolio/seg-braille.jpg` 삭제. Segmentation 섹션은 sidewalk/caution/roadway 3클래스로 축소.
+    - `roadway` _1(신뢰도 0.57) → _2(신뢰도 0.68)로 교체.
+    - 분석용 임시 R2 파일 24개(`_check_*.jpg`) 정리.
+  - **샘플 입력 프레임 5종 교체(선행 작업)**: 박스 없는 원본 프레임 1~5번 → 보행 안전 핵심 Detection 결과 5종(person/bicycle/movable_signage/traffic_light/pole)으로 교체. 모두 추천 변형(_1번) 사용.
+  - **braille 재학습 명시 callout**: sidewalk_normal 블록 뒤에 "점자블록은 한국 실사 데이터 확보 후 재학습 예정" 회색 callout 추가 — 한계를 솔직히 드러내며 개선 의지 표현.
+  - **노션 블록 작업**: PATCH 7건(wheelchair→stroller, roadway→_2, 샘플 5종 교체), DELETE 1건(braille), callout INSERT 1건. 최종 이미지 블록 13개.
+  - **빌드 스크립트/백업 동기화**: `scripts/notion/build_portfolio.py`·`docs/portfolio/notion_portfolio_backup.md`의 이미지 매핑을 검증 결과에 맞게 갱신. 백업에 검증 이력 메모 추가.
+- **관련 파일**: `scripts/notion/build_portfolio.py`, `docs/portfolio/notion_portfolio_backup.md`
+- **검증 결과**: VLM 분석 34장 완료. 추천 변형(_1 우선, roadway는 _2) 모두 박스/마스크 정확도 확인. 노션 API 응답 200, 이미지 블록 13개 정상 렌더링.
+- **비고**: `wheelchair`·`carrier`·`traffic_light_controller` 등은 모델 검증 보고서(`docs/ops/model_class_validation_report.md`)에서 이미 저신뢰도/해외 대체로 명시된 클래스. 본 검증으로 포트폴리오에서 부적합 결과가 노출되는 역효과를 방지. R2 presigned URL 7일 만료 전 노션 캐싱 완료.
+
+---
+
+### 2026-07-27 | 7단계 | notion_portfolio_backup
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 노션 포트폴리오 스크립트 및 백업 문서 업데이트
+- **관련 파일**: `.mcp.json`, `docs/changelogs/kb.md`, `docs/portfolio/`, `scripts/notion/`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-27 | 7단계 | notion_portfolio_backup
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 노션 포트폴리오 스크립트 및 백업 문서 업데이트
+- **관련 파일**: `.mcp.json`, `docs/changelogs/kb.md`, `docs/portfolio/notion_portfolio_backup.md`, `scripts/notion/build_portfolio.py`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-27 | 7단계 | notion_portfolio_backup
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 노션 포트폴리오 스크립트 및 백업 문서 업데이트
+- **관련 파일**: `.mcp.json`, `docs/changelogs/kb.md`, `docs/portfolio/`, `scripts/notion/`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
