@@ -231,6 +231,7 @@ docs/ops/reports/*
 !docs/ops/reports/presentation_template_cache_code_review.md
 !docs/ops/reports/presentation_script_consistency_check.md
 !docs/ops/reports/yolo_segmentation_overview.md
+!docs/ops/reports/th_final_report.md
 
 # ==========================================
 # Cache
