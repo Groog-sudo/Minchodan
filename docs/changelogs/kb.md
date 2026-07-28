@@ -4472,3 +4472,13 @@
   - TFLite NPU(NNAPI) Delegate 및 폴백 체인 구현
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
+
+---
+
+### 2026-07-28 | 3단계 | android_nnapi_bench_and_gpu_priority_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - NNAPI 실측 검증 및 GPU FP16 1순위 엔진 보장
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).

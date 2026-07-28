@@ -144,23 +144,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             return null
         }
 
-        // 1. NNAPI (NPU) Delegate 시도
-        try {
-            val options = NnApiDelegate.Options().apply {
-                setExecutionPreference(NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED)
-                setAllowFp16(true)
-            }
-            val delegate = NnApiDelegate(options)
-            val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
-            nnApiDelegates.add(delegate)
-            activeEngine = "NNAPI(NPU FP16)"
-            Log.i(TAG, "$assetName NNAPI delegate(FP16, sustained) 적용")
-            return interpreter
-        } catch (e: Throwable) {
-            Log.w(TAG, "$assetName NNAPI delegate 실패, GPU/CPU 폴백 시도: ${e.message}")
-        }
-
-        // 2. GPU Delegate (FP16) 시도
+        // 1. GPU Delegate (FP16) 1순위 시도 (실측: det 38.9ms로 가장 빠름)
         if (useGpu) {
             try {
                 // precisionLossAllowed=true: FP32 가중치를 GPU에서 FP16으로 연산한다.
@@ -180,8 +164,24 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 Log.i(TAG, "$assetName GPU delegate(FP16, sustained) 적용")
                 return interpreter
             } catch (e: Throwable) {
-                Log.w(TAG, "$assetName GPU delegate 실패, CPU 폴백: ${e.message}")
+                Log.w(TAG, "$assetName GPU delegate 실패, NNAPI/CPU 폴백: ${e.message}")
             }
+        }
+
+        // 2. NNAPI (NPU FP16) 2순위 폴백 (FP32 base 모델은 오버헤드로 det ~235ms)
+        try {
+            val options = NnApiDelegate.Options().apply {
+                setExecutionPreference(NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED)
+                setAllowFp16(true)
+            }
+            val delegate = NnApiDelegate(options)
+            val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
+            nnApiDelegates.add(delegate)
+            activeEngine = "NNAPI(NPU FP16)"
+            Log.i(TAG, "$assetName NNAPI delegate(FP16, sustained) 적용")
+            return interpreter
+        } catch (e: Throwable) {
+            Log.w(TAG, "$assetName NNAPI delegate 실패, CPU 폴백: ${e.message}")
         }
 
         // 3. CPU (XNNPACK) 폴백

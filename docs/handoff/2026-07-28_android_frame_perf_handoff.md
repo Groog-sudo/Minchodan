@@ -34,6 +34,11 @@ iOS는 `CoreMLInferenceBridge.swift`(654줄)가 base64를 네이티브에서 직
 **목표 8fps 달성** (§5.7). 캡처·서버 전송·콘솔 Live Feed 경로가 8fps대로 안정화됐다.
 온디바이스 추론 디스패치는 4.1fps이며 추가 개선 여지는 §5.7 말미 참조.
 
+> **2026-07-28 NNAPI(NPU) 실측 검증 요약**:
+> - NNAPI Delegate(NPU FP16) 시도 결과: `det` 235ms / `seg` 305ms로 FP32 base 모델 텐서 변환 오버헤드 때문에 GPU 대비 약 5~6배 지연됨을 확인.
+> - 따라서 `TFLiteInferenceBridgeModule.kt` 시도 순서를 **GPU(FP16) 1순위 -> NNAPI 2순위 -> CPU 3순위**로 재정립함.
+> - GPU FP16 복구 실측: `det` 38.19~43.70ms / `seg` 45.70ms / `total` 63.04~86.92ms 정상 복구 확인.
+
 > 경과 기록: 중간 단계 수치(215ms/4.6fps 등)는 §5.1~§5.6에 원인 분석과 함께 남겨 두었다.
 > §5.5는 "오디오 재생 중 추론 중단" 진단이 측정 아티팩트였음을 정정한 절이다.
 
