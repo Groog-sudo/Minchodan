@@ -77,11 +77,11 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     private val inferenceThread = HandlerThread("TFLiteInference").apply { start() }
     private val inferenceHandler = Handler(inferenceThread.looper)
 
-    // 입력 전처리 재사용 버퍼. 추론은 inferenceHandler(단일 스레드)에서만 실행되므로
-    // 인스턴스 단위 재사용이 안전하다(프레임마다 4.7MiB 재할당 제거).
-    private val scratchFloats = FloatArray(INPUT_SIZE * INPUT_SIZE * 3)
-    private val inputBuffer: ByteBuffer = ByteBuffer
-        .allocateDirect(INPUT_SIZE * INPUT_SIZE * 3 * 4)
+    // 입력 전처리 재사용 버퍼 (모델 로드 시 동적 크기로 재할당됨)
+    private var inputSize = 640
+    private var scratchFloats = FloatArray(640 * 640 * 3)
+    private var inputBuffer: ByteBuffer = ByteBuffer
+        .allocateDirect(640 * 640 * 3 * 4)
         .order(ByteOrder.nativeOrder())
 
     override fun getName(): String = "TFLiteInferenceBridge"
@@ -114,9 +114,20 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 return
             }
 
+            // 모델의 실제 입력 텐서 해상도(예: 416x416, 640x640) 동적 감지 및 전처리 버퍼 맞춤
+            val shape = detInterpreter?.getInputTensor(0)?.shape() ?: segInterpreter?.getInputTensor(0)?.shape()
+            if (shape != null && shape.size >= 3 && shape[1] > 0) {
+                inputSize = shape[1]
+                scratchFloats = FloatArray(inputSize * inputSize * 3)
+                inputBuffer = ByteBuffer
+                    .allocateDirect(inputSize * inputSize * 3 * 4)
+                    .order(ByteOrder.nativeOrder())
+                Log.i(TAG, "인터프리터 입력 해상도 동적 감지: ${inputSize}x${inputSize}")
+            }
+
             Log.i(
                 TAG,
-                "모델 로드 완료 det=${detInterpreter != null} seg=${segInterpreter != null} gpu=$useGpu"
+                "모델 로드 완료 det=${detInterpreter != null} seg=${segInterpreter != null} gpu=$useGpu inputSize=$inputSize"
             )
             promise.resolve(statusMap(detInterpreter != null, segInterpreter != null))
         } catch (e: Throwable) {
@@ -227,8 +238,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             return
         }
         val pixels = ReflexFrameCache.snapshot()
-        if (pixels == null || pixels.size != INPUT_SIZE * INPUT_SIZE) {
-            promise.reject("NO_FRAME", "네이티브 프레임 캐시가 비어 있습니다.", null)
+        if (pixels == null || pixels.size != inputSize * inputSize) {
+            promise.reject("NO_FRAME", "네이티브 프레임 캐시가 비어 있거나 크기가 일치하지 않습니다.", null)
             return
         }
         // 전처리 + 추론을 백그라운드로 디스패치한다. 메서드는 즉시 리턴해 네이티브 모듈
@@ -356,20 +367,20 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
      * 보내므로 대개 리사이즈가 생략된다. 그렇지 않은 입력은 센터 크롭 후 스케일한다.
      */
     private fun toNormalizedHwcBuffer(src: Bitmap): ByteBuffer {
-        val square = if (src.width == INPUT_SIZE && src.height == INPUT_SIZE) {
+        val square = if (src.width == inputSize && src.height == inputSize) {
             src
         } else {
             val cropSize = min(src.width, src.height)
             val originX = max(0, (src.width - cropSize) / 2)
             val originY = max(0, (src.height - cropSize) / 2)
             val cropped = Bitmap.createBitmap(src, originX, originY, cropSize, cropSize)
-            val scaled = Bitmap.createScaledBitmap(cropped, INPUT_SIZE, INPUT_SIZE, true)
+            val scaled = Bitmap.createScaledBitmap(cropped, inputSize, inputSize, true)
             if (cropped !== src && cropped !== scaled) cropped.recycle()
             scaled
         }
 
-        val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
-        square.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
+        val pixels = IntArray(inputSize * inputSize)
+        square.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
         if (square !== src) square.recycle()
 
         return pixelsToNormalizedHwcBuffer(pixels)
@@ -463,10 +474,11 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             }
             if (bestScore < confThreshold || bestClassId < 0) continue
 
-            val cx = out[i] * INPUT_SIZE
-            val cy = out[numAnchors + i] * INPUT_SIZE
-            val w = out[2 * numAnchors + i] * INPUT_SIZE
-            val h = out[3 * numAnchors + i] * INPUT_SIZE
+            // tfliteDetector.ts / CameraView 오버레이와의 표준 계약(640x640 정사각 좌표계)으로 좌표 스케일링
+            val cx = out[i] * 640f
+            val cy = out[numAnchors + i] * 640f
+            val w = out[2 * numAnchors + i] * 640f
+            val h = out[3 * numAnchors + i] * 640f
             if (w <= 1f || h <= 1f) continue
 
             results.add(
