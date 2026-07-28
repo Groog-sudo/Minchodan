@@ -4336,3 +4336,18 @@
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: `./gradlew :app:assembleDebug` BUILD SUCCESSFUL, `tsc --noEmit` 통과. Xiaomi 12 30초 실측: 추론 total 중앙값 101.6ms→**54ms(전체)·90ms(오디오 제외)**, 플러그인 콜백 44ms→**34ms**, 플러그인 공급 4.6fps→**8.9fps**, 서버 detection 수신 169건→**204건/30초**. 안정성 `AppState 진동 0` / `WS 연결 시도 0` / `세션 종료 0` 유지(회귀 없음).
 - **비고**: 추론 시간은 대폭 단축했으나 8fps 미달(전체 3.8fps, 오디오 제외 6fps). **주원인은 본 최적화와 무관한 별도 문제**: 가이드 음성 재생(약 3초/회, 30초 중 42%) 구간에 추론이 완전 중단. 오디오-추론 분리가 다음 최우선 과제(핸드오프 §5.4).
+
+---
+
+### 2026-07-28 | 1단계 | ws_halfopen_detection_reflex_alert_delay_fix
+
+- **커밋**: `fix(client): WS half-open 감지 추가 — heartbeat 타임아웃 + 서버 생존 신호 기반 반사 경보 즉시 전환`
+- **변경 내용**:
+  - **증상**: 사용자 보고 "서버 병목 후에 햅틱/비프가 들린다". 실측 결과 서버가 WS 종료(`code=1000`, FastAPI 로그 `[WS] 연결 끊김`/`세션 종료`)한 후에도 클라이언트가 `[LocalReflex] 서버 연결 정상` 로그를 계속 출력하며 온디바이스 반사 경보를 무한 억제. 서버가 드디어 응답/reflex_alert를 보낼 때까지 햅틱/비프 지연.
+  - **근본 원인 1 (useWebSocket.ts)**: 클라이언트 heartbeat_ack 타임아웃 부재. 서버는 5초마다 heartbeat 보내고 단말 응답 없으면 연결 종료하지만, **단말은 서버 heartbeat가 안 와도 연결을 안 끊음**(비대칭). WS가 half-open으로 죽으면(TCP 살아있으나 WS 메시지 불통) onclose가 발화하지 않아 status가 "connected"로 고정.
+  - **근본 원인 2 (CameraView.tsx)**: `isServerTimeout` 판정이 `lastFrameSentTsRef > lastServerResponseTsRef && 300ms` 조건에 의존. WS가 죽으면 `sendDetectionFrame`이 false 반환해 `lastFrameSentTsRef`가 갱신되지 않고, 조건이 false가 되어 타임아웃 미감지.
+  - **수정 1 (useWebSocket.ts)**: `lastServerHeartbeatTsRef`로 서버 heartbeat 수신 시각 추적. heartbeat 타이머에서 15초(서버 5초 간격 × 3) 이상 미수신 시 능동 `ws.close()` → onclose 강제 발화 → 재연결. `lastServerMessageTs`(모든 서버 메시지 수신 시각) 노출.
+  - **수정 2 (CameraView.tsx)**: `isServerTimeout` 판정을 `now - lastServerMessageTsRef.current > SERVER_LIVENESS_TIMEOUT_MS(1500)` 단순 조건으로 변경. WS가 죽으면 어떤 서버 메시지도 안 오므로 즉시 타임아웃 감지 → 온디바이스 반사 경보 즉시 허용.
+- **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: Xiaomi 12 실측. 정상 연결 시 "서버 연결 정상 억제" 정상 동작, heartbeat 오탐 없음. **서버 강제 재시작 시 WS 종료 60ms 만에 감지(code=1012), isServerTimeout 즉시 전환**(서버 정상 억제 → PathObstacle 게이트). 서버 복구 후 자동 재연결 및 "서버 연결 정상" 복귀. `tsc --noEmit` 통과, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- **비고**: 반사 경로 설계 원칙(반사=즉시 경보, 서버 미경유)을 위한 핵심 안전 장치. 이전에는 서버 응답을 무한 대기하며 원칙을 위반했고, 사용자가 체감하는 지연의 직접 원인이었다. 실내 씬에서는 PathObstacle 게이트가 추가로 통로 경보를 억제하지만, 이것은 의도된 정책(실내 경보 억제)이므로 별개.

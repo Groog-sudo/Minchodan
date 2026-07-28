@@ -73,6 +73,14 @@ const COLOR_OVERLAY_BG = "rgba(10, 13, 16, 0.85)";
 
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
+// 💡 [면접 대비 주석] 서버 생존 신호 타임아웃 (2026-07-28).
+// 정상 연결 시 서버는 프레임당 ack(~125ms 간격)와 heartbeat(5초 간격)를 보낸다.
+// 따라서 1500ms 동안 아무 메시지가 없으면 서버가 불응하거나 WS가 죽은 것으로 본다.
+// 이 시점부터 온디바이스 반사 경보를 허용해 "서버 병목 후에야 햅틱/비프가 울리는"
+// 지연(반사 경로 설계 원칙 위반)을 제거한다. WS half-open 시 useWebSocket의 heartbeat
+// 타임아웃(15초)이 능동 종료/재연결하지만, 그 사이 15초 동안 이 값을 즉시 타임아웃으로
+// 잡아 반사 경보 공백을 없앤다.
+const SERVER_LIVENESS_TIMEOUT_MS = 1500;
 // 2026-07-28 (Android Live Feed 끊김 P0): TFLite 경로는 추론 입력으로 JS JPEG 디코드
 // (decodeBase64JpegToHwc)를 요구한다. Xiaomi 12 실측에서 이 디코드 1회가 JS 스레드를
 // 약 900ms 점유해, 120ms 간격으로 매 프레임 돌리면 캡처·WS 송신·콘솔 Live Feed가
@@ -552,6 +560,7 @@ export function CameraView() {
     navRoute,
     networkRttMs,
     networkRttAvgMs,
+    lastServerMessageTs,
   } = useWebSocket(
     DEVICE_ID,
     TOKEN,
@@ -1012,6 +1021,13 @@ export function CameraView() {
   // 최신 상태는 반드시 ref 를 통해 읽어야 한다.
   const lastFrameSentTsRef = useRef(0);
   const lastServerResponseTsRef = useRef(0);
+  // 💡 [면접 대비 주석] 서버 생존 신호 기반 타임아웃 (2026-07-28).
+  // 기존 isServerTimeout 판정은 lastFrameSentTsRef > lastServerResponseTsRef 조건에
+  // 의존했는데, WS가 half-open으로 죽으면 sendDetectionFrame이 false를 반환해
+  // lastFrameSentTsRef가 갱신되지 않고, 결과적으로 타임아웃을 감지하지 못했다.
+  // useWebSocket이 노출하는 lastServerMessageTs(모든 서버 메시지 수신 시각)를
+  // 미러링하여, 서버 메시지가 멈추면(WS 죽음) 단순히 경과 시간으로 타임아웃을 잡는다.
+  const lastServerMessageTsRef = useRef(0);
   const localReflexStreakRef = useRef(0);
   const lastLocalVoiceClipTsRef = useRef<Record<string, number>>({
     front: 0,
@@ -1042,6 +1058,7 @@ export function CameraView() {
   useEffect(() => { isMockModeRef.current = isMockMode; }, [isMockMode]);
   useEffect(() => { requiresFloat32Ref.current = requiresFloat32; }, [requiresFloat32]);
   useEffect(() => { wsStatusRef.current = status; }, [status]);
+  useEffect(() => { lastServerMessageTsRef.current = lastServerMessageTs; }, [lastServerMessageTs]);
   useEffect(() => { sendRef.current = send; }, [send]);
   useEffect(() => { sendBinaryRef.current = sendBinary; }, [sendBinary]);
   useEffect(() => { sendDetectionFrameRef.current = sendDetectionFrame; }, [sendDetectionFrame]);
@@ -1263,10 +1280,16 @@ export function CameraView() {
       const isReflexStable = localReflexStreakRef.current >= requiredStreak;
       const stableReflexDetections = isReflexStable ? reflexDetections : [];
 
-      // 3. WebSocket 연결 끊김/타임아웃(300ms 초과) 감지 (마지막 수신 타임스탬프 기준)
+      // 3. WebSocket 연결 끊김/타임아웃 감지 (2026-07-28 개정).
+      // 이전 판정(lastFrameSentTsRef > lastServerResponseTsRef && 300ms)은 WS가
+      // half-open으로 죽으면 lastFrameSentTsRef가 갱신되지 않아 타임아웃을 못 잡았다.
+      // 서버 메시지 수신 시각(lastServerMessageTsRef) 기반 단순 판정으로 변경: WS가 죽으면
+      // 어떤 서버 메시지도 안 오므로 이 값이 멈추고, SERVER_LIVENESS_TIMEOUT_MS(1500ms)를
+      // 넘으면 서버 불응으로 간주해 온디바이스 반사 경보를 즉시 허용한다.
+      // lastServerMessageTsRef=0(초기/재연결 직전)이면 wsStatusRef 조건이 우선하므로
+      // connected 상태에서만 이 조건이 의미를 갖는다.
       const isServerTimeout = wsStatusRef.current !== "connected" ||
-        (lastFrameSentTsRef.current > lastServerResponseTsRef.current &&
-          now - lastServerResponseTsRef.current > 300);
+        now - lastServerMessageTsRef.current > SERVER_LIVENESS_TIMEOUT_MS;
 
       // iOS 로컬 반사 기준선: bf2c0eb (2026-07-20 Merge kb→dev). 239d5b0 공통화는 롤백(R-00=B).
       let pathRaisedAlert = false;

@@ -206,18 +206,26 @@ bash scripts/metro_tailscale.sh status
 
 ## 8. 마무리 전 반드시 처리할 것
 
-1. **임시 진단 로그 제거**
-   - `client/src/hooks/useWebSocket.ts:749` `[DIAG/WS] 소켓 교체 effect 실행`
-   - `client/src/hooks/useWebSocket.ts:788` `[DIAG/WS] AppState x -> y`
-   - `client/src/components/CameraView.tsx:1104` `[DIAG] handleFrame gap=` (`[TEMP DIAG 2026-07-24]`, `__lastHandleFrameTs`) — 프레임 병목 조사가 끝나면
-   - `CameraView.tsx`의 `[Camera] 지원 포맷(상위 8)` 진단 effect — §6.1 재시도가 끝나면
-2. **보안**: 세션 중 `.env.network.cloud`의 `R2_ACCESS_KEY_ID`와 `R2_ENDPOINT`(계정 ID 포함)가 대화에 평문 노출됐다. **Cloudflare에서 폐기·재발급 필요**.
-3. **`ruff format`**: `server/tts/speech_text.py`, `tests/test_convenience_rag_sources.py` 2건이 기존부터 미포맷(본 작업 무관, 미수정).
-4. **커밋**: 전부 미커밋. changelog 3건은 이미 기록됨. `dev` 병합 전 `kb` 브랜치에서 커밋 필요.
+> **2026-07-28 진행 상태**: 아래 항목은 인수인계 시점 기준이다. 항목 1(진단 로그 제거), 3(ruff format), 4(커밋)은 **이후 세션에서 모두 완료**되었다(커밋 `5b04d94`, `2bed639` 등). 항목 2(R2 키 폐기)만 사용자 행동으로 남아있다.
+
+1. **임시 진단 로그 제거** — ✅ 완료(2026-07-28). useWebSocket.ts 2건 + CameraView.tsx 2건 제거.
+2. **보안**: 세션 중 `.env.network.cloud`의 `R2_ACCESS_KEY_ID`와 `R2_ENDPOINT`(계정 ID 포함)가 대화에 평문 노출됐다. **Cloudflare에서 폐기·재발급 필요**. — ⏳ 사용자 대기
+3. **`ruff format`** — ✅ 완료(2026-07-28). `server/tts/speech_text.py`, `tests/test_convenience_rag_sources.py` 포맷 적용.
+4. **커밋** — ✅ 완료(2026-07-28). `kb` 브랜치에 8fps 최적화 + WS half-open 수정까지 커밋.
 
 ---
 
 ## 9. 미해결 결함
+
+### 9.0 WS half-open 감지 실패로 인한 반사 경보 지연 — ✅ 해결(2026-07-28)
+
+사용자 보고 "서버 병목 후에 햅틱/비프가 들린다"의 원인. 서버가 WS를 종료해도 클라이언트가 "서버 연결 정상"으로 착각해 온디바이스 반사 경보를 무한 억제했다.
+
+**근본 원인**: (1) 클라이언트 heartbeat_ack 타임아웃 부재 — 서버는 5초마다 heartbeat 보내고 단말 무응답 시 끊지만, 단말은 서버 heartbeat가 안 와도 안 끊음. WS half-open 시 onclose 미발화. (2) `isServerTimeout` 판정이 `lastFrameSentTsRef` 의존 — WS 죽으면 전송 실패로 미갱신, 타임아웃 미감지.
+
+**수정**: (1) useWebSocket에 `lastServerHeartbeatTsRef` + 15초 타임아웃 능동 종료. (2) CameraView `isServerTimeout`을 서버 메시지 수신 시각 기반 1500ms 단순 판정으로 변경.
+
+**실측**: 서버 강제 재시작 시 WS 종료 60ms 만에 감지(code=1012), isServerTimeout 즉시 전환. 서버 복구 후 자동 재연결. 커밋 `fix(client): WS half-open 감지 추가`.
 
 ### 9.1 `AudioRecorder.constructor` 렌더 에러
 ```

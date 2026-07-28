@@ -20,6 +20,10 @@ import {
   WS_URL,
   getWsUrlCandidates,
 } from "../config";
+// 서버 heartbeat 미수신 타임아웃. 서버가 5초마다 heartbeat를 보내므로(HeartbeatManager
+// interval=5), 15초(3회분) 이상 안 오면 연결이 죽은 것으로 판단해 능동 종료한다.
+// 너무 짧으면 서버 busy 시 오탐, 너무 길면 half-open 감지 지연. 3회분은 네트워크 지터 여유.
+const SERVER_HEARTBEAT_TIMEOUT_MS = 15000;
 import { audioEngine } from "../services/audioEngine";
 import {
   GUIDE_PRIORITY,
@@ -77,6 +81,9 @@ export interface UseWebSocketReturn {
   networkRttMs: number | null;
   /** network_probe RTT 최근 30개 평균(ms). */
   networkRttAvgMs: number | null;
+  /** 서버로부터 메시지를 마지막으로 수신한 시각(Date.now()). WS half-open 감지와
+   * CameraView의 서버 생존 판정에 사용. 0 = 아직 수신 없음(초기 연결 전). */
+  lastServerMessageTs: number;
 }
 
 // STT 응답이 오지 않는 예외 상황(네트워크 끊김 등)에서 인지 경로가 무한정 뮤트된 채
@@ -114,6 +121,18 @@ export function useWebSocket(
   const reconnectCount = useRef(0);
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const networkProbeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 💡 [면접 대비 주석] 서버 heartbeat 수신 시각 추적 (2026-07-28).
+  // 서버는 5초마다 heartbeat를 보낸다(HeartbeatManager interval=5). 단말은 그에 대해
+  // heartbeat_ack를 반환하지만, 역방향(서버 -> 단말) 타임아웃이 없었다. WS가 half-open으로
+  // 죽으면(TCP는 살아있으나 WS 메시지 불통) onclose가 발화하지 않아 status가 "connected"로
+  // 고정되고, CameraView가 온디바이스 반사 경보를 억제한 채 서버 응답을 무한 대기했다.
+  // 서버 heartbeat가 15초(3회분) 이상 안 오면 능동적으로 ws.close()하여 onclose를 강제한다.
+  const lastServerHeartbeatTsRef = useRef(0);
+  // 서버로부터 받은 모든 메시지(heartbeat, ack, reflex_alert, guide, server_detection 등)의
+  // 최신 수신 시각. CameraView가 "서버 생존" 판정을 lastFrameSent 의존에서 이 값 기반으로
+  // 단순화할 수 있도록 노출한다. WS가 죽으면 어떤 메시지도 안 오므로 이 값이 멈추고,
+  // 일정 시간 경과 시 타임아웃으로 판정한다.
+  const [lastServerMessageTs, setLastServerMessageTs] = useState(0);
   const pendingNetworkProbes = useRef<Map<string, number>>(new Map());
   // ACK 기반 in-flight 프레임 추적 (2026-07-17, P0).
   // key: `${event_id}:${frame_id}`, value: 송신 시각(Date.now()).
@@ -295,9 +314,26 @@ export function useWebSocket(
       );
 
       clearHeartbeat();
+      // 최초 수신 시각을 연결 시점으로 초기화(초기값 0이면 첫 프레임 전 타임아웃 오탐).
+      lastServerHeartbeatTsRef.current = Date.now();
       heartbeatTimer.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
+          // 단말 -> 서버 heartbeat_ack 유도용 heartbeat 송신 유지(서버 타임아웃 방지).
           ws.send(JSON.stringify({ type: "heartbeat", ts: Date.now() }));
+        }
+        // 서버 -> 단말 heartbeat 수신 감지: half-open(서버가 보내지만 단말에 안 도착)
+        // 또는 서버 다운 시 lastServerHeartbeatTsRef가 갱신되지 않는다. 15초(서버 5초
+        // 간격의 3회분) 이상 미수신 시 능동 종료하여 onclose를 강제 발화시킨다.
+        const sinceLastHeartbeat = Date.now() - lastServerHeartbeatTsRef.current;
+        if (sinceLastHeartbeat > SERVER_HEARTBEAT_TIMEOUT_MS) {
+          console.warn(
+            `[WS] 서버 heartbeat 타임아웃(${sinceLastHeartbeat}ms) - 능동 종료 후 재연결`,
+          );
+          try {
+            ws.close();
+          } catch {
+            // close 예외는 onclose 경쟁/이미 닫힌 소켓. 무시하고 onclose 경로에 맡김.
+          }
         }
       }, HEARTBEAT_INTERVAL);
 
@@ -357,6 +393,11 @@ export function useWebSocket(
       try {
         const data: WSMessage = JSON.parse(event.data);
 
+        // 서버 생존 신호: 모든 JSON 메시지 수신 시 갱신. WS가 죽으면 어떤 메시지도
+        // 안 오므로 CameraView가 이 값을 기반으로 타임아웃을 판정할 수 있다.
+        // (heartbeat 분기에서도 별도 갱신하지만, 여기서 모든 타입을 통합 처리한다.)
+        setLastServerMessageTs(Date.now());
+
         if (data.type === "welcome") {
           receivedWelcome = true;
           setLastMessage(data);
@@ -388,6 +429,9 @@ export function useWebSocket(
             audioEngine.speakFallback("서버 연결이 복구되었습니다. 상세 안내를 다시 시작합니다.");
           }
         } else if (data.type === "heartbeat") {
+          // 서버 생존 신호: half-open 감지용 수신 시각 갱신.
+          lastServerHeartbeatTsRef.current = Date.now();
+          setLastServerMessageTs(Date.now());
           ws.send(
             JSON.stringify({ type: "heartbeat_ack", ts: Date.now() }),
           );
@@ -820,5 +864,6 @@ export function useWebSocket(
     navRoute,
     networkRttMs,
     networkRttAvgMs,
+    lastServerMessageTs,
   };
 }
