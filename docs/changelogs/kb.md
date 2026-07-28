@@ -4334,5 +4334,5 @@
   - **2단계 (CameraView.tsx)**: handleFrame의 `await detectFrameRef.current(...)`를 fire-and-forget `.then()` 체인으로 분리. 추론 결과 처리 로직을 `runDetectionResult` 콜백으로 분리. handleFrame은 추론 시작 후 즉시 리턴해 다음 프레임 캡처/서버 전송이 125ms 간격으로 계속 실행. `detectingRef`는 추론 체인 직렬화(결과 순서 보장) 용도로 유지.
   - **보조**: `JS_DECODE_DETECT_MIN_INTERVAL_MS` 주석을 네이티브 브릿지 실패(JS TFLite 폴백) 시에만 활성화됨을 명시.
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
-- **검증 결과**: `./gradlew :app:assembleDebug` BUILD SUCCESSFUL, `tsc --noEmit` 통과. 실기기 성능 측정은 후속(핸드오프 §5 측정 명령 사용 예정).
-- **비고**: 추론 사이클은 1단계(씬 분류 병렬화)로 단축 예상, handleFrame 간격은 2단계로 캡처 스로틀(125ms)에 수렴 예상. 실측 후 핸드오프 문서 §5에 결과 반영.
+- **검증 결과**: `./gradlew :app:assembleDebug` BUILD SUCCESSFUL, `tsc --noEmit` 통과. Xiaomi 12 30초 실측: 추론 total 중앙값 101.6ms→**54ms(전체)·90ms(오디오 제외)**, 플러그인 콜백 44ms→**34ms**, 플러그인 공급 4.6fps→**8.9fps**, 서버 detection 수신 169건→**204건/30초**. 안정성 `AppState 진동 0` / `WS 연결 시도 0` / `세션 종료 0` 유지(회귀 없음).
+- **비고**: 추론 시간은 대폭 단축했으나 8fps 미달(전체 3.8fps, 오디오 제외 6fps). **주원인은 본 최적화와 무관한 별도 문제**: 가이드 음성 재생(약 3초/회, 30초 중 42%) 구간에 추론이 완전 중단. 오디오-추론 분리가 다음 최우선 과제(핸드오프 §5.4).
