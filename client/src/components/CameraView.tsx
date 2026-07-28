@@ -79,7 +79,10 @@ const REAL_DETECT_MIN_INTERVAL_MS = 120;
 // 전부 그 속도에 묶였다(실측 1.05fps). CoreML처럼 네이티브가 입력을 직접 소비하는
 // 경로가 아닐 때는 추론 간격을 벌려, 디코드가 없는 프레임이 8fps로 서버·콘솔까지
 // 흐르게 한다. 온디바이스 반사 탐지 실효 주기는 기존 약 1.05fps보다 오히려 빨라진다.
-// 네이티브에서 640x640 텐서를 직접 넘기도록 플러그인을 고치면 이 상수는 제거 가능.
+//
+// 2026-07-28 (8fps 최적화): NativeTFLiteDetector가 기본 경로가 되어 requiresFloat32=false
+// 이므로 이 분기는 네이티브 브릿지 로드 실패(JS TFLite 폴백) 시에만 활성화된다.
+// 폴백 시 JS 디코드 비용이 여전히 존재하므로 500ms 간격을 유지해 과부하를 막는다.
 const JS_DECODE_DETECT_MIN_INTERVAL_MS = 500;
 // STT 마이크 권한 재확인 최소 간격. 권한 다이얼로그 -> 액티비티 pause/resume ->
 // 재요청으로 이어지는 자가 순환을 끊기 위한 하한(2026-07-28).
@@ -1155,18 +1158,44 @@ export function CameraView() {
 
     detectingRef.current = true;
     lastDetectTsRef.current = now;
-    try {
-      const t0 = Date.now();
-      const { seg, det, benchmark, scene } = await detectFrameRef.current(frame.float32, frame.base64) as any;
-      const dt = Date.now() - t0;
-      if (benchmark && !audioEngine.isGuidePlaying) {
-        console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
-      }
-      // 온디바이스 추론 지연을 캡처 루프에 피드백하여 반사 fps를 동적으로 조절
-      // (추론이 캡처 간격을 못 따라가면 fps를 낮춰 과부하로 인한 크래시 재발을 방지)
-      reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
-      // BBox 오버레이용: det + seg 상위 결과 병합
-      const allDetections = [...det, ...seg].slice(0, 20);
+    // 💡 [면접 대비 주석] 추론을 fire-and-forget로 분리한 이유 (2026-07-28).
+    // 이전에는 `await detectFrameRef.current(...)`로 handleFrame이 추론 완료(약 101.6ms)까지
+    // 블로킹되었다. handleFrame은 handleStreamFrameBase64 -> onFrameRef로부터 JS 스레드에서
+    // 호출되므로, await 중에는 이 함수의 실행이 일시중단되고 detectingRef.current=true 인 상태로
+    // 머무른다. detectingRef 가드(위 if)가 후속 프레임의 추론을 전부 무시하므로, 결국 추론 한
+    // 사이클(101.6ms) + REAL_DETECT_MIN_INTERVAL_MS(120ms) 대기 ≈ 215ms가 프레임 간격이 된다.
+    //
+    // 추론 자체는 이미 1단계(TFLiteInferenceBridgeModule HandlerThread 분리)로 네이티브
+    // 백그라운드 스레드에서 돈다. 따라서 JS는 결과를 기다릴 필요 없이 즉시 리턴해 다음
+    // 프레임의 캡처/서버 전송을 125ms 간격으로 계속 처리할 수 있다. 추론 결과 도착 시점에
+    // runDetectionResult(result, now)가 BBox/반사 게이트/경보를 처리한다. detectingRef로
+    // 추론 체인은 직렬화되어 있으므로 결과 순서가 보장된다.
+    const detectTs = now;
+    void detectFrameRef.current(frame.float32, frame.base64)
+      .then((result: any) => {
+        runDetectionResult(result, detectTs);
+      })
+      .catch((err: unknown) => {
+        console.error("[CameraView] 추론 오류:", err);
+      })
+      .finally(() => {
+        detectingRef.current = false;
+      });
+  }, []); // 의존성 없음 - 모든 최신 상태를 ref 로 직접 참조
+
+  // 추론 결과 처리: BBox 표시, 씬 판정, 반사 게이트, 경보. handleFrame에서 분리되어
+  // 비동기 콜백으로 실행된다. detectingRef가 추론 체인을 직렬화하므로 동시 실행되지 않는다.
+  const runDetectionResult = useCallback((result: any, now: number) => {
+    const { seg = [], det = [], benchmark, scene } = result ?? {};
+    const dt = benchmark?.total_ms ?? 0;
+    if (benchmark && !audioEngine.isGuidePlaying) {
+      console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
+    }
+    // 온디바이스 추론 지연을 캡처 루프에 피드백하여 반사 fps를 동적으로 조절
+    // (추론이 캡처 간격을 못 따라가면 fps를 낮춰 과부하로 인한 크래시 재발을 방지)
+    reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
+    // BBox 오버레이용: det + seg 상위 결과 병합
+    const allDetections = [...det, ...seg].slice(0, 20);
 
       // BBox는 연결 상태와 무관하게 최신 온디바이스 결과를 표시한다.
       // 서버 server_detection 결과가 존재하면 위 수신 핸들러가 이를 덮어쓴다.
@@ -1339,11 +1368,6 @@ export function CameraView() {
         const src = getFrameProvider()?.getPreviewSource?.();
         if (typeof src === "number") setPreviewSrcRef.current(src);
       }
-    } catch (err) {
-      console.error("[CameraView] 추론 오류:", err);
-    } finally {
-      detectingRef.current = false;
-    }
   }, []); // 의존성 없음 - 모든 최신 상태를 ref 로 직접 참조
 
   // 캡처 시작: 기본 OFF. "탐지 시작"으로 detectionEnabled=true일 때만 루프 기동.

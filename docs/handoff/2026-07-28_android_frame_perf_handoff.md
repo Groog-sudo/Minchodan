@@ -103,9 +103,13 @@ WS connected → GPS effect 재실행 → 위치 권한 요청 → 다이얼로�
 
 ---
 
-## 5. 남은 과제 — 8fps까지 (최우선)
+## 5. 8fps 최적화 적용 및 남은 과제
 
-현재 215ms. 예산 분석:
+> **2026-07-28 업데이트**: 파이프라인 버블 원인 분석 후 2단계 최적화를 적용했다(커밋 `perf(client/android)` + `perf(client)`). 아래 "최적화 전" 분석은 원인 기록으로 보존하고, 적용 내용과 대기 중인 실측을 추가했다. **실측 미수행 상태** — 검증 필요.
+
+### 5.1 최적화 전 예산 분석 (원인 기록)
+
+최적화 전 215ms. 예산 분석:
 
 | 구간 | 실측 | 스레드 |
 | :--- | ---: | :--- |
@@ -121,6 +125,35 @@ WS connected → GPS effect 재실행 → 위치 권한 요청 → 다이얼로�
 3. **네이티브 모듈 스레드와 worklet 경합** — 추론 101.6ms 동안 GPU delegate가 카메라 파이프라인과 경합할 가능성. `Interpreter.Options().setNumThreads` 조정이나 CPU 폴백 대조 실험으로 확인 가능.
 
 > **주의**: §3.3 수정 전 측정값(1.05 / 3.9 / 4.5fps)은 WS 루프 오염 상태였다. 비교 기준은 이 문서의 최종 수치(215ms / 4.6fps)만 쓸 것.
+
+### 5.2 적용된 최적화 (2단계, 2026-07-28)
+
+**진단 정정**: 핵심 병목은 (1)(2)(3) 후보가 아니라 **파이프라인 버블**이었다. 추론 자체는 101.6ms(< 125ms)로 이미 목표 이내였으나, 두 가지 구조적 비대칭이 215ms를 만들었다:
+
+1. **Android TFLite 추론이 RN 네이티브 모듈 단일 스레드에서 동기 실행** (RN 공식 문서: "all native module async methods execute on one thread"). iOS는 `DispatchQueue.global().async`로 백그라운드화. 이로 인해 `localDetectorSelect.android.ts`의 `Promise.all([runNativeDetect, classifyScene])`가 실제로는 직렬 실행(같은 단일 스레드 공유).
+2. **`detectingRef` 가드가 `await detectFrame` 완료까지 후속 프레임 무시** (CameraView.tsx). 추론 101.6ms + `REAL_DETECT_MIN_INTERVAL_MS=120ms` 대기 ≈ 215ms.
+
+**1단계 — TFLite 백그라운드 스레드 분리** (`TFLiteInferenceBridgeModule.kt`):
+- `HandlerThread("TFLiteInference")` + `Handler` 신설 (iOS 글로벌 큐 대응).
+- `detectFrameCached()`/`detectFrame()`: 추론을 `inferenceHandler.post{}`로 디스패치, 즉시 리턴.
+- `invalidate()`: `removeCallbacksAndMessages` + `quitSafely` 누수 방지.
+- 효과: 씬 분류 동기부분과 TFLite 추론이 진정 병렬 실행 → Promise.all 실질 병렬화.
+
+**2단계 — 캡처-추론 경로 분리** (`CameraView.tsx`):
+- `await detectFrameRef.current(...)` → fire-and-forget `.then()` 체인으로 분리.
+- 추론 결과 처리를 `runDetectionResult` 콜백으로 분리.
+- `detectingRef`는 추론 체인 직렬화(결과 순서 보장) 용도 유지.
+- 효과: handleFrame 간격이 추론 시간이 아닌 캡처 스로틀(125ms)에 수렴 예상.
+
+**검증 상태**: `./gradlew :app:assembleDebug` BUILD SUCCESSFUL, `tsc --noEmit` 통과. **실기기 성능 실측 미수행** — 아래 측정 명령으로 `handleFrame gap` 중앙값 125ms 달성 여부 확인 필요.
+
+### 5.3 후속 최적화 후보 (실측 후 재평가)
+
+위 2단계로 8fps 미달 시 재검토:
+
+1. **플러그인 YUV JPEG 왕복** (§5.1 후보 1): 여전히 잔존. 플러그인 콜백 44ms 중 비트맵 변환 7~16ms + JPEG 압축 5~15ms. 추론은 `ReflexFrameCache` 네이티브 픽셀을 직접 소비하므로 JPEG는 콘솔 Live Feed 전송용만. JPEG 생성을 선택적/저속 경로로 이관 검토.
+2. **det/seg 병렬화**: 현재 `runBothAndResolve`에서 직렬 실행. 별개 Interpreter이나 GPU delegate 단일 리소스 공유로 CPU 폴백 시에만 진정 병렬 이득.
+3. **CPU 스레드 수 조정**: `Interpreter.Options().setNumThreads(CPU_THREADS=4)` 대조 실험.
 
 ---
 
@@ -240,3 +273,5 @@ docker logs --since 30s minchodan-fastapi 2>&1 | grep -c 'detection 수신'
 ### 정상 기준선 (2026-07-28 최종)
 
 `AppState 진동 0` / `WS 연결 시도 0` / `세션 종료 0` / `handleFrame 중앙값 215ms` / `추론 total 101.6ms` / `플러그인 44ms` / `카메라 30fps` / `detection 수신 169건/30초`. 이 값에서 벗어나면 회귀를 먼저 의심할 것.
+
+> **2026-07-28 §5.2 최적화 적용 후**: 위 215ms 기준선은 최적화 전 값이다. §5.2의 2단계 최적화(백그라운드 스레드 분리 + 캡처-추론 분리) 적용 후에는 **`handleFrame 중앙값 125ms`(8fps) 달성 목표**. 실측 전까지는 미검증 상태이며, 측정 후 이 기준선을 갱신할 것. 안정성 지표(`AppState 진동 0` 등)는 최적화와 무관하므로 동일하게 유지돼야 한다.

@@ -4322,3 +4322,17 @@
 - **관련 파일**: `client/src/hooks/useLocation.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useWebSocket.ts`(임시 진단 로그), `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
 - **검증 결과**: Xiaomi 12 30초 측정. AppState 진동 115회→**0회**, WS 재연결 57회→**0회**, `REQUEST_PERMISSIONS` 117회→**0회**, 서버 세션 종료 58회→**0회**. 서버 `detection 수신` 34건/30초→**169건/30초**(약 5배). `handleFrame` 중앙값 215ms(4.6fps), 네이티브 추론 total 101.6ms, 플러그인 콜백 44ms, 카메라 공급 30.0fps. `npx tsc --noEmit` 통과.
 - **비고**: **이 루프가 그동안의 모든 프레임레이트 측정을 오염시켰다**(초당 1.6회 소켓 재수립). 이전 엔트리의 1.05/3.9/4.5fps 수치는 오염 상태 값이므로 비교 기준으로 쓰지 말 것. 8fps 목표는 미달(215ms)이며 남은 병목 분석과 후속 과제는 인수인계 문서 §5 참조. 임시 진단 로그 3종은 제거 대상(§8).
+
+---
+
+### 2026-07-28 | 3단계 | android_inference_background_thread_and_pipeline_split
+
+- **커밋**: `perf(client/android): TFLite 추론 백그라운드 스레드 분리 (iOS DispatchQueue.global 패턴 대응)`, `perf(client): 캡처-추론 경로 분리로 handleFrame 파이프라인 버블 제거`
+- **변경 내용**:
+  - **진단**: 온디바이스 추론 8fps(125ms 간격) 목표에서 추론 자체는 101.6ms로 이미 125ms 이하였으나, handleFrame 간격이 215ms로 측정되는 원인은 **파이프라인 버블(약 113ms)**이었다. 두 가지 구조적 비대칭: (1) Android TFLite 추론이 RN 네이티브 모듈 단일 스레드에서 동기 실행(RN 공식 문서상 모든 @ReactMethod가 단일 스레드 공유) → `Promise.all([runNativeDetect, classifyScene])`가 실제로는 직렬 실행. (2) `detectingRef` 가드가 `await detectFrame` 완료까지 후속 프레임 무시 → 101.6ms + 120ms 대기 ≈ 215ms.
+  - **1단계 (TFLiteInferenceBridgeModule.kt)**: `HandlerThread("TFLiteInference")` + `Handler` 신설로 iOS `DispatchQueue.global(qos: .userInteractive).async` 패턴 대응. `detectFrameCached()`/`detectFrame()`이 전처리+추론을 `inferenceHandler.post{}`로 디스패치하고 즉시 리턴해 네이티브 모듈 스레드 해방. `invalidate()`에서 `removeCallbacksAndMessages` + `quitSafely`로 누수 방지. `scratchFloats`/`inputBuffer`는 단일 스레드 재사용 안전성 유지.
+  - **2단계 (CameraView.tsx)**: handleFrame의 `await detectFrameRef.current(...)`를 fire-and-forget `.then()` 체인으로 분리. 추론 결과 처리 로직을 `runDetectionResult` 콜백으로 분리. handleFrame은 추론 시작 후 즉시 리턴해 다음 프레임 캡처/서버 전송이 125ms 간격으로 계속 실행. `detectingRef`는 추론 체인 직렬화(결과 순서 보장) 용도로 유지.
+  - **보조**: `JS_DECODE_DETECT_MIN_INTERVAL_MS` 주석을 네이티브 브릿지 실패(JS TFLite 폴백) 시에만 활성화됨을 명시.
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: `./gradlew :app:assembleDebug` BUILD SUCCESSFUL, `tsc --noEmit` 통과. 실기기 성능 측정은 후속(핸드오프 §5 측정 명령 사용 예정).
+- **비고**: 추론 사이클은 1단계(씬 분류 병렬화)로 단축 예상, handleFrame 간격은 2단계로 캡처 스로틀(125ms)에 수렴 예상. 실측 후 핸드오프 문서 §5에 결과 반영.
