@@ -217,17 +217,52 @@ def check_forbidden_files():
         return False
 
 
+def use_test_wrapper():
+    """통합 테스트 래퍼를 쓸 수 있는 환경인지 판정합니다.
+
+    2026-07-28: live_server 마커 테스트(test_ws_echo.py 등)는 기동된 FastAPI 컨테이너에
+    실제 접속하므로, tests/conftest.py가 setdefault로 넣는 테스트 전용 JWT iss/aud와
+    서버 값(minchodan-api / minchodan-clients)이 어긋나 토큰 검증이 항상 실패했다.
+    scripts/run_integration_tests.sh가 서버와 동일한 클레임을 미리 export해 이를 막는다.
+
+    래퍼는 .env와 그 안의 JWT_SECRET_KEY를 필수로 요구하므로, 둘 중 하나라도 없으면
+    JWT가 필요 없던 단계까지 함께 실패한다. 그래서 조건을 만족할 때만 경유한다.
+    """
+    wrapper = os.path.join(PROJECT_ROOT, "scripts", "run_integration_tests.sh")
+    env_path = os.path.join(PROJECT_ROOT, ".env")
+    if not os.path.exists(wrapper) or not os.path.exists(env_path):
+        return False
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("JWT_SECRET_KEY=") and line.split("=", 1)[1].strip():
+                    return True
+    except OSError:
+        return False
+    return False
+
+
 def get_test_cmd(stage):
     """지정된 단계에 맞는 테스트 명령을 반환합니다."""
     py_bin = sys.executable
+    if use_test_wrapper():
+        # 래퍼가 내부에서 pytest를 실행하므로 테스트 파일 경로만 넘긴다.
+        runner = "bash scripts/run_integration_tests.sh"
+        suffix = " -q"
+    else:
+        print_warn(
+            ".env 또는 JWT_SECRET_KEY가 없어 테스트 래퍼를 건너뜁니다(live_server 실패 가능)."
+        )
+        runner = f"{py_bin} -m pytest"
+        suffix = " -q"
     test_cmds = {
-        1: f"{py_bin} tests/test_ws_echo.py",
-        2: f"{py_bin} tests/test_frame_decode.py",
-        3: f"{py_bin} scripts/verify_gpu.py && {py_bin} tests/test_detection.py",
+        1: f"{runner} tests/test_ws_echo.py{suffix}",
+        2: f"{runner} tests/test_frame_decode.py{suffix}",
+        3: f"{py_bin} scripts/verify_gpu.py && {runner} tests/test_detection.py{suffix}",
         4: f"{py_bin} scripts/eval_hitrate.py",
-        5: f"{py_bin} tests/test_retriever.py",
-        6: f"{py_bin} tests/test_langgraph.py",
-        7: f"{py_bin} tests/test_reflex_and_nav.py",
+        5: f"{runner} tests/test_retriever.py{suffix}",
+        6: f"{runner} tests/test_langgraph.py{suffix}",
+        7: f"{runner} tests/test_reflex_and_nav.py{suffix}",
     }
     return test_cmds.get(stage)
 
