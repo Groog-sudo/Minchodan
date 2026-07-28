@@ -108,7 +108,7 @@ Android 실기기에서 §10 A-S1~A-S7이 Pass이고, 서버 가중치·온디�
 | M-05 | conf / NMS | 온디바이스 conf·IoU가 Near 경보 체감을 iOS·서버와 과도하게 어긋나지 않음 | P1 |
 | M-06 | GPU/CPU 폴백 | `android-gpu` 로드 실패 시 CPU 폴백 로그(`delegate 로드 실패`)·연속 추론 30s 안정 | P1 |
 | M-07 | 입력 계약 | Frame Processor → Float32/base64 경로가 `requiresFloat32`와 일치, 첫 프레임 추론 성공 | P0 |
-| M-08 | 벤치 로그 | det/seg/total ms 표준 로그 (iOS CoreMLBench와 비교 가능) | P2 |
+| M-08 | 벤치 로그 | det/seg/total ms 표준 로그. 2026-07-28부터 태그를 플랫폼 중립 `[OnDeviceBench]`로 통일하고 실제 엔진명(`TFLite GPU` / `CoreML CPU Engine`)을 함께 출력한다(기존 `[CoreMLBench] ANE 가속`은 Android에서 사실과 달랐다) | P2 |
 
 **관련 파일**: `client/src/inference/tfliteDetector.ts`, `localDetectorSelect.android.ts`, `client/assets/models/yolo26n/*.tflite`, `scripts/export_tflite.py`
 

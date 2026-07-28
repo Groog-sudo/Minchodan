@@ -4432,3 +4432,13 @@
   - **부수 확인**: 서버도 이미 `REFLEX_SEG_EVERY_N`(`detection_pipeline.py`)으로 반사 스트림 seg 주기를 분리하고 있다. 온디바이스 `SEG_EVERY_N=3`(`TFLiteInferenceBridgeModule.kt`)과 같은 접근이나 두 상수가 독립 존재하므로, 값이 어긋나면 단말 오버레이와 콘솔·서버 BBox의 노면 갱신 주기가 달라진다. 조정 시 양쪽을 함께 볼 것.
 - **관련 파일**: `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
 - **검증 결과**: 코드 확인(`consumer.py`, `detection_pipeline.py`, 서버 환경변수)과 DB 조회로 확정. 코드 변경 없음(문서 정정 전용).
+
+---
+
+### 2026-07-28 | 3단계 | temp_diag_removal_and_bench_log_label_unification
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 임시 계측(TEMP DIAG 2026-07-28b) 제거 및 벤치 로그 태그를 플랫폼 중립 OnDeviceBench로 통일
+- **관련 파일**: `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/mobile/android_ios_parity_checklist.md`, `docs/mobile/mobile_ios_implementation_plan.md`
+- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
