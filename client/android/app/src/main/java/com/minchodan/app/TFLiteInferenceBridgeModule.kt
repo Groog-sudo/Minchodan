@@ -2,6 +2,8 @@ package com.minchodan.app
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Base64
 import android.util.Log
 import com.facebook.react.bridge.Arguments
@@ -47,8 +49,24 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     @Volatile
     private var isLoaded = false
 
-    // 입력 전처리 재사용 버퍼. detectFrame/detectFrameCached는 RN 네이티브 모듈 스레드에서
-    // 직렬 실행되므로 인스턴스 단위 재사용이 안전하다(프레임마다 4.7MiB 재할당 제거).
+    // 💡 [면접 대비 주석] 추론 전용 백그라운드 스레드.
+    // iOS CoreMLInferenceBridge.swift의 DispatchQueue.global(qos: .userInteractive).async {} 에 대응한다.
+    //
+    // RN Android는 @ReactMethod가 단일 "Native Modules Queue Thread"에서 실행된다(공식 문서).
+    // 추론(det+seg 약 100ms)을 그 스레드에서 동기 실행하면, 같은 시점에 들어오는 다른
+    // @ReactMethod 호출(SceneClassifyBridgeModule.classifyScene 등)이 전부 직렬화되어 밀린다.
+    // localDetectorSelect.android.ts의 Promise.all([runNativeDetect, classifyScene])는
+    // JS상에서는 병렬처럼 보이지만 두 호출이 같은 단일 스레드를 공유하므로 실제로는 직렬 실행된다.
+    //
+    // 추론을 이 전용 스레드로 옮기면 네이티브 모듈 스레드가 즉시 해방되어 씬 분류의 동기 부분
+    // (base64 디코드 + bitmap 생성)과 TFLite 추론이 진정 병렬로 실행된다.
+    // HandlerThread는 단일 루퍼를 쓰므로 scratchFloats/inputBuffer 인스턴스 재사용이 안전하다
+    // (추론 작업은 항상 이 스레드에서 순차 실행됨).
+    private val inferenceThread = HandlerThread("TFLiteInference").apply { start() }
+    private val inferenceHandler = Handler(inferenceThread.looper)
+
+    // 입력 전처리 재사용 버퍼. 추론은 inferenceHandler(단일 스레드)에서만 실행되므로
+    // 인스턴스 단위 재사용이 안전하다(프레임마다 4.7MiB 재할당 제거).
     private val scratchFloats = FloatArray(INPUT_SIZE * INPUT_SIZE * 3)
     private val inputBuffer: ByteBuffer = ByteBuffer
         .allocateDirect(INPUT_SIZE * INPUT_SIZE * 3 * 4)
@@ -164,14 +182,19 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             promise.reject("NO_FRAME", "네이티브 프레임 캐시가 비어 있습니다.", null)
             return
         }
-        try {
-            val prepStart = System.nanoTime()
-            val input = pixelsToNormalizedHwcBuffer(pixels)
-            val prepMs = (System.nanoTime() - prepStart) / 1_000_000.0
-            runBothAndResolve(input, prepMs, promise)
-        } catch (e: Throwable) {
-            Log.e(TAG, "detectFrameCached 실패: ${e.message}", e)
-            promise.reject("EXEC_ERROR", "추론 실행 오류: ${e.message}", e)
+        // 전처리 + 추론을 백그라운드로 디스패치한다. 메서드는 즉시 리턴해 네이티브 모듈
+        // 스레드를 해방한다(위 inferenceThread 주석 참조). promise.resolve/reject는
+        // 어느 스레드에서든 호출 가능하며 JS 스레드로 자동 디스패치된다.
+        inferenceHandler.post {
+            try {
+                val prepStart = System.nanoTime()
+                val input = pixelsToNormalizedHwcBuffer(pixels)
+                val prepMs = (System.nanoTime() - prepStart) / 1_000_000.0
+                runBothAndResolve(input, prepMs, promise)
+            } catch (e: Throwable) {
+                Log.e(TAG, "detectFrameCached 실패: ${e.message}", e)
+                promise.reject("EXEC_ERROR", "추론 실행 오류: ${e.message}", e)
+            }
         }
     }
 
@@ -182,23 +205,26 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             return
         }
 
-        var bitmap: Bitmap? = null
-        try {
-            val prepStart = System.nanoTime()
-            bitmap = decodeBase64(base64Image)
-            if (bitmap == null) {
-                promise.reject("INVALID_IMAGE", "base64 이미지 디코딩 실패", null)
-                return
-            }
+        // base64 디코드 + 전처리 + 추론을 백그라운드로 디스패치한다(detectFrameCached와 동일).
+        inferenceHandler.post {
+            var bitmap: Bitmap? = null
+            try {
+                val prepStart = System.nanoTime()
+                bitmap = decodeBase64(base64Image)
+                if (bitmap == null) {
+                    promise.reject("INVALID_IMAGE", "base64 이미지 디코딩 실패", null)
+                    return@post
+                }
 
-            val input = toNormalizedHwcBuffer(bitmap)
-            val prepMs = (System.nanoTime() - prepStart) / 1_000_000.0
-            runBothAndResolve(input, prepMs, promise)
-        } catch (e: Throwable) {
-            Log.e(TAG, "detectFrame 실패: ${e.message}", e)
-            promise.reject("EXEC_ERROR", "추론 실행 오류: ${e.message}", e)
-        } finally {
-            bitmap?.recycle()
+                val input = toNormalizedHwcBuffer(bitmap)
+                val prepMs = (System.nanoTime() - prepStart) / 1_000_000.0
+                runBothAndResolve(input, prepMs, promise)
+            } catch (e: Throwable) {
+                Log.e(TAG, "detectFrame 실패: ${e.message}", e)
+                promise.reject("EXEC_ERROR", "추론 실행 오류: ${e.message}", e)
+            } finally {
+                bitmap?.recycle()
+            }
         }
     }
 
@@ -478,6 +504,9 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     override fun invalidate() {
         super.invalidate()
         isLoaded = false
+        // 대기 중인 추론 작업을 취소하고 스레드를 종료한다(reload/앱 종료 시 누수 방지).
+        inferenceHandler.removeCallbacksAndMessages(null)
+        inferenceThread.quitSafely()
         ReflexFrameCache.clear()
         detInterpreter?.close()
         detInterpreter = null
