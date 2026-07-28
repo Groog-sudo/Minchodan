@@ -4418,3 +4418,17 @@
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL. 3단계 pytest는 미실행(`--skip-test`) - `verify_gpu.py`가 PyTorch 2.13 이상을 요구하나 로컬 venv는 2.12.1이며 본 변경은 Kotlin 전용이라 무관하다.
   - 실기기 실측(Xiaomi 12, 40초): 화면 표시 지연 `shownLag` 215~266ms -> **115~155ms(중앙 약 128ms)**, 추론 `avgTotal` 117~128ms -> **65.7~72.3ms**, BBox 갱신률 15~17/5초 -> **20~31/5초(약 5.2/s)**, `handleFrame` 44~46/5초 유지, 서버 `detection 수신` 335건/40초.
 - **비고**: 온디바이스 seg가 안전 경로에 쓰이지 않음을 먼저 확인했다 - `pathObstacleDetector.ts:93`이 `model === "segmentation"`을 전부 건너뛰고, CameraView 반사 후보 필터가 `SAFE_SURFACE_CLASSES`·`GROUND_HAZARDS`(seg 4클래스)를 제외한다("노면은 인지 경로 전담", 2026-07-14). 유일한 소비처는 BBox 표시. 건너뛴 프레임은 `lastSegResult`를 재사용해 오버레이 깜빡임을 막고, 벤치에 `seg_fresh` 플래그를 추가했다. 측정 중 서버 `server_detection`이 전부 탐지 0건으로 도착한 점은 별도 확인 필요.
+
+---
+
+### 2026-07-28 | 3단계 | server_detection_zero_result_misdiagnosis_correction
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - 직전 엔트리에서 "측정 중 서버 `server_detection`이 전부 탐지 0건 - 서버측 확인 필요"로 기록한 관측을 **오판으로 정정**했다.
+  - 확인 내용: `_send_server_detection`(`consumer.py:1177`)은 필터 없이 `detections`·`surfaces`를 그대로 매핑하므로 빈 배열은 파이프라인 무탐지를 의미한다. 서버 임계값 `YOLO_DET_CONF=0.50`은 온디바이스와 동일(파리티 정상). **같은 구간에서 온디바이스도 탐지 0건**이었다(`[Reflex] 전체 탐지` 로그 0건, 조건은 `all.length > 0 && !isGuidePlaying`이며 해당 구간 오디오 0·추론 완료 20~31회). 서버 파이프라인 자체는 `detection_guidance_logs` 103건(reflex 73 / cognitive 30)에 `movable_signage conf=0.594`, `braille_normal conf=1.0` 등이 정상 기록되어 있어 문제없음.
+  - 결론: 카메라가 탐지 대상 없는 장면을 보고 있었을 뿐이며 서버·단말 모두 정상.
+  - **계측 함정 기록**: `[DIAG/FRAME]`의 `dev` 카운터는 `setDetections`를 빈 배열로 호출한 경우까지 세므로 `dev>0`이 "온디바이스가 탐지했다"는 근거가 되지 못한다. 이 구분을 하지 않은 것이 오판의 원인이었다.
+  - **부수 확인**: 서버도 이미 `REFLEX_SEG_EVERY_N`(`detection_pipeline.py`)으로 반사 스트림 seg 주기를 분리하고 있다. 온디바이스 `SEG_EVERY_N=3`(`TFLiteInferenceBridgeModule.kt`)과 같은 접근이나 두 상수가 독립 존재하므로, 값이 어긋나면 단말 오버레이와 콘솔·서버 BBox의 노면 갱신 주기가 달라진다. 조정 시 양쪽을 함께 볼 것.
+- **관련 파일**: `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
+- **검증 결과**: 코드 확인(`consumer.py`, `detection_pipeline.py`, 서버 환경변수)과 DB 조회로 확정. 코드 변경 없음(문서 정정 전용).
