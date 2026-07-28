@@ -4406,3 +4406,13 @@
 - **검증 결과**: 이중 경로 분리 검사·금지 파일 검사·react-doctor(client/console) 통과, `npx tsc --noEmit` 통과. **3단계 pytest는 미실행(skip)** - `scripts/verify_gpu.py`가 PyTorch 2.13 이상을 요구하는데 로컬 venv가 2.12.1이라 실패하며, 이번 변경은 클라이언트 TypeScript 전용이라 해당 게이트와 무관하다. `ruff`도 스크립트가 명령을 찾지 못해 생략됐다(Python 변경 없음).
   - 실기기 실측(Xiaomi 12, 40초): 오버레이 출처가 서버 혼합에서 온디바이스 전용으로 전환(`applied[srv=0 dev=15~17 staleReject=21~31]`), 화면 표시 지연 `shownLag` 261~318ms -> **215~266ms**.
 - **비고**: 1차 시도(서버 결과의 프레임 시각이 최신일 때만 채택)는 실측에서 거의 걸러지지 않아 폐기했다. handleFrame이 모든 프레임(8.7fps)을 서버로 보내지만 온디바이스 추론은 3.3회/초만 돌아, 서버 결과의 프레임 시각이 실제로 더 최신이기 때문이다. 기준을 프레임 시각에서 **표시 시점의 나이**로 바꿔 해결했다(`ONDEVICE_OVERLAY_HOLD_MS=700`).
+
+---
+
+### 2026-07-28 | 3단계 | seg_inference_cadence_separation
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - seg 추론을 3프레임 주기로 분리해 BBox 표시 지연 228ms에서 128ms로 단축 (온디바이스 seg는 안전 경로 미사용, 표시 전용 확인 후 적용)
+- **관련 파일**: `lient/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

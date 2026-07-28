@@ -49,6 +49,11 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     @Volatile
     private var isLoaded = false
 
+    // seg 주기 분리용(위 runBothAndResolve 주석 참조). 추론은 inferenceHandler 단일
+    // 스레드에서만 실행되므로 동기화 없이 안전하다.
+    private var inferenceTick = 0L
+    private var lastSegResult: List<Detection> = emptyList()
+
     // 💡 [면접 대비 주석] 추론 전용 백그라운드 스레드.
     // iOS CoreMLInferenceBridge.swift의 DispatchQueue.global(qos: .userInteractive).async {} 에 대응한다.
     //
@@ -241,21 +246,42 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             )
             val detMs = (System.nanoTime() - detStart) / 1_000_000.0
 
-            input.rewind()
-            val segStart = System.nanoTime()
-            val seg = runModel(
-                segInterpreter,
-                input,
-                SEG_CLASS_NAMES,
-                SEG_CONF_THRESHOLD,
-                LEGACY_SEG_ATTRS,
-                "segmentation"
-            )
-            val segMs = (System.nanoTime() - segStart) / 1_000_000.0
+            // 💡 [면접 대비 주석] seg 주기 분리 (2026-07-28).
+            // seg(노면 4클래스)는 온디바이스 안전 경로에 쓰이지 않는다.
+            //   - pathObstacleDetector.analyze()는 model == "segmentation" 항목을 전부 건너뛴다.
+            //   - CameraView 반사 후보 필터는 SAFE_SURFACE_CLASSES / GROUND_HAZARDS(= seg 4클래스)를
+            //     모두 제외한다("노면은 인지 경로 전담" 정책, 2026-07-14).
+            // 즉 온디바이스 seg의 유일한 소비처는 BBox 오버레이 표시다.
+            //
+            // 그런데 실측상 seg가 추론 시간의 절반을 차지한다(det 약 47ms / seg 약 59ms).
+            // 매 프레임 돌리면 추론 주기가 약 310ms로 묶여 BBox 갱신이 초당 3.2회에 그치고,
+            // 프리뷰(30fps)와의 격차가 "박스가 늦게 붙는" 체감을 만든다.
+            // det를 매 프레임, seg를 SEG_EVERY_N 프레임마다 돌려 갱신률을 올린다.
+            // seg를 건너뛴 프레임은 직전 결과를 그대로 재사용하므로 오버레이가 깜빡이지 않는다.
+            val runSeg = (inferenceTick++ % SEG_EVERY_N) == 0L
+            var segMs = 0.0
+            val seg: List<Detection>
+            if (runSeg) {
+                input.rewind()
+                val segStart = System.nanoTime()
+                seg = runModel(
+                    segInterpreter,
+                    input,
+                    SEG_CLASS_NAMES,
+                    SEG_CONF_THRESHOLD,
+                    LEGACY_SEG_ATTRS,
+                    "segmentation"
+                )
+                segMs = (System.nanoTime() - segStart) / 1_000_000.0
+                lastSegResult = seg
+            } else {
+                seg = lastSegResult
+            }
 
             val benchmark = Arguments.createMap().apply {
                 putDouble("det_ms", detMs)
                 putDouble("seg_ms", segMs)
+                putBoolean("seg_fresh", runSeg)
                 putDouble("prep_ms", prepMs)
                 putDouble("scene_ms", 0.0)
                 putDouble("total_ms", prepMs + detMs + segMs)
@@ -536,6 +562,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         private const val NUM_ANCHORS = 8400
         private const val CPU_THREADS = 4
         private const val INV_255 = 1.0f / 255.0f
+        // seg를 몇 프레임마다 실행할지. 1이면 매 프레임(기존 동작).
+        private const val SEG_EVERY_N = 3L
 
         // tfliteDetector.ts와 동일 임계값(SSOT 어긋나면 온디바이스/서버 판정이 갈린다).
         private const val DET_CONF_THRESHOLD = 0.50f
