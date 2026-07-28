@@ -517,6 +517,27 @@ det 0.78~6.04ms로 iOS를 능가했으나 **BBox가 전부 깨졌다.** 원인�
 
 > 실제 성능 해법은 해상도 축소가 아니라 **모델 FP16 재export**였다(640 유지, 12.3MB → 6.2MB, det 38.9ms → 31.9~43.7ms). `scripts/export_tflite.py`에 `--half`/`--int8`/`--imgsz` 플래그가 추가되어 있으므로 다음 단계인 INT8 실험은 바로 돌릴 수 있다.
 
+### 6.5 det/seg 병렬화 → 두 변형 모두 되돌림 (2026-07-28)
+§5.13에서 병목이 `interpreter.run()`으로 확인된 뒤, seg가 도는 프레임의 `total`이 `det 27.7 + seg 35.0 = 65ms`대로 튀는 것을 없애려 두 가지를 실측했다. seg 전용 `HandlerThread`를 추가하고 seg 결과를 기다리지 않는(fire-and-forget) 구조는 공통이며, 차이는 seg의 배치 위치다.
+
+| 구간(중앙값) | **A 현행**: seg=GPU 동기 | B: seg=CPU 비동기 | C: seg=GPU 비동기 |
+| :--- | ---: | ---: | ---: |
+| `prep` | **1.93ms** | 3.47ms | 6.10ms |
+| `det_run` | **27.70ms** | 31.18ms | 38.74ms |
+| `det` | **28.61ms** | 34.04ms | 42.21ms |
+| `total` | **34.83ms** | 40.13ms | 54.07ms |
+| `seg_run` | **34.97ms** | 366.43ms | 66.77ms |
+| `total` p90 | 69.6ms | **51.8ms** | 83.7ms |
+| 샘플 수 | 256 | 217 | 187 |
+
+**B(seg=CPU)가 실패한 이유**: XNNPACK 4스레드에서 seg가 35ms → 366ms로 **10배** 느려졌다. YOLO 계열 conv 스택은 이 단말에서 GPU 우위가 압도적이다. 게다가 4스레드 CPU 점유가 `prep`과 JS 스레드까지 끌어내렸다.
+
+**C(seg=GPU)가 실패한 이유**: GPU는 직렬화된 단일 자원이다. 두 작업을 동시에 올려도 실제로 겹쳐 돌지 않고 인터리빙되며, 그 오버헤드로 **양쪽이 다 느려졌다**(det_run 27.7 → 38.7ms, seg_run 35.0 → 66.8ms).
+
+> **교훈: "스레드를 나누면 병렬"이 아니다.** 병렬 이득은 서로 다른 연산 유닛에 올릴 때만 나오는데, 이 단말에서 seg를 올릴 만한 두 번째 유닛이 없다(CPU는 10배 느리고, HTP는 INT8 미보유). 유일하게 개선된 지표는 B의 `total` p90(69.6 → 51.8ms)인데, 이는 seg를 프레임 응답에서 떼어낸 효과이지 배치 변경의 효과가 아니다. **INT8 + HTP로 seg를 NPU에 올릴 수 있게 되면 이 실험은 다시 해볼 가치가 있다.**
+
+측정 방식 주의: C는 MIUI 카메라 제한(§9.2) 때문에 앱을 런처에서 수동 실행해 측정했고, 이 경우 Metro 연결이 끊겨 로그가 오지 않는다. **`adb logcat | grep ReactNativeJS`로 수집해야 한다**(§측정 명령 참조).
+
 ---
 
 ## 7. 통합 테스트 환경 (별건, 이미 구축 완료)
@@ -609,6 +630,18 @@ adb shell am start -a android.intent.action.VIEW \
 ```
 
 ### 측정 명령 (30초 창)
+
+> **주의 (2026-07-28)**: 앱을 런처에서 **수동 실행**하면 Metro dev 서버 연결이 끊겨
+> `logs/metro/metro.log`에 아무것도 쌓이지 않는다. MIUI 카메라 제한(§9.2) 때문에 수동
+> 실행이 필요한 경우가 많으므로, 그때는 아래 대신 logcat에서 수집한다.
+>
+> ```bash
+> adb logcat -c; sleep 45
+> adb logcat -d | grep -oE 'prep=[0-9.]+ms det=[0-9.]+ms seg=[0-9.]+ms total=[0-9.]+ms det_run=[0-9.]+ms det_decode=[0-9.]+ms seg_run=[0-9.]+ms seg_decode=[0-9.]+ms'
+> ```
+>
+> 또한 `scaling_cur_freq`는 **부하가 도는 중에** 읽어야 한다. 카메라가 멈춘 상태에서 읽으면
+> 거버너의 정상 유휴 스케일다운(0.8GHz대)을 스로틀링으로 오독하게 된다(2026-07-28 실제 오독).
 
 ```bash
 BEFORE=$(wc -l < logs/metro/metro.log | tr -d ' '); adb logcat -c; sleep 30

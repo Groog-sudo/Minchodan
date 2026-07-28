@@ -4565,3 +4565,17 @@
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/inference/types.ts`, `client/src/inference/localDetectorSelect.android.ts`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: 실기기(Xiaomi 12) 256프레임/40초 실측. `det_run` 중앙값 27.70ms / `det_decode` 0.51ms / `seg_run` 34.97ms / `seg_decode` 0.35ms / `total` 34.83ms. `tsc --noEmit` 통과, `:app:compileDebugKotlin` BUILD SUCCESSFUL.
 - **비고**: **후처리 병목 가설은 기각됐다.** decode는 det의 1.8%로, 재작성 전에도 병목이 아니었다. 남은 병목은 전부 `interpreter.run()`이며 iOS 격차 해소는 INT8+HTP 또는 해상도 축소 외 선택지가 없다(둘 다 mAP 검증 선행 필요). 상세는 핸드오프 §5.13.
+
+---
+
+### 2026-07-28 | 3단계 | android_det_seg_parallelism_experiment_reverted
+
+- **커밋**: `docs: det/seg 병렬화 실측 결과 기록 (두 변형 모두 기각, 코드 되돌림)`
+- **변경 내용**:
+  - seg 전용 `HandlerThread` + fire-and-forget 비동기 구조를 구현하고 seg 배치를 두 가지로 실측했다. 두 변형 모두 현행(A: seg=GPU 동기)보다 나빠 **코드는 되돌리고 결과만 문서화**했다.
+  - **B(seg=CPU/XNNPACK 비동기)**: seg_run 34.97ms → 366.43ms(10배 악화). 4스레드 CPU 점유가 prep(1.93 → 3.47ms)과 det(28.61 → 34.04ms)까지 끌어내림.
+  - **C(seg=GPU 비동기)**: GPU가 직렬 자원이라 동시 실행이 인터리빙에 그쳐 양쪽 모두 악화(det_run 27.70 → 38.74ms, seg_run 34.97 → 66.77ms, total 34.83 → 54.07ms).
+  - 핸드오프 §6.5에 3자 비교표와 기각 사유, §측정 명령에 logcat 수집 절차·`scaling_cur_freq` 오독 주의를 추가.
+- **관련 파일**: `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 실기기(Xiaomi 12) 3회 실측(A 256샘플 / B 217샘플 / C 187샘플). 코드는 `git checkout`으로 6fa8093 상태 복구.
+- **비고**: 유일한 개선 지표는 B의 total p90(69.6 → 51.8ms)이며 이는 배치 변경이 아니라 seg를 프레임 응답에서 분리한 효과다. **INT8 + HTP로 seg를 NPU에 올릴 수 있게 되면 비동기 구조는 재시도 가치가 있다.**
