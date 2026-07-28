@@ -46,6 +46,26 @@ export function useLocation(): UseLocationReturn {
 
   const requestLocationPermission = useCallback(async (): Promise<boolean> => {
     try {
+      // 2026-07-28 (WS 재연결 루프 P0): 이전에는 현재 상태를 보지 않고 항상
+      // requestForegroundPermissionsAsync()를 호출했다. 이미 부여된 상태에서도
+      // GrantPermissionsActivity가 뜨면서 MainActivity가 pause되고, 그 결과
+      // AppState가 background로 떨어져 useWebSocket이 소켓을 닫는다. 이 훅을 부르는
+      // CameraView의 GPS effect는 의존성이 [isMockMode, status](WS 연결 상태)이므로,
+      // 재연결로 status가 connected가 될 때마다 다시 호출되어 자기 강화 루프가 됐다.
+      // Xiaomi 12 실측: AppState 30초 115회 진동, REQUEST_PERMISSIONS 초당 약 4회,
+      // 서버 기준 3분간 292회 재연결(close code=1000). UI 연결됨<->연결중 깜빡임의 원인.
+      // useSttRecorder.ensurePermission과 동일하게 선조회 후 미부여일 때만 요청한다.
+      const current = await Location.getForegroundPermissionsAsync();
+      if (current.status === "granted") {
+        setHasPermission(true);
+        return true;
+      }
+      if (current.status === "denied" && current.canAskAgain === false) {
+        // 사용자가 영구 거부한 상태에서 재요청하면 다이얼로그 없이 즉시 거부되며,
+        // 호출부가 반복 호출할 경우 불필요한 왕복만 남는다.
+        setHasPermission(false);
+        return false;
+      }
       const { status } = await Location.requestForegroundPermissionsAsync();
       const granted = status === "granted";
       setHasPermission(granted);

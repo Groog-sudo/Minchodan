@@ -73,6 +73,17 @@ const COLOR_OVERLAY_BG = "rgba(10, 13, 16, 0.85)";
 
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
+// 2026-07-28 (Android Live Feed 끊김 P0): TFLite 경로는 추론 입력으로 JS JPEG 디코드
+// (decodeBase64JpegToHwc)를 요구한다. Xiaomi 12 실측에서 이 디코드 1회가 JS 스레드를
+// 약 900ms 점유해, 120ms 간격으로 매 프레임 돌리면 캡처·WS 송신·콘솔 Live Feed가
+// 전부 그 속도에 묶였다(실측 1.05fps). CoreML처럼 네이티브가 입력을 직접 소비하는
+// 경로가 아닐 때는 추론 간격을 벌려, 디코드가 없는 프레임이 8fps로 서버·콘솔까지
+// 흐르게 한다. 온디바이스 반사 탐지 실효 주기는 기존 약 1.05fps보다 오히려 빨라진다.
+// 네이티브에서 640x640 텐서를 직접 넘기도록 플러그인을 고치면 이 상수는 제거 가능.
+const JS_DECODE_DETECT_MIN_INTERVAL_MS = 500;
+// STT 마이크 권한 재확인 최소 간격. 권한 다이얼로그 -> 액티비티 pause/resume ->
+// 재요청으로 이어지는 자가 순환을 끊기 위한 하한(2026-07-28).
+const STT_PERMISSION_RECHECK_MIN_MS = 10000;
 
 // 2026-07-11 LiDAR 실거리 프로브(프로토타입) 샘플링 지점: 세로 화면 정규화 좌표.
 // bbox 휴리스틱 거리의 기준점(중앙/하단)과 대응시켜 줄자 실측 대조가 쉽게 한다.
@@ -560,6 +571,9 @@ export function CameraView() {
   const [sttErrorInfo, setSttErrorInfo] = useState<string>("");
   // 누르는 즉시 UI를 활성(빨간)으로 바꿔, 녹음 prepare 지연 동안에도 "버튼이 안 된다"로 오인되지 않게 한다.
   const [sttHeld, setSttHeld] = useState(false);
+  // STT 권한 재확인 루프 차단용(2026-07-28).
+  const sttPermissionInFlightRef = useRef(false);
+  const lastSttPermissionCheckTsRef = useRef(0);
   const sttPressActiveRef = useRef(false);
   const sttPressStartedAtRef = useRef(0);
   const delayedSttStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -669,16 +683,43 @@ export function CameraView() {
   // 첫 시도가 항상 실패하므로, 진입 시 미리 권한을 확보한다.
   useEffect(() => {
     if (isMockMode) return;
-    void requestSttPermissionEarly();
 
-    // 앱이 포그라운드(active) 상태로 복귀(리로드)할 때 마이크 권한을 재확인하여 실시간 동기화
+    // 2026-07-28 (WS 재연결 루프 P0): 이전에는 active 전이마다 무조건 재요청했다.
+    // 권한 다이얼로그가 뜨면 MainActivity가 pause -> AppState "background",
+    // 다이얼로그가 닫히면 "active" -> 리스너가 또 요청하는 자가 순환이 생긴다.
+    // Xiaomi 12 실측: AppState가 30초에 75회 진동(active<->background 약 1.25회/초),
+    // REQUEST_PERMISSIONS 인텐트 초당 4회, 그 여파로 useWebSocket의 background
+    // 핸들러가 소켓을 닫고 active에서 재연결해 3분간 292회 재연결(close code=1000)이
+    // 발생했다. UI의 연결됨<->연결중 깜빡임과 프레임 전송 저하의 직접 원인이다.
+    //
+    // (1) background -> active 복귀에서만 재확인하고,
+    // (2) 진행 중 재진입을 막고,
+    // (3) 최소 간격을 둬서 루프가 성립하지 않게 한다.
+    let cancelled = false;
+    const runPermissionCheck = () => {
+      const now = Date.now();
+      if (sttPermissionInFlightRef.current) return;
+      if (now - lastSttPermissionCheckTsRef.current < STT_PERMISSION_RECHECK_MIN_MS) return;
+      lastSttPermissionCheckTsRef.current = now;
+      sttPermissionInFlightRef.current = true;
+      void requestSttPermissionEarly().finally(() => {
+        if (!cancelled) sttPermissionInFlightRef.current = false;
+      });
+    };
+
+    runPermissionCheck();
+
+    let previousAppState = AppState.currentState;
     const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "active") {
-        void requestSttPermissionEarly();
+      const wasBackground = previousAppState === "background";
+      previousAppState = nextAppState;
+      if (nextAppState === "active" && wasBackground) {
+        runPermissionCheck();
       }
     });
 
     return () => {
+      cancelled = true;
       subscription.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -977,6 +1018,10 @@ export function CameraView() {
   const detectFrameRef = useRef(detectFrame);
   const isModelsLoadedRef = useRef(isModelsLoaded);
   const isMockModeRef = useRef(isMockMode);
+  // 2026-07-28: 추론 입력 계약(네이티브 직접 소비 vs JS JPEG 디코드)에 따라 추론
+  // 최소 간격을 바꾸기 위해 handleFrame 클로저에서 최신값을 읽는다.
+  const requiresFloat32Ref = useRef(requiresFloat32);
+
   // 2026-07-11: WS 연결 상태를 ref로 추적해 handleFrame 클로저 안에서 최신값을 읽는다.
   // 폴백 모드에서 온디바이스 추론 결과를 BBox로 표시하기 위해 필요하다.
   const wsStatusRef = useRef(status);
@@ -992,6 +1037,7 @@ export function CameraView() {
   useEffect(() => { detectFrameRef.current = detectFrame; }, [detectFrame]);
   useEffect(() => { isModelsLoadedRef.current = isModelsLoaded; }, [isModelsLoaded]);
   useEffect(() => { isMockModeRef.current = isMockMode; }, [isMockMode]);
+  useEffect(() => { requiresFloat32Ref.current = requiresFloat32; }, [requiresFloat32]);
   useEffect(() => { wsStatusRef.current = status; }, [status]);
   useEffect(() => { sendRef.current = send; }, [send]);
   useEffect(() => { sendBinaryRef.current = sendBinary; }, [sendBinary]);
@@ -1037,10 +1083,6 @@ export function CameraView() {
   // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
   const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
     const now = Date.now();
-    // [TEMP DIAG 2026-07-24] handleFrame 실제 호출 간격 계측(원인 격리용, 확인 후 제거)
-    const prevCallTs = (globalThis as any).__lastHandleFrameTs ?? now;
-    (globalThis as any).__lastHandleFrameTs = now;
-    console.log(`[DIAG] handleFrame gap=${now - prevCallTs}ms stream=${frame.stream ?? "reflex"}`);
     // 2026-07-11 event_id 구조화(dev 개선 계획서 §3): 기존 `event-${now}`는 ms 단위라
     // 반사/인지 두 캡처 타이머가 같은 ms에 발화하면 event_id가 충돌했고, 서버 DB의
     // event_id UNIQUE + 중복 저장 방지 로직(detection_guidance_log_service)이 두 번째
@@ -1103,7 +1145,9 @@ export function CameraView() {
 
     const minInterval = isMockModeRef.current
       ? MOCK_DETECT_MIN_INTERVAL_MS
-      : REAL_DETECT_MIN_INTERVAL_MS;
+      : requiresFloat32Ref.current
+        ? JS_DECODE_DETECT_MIN_INTERVAL_MS
+        : REAL_DETECT_MIN_INTERVAL_MS;
 
     if (detectingRef.current || now - lastDetectTsRef.current < minInterval) {
       return;
@@ -1415,6 +1459,17 @@ export function CameraView() {
               isActive={detectionEnabled && !depthMode}
               video={true}
               audio={false}
+              // 프레임 공급률 확보(2026-07-28). format 미지정 시 기기 기본 포맷이
+              // 초당 약 4.8프레임만 공급해 반사 8fps 목표의 상한이 됐다.
+              // 2026-07-28: yuv면 플러그인이 프레임당 JPEG 인코딩 2회 + 디코딩 2회를
+              // 수행해야 한다(YuvImage.compressToJpeg -> decodeByteArray). Xiaomi 12
+              // 실측에서 콜백 1회 65~77ms, 카메라는 21fps를 주는데 콜백은 4.4회/초에
+              // 그쳤다. rgb면 플레인 버퍼를 Bitmap으로 바로 복사해 그 왕복이 사라진다.
+              // 네이티브(ReflexFrameProcessorPlugin)는 두 포맷을 모두 처리하므로 이
+              // 값만 yuv로 되돌리면 기존 경로로 즉시 복구된다.
+              // 2026-07-28 실측: rgb로 바꿨더니 플러그인 콜백이 30초에 4회로 붕괴했다
+              // (yuv 131회). 프레임은 640x480 RGBA로 오지만 콜백 1회가 117ms로 오히려
+              // 늘었다. 네이티브 rgbaImageToBitmap 경로는 보존하되 기본은 yuv로 되돌린다.
               pixelFormat="yuv"
               // 추론/전송 프레임(중앙 정사각 크롭)과 프리뷰 FOV를 맞춘다.
               // contain 이면 레터박스가 생겨 640 좌표 % 오버레이가 콘솔 JPEG 대비 어긋난다.
