@@ -60,7 +60,7 @@ def export_one(model_name: str, half: bool = True, int8: bool = False, imgsz: in
     target = os.path.join(OUTPUT_DIR, f"{model_name}.tflite")
     if os.path.exists(target):
         os.remove(target)
-    # ultralytics는 종당 *_saved_model/ 디렉터리 + .tflite 파일을 만든다.
+    # ultralytics는 종종 *_saved_model/ 디렉터리 + .tflite 파일을 만든다.
     if os.path.isdir(exported_path):
         candidates = [
             os.path.join(exported_path, name)

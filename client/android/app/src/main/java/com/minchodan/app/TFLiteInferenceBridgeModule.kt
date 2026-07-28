@@ -441,7 +441,10 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             val cy = out[NUM_ANCHORS + i] * INPUT_SIZE
             val w = out[2 * NUM_ANCHORS + i] * INPUT_SIZE
             val h = out[3 * NUM_ANCHORS + i] * INPUT_SIZE
-            if (w <= 2f || h <= 2f || w >= 638f || h >= 638f) continue
+            // 하한만 둔다. 상한(w/h >= 638)을 두면 코앞의 벽·차량·사람처럼 화면을 가득
+            // 채우는 박스가 버려지는데, 이는 반사 경로가 가장 먼저 경보해야 할 근접
+            // 장애물이다(2026-07-28 회귀 제거).
+            if (w <= 2f || h <= 2f) continue
 
             results.add(
                 Detection(

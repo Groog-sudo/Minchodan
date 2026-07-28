@@ -39,8 +39,22 @@ def load_env_file():
 
 
 load_env_file()
-raw_key = os.getenv("TMAP_APP_KEY") or os.getenv("TMAP_API_KEY") or ""
-APP_KEY = raw_key.strip() if raw_key.strip() else "DUMMY_TMAP_KEY"
+APP_KEY = (os.getenv("TMAP_APP_KEY") or os.getenv("TMAP_API_KEY") or "").strip()
+
+# 키 자리표시자 목록. 실제 키가 아닌데도 길이만 충분해 통과하던 값을 명시적으로 차단한다.
+PLACEHOLDER_APP_KEYS = frozenset({"YOUR_TMAP_APP_KEY_HERE", "DUMMY_TMAP_KEY"})
+
+# 2026-07-28: 시연용 가상 경로는 명시적 opt-in에서만 허용한다(회귀 분석 보고서 §564).
+# 기본값은 fail-closed이며, 이 플래그가 켜져도 "키 미설정" 상황에서만 가상 경로를 만든다.
+# 유효한 키로 호출했다가 실패한 경우는 어떤 설정에서도 가상 경로를 반환하지 않는다.
+NAV_MOCK_ROUTE_ENABLED = os.getenv("NAV_MOCK_ROUTE", "0").strip().lower() in {"1", "true", "yes"}
+
+
+def _has_valid_app_key() -> bool:
+    """TMAP 호출에 사용할 수 있는 실제 키가 설정되어 있는지 판정한다."""
+    key = (APP_KEY or "").strip()
+    return bool(key) and key not in PLACEHOLDER_APP_KEYS
+
 
 try:
     from server.navigation.manager import nav_manager
@@ -113,7 +127,7 @@ def helper_search_poi(keyword):
     except ValueError:
         pass
 
-    if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
+    if not _has_valid_app_key():
         # 2026-07-20 (회귀 분석 보고서 P0 - fail-closed): 고정 가상 좌표(126.8722/
         # 37.4590) 성공 처리를 제거했다. docs/ops/environment_variables.md와
         # .env.example이 이미 "키 미설정 시 기능 비활성화"를 명시하고 있었는데,
@@ -166,7 +180,7 @@ def helper_search_nearest_poi(keyword: str, center_lat: float, center_lon: float
     보장하지 못한다. 여러 후보(count)를 받아 직접 거리 계산 후 최소값을 골라야
     "가까운 지하철역이 어디야" 같은 근접 질의에 정확히 답할 수 있다.
     """
-    if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
+    if not _has_valid_app_key():
         # 2026-07-20 (회귀 분석 보고서 P0 - fail-closed): 가상 인접 목적지 성공
         # 처리를 제거했다(위 helper_search_poi와 동일 이유).
         logger.warning("[TMAP] API Key가 유효하지 않아 인접 목적지 검색을 비활성화합니다.")
@@ -244,10 +258,15 @@ def helper_resolve_destination_poi(
         }
         검색 결과가 없거나 API 실패 시 None.
     """
-    mock_best = {"name": keyword, "x": "127.0380", "y": "37.5010", "distance_m": 250.0}
-    if not APP_KEY or APP_KEY == "DUMMY_TMAP_KEY" or len(APP_KEY) < 10:
-        logger.warning("[TMAP] API Key 미설정: 가상 POI 검색 결과로 폴백합니다.")
-        return {"best": mock_best, "candidates": [mock_best], "ambiguous": False}
+    if not _has_valid_app_key():
+        if NAV_MOCK_ROUTE_ENABLED:
+            logger.warning(
+                "[TMAP] API Key 미설정 + NAV_MOCK_ROUTE=1: 가상 POI로 폴백합니다(시연 전용)."
+            )
+            mock_best = {"name": keyword, "x": "127.0380", "y": "37.5010", "distance_m": 250.0}
+            return {"best": mock_best, "candidates": [mock_best], "ambiguous": False}
+        logger.warning("[TMAP] API Key가 유효하지 않아 목적지를 해석할 수 없습니다.")
+        return None
 
     url = "https://apis.openapi.sk.com/tmap/pois"
     params = {
@@ -265,8 +284,10 @@ def helper_resolve_destination_poi(
     try:
         response = requests.get(url, params=params, headers=headers, timeout=10)
         if response.status_code != 200:
-            logger.warning(f"[TMAP] POI HTTP {response.status_code}: 가상 POI 폴백을 사용합니다.")
-            return {"best": mock_best, "candidates": [mock_best], "ambiguous": False}
+            # 유효한 키로 호출했는데 실패한 경우다. 가상 좌표로 성공 처리하면 사용자가
+            # 실재하지 않는 목적지로 안내받게 되므로 fail-closed를 유지한다.
+            logger.warning(f"[TMAP] POI HTTP {response.status_code}: 목적지 해석을 중단합니다.")
+            return None
         pois = response.json().get("searchPoiInfo", {}).get("pois", {}).get("poi", [])
         if not pois:
             return None
@@ -351,9 +372,14 @@ def helper_fetch_route(start_poi, end_poi):
             ],
         }
 
-    if not APP_KEY or APP_KEY == "DUMMY_TMAP_KEY" or len(APP_KEY) < 10:
-        logger.warning("[TMAP] API Key 미설정: 가상 보행자 시뮬레이션 경로로 자동 폴백합니다.")
-        return get_mock_route()
+    if not _has_valid_app_key():
+        if NAV_MOCK_ROUTE_ENABLED:
+            logger.warning("[TMAP] API Key 미설정 + NAV_MOCK_ROUTE=1: 가상 경로 사용(시연 전용).")
+            return get_mock_route()
+        # 2026-07-20 (회귀 분석 보고서 P0 - fail-closed): 가상 경로를 성공으로 처리하면
+        # 사용자가 실재하지 않는 회전 안내를 듣게 된다. 기본값은 기능 비활성화다.
+        logger.warning("[TMAP] API Key가 유효하지 않아 경로 조회를 비활성화합니다.")
+        return None
 
     url = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json"
     headers = {"appKey": APP_KEY, "Content-Type": "application/json"}
@@ -371,11 +397,12 @@ def helper_fetch_route(start_poi, end_poi):
         response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
         if response.status_code == 200:
             return response.json()
-        logger.warning(f"[TMAP] Route HTTP {response.status_code}: 가상 보행자 경로로 폴백합니다.")
-        return get_mock_route()
+        # 유효한 키의 API 실패는 가상 경로로 덮지 않는다(위 fail-closed와 동일 이유).
+        logger.warning(f"[TMAP] Route HTTP {response.status_code}: 경로 조회를 중단합니다.")
+        return None
     except Exception as e:
-        logger.error(f"[TMAP] Route fetch helper exception: {e}. 가상 경로로 폴백합니다.")
-        return get_mock_route()
+        logger.error(f"[TMAP] Route fetch helper exception: {e}")
+        return None
 
 
 # index.html 로드 경로 지정

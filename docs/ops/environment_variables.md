@@ -256,6 +256,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | 변수명 | 타입 | 필수/선택 | 기본값 | 설명 | 참조 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`TMAP_APP_KEY`** | string | 필수(내비게이션 사용 시) | `YOUR_TMAP_APP_KEY_HERE`(코드 내 플레이스홀더) | TMAP POI 검색·보행자 경로 안내 API 키. 미설정 또는 플레이스홀더 그대로일 경우 콘솔 경고와 함께 기능 비활성화. **2026-07-11 용도 확장**: 단말 하단 T맵 지도 패널(WebView + TMap JS API)용으로 `nav_route` WS 메시지의 `app_key` 필드에 실어 전달. 클라이언트 하드코딩을 피해 저장소에 키가 남지 않으나 앱 런타임에는 노출되므로 **TMap 콘솔에서 키 사용 제한 설정 권장**. **2026-07-13 해결**: `.env.example`에 추가 완료(정합성 검토 P0). **2026-07-18 정정**: 프로토타입 `pedestrian_navigation.py`가 삭제되어 TMAP 연동은 `server/navigation/server.py`에서 담당 | `server/navigation/server.py:38`, `server/api/ws_router.py` |
+| **`NAV_MOCK_ROUTE`** | bool(`1`/`true`/`yes`) | 선택 | `0`(비활성) | **시연 전용 가상 보행자 경로 opt-in**(2026-07-28 신설). `1`일 때만 `TMAP_APP_KEY` 미설정·플레이스홀더 상황에서 `helper_fetch_route`/`helper_resolve_destination_poi`가 고정 좌표 가상 경로를 반환한다. **유효한 키로 호출했다가 API가 실패한 경우(비200·예외)는 이 플래그와 무관하게 항상 `None`** — 실재하지 않는 회전 안내가 사용자에게 재생되는 것을 막기 위한 비협상 규칙이다. 운영 배포에서는 절대 켜지 않는다 | `server/navigation/server.py`, `tests/test_navigation_server_poi_resolver.py` |
 
 ### 2.15 클라이언트·콘솔 공개 변수 (빌드 시 인라인, 2026-07-11 신설)
 

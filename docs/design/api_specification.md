@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.36 (2026-07-28: 내비게이션 TMAP API 키 미설정/HTTP 제한 시 3단계 가상 보행자 경로 Mock Route Fallback 추가 및 `MIN_STT_AUDIO_BYTES` 수신 가드 완화 6,000바이트 반영. 기존 v0.4.35 이력 유지)
+> **버전**: v0.4.37 (2026-07-28: 가상 보행자 경로를 `NAV_MOCK_ROUTE` opt-in 시연 모드로 격리하고 기본 fail-closed 복원, 유효 키의 API 실패는 항상 fail-closed 확정. 기존 v0.4.36의 `MIN_STT_AUDIO_BYTES` 6,000바이트 완화 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)
@@ -526,6 +526,21 @@ guide 수신 시 자동 재생하므로 신규 클라이언트 처리 불필요)
 > 전환 - [`environment_variables.md`](../ops/environment_variables.md) §2.14 `TMAP_APP_KEY`에
 > 이미 명시된 "키 미설정 시 기능 비활성화" 정책과 정합.
 
+> **비고 (2026-07-28) - 가상 경로 opt-in 격리**: 2026-07-28 중간 커밋(`843c09b`)이 위
+> fail-closed를 되돌려 키 미설정·API 실패 모두에서 고정 좌표(127.0380/37.5010) 가상 경로를
+> 성공 처리했다. 시연 편의가 목적이었으나 (1) 유효한 키로 호출했다가 TMAP이 5xx를 내거나
+> 네트워크가 끊긴 경우까지 가상 경로가 나가 사용자가 실재하지 않는 회전 안내를 듣게 되고,
+> (2) 자리표시자 `YOUR_TMAP_APP_KEY_HERE`가 길이 검사(`len < 10`)를 통과해 실제 TMAP 호출까지
+> 발생했다(`tests/test_navigation_server_poi_resolver.py` 3건 실패로 확인). 아래로 확정한다.
+>
+> | 상황 | 기본값 | `NAV_MOCK_ROUTE=1` |
+> | :--- | :--- | :--- |
+> | 키 미설정·자리표시자 | `None` (기능 비활성화) | 가상 경로/가상 POI 반환(시연 전용) |
+> | 유효 키 + API 실패(비200·예외) | `None` | **`None`** (opt-in과 무관하게 항상 fail-closed) |
+>
+> 자리표시자 판정은 길이 대신 `PLACEHOLDER_APP_KEYS`(`YOUR_TMAP_APP_KEY_HERE`,
+> `DUMMY_TMAP_KEY`) 집합 비교로 통일했다(`_has_valid_app_key`).
+
 > **비고 (2026-07-11) - 인텐트 대기 상태 체크 순서**: `awaiting_intent` 대기 상태에서
 > 발화 분기 우선순위를 `nav intent -> question intent -> wake 재호출 -> else(재질문)`로
 > 변경했다(이전: wake 재호출이 최우선). "길댕아 길찾아줘"라고 말하면 wake 매칭이 먼저
@@ -1020,6 +1035,8 @@ LiDAR 심도 카메라는 vision-camera와 별도의 `AVCaptureSession`을 쓰�
 | **v0.4.29** | **2026-07-19** | **§4.4 `console_guide_audio`·§4.5 `reflex_alert` 콘솔 미러 신설 - 서버가 단말에 보내는 guide WAV와 동일 바이너리를 관제 콘솔 `/ws/console/live-feed`에도 브로드캐스트하고, 반사 비프 클립 5종을 `console/public/reflex_clips/`로 정적 복사해 단말과 동일 파일 재생. 햅틱은 청각 재현 불가하므로 시각 펄스로 근사 표현** |
 | **v0.4.31** | **2026-07-19** | **§8.7 `/ws/console/live-feed` 관리자 JWT 인증을 최초 도입. v0.4.32에서 URL 전달 방식은 폐기됨. 단말/콘솔 거리 구역 오버레이를 좌·우 끝까지 이어지는 SVG 호(NEAR/MED) + 라벨로 갱신** |
 | **v0.4.32** | **2026-07-19** | **SSE·프레임·콘솔 WS의 URL 쿼리 토큰 제거. Authorization 헤더/WS 최초 auth 메시지로 전환하고 Origin 검증·인증 제한시간 추가. §8.8 최초 관리자 1회 부트스트랩, RBAC, 로그인 제한, 단말 JWT 발급 계약 신설** |
+| **v0.4.37** | **2026-07-28** | **가상 보행자 경로를 `NAV_MOCK_ROUTE=1` opt-in 시연 모드로 격리하고 기본 fail-closed 복원. 유효 키 사용 중 API 실패(비200·예외)는 opt-in과 무관하게 항상 `None`. 자리표시자 판정을 길이 검사에서 `PLACEHOLDER_APP_KEYS` 집합 비교로 교체** |
+| **v0.4.36** | **2026-07-28** | **`MIN_STT_AUDIO_BYTES`를 11,200(~0.35s)에서 6,000(~0.18s)으로 완화해 짧은 음성 문의 수용** |
 | **v0.4.35** | **2026-07-20** | **코드-문서 정합: §4.1 reflex_alert에 `alert_source`/`event_state`/`estimated_distance_m`/`policy_version` 4개 필드 추가, `alert_id`를 class-agnostic `high_obstacle` 고정값으로 정정. §6.1 인지 guide에 `source:"cognitive"` 필드 명시. §6.2 `status` 메시지를 dead contract(예약/미발행)로 표기. §1 type 목록에서 폐기된 `contact_save` 제거. §4.3 latency_event `latency_alert`/`latency_threshold_ms`를 반사/인지 필수·STT 선택으로 한정. §6.3 STT 예시 model_name을 기본값 `faster-whisper-small`로 정정** |
 | **v0.4.34** | **2026-07-20** | **§6.3 STT 목적지 파서를 위치기반 조사/명령어미 제거로 교체(전역 replace 결함 수정), WAITING_FOR_POI_CONFIRMATION 상태·명령 어휘 신설(동명 POI 음성 확인), TMAP 키 누락 시 helper_search_poi/helper_search_nearest_poi/helper_fetch_route fail-closed 전환** |
 | **v0.4.33** | **2026-07-20** | **§6.5 realtime_gps→콘솔 HUD 브로드캐스트·단말 connected 후 즉시 GPS 전송 계약. §8.5 Detection Guidance Log 목록 썸네일 bbox 오버레이·반사/노면-only bbox 저장·pipeline_debug 폴백** |

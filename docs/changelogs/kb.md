@@ -4482,6 +4482,7 @@
   - NNAPI 실측 검증 및 GPU FP16 1순위 엔진 보장
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
+- **비고**: NNAPI(NPU)는 det ~235ms로 GPU FP16(38.9ms) 대비 6배 느려 기각. 코드는 `fa36d3f`에서 전면 제거됐고 음성 결과는 핸드오프 §6.3에 보존. **INT8 재export 없이 재시도 금지**.
 
 ---
 
@@ -4490,6 +4491,7 @@
 - **커밋**: `(자동 커밋 완료)`
 - **변경 내용**:
   - 416x416 FP16 모델 재export 및 동적 앵커 디코딩으로 iOS 능가 추론 속도(det 0.78~6.04ms) 달성
+- **비고**: **되돌림.** 416 입력이 `ReflexFrameCache.SIDE=640` 고정과 충돌해 매 프레임 `NO_FRAME` 거절 → BBox 전면 붕괴. 후속 `d0bc3f4`에서 640 FP16으로 원복했고 실제 성능 개선은 해상도가 아닌 FP16 재export 몫이었다(핸드오프 §6.4). `scripts/export_tflite.py`의 `--half`/`--int8`/`--imgsz` 플래그는 유지.
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/assets/models/yolo26n/object_detection.tflite`, `client/assets/models/yolo26n/segmentation.tflite`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `scripts/export_tflite.py`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
 
@@ -4510,6 +4512,7 @@
 - **커밋**: `(자동 커밋 완료)`
 - **변경 내용**:
   - BBoxOverlay 센터 크롭 cover 뷰포트 정밀 변환 적용으로 위치 어긋남 해결
+- **비고**: **되돌림.** 후속 `fa36d3f`가 `CameraView.tsx`를 변경 전 상태로 완전 복구해 순변경 0. 커밋 제목이 revert임을 드러내지 않으므로 이력 해석 시 주의.
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/components/CameraView.tsx`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
 
@@ -4532,13 +4535,20 @@
   - TMAP API 미설정 시 내비게이션 가상 경로 폴백 구축, STT 짧은 음성 수신 가드 완화 및 파이프라인 종합 수리
 - **관련 파일**: `docs/design/api_specification.md`, `server/api/ws_router.py`, `server/navigation/server.py`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
+- **비고**: 가상 경로 폴백은 2026-07-20 fail-closed 정책(회귀 분석 보고서 P0)을 되돌린 것으로, 아래 `nav_mock_route_opt_in_and_bbox_regression_fix` 엔트리에서 opt-in으로 격리 수정됨. 동일 내용 중복 엔트리 1건은 제거함.
 
 ---
 
-### 2026-07-28 | 6단계 | stt_llm_rag_nav_fixes
+### 2026-07-28 | 6단계 | nav_mock_route_opt_in_and_bbox_regression_fix
 
-- **커밋**: `(자동 커밋 완료)`
+- **커밋**: `fix(server): 내비게이션 가상 경로를 NAV_MOCK_ROUTE opt-in으로 격리하고 fail-closed 복원`
 - **변경 내용**:
-  - TMAP API 미설정 시 내비게이션 가상 경로 폴백 구축, STT 짧은 음성 수신 가드 완화 및 파이프라인 종합 수리
-- **관련 파일**: `docs/changelogs/kb.md`, `docs/design/api_specification.md`, `server/api/ws_router.py`, `server/navigation/server.py`
-- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
+  - `server/navigation/server.py`: `843c09b`가 되돌린 fail-closed 정책을 복원. 가상 경로·가상 POI는 `NAV_MOCK_ROUTE=1`일 때만, 그리고 **키 미설정 상황에서만** 반환한다.
+  - 유효한 키로 호출했다가 API가 실패한 경우(비200·예외)는 opt-in 여부와 무관하게 항상 `None`. 실재하지 않는 회전 안내가 사용자에게 재생되는 것을 차단.
+  - 자리표시자 판정을 `len(APP_KEY) < 10` 길이 검사에서 `PLACEHOLDER_APP_KEYS` 집합 비교(`_has_valid_app_key`)로 교체. 기존 길이 검사는 `YOUR_TMAP_APP_KEY_HERE`(22자)를 통과시켜 유닛 테스트가 실제 TMAP에 HTTP 요청을 보내 403을 받는 상태였다.
+  - `TFLiteInferenceBridgeModule.kt`: `fa36d3f`가 추가한 bbox 상한 필터(`w >= 638f || h >= 638f`) 제거. 코앞의 벽·차량·사람처럼 화면을 가득 채우는 박스는 반사 경로가 가장 먼저 경보해야 할 근접 장애물이다.
+  - 핸드오프 §6.3/§6.4에 NNAPI(det ~235ms 기각)·416 재export(ReflexFrameCache 640 고정과 충돌) 음성 결과 보존.
+  - `scripts/export_tflite.py` 주석 오타("종당" → "종종"), changelog 중복 엔트리 1건 제거 및 되돌림 이력 비고 3건 추가.
+- **관련 파일**: `server/navigation/server.py`, `tests/test_navigation_server_poi_resolver.py`, `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `scripts/export_tflite.py`, `.env.example`
+- **검증 결과**: `pytest tests/test_navigation_server_poi_resolver.py` 18 passed(기존 실패 3건 복구 + opt-in/API 실패 격리 테스트 5건 신규). `ruff check`·`ruff format --check` 통과.
+- **비고**: 안드로이드 Kotlin 변경은 코드 리뷰 수준 검증만 수행했으며 실기기 재빌드·BBox 육안 확인은 미실시.

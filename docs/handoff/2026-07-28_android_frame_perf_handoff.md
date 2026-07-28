@@ -479,6 +479,21 @@ ack에서만 `delete`되고 TTL이 없었다. ack가 유실되면 probe 주기(�
 ### 6.2 `pixelFormat="rgb"` → 되돌림
 네이티브 `rgbaImageToBitmap` 경로는 정상 동작해 640×480 RGBA 프레임을 받았으나, **플러그인 콜백이 30초에 4회로 붕괴**했다(yuv는 131회). 콜백 1회 비용도 117ms로 오히려 늘었다. 원인 미규명. 네이티브 경로는 보존했고 JS의 `pixelFormat`만 `yuv`로 복구했으므로, 원인을 찾으면 한 줄로 재시도 가능하다.
 
+### 6.3 NNAPI(NPU) delegate 1순위 적용 → 되돌림 (2026-07-28)
+`EXPORT_SOURCE_260714.txt`에 기록된 NNAPI 차단 요인(`NON_MAX_SUPPRESSION_V4`)이 2026-07-24 `nms=False` 재export로 이미 제거된 상태여서, `NnApiDelegate`(별도 의존성 불필요, `org.tensorflow:tensorflow-lite`에 포함)를 GPU보다 앞에 배치해 실측했다.
+
+| 엔진 | det 실측 | 판정 |
+| :--- | ---: | :--- |
+| GPU FP16 delegate | 38.9ms | 채택 |
+| **NNAPI(NPU) FP16** | **~235ms** | **기각 (6배 느림)** |
+
+Snapdragon 8 Gen 1의 Hexagon HTP는 INT8 경로에서 이득이 나는 구조라, FP32 가중치 모델에서는 그래프 분할·양자화 오버헤드가 이득을 압도한다. **INT8 재export 없이 NNAPI를 재시도하지 말 것.** 코드는 `fa36d3f`에서 전면 제거됐다(커밋 `ab1662f`/`5b8beff`에 원본 구현이 남아 있으므로 INT8 모델 확보 시 cherry-pick 가능).
+
+### 6.4 416x416 재export → 되돌림 (2026-07-28)
+det 0.78~6.04ms로 iOS를 능가했으나 **BBox가 전부 깨졌다.** 원인은 `ReflexFrameCache.SIDE = 640` 고정: 네이티브 프레임 캐시가 640×640 IntArray를 담는데 인터프리터 입력이 416이 되면서 `pixels.size != inputSize * inputSize`로 매 프레임 `NO_FRAME` 거절 → base64 폴백 경로로 밀려났다. 동적 입력 해상도 감지(`getInputTensor(0).shape()`)를 넣어도 캐시 측 상수와 오버레이 좌표계약(640 고정)까지 함께 바꿔야 해서 되돌렸다. **해상도를 바꾸려면 `ReflexFrameCache.SIDE` + `FRAME_SIZE`(CameraView) + 프레임 프로세서 크롭까지 3곳을 동시에 고쳐야 한다.**
+
+> 실제 성능 해법은 해상도 축소가 아니라 **모델 FP16 재export**였다(640 유지, 12.3MB → 6.2MB, det 38.9ms → 31.9~43.7ms). `scripts/export_tflite.py`에 `--half`/`--int8`/`--imgsz` 플래그가 추가되어 있으므로 다음 단계인 INT8 실험은 바로 돌릴 수 있다.
+
 ---
 
 ## 7. 통합 테스트 환경 (별건, 이미 구축 완료)

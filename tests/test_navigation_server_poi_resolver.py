@@ -186,3 +186,59 @@ def test_fetch_route_fails_closed_without_valid_key(monkeypatch, invalid_key: st
     )
 
     assert result is None
+
+
+# [하드 코딩 부분 - 핵심]
+# 2026-07-28: 시연용 가상 경로가 기본 동작으로 되돌아갔던 회귀를 재차 차단한다.
+# (1) 가상 경로는 NAV_MOCK_ROUTE opt-in에서만 허용하고,
+# (2) 유효한 키로 호출했다가 실패한 경우는 opt-in 여부와 무관하게 항상 fail-closed다.
+#     실패를 가상 경로로 덮으면 사용자가 실재하지 않는 회전 안내를 듣게 된다.
+
+
+@pytest.mark.parametrize("placeholder_key", ["", "DUMMY_TMAP_KEY", "YOUR_TMAP_APP_KEY_HERE"])
+def test_fetch_route_returns_mock_only_when_opt_in(monkeypatch, placeholder_key: str) -> None:
+    monkeypatch.setattr(nav_server_module, "APP_KEY", placeholder_key)
+    monkeypatch.setattr(nav_server_module, "NAV_MOCK_ROUTE_ENABLED", True)
+
+    result = nav_server_module.helper_fetch_route(
+        {"name": "출발", "x": "127.0", "y": "37.5"},
+        {"name": "도착", "x": "127.1", "y": "37.6"},
+    )
+
+    assert result is not None
+    assert result["type"] == "FeatureCollection"
+
+
+def test_fetch_route_fails_closed_on_api_error_even_with_opt_in(monkeypatch) -> None:
+    monkeypatch.setattr(nav_server_module, "APP_KEY", "REAL_LOOKING_APP_KEY_1234")
+    monkeypatch.setattr(nav_server_module, "NAV_MOCK_ROUTE_ENABLED", True)
+
+    class _ErrorResponse:
+        status_code = 500
+
+    monkeypatch.setattr(
+        nav_server_module.requests, "post", lambda *args, **kwargs: _ErrorResponse()
+    )
+
+    result = nav_server_module.helper_fetch_route(
+        {"name": "출발", "x": "127.0", "y": "37.5"},
+        {"name": "도착", "x": "127.1", "y": "37.6"},
+    )
+
+    assert result is None
+
+
+def test_resolver_fails_closed_on_api_error_even_with_opt_in(monkeypatch) -> None:
+    monkeypatch.setattr(nav_server_module, "APP_KEY", "REAL_LOOKING_APP_KEY_1234")
+    monkeypatch.setattr(nav_server_module, "NAV_MOCK_ROUTE_ENABLED", True)
+
+    class _ErrorResponse:
+        status_code = 503
+
+    monkeypatch.setattr(nav_server_module.requests, "get", lambda *args, **kwargs: _ErrorResponse())
+
+    result = nav_server_module.helper_resolve_destination_poi(
+        "강남역", center_lat=37.4979, center_lon=127.0276
+    )
+
+    assert result is None

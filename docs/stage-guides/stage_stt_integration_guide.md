@@ -126,7 +126,8 @@ flowchart TD
 | TC-STT-012 | 목적지 파서 장소명 보존 | "구로역으로 설정"/"가로수길로 가줘"/"압구정로데오역까지 안내해줘" 등이 장소명 내부 문자 손실 없이 TMAP 검색어로 전달됨(`tests/test_stt_to_llm_bridge_template.py::test_destination_parser_preserves_place_name`) |
 | TC-STT-013 | 목적지 대기 중 wake 오탐 방지 | `WAITING_FOR_DESTINATION`에서 "길동역"/"길음역"/"길상사"가 재질문(`navigation-destination-reprompt`)이 아니라 POI 검색으로 진행됨(`test_gildaeng_fuzzy_wake_does_not_intercept_real_destination`) |
 | TC-STT-014 | 동명 POI 확인 플로우 | 동명 후보가 모호하면 `navigation-poi-confirm-needed`로 확인 질문 반환 → "2번" 발화로 해당 후보 경로 확정, 성공 안내는 실제 선택 POI 이름을 포함(`test_ambiguous_poi_triggers_confirmation_instead_of_auto_pick`, `test_poi_confirmation_selection_completes_route`) |
-| TC-STT-015 | TMAP 키 누락 fail-closed | 키가 없거나 플레이스홀더일 때 `helper_search_poi`/`helper_search_nearest_poi`/`helper_fetch_route`/`helper_resolve_destination_poi`가 가상 좌표 대신 `None`을 반환(`tests/test_navigation_server_poi_resolver.py`) |
+| TC-STT-015 | TMAP 키 누락 fail-closed | 키가 없거나 플레이스홀더(`YOUR_TMAP_APP_KEY_HERE`/`DUMMY_TMAP_KEY`)일 때 `helper_search_poi`/`helper_search_nearest_poi`/`helper_fetch_route`/`helper_resolve_destination_poi`가 가상 좌표 대신 `None`을 반환(`tests/test_navigation_server_poi_resolver.py`) |
+| TC-STT-016 | 가상 경로 opt-in 격리 | `NAV_MOCK_ROUTE=1`일 때만 키 미설정 상황에서 가상 경로가 반환되고, **유효 키의 API 실패(비200·예외)는 opt-in 여부와 무관하게 항상 `None`**(`test_fetch_route_returns_mock_only_when_opt_in`, `test_fetch_route_fails_closed_on_api_error_even_with_opt_in`, `test_resolver_fails_closed_on_api_error_even_with_opt_in`) |
 
 ---
 
