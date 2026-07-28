@@ -3,21 +3,21 @@ name: yolo-obstacle-detection
 description: |
   실시간 카메라 프레임에서 Yolo 26N - Object Detection(29클래스: scooter·bollard·car 등)으로 시각장애인 위험 사물을 탐지하고,
   Yolo 26N - Segmentation(4클래스: sidewalk_normal·caution·roadway·braille_normal)으로 노면 상태를 분할하며, ByteTrack으로 객체를 추적한다.
-  이중 게이트(Reflex Gate + Surface Gate)로 위험도를 1차 분류하는 듀얼헤드 파이프라인. 실제 배포 앱 반사 경로는 온디바이스(CoreML/TFLite)로 수행.
+  3중 게이트(Reflex Gate + Surface Gate + Head Level Gate)로 위험도를 1차 분류하는 듀얼헤드 파이프라인. Head Level Gate는 두상 높이 위험물을 high로 격상한다. 실제 배포 앱 반사 경로는 온디바이스(CoreML/TFLite)로 수행.
 ---
 
 # Yolo 26N - Object Detection (3단계: AI 장애물 실시간 인식)  v1.1 핵심
 
 > **작성일**: 2026-06-24
 > **버전**: v0.3.0 (2026-07-07 실제 파인튜닝 모델 클래스·게이트 기준으로 정정, 온디바이스 추론 경로 각주 추가)
-> **설계 기준**: `docs/design/minchodan_design_note.md` 3단계 (v1.1 듀얼헤드 + 이중 게이트)
+> **설계 기준**: `docs/design/minchodan_design_note.md` 3단계 (v1.1 듀얼헤드 + 3중 게이트)
 > **코딩 패턴 준수**: [`docs/dev-guides/course_codebase_guide.md`](../../../docs/dev-guides/course_codebase_guide.md) 섹션 10, 9, 17.2
 
 > **2026-07-07 정정 요약**: 최초 계획 시점의 클래스 taxonomy(킥보드/계단, 노면 7클래스)가 실제 파인튜닝 완료 모델과 어긋나 있어 실측 기준으로 정정했다. 실제 모델은 **Object Detection 29클래스**(`det_best_20260705.pt`), **Segmentation 4클래스**(`segbest.pt`, `sidewalk_normal`/`caution`/`roadway`/`braille_normal`)다. 상세 근거: [`docs/ops/model_class_validation_report.md`](../../../docs/ops/model_class_validation_report.md), [`docs/stage-guides/stage3_detection_design.md`](../../../docs/stage-guides/stage3_detection_design.md). 또한 **실제 배포 앱은 이 서버 경로가 아니라 온디바이스(CoreML/TFLite)로 탐지·게이트를 수행**한다(§ 온디바이스 런타임 각주 참조).
 
 ## 개요
 
-2단계(프레임 수신)에서 받은 640x640 BGR 프레임을 **Yolo 26N - Object Detection**으로 추론하여 전동킥보드(`scooter`), 볼라드(`bollard`), 차량(`car`/`truck`/`bus`) 등 위험 사물을 탐지하고, **Yolo 26N - Segmentation**으로 노면 상태(정상 보도, 주의 구간, 차도, 점자블록)를 분할하며, **ByteTrack**으로 Track ID를 부여한다. **이중 게이트**(Reflex Gate + Surface Gate) 룰로 위험도를 1차 분류한다.
+2단계(프레임 수신)에서 받은 640x640 BGR 프레임을 **Yolo 26N - Object Detection**으로 추론하여 전동킥보드(`scooter`), 볼라드(`bollard`), 차량(`car`/`truck`/`bus`) 등 위험 사물을 탐지하고, **Yolo 26N - Segmentation**으로 노면 상태(정상 보도, 주의 구간, 차도, 점자블록)를 분할하며, **ByteTrack**으로 Track ID를 부여한다. **3중 게이트**(Reflex Gate + Surface Gate + Head Level Gate) 룰로 위험도를 1차 분류한다.
 
 ## v1.1 핵심 변경 사항
 
@@ -25,16 +25,17 @@ description: |
 | --- | --- | --- |
 | 객체 탐지 | YOLOv8 | **Yolo 26N - Object Detection** (NMS-free, sm_120, 소형객체 최적화) |
 | 분할 | 없음 | **Yolo 26N - Segmentation** |
-| 게이트 | 단일 Risk Gate | **이중 게이트**: Reflex Gate (Detection) + Surface Gate (Seg) |
+| 게이트 | 단일 Risk Gate | **3중 게이트**: Reflex Gate (Detection) + Surface Gate (Seg) + Head Level Gate (두상 높이 격상) |
 | 노면 클래스 | 혼합 | **실제 4클래스**: `sidewalk_normal`, `caution`(계단/맨홀/그레이팅/파손 통합), `roadway`, `braille_normal` (최초 계획의 7클래스 분리안은 미채택) |
 | LLM 경유 | high도 LLM 거침 | **반사 경로 LLM 미경유** (비협상 원칙) |
 
 ## 전체 아키텍처 위치
 
 ```
-[모바일 카메라]  [2단계: 프레임 수신]  3단계: Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트
+[모바일 카메라]  [2단계: 프레임 수신]  3단계: Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 3중 게이트
                                              high  Reflex Gate  사전합성 클립 (LLM 미경유)
                                              P0 노면  Surface Gate  사전합성 클립 (LLM 미경유)
+                                             두상 높이  Head Level Gate  사전합성 클립 (LLM 미경유)
                                              mid/low  Redis Streams  5단계 RAG  6단계 LangGraph
 ```
 

@@ -3,7 +3,7 @@
 > **작성일**: 2026-06-24
 > **버전**: v0.4.15 (2026-07-20 코드-문서 정합: Suppressor TTL 5초 정정, DETECTOR_TYPE 기본값 yolo 정합, TTS 4엔진·edge-tts 반영, §10 보안 변수 참조 보강)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+> **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
 
@@ -22,7 +22,7 @@ Minchodan은 시각장애인 보행 보조를 위한 스마트 가이드독 AI �
 - ByteTrack (객체 추적)
 - Redis (Streams 이벤트 버스 + Track 컨텍스트 TTL=30)
 - LangGraph (raw SimpleOllamaClient/SimpleOpenAIClient, LangChain 래퍼 미사용)
-- Ollama (gemma4-e4b 가이드 생성, nomic-embed-text 임베딩, 호스트 로컬 실행)
+- Ollama (gemma4-e4b 가이드 생성, nomic-embed-text 보행 수칙 RAG 임베딩, bge-m3 생활지원 RAG 임베딩, 호스트 로컬 실행)
 - Gemini API (gemini-2.5-flash-lite, 4단계 오프라인 RAG 빌드 VLM 캡셔닝. 최초 계획 로컬 Llava에서 전환)
 - ChromaDB (로컬 파일 기반 벡터 저장소)
 - MariaDB (세션/디바이스/탐지-가이드 로그 영속화, `server/services/` 계층)
@@ -87,7 +87,7 @@ graph TD
 
         subgraph Orch ["6. LangGraph 오케스트레이션"]
             L1["L1 Classifier<br/>(룰 기반 위험도)"]
-            L2["L2 Generator<br/>(ChatOllama gemma4-e4b)"]
+            L2["L2 Generator<br/>(SimpleOllamaClient gemma4-e4b)"]
             L3["L3 Validator<br/>(길이·방향 검증)"]
             FallbackNode["Fallback Node<br/>(고정 문장)"]
         end
@@ -190,13 +190,13 @@ graph TD
 | `server/orchestration/state.py`               | `OrchState` TypedDict (event, risk_level, rag_context)                     | 6    |
 | `server/orchestration/graph.py`               | `StateGraph` 조립, 노드 등록, 엣지 정의                                    | 6    |
 | `server/orchestration/nodes/l1_classifier.py` | L1 룰 기반 위험도 분류 (mid/low만 진입)                                    | 6    |
-| `server/orchestration/nodes/l2_generator.py`  | L2 ChatOllama(gemma4-e4b) ainvoke (20자/방향)                              | 6    |
+| `server/orchestration/nodes/l2_generator.py`  | L2 SimpleOllamaClient(gemma4-e4b) ainvoke (20자/방향)                      | 6    |
 | `server/orchestration/nodes/l3_validator.py`  | L3 길이·방향 키워드 검증, RETRY(최대 1회)                                  | 6    |
 | `server/orchestration/nodes/fallback_node.py` | 최종 실패 고정 문장                                                        | 6    |
-| `server/orchestration/llm_client_factory.py`  | `BaseChatModel` Ollama(gemma4-e4b) gpt-4o-mini 핫스왑                      | 6    |
+| `server/orchestration/llm_client_factory.py`  | SimpleOllamaClient/SimpleOpenAIClient/SimpleGeminiClient 핫스왑            | 6    |
 | `server/tts/realtime_tts.py`                  | 인지 경로 `TTSService.generate()` 호출, WAV 바이너리 WS 프레임 전송. (text, voice, speed) 키 FIFO 캐시(64건)로 고정 안내문 재합성 회피(2026-07-11, CPU 폴백 환경 합성 1.4~1.9초 실측 근거) | 7    |
 | `server/tts/reflex_clip_sender.py`            | 반사 경로 alert_id 사전합성 클립 WS 고우선 전송                            | 7    |
-| `server/tts/suppressor.py`                    | Redis `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` 중복 억제. 노면(surface) 경보는 `REFLEX_SURFACE_SUPPRESS_TTL_S=15`로 별도 적용 | 7    |
+| `server/tts/suppressor.py`                    | Redis `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` 중복 억제. 노면(surface) 경보는 `REFLEX_SURFACE_SUPPRESS_TTL_S=60`로 별도 적용 (2026-07-20 15→30→60초 2차 상향) | 7    |
 | `server/tts/tts_service.py`                   | `TTSService` 추상화(Supertonic/Piper/Pyttsx3), WAV 규격 통일               | 7    |
 | `server/bus/redis_client.py`                  | aioredis 연결 풀                                                           | 3·6  |
 | `server/bus/producer.py`                      | `xadd("risk.events", …)` 인지 경로 발행                                    | 3    |
@@ -303,7 +303,7 @@ graph TD
 - **T3-S (2026-07-18)**: 서버 `session_manager`의 `_stt_activity` 레지스트리로 STT 처리 중인 device_id를 추적. `DetectionConsumer`는 해당 device_id의 인지 가이드 발행을 조기 반환(반사는 제외)
 - **(반사)** 단말에 사전 번들된 고정 클립을 `alert_id`로 즉시 재생 (실시간 TTS 합성 금지)
 - **선점(preempt)**: 반사 음성은 인지 음성을 중단시키고 재생. WS에서 반사 이벤트는 별도 고우선 타입
-- 중복 억제 `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` (노면 surface 경보는 `REFLEX_SURFACE_SUPPRESS_TTL_S=15`)
+- 중복 억제 `setex(suppress:…, REFLEX_SUPPRESS_TTL_S=5)` (노면 surface 경보는 `REFLEX_SURFACE_SUPPRESS_TTL_S=60`, 2026-07-20 15→30→60초 2차 상향)
 - 햅틱·접근성(`announceForAccessibility`) 연동
 - `TTSService` 추상화(`SupertonicTTSService`/`PiperTTSService`/`Pyttsx3TTSService`/`EdgeTTSService`, 4종 핫스왑), 출력은 WAV로 규격 통일
 
@@ -424,15 +424,15 @@ sequenceDiagram
 | 추상화     | 기본                               | 대안                 | 위치                                         |
 | ---------- | ---------------------------------- | -------------------- | -------------------------------------------- |
 | Vector DB  | ChromaDB                           | Qdrant               | `server/rag/vector_db_factory.py`            |
-| LLM Client | ChatOllama(gemma4-e4b)             | gpt-4o-mini          | `server/orchestration/llm_client_factory.py` |
-| Embeddings | OllamaEmbeddings(nomic-embed-text) | gemini-embedding-001 | `server/rag/build/` (Embeddings 추상 클래스) |
+| LLM Client | SimpleOllamaClient(gemma4-e4b)     | SimpleOpenAIClient/SimpleGeminiClient | `server/orchestration/llm_client_factory.py` |
+| Embeddings | OllamaEmbeddings(nomic-embed-text, 보행 수칙) / bge-m3(생활지원) | gemini-embedding-001 | `server/rag/embedding_engine_factory.py` |
 | TTS        | supertonic(기본)                   | piper / pyttsx3(핫스왑 폴백) | `server/tts/tts_service.py`                  |
 
 ---
 
 ## 10. 환경 변수
 
-> **단일 명세**: 환경 변수의 전체 목록·타입·필수 여부·기본값·참조는 [`docs/environment_variables.md`](environment_variables.md)를 기준으로 합니다. 본 절은 핵심 변수 요약만 제공합니다.
+> **단일 명세**: 환경 변수의 전체 목록·타입·필수 여부·기본값·참조는 [`docs/ops/environment_variables.md`](../ops/environment_variables.md)를 기준으로 합니다. 본 절은 핵심 변수 요약만 제공합니다.
 
 | 변수                | 설명                                      | 기본값                   |
 | ------------------- | ----------------------------------------- | ------------------------ |
@@ -440,7 +440,8 @@ sequenceDiagram
 | `OLLAMA_BASE_URL`   | Ollama 서버 주소                          | `http://localhost:11434` |
 | `GEMMA_MODEL`       | L2 가이드 생성 모델                       | `gemma4-e4b`             |
 | `GOOGLE_API_KEY`    | 4단계 Gemini VLM 캡셔닝(`gemini-2.5-flash-lite`, 오프라인 빌드 전용) 필수 | (미설정) |
-| `EMBEDDING_MODEL`   | 임베딩 모델                               | `nomic-embed-text`       |
+| `EMBEDDING_MODEL`   | 보행 수칙 RAG 임베딩 모델                 | `nomic-embed-text`       |
+| `CONVENIENCE_EMBEDDING_MODEL` | 생활지원 RAG 전용 임베딩 모델   | `bge-m3`                 |
 | `REDIS_URL`         | Redis 연결 URL                            | `redis://localhost:6379` |
 | `CHROMA_PATH`       | ChromaDB persist 디렉토리                 | `data/chroma_db`         |
 | `CHROMA_COLLECTION` | ChromaDB 콜렉션명                         | `safety_guidelines`      |
@@ -463,7 +464,7 @@ sequenceDiagram
 
 > **보안·인증 변수**: `JWT_SECRET_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE`, `ADMIN_BOOTSTRAP_TOKEN`, `APP_ENV`, `ALLOW_STATIC_DEVICE_TOKENS`, `WS_AUTH_TIMEOUT_SECONDS`, `REDIS_PASSWORD`, `DB_PASSWORD`, `ACCESS_TOKEN_EXPIRE_HOURS`, `DEVICE_TOKEN_EXPIRE_DAYS` 등은 보안 민감 변수로 [`docs/ops/environment_variables.md`](../ops/environment_variables.md) §2.5(인증)·§2.1(서버 전체)를 단일 명세로 참조합니다. 본 §10 표는 런타임 동작 핵심 요약만 포함합니다.
 >
-> **불일치 해소 이력**: 2026-06-27 환경 변수 3원화(`.env.example`·본 절·루트 `README.md`)를 단일 명세서로 통합. 상세 내용은 [`docs/environment_variables.md`](environment_variables.md) 4절을 참조.
+> **불일치 해소 이력**: 2026-06-27 환경 변수 3원화(`.env.example`·본 절·루트 `README.md`)를 단일 명세서로 통합. 상세 내용은 [`docs/ops/environment_variables.md`](../ops/environment_variables.md) 4절을 참조.
 
 ---
 
@@ -501,7 +502,7 @@ sequenceDiagram
 | **6단계 (오케스트레이션)** | **LangSmith Trace MCP** | `StateGraph` 내의 노드 전이 및 실행 지연(Latency)을 시각적으로 추적하고 가드레일 위반 시의 재시도 루프를 감시합니다. |
 | **6단계 (오케스트레이션)** | **System / GPU Monitor MCP** | GPU 자원 사용량과 CUDA 메모리 한계를 모니터링하여 로컬 Ollama 모델 부하 임계치 도달 시 OpenAI GPT-4o-mini로의 핫스왑을 제어합니다. |
 | **7단계 (음성 출력)** | **Audio Validator MCP** | 실시간 생성된 음성 안내(WAV 바이너리 WS 프레임)의 샘플 레이트 규격 준수 여부, 오디오 TTFB 및 무음 구간(Silence)을 검증합니다. |
-| **7단계 (음성 출력)** | **Redis Cache Monitor MCP** | 중복 경보 방지를 위한 `suppress:alert_id` 캐시 키와 TTL(`REFLEX_SUPPRESS_TTL_S=5`, surface는 15초)의 정밀 상태를 상시 모니터링하고 관리합니다. |
+| **7단계 (음성 출력)** | **Redis Cache Monitor MCP** | 중복 경보 방지를 위한 `suppress:alert_id` 캐시 키와 TTL(`REFLEX_SUPPRESS_TTL_S=5`, surface는 60초, 2026-07-20 15→30→60초 2차 상향)의 정밀 상태를 상시 모니터링하고 관리합니다. |
 | **7단계 (음성 출력)** | **Accessibility Simulator MCP** | `announceForAccessibility` 텍스트와 실제 재생되는 오디오 파일 간의 의미 정합성을 시각장애인 접근성 관점에서 비교 검증합니다. |
 | **공통 (경보)** | **Slack Notification MCP** | L3 가드레일 최종 실패(Fallback 작동) 및 추론 서버 크리티컬 예외 발생 시 실시간으로 개발팀 채널에 즉시 에러 로그를 전송합니다. |
 
@@ -642,7 +643,7 @@ sequenceDiagram
 
 MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리드 온디바이스-서버 아키텍처**의 구체적 청사진은 별도 문서로 관리한다.
 
-> **상세 설계서**: [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0)
+> **상세 설계서**: [`docs/research/post_mvp_hybrid_roadmap.md`](../research/post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0)
 
 ### 14.1 핵심 개념
 
@@ -666,11 +667,11 @@ MVP(서버 중심 7단계 파이프라인) 완성 후 도입할 **하이브리�
 | **포스트 C** | `Frame Processor`(10fps 로컬 추론) + `setInterval`(2fps 서버 전송) 병행 | 배터리·발열 프로파일링, 오프라인 반사 동작 |
 | **포스트 D** | 단말-서버 알림 중복 조정 (dedupe/debounce/우선순위 머지) | 알림 중복 억제, 온라인 복귀 자동화 |
 
-> 상세 매커니즘, 시나리오 흐름도, 리스크 분석, 환경 변수 추가 예정, 검증 기준은 [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md)를 참조.
+> 상세 매커니즘, 시나리오 흐름도, 리스크 분석, 환경 변수 추가 예정, 검증 기준은 [`docs/research/post_mvp_hybrid_roadmap.md`](../research/post_mvp_hybrid_roadmap.md)를 참조.
 
 ---
 
-## 11. 필드 테스트 개선 (2026-07-17, M1-M7)
+## 15. 필드 테스트 개선 (2026-07-17, M1-M7)
 
 실사용 필드 테스트 피드백 기반 7개 마일스톤 개선. 상세는 [`docs/research/field_test_improvement_plan.md`](../research/field_test_improvement_plan.md).
 

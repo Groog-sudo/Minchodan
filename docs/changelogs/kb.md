@@ -4249,3 +4249,13 @@
   - 노션 포트폴리오 스크립트 및 백업 문서 업데이트
 - **관련 파일**: `.mcp.json`, `docs/changelogs/kb.md`, `docs/portfolio/`, `scripts/notion/`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-28 | 3단계 | doc_consistency_review_fix
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 코드-문서 정합성 검토 8개 이슈 수정: 이중->3중 게이트 표현 통일, ChatOllama->SimpleOllamaClient 오기 정정, Surface TTL 15->60초, base64->바이너리 전송, architecture.md 섹션 번호 중복 해소, 상대경로 링크 8곳 정정, bge-m3 생활지원 RAG 임베딩 이중 명시, validate_agent_rules pre-commit 훅 등록
+- **관련 파일**: `agents/skills/yolo-obstacle-detection/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `.pre-commit-config.yaml`, `AGENTS.md`, `SKILLS.md`, `docs/design/architecture.md`, `docs/design/minchodan_design_note.md`, `docs/design/pipeline_stage_design.md`, `docs/ops/environment_variables.md`, `docs/handoff/2026-07-28_consistency_review_handoff.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.

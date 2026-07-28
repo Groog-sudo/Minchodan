@@ -290,7 +290,7 @@ Slack 경보는 **2개 독립 구현체**가 존재하며, 각각 다른 인증 
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`CONVENIENCE_CHROMA_COLLECTION`** | string | 선택 | `convenience_guide` | 생활지원 RAG 전용 ChromaDB 컬렉션명. 안전 수칙(`safety_guidelines`)과 분리된 생활 정보 검색용 | `server/rag/retriever.py`, `scripts/` |
 | **`CONVENIENCE_CHROMA_PATH`** | path | 선택 | `data/chroma_db/convenience_guidelines` | 생활지원 RAG 전용 ChromaDB persist 디렉토리. `.env.example`에 명시됨 | `server/rag/convenience_rag.py:397,597`, `scripts/build_convenience_db.py:33` |
-| **`CONVENIENCE_EMBEDDING_MODEL`** | string | 선택 | (`EMBEDDING_MODEL` 폴백) | 생활지원 RAG 전용 임베딩 모델 | `server/rag/embedding_engine_factory.py` |
+| **`CONVENIENCE_EMBEDDING_MODEL`** | string | 선택 | `bge-m3` | 생활지원 RAG 전용 임베딩 모델. 코드 기본값 `bge-m3`(`server/rag/convenience_rag.py:438,623`). 보행 수칙 RAG(`EMBEDDING_MODEL=nomic-embed-text`)과 분리. 사전 요건: `ollama pull bge-m3` | `server/rag/embedding_engine_factory.py` |
 | **`CONVENIENCE_EMBEDDING_PROVIDER`** | string | 선택 | (`LLM_PROVIDER` 폴백) | 생활지원 RAG 임베딩 공급자(`ollama`/`openai`) | `server/rag/embedding_engine_factory.py` |
 | **`CONVENIENCE_LLM_PROVIDER`** | string | 선택 | `ollama` | 생활지원 RAG **답변** LLM. `ollama`(기본, 실패 시 Gemini 폴백) / `gemini`(API 우선) / `ollama_only` / `gemini_only` | `server/rag/convenience_rag.py` |
 | **`GEMINI_MODEL`** | string | 선택 | `gemini-2.5-flash-lite` | Gemini 캡셔닝/LLM 모델명. 4단계 RAG 빌드 및 L2 가이드 생성(gemini provider) 시 사용 | `server/rag/build/gemini_captioner.py`, `server/orchestration/llm_client_factory.py` |

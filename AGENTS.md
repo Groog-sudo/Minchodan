@@ -38,7 +38,7 @@
 - Tracking: ByteTrack
 - Vector DB: ChromaDB (로컬 파일 기반, `data/chroma_db/`)
 - LLM Orchestration: LangGraph (LLM 호출 클라이언트는 raw 구현: SimpleOllamaClient/SimpleOpenAIClient/SimpleGeminiClient. LangChain 래퍼(LLMChain 등) 미사용이나, 메시지 스키마는 langchain_core.messages 사용. RAG 검색 계층(server/rag/)은 ChromaDB 래퍼(langchain_community.vectorstores) 사용)
-- Local LLM/Embedding: Ollama (gemma4-e4b, nomic-embed-text), Gemini API (gemini-2.5-flash-lite, 4단계 VLM 캡셔닝 - 최초 계획 로컬 Llava에서 전환)
+- Local LLM/Embedding: Ollama (gemma4-e4b, nomic-embed-text 보행 수칙 RAG 임베딩, bge-m3 생활지원 RAG 임베딩), Gemini API (gemini-2.5-flash-lite, 4단계 VLM 캡셔닝 - 최초 계획 로컬 Llava에서 전환)
 - TTS: Supertonic 3 (기본, ONNX 로컬, MIT 라이선스, 99M 파라미터; 2026-07-09 Piper에서 교체 - 발음 품질 한계 실측 확인. Piper(piper-kss-korean.onnx)는 핫스왑 폴백으로 코드 보존(`TTS_ENGINE=piper`), 최초 계획 Kokoro/Coqui 미구현), edge-tts (한국어 자연도 우선), pyttsx3 (핫스왑 폴백)
 - STT (부가, 음성 명령): faster-whisper (기본 `faster-whisper-small`, 2026-07-11 medium에서 전환 - CPU 폴백 지연 실측 근거; hotwords 바이어싱, 서버 기동 시 프리로드. 단말 온디바이스 STT 미사용)
 - Navigation (부가, GPS 길안내): TMAP 보행자 경로 API + NavigationManager (디바이스별 세션 상태기계, `realtime_gps` 수신 시점 길안내 평가)
@@ -161,8 +161,8 @@
 | 스킬                        | 단계 | 경로                                        | 설명                                                                            |
 | --------------------------- | ---- | ------------------------------------------- | ------------------------------------------------------------------------------- |
 | `websocket-gateway`         | 1    | `.agents/skills/websocket-gateway/`         | FastAPI WebSocket 실시간 통신, Redis Streams                                    |
-| `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), base64 전송                                |
-| `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 이중 게이트 |
+| `camera-frame-capture`      | 2    | `.agents/skills/camera-frame-capture/`      | 이중 캡처(반사 8~10fps/인지 1~2fps), 바이너리(raw JPEG) 전송(base64는 폴백)      |
+| `yolo-obstacle-detection`   | 3    | `.agents/skills/yolo-obstacle-detection/`   | Yolo 26N - Object Detection + Yolo 26N - Segmentation + ByteTrack + 3중 게이트(Reflex + Surface + Head Level) |
 | `rag-knowledge-builder`     | 4    | `.agents/skills/rag-knowledge-builder/`     | Gemini VLM 캡셔닝 + nomic-embed + ChromaDB 오프라인 빌드 (2026-07-07: Llava에서 Gemini로 실제 구현 정정) |
 | `rag-realtime-search`       | 5    | `.agents/skills/rag-realtime-search/`       | similarity_search(k=5) < 50ms, VectorDBFactory                                  |
 | `llm-guidance-orchestrator` | 6    | `.agents/skills/llm-guidance-orchestrator/` | LangGraph L1/L2/L3, LLMClientFactory 핫스왑                                     |

@@ -34,6 +34,20 @@ repos:
         pass_filenames: false
 
   # ==========================================
+  # 다중 에이전트 진입점 정합성 (로컬 훅)
+  # 기준: AGENTS.md §10 Multi-Agent Entry Points
+  # ==========================================
+  - repo: local
+    hooks:
+      - id: validate-agent-rules
+        name: Multi-Agent Entry Points 정합성 검증
+        entry: python3 scripts/validate_agent_rules.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        files: '^(AGENTS\.md|CLAUDE\.md|GEMINI\.md|\.antigravity/rules\.md|\.cursor/rules/.*\.mdc|\.agents/skills/.*|\.claude/skills/.*)$'
+
+  # ==========================================
   # 공통 (모든 단계)
   # ==========================================
   - repo: https://github.com/pre-commit/pre-commit-hooks

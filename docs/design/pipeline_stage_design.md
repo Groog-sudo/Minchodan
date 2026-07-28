@@ -3,7 +3,7 @@
 > **작성일**: 2026-06-24
 > **버전**: v0.3.7 (2026-07-20 코드-문서 정합: 7단계 억제 TTL 5초·TTS 4엔진, Medium hints 유지)
 > **설계 기준**: `docs/minchodan_design_note.md` (7단계 골격, 비전 설계서 v1.1)
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+> **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
 
@@ -135,7 +135,7 @@ graph LR
 
 - **인지**: **2026-07-09 정정** - Supertonic(`TTS_ENGINE=supertonic` 기본값, Piper/pyttsx3/edge-tts 핫스왑, Kokoro/Coqui 미구현) `generate()` **WAV** bytes → WS 바이너리 프레임(base64 미경유) `expo-audio` 상시 재생 웜 플레이어
 - **반사**: 사전합성 고정 클립 `alert_id`로 즉시 재생 (선점, 실시간 합성 금지)
-- 중복 억제 `setex(suppress:{device_id}:{alert_source}:{track_id}:{distance_band}, REFLEX_SUPPRESS_TTL_S=5)` (노면 surface는 `REFLEX_SURFACE_SUPPRESS_TTL_S=15`), 햅틱 연동
+- 중복 억제 `setex(suppress:{device_id}:{alert_source}:{track_id}:{distance_band}, REFLEX_SUPPRESS_TTL_S=5)` (노면 surface는 `REFLEX_SURFACE_SUPPRESS_TTL_S=60`, 2026-07-20 15→30→60초 2차 상향), 햅틱 연동
 
 ---
 

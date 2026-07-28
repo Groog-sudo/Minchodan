@@ -5,7 +5,7 @@
 > **작성일**: 2026-06-23
 > **수정일**: 2026-07-20 (7단계 TTS 구현체 정합: Kokoro/Coqui → Supertonic 3, edge-tts 추가. §3 노면 4클래스 확정 및 Reflex/Surface Gate를 `risk_ssot_contract.md` 기준 class-agnostic으로 갱신)
 > **버전**: v0.2.4
-> **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
+> **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md) (수업 전체 코드베이스 코딩 패턴·함수 시그니처 표준)
 
 ---
 
@@ -153,10 +153,10 @@
 - **선택 이유:** 탐지 유무로 워크플로를 제어하는 상태 그래프가 적합. 로컬 LLM으로 RTT·토큰비용·프라이버시 해결, 성능 부족 시에만 상용 승급.
 - **핵심 절차:** `StateGraph(OrchState)`
   - **L1**: 룰 기반 위험도 분류(high는 이미 즉시 경보 처리됨 / mid·low만 진입)
-  - **L2**: RAG+탐지 결합 프롬프트로 ChatOllama(gemma4-e4b) `ainvoke` — "한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함"
+  - **L2**: RAG+탐지 결합 프롬프트로 SimpleOllamaClient(gemma4-e4b) `ainvoke` — "한국어 1문장, 20자 내, 방향(좌/우/직진/정지) 포함"
   - **L3**: 길이·방향 키워드 검증, 위반 시 L2 RETRY(최대 1회)
   - Fallback/핫스왑: L3 실패율 >10% 또는 `LLM_PROVIDER=openai` 시 gpt-4o-mini 자동 전환; 최종 실패 시 고정 문장("전방 주의, 천천히 멈추세요")
-- **활용 스택·핵심 함수:** LangGraph, LangChain, ChatOllama / `StateGraph()`, `ainvoke()` — _LLMClientFactory(BaseChatModel)로 로컬상용 핫스왑_
+- **활용 스택·핵심 함수:** LangGraph, SimpleOllamaClient(raw 구현, LangChain 래퍼 미사용) / `StateGraph()`, `ainvoke()` — _LLMClientFactory로 로컬/상용 핫스왑_
 - **데이터 인터페이스:** In `OrchState{event, risk_level, rag_context}` Out 가이드 문장(String)
 - **의존성·예외:** 선행=3·5단계. 출력=7단계. **필수 가드:** API 장애/Rate Limit/네트워크 차단 시 디폴트 수칙 문장 즉시 반환(프레임워크 정지 금지).
 - **분업:** 랭체인 숙련 1~2명. 프롬프트 튜닝 집중, 문장 품질은 전원 검토.
@@ -197,14 +197,14 @@
 | 항목           | MVP 잠정          | 대안/승급             |
 | -------------- | ----------------- | --------------------- |
 | Vector DB      | ChromaDB          | Qdrant                |
-| 임베딩         | nomic-embed-text  | gemini-embedding-001  |
+| 임베딩         | nomic-embed-text(보행 수칙) / bge-m3(생활지원) | gemini-embedding-001  |
 | L2 LLM         | gemma4-e4b        | gpt-4o-mini           |
 | On-device 추론 | 없음(thin client) | 반사 레이어(post-MVP) |
 | 통신 프로토콜  | WS·REST·SSE·Redis | WebRTC/gRPC 등        |
 | TTS            | Supertonic(Piper/pyttsx3/edge-tts 핫스왑, 2026-07-09 확정) | Kokoro/Coqui(초기 계획, 미구현) |
 | RDB            | 비동기 SQLAlchemy | MariaDB/PostgreSQL    |
 
-> **On-device 추론 Post-MVP 상세 설계서**: [`docs/post_mvp_hybrid_roadmap.md`](post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0) — 하이브리드 엣지-클라우드 이중 루프, `yolo26n` CoreML/TFLite 포팅, `Frame Processor` 병행 구조, 점진적 전환 4단계(포스트 A~D) 청사진.
+> **On-device 추론 Post-MVP 상세 설계서**: [`docs/research/post_mvp_hybrid_roadmap.md`](../research/post_mvp_hybrid_roadmap.md) (2026-07-01, v0.1.0) — 하이브리드 엣지-클라우드 이중 루프, `yolo26n` CoreML/TFLite 포팅, `Frame Processor` 병행 구조, 점진적 전환 4단계(포스트 A~D) 청사진.
 
 ### C. 학습 환경 전제 (v1.1 C3)
 
