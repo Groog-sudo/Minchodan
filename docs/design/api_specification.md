@@ -1,7 +1,7 @@
 # Minchodan API 명세서
 
 > **작성일**: 2026-06-24
-> **버전**: v0.4.35 (2026-07-20 코드-문서 정합: §4.1 reflex_alert 4개 필드 추가·alert_id class-agnostic 정정, §6.1 인지 guide source 필드, §6.2 status dead contract 표기, §1 contact_save 제거, §4.3 latency_event 필드 한정, §6.3 STT 예시 model_name 정정. 기존 v0.4.34 이력 유지: §6.3 STT 목적지 파서 위치기반 교체, POI 확인 대기 상태 신설, TMAP 키 누락 fail-closed 전환)
+> **버전**: v0.4.36 (2026-07-28: 내비게이션 TMAP API 키 미설정/HTTP 제한 시 3단계 가상 보행자 경로 Mock Route Fallback 추가 및 `MIN_STT_AUDIO_BYTES` 수신 가드 완화 6,000바이트 반영. 기존 v0.4.35 이력 유지)
 > **설계 기준**: `docs/design/minchodan_design_note.md` 1·2·3·7단계 인터페이스
 > **구현 상태**: 1~7단계 전체 구현 완료. `/ws/detect` 핸드셰이크(hello/welcome/auth_ok/heartbeat), detection 페이로드, ack 응답, reflex_alert(사전합성 클립 선점), guide(실시간 TTS WAV), server_detection, realtime_gps, nav_route, distance_probe_sample(LiDAR 검증 전용), network_probe 정합 확인.
 > **코딩 패턴 기준**: [`docs/dev-guides/course_codebase_guide.md`](../dev-guides/course_codebase_guide.md)

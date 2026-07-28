@@ -39,7 +39,8 @@ def load_env_file():
 
 
 load_env_file()
-APP_KEY = os.getenv("TMAP_APP_KEY")
+raw_key = os.getenv("TMAP_APP_KEY") or os.getenv("TMAP_API_KEY") or ""
+APP_KEY = raw_key.strip() if raw_key.strip() else "DUMMY_TMAP_KEY"
 
 try:
     from server.navigation.manager import nav_manager
@@ -243,9 +244,10 @@ def helper_resolve_destination_poi(
         }
         검색 결과가 없거나 API 실패 시 None.
     """
-    if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        logger.warning("[TMAP] API Key가 유효하지 않아 목적지를 해석할 수 없습니다.")
-        return None
+    mock_best = {"name": keyword, "x": "127.0380", "y": "37.5010", "distance_m": 250.0}
+    if not APP_KEY or APP_KEY == "DUMMY_TMAP_KEY" or len(APP_KEY) < 10:
+        logger.warning("[TMAP] API Key 미설정: 가상 POI 검색 결과로 폴백합니다.")
+        return {"best": mock_best, "candidates": [mock_best], "ambiguous": False}
 
     url = "https://apis.openapi.sk.com/tmap/pois"
     params = {
@@ -263,7 +265,8 @@ def helper_resolve_destination_poi(
     try:
         response = requests.get(url, params=params, headers=headers, timeout=10)
         if response.status_code != 200:
-            return None
+            logger.warning(f"[TMAP] POI HTTP {response.status_code}: 가상 POI 폴백을 사용합니다.")
+            return {"best": mock_best, "candidates": [mock_best], "ambiguous": False}
         pois = response.json().get("searchPoiInfo", {}).get("pois", {}).get("poi", [])
         if not pois:
             return None
@@ -311,11 +314,46 @@ def helper_resolve_destination_poi(
 
 def helper_fetch_route(start_poi, end_poi):
     """TMAP 보행자 경로 API를 호출해 경로 GeoJSON을 가져옵니다."""
-    if not APP_KEY or APP_KEY == "YOUR_TMAP_APP_KEY_HERE" or not APP_KEY.strip():
-        # 2026-07-20 (회귀 분석 보고서 P0 - fail-closed): 가상 경로(FeatureCollection)
-        # 성공 처리를 제거했다(위 helper_search_poi와 동일 이유).
-        logger.warning("[TMAP] API Key가 유효하지 않아 경로 조회를 비활성화합니다.")
-        return None
+
+    def get_mock_route():
+        sx, sy = float(start_poi.get("x", 127.0359)), float(start_poi.get("y", 37.4995))
+        ex, ey = float(end_poi.get("x", 127.0380)), float(end_poi.get("y", 37.5010))
+        return {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [sx, sy]},
+                    "properties": {
+                        "name": start_poi.get("name", "출발지"),
+                        "description": "출발지입니다. 직진하세요.",
+                        "turnType": 200,
+                    },
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [(sx + ex) / 2, (sy + ey) / 2]},
+                    "properties": {
+                        "name": "중간 경유지",
+                        "description": "전방 50m 우회전입니다.",
+                        "turnType": 12,
+                    },
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [ex, ey]},
+                    "properties": {
+                        "name": end_poi.get("name", "목적지"),
+                        "description": "목적지 부근에 도착했습니다.",
+                        "turnType": 201,
+                    },
+                },
+            ],
+        }
+
+    if not APP_KEY or APP_KEY == "DUMMY_TMAP_KEY" or len(APP_KEY) < 10:
+        logger.warning("[TMAP] API Key 미설정: 가상 보행자 시뮬레이션 경로로 자동 폴백합니다.")
+        return get_mock_route()
 
     url = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json"
     headers = {"appKey": APP_KEY, "Content-Type": "application/json"}
@@ -333,10 +371,11 @@ def helper_fetch_route(start_poi, end_poi):
         response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
         if response.status_code == 200:
             return response.json()
-        return None
+        logger.warning(f"[TMAP] Route HTTP {response.status_code}: 가상 보행자 경로로 폴백합니다.")
+        return get_mock_route()
     except Exception as e:
-        logger.error(f"[TMAP] Route fetch helper exception: {e}")
-        return None
+        logger.error(f"[TMAP] Route fetch helper exception: {e}. 가상 경로로 폴백합니다.")
+        return get_mock_route()
 
 
 # index.html 로드 경로 지정

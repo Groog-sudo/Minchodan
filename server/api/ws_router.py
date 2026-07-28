@@ -59,7 +59,9 @@ router = APIRouter()
 _LAST_GPS_LOG_TS: dict[str, float] = {}
 _GPS_LOG_INTERVAL_S = 15.0
 
-MIN_STT_AUDIO_BYTES = 11200  # 2026-07-19: ~0.35s @16kHz mono PCM16 (이전 4096은 탭 오탐 통과)
+MIN_STT_AUDIO_BYTES = (
+    6000  # 2026-07-28: 짧은 음성 문의 수용을 위해 11200(~0.35s)에서 6000(~0.18s)으로 완화
+)
 MAX_STT_AUDIO_BYTES = max(1, int(os.getenv("STT_UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))))
 MAX_STT_BASE64_CHARS = ((MAX_STT_AUDIO_BYTES + 2) // 3) * 4 + 4
 _WS_STT_SEMAPHORE = asyncio.Semaphore(max(1, int(os.getenv("STT_MAX_CONCURRENT_REQUESTS", "2"))))
