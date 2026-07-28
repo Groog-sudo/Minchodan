@@ -431,8 +431,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * channels-first dense head 디코드: [1, 4+nc(+32 mask), 8400].
-     * 길이가 맞지 않으면 null을 반환해 legacy 경로로 넘긴다(tfliteDetector.ts와 동일 분기).
+     * channels-first dense head 디코드: [1, 4+nc(+32 mask), numAnchors].
+     * 동적 앵커 수 (640 -> 8400, 416 -> 3549 등) 호환 지원.
      */
     private fun decodeDense(
         out: FloatArray,
@@ -443,16 +443,19 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         val nc = names.size
         val boxAttrs = 4 + nc
         val withMask = boxAttrs + 32
-        if (out.size != boxAttrs * NUM_ANCHORS && out.size != withMask * NUM_ANCHORS) {
-            return null
+
+        val numAnchors = when {
+            out.size % boxAttrs == 0 -> out.size / boxAttrs
+            out.size % withMask == 0 -> out.size / withMask
+            else -> return null
         }
 
         val results = ArrayList<Detection>()
-        for (i in 0 until NUM_ANCHORS) {
+        for (i in 0 until numAnchors) {
             var bestClassId = -1
             var bestScore = -1.0f
             for (c in 0 until nc) {
-                val score = out[(4 + c) * NUM_ANCHORS + i]
+                val score = out[(4 + c) * numAnchors + i]
                 if (score > bestScore) {
                     bestScore = score
                     bestClassId = c
@@ -461,9 +464,9 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             if (bestScore < confThreshold || bestClassId < 0) continue
 
             val cx = out[i] * INPUT_SIZE
-            val cy = out[NUM_ANCHORS + i] * INPUT_SIZE
-            val w = out[2 * NUM_ANCHORS + i] * INPUT_SIZE
-            val h = out[3 * NUM_ANCHORS + i] * INPUT_SIZE
+            val cy = out[numAnchors + i] * INPUT_SIZE
+            val w = out[2 * numAnchors + i] * INPUT_SIZE
+            val h = out[3 * numAnchors + i] * INPUT_SIZE
             if (w <= 1f || h <= 1f) continue
 
             results.add(

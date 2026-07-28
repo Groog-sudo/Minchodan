@@ -42,11 +42,11 @@ def resolve_weights(model_name: str) -> str:
     raise FileNotFoundError(f"가중치 없음: {primary} 또는 {fallback}")
 
 
-def export_one(model_name: str) -> str:
+def export_one(model_name: str, half: bool = True, int8: bool = False, imgsz: int = 640) -> str:
     weights = resolve_weights(model_name)
-    print(f"[INFO] {model_name}: {weights} -> tflite")
+    print(f"[INFO] {model_name}: {weights} -> tflite (half={half}, int8={int8}, imgsz={imgsz})")
     model = YOLO(weights)
-    export_kwargs: dict = {"format": "tflite", "imgsz": 640, "int8": False}
+    export_kwargs: dict = {"format": "tflite", "imgsz": imgsz, "int8": int8, "half": half}
     # detect는 NMS 미포함([1, 4+nc, 8400] channels-first)으로 보낸다.
     # NON_MAX_SUPPRESSION_V4 가 NNAPI/GPU delegate와 비호환이라 JS NMS로 후처리한다.
     # (CoreML iOS 경로는 nms=True 유지 — scripts/export_mobile.py / convert_yolo_to_coreml.py)
@@ -60,7 +60,7 @@ def export_one(model_name: str) -> str:
     target = os.path.join(OUTPUT_DIR, f"{model_name}.tflite")
     if os.path.exists(target):
         os.remove(target)
-    # ultralytics는 종종 *_saved_model/ 디렉터리 + .tflite 파일을 만든다.
+    # ultralytics는 종당 *_saved_model/ 디렉터리 + .tflite 파일을 만든다.
     if os.path.isdir(exported_path):
         candidates = [
             os.path.join(exported_path, name)
@@ -82,13 +82,36 @@ def main() -> int:
         choices=list(MODELS),
         help="변환할 모델 (미지정 시 det+seg 모두)",
     )
+    parser.add_argument(
+        "--half",
+        action="store_true",
+        default=True,
+        help="FP16(half) 정밀도로 TFLite export (기본값: True)",
+    )
+    parser.add_argument(
+        "--fp32",
+        action="store_true",
+        help="FP32(full) 정밀도로 TFLite export",
+    )
+    parser.add_argument(
+        "--int8",
+        action="store_true",
+        help="INT8 정밀도로 TFLite export",
+    )
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="입력 이미지 크기 (기본값: 640)",
+    )
     args = parser.parse_args()
     targets = [args.model] if args.model else list(MODELS)
+    use_half = False if args.fp32 else (args.half and not args.int8)
 
     failed: list[str] = []
     for name in targets:
         try:
-            export_one(name)
+            export_one(name, half=use_half, int8=args.int8, imgsz=args.imgsz)
         except Exception as e:
             print(f"[ERROR] {name}: {e}")
             failed.append(name)
