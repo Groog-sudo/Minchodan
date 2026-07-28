@@ -44,7 +44,12 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
 
     private var detInterpreter: Interpreter? = null
     private var segInterpreter: Interpreter? = null
-    private var gpuDelegate: GpuDelegate? = null
+    // 💡 [면접 대비 주석] 델리게이트는 인터프리터마다 별도 인스턴스를 쓴다 (2026-07-28).
+    // TFLite는 하나의 delegate 인스턴스를 여러 Interpreter에 공유하는 것을 지원하지 않는다.
+    // 초기 구현이 det/seg에 같은 GpuDelegate를 넘겨 seg 쪽이 조용히 CPU로 떨어지거나
+    // 정의되지 않은 동작을 할 여지가 있었다. 사용한 델리게이트는 close() 대상으로 모두 보관한다.
+    private val gpuDelegates = mutableListOf<GpuDelegate>()
+    private var gpuActive = false
 
     @Volatile
     private var isLoaded = false
@@ -122,7 +127,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         Arguments.createMap().apply {
             putBoolean("det", det)
             putBoolean("seg", seg)
-            putString("engine", if (gpuDelegate != null) "TFLite GPU" else "TFLite CPU(XNNPACK)")
+            putString("engine", if (gpuActive) "TFLite GPU(FP16)" else "TFLite CPU(XNNPACK)")
         }
 
     /** GPU delegate로 먼저 시도하고 실패하면 CPU로 재시도한다(부분 실패가 전체 실패가 되지 않게). */
@@ -136,14 +141,29 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
 
         if (useGpu) {
             try {
-                val delegate = gpuDelegate ?: GpuDelegate().also { gpuDelegate = it }
-                return Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
+                // precisionLossAllowed=true: FP32 가중치를 GPU에서 FP16으로 연산한다.
+                // iOS는 CoreML FP16+ANE로 det 6~14ms인데 Android는 FP32 GPU에서 42~52ms였다
+                // (2026-07-28 실측, 약 3~7배 격차). 모델 재export 없이 얻을 수 있는 가장 큰 지렛대.
+                // SUSTAINED_SPEED: 단발 지연보다 연속 추론 처리량을 우선한다(보행 중 상시 추론).
+                val options = GpuDelegate.Options().apply {
+                    setPrecisionLossAllowed(true)
+                    setInferencePreference(
+                        GpuDelegate.Options.INFERENCE_PREFERENCE_SUSTAINED_SPEED
+                    )
+                }
+                val delegate = GpuDelegate(options)
+                val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
+                gpuDelegates.add(delegate)
+                gpuActive = true
+                Log.i(TAG, "$assetName GPU delegate(FP16, sustained) 적용")
+                return interpreter
             } catch (e: Throwable) {
                 Log.w(TAG, "$assetName GPU delegate 실패, CPU 폴백: ${e.message}")
             }
         }
 
         return try {
+            Log.i(TAG, "$assetName CPU(XNNPACK, threads=$CPU_THREADS) 적용")
             Interpreter(buffer, Interpreter.Options().setNumThreads(CPU_THREADS))
         } catch (e: Throwable) {
             Log.e(TAG, "$assetName CPU 인터프리터 생성 실패: ${e.message}")
@@ -538,8 +558,15 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         detInterpreter = null
         segInterpreter?.close()
         segInterpreter = null
-        gpuDelegate?.close()
-        gpuDelegate = null
+        for (delegate in gpuDelegates) {
+            try {
+                delegate.close()
+            } catch (e: Throwable) {
+                Log.w(TAG, "GPU delegate close 실패: ${e.message}")
+            }
+        }
+        gpuDelegates.clear()
+        gpuActive = false
     }
 
     private data class Detection(

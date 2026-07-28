@@ -4452,3 +4452,13 @@
   - 장시간 가동 성능 저하 조사 - 반사 클립 플레이어 누수, network_probe 무한 누적, near 클립 track Set 무한 증가 3건 수정
 - **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/services/audioEngine.ts`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
+
+---
+
+### 2026-07-28 | 3단계 | gpu_delegate_separation_and_fp16
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 델리게이트 인스턴스 분리 및 GPU FP16 연산 적용
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`
+- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
