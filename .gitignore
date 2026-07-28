@@ -400,3 +400,7 @@ docker/docker-compose.subnet-override.local.yml
 
 # local admin bootstrap credentials (never commit)
 .admin_bootstrap_credentials.local
+
+# INT8 캘리브레이션 생성물 (scripts/build_int8_calibration_set.py 산출)
+# 실사용자 촬영 프레임과 로컬 절대경로가 담긴 자동 생성 자산이므로 추적하지 않는다.
+data/int8_calibration/

@@ -517,6 +517,27 @@ det 0.78~6.04ms로 iOS를 능가했으나 **BBox가 전부 깨졌다.** 원인�
 
 > 실제 성능 해법은 해상도 축소가 아니라 **모델 FP16 재export**였다(640 유지, 12.3MB → 6.2MB, det 38.9ms → 31.9~43.7ms). `scripts/export_tflite.py`에 `--half`/`--int8`/`--imgsz` 플래그가 추가되어 있으므로 다음 단계인 INT8 실험은 바로 돌릴 수 있다.
 
+### 6.6 INT8 양자화 + NNAPI(HTP) → 기각 (2026-07-28)
+§5.13 이후 남은 유일한 지렛대였던 "INT8로 HTP(NPU)에 올린다"를 끝까지 실행해 실측했다. **FP16 GPU 대비 5.3배 느려 기각한다.**
+
+| 구간(중앙값) | **FP16 GPU (현행)** | INT8 + NNAPI | 배율 |
+| :--- | ---: | ---: | ---: |
+| `prep` | **1.93ms** | 5.87ms | 3.04x |
+| **`det_run`** | **27.70ms** | **145.97ms** | **5.27x** |
+| `det_decode` | **0.51ms** | 12.55ms | 24.61x |
+| `total` | **34.83ms** | 186.03ms | 5.34x |
+| 45초 샘플 수 | 256 | 79 | — |
+
+`det_run`은 최소 44.8ms / 최대 471.8ms로 편차도 극심했다. NNAPI가 그래프를 잘게 쪼개 일부만 가속기에 올리고 나머지를 CPU로 되돌리는 전형적인 패턴으로 보이나, NNAPI 내부 파티션 로그는 verbose 빌드가 아니면 나오지 않아 HTP 실제 배정 여부는 확인하지 못했다.
+
+**2026-07-28 NNAPI 실측은 이로써 두 번째다.** §6.3(FP32, det ~235ms)과 본 절(INT8, det 146ms) 모두 GPU에 크게 못 미쳤다. **이 단말에서 NNAPI 경로는 정밀도와 무관하게 기각한다.** 추가 시도는 Qualcomm QNN SDK를 직접 붙여 HTP에 명시 배정하는 방식으로만 의미가 있다.
+
+정확도는 **측정하지 못했다.** 학습·검증 데이터셋이 macOS 개발기에 없다(`training/configs/*.yaml`이 Windows 경로를 가리킴). 속도가 이미 5배 나빠 채택 여지가 없어 mAP 검증까지 가지 않았다. 참고로 출력 양자화 스케일이 0.00415이므로 정규화 좌표 기준 640px에서 **약 2.7px 격자**로 좌표가 뭉개지고 신뢰도 해상도도 0.004 단위가 된다 — 볼라드·폴 같은 원거리 소형 객체에는 불리한 조건이다.
+
+**남긴 것**: 브릿지의 int8 I/O 지원과 dtype 기반 델리게이트 분기는 **코드에 유지했다**(`QuantSpec`, `probeIsInt8`, `pixelsToInt8HwcBuffer`). float 모델에서는 완전히 비활성이며, QNN 등으로 HTP에 재도전할 때 그대로 쓸 수 있다. 다만 **INT8 경로의 탐지 정확도(BBox 좌표 정합성 포함)는 검증하지 않았다** — 적재·실행이 된다는 것까지만 확인됐다.
+
+**재현 도구**: `scripts/build_int8_calibration_set.py`(실촬영 195장 + 검증 105장으로 300장 조립, 의사 라벨 생성) + `scripts/export_tflite.py --int8 --data <yaml> --out-suffix _int8`. export 소요 약 26.5분. ultralytics가 최종 배치하는 `_int8.tflite`는 **float32 I/O + int8 가중치** 변형이므로, end-to-end int8이 필요하면 `*_saved_model/*_full_integer_quant.tflite`를 직접 가져와야 한다.
+
 ### 6.5 det/seg 병렬화 → 두 변형 모두 되돌림 (2026-07-28)
 §5.13에서 병목이 `interpreter.run()`으로 확인된 뒤, seg가 도는 프레임의 `total`이 `det 27.7 + seg 35.0 = 65ms`대로 튀는 것을 없애려 두 가지를 실측했다. seg 전용 `HandlerThread`를 추가하고 seg 결과를 기다리지 않는(fire-and-forget) 구조는 공통이며, 차이는 seg의 배치 위치다.
 

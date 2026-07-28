@@ -4579,3 +4579,16 @@
 - **관련 파일**: `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: 실기기(Xiaomi 12) 3회 실측(A 256샘플 / B 217샘플 / C 187샘플). 코드는 `git checkout`으로 6fa8093 상태 복구.
 - **비고**: 유일한 개선 지표는 B의 total p90(69.6 → 51.8ms)이며 이는 배치 변경이 아니라 seg를 프레임 응답에서 분리한 효과다. **INT8 + HTP로 seg를 NPU에 올릴 수 있게 되면 비동기 구조는 재시도 가치가 있다.**
+
+---
+
+### 2026-07-28 | 3단계 | android_int8_quantization_nnapi_htp_rejected
+
+- **커밋**: `perf(client/android): INT8 양자화 + NNAPI(HTP) 실측 및 기각, int8 I/O 브릿지 지원 추가`
+- **변경 내용**:
+  - `scripts/export_tflite.py`: `--data`(INT8 시 필수 강제)·`--out-suffix` 추가. data 없이 내보내면 ultralytics가 coco8을 내려받아 캘리브레이션하는데 보도 29클래스와 분포가 달라 양자화 스케일이 어긋난다. 이제 누락 시 이유를 설명하며 실패한다.
+  - `scripts/build_int8_calibration_set.py` 신규: 실촬영 195장(`data/event_frames` 171 + `seg_compare_real` 24) + `validation_samples` 105장으로 300장 조립. ultralytics 로더가 "라벨 전부 비어 있음"을 오류 처리하므로 원본 `.pt`로 의사 라벨 생성(det 254/300, seg 95/300). det/seg 라벨 경로 충돌을 피하려 태스크별 루트 분리.
+  - `TFLiteInferenceBridgeModule.kt`: INT8 full-integer 모델 지원. `QuantSpec`(모델별 양자화 규격), `probeIsInt8`(델리게이트 선택 전 dtype 사전 판별), `pixelsToInt8HwcBuffer`(입력 양자화), int8 출력 벌크 역양자화, dtype 기반 델리게이트 분기(INT8 → NNAPI, float → GPU) 추가.
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `scripts/export_tflite.py`, `scripts/build_int8_calibration_set.py`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 실기기(Xiaomi 12) 45초 실측 79샘플. **INT8+NNAPI가 FP16 GPU 대비 5.3배 느려 기각** — `det_run` 27.70 → 145.97ms(편차 44.8~471.8ms), `total` 34.83 → 186.03ms. 배포본은 FP16으로 원복(해시 대조 확인). `compileDebugKotlin` BUILD SUCCESSFUL, `ruff check` 통과.
+- **비고**: 2026-07-28 NNAPI 실측은 이번이 두 번째다(§6.3 FP32 235ms, §6.6 INT8 146ms). **이 단말에서 NNAPI는 정밀도와 무관하게 기각**하며, 추가 시도는 Qualcomm QNN SDK로 HTP에 명시 배정하는 방식만 의미가 있다. 정확도(mAP)는 학습·검증 데이터셋이 macOS 개발기에 없어 측정하지 못했고, 속도가 이미 5배 나빠 검증까지 가지 않았다. **브릿지의 int8 I/O 지원은 코드에 유지**했으나(float 모델에서는 완전 비활성) INT8 경로의 탐지 정확도는 미검증이다.

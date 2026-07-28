@@ -13,8 +13,10 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.DataType
 import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -49,7 +51,9 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     // 초기 구현이 det/seg에 같은 GpuDelegate를 넘겨 seg 쪽이 조용히 CPU로 떨어지거나
     // 정의되지 않은 동작을 할 여지가 있었다. 사용한 델리게이트는 close() 대상으로 모두 보관한다.
     private val gpuDelegates = mutableListOf<GpuDelegate>()
+    private val nnApiDelegates = mutableListOf<NnApiDelegate>()
     private var gpuActive = false
+    private var engineLabel = "CPU(XNNPACK)"
 
     @Volatile
     private var isLoaded = false
@@ -91,6 +95,43 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     private val detOutScratch = OutputScratch()
     private val segOutScratch = OutputScratch()
 
+    // 💡 [면접 대비 주석] INT8 full-integer 양자화 모델 지원 (2026-07-28).
+    // FP16 export는 내부만 반정밀도로 두고 입출력은 float32를 유지하지만, HTP(NPU)를
+    // 노린 full_integer_quant는 입출력 텐서 자체가 int8이다. float32 버퍼를 그대로
+    // 넘기면 형 불일치로 실패하므로, 모델별 양자화 파라미터를 읽어 입력은 양자화하고
+    // 출력은 역양자화한다. 이 정보는 모델마다 다르므로(det만 INT8, seg는 FP16 같은
+    // 혼용이 가능하다) 인터프리터별로 보관한다.
+    private var detQuant = QuantSpec.FLOAT
+    private var segQuant = QuantSpec.FLOAT
+
+    // int8 입력용 버퍼. float32 대비 1/4 크기(640*640*3 바이트)다.
+    private val int8InputBuffer: ByteBuffer = ByteBuffer
+        .allocateDirect(INPUT_SIZE * INPUT_SIZE * 3)
+        .order(ByteOrder.nativeOrder())
+
+    /** 모델 입출력 텐서의 양자화 규격. */
+    private class QuantSpec(
+        val inputIsInt8: Boolean,
+        val inputScale: Float,
+        val inputZeroPoint: Int,
+        val outputIsInt8: Boolean,
+        val outputScale: Float,
+        val outputZeroPoint: Int
+    ) {
+        /**
+         * 0~255 픽셀값을 곧바로 int8 양자화값으로 바꾸는 계수.
+         * 원식은 q = round((p/255) / scale) + zp 이므로 계수는 1 / (255 * scale)이다.
+         * ultralytics full_integer_quant는 scale이 정확히 1/255, zp가 -128로 나와
+         * 실제로는 q = p - 128 한 번의 뺄셈으로 끝난다.
+         */
+        val inputMultiplier: Float =
+            if (inputIsInt8 && inputScale > 0f) 1f / (255f * inputScale) else 0f
+
+        companion object {
+            val FLOAT = QuantSpec(false, 0f, 0, false, 0f, 0)
+        }
+    }
+
     // decodeDense의 앵커별 최대 점수 누산용. det/seg 모두 NUM_ANCHORS 고정이라 공유한다.
     private val bestScorePerAnchor = FloatArray(NUM_ANCHORS)
     private val bestClassPerAnchor = IntArray(NUM_ANCHORS)
@@ -99,16 +140,18 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     private class OutputScratch {
         private var buffer: ByteBuffer? = null
         private var floats: FloatArray? = null
+        private var rawBytes: ByteArray? = null
 
         // TFLite는 출력 ByteBuffer 크기가 텐서 바이트 수와 정확히 일치할 것을 요구하므로
-        // "충분히 큼"이 아니라 정확 일치일 때만 재사용한다.
-        fun buffer(length: Int): ByteBuffer {
+        // "충분히 큼"이 아니라 정확 일치일 때만 재사용한다. int8 출력은 요소당 1바이트다.
+        fun buffer(length: Int, bytesPerElement: Int): ByteBuffer {
+            val bytes = length * bytesPerElement
             val cur = buffer
-            if (cur != null && cur.capacity() == length * 4) {
+            if (cur != null && cur.capacity() == bytes) {
                 cur.clear()
                 return cur
             }
-            val next = ByteBuffer.allocateDirect(length * 4).order(ByteOrder.nativeOrder())
+            val next = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
             buffer = next
             return next
         }
@@ -118,6 +161,15 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             if (cur != null && cur.size == length) return cur
             val next = FloatArray(length)
             floats = next
+            return next
+        }
+
+        /** int8 출력을 벌크로 받아둘 바이트 배열(역양자화 전 단계). */
+        fun bytes(length: Int): ByteArray {
+            val cur = rawBytes
+            if (cur != null && cur.size == length) return cur
+            val next = ByteArray(length)
+            rawBytes = next
             return next
         }
     }
@@ -145,6 +197,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
 
             detInterpreter = createInterpreter(DET_ASSET, useGpu)
             segInterpreter = createInterpreter(SEG_ASSET, useGpu)
+            detQuant = readQuantSpec(detInterpreter, "object_detection")
+            segQuant = readQuantSpec(segInterpreter, "segmentation")
             isLoaded = detInterpreter != null || segInterpreter != null
 
             if (!isLoaded) {
@@ -154,7 +208,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
 
             Log.i(
                 TAG,
-                "모델 로드 완료 det=${detInterpreter != null} seg=${segInterpreter != null} gpu=$useGpu"
+                "모델 로드 완료 det=${detInterpreter != null} seg=${segInterpreter != null} " +
+                    "gpu=$useGpu engine=$engineLabel"
             )
             promise.resolve(statusMap(detInterpreter != null, segInterpreter != null))
         } catch (e: Throwable) {
@@ -167,16 +222,103 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         Arguments.createMap().apply {
             putBoolean("det", det)
             putBoolean("seg", seg)
-            putString("engine", if (gpuActive) "TFLite GPU(FP16)" else "TFLite CPU(XNNPACK)")
+            putString("engine", "TFLite $engineLabel")
         }
 
-    /** GPU delegate로 먼저 시도하고 실패하면 CPU로 재시도한다(부분 실패가 전체 실패가 되지 않게). */
+    /** 인터프리터의 입출력 텐서에서 양자화 규격을 읽는다. float 모델이면 FLOAT을 돌려준다. */
+    private fun readQuantSpec(interpreter: Interpreter?, label: String): QuantSpec {
+        if (interpreter == null) return QuantSpec.FLOAT
+        return try {
+            val inTensor = interpreter.getInputTensor(0)
+            val outTensor = interpreter.getOutputTensor(0)
+            val inInt8 = inTensor.dataType() == DataType.INT8
+            val outInt8 = outTensor.dataType() == DataType.INT8
+            if (!inInt8 && !outInt8) {
+                Log.i(TAG, "$label 입출력 float32 (양자화 변환 없음)")
+                return QuantSpec.FLOAT
+            }
+            val inParams = inTensor.quantizationParams()
+            val outParams = outTensor.quantizationParams()
+            Log.i(
+                TAG,
+                "$label INT8 양자화 감지 - 입력(scale=${inParams.scale}, zp=${inParams.zeroPoint}) " +
+                    "출력(scale=${outParams.scale}, zp=${outParams.zeroPoint})"
+            )
+            QuantSpec(
+                inputIsInt8 = inInt8,
+                inputScale = inParams.scale,
+                inputZeroPoint = inParams.zeroPoint,
+                outputIsInt8 = outInt8,
+                outputScale = outParams.scale,
+                outputZeroPoint = outParams.zeroPoint
+            )
+        } catch (e: Throwable) {
+            Log.w(TAG, "$label 양자화 규격 조회 실패, float로 진행: ${e.message}")
+            QuantSpec.FLOAT
+        }
+    }
+
+    /**
+     * 모델이 INT8 양자화본인지 델리게이트 선택 전에 미리 확인한다.
+     *
+     * 델리게이트 선택이 dtype에 달려 있는데(INT8은 GPU가 아니라 NNAPI/HTP로 가야 한다),
+     * dtype은 인터프리터를 만들어야 읽을 수 있다. 델리게이트 없는 가벼운 인터프리터를
+     * 한 번 만들어 확인하고 즉시 닫는다. 로드 시 1회 비용이라 런타임에는 영향이 없다.
+     */
+    private fun probeIsInt8(assetName: String): Boolean = try {
+        val probeBuffer = loadModelBuffer(assetName)
+        Interpreter(probeBuffer, Interpreter.Options().setNumThreads(1)).use {
+            it.getInputTensor(0).dataType() == DataType.INT8
+        }
+    } catch (e: Throwable) {
+        Log.w(TAG, "$assetName INT8 사전 판별 실패, float 가정: ${e.message}")
+        false
+    }
+
+    /**
+     * 델리게이트를 골라 인터프리터를 만든다. 부분 실패가 전체 실패가 되지 않도록 단계 폴백한다.
+     *
+     * 💡 [면접 대비 주석] 모델 정밀도에 따라 가속기를 달리 고른다 (2026-07-28).
+     * TFLite GPU 델리게이트는 float 연산에 맞춰져 있어 int8 모델을 제대로 가속하지 못한다.
+     * 반대로 Snapdragon HTP(NPU)는 int8에서 이득이 나는 구조라, 2026-07-28에 FP32 모델로
+     * NNAPI를 시험했을 때 det ~235ms로 GPU(38.9ms)보다 6배 느렸다(핸드오프 6.3).
+     * 그래서 INT8 모델일 때만 NNAPI를 1순위로 쓰고, float 모델은 기존대로 GPU를 쓴다.
+     */
     private fun createInterpreter(assetName: String, useGpu: Boolean): Interpreter? {
+        val isInt8 = probeIsInt8(assetName)
         val buffer = try {
             loadModelBuffer(assetName)
         } catch (e: Throwable) {
             Log.e(TAG, "$assetName 자산 로드 실패: ${e.message}")
             return null
+        }
+
+        if (isInt8) {
+            try {
+                val options = NnApiDelegate.Options().apply {
+                    setExecutionPreference(
+                        NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED
+                    )
+                    setAllowFp16(true)
+                }
+                val delegate = NnApiDelegate(options)
+                val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
+                nnApiDelegates.add(delegate)
+                engineLabel = "NNAPI(NPU INT8)"
+                Log.i(TAG, "$assetName NNAPI delegate(INT8, sustained) 적용")
+                return interpreter
+            } catch (e: Throwable) {
+                Log.w(TAG, "$assetName NNAPI delegate 실패, CPU 폴백: ${e.message}")
+            }
+            // INT8은 GPU를 건너뛰고 바로 CPU로 간다. XNNPACK은 int8 커널을 갖추고 있다.
+            return try {
+                engineLabel = "CPU(XNNPACK INT8)"
+                Log.i(TAG, "$assetName CPU(XNNPACK INT8, threads=$CPU_THREADS) 적용")
+                Interpreter(buffer, Interpreter.Options().setNumThreads(CPU_THREADS))
+            } catch (e: Throwable) {
+                Log.e(TAG, "$assetName CPU 인터프리터 생성 실패: ${e.message}")
+                null
+            }
         }
 
         if (useGpu) {
@@ -195,6 +337,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
                 gpuDelegates.add(delegate)
                 gpuActive = true
+                engineLabel = "GPU(FP16)"
                 Log.i(TAG, "$assetName GPU delegate(FP16, sustained) 적용")
                 return interpreter
             } catch (e: Throwable) {
@@ -255,7 +398,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 val prepStart = System.nanoTime()
                 val input = pixelsToNormalizedHwcBuffer(pixels)
                 val prepMs = (System.nanoTime() - prepStart) / 1_000_000.0
-                runBothAndResolve(input, prepMs, promise)
+                runBothAndResolve(pixels, input, prepMs, promise)
             } catch (e: Throwable) {
                 Log.e(TAG, "detectFrameCached 실패: ${e.message}", e)
                 promise.reject("EXEC_ERROR", "추론 실행 오류: ${e.message}", e)
@@ -281,9 +424,10 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                     return@post
                 }
 
-                val input = toNormalizedHwcBuffer(bitmap)
+                val pixels = bitmapToSquarePixels(bitmap)
+                val input = pixelsToNormalizedHwcBuffer(pixels)
                 val prepMs = (System.nanoTime() - prepStart) / 1_000_000.0
-                runBothAndResolve(input, prepMs, promise)
+                runBothAndResolve(pixels, input, prepMs, promise)
             } catch (e: Throwable) {
                 Log.e(TAG, "detectFrame 실패: ${e.message}", e)
                 promise.reject("EXEC_ERROR", "추론 실행 오류: ${e.message}", e)
@@ -293,16 +437,25 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    private fun runBothAndResolve(input: ByteBuffer, prepMs: Double, promise: Promise) {
+    private fun runBothAndResolve(
+        pixels: IntArray,
+        floatInput: ByteBuffer,
+        prepMs: Double,
+        promise: Promise
+    ) {
         try {
+            // det와 seg는 정밀도가 다를 수 있다(예: det만 INT8 실험본). 모델별로 규격에
+            // 맞는 입력 버퍼를 고른다. float 모델끼리는 같은 버퍼를 그대로 공유한다.
+            val detInput = inputFor(pixels, detQuant, floatInput)
             val detRun = runModel(
                 detInterpreter,
-                input,
+                detInput,
                 AIHUB_CLASS_NAMES,
                 DET_CONF_THRESHOLD,
                 LEGACY_DET_ATTRS,
                 "object_detection",
-                detOutScratch
+                detOutScratch,
+                detQuant
             )
             val det = detRun.detections
             val detMs = detRun.runMs + detRun.decodeMs
@@ -325,15 +478,17 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             var segDecodeMs = 0.0
             val seg: List<Detection>
             if (runSeg) {
-                input.rewind()
+                val segInput = inputFor(pixels, segQuant, floatInput)
+                segInput.rewind()
                 val segRun = runModel(
                     segInterpreter,
-                    input,
+                    segInput,
                     SEG_CLASS_NAMES,
                     SEG_CONF_THRESHOLD,
                     LEGACY_SEG_ATTRS,
                     "segmentation",
-                    segOutScratch
+                    segOutScratch,
+                    segQuant
                 )
                 seg = segRun.detections
                 segRunMs = segRun.runMs
@@ -383,7 +538,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
      * 프레임 프로세서(ReflexFrameProcessorPlugin)가 이미 640x640 정사각으로 크롭·스케일해
      * 보내므로 대개 리사이즈가 생략된다. 그렇지 않은 입력은 센터 크롭 후 스케일한다.
      */
-    private fun toNormalizedHwcBuffer(src: Bitmap): ByteBuffer {
+    private fun bitmapToSquarePixels(src: Bitmap): IntArray {
         val square = if (src.width == INPUT_SIZE && src.height == INPUT_SIZE) {
             src
         } else {
@@ -400,7 +555,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         square.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
         if (square !== src) square.recycle()
 
-        return pixelsToNormalizedHwcBuffer(pixels)
+        return pixels
     }
 
     /**
@@ -429,6 +584,36 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
+     * ARGB IntArray → HWC RGB int8 다이렉트 버퍼 (full-integer 양자화 모델용).
+     *
+     * q = round((p/255) / scale) + zp 를 계수 하나로 접어 q = round(p * mul) + zp로 계산한다.
+     * ultralytics full_integer_quant는 scale=1/255, zp=-128로 나오므로 mul이 정확히 1이 되어
+     * 사실상 q = p - 128 이다. float32 경로(123만 회 float 쓰기)보다 오히려 싸다.
+     */
+    private fun pixelsToInt8HwcBuffer(pixels: IntArray, spec: QuantSpec): ByteBuffer {
+        val buffer = int8InputBuffer
+        buffer.rewind()
+        val mul = spec.inputMultiplier
+        val zp = spec.inputZeroPoint
+        for (pixel in pixels) {
+            buffer.put(quantizeChannel((pixel shr 16) and 0xFF, mul, zp))
+            buffer.put(quantizeChannel((pixel shr 8) and 0xFF, mul, zp))
+            buffer.put(quantizeChannel(pixel and 0xFF, mul, zp))
+        }
+        buffer.rewind()
+        return buffer
+    }
+
+    private fun quantizeChannel(value: Int, mul: Float, zeroPoint: Int): Byte {
+        val q = (value * mul).roundToInt() + zeroPoint
+        return q.coerceIn(-128, 127).toByte()
+    }
+
+    /** 모델 규격에 맞는 입력 버퍼를 고른다. */
+    private fun inputFor(pixels: IntArray, spec: QuantSpec, floatBuffer: ByteBuffer): ByteBuffer =
+        if (spec.inputIsInt8) pixelsToInt8HwcBuffer(pixels, spec) else floatBuffer
+
+    /**
      * 모델 1회 실행 결과와 구간별 지연.
      *
      * 💡 [면접 대비 주석] run/decode 분리 계측 (2026-07-28).
@@ -451,13 +636,14 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         confThreshold: Float,
         legacyAttrs: Int,
         label: String,
-        scratch: OutputScratch
+        scratch: OutputScratch,
+        spec: QuantSpec
     ): ModelRun {
         if (interpreter == null) return ModelRun(emptyList(), 0.0, 0.0)
         return try {
             val outTensor = interpreter.getOutputTensor(0)
             val outLength = outTensor.shape().fold(1) { acc, d -> acc * d }
-            val outBuffer = scratch.buffer(outLength)
+            val outBuffer = scratch.buffer(outLength, if (spec.outputIsInt8) 1 else 4)
 
             val runStart = System.nanoTime()
             interpreter.run(input, outBuffer)
@@ -466,7 +652,21 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             val decodeStart = System.nanoTime()
             outBuffer.rewind()
             val out = scratch.floats(outLength)
-            outBuffer.asFloatBuffer().get(out)
+            if (spec.outputIsInt8) {
+                // 역양자화: f = (q - zp) * scale. dense head 디코드는 float 입력을 전제한다.
+                // 다이렉트 ByteBuffer를 get(i)로 요소마다 읽으면 호출당 경계 검사가 붙어
+                // 277,200개 기준 12.5ms까지 나왔다(2026-07-28 실측). 바이트 배열로 한 번에
+                // 벌크 복사한 뒤 JVM 힙에서 변환한다(입력 버퍼 최적화와 같은 접근).
+                val bytes = scratch.bytes(outLength)
+                outBuffer.get(bytes, 0, outLength)
+                val scale = spec.outputScale
+                val zp = spec.outputZeroPoint
+                for (i in 0 until outLength) {
+                    out[i] = (bytes[i] - zp) * scale
+                }
+            } else {
+                outBuffer.asFloatBuffer().get(out)
+            }
             val detections = decodeDense(out, names, confThreshold, label)
                 ?: decodeLegacy(out, names, confThreshold, legacyAttrs, label)
             val decodeMs = (System.nanoTime() - decodeStart) / 1_000_000.0
@@ -646,6 +846,14 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         detInterpreter = null
         segInterpreter?.close()
         segInterpreter = null
+        for (delegate in nnApiDelegates) {
+            try {
+                delegate.close()
+            } catch (e: Throwable) {
+                Log.w(TAG, "NNAPI delegate close 실패: ${e.message}")
+            }
+        }
+        nnApiDelegates.clear()
         for (delegate in gpuDelegates) {
             try {
                 delegate.close()
