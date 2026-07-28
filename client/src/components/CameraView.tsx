@@ -95,6 +95,10 @@ const JS_DECODE_DETECT_MIN_INTERVAL_MS = 500;
 // STT 마이크 권한 재확인 최소 간격. 권한 다이얼로그 -> 액티비티 pause/resume ->
 // 재요청으로 이어지는 자가 순환을 끊기 위한 하한(2026-07-28).
 const STT_PERMISSION_RECHECK_MIN_MS = 10000;
+// 온디바이스 오버레이 우선 유지 시간(2026-07-28). 온디바이스 추론이 이 시간 안에
+// 결과를 냈으면 더 느린 서버 결과로 화면을 덮지 않는다. 온디바이스 갱신 주기가
+// 실측 약 300ms이므로 2회분 여유를 둔다.
+const ONDEVICE_OVERLAY_HOLD_MS = 700;
 
 // 2026-07-11 LiDAR 실거리 프로브(프로토타입) 샘플링 지점: 세로 화면 정규화 좌표.
 // bbox 휴리스틱 거리의 기준점(중앙/하단)과 대응시켜 줄자 실측 대조가 쉽게 한다.
@@ -955,9 +959,53 @@ export function CameraView() {
       setLastDetect(`서버추론: 안전 (${lastMessage.decode_ms ?? 0}ms)`);
     } else if (lastMessage.type === "server_detection") {
       const serverDets = lastMessage.detections ?? [];
+      // [TEMP DIAG 2026-07-28b] BBox가 뒤늦게 붙는 체감의 원인 계측.
+      // event_id는 `event-<device>-<stream>-<캡처 Date.now()>` 형식이므로 끝의 ts로
+      // "이 화면에 그려지는 bbox가 몇 ms 전 프레임의 것인지"를 직접 잴 수 있다.
+      {
+        const idTs = Number(String(lastMessage.event_id ?? "").split("-").pop());
+        if (Number.isFinite(idTs) && idTs > 0) {
+          const d = frameDiagRef.current;
+          d.serverDetLagSum += Date.now() - idTs;
+          d.serverDetCount += 1;
+        }
+      }
       // 서버가 mock 탐지기이거나 해당 프레임에서 무탐지인 경우 빈 배열을
       // 수신하더라도, 온디바이스 결과를 지워 BBox가 사라지지 않게 한다.
-      if (serverDets.length > 0) setDetections(serverDets);
+      //
+      // 💡 [면접 대비 주석] 화면 BBox의 출처 선택 기준 (2026-07-28).
+      //
+      // 1차 시도는 "서버 결과의 프레임 시각이 최신일 때만 채택"이었으나 실측에서 거의
+      // 걸러지지 않았다(30건 중 2~11건). handleFrame은 모든 프레임(8.7fps)을 서버로
+      // 보내지만 온디바이스 추론은 3.3회/초만 돌므로, 서버는 온디바이스가 건너뛴 프레임을
+      // 처리한다. 그 결과의 "프레임 시각"은 실제로 더 최신이라 stale이 아니다.
+      //
+      // 체감 지연을 좌우하는 것은 프레임 시각이 아니라 **표시 시점의 나이**다.
+      // 실측: 서버 결과가 화면에 닿을 때 나이 325~436ms, 온디바이스는 222~268ms.
+      // 즉 온디바이스가 살아 있는 동안에는 서버 결과를 반영할수록 화면이 뒤처진다.
+      //
+      // 따라서 온디바이스 추론이 최근에 결과를 낸 동안에는 서버 결과로 덮지 않는다.
+      // 서버 결과는 온디바이스가 죽었거나(모델 미적재·폴백 실패) 갱신이 끊긴 경우의
+      // 폴백으로만 쓴다. 서버 탐지 자체는 인지 경로·로깅에 그대로 사용되며, 여기서
+      // 막는 것은 "화면 오버레이 덮어쓰기"뿐이다.
+      {
+        const serverFrameTs = Number(String(lastMessage.event_id ?? "").split("-").pop());
+        const onDeviceFresh =
+          lastOnDeviceAppliedAtRef.current > 0 &&
+          Date.now() - lastOnDeviceAppliedAtRef.current < ONDEVICE_OVERLAY_HOLD_MS;
+        const isStale = onDeviceFresh;
+        const d = frameDiagRef.current;
+        if (serverDets.length > 0 && !isStale) {
+          setDetections(serverDets);
+          d.srvApplied += 1;
+          if (Number.isFinite(serverFrameTs) && serverFrameTs > 0) {
+            d.shownLagSum += Date.now() - serverFrameTs;
+            d.shownLagCount += 1;
+          }
+        } else if (serverDets.length > 0 && isStale) {
+          d.srvRejectedStale += 1;
+        }
+      }
 
       // LiDAR 검증 캡처가 보낸 event_id와 일치하면, 받은 bbox로 같은 depth 세션의
       // LiDAR 실측을 샘플링해 distance_probe_sample로 보고한다(검증 전용, 1회성).
@@ -1066,6 +1114,9 @@ export function CameraView() {
   useEffect(() => { reportInferenceLatencyRef.current = reportInferenceLatency; }, [reportInferenceLatency]);
 
   const detectingRef = useRef(false);
+  // 온디바이스 결과를 화면에 마지막으로 반영한 "실제 시각"(도착 기준).
+  // 이 값이 최근이면 온디바이스가 살아 있다고 보고 서버 결과로 덮지 않는다(2026-07-28).
+  const lastOnDeviceAppliedAtRef = useRef(0);
   // [TEMP DIAG 2026-07-28b] 오디오 재생 중 추론 중단 검증용 집계. 확인 후 제거.
   const frameDiagRef = useRef({
     frames: 0,
@@ -1076,6 +1127,15 @@ export function CameraView() {
     doneAudio: 0,
     totalMsSum: 0,
     totalMsSumAudio: 0,
+    serverDetLagSum: 0,
+    serverDetCount: 0,
+    onDeviceLagSum: 0,
+    onDeviceLagCount: 0,
+    srvApplied: 0,
+    srvRejectedStale: 0,
+    devApplied: 0,
+    shownLagSum: 0,
+    shownLagCount: 0,
   });
   useEffect(() => {
     const timer = setInterval(() => {
@@ -1083,11 +1143,16 @@ export function CameraView() {
       if (d.frames === 0 && d.done === 0) return;
       const avg = d.done > 0 ? (d.totalMsSum / d.done).toFixed(1) : "-";
       const avgAudio = d.doneAudio > 0 ? (d.totalMsSumAudio / d.doneAudio).toFixed(1) : "-";
+      const srvLag = d.serverDetCount > 0 ? (d.serverDetLagSum / d.serverDetCount).toFixed(0) : "-";
+      const devLag = d.onDeviceLagCount > 0 ? (d.onDeviceLagSum / d.onDeviceLagCount).toFixed(0) : "-";
       console.log(
         `[DIAG/FRAME] 5s frames=${d.frames}(audio ${d.framesAudio}) ` +
           `dispatch=${d.dispatch}(audio ${d.dispatchAudio}) ` +
           `done=${d.done}(audio ${d.doneAudio}) ` +
-          `avgTotal=${avg}ms audioAvgTotal=${avgAudio}ms`,
+          `avgTotal=${avg}ms audioAvgTotal=${avgAudio}ms ` +
+          `bboxLag(server)=${srvLag}ms(n=${d.serverDetCount}) bboxLag(onDevice)=${devLag}ms ` +
+          `applied[srv=${d.srvApplied} dev=${d.devApplied} staleReject=${d.srvRejectedStale}] ` +
+          `shownLag=${d.shownLagCount > 0 ? (d.shownLagSum / d.shownLagCount).toFixed(0) : "-"}ms`,
       );
       frameDiagRef.current = {
         frames: 0,
@@ -1098,6 +1163,15 @@ export function CameraView() {
         doneAudio: 0,
         totalMsSum: 0,
         totalMsSumAudio: 0,
+        serverDetLagSum: 0,
+        serverDetCount: 0,
+        onDeviceLagSum: 0,
+        onDeviceLagCount: 0,
+        srvApplied: 0,
+        srvRejectedStale: 0,
+        devApplied: 0,
+        shownLagSum: 0,
+        shownLagCount: 0,
       };
     }, 5000);
     return () => clearInterval(timer);
@@ -1287,9 +1361,23 @@ export function CameraView() {
     // BBox 오버레이용: det + seg 상위 결과 병합
     const allDetections = [...det, ...seg].slice(0, 20);
 
-      // BBox는 연결 상태와 무관하게 최신 온디바이스 결과를 표시한다.
+      // [TEMP DIAG 2026-07-28b] 온디바이스 결과가 화면에 반영되기까지의 지연.
+    // now는 추론 디스패치 시각이므로 캡처 시점 기준 지연에 근사한다.
+    {
+      const d = frameDiagRef.current;
+      d.onDeviceLagSum += Date.now() - now;
+      d.onDeviceLagCount += 1;
+    }
+    lastOnDeviceAppliedAtRef.current = Date.now();
+    // BBox는 연결 상태와 무관하게 최신 온디바이스 결과를 표시한다.
       // 서버 server_detection 결과가 존재하면 위 수신 핸들러가 이를 덮어쓴다.
       setDetectionsRef.current(allDetections);
+      {
+        const d = frameDiagRef.current;
+        d.devApplied += 1;
+        d.shownLagSum += Date.now() - now;
+        d.shownLagCount += 1;
+      }
 
       // 1. 공통 전처리: 기하/신뢰도 1차 필터(근접 긴급은 outdoor 게이트를 우회해야 하므로 아래에서 별도 처리)
       // scene 미존재(허용적 폴백)면 히스테리시스 없이 실외로 간주해 기존 co-occurrence만 사용.

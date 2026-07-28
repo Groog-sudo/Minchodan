@@ -27,6 +27,13 @@ const HIGH_DANGER_INTERVAL_MS = 100;
 // 존재감만 남겨, 방향성 안내 자체는 계속 인지할 수 있게 한다.
 /** 가이드/클립 재생 중 Near 연속 비프 볼륨. 0.25는 말 안내를 덮어 실측에서 비프만 들림. */
 const DUCKED_BEEP_VOLUME = 0.08;
+
+/**
+ * expo-speech 폴백 발화의 음절 경계 로그 스위치 (2026-07-28).
+ * 발화 1회에 수십 건이 Metro 브릿지로 나가, 하필 프레임·추론 처리량이 떨어지는
+ * 오디오 구간의 계측을 왜곡하고 부하를 더한다. 발음/타이밍 디버깅 시에만 켠다.
+ */
+const SPEAK_BOUNDARY_DEBUG = false;
 /**
  * Near/인지 음성 안내 대기열 상한.
  * 2026-07-21: Near 완주 후 Medium 1회를 위해 2슬롯(동시 near pending + med pending).
@@ -70,6 +77,16 @@ class AudioEngine {
   private sessionInitialized = false;
   private guidePlayer: AudioPlayer | null = null;
   private guideFileUri: string | null = null;
+  // 💡 [면접 대비 주석] 웜 플레이어 리스너 누수 차단 (2026-07-28).
+  // guideWarmPlayer는 Hearing Protection 우회를 위해 무음 루프로 "상시 재생"되는 단일
+  // 인스턴스를 재사용한다. 그런데 playGuideAudioBytesNow()가 재생할 때마다 이 플레이어에
+  // addListener("playbackStatusUpdate")를 새로 걸면서 해제는 하지 않아, 가이드를 N번
+  // 재생하면 상태 업데이트마다 N개 클로저가 실행됐다. 상시 재생이라 가이드가 없을 때도
+  // 업데이트가 계속 발생하므로 비용이 누적된다.
+  // Xiaomi 12 실측(2026-07-28): 오디오 재생 구간에서 handleFrame이 5초당 45 -> 18회,
+  // 추론 디스패치 21 -> 1회로 붕괴. logcat ExpoAudio 세션 이벤트 30초에 1701회.
+  // 새 리스너를 걸기 전에 직전 구독을 반드시 해제한다.
+  private guideStatusSubscription: { remove: () => void } | null = null;
   // [2026-07-09 추가] iOS Hearing Protection은 재생 "시작" 시점마다 볼륨 제한을
   // 부여한다(위 클래스 주석 참조 - panPlayers가 상시 루프로 이 문제를 우회하는 이유와
   // 동일). 가이드 음성은 매번 createAudioPlayer()로 새 플레이어를 만들어 무음에서
@@ -819,7 +836,9 @@ class AudioEngine {
       guidePlayer.play();
       console.log(`[AudioEngine][DEBUG] (bytes) 재생 시작 ts=${callTs}, duration=${guidePlayer.duration}s`);
 
-      guidePlayer.addListener("playbackStatusUpdate", (status) => {
+      // 웜 플레이어는 재사용되므로 직전 구독을 반드시 해제한 뒤 새로 건다(위 필드 주석).
+      this.guideStatusSubscription?.remove();
+      this.guideStatusSubscription = guidePlayer.addListener("playbackStatusUpdate", (status) => {
         if (status.didJustFinish && this.guidePlayer === guidePlayer) {
           console.log(
             `[AudioEngine][DEBUG] (bytes) 자연 종료(didJustFinish) ts=${callTs}, currentTime=${status.currentTime}, duration=${status.duration}`,
@@ -967,6 +986,10 @@ class AudioEngine {
           console.log(`[AudioEngine][DEBUG] speakFallback onStart id=${callId} ts=${Date.now()}`);
         },
         onBoundary: (event: any) => {
+          // 2026-07-28: 음절 경계마다 console.log를 내보내면 발화 1회에 수십 건이
+          // Metro 브릿지로 나간다. 하필 이 구간이 프레임·추론 처리량이 떨어지는
+          // 구간이라 계측을 왜곡하고 부하를 더한다. 기본 비활성, 필요 시 상수만 켠다.
+          if (!SPEAK_BOUNDARY_DEBUG) return;
           const idx = event?.charIndex ?? -1;
           const len = event?.charLength ?? 0;
           const chunk = idx >= 0 ? text.slice(idx, idx + len) : "?";

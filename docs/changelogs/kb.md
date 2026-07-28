@@ -4380,3 +4380,27 @@
 - **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
 - **검증 결과**: Xiaomi 12 40초 실측. `handleFrame` 5초당 25~28회(5.2fps) → **42~45회(8.4~9.0fps)**, 추론 디스패치 11~13회 → **18~23회(4.1/s)**, 서버 `detection 수신` 134건/30초 → **242건/30초(8.1fps)**, 추론 지연 중앙값 145ms → **109.8ms**, 동적 FPS 조절 발생 180<->200ms 진동 → **0회**(base 125ms 고정). `npx tsc --noEmit` 통과. **목표 8fps 달성.**
 - **비고**: 온디바이스 추론 디스패치는 4.1fps(최초 1.05fps 대비 약 4배). 상한 요인은 `detectingRef` in-flight 1개 제한 + `REAL_DETECT_MIN_INTERVAL_MS=120ms`이며 추론 약 110ms와 합쳐 약 240ms 주기가 된다. 더 올리려면 in-flight 2개 파이프라이닝이 필요하나 반사 경로 결과 순서 보장과 CPU/GPU 경합 검토가 선행되어야 한다. `[DIAG/FRAME]` 임시 계측(`[TEMP DIAG 2026-07-28b]`)은 제거 대상.
+
+---
+
+### 2026-07-28 | 7단계 | audio_warm_player_listener_leak_fix
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - **증상**: 가이드 음성 재생 구간에 프레임·추론 처리량이 붕괴. 전 구간 오디오인 5초 창에서 `handleFrame` 45 -> 18회, 추론 디스패치 21 -> 1회.
+  - **원인**: `audioEngine.ensureGuideWarmPlayer()`는 iOS Hearing Protection 우회를 위해 **무음 루프로 상시 재생되는 단일 플레이어**를 재사용하는데, `playGuideAudioBytesNow()`가 재생할 때마다 `addListener("playbackStatusUpdate")`를 새로 걸고 해제하지 않았다(파일 전체에 `removeListener` 부재). 가이드 N회 재생 시 상태 업데이트마다 N개 클로저가 실행되고, 웜 플레이어가 상시 재생이라 가이드가 없을 때도 비용이 누적됐다. 이전 세션이 관측한 `ExpoAudio 세션 이벤트 30초 1701회`가 이 누수의 결과. 옛 클로저가 `file`·`epoch`를 붙들어 메모리 누수이기도 했다.
+  - **수정**: `guideStatusSubscription` 필드 신설, 새 리스너 등록 전 직전 구독 `remove()`. 추가로 `SPEAK_BOUNDARY_DEBUG=false` 상수를 신설해 expo-speech 폴백의 음절 경계 로그(발화 1회당 수십 건이 Metro 브릿지로 전송)를 기본 비활성화.
+  - **문서**: 인수인계 §5.5-1(오디오 저하 현상은 실재함을 정정), §5.8(발열 스로틀링), §5.9(본 수정) 추가 및 §5.4 과제 목록 갱신.
+- **관련 파일**: `client/src/services/audioEngine.ts`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
+- **검증 결과**: Xiaomi 12 45초 실측. 오디오 100% 구간 `frames` 18 -> **45/41**, `dispatch` 1 -> **18/19**로 무음 구간(43~44 / 20~24)과 사실상 동일 수준 회복. 서버 `detection 수신` **313건/40초(7.8fps)**. `npx tsc --noEmit` 통과.
+- **비고**: 반사 경보 음성이 재생되는 동안 다음 위험 탐지가 늦어지던 안전 문제도 함께 해소된다. 별건으로 발열 스로틀링 확인 - 몇 시간 연속 가동 + USB 충전(배터리 44.3°C, cpu7 0.81GHz)에서 카메라 30 -> 12.6fps, 플러그인 44 -> 101ms로 저하했고 냉각 후 정상 복귀(§5.8). Android `Thermal Status`는 0(NONE)으로 보고되므로 `scaling_cur_freq`를 직접 확인해야 한다.
+
+---
+
+### 2026-07-28 | 3단계 | bbox_overlay_ondevice_source_and_audio_listener_leak
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - BBox 오버레이를 온디바이스 결과 우선으로 전환하고 audioEngine 웜 플레이어 리스너 누수를 제거 (클라이언트 TS 전용 변경으로 3단계 GPU 테스트는 로컬 PyTorch 2.12.1 < 요구 2.13 사유로 skip)
+- **관련 파일**: `lient/src/components/CameraView.tsx`, `client/src/services/audioEngine.ts`, `docs/changelogs/kb.md`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
