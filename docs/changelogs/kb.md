@@ -4512,3 +4512,13 @@
   - BBoxOverlay 센터 크롭 cover 뷰포트 정밀 변환 적용으로 위치 어긋남 해결
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/components/CameraView.tsx`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
+
+---
+
+### 2026-07-28 | 3단계 | android_640_zero_pixel_loss_perf_opt
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - 픽셀 손실 없는 640x640 정해상도 보존 및 JVM 디코딩 루프 최적화로 det 30ms대 달성
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).

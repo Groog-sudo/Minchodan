@@ -15,7 +15,6 @@ import com.facebook.react.bridge.WritableMap
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
-import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -49,9 +48,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     // TFLite는 하나의 delegate 인스턴스를 여러 Interpreter에 공유하는 것을 지원하지 않는다.
     // 초기 구현이 det/seg에 같은 GpuDelegate를 넘겨 seg 쪽이 조용히 CPU로 떨어지거나
     // 정의되지 않은 동작을 할 여지가 있었다. 사용한 델리게이트는 close() 대상으로 모두 보관한다.
-    private val nnApiDelegates = mutableListOf<NnApiDelegate>()
     private val gpuDelegates = mutableListOf<GpuDelegate>()
-    private var activeEngine = "CPU(XNNPACK)"
+    private var gpuActive = false
 
     @Volatile
     private var isLoaded = false
@@ -77,11 +75,11 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     private val inferenceThread = HandlerThread("TFLiteInference").apply { start() }
     private val inferenceHandler = Handler(inferenceThread.looper)
 
-    // 입력 전처리 재사용 버퍼 (모델 로드 시 동적 크기로 재할당됨)
-    private var inputSize = 640
-    private var scratchFloats = FloatArray(640 * 640 * 3)
-    private var inputBuffer: ByteBuffer = ByteBuffer
-        .allocateDirect(640 * 640 * 3 * 4)
+    // 입력 전처리 재사용 버퍼. 추론은 inferenceHandler(단일 스레드)에서만 실행되므로
+    // 인스턴스 단위 재사용이 안전하다(프레임마다 4.7MiB 재할당 제거).
+    private val scratchFloats = FloatArray(INPUT_SIZE * INPUT_SIZE * 3)
+    private val inputBuffer: ByteBuffer = ByteBuffer
+        .allocateDirect(INPUT_SIZE * INPUT_SIZE * 3 * 4)
         .order(ByteOrder.nativeOrder())
 
     override fun getName(): String = "TFLiteInferenceBridge"
@@ -114,20 +112,9 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 return
             }
 
-            // 모델의 실제 입력 텐서 해상도(예: 416x416, 640x640) 동적 감지 및 전처리 버퍼 맞춤
-            val shape = detInterpreter?.getInputTensor(0)?.shape() ?: segInterpreter?.getInputTensor(0)?.shape()
-            if (shape != null && shape.size >= 3 && shape[1] > 0) {
-                inputSize = shape[1]
-                scratchFloats = FloatArray(inputSize * inputSize * 3)
-                inputBuffer = ByteBuffer
-                    .allocateDirect(inputSize * inputSize * 3 * 4)
-                    .order(ByteOrder.nativeOrder())
-                Log.i(TAG, "인터프리터 입력 해상도 동적 감지: ${inputSize}x${inputSize}")
-            }
-
             Log.i(
                 TAG,
-                "모델 로드 완료 det=${detInterpreter != null} seg=${segInterpreter != null} gpu=$useGpu inputSize=$inputSize"
+                "모델 로드 완료 det=${detInterpreter != null} seg=${segInterpreter != null} gpu=$useGpu"
             )
             promise.resolve(statusMap(detInterpreter != null, segInterpreter != null))
         } catch (e: Throwable) {
@@ -140,13 +127,10 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         Arguments.createMap().apply {
             putBoolean("det", det)
             putBoolean("seg", seg)
-            putString("engine", "TFLite $activeEngine")
+            putString("engine", if (gpuActive) "TFLite GPU(FP16)" else "TFLite CPU(XNNPACK)")
         }
 
-    /**
-     * NNAPI(NPU) delegate로 먼저 시도하고, 실패하면 GPU(FP16) -> CPU(XNNPACK) 순으로 폴백한다.
-     * EXPORT_SOURCE_260714.txt: NON_MAX_SUPPRESSION_V4 제거로 NNAPI 호환 확보.
-     */
+    /** GPU delegate로 먼저 시도하고 실패하면 CPU로 재시도한다(부분 실패가 전체 실패가 되지 않게). */
     private fun createInterpreter(assetName: String, useGpu: Boolean): Interpreter? {
         val buffer = try {
             loadModelBuffer(assetName)
@@ -155,7 +139,6 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             return null
         }
 
-        // 1. GPU Delegate (FP16) 1순위 시도 (실측: det 38.9ms로 가장 빠름)
         if (useGpu) {
             try {
                 // precisionLossAllowed=true: FP32 가중치를 GPU에서 FP16으로 연산한다.
@@ -171,33 +154,15 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 val delegate = GpuDelegate(options)
                 val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
                 gpuDelegates.add(delegate)
-                activeEngine = "GPU(FP16)"
+                gpuActive = true
                 Log.i(TAG, "$assetName GPU delegate(FP16, sustained) 적용")
                 return interpreter
             } catch (e: Throwable) {
-                Log.w(TAG, "$assetName GPU delegate 실패, NNAPI/CPU 폴백: ${e.message}")
+                Log.w(TAG, "$assetName GPU delegate 실패, CPU 폴백: ${e.message}")
             }
         }
 
-        // 2. NNAPI (NPU FP16) 2순위 폴백 (FP32 base 모델은 오버헤드로 det ~235ms)
-        try {
-            val options = NnApiDelegate.Options().apply {
-                setExecutionPreference(NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED)
-                setAllowFp16(true)
-            }
-            val delegate = NnApiDelegate(options)
-            val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
-            nnApiDelegates.add(delegate)
-            activeEngine = "NNAPI(NPU FP16)"
-            Log.i(TAG, "$assetName NNAPI delegate(FP16, sustained) 적용")
-            return interpreter
-        } catch (e: Throwable) {
-            Log.w(TAG, "$assetName NNAPI delegate 실패, CPU 폴백: ${e.message}")
-        }
-
-        // 3. CPU (XNNPACK) 폴백
         return try {
-            activeEngine = "CPU(XNNPACK)"
             Log.i(TAG, "$assetName CPU(XNNPACK, threads=$CPU_THREADS) 적용")
             Interpreter(buffer, Interpreter.Options().setNumThreads(CPU_THREADS))
         } catch (e: Throwable) {
@@ -238,8 +203,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             return
         }
         val pixels = ReflexFrameCache.snapshot()
-        if (pixels == null || pixels.size != inputSize * inputSize) {
-            promise.reject("NO_FRAME", "네이티브 프레임 캐시가 비어 있거나 크기가 일치하지 않습니다.", null)
+        if (pixels == null || pixels.size != INPUT_SIZE * INPUT_SIZE) {
+            promise.reject("NO_FRAME", "네이티브 프레임 캐시가 비어 있습니다.", null)
             return
         }
         // 전처리 + 추론을 백그라운드로 디스패치한다. 메서드는 즉시 리턴해 네이티브 모듈
@@ -367,20 +332,20 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
      * 보내므로 대개 리사이즈가 생략된다. 그렇지 않은 입력은 센터 크롭 후 스케일한다.
      */
     private fun toNormalizedHwcBuffer(src: Bitmap): ByteBuffer {
-        val square = if (src.width == inputSize && src.height == inputSize) {
+        val square = if (src.width == INPUT_SIZE && src.height == INPUT_SIZE) {
             src
         } else {
             val cropSize = min(src.width, src.height)
             val originX = max(0, (src.width - cropSize) / 2)
             val originY = max(0, (src.height - cropSize) / 2)
             val cropped = Bitmap.createBitmap(src, originX, originY, cropSize, cropSize)
-            val scaled = Bitmap.createScaledBitmap(cropped, inputSize, inputSize, true)
+            val scaled = Bitmap.createScaledBitmap(cropped, INPUT_SIZE, INPUT_SIZE, true)
             if (cropped !== src && cropped !== scaled) cropped.recycle()
             scaled
         }
 
-        val pixels = IntArray(inputSize * inputSize)
-        square.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
+        val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
+        square.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
         if (square !== src) square.recycle()
 
         return pixelsToNormalizedHwcBuffer(pixels)
@@ -442,8 +407,8 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * channels-first dense head 디코드: [1, 4+nc(+32 mask), numAnchors].
-     * 동적 앵커 수 (640 -> 8400, 416 -> 3549 등) 호환 지원.
+     * channels-first dense head 디코드: [1, 4+nc(+32 mask), 8400].
+     * 길이가 맞지 않으면 null을 반환해 legacy 경로로 넘긴다(tfliteDetector.ts와 동일 분기).
      */
     private fun decodeDense(
         out: FloatArray,
@@ -454,39 +419,29 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         val nc = names.size
         val boxAttrs = 4 + nc
         val withMask = boxAttrs + 32
-
-        val numAnchors = when {
-            out.size % boxAttrs == 0 -> out.size / boxAttrs
-            out.size % withMask == 0 -> out.size / withMask
-            else -> return null
+        if (out.size != boxAttrs * NUM_ANCHORS && out.size != withMask * NUM_ANCHORS) {
+            return null
         }
 
-        val results = ArrayList<Detection>()
-        for (i in 0 until numAnchors) {
+        val results = ArrayList<Detection>(16)
+        for (i in 0 until NUM_ANCHORS) {
             var bestClassId = -1
-            var bestScore = -1.0f
+            var bestScore = confThreshold
+
             for (c in 0 until nc) {
-                val score = out[(4 + c) * numAnchors + i]
+                val score = out[(4 + c) * NUM_ANCHORS + i]
                 if (score > bestScore) {
                     bestScore = score
                     bestClassId = c
                 }
             }
-            if (bestScore < confThreshold || bestClassId < 0) continue
+            if (bestClassId < 0) continue
 
-            // tfliteDetector.ts / CameraView 오버레이와의 표준 계약(640x640 정사각 좌표계)으로 좌표 스케일링
-            val rawCx = out[i]
-            val rawCy = out[numAnchors + i]
-            val rawW = out[2 * numAnchors + i]
-            val rawH = out[3 * numAnchors + i]
-
-            // out[i]가 0~1 사이 비율인지, 이미 픽셀 좌표(0~640)인지 판별하여 스케일링
-            val scale = if (rawCx <= 1.5f && rawCy <= 1.5f) 640f else 1.0f
-            val cx = rawCx * scale
-            val cy = rawCy * scale
-            val w = rawW * scale
-            val h = rawH * scale
-            if (w <= 1f || h <= 1f) continue
+            val cx = out[i] * INPUT_SIZE
+            val cy = out[NUM_ANCHORS + i] * INPUT_SIZE
+            val w = out[2 * NUM_ANCHORS + i] * INPUT_SIZE
+            val h = out[3 * NUM_ANCHORS + i] * INPUT_SIZE
+            if (w <= 2f || h <= 2f || w >= 638f || h >= 638f) continue
 
             results.add(
                 Detection(
@@ -604,14 +559,6 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         detInterpreter = null
         segInterpreter?.close()
         segInterpreter = null
-        for (delegate in nnApiDelegates) {
-            try {
-                delegate.close()
-            } catch (e: Throwable) {
-                Log.w(TAG, "NNAPI delegate close 실패: ${e.message}")
-            }
-        }
-        nnApiDelegates.clear()
         for (delegate in gpuDelegates) {
             try {
                 delegate.close()
@@ -620,7 +567,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             }
         }
         gpuDelegates.clear()
-        activeEngine = "CPU(XNNPACK)"
+        gpuActive = false
     }
 
     private data class Detection(
