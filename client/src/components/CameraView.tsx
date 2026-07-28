@@ -1937,48 +1937,53 @@ function getZoneTag(areaRatio: number): { color: string; tag: string } {
 
 /**
  * BBox 오버레이: 카메라 프리뷰 위에 탐지 박스를 그린다.
- * 박스 좌표는 640x640 기준이므로 화면 대비 비율로 변환.
+ * 640x640 정사각 캡처 좌표를 resizeMode="cover" 카메라 뷰포트에 정밀 매핑.
  */
 function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) {
+  const [layout, setLayout] = useState<{ width: number; height: number } | null>(null);
+
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {detections.map((d, i) => {
-        // 2026-07-19: 거리 구역 기반 색상. 기존 클래스 해시 색상 대신 Near/Med/Far
-        // 팔레트를 사용해 거리 직관성 확보. 단, HIGH_HAZARDS/caution/roadway는
-        // 기존 강제 색상을 우선 적용(위험 종류가 거리보다 중요).
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        if (width > 0 && height > 0) {
+          setLayout({ width, height });
+        }
+      }}
+    >
+      {layout && detections.map((d, i) => {
         const areaRatio = (d.bbox.w * d.bbox.h) / (FRAME_SIZE * FRAME_SIZE);
         const zone = getZoneTag(areaRatio);
         const hazardOverride = HIGH_HAZARDS.includes(d.className) || d.className === "caution" || d.className === "roadway";
         const color = hazardOverride ? getClassColor(d.className) : zone.color;
-        // 좌표 스케일 오류로 %가 100을 크게 넘으면 카메라 컨테이너(overflow:hidden)를
-        // 뚫고 운영자 UI 위까지 박스가 그려진다(2026-07-19 실기기). 표시만 캔버스 안으로 clamp.
-        const leftPct = Math.min(100, Math.max(0, (d.bbox.x / FRAME_SIZE) * 100));
-        const topPct = Math.min(100, Math.max(0, (d.bbox.y / FRAME_SIZE) * 100));
-        const widthPct = Math.min(100 - leftPct, Math.max(0, (d.bbox.w / FRAME_SIZE) * 100));
-        const heightPct = Math.min(100 - topPct, Math.max(0, (d.bbox.h / FRAME_SIZE) * 100));
+
+        // resizeMode="cover" & 정사각 Center Crop(640x640) ➔ 뷰포트(width x height) 좌표 정밀 변환
+        const { width: viewW, height: viewH } = layout;
+        // cover 모드 시 640x640 정사각 영역의 화면상 스케일 및 오프셋 계산
+        const scale = Math.max(viewW / FRAME_SIZE, viewH / FRAME_SIZE);
+        const offsetX = (viewW - FRAME_SIZE * scale) / 2;
+        const offsetY = (viewH - FRAME_SIZE * scale) / 2;
+
+        const leftPx = Math.max(0, Math.min(viewW, d.bbox.x * scale + offsetX));
+        const topPx = Math.max(0, Math.min(viewH, d.bbox.y * scale + offsetY));
+        const widthPx = Math.max(0, Math.min(viewW - leftPx, d.bbox.w * scale));
+        const heightPx = Math.max(0, Math.min(viewH - topPx, d.bbox.h * scale));
+
         const distance = resolveDetectionDistance(d);
         const distanceText = distance.meters !== null ? `${distance.meters.toFixed(1)}m ${distance.label}` : distance.label;
-        // 박스가 화면 밖(음수 좌표 등)으로 나가도 클래스명 라벨은 항상 화면 안쪽에 보이도록
-        // 박스 테두리와 라벨의 위치를 분리하고, 라벨 좌표만 [0, 100]%로 clamp한다.
-        const labelLeftPct = leftPct;
-        const labelTopPct = topPct;
-        // Fragment 사용 필수: 두 절대좌표 View를 감싸는 style 없는 중간 View를 두면
-        // 그 View가 0x0으로 collapse되어, 안쪽 %기반 left/top/width/height가 그 0x0
-        // 기준으로 계산되어 박스 자체가 안 보이는 회귀가 발생함(실기기 재현 확인, 2026-07-07).
-        // 반드시 두 View 모두 바깥 absoluteFill 컨테이너의 직계 자식으로 유지해야 한다.
-        // track_id가 없는 온디바이스 결과이므로 모델·클래스·반올림 bbox로 안정 키를 만든다.
-        // 겹친/중복(NMS 이전) 박스는 반올림 좌표까지 같을 수 있어 배열 인덱스를
-        // tie-breaker로 덧붙여 유일성을 보장한다(React 중복 key 경고 실측 수정).
         const bboxKey = `${d.model}-${d.className}-${Math.round(d.bbox.x)}-${Math.round(d.bbox.y)}-${Math.round(d.bbox.w)}-${Math.round(d.bbox.h)}-${i}`;
+
         return (
           <Fragment key={bboxKey}>
             <View
               style={{
                 position: "absolute",
-                left: `${leftPct}%`,
-                top: `${topPct}%`,
-                width: `${widthPct}%`,
-                height: `${heightPct}%`,
+                left: leftPx,
+                top: topPx,
+                width: widthPx,
+                height: heightPx,
                 borderWidth: 2,
                 borderColor: color,
                 backgroundColor: "transparent",
@@ -1987,7 +1992,7 @@ function BBoxOverlay({ detections }: { detections: OnDeviceDetectionResult[] }) 
             <View
               style={[
                 styles.bboxLabel,
-                { position: "absolute", left: `${labelLeftPct}%`, top: `${labelTopPct}%`, backgroundColor: color },
+                { position: "absolute", left: leftPx, top: topPx, backgroundColor: color },
               ]}
             >
               <Text style={styles.bboxText}>

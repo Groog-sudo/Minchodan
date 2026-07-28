@@ -475,10 +475,17 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             if (bestScore < confThreshold || bestClassId < 0) continue
 
             // tfliteDetector.ts / CameraView 오버레이와의 표준 계약(640x640 정사각 좌표계)으로 좌표 스케일링
-            val cx = out[i] * 640f
-            val cy = out[numAnchors + i] * 640f
-            val w = out[2 * numAnchors + i] * 640f
-            val h = out[3 * numAnchors + i] * 640f
+            val rawCx = out[i]
+            val rawCy = out[numAnchors + i]
+            val rawW = out[2 * numAnchors + i]
+            val rawH = out[3 * numAnchors + i]
+
+            // out[i]가 0~1 사이 비율인지, 이미 픽셀 좌표(0~640)인지 판별하여 스케일링
+            val scale = if (rawCx <= 1.5f && rawCy <= 1.5f) 640f else 1.0f
+            val cx = rawCx * scale
+            val cy = rawCy * scale
+            val w = rawW * scale
+            val h = rawH * scale
             if (w <= 1f || h <= 1f) continue
 
             results.add(

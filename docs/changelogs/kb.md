@@ -4502,3 +4502,13 @@
   - 640x640 정밀 해상도 원복 유지 및 FP16 모델로 30ms대 속도/BBox 렌더링 정상 복구
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/assets/models/yolo26n/object_detection.tflite`, `client/assets/models/yolo26n/segmentation.tflite`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
+
+---
+
+### 2026-07-28 | 3단계 | android_bbox_overlay_center_crop_cover_alignment
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - BBoxOverlay 센터 크롭 cover 뷰포트 정밀 변환 적용으로 위치 어긋남 해결
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/components/CameraView.tsx`
+- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).
