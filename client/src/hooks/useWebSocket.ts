@@ -102,6 +102,11 @@ const MAX_IN_FLIGHT_FRAMES = 2;
 // 건너뛰고 망 상태가 바뀔 시간을 준 뒤에만 다시 시도한다.
 const CANDIDATE_COOLDOWN_MS = 45000;
 
+// 미응답 network_probe 보관 상한(ms). probe 주기(기본 1s)와 RTT 여유를 감안한 값.
+const NETWORK_PROBE_TTL_MS = 10000;
+// Near 클립 1회 재생 이력을 보관할 최대 track 수. reflex_clear 유실 시 무한 증가 차단.
+const NEAR_CLIP_TRACK_LIMIT = 256;
+
 export function useWebSocket(
   deviceId: string = DEVICE_ID,
   token: string = TOKEN,
@@ -224,7 +229,19 @@ export function useWebSocket(
   const sendNetworkProbe = useCallback((ws: WebSocket) => {
     if (!NETWORK_BENCHMARK_ENABLED || ws.readyState !== WebSocket.OPEN) return;
     const probeId = `ios-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    pendingNetworkProbes.current.set(probeId, Date.now());
+    const nowTs = Date.now();
+    // 💡 [면접 대비 주석] 미응답 probe TTL 스윕 (2026-07-28).
+    // 이 Map은 ack에서만 delete되고 그 밖에는 clearNetworkProbe()(연결 교체·정리)에서만
+    // 비워졌다. 재연결 루프가 있던 동안에는 초당 1.6회 연결이 재수립되며 자동으로
+    // 비워져 문제가 드러나지 않았으나, 루프를 고쳐 연결이 몇 시간 유지되기 시작하자
+    // ack가 유실된 probe가 초당 1개씩 무한 누적되는 경로가 됐다.
+    // probe 주기(기본 1s)와 RTT를 감안해 TTL을 넘긴 항목은 버린다.
+    for (const [id, sentAt] of pendingNetworkProbes.current) {
+      if (nowTs - sentAt > NETWORK_PROBE_TTL_MS) {
+        pendingNetworkProbes.current.delete(id);
+      }
+    }
+    pendingNetworkProbes.current.set(probeId, nowTs);
     ws.send(
       JSON.stringify({
         type: "network_probe",
@@ -483,7 +500,15 @@ export function useWebSocket(
           hapticEngine.trigger(hapticPattern, { allowDuringStt: true });
           if (playEnterClip || playMidClip) {
             if (playEnterClip) {
+              // 2026-07-28: reflex_clear가 유실되면 이 Set이 무한히 커진다(track마다 1개).
+              // 메모리 자체는 작지만 재사용된 track_id의 클립이 잘못 억제될 수 있어
+              // 상한을 두고 가장 오래된 항목부터 버린다(Set은 삽입 순서를 유지한다).
               nearClipPlayedTracksRef.current.add(trackKey);
+              while (nearClipPlayedTracksRef.current.size > NEAR_CLIP_TRACK_LIMIT) {
+                const oldest = nearClipPlayedTracksRef.current.values().next().value;
+                if (oldest === undefined) break;
+                nearClipPlayedTracksRef.current.delete(oldest);
+              }
             }
             void audioEngine.playReflexClip(data.clip as string);
           }

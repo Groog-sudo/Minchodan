@@ -427,6 +427,43 @@ shownLag 81ms = native 57ms + bridge 24ms
 
 ---
 
+### 5.12 장시간 가동 성능 저하 조사 — 누적 경로 3건 (2026-07-28)
+
+§5.11에서 "냉각 직후 81ms / 수 시간 가동 후 128ms" 격차를 확인한 뒤, §5.9의 리스너 누수와 **같은 유형**을 코드 전반에서 정적으로 훑어 3건을 찾아 수정했다.
+
+**1. 반사 클립 플레이어 누수 (영향 큼)** — `audioEngine.playReflexClip`
+
+`createAudioPlayer()`로 만든 플레이어를 지역 변수로만 들고 `didJustFinish` 콜백에서만 `remove()`했다. 참조를 보관하지 않으므로 클립이 완주하지 못하면(가이드 선점, 앱 백그라운드 전환, 오디오 세션 인터럽션) 네이티브 플레이어와 리스너를 정리할 경로가 **아예 없었다**. 반사 클립은 Near 경보마다 재생되어 장시간 보행에서 지속 누적된다.
+
+수정: `reflexClipPlayer`/`reflexClipSubscription` 참조 보관, 새 클립 재생 전 `disposeReflexClipPlayer()`로 직전 회수, `didJustFinish` 미도착 대비 duration 기반 안전 타이머(`REFLEX_CLIP_REAP_MIN_MS=1500` ~ `REFLEX_CLIP_REAP_MAX_MS=5000`).
+
+**2. `pendingNetworkProbes` 무한 누적** — `useWebSocket.sendNetworkProbe`
+
+ack에서만 `delete`되고 TTL이 없었다. ack가 유실되면 probe 주기(기본 1s)마다 1개씩 무한 증가한다. 수정: 송신 시 `NETWORK_PROBE_TTL_MS=10000` 초과 항목 스윕.
+
+> **인과 주의**: §3.3의 WS 재연결 루프를 고치기 전에는 초당 1.6회 연결이 재수립되며 `clearNetworkProbe()`가 이 Map을 계속 비웠다. **연결을 안정화시키자 이 누적 경로가 비로소 활성화됐다.** 한 버그를 고치면 그것이 가리고 있던 다른 누적이 드러날 수 있다.
+
+**3. `nearClipPlayedTracksRef` 무한 증가** — `useWebSocket`
+
+`reflex_clear`가 유실되면 track마다 항목이 남는다. 메모리는 작지만 재사용된 `track_id`의 클립이 잘못 억제될 수 있다. 수정: `NEAR_CLIP_TRACK_LIMIT=256` 상한, Set의 삽입 순서를 이용해 오래된 항목부터 제거.
+
+**이상 없음으로 확인한 항목**
+
+| 항목 | 상태 |
+| :--- | :--- |
+| `pendingFrames` | 2초 TTL 스윕 존재 |
+| `networkRttSamples` | `slice(-30)`으로 바운드 |
+| `setInterval`/`clearInterval`, `setTimeout`/`clearTimeout` | 파일별 균형 정상 |
+| `playGuideAudio`(레거시 base64 경로) | `stopGuideAudio`에서 `prevPlayer.remove()` |
+| `reflexClipUriCache` | 클립 종류 수로 바운드 |
+| `candidateCooldownUntilRef` | 후보 URL 수로 바운드 |
+
+**검증**: 실기기 40초. det 42~52ms·seg 3프레임 주기 정상, 반사 클립 정리 오류 0건, `probe` ack로 RTT 정상 갱신(59~69ms, avg30 83ms — TTL이 정상 ack를 잘라내지 않음), ERROR 0건, 서버 `detection 수신` 326건/40초(8.2fps).
+
+**남은 관찰 과제**: 위 3건이 §5.11의 81ms→128ms 격차를 얼마나 설명하는지는 **장시간 가동 후 재측정으로만 확인 가능하다**. 발열 스로틀링(§5.8)이 동시에 작용하므로, 재측정 시 `scaling_cur_freq`·thermal zone 온도·가동 시간을 함께 기록해 두 요인을 분리할 것.
+
+---
+
 ## 6. 실패한 시도 (반복하지 말 것)
 
 ### 6.1 `useCameraFormat`으로 포맷·fps 고정 → 되돌림

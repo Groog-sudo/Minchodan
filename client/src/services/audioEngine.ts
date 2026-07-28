@@ -34,6 +34,10 @@ const DUCKED_BEEP_VOLUME = 0.08;
  * 오디오 구간의 계측을 왜곡하고 부하를 더한다. 발음/타이밍 디버깅 시에만 켠다.
  */
 const SPEAK_BOUNDARY_DEBUG = false;
+
+// 반사 클립 안전 회수 시간(ms). didJustFinish가 오지 않는 경우의 백스톱.
+const REFLEX_CLIP_REAP_MIN_MS = 1500;
+const REFLEX_CLIP_REAP_MAX_MS = 5000;
 /**
  * Near/인지 음성 안내 대기열 상한.
  * 2026-07-21: Near 완주 후 Medium 1회를 위해 2슬롯(동시 near pending + med pending).
@@ -87,6 +91,17 @@ class AudioEngine {
   // 추론 디스패치 21 -> 1회로 붕괴. logcat ExpoAudio 세션 이벤트 30초에 1701회.
   // 새 리스너를 걸기 전에 직전 구독을 반드시 해제한다.
   private guideStatusSubscription: { remove: () => void } | null = null;
+  // 💡 [면접 대비 주석] 반사 클립 플레이어 누수 차단 (2026-07-28).
+  // 기존에는 createAudioPlayer()로 만든 클립 플레이어를 지역 변수로만 들고,
+  // didJustFinish 콜백에서만 remove()했다. 참조를 보관하지 않으므로 클립이 완주하지
+  // 못하면(가이드 선점, 앱 백그라운드 전환, 오디오 세션 인터럽션) 네이티브 플레이어와
+  // 리스너를 정리할 경로가 아예 없었다. 반사 클립은 Near 경보마다 재생되어 실사용
+  // 빈도가 높아 장시간 보행에서 누적된다.
+  // 참조를 보관해 새 클립 재생 전에 직전 플레이어를 정리하고, didJustFinish가 오지
+  // 않는 경우를 대비해 안전 타이머로도 회수한다.
+  private reflexClipPlayer: AudioPlayer | null = null;
+  private reflexClipSubscription: { remove: () => void } | null = null;
+  private reflexClipReapTimer: ReturnType<typeof setTimeout> | null = null;
   // [2026-07-09 추가] iOS Hearing Protection은 재생 "시작" 시점마다 볼륨 제한을
   // 부여한다(위 클래스 주석 참조 - panPlayers가 상시 루프로 이 문제를 우회하는 이유와
   // 동일). 가이드 음성은 매번 createAudioPlayer()로 새 플레이어를 만들어 무음에서
@@ -1132,18 +1147,56 @@ class AudioEngine {
         this.stopGuideAudio();
       }
       this.beginReflexClipDucking();
+      // 직전 클립이 남아 있으면(완주 실패) 먼저 회수한다.
+      this.disposeReflexClipPlayer();
       const clipPlayer = createAudioPlayer(uri);
+      this.reflexClipPlayer = clipPlayer;
       clipPlayer.volume = 1.0;
-      clipPlayer.addListener("playbackStatusUpdate", (status) => {
+      this.reflexClipSubscription = clipPlayer.addListener("playbackStatusUpdate", (status) => {
         if (status.didJustFinish) {
-          clipPlayer.remove();
+          this.disposeReflexClipPlayer();
           this.endReflexClipDucking();
         }
       });
       clipPlayer.play();
+      // didJustFinish 미도착 대비 안전 회수. 클립은 짧은 사전합성 WAV이므로
+      // duration을 못 읽어도 상한(REFLEX_CLIP_REAP_MAX_MS)으로 충분하다.
+      const durationMs = Number.isFinite(clipPlayer.duration)
+        ? Math.round(clipPlayer.duration * 1000)
+        : 0;
+      const reapAfter = Math.min(
+        REFLEX_CLIP_REAP_MAX_MS,
+        Math.max(REFLEX_CLIP_REAP_MIN_MS, durationMs + 500),
+      );
+      this.reflexClipReapTimer = setTimeout(() => {
+        this.reflexClipReapTimer = null;
+        if (this.reflexClipPlayer === clipPlayer) {
+          this.disposeReflexClipPlayer();
+          this.endReflexClipDucking();
+        }
+      }, reapAfter);
     } catch (err) {
       this.endReflexClipDucking();
       console.error("[AudioEngine] 반사 클립 재생 실패:", err);
+    }
+  }
+
+  /** 반사 클립 플레이어와 그 리스너·안전 타이머를 회수한다(중복 호출 안전). */
+  private disposeReflexClipPlayer(): void {
+    if (this.reflexClipReapTimer) {
+      clearTimeout(this.reflexClipReapTimer);
+      this.reflexClipReapTimer = null;
+    }
+    this.reflexClipSubscription?.remove();
+    this.reflexClipSubscription = null;
+    const player = this.reflexClipPlayer;
+    this.reflexClipPlayer = null;
+    if (player) {
+      try {
+        player.remove();
+      } catch (err) {
+        console.error("[AudioEngine] 반사 클립 플레이어 정리 실패:", err);
+      }
     }
   }
 
