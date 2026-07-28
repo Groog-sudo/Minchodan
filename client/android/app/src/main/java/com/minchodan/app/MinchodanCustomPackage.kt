@@ -13,6 +13,8 @@ class MinchodanCustomPackage : ReactPackage {
         modules.add(AudioSessionBridgeModule(reactContext))
         modules.add(SceneClassifyBridgeModule(reactContext))
         modules.add(PhoneDialBridgeModule(reactContext))
+        // iOS CoreMLInferenceBridge 대응 온디바이스 추론 브릿지 (2026-07-28).
+        modules.add(TFLiteInferenceBridgeModule(reactContext))
         return modules
     }
 

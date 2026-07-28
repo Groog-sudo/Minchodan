@@ -243,21 +243,46 @@ export function useCamera(
     // CoreML 네이티브 브릿지는 base64를 직접 소비하므로 float32는 TFLite 폴백 전용이다.
     // 이전에는 폴백 전용 전처리를 CoreML 모드에서도 매 프레임 실행해 JS 스레드를 포화시켰다.
     // takePhoto 폴백 경로(frameCaptureProvider.ts Float32Array(0))와 동일한 우회 전략.
-    const float32 = requiresFloat32Ref.current
-      ? decodeBase64JpegToHwc(base64)
-      : new Float32Array(0);
-    const frame: FrameData = {
-      float32,
-      stream: "reflex",
-      base64,
-      jpegBytes,
+    //
+    // 2026-07-28 (Android Live Feed 끊김 P0): TFLite 경로(requiresFloat32=true)에서는
+    // 위 우회가 적용되지 않아 매 프레임 JS JPEG 디코드가 돌았다. Xiaomi 12 실측에서
+    // handleFrame 호출 간격이 899~965ms(약 1.05fps, 목표 8fps=125ms)로 고정되고
+    // NetworkBench RTT가 33ms에서 35s까지 치솟았다 - JS 스레드 포화의 전형적 신호다.
+    // 네이티브 플러그인이 이미 640x640으로 크롭·리사이즈한 비트맵을 JPEG로 압축해
+    // 넘기는데, JS가 그것을 다시 디코드·크롭·바이리니어 리사이즈해 640x640으로
+    // 되돌리는 완전한 왕복이었다.
+    //
+    // float32를 지연 계산(lazy getter)으로 바꿔, 서버·콘솔 전송 경로(jpegBytes)는
+    // 디코드를 전혀 기다리지 않게 한다. 디코드는 온디바이스 추론이 실제로
+    // frame.float32를 읽는 순간에만, 프레임당 최대 1회 수행된다(반사/인지 프레임이
+    // 결과를 공유). 추론 스로틀(CameraView REAL_DETECT_MIN_INTERVAL_MS)에 걸려
+    // 건너뛰는 프레임은 디코드 비용이 0이 된다.
+    const needsFloat32 = requiresFloat32Ref.current;
+    let decodedFloat32: Float32Array | null = null;
+    const readFloat32 = (): Float32Array => {
+      if (decodedFloat32 === null) {
+        decodedFloat32 = needsFloat32 ? decodeBase64JpegToHwc(base64) : new Float32Array(0);
+      }
+      return decodedFloat32;
     };
 
-    onFrameRef.current(frame);
+    const makeFrame = (stream: StreamType): FrameData => {
+      const frame = { stream, base64, jpegBytes } as FrameData;
+      Object.defineProperty(frame, "float32", {
+        enumerable: true,
+        configurable: true,
+        get: readFloat32,
+      });
+      return frame;
+    };
+
+    onFrameRef.current(makeFrame("reflex"));
 
     const ratio = Math.max(1, Math.floor(reflexFps / cognitiveFps));
     if (streamFrameCounterRef.current % ratio === 0) {
-      onFrameRef.current({ ...frame, stream: "cognitive" });
+      // 스프레드({...frame})는 getter를 즉시 평가해 지연 계산 효과를 없앤다. 같은
+      // readFloat32 클로저를 공유하는 새 프레임 객체를 만들어 디코드 1회를 유지한다.
+      onFrameRef.current(makeFrame("cognitive"));
     }
   }, [reflexFps, cognitiveFps]);
 

@@ -128,7 +128,19 @@ android {
         }
     }
     androidResources {
-        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+        // 'ios'와 '*.txt'는 아래 assets.srcDirs로 끌어오는 assets/models 안의 CoreML
+        // 자산(약 16MB)과 export 메모를 APK에서 제외하기 위해 추가한다(Android 미사용).
+        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~:!ios:!*.txt'
+    }
+
+    // 2026-07-28: TFLiteInferenceBridgeModule이 AssetManager로 직접 여는 모델 경로.
+    // JS의 require("../../assets/models/...")는 Metro 자산이라 네이티브에서 해석할 수
+    // 없으므로, 동일 파일을 APK assets/yolo26n/*.tflite 로도 패키징한다(복사본 없이
+    // 원본 디렉토리를 그대로 소스로 지정). iOS가 .mlmodelc를 Bundle에서 여는 것과 대응.
+    sourceSets {
+        main {
+            assets.srcDirs += ["$rootDir/../assets/models"]
+        }
     }
 
     aaptOptions {
@@ -163,6 +175,14 @@ dependencies {
     // iOS VNClassifyImageRequest 대응: 온디바이스 이미지 라벨링으로 실내/실외 씬 판정
     // (docs/design/indoor_fp_mitigation_design.md §4 Android 확장)
     implementation("com.google.mlkit:image-labeling:17.0.9")
+
+    // 2026-07-28: iOS CoreMLInferenceBridge.swift 대응 Android 네이티브 추론 런타임.
+    // JS(react-native-fast-tflite) 경로는 입력으로 JS JPEG 디코드 산출 float32를 요구해
+    // 매 프레임 JS 스레드를 약 900ms 점유했다(Xiaomi 12 실측). 네이티브가 base64를
+    // 직접 디코드·추론하도록 옮겨 JS 스레드 점유를 없앤다. GPU delegate 실패 시
+    // 모듈이 CPU(XNNPACK)로 자동 폴백한다.
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.17.0")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
