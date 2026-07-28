@@ -15,6 +15,7 @@ import com.facebook.react.bridge.WritableMap
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -48,8 +49,9 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
     // TFLite는 하나의 delegate 인스턴스를 여러 Interpreter에 공유하는 것을 지원하지 않는다.
     // 초기 구현이 det/seg에 같은 GpuDelegate를 넘겨 seg 쪽이 조용히 CPU로 떨어지거나
     // 정의되지 않은 동작을 할 여지가 있었다. 사용한 델리게이트는 close() 대상으로 모두 보관한다.
+    private val nnApiDelegates = mutableListOf<NnApiDelegate>()
     private val gpuDelegates = mutableListOf<GpuDelegate>()
-    private var gpuActive = false
+    private var activeEngine = "CPU(XNNPACK)"
 
     @Volatile
     private var isLoaded = false
@@ -127,10 +129,13 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         Arguments.createMap().apply {
             putBoolean("det", det)
             putBoolean("seg", seg)
-            putString("engine", if (gpuActive) "TFLite GPU(FP16)" else "TFLite CPU(XNNPACK)")
+            putString("engine", "TFLite $activeEngine")
         }
 
-    /** GPU delegate로 먼저 시도하고 실패하면 CPU로 재시도한다(부분 실패가 전체 실패가 되지 않게). */
+    /**
+     * NNAPI(NPU) delegate로 먼저 시도하고, 실패하면 GPU(FP16) -> CPU(XNNPACK) 순으로 폴백한다.
+     * EXPORT_SOURCE_260714.txt: NON_MAX_SUPPRESSION_V4 제거로 NNAPI 호환 확보.
+     */
     private fun createInterpreter(assetName: String, useGpu: Boolean): Interpreter? {
         val buffer = try {
             loadModelBuffer(assetName)
@@ -139,6 +144,23 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             return null
         }
 
+        // 1. NNAPI (NPU) Delegate 시도
+        try {
+            val options = NnApiDelegate.Options().apply {
+                setExecutionPreference(NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED)
+                setAllowFp16(true)
+            }
+            val delegate = NnApiDelegate(options)
+            val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
+            nnApiDelegates.add(delegate)
+            activeEngine = "NNAPI(NPU FP16)"
+            Log.i(TAG, "$assetName NNAPI delegate(FP16, sustained) 적용")
+            return interpreter
+        } catch (e: Throwable) {
+            Log.w(TAG, "$assetName NNAPI delegate 실패, GPU/CPU 폴백 시도: ${e.message}")
+        }
+
+        // 2. GPU Delegate (FP16) 시도
         if (useGpu) {
             try {
                 // precisionLossAllowed=true: FP32 가중치를 GPU에서 FP16으로 연산한다.
@@ -154,7 +176,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 val delegate = GpuDelegate(options)
                 val interpreter = Interpreter(buffer, Interpreter.Options().addDelegate(delegate))
                 gpuDelegates.add(delegate)
-                gpuActive = true
+                activeEngine = "GPU(FP16)"
                 Log.i(TAG, "$assetName GPU delegate(FP16, sustained) 적용")
                 return interpreter
             } catch (e: Throwable) {
@@ -162,7 +184,9 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             }
         }
 
+        // 3. CPU (XNNPACK) 폴백
         return try {
+            activeEngine = "CPU(XNNPACK)"
             Log.i(TAG, "$assetName CPU(XNNPACK, threads=$CPU_THREADS) 적용")
             Interpreter(buffer, Interpreter.Options().setNumThreads(CPU_THREADS))
         } catch (e: Throwable) {
@@ -558,6 +582,14 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         detInterpreter = null
         segInterpreter?.close()
         segInterpreter = null
+        for (delegate in nnApiDelegates) {
+            try {
+                delegate.close()
+            } catch (e: Throwable) {
+                Log.w(TAG, "NNAPI delegate close 실패: ${e.message}")
+            }
+        }
+        nnApiDelegates.clear()
         for (delegate in gpuDelegates) {
             try {
                 delegate.close()
@@ -566,7 +598,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             }
         }
         gpuDelegates.clear()
-        gpuActive = false
+        activeEngine = "CPU(XNNPACK)"
     }
 
     private data class Detection(
