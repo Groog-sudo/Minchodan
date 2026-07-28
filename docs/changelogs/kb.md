@@ -4351,3 +4351,32 @@
 - **관련 파일**: `client/src/hooks/useWebSocket.ts`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: Xiaomi 12 실측. 정상 연결 시 "서버 연결 정상 억제" 정상 동작, heartbeat 오탐 없음. **서버 강제 재시작 시 WS 종료 60ms 만에 감지(code=1012), isServerTimeout 즉시 전환**(서버 정상 억제 → PathObstacle 게이트). 서버 복구 후 자동 재연결 및 "서버 연결 정상" 복귀. `tsc --noEmit` 통과, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
 - **비고**: 반사 경로 설계 원칙(반사=즉시 경보, 서버 미경유)을 위한 핵심 안전 장치. 이전에는 서버 응답을 무한 대기하며 원칙을 위반했고, 사용자가 체감하는 지연의 직접 원인이었다. 실내 씬에서는 PathObstacle 게이트가 추가로 통로 경보를 억제하지만, 이것은 의도된 정책(실내 경보 억제)이므로 별개.
+
+---
+
+### 2026-07-28 | 3단계 | android_inference_benchmark_regression_and_audio_artifact_retraction
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - **§5.4 1순위 과제 철회**: 이전 세션이 "오디오 재생 중 추론 완전 중단(30초 중 12.5초, 42% 손실)"으로 판정한 근거는 `[TFLiteNativeBench]` 로그 개수였으나, 이 로그는 `localDetectorSelect.android.ts:97`에서 `!audioEngine.isGuidePlaying`으로 감싸져 있어 가이드 음성 재생 중에는 설계상 출력되지 않는다. 같은 게이팅이 `[CoreMLBench]`·`[SceneClassify]`·플러그인 완료 로그에도 걸려 교차 확인이 불가능했고, `[DIAG] handleFrame gap`은 이미 제거된 상태였다.
+  - **검증 계측 투입**: 오디오 상태로 게이팅하지 않는 5초 단위 집계 `[DIAG/FRAME]`(frames/dispatch/done을 오디오 구간과 분리 집계)을 CameraView에 추가. 프레임당 로그가 아니라 오디오 콜백과 경합하지 않는다.
+  - **판정**: 오디오 재생 구간이 전체 프레임의 40%(17/43)일 때 추론 디스패치 47%(8/17)·완료 41%(7/17)로 **비례 정상 실행**. 추론 중단은 사실이 아니며 측정 아티팩트로 확정.
+  - **재검증 결과**: `handleFrame` 호출이 5초당 43~45회(**8.6~9.0fps**)로 캡처·서버 전송 경로는 이미 목표 8fps 초과 달성(서버 detection 수신 195건/30초). 남은 격차는 추론 디스패치 빈도 3.4fps 하나이며, 원인은 `detectingRef` 직렬화 + `REAL_DETECT_MIN_INTERVAL_MS=120ms`(실효 약 290ms 주기).
+  - **회귀 발견·수정**: `DualDetectionResult`에 `benchmark` 필드가 없어 Android·iOS 디텍터 모두 반환에서 누락, `CameraView.runDetectionResult`가 항상 `undefined`를 받았다. `fcbd77a`(캡처-추론 분리)에서 벽시계 폴백(`Date.now() - t0`)까지 사라져 `reportInferenceLatency(0)`이 매 프레임 호출됐고, `useCamera`의 과부하 분기가 절대 참이 되지 않아 **동적 FPS 과부하 보호가 무력화**된 상태였다. `InferenceBenchmark` 타입 신설 + 양 플랫폼 디텍터 반환에 포함 + `dt`를 디스패치 시각 기준 벽시계 폴백으로 복원.
+  - **진짜 병목은 중간 래퍼**: `useOnDeviceDetection.detectFrame`이 디텍터 결과에서 `seg`/`det`/`scene`만 뽑아 반환해 `benchmark`를 여기서 버렸다. 디텍터 반환에 필드를 추가해도 이 래퍼를 고치기 전까지는 CameraView에 도달하지 않았다.
+- **관련 파일**: `client/src/inference/types.ts`, `client/src/inference/localDetectorSelect.android.ts`, `client/src/inference/localDetectorSelect.ios.ts`, `client/src/hooks/useOnDeviceDetection.ts`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
+- **검증 결과**: `npx tsc --noEmit` 통과. 오디오 아티팩트 판정 실기기 확정 - 프레임 100%가 오디오 구간인 창에서도 추론 8~10회/5초 정상 실행(중단 아님). 단 완전 무중단은 아니고 dispatch/frames 비율이 비오디오 0.62~0.76 대비 오디오 0.30~0.35로 **약 50% 저하**하므로 이 수치로 정정. benchmark 전달 수정 런타임 검증 완료 - `[DIAG/FRAME] avgTotal` 0.0ms → 125~159ms, `[CoreMLBench] det 41.67 / seg 49.92 / total 96.32ms` 출력 복구, `[Camera] 동적 FPS 조절: 200ms -> 180ms (추론 지연=96.3ms)` 정상 동작.
+- **비고**: 부수 발견 - 지연 피드백이 0이던 동안 반사 간격이 **200ms까지 올라간 채 고착**되어 있었다(서버 busy 힌트로 상승한 값이 실제 지연 기반으로 회복 불가). 이 회귀는 과부하 보호를 죽였을 뿐 아니라 평상시 fps도 깎고 있었다. `[DIAG/FRAME]`은 임시 계측(`[TEMP DIAG 2026-07-28b]`)이며 제거 대상. Android에서도 `[CoreMLBench] ANE 가속 지연시간` iOS 용어가 출력되는 라벨 불일치 있음(동작 무관).
+
+---
+
+### 2026-07-28 | 3단계 | android_reflex_8fps_achieved_capture_inference_decoupling
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - **문제**: `benchmark` 전달 회귀를 고치자 실제 추론 지연(96~160ms)이 동적 FPS 컨트롤러에 들어가면서 반사 간격이 180~200ms에 고착됐다(약 5fps). 상수를 대입하면 구조적으로 불가피 - 하강 조건이 `추론지연 < 현재간격 x RECOVERY_LATENCY_RATIO(0.5)`라 cur=180에서 90ms 미만이 필요한데 추론이 96~160ms이므로 **base 125ms에 수학적으로 도달 불가**. 지연이 0으로 잘못 보고되던 동안 8.6~9.0fps가 나왔던 것도 우연히 하강 분기만 계속 탄 결과였다.
+  - **근본 원인은 잘못된 결합**: 이 컨트롤러는 "추론이 JS 스레드를 점유해 캡처를 방해한다"를 전제로 도입됐으나, 네이티브 경로(iOS CoreML / Android TFLiteInferenceBridge)는 추론이 백그라운드 스레드에서 돌고 CameraView가 fire-and-forget으로 디스패치하므로 추론 지연이 캡처를 전혀 막지 않는다. 그럼에도 추론 지연으로 캡처 간격을 늘려 서버 전송·콘솔 Live Feed까지 함께 느려졌다.
+  - **수정**: `reportInferenceLatency(latencyMs, blocksCapture=true)` 인자 추가. `blocksCapture=false`(네이티브 백그라운드 추론)면 상승 분기를 적용하지 않는다. 하강(회복) 분기와 `serverBusyUntil` 홀드·`cur > base` 가드는 공통 유지해 서버 백프레셔는 그대로 살아 있다. 호출부는 `requiresFloat32Ref.current`(JS 디코드 폴백 여부)를 전달한다. 추론 폭주 역압력은 `detectingRef`(진행 중이면 디스패치 생략)가 계속 담당한다.
+- **관련 파일**: `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
+- **검증 결과**: Xiaomi 12 40초 실측. `handleFrame` 5초당 25~28회(5.2fps) → **42~45회(8.4~9.0fps)**, 추론 디스패치 11~13회 → **18~23회(4.1/s)**, 서버 `detection 수신` 134건/30초 → **242건/30초(8.1fps)**, 추론 지연 중앙값 145ms → **109.8ms**, 동적 FPS 조절 발생 180<->200ms 진동 → **0회**(base 125ms 고정). `npx tsc --noEmit` 통과. **목표 8fps 달성.**
+- **비고**: 온디바이스 추론 디스패치는 4.1fps(최초 1.05fps 대비 약 4배). 상한 요인은 `detectingRef` in-flight 1개 제한 + `REAL_DETECT_MIN_INTERVAL_MS=120ms`이며 추론 약 110ms와 합쳐 약 240ms 주기가 된다. 더 올리려면 in-flight 2개 파이프라이닝이 필요하나 반사 경로 결과 순서 보장과 CPU/GPU 경합 검토가 선행되어야 한다. `[DIAG/FRAME]` 임시 계측(`[TEMP DIAG 2026-07-28b]`)은 제거 대상.

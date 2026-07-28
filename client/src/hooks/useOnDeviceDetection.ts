@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { createLocalDetector } from "../inference/localDetector";
-import { DetectionResult, SceneClassification } from "../inference/types";
+import { DetectionResult, InferenceBenchmark, SceneClassification } from "../inference/types";
 import { audioEngine } from "../services/audioEngine";
 import { hapticEngine } from "../services/hapticEngine";
 
@@ -95,10 +95,19 @@ export function useOnDeviceDetection() {
     async (
       frame: Float32Array,
       base64: string | null = null
-    ): Promise<{ seg: OnDeviceDetectionResult[]; det: OnDeviceDetectionResult[]; scene?: SceneClassification }> => {
+    ): Promise<{
+      seg: OnDeviceDetectionResult[];
+      det: OnDeviceDetectionResult[];
+      scene?: SceneClassification;
+      benchmark?: InferenceBenchmark;
+    }> => {
       let seg: OnDeviceDetectionResult[] = [];
       let det: OnDeviceDetectionResult[] = [];
       let scene: SceneClassification | undefined;
+      // 2026-07-28: 이 래퍼가 seg/det/scene만 뽑아 반환해 benchmark를 버렸다.
+      // CameraView.runDetectionResult가 항상 undefined를 받아 reportInferenceLatency(0)이
+      // 호출됐고, useCamera의 동적 FPS 과부하 보호가 무력화된 상태였다.
+      let benchmark: InferenceBenchmark | undefined;
 
       if (!detectorRef.current || !detectorRef.current.isLoaded) {
         return { seg, det };
@@ -109,6 +118,7 @@ export function useOnDeviceDetection() {
         seg = result.seg;
         det = result.det;
         scene = result.scene;
+        benchmark = result.benchmark;
       } catch (e) {
         console.error("[OnDevice] 로컬 추론 실행 중 오류:", e);
       }
@@ -135,7 +145,7 @@ export function useOnDeviceDetection() {
       }
 
       // 중복 피드백 제어를 제거하여 상위 CameraView.tsx 단일 오케스트레이션으로 일원화합니다.
-      return { seg, det, scene };
+      return { seg, det, scene, benchmark };
     },
     []
   );

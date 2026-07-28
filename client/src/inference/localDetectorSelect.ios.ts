@@ -132,12 +132,15 @@ class CoreMLDetector implements LocalDetector {
         console.warn("[CoreMLDetector] CoreML은 base64 이미지 입력을 필요로 합니다.");
       }
 
+      // 2026-07-28: benchmark를 함께 넘긴다. 누락 시 CameraView.runDetectionResult가
+      // reportInferenceLatency(0)을 호출해 동적 FPS 과부하 보호가 무력화된다(Android 동일).
       if (this.segFallback) {
         const segResults = await segPromise;
         return {
           det: coremlResults.det,
           seg: segResults.seg,
           scene: coremlResults.scene,
+          benchmark: coremlResults.benchmark,
         };
       } else {
         // 완전 CoreML 가속 모드
@@ -145,6 +148,7 @@ class CoreMLDetector implements LocalDetector {
           det: coremlResults.det,
           seg: coremlResults.seg || [],
           scene: coremlResults.scene,
+          benchmark: coremlResults.benchmark,
         };
       }
     } catch (e) {

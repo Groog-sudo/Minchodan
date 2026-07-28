@@ -73,8 +73,12 @@ export interface UseCameraReturn {
    */
   setRequiresFloat32: (required: boolean) => void;
   requestCameraPermission: () => Promise<boolean>;
-  /** 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다. */
-  reportInferenceLatency: (latencyMs: number) => void;
+  /**
+   * 온디바이스 추론 지연(ms)을 보고하여 반사 캡처 fps를 동적으로 조절한다.
+   * blocksCapture=false면 추론이 캡처를 막지 않는 경로(네이티브 백그라운드 추론)이므로
+   * 상승 분기를 적용하지 않는다. 상세 근거는 구현부 주석 참조.
+   */
+  reportInferenceLatency: (latencyMs: number, blocksCapture?: boolean) => void;
   /**
    * 서버 ack 백프레셔(server_busy / suggest_reflex_interval_ms)를 반영한다.
    * 2026-07-21 P0: 야외 과부하 시 단말 반사 송신률을 낮춰 큐 drop·늦은 판정을 줄인다.
@@ -138,19 +142,47 @@ export function useCamera(
     [intervalSharedValue],
   );
 
+  /**
+   * 온디바이스 추론 지연을 캡처 루프에 피드백한다.
+   *
+   * 💡 [면접 대비 주석] blocksCapture 인자의 의미 (2026-07-28).
+   * 이 컨트롤러는 "추론이 캡처 간격을 못 따라가면 캡처 fps를 낮춰 과부하 크래시를 막는다"는
+   * 목적으로 도입됐다. 그 전제는 추론이 JS 스레드를 점유해 캡처를 실제로 방해한다는 것이었다.
+   *
+   * 그런데 현재 네이티브 경로(iOS CoreML / Android TFLiteInferenceBridge)는 추론이
+   * 네이티브 백그라운드 스레드에서 돌고, CameraView가 fire-and-forget으로 디스패치하므로
+   * 추론 지연이 캡처를 전혀 막지 않는다. 그럼에도 추론 지연으로 캡처 간격을 늘리면
+   * 서버 전송·콘솔 Live Feed까지 함께 느려지는 잘못된 결합이 된다.
+   *
+   * Xiaomi 12 실측(2026-07-28): 추론 96~160ms에서 상승 분기(latency > cur*0.9)가 계속
+   * 걸려 간격이 180~200ms에 고착됐다(약 5fps). 하강 분기는 latency < cur*0.5를 요구하므로
+   * base 125ms에는 수학적으로 도달할 수 없다. 반대로 지연이 0으로 잘못 보고되던 동안에는
+   * base까지 내려가 8.6~9.0fps가 나왔다.
+   *
+   * 따라서 추론이 캡처를 막지 않는 경로(blocksCapture=false)에서는 상승 분기를 적용하지
+   * 않는다. 하강(회복) 분기는 유지해야 서버 busy로 올라간 간격이 되돌아올 수 있다.
+   * 추론 폭주에 대한 역압력은 CameraView의 detectingRef(진행 중이면 디스패치 생략)가
+   * 이미 담당하므로 과부하 보호가 사라지는 것은 아니다.
+   *
+   * JS 디코드 폴백 경로(requiresFloat32=true)는 추론이 실제로 JS 스레드를 점유하므로
+   * blocksCapture=true로 기존 동작을 그대로 유지한다.
+   */
   const reportInferenceLatency = useCallback(
-    (latencyMs: number) => {
+    (latencyMs: number, blocksCapture: boolean = true) => {
       if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
       const base = baseIntervalRef.current;
       const cur = currentIntervalRef.current;
       let next = cur;
 
-      if (latencyMs > cur * OVERLOAD_LATENCY_RATIO) {
+      // 회복 가능 조건은 두 경로 공통으로 유지한다. 특히 serverBusyUntil 홀드를 건너뛰면
+      // 서버 백프레셔가 무력화되므로 blocksCapture 여부와 무관하게 지킨다.
+      const canRecover = cur > base && Date.now() >= serverBusyUntilRef.current;
+
+      if (blocksCapture && latencyMs > cur * OVERLOAD_LATENCY_RATIO) {
         next = Math.min(MAX_REFLEX_INTERVAL_MS, cur + INTERVAL_INCREASE_STEP_MS);
       } else if (
-        latencyMs < cur * RECOVERY_LATENCY_RATIO &&
-        cur > base &&
-        Date.now() >= serverBusyUntilRef.current
+        canRecover &&
+        (!blocksCapture || latencyMs < cur * RECOVERY_LATENCY_RATIO)
       ) {
         next = Math.max(base, cur - INTERVAL_DECREASE_STEP_MS);
       }

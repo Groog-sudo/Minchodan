@@ -105,6 +105,9 @@ class NativeTFLiteDetector implements LocalDetector {
         det: bridgeResult?.det ?? [],
         seg: bridgeResult?.seg ?? [],
         scene,
+        // 2026-07-28: 누락 시 CameraView가 reportInferenceLatency(0)을 호출해
+        // 동적 FPS 과부하 보호가 무력화된다.
+        benchmark: bridgeResult?.benchmark,
       };
     } catch (e) {
       console.error("[NativeTFLiteDetector] 추론 중 에러:", e);

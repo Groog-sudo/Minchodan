@@ -1066,6 +1066,42 @@ export function CameraView() {
   useEffect(() => { reportInferenceLatencyRef.current = reportInferenceLatency; }, [reportInferenceLatency]);
 
   const detectingRef = useRef(false);
+  // [TEMP DIAG 2026-07-28b] 오디오 재생 중 추론 중단 검증용 집계. 확인 후 제거.
+  const frameDiagRef = useRef({
+    frames: 0,
+    framesAudio: 0,
+    dispatch: 0,
+    dispatchAudio: 0,
+    done: 0,
+    doneAudio: 0,
+    totalMsSum: 0,
+    totalMsSumAudio: 0,
+  });
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const d = frameDiagRef.current;
+      if (d.frames === 0 && d.done === 0) return;
+      const avg = d.done > 0 ? (d.totalMsSum / d.done).toFixed(1) : "-";
+      const avgAudio = d.doneAudio > 0 ? (d.totalMsSumAudio / d.doneAudio).toFixed(1) : "-";
+      console.log(
+        `[DIAG/FRAME] 5s frames=${d.frames}(audio ${d.framesAudio}) ` +
+          `dispatch=${d.dispatch}(audio ${d.dispatchAudio}) ` +
+          `done=${d.done}(audio ${d.doneAudio}) ` +
+          `avgTotal=${avg}ms audioAvgTotal=${avgAudio}ms`,
+      );
+      frameDiagRef.current = {
+        frames: 0,
+        framesAudio: 0,
+        dispatch: 0,
+        dispatchAudio: 0,
+        done: 0,
+        doneAudio: 0,
+        totalMsSum: 0,
+        totalMsSumAudio: 0,
+      };
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
   const lastDetectTsRef = useRef(0);
   // 2026-07-13: 온디바이스 씬 분류(scene.isLikelyIndoor) 기반 실외 추정치를 서버로 전달하기
   // 위한 ref. 이번 프레임 전송 시점엔 아직 이번 프레임의 온디바이스 추론이 끝나지 않았으므로
@@ -1103,6 +1139,17 @@ export function CameraView() {
   // ref 기반 handleFrame: 항상 최신 상태를 참조하며 stale closure 없음.
   const handleFrame = useCallback(async (frame: FrameData, _stream: StreamType) => {
     const now = Date.now();
+    // [TEMP DIAG 2026-07-28b] 오디오 재생 중 추론 중단 여부 검증용. 확인 후 제거.
+    // 기존 [TFLiteNativeBench] 로그는 !audioEngine.isGuidePlaying으로 감싸져 있어
+    // 가이드 음성 재생 중에는 "추론 샘플 0건"으로 보이지만, 그것이 실제 중단인지
+    // 로그 억제인지 구분할 수 없다. 여기서는 오디오 상태로 게이팅하지 않고 집계만
+    // 올리고, 5초마다 한 줄로 flush한다(프레임당 로그가 아니라 오디오 콜백과 경합하지 않음).
+    {
+      const d = frameDiagRef.current;
+      const playing = audioEngine.isGuidePlaying;
+      d.frames += 1;
+      if (playing) d.framesAudio += 1;
+    }
     // 2026-07-11 event_id 구조화(dev 개선 계획서 §3): 기존 `event-${now}`는 ms 단위라
     // 반사/인지 두 캡처 타이머가 같은 ms에 발화하면 event_id가 충돌했고, 서버 DB의
     // event_id UNIQUE + 중복 저장 방지 로직(detection_guidance_log_service)이 두 번째
@@ -1175,6 +1222,12 @@ export function CameraView() {
 
     detectingRef.current = true;
     lastDetectTsRef.current = now;
+    // [TEMP DIAG 2026-07-28b] 추론 디스패치/완료 집계(오디오 상태 무관).
+    {
+      const d = frameDiagRef.current;
+      d.dispatch += 1;
+      if (audioEngine.isGuidePlaying) d.dispatchAudio += 1;
+    }
     // 💡 [면접 대비 주석] 추론을 fire-and-forget로 분리한 이유 (2026-07-28).
     // 이전에는 `await detectFrameRef.current(...)`로 handleFrame이 추론 완료(약 101.6ms)까지
     // 블로킹되었다. handleFrame은 handleStreamFrameBase64 -> onFrameRef로부터 JS 스레드에서
@@ -1190,6 +1243,17 @@ export function CameraView() {
     const detectTs = now;
     void detectFrameRef.current(frame.float32, frame.base64)
       .then((result: any) => {
+        // [TEMP DIAG 2026-07-28b] 완료 집계. total_ms를 오디오 상태와 무관하게 누적한다.
+        {
+          const d = frameDiagRef.current;
+          d.done += 1;
+          const totalMs = result?.benchmark?.total_ms;
+          if (typeof totalMs === "number") d.totalMsSum += totalMs;
+          if (audioEngine.isGuidePlaying) {
+            d.doneAudio += 1;
+            if (typeof totalMs === "number") d.totalMsSumAudio += totalMs;
+          }
+        }
         runDetectionResult(result, detectTs);
       })
       .catch((err: unknown) => {
@@ -1204,13 +1268,22 @@ export function CameraView() {
   // 비동기 콜백으로 실행된다. detectingRef가 추론 체인을 직렬화하므로 동시 실행되지 않는다.
   const runDetectionResult = useCallback((result: any, now: number) => {
     const { seg = [], det = [], benchmark, scene } = result ?? {};
-    const dt = benchmark?.total_ms ?? 0;
+    // 2026-07-28: fire-and-forget 분리(fcbd77a) 이후 벽시계 폴백이 사라져 dt가 항상 0이었다.
+    // now는 추론 디스패치 시각(detectTs)이므로 여기까지의 경과가 곧 종단 추론 지연이다.
+    // 네이티브 benchmark가 없어도 이 값으로 동적 FPS 과부하 보호가 동작해야 한다.
+    const dt = Date.now() - now;
     if (benchmark && !audioEngine.isGuidePlaying) {
       console.log(`[CoreMLBench] ANE 가속 지연시간 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
     }
     // 온디바이스 추론 지연을 캡처 루프에 피드백하여 반사 fps를 동적으로 조절
     // (추론이 캡처 간격을 못 따라가면 fps를 낮춰 과부하로 인한 크래시 재발을 방지)
-    reportInferenceLatencyRef.current(benchmark?.total_ms ?? dt);
+    // 2026-07-28: requiresFloat32=true인 JS 디코드 폴백에서만 추론이 JS 스레드를 점유해
+    // 캡처를 실제로 막는다. 네이티브 경로는 백그라운드 스레드 + fire-and-forget이라
+    // 추론 지연으로 캡처 간격을 늘리면 서버 전송·콘솔 Live Feed까지 함께 느려진다.
+    reportInferenceLatencyRef.current(
+      benchmark?.total_ms ?? dt,
+      requiresFloat32Ref.current,
+    );
     // BBox 오버레이용: det + seg 상위 결과 병합
     const allDetections = [...det, ...seg].slice(0, 20);
 
