@@ -4259,3 +4259,66 @@
   - 코드-문서 정합성 검토 8개 이슈 수정: 이중->3중 게이트 표현 통일, ChatOllama->SimpleOllamaClient 오기 정정, Surface TTL 15->60초, base64->바이너리 전송, architecture.md 섹션 번호 중복 해소, 상대경로 링크 8곳 정정, bge-m3 생활지원 RAG 임베딩 이중 명시, validate_agent_rules pre-commit 훅 등록
 - **관련 파일**: `agents/skills/yolo-obstacle-detection/SKILL.md`, `.claude/skills/yolo-obstacle-detection/SKILL.md`, `.pre-commit-config.yaml`, `AGENTS.md`, `SKILLS.md`, `docs/design/architecture.md`, `docs/design/minchodan_design_note.md`, `docs/design/pipeline_stage_design.md`, `docs/ops/environment_variables.md`, `docs/handoff/2026-07-28_consistency_review_handoff.md`
 - **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+
+---
+
+### 2026-07-28 | ops | integration_test_env_bringup_and_test_contract_fix
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - integration-test-orchestrator 스킬 절차로 macOS 통합 테스트 환경 기동(FastAPI/Redis/MariaDB/Console 4컨테이너 + Metro + Android 실기기).
+  - 로컬 자립 프로필 `.env.network.local` 신설(컨테이너 MariaDB + `EVENT_FRAME_STORAGE_BACKEND=local`). 클라우드 DB 호스트가 플레이스홀더이고 Tailscale RPi가 오프라인이라 컨테이너 DB로 폴백.
+  - 기존 `docker_mariadb_data` 볼륨의 root/앱 계정 불일치를 볼륨 삭제 없이 `--skip-grant-tables` 임시 인스턴스로 복구하고 `gildang`/`gildang_db` 재생성. 기존 `minchodan_db`는 보존.
+  - `server/db/init_db.py`로 ORM 스키마 7테이블 생성, 관리자 부트스트랩 1회 수행(로컬 자격증명 파일의 5자 플레이스홀더 비밀번호가 서버 정책 12자 미달이라 재발급).
+  - `tests/test_event_frame_store.py`: `frames_dir` 픽스처가 저장 백엔드를 `local`로 고정. 로컬 `.env`가 `r2`인 환경에서 단위 테스트가 실 R2 버킷 `event_frames/`를 삭제하려 시도하던 경로를 차단(이번 실행 삭제 0건).
+  - `tests/test_api_ws.py`, `tests/test_ws_live_priority.py`: `decode_ms > 0` 구계약을 존재·비음수 검증으로 정정. a4ef642에서 바이너리 경로 ACK가 디코드 이전에 선전송되도록 바뀌어 ACK의 `decode_ms`는 0.0이 정상.
+  - `scripts/run_integration_tests.sh` 신설. `tests/conftest.py`가 `JWT_ISSUER`/`JWT_AUDIENCE`를 테스트 전용 값으로 setdefault 하여 live_server 마커 테스트가 실서버(`minchodan-api`/`minchodan-clients`)와 iss/aud 불일치로 항상 실패하던 문제를 사전 export로 해소.
+- **관련 파일**: `tests/test_event_frame_store.py`, `tests/test_api_ws.py`, `tests/test_ws_live_priority.py`, `scripts/run_integration_tests.sh`, `.env.network.local`(git 제외), `docs/changelogs/kb.md`
+- **검증 결과**: `ruff check .` All checks passed. `pytest tests/` 482 passed, 1 skipped(수정 전 8 failed). 컨테이너 4종 healthy, 관리자 로그인 HTTP 200, 관제 SSE `system_metrics` 수신, Metro `Android Bundled 991 modules`, FastAPI-Ollama 도달 확인.
+- **비고**: `ruff format --check`에서 `server/tts/speech_text.py`, `tests/test_convenience_rag_sources.py` 2건이 기존부터 미포맷 상태(본 작업 무관, 미수정). Android 실기기는 잠금화면 상태로 앱 WS 연결까지는 미확인. `.env.network.cloud`의 R2 액세스 키가 세션 중 평문 노출되어 폐기·재발급 필요.
+
+---
+
+### 2026-07-28 | 3단계 | android_native_tflite_bridge_ios_parity
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - **원인 규명**: Android 콘솔 Live Feed 끊김의 근본 원인은 온디바이스 추론 입력 계약 비대칭. iOS는 `CoreMLDetector.requiresFloat32=false`로 네이티브가 base64를 직접 소비하는데, Android는 JS `TFLiteDetector.requiresFloat32=true`라 매 프레임 `decodeBase64JpegToHwc`(JPEG 디코드 + 센터크롭 + 바이리니어 리사이즈 + 4.7MiB Float32Array)를 JS 스레드에서 실행했다. `ReflexFrameProcessorPlugin.kt`가 이미 640x640으로 만들어 JPEG로 넘긴 것을 JS가 다시 640x640으로 되돌리는 완전한 왕복.
+  - **`TFLiteInferenceBridgeModule.kt` 신설**: iOS `CoreMLInferenceBridge.swift` 대응. `loadModels()`/`detectFrame(base64)` 동일 시그니처. TFLite Interpreter(GPU delegate, 실패 시 CPU/XNNPACK 폴백)로 det·seg 추론 후 dense head channels-first 디코드와 클래스별 NMS까지 네이티브 수행. 임계값(det 0.50/seg 0.35/IoU 0.45)과 29+4 클래스명은 `tfliteDetector.ts`와 동일 유지.
+  - **`localDetectorSelect.android.ts`**: `NativeTFLiteDetector`로 교체, `requiresFloat32=false`. 네이티브 모듈 부재·로드 실패 시 기존 JS `TFLiteDetector` 자동 폴백. 씬 분류는 `SceneClassifyBridgeModule`과 병렬 실행.
+  - **`app/build.gradle`**: `org.tensorflow:tensorflow-lite(-gpu):2.17.0` 추가. `assets/models`를 APK assets로 패키징(`noCompress "tflite"` 기존 설정 활용), CoreML `ios/`(약 16MB)와 `*.txt`는 `ignoreAssetsPattern`으로 제외.
+  - **`useCamera.ts`**: `handleStreamFrameBase64`의 float32를 지연 계산(lazy getter, 반사/인지 프레임이 결과 공유)으로 변경. JS 폴백 경로로 떨어져도 서버·콘솔 전송이 디코드를 기다리지 않는다.
+  - **`CameraView.tsx`**: JS 디코드 경로 전용 추론 간격 `JS_DECODE_DETECT_MIN_INTERVAL_MS=500` 분리(네이티브 경로는 기존 120ms 유지).
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `client/android/app/build.gradle`, `client/src/inference/localDetectorSelect.android.ts`, `client/src/hooks/useCamera.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: Xiaomi 12(HyperOS, Android 15) 실기기 30초 측정. `handleFrame` reflex 간격 중앙값 899ms→247ms(1.05fps→3.9fps), `NetworkBench` avg30 RTT 4204ms→90ms, 네이티브 추론 total 중앙값 107.7ms(det 35.8/seg 51.9). 로그 `[NativeTFLiteDetector] det=native / seg=native (TFLite GPU)`, `requiresFloat32=false` 확인. `npx tsc --noEmit` 통과, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- **비고**: 목표 8fps(125ms) 대비 아직 247ms. 남은 병목은 `ReflexFrameProcessorPlugin.kt`의 worklet 내 JPEG 압축(quality 70)+base64 인코딩으로 추정되며, 바이트 직접 반환 또는 품질 조정이 후속 과제. 서버측 `detection 수신`이 30초 34건인 것은 Mac CPU YOLO 라우팅(`route_sem`) 한계로, 콘솔 Live Feed 중계 경로(`CONSOLE_RELAY_MIN_INTERVAL_S=0.1`)와는 분리되어 있어 Live Feed는 프레임 도착률을 따른다. JDK 미설치 환경이라 `JAVA_HOME=/opt/homebrew/opt/openjdk@17`로 빌드했다.
+
+---
+
+### 2026-07-28 | 3단계 | android_native_pixel_handoff_and_frame_supply_finding
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - **`ReflexFrameCache` 신설**: 프레임 프로세서가 이미 확보한 640x640 ARGB 픽셀을 네이티브 캐시에 보관하고, 추론 브릿지가 직접 읽는다. 같은 프로세스 안에서 방금 만든 픽셀을 JPEG 인코딩 -> base64 -> `Base64.decode` -> `BitmapFactory.decode` -> `getPixels`로 되돌리던 왕복을 제거.
+  - **`TFLiteInferenceBridgeModule.detectFrameCached()`**: 인자 없이 캐시를 소비하는 경로. 캐시 미존재 시 `NO_FRAME`으로 거절해 JS가 기존 `detectFrame(base64)`로 폴백.
+  - **전처리 벌크화**: 픽셀당 `putFloat` 3회(약 123만 회)를 `FloatArray` 채운 뒤 `FloatBuffer.put(array)` 1회로 교체. 4.7MiB 다이렉트 입력 버퍼를 프레임마다 재할당하지 않고 인스턴스 단위 재사용.
+  - **`prep_ms` 벤치 필드 추가**: 전처리와 추론 지연을 분리 계측.
+  - **카메라 포맷 고정 시도 후 되돌림**: `useCameraFormat`으로 720p/30fps를 지정했더니 Xiaomi 12에서 `CameraView averageFps=0.0`으로 세션이 프레임을 전혀 내보내지 않았다. fps를 포맷 지원 범위로 클램프해도 동일. 회귀이므로 되돌리고, 기기가 실제 제공하는 포맷 목록을 찍는 진단 로그만 남겼다.
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/ReflexFrameCache.kt`, `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/ReflexFrameProcessorPlugin.kt`, `client/src/inference/localDetectorSelect.android.ts`, `client/src/components/CameraView.tsx`, `docs/changelogs/kb.md`
+- **검증 결과**: Xiaomi 12 35초 측정. `handleFrame` reflex 간격 중앙값 247ms -> 218ms(3.9fps -> 4.5fps), 네이티브 추론 total 중앙값 107.7ms -> 94.6ms(prep 4~12ms), 플러그인 콜백 중앙값 62ms -> 38ms, 서버 detection 수신 34건/30초 -> 60건/35초. 최초 대비 1.05fps -> 4.5fps. `npx tsc --noEmit` 통과, `assembleDebug` BUILD SUCCESSFUL.
+- **비고**: 목표 8fps(125ms) 미달. **남은 병목은 처리 비용이 아니라 카메라 공급률로 특정됨** - 플러그인 콜백이 35초에 167회(4.8회/초)인데 콜백 1회 처리는 38ms, worklet 스로틀은 125ms라 worklet은 프레임당 171ms를 놀고 있다. 즉 VisionCamera가 기본 포맷에서 초당 약 4.8프레임만 공급한다. 유효한 포맷 조합 선정이 후속 과제이며, `[Camera] 지원 포맷(상위 8)` 로그로 기기 실제 목록을 먼저 확인해야 한다. 측정 중 `useSttRecorder.ts:79`의 `useAudioRecorder`에서 `AudioRecorder.constructor ... current activity is no longer available` 렌더 에러가 반복 발생해 `CameraView` 마운트를 막는 현상도 확인됐다(별도 결함, 미해결).
+
+---
+
+### 2026-07-28 | 1단계 | ws_reconnect_loop_root_cause_location_permission
+
+- **커밋**: `(미커밋)`
+- **변경 내용**:
+  - **증상**: 앱 UI `연결중`↔`연결됨` 깜빡임. 서버 기준 3분간 292회 연결·해제, 종료 코드 전부 `1000`(클라이언트 정상 종료).
+  - **추적**: `onclose` 로그가 최근 2000줄에 0건 → 닫기 전 `onclose`를 null로 만드는 경로만 후보(소켓 교체 effect, AppState background 핸들러). `[Camera] 루프 중지` 1회뿐이라 리마운트 아님, `useWebSocket` 사용처 1곳이라 소켓 경합 아님. 임시 진단 로그 투입 결과 소켓 교체 effect 0회, **AppState 30초 75회 진동**(active↔background 약 1.25회/초). logcat에서 `GrantPermissionsActivity` 20초 99회, `REQUEST_PERMISSIONS` 79회, `callingPackage com.minchodan.app` 확인.
+  - **근본 원인**: `useLocation.requestLocationPermission`이 현재 상태를 조회하지 않고 항상 `Location.requestForegroundPermissionsAsync()`를 호출. 이미 부여된 상태에서도 권한 다이얼로그가 떠 MainActivity가 pause되고 AppState가 background로 떨어져 `useWebSocket`이 소켓을 닫는다. 이 훅을 부르는 CameraView GPS effect의 의존성이 `[isMockMode, status]`(WS 연결 상태)라, 재연결로 status가 connected가 될 때마다 재호출되는 자기 강화 루프가 성립했다.
+  - **수정**: `getForegroundPermissionsAsync()` 선조회 후 미부여일 때만 요청, 영구 거부(`canAskAgain === false`) 조기 반환. `useSttRecorder.ensurePermission`과 동일 패턴.
+  - **부수 수정**: CameraView의 STT 권한 재확인 effect도 `active` 전이마다 무조건 재요청하던 것을 `background -> active` 전이 + in-flight 가드 + 최소 간격 10초로 제한.
+- **관련 파일**: `client/src/hooks/useLocation.ts`, `client/src/components/CameraView.tsx`, `client/src/hooks/useWebSocket.ts`(임시 진단 로그), `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `docs/changelogs/kb.md`
+- **검증 결과**: Xiaomi 12 30초 측정. AppState 진동 115회→**0회**, WS 재연결 57회→**0회**, `REQUEST_PERMISSIONS` 117회→**0회**, 서버 세션 종료 58회→**0회**. 서버 `detection 수신` 34건/30초→**169건/30초**(약 5배). `handleFrame` 중앙값 215ms(4.6fps), 네이티브 추론 total 101.6ms, 플러그인 콜백 44ms, 카메라 공급 30.0fps. `npx tsc --noEmit` 통과.
+- **비고**: **이 루프가 그동안의 모든 프레임레이트 측정을 오염시켰다**(초당 1.6회 소켓 재수립). 이전 엔트리의 1.05/3.9/4.5fps 수치는 오염 상태 값이므로 비교 기준으로 쓰지 말 것. 8fps 목표는 미달(215ms)이며 남은 병목 분석과 후속 과제는 인수인계 문서 §5 참조. 임시 진단 로그 3종은 제거 대상(§8).

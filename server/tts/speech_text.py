@@ -39,9 +39,7 @@ def normalize_text_for_speech(text: str | None) -> str:
         return ""
 
     def replace_phone(match: re.Match[str]) -> str:
-        spoken_groups = ", ".join(
-            _speak_digit_group(group) for group in match.groups() if group
-        )
+        spoken_groups = ", ".join(_speak_digit_group(group) for group in match.groups() if group)
         return f"{spoken_groups} "
 
     return _PHONE_NUMBER_PATTERN.sub(replace_phone, str(text))

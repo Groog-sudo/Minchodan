@@ -26,9 +26,18 @@ from server.services.remote_storage_client import RemoteStoreResult
 
 @pytest.fixture
 def frames_dir(tmp_path, monkeypatch):
-    """EVENT_FRAMES_DIR를 임시 디렉토리로 격리한다."""
+    """EVENT_FRAMES_DIR를 임시 디렉토리로 격리한다.
+
+    2026-07-28: 저장 백엔드도 함께 local로 고정한다. 로컬 `.env`가
+    EVENT_FRAME_STORAGE_BACKEND=r2 인 환경에서는 cleanup_expired_frames()가
+    is_r2_backend() 분기를 타서 실제 Cloudflare R2 버킷의 event_frames/ 객체를
+    삭제하려 시도한다(단위 테스트가 운영 데이터를 지우는 경로). 백엔드를 고정해
+    임시 디렉토리 검증만 수행하도록 한다.
+    """
     target = tmp_path / "event_frames"
     monkeypatch.setattr(store, "EVENT_FRAMES_DIR", target)
+    monkeypatch.setenv("EVENT_FRAME_STORAGE_BACKEND", "local")
+    monkeypatch.setenv("EVENT_FRAME_BACKEND", "local")
     return target
 
 

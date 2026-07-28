@@ -9,9 +9,7 @@ from server.rag.convenience_rag import build_convenience_documents
 def test_official_seoul_dataset_has_public_sources() -> None:
     documents = build_convenience_documents()
     organizations = [
-        document
-        for document in documents
-        if document.metadata.get("source_type") == "organization"
+        document for document in documents if document.metadata.get("source_type") == "organization"
     ]
 
     assert len(organizations) == 11

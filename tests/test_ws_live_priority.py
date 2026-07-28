@@ -93,7 +93,10 @@ async def test_live_ws_detection_control_and_server_detection():
         assert "ack" in types, f"ack missing, got={types}"
         ack = next(m for m in messages if m.get("type") == "ack")
         assert ack.get("event_id") == event_id
-        assert ack.get("decode_ms", 0) > 0
+        # 2026-07-24(a4ef642): 바이너리 경로 ACK는 디코드 이전에 즉시 전송된다.
+        # decode_ms > 0 은 구계약이므로 존재·비음수만 검증한다(test_api_ws 동일).
+        assert isinstance(ack.get("decode_ms"), (int, float))
+        assert ack.get("decode_ms", -1) >= 0
 
         assert "server_detection" in types, f"server_detection missing, got={types}"
         det_msg = next(m for m in messages if m.get("type") == "server_detection")

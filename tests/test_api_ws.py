@@ -101,7 +101,12 @@ def test_websocket_detection_binary_transport():
         ack_msg = websocket.receive_json()
         assert ack_msg["type"] == "ack"
         assert ack_msg["event_id"] == "evt-binary-1"
-        assert ack_msg["decode_ms"] > 0
+        # 2026-07-24(a4ef642) 이후 바이너리 경로는 ACK를 먼저 보내고 JPEG 디코드를
+        # 백그라운드(_decode_and_route_bg)에서 수행한다. 따라서 ACK의 decode_ms는
+        # 디코드 소요가 아니라 "아직 측정 전"을 뜻하는 0.0이 정상이다. 계약은
+        # 필드 존재와 음수가 아님까지만 검증한다.
+        assert isinstance(ack_msg["decode_ms"], (int, float))
+        assert ack_msg["decode_ms"] >= 0
 
 
 def test_websocket_binary_frame_without_pending_meta_is_ignored():
