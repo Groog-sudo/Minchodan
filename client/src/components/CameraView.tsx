@@ -1246,7 +1246,13 @@ export function CameraView() {
       // 달랐다(실제 엔진은 TFLite GPU/CPU). 태그를 플랫폼 중립으로 바꾸고 실제 엔진명을
       // 함께 찍어 양 플랫폼 대조가 가능하게 한다(android_ios_parity_checklist M-08).
       const engineLabel = detShapeLogRef.current || Platform.OS;
-      console.log(`[OnDeviceBench] ${engineLabel} 추론 지연 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms`);
+      // 2026-07-28: run(가속기)/decode(JVM 후처리) 분리 계측을 함께 찍는다. 두 수치의
+      // 비율이 다음 최적화가 가속기 교체(INT8/NPU)인지 후처리 개선인지를 결정한다.
+      const split =
+        benchmark.det_run_ms !== undefined
+          ? ` | det 내역 run: ${benchmark.det_run_ms.toFixed(2)}ms + decode: ${benchmark.det_decode_ms?.toFixed(2) ?? 0}ms | seg 내역 run: ${benchmark.seg_run_ms?.toFixed(2) ?? 0}ms + decode: ${benchmark.seg_decode_ms?.toFixed(2) ?? 0}ms`
+          : "";
+      console.log(`[OnDeviceBench] ${engineLabel} 추론 지연 - 탐지(det): ${benchmark.det_ms?.toFixed(2) ?? 0}ms | 분할(seg): ${benchmark.seg_ms?.toFixed(2) ?? 0}ms | 총합(total): ${benchmark.total_ms?.toFixed(2) ?? 0}ms${split}`);
     }
     // 온디바이스 추론 지연을 캡처 루프에 피드백하여 반사 fps를 동적으로 조절
     // (추론이 캡처 간격을 못 따라가면 fps를 낮춰 과부하로 인한 크래시 재발을 방지)

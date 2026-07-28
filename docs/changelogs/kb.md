@@ -4552,3 +4552,16 @@
 - **관련 파일**: `server/navigation/server.py`, `tests/test_navigation_server_poi_resolver.py`, `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `docs/design/api_specification.md`, `docs/ops/environment_variables.md`, `docs/stage-guides/stage_stt_integration_guide.md`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`, `scripts/export_tflite.py`, `.env.example`
 - **검증 결과**: `pytest tests/test_navigation_server_poi_resolver.py` 18 passed(기존 실패 3건 복구 + opt-in/API 실패 격리 테스트 5건 신규). `ruff check`·`ruff format --check` 통과.
 - **비고**: 안드로이드 Kotlin 변경은 코드 리뷰 수준 검증만 수행했으며 실기기 재빌드·BBox 육안 확인은 미실시.
+
+---
+
+### 2026-07-28 | 3단계 | android_run_decode_split_bench_and_buffer_reuse
+
+- **커밋**: `perf(client/android): 추론 run/decode 분리 계측 및 출력 버퍼 재사용`
+- **변경 내용**:
+  - `runModel()`을 `ModelRun(detections, runMs, decodeMs)` 반환으로 바꿔 **가속기 실행(run)과 JVM 후처리(decode)를 분리 계측**. 벤치마크에 `det_run_ms`/`det_decode_ms`/`seg_run_ms`/`seg_decode_ms` 추가하고 `[TFLiteNativeBench]`·`[OnDeviceBench]` 로그에 노출(기존 prep/det/seg/total 토큰 순서는 측정 명령 grep 패턴 호환을 위해 유지).
+  - 출력 버퍼 재사용(`OutputScratch`): det 1.11MB + seg 1.34MB를 매 프레임 `allocateDirect` + 동일 크기 `FloatArray`로 새로 할당하던 것을 모델별 1회 할당으로 전환. 입력 버퍼는 이미 재사용 처리되어 있었으나 출력만 누락된 상태였다.
+  - `decodeDense`를 클래스 우선 순차 스캔으로 재작성(앵커 우선 스트라이드 접근 → 캐시 친화 순차 스캔).
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `client/src/inference/types.ts`, `client/src/inference/localDetectorSelect.android.ts`, `client/src/components/CameraView.tsx`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 실기기(Xiaomi 12) 256프레임/40초 실측. `det_run` 중앙값 27.70ms / `det_decode` 0.51ms / `seg_run` 34.97ms / `seg_decode` 0.35ms / `total` 34.83ms. `tsc --noEmit` 통과, `:app:compileDebugKotlin` BUILD SUCCESSFUL.
+- **비고**: **후처리 병목 가설은 기각됐다.** decode는 det의 1.8%로, 재작성 전에도 병목이 아니었다. 남은 병목은 전부 `interpreter.run()`이며 iOS 격차 해소는 INT8+HTP 또는 해상도 축소 외 선택지가 없다(둘 다 mAP 검증 선행 필요). 상세는 핸드오프 §5.13.

@@ -29,6 +29,15 @@ export interface InferenceBenchmark {
   prep_ms?: number;
   scene_ms?: number;
   total_ms?: number;
+  /**
+   * 2026-07-28: det_ms/seg_ms는 "가속기 실행 + JVM 후처리"를 합친 값이라 최적화 방향을
+   * 가를 수 없었다. run(가속기 delegate 실행)과 decode(dense head 디코드 + NMS)를 분리해
+   * 보고한다. Android 네이티브 브릿지에서만 채워지며 iOS/JS 폴백 경로에서는 undefined.
+   */
+  det_run_ms?: number;
+  det_decode_ms?: number;
+  seg_run_ms?: number;
+  seg_decode_ms?: number;
 }
 
 export interface DualDetectionResult {

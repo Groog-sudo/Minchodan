@@ -82,6 +82,46 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         .allocateDirect(INPUT_SIZE * INPUT_SIZE * 3 * 4)
         .order(ByteOrder.nativeOrder())
 
+    // 💡 [면접 대비 주석] 출력 버퍼도 입력과 동일하게 재사용한다 (2026-07-28).
+    // 입력 버퍼는 재사용 처리가 되어 있었지만 출력은 매 프레임 새로 할당하고 있었다.
+    // det 출력 [1,33,8400] = 277,200 float = 1.11MB, seg 출력 [1,40,8400] = 1.34MB로,
+    // seg가 도는 프레임마다 2.45MB를 allocateDirect(native malloc)로 새로 잡고 같은 크기의
+    // FloatArray까지 새로 만들어 GC 압력을 유발했다. det/seg는 출력 크기가 다르므로
+    // 모델별로 분리 보관한다. 추론은 inferenceHandler 단일 스레드 전용이라 동기화 불필요.
+    private val detOutScratch = OutputScratch()
+    private val segOutScratch = OutputScratch()
+
+    // decodeDense의 앵커별 최대 점수 누산용. det/seg 모두 NUM_ANCHORS 고정이라 공유한다.
+    private val bestScorePerAnchor = FloatArray(NUM_ANCHORS)
+    private val bestClassPerAnchor = IntArray(NUM_ANCHORS)
+
+    /** 모델 출력 텐서 크기에 맞춰 direct 버퍼와 FloatArray를 1회만 할당해 재사용한다. */
+    private class OutputScratch {
+        private var buffer: ByteBuffer? = null
+        private var floats: FloatArray? = null
+
+        // TFLite는 출력 ByteBuffer 크기가 텐서 바이트 수와 정확히 일치할 것을 요구하므로
+        // "충분히 큼"이 아니라 정확 일치일 때만 재사용한다.
+        fun buffer(length: Int): ByteBuffer {
+            val cur = buffer
+            if (cur != null && cur.capacity() == length * 4) {
+                cur.clear()
+                return cur
+            }
+            val next = ByteBuffer.allocateDirect(length * 4).order(ByteOrder.nativeOrder())
+            buffer = next
+            return next
+        }
+
+        fun floats(length: Int): FloatArray {
+            val cur = floats
+            if (cur != null && cur.size == length) return cur
+            val next = FloatArray(length)
+            floats = next
+            return next
+        }
+    }
+
     override fun getName(): String = "TFLiteInferenceBridge"
 
     // ---------------------------------------------------------------- load
@@ -255,16 +295,17 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
 
     private fun runBothAndResolve(input: ByteBuffer, prepMs: Double, promise: Promise) {
         try {
-            val detStart = System.nanoTime()
-            val det = runModel(
+            val detRun = runModel(
                 detInterpreter,
                 input,
                 AIHUB_CLASS_NAMES,
                 DET_CONF_THRESHOLD,
                 LEGACY_DET_ATTRS,
-                "object_detection"
+                "object_detection",
+                detOutScratch
             )
-            val detMs = (System.nanoTime() - detStart) / 1_000_000.0
+            val det = detRun.detections
+            val detMs = detRun.runMs + detRun.decodeMs
 
             // 💡 [면접 대비 주석] seg 주기 분리 (2026-07-28).
             // seg(노면 4클래스)는 온디바이스 안전 경로에 쓰이지 않는다.
@@ -280,19 +321,24 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             // seg를 건너뛴 프레임은 직전 결과를 그대로 재사용하므로 오버레이가 깜빡이지 않는다.
             val runSeg = (inferenceTick++ % SEG_EVERY_N) == 0L
             var segMs = 0.0
+            var segRunMs = 0.0
+            var segDecodeMs = 0.0
             val seg: List<Detection>
             if (runSeg) {
                 input.rewind()
-                val segStart = System.nanoTime()
-                seg = runModel(
+                val segRun = runModel(
                     segInterpreter,
                     input,
                     SEG_CLASS_NAMES,
                     SEG_CONF_THRESHOLD,
                     LEGACY_SEG_ATTRS,
-                    "segmentation"
+                    "segmentation",
+                    segOutScratch
                 )
-                segMs = (System.nanoTime() - segStart) / 1_000_000.0
+                seg = segRun.detections
+                segRunMs = segRun.runMs
+                segDecodeMs = segRun.decodeMs
+                segMs = segRunMs + segDecodeMs
                 lastSegResult = seg
             } else {
                 seg = lastSegResult
@@ -305,6 +351,12 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 putDouble("prep_ms", prepMs)
                 putDouble("scene_ms", 0.0)
                 putDouble("total_ms", prepMs + detMs + segMs)
+                // run = 가속기(GPU delegate) 실행, decode = JVM dense head 디코드 + NMS.
+                // 최적화 방향(가속기 교체 vs 후처리 개선)을 가르는 분리 계측이다.
+                putDouble("det_run_ms", detRun.runMs)
+                putDouble("det_decode_ms", detRun.decodeMs)
+                putDouble("seg_run_ms", segRunMs)
+                putDouble("seg_decode_ms", segDecodeMs)
             }
 
             promise.resolve(
@@ -376,33 +428,53 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
         return buffer
     }
 
+    /**
+     * 모델 1회 실행 결과와 구간별 지연.
+     *
+     * 💡 [면접 대비 주석] run/decode 분리 계측 (2026-07-28).
+     * 기존에는 `det_ms` 하나로 "가속기 실행 + JVM 후처리"를 뭉쳐서 쟀기 때문에,
+     * 35ms 중 GPU 몫이 얼마인지 알 수 없어 최적화 방향(가속기 교체 vs 후처리 개선)을
+     * 정할 수 없었다. iOS는 CoreML을 nms=True로 export해 디코딩·NMS까지 ANE 그래프
+     * 안에서 처리하지만, Android는 NNAPI/GPU 호환을 위해 nms=False로 뽑아 디코딩·NMS를
+     * JVM으로 끄집어냈다. 두 플랫폼 수치를 비교하려면 이 분리가 전제다.
+     */
+    private data class ModelRun(
+        val detections: List<Detection>,
+        val runMs: Double,
+        val decodeMs: Double
+    )
+
     private fun runModel(
         interpreter: Interpreter?,
         input: ByteBuffer,
         names: Array<String>,
         confThreshold: Float,
         legacyAttrs: Int,
-        label: String
-    ): List<Detection> {
-        if (interpreter == null) return emptyList()
+        label: String,
+        scratch: OutputScratch
+    ): ModelRun {
+        if (interpreter == null) return ModelRun(emptyList(), 0.0, 0.0)
         return try {
             val outTensor = interpreter.getOutputTensor(0)
             val outLength = outTensor.shape().fold(1) { acc, d -> acc * d }
-            val outBuffer = ByteBuffer
-                .allocateDirect(outLength * 4)
-                .order(ByteOrder.nativeOrder())
+            val outBuffer = scratch.buffer(outLength)
 
+            val runStart = System.nanoTime()
             interpreter.run(input, outBuffer)
+            val runMs = (System.nanoTime() - runStart) / 1_000_000.0
 
+            val decodeStart = System.nanoTime()
             outBuffer.rewind()
-            val out = FloatArray(outLength)
+            val out = scratch.floats(outLength)
             outBuffer.asFloatBuffer().get(out)
-
-            decodeDense(out, names, confThreshold, label)
+            val detections = decodeDense(out, names, confThreshold, label)
                 ?: decodeLegacy(out, names, confThreshold, legacyAttrs, label)
+            val decodeMs = (System.nanoTime() - decodeStart) / 1_000_000.0
+
+            ModelRun(detections, runMs, decodeMs)
         } catch (e: Throwable) {
             Log.e(TAG, "$label 추론 에러: ${e.message}", e)
-            emptyList()
+            ModelRun(emptyList(), 0.0, 0.0)
         }
     }
 
@@ -423,18 +495,30 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
             return null
         }
 
-        val results = ArrayList<Detection>(16)
-        for (i in 0 until NUM_ANCHORS) {
-            var bestClassId = -1
-            var bestScore = confThreshold
-
-            for (c in 0 until nc) {
-                val score = out[(4 + c) * NUM_ANCHORS + i]
-                if (score > bestScore) {
-                    bestScore = score
-                    bestClassId = c
+        // 💡 [면접 대비 주석] 클래스 우선 순차 스캔 (2026-07-28).
+        // 기존 루프는 앵커 i를 바깥, 클래스 c를 안쪽에 두어 out[(4+c)*8400 + i]를 읽었다.
+        // 이 접근은 한 앵커의 29개 클래스가 각각 8400 float(33,600바이트)씩 떨어져 있어
+        // 8400 x 29 = 243,600회 접근이 사실상 전부 캐시 미스가 된다.
+        // 루프를 뒤집으면 클래스 c 한 줄(8400 float = 33KB)을 순차 스캔하는 형태가 되어
+        // 캐시 라인을 온전히 쓰고 JIT 벡터화도 받을 수 있다. 결과는 완전히 동일하다.
+        val bestScore = bestScorePerAnchor
+        val bestClass = bestClassPerAnchor
+        java.util.Arrays.fill(bestScore, confThreshold)
+        java.util.Arrays.fill(bestClass, -1)
+        for (c in 0 until nc) {
+            val base = (4 + c) * NUM_ANCHORS
+            for (i in 0 until NUM_ANCHORS) {
+                val score = out[base + i]
+                if (score > bestScore[i]) {
+                    bestScore[i] = score
+                    bestClass[i] = c
                 }
             }
+        }
+
+        val results = ArrayList<Detection>(16)
+        for (i in 0 until NUM_ANCHORS) {
+            val bestClassId = bestClass[i]
             if (bestClassId < 0) continue
 
             val cx = out[i] * INPUT_SIZE
@@ -450,7 +534,7 @@ class TFLiteInferenceBridgeModule(reactContext: ReactApplicationContext) :
                 Detection(
                     model = label,
                     className = names.getOrElse(bestClassId) { "cls_$bestClassId" },
-                    confidence = bestScore,
+                    confidence = bestScore[i],
                     x = cx - w / 2f,
                     y = cy - h / 2f,
                     w = w,

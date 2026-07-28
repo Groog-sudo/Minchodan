@@ -97,7 +97,10 @@ class NativeTFLiteDetector implements LocalDetector {
       if (bridgeResult?.benchmark && !audioEngine.isGuidePlaying) {
         const b = bridgeResult.benchmark;
         console.log(
-          `[TFLiteNativeBench] prep=${b.prep_ms?.toFixed(2)}ms det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms`,
+          // 2026-07-28: det_run(GPU delegate 실행) / det_decode(JVM dense head + NMS) 분리.
+          // 기존 prep/det/seg/total 토큰 순서는 핸드오프 §측정 명령의 grep 패턴이 의존하므로
+          // 그대로 두고 뒤에 덧붙인다.
+          `[TFLiteNativeBench] prep=${b.prep_ms?.toFixed(2)}ms det=${b.det_ms?.toFixed(2)}ms seg=${b.seg_ms?.toFixed(2)}ms total=${b.total_ms?.toFixed(2)}ms det_run=${b.det_run_ms?.toFixed(2)}ms det_decode=${b.det_decode_ms?.toFixed(2)}ms seg_run=${b.seg_run_ms?.toFixed(2)}ms seg_decode=${b.seg_decode_ms?.toFixed(2)}ms`,
         );
       }
 
