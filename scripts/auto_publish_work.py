@@ -169,7 +169,10 @@ def check_forbidden_files():
             text=True,
             check=True,
         )  # nosec B603 B607
-        status_lines = result.stdout.strip().split("\n")
+        # 2026-07-28: stdout 전체를 strip() 하면 unstaged 수정(" M path")의 첫 줄에서
+        # 앞 공백이 사라져 상태 문자가 2개로 줄고, 뒤의 line[3:]가 경로 첫 글자를
+        # 잘라먹는다(실측: "client/..." -> "lient/..."). splitlines()로 줄만 나눈다.
+        status_lines = result.stdout.splitlines()
 
         forbidden_found = False
         for line in status_lines:
@@ -267,7 +270,7 @@ def analyze_modified_documents():
             check=True,
         )  # nosec B603 B607
         modified_files = []
-        for line in result.stdout.strip().split("\n"):
+        for line in result.stdout.splitlines():
             if line:
                 modified_files.append(line[3:].strip())
 
@@ -310,7 +313,7 @@ def analyze_modified_documents():
         print_warn(f"수정 파일 분석 중 오류 발생: {e!s}")
 
 
-def write_changelog(initial, stage, summary, desc, modified_files):
+def write_changelog(initial, stage, summary, desc, modified_files, tests_ran=True):
     """Changelog 파일에 이력을 자동 누적 기입합니다."""
     print_header("Changelog 기입")
     changelog_path = os.path.join(PROJECT_ROOT, "docs", "changelogs", f"{initial}.md")
@@ -334,6 +337,13 @@ def write_changelog(initial, stage, summary, desc, modified_files):
 
     # 추가될 로그 항목 구성
     files_str = ", ".join([f"`{f}`" for f in modified_files]) if modified_files else "없음"
+    # 2026-07-28: --skip-test로 테스트를 건너뛴 회차에도 "테스트를 통과함"으로
+    # 기록되어 changelog가 사실과 어긋났다. 실제 실행 여부를 반영한다.
+    verify_str = (
+        "자동화 린트 및 단계별 테스트를 통과함."
+        if tests_ran
+        else "정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test)."
+    )
     entry = f"""
 ---
 
@@ -343,7 +353,7 @@ def write_changelog(initial, stage, summary, desc, modified_files):
 - **변경 내용**:
   - {desc}
 - **관련 파일**: {files_str}
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+- **검증 결과**: {verify_str}
 """
     try:
         with open(changelog_path, "a", encoding="utf-8") as f:
@@ -366,7 +376,7 @@ def get_modified_files_list():
             check=True,
         )  # nosec B603 B607
         files = []
-        for line in result.stdout.strip().split("\n"):
+        for line in result.stdout.splitlines():
             if line:
                 files.append(line[3:].strip())
         return files
@@ -464,7 +474,14 @@ def main():
     analyze_modified_documents()
 
     # 6. Changelog 누적 기록
-    if not write_changelog(args.initial, args.stage, args.summary, args.desc, modified_files):
+    if not write_changelog(
+        args.initial,
+        args.stage,
+        args.summary,
+        args.desc,
+        modified_files,
+        tests_ran=not args.skip_test,
+    ):
         sys.exit(1)
 
     # 7. Git 커밋 및 푸시

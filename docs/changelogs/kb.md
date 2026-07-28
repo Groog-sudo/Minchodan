@@ -4414,5 +4414,7 @@
 - **커밋**: `(자동 커밋 완료)`
 - **변경 내용**:
   - seg 추론을 3프레임 주기로 분리해 BBox 표시 지연 228ms에서 128ms로 단축 (온디바이스 seg는 안전 경로 미사용, 표시 전용 확인 후 적용)
-- **관련 파일**: `lient/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
-- **검증 결과**: 자동화 린트 및 단계별 테스트를 통과함.
+- **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL. 3단계 pytest는 미실행(`--skip-test`) - `verify_gpu.py`가 PyTorch 2.13 이상을 요구하나 로컬 venv는 2.12.1이며 본 변경은 Kotlin 전용이라 무관하다.
+  - 실기기 실측(Xiaomi 12, 40초): 화면 표시 지연 `shownLag` 215~266ms -> **115~155ms(중앙 약 128ms)**, 추론 `avgTotal` 117~128ms -> **65.7~72.3ms**, BBox 갱신률 15~17/5초 -> **20~31/5초(약 5.2/s)**, `handleFrame` 44~46/5초 유지, 서버 `detection 수신` 335건/40초.
+- **비고**: 온디바이스 seg가 안전 경로에 쓰이지 않음을 먼저 확인했다 - `pathObstacleDetector.ts:93`이 `model === "segmentation"`을 전부 건너뛰고, CameraView 반사 후보 필터가 `SAFE_SURFACE_CLASSES`·`GROUND_HAZARDS`(seg 4클래스)를 제외한다("노면은 인지 경로 전담", 2026-07-14). 유일한 소비처는 BBox 표시. 건너뛴 프레임은 `lastSegResult`를 재사용해 오버레이 깜빡임을 막고, 벤치에 `seg_fresh` 플래그를 추가했다. 측정 중 서버 `server_detection`이 전부 탐지 0건으로 도착한 점은 별도 확인 필요.
