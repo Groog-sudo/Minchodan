@@ -4592,3 +4592,18 @@
 - **관련 파일**: `client/android/app/src/main/java/com/minchodan/app/TFLiteInferenceBridgeModule.kt`, `scripts/export_tflite.py`, `scripts/build_int8_calibration_set.py`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: 실기기(Xiaomi 12) 45초 실측 79샘플. **INT8+NNAPI가 FP16 GPU 대비 5.3배 느려 기각** — `det_run` 27.70 → 145.97ms(편차 44.8~471.8ms), `total` 34.83 → 186.03ms. 배포본은 FP16으로 원복(해시 대조 확인). `compileDebugKotlin` BUILD SUCCESSFUL, `ruff check` 통과.
 - **비고**: 2026-07-28 NNAPI 실측은 이번이 두 번째다(§6.3 FP32 235ms, §6.6 INT8 146ms). **이 단말에서 NNAPI는 정밀도와 무관하게 기각**하며, 추가 시도는 Qualcomm QNN SDK로 HTP에 명시 배정하는 방식만 의미가 있다. 정확도(mAP)는 학습·검증 데이터셋이 macOS 개발기에 없어 측정하지 못했고, 속도가 이미 5배 나빠 검증까지 가지 않았다. **브릿지의 int8 I/O 지원은 코드에 유지**했으나(float 모델에서는 완전 비활성) INT8 경로의 탐지 정확도는 미검증이다.
+
+---
+
+### 2026-07-29 | 3단계 | android_inference_pipelining_and_thermal_backoff
+
+- **커밋**: `perf(client/android): 추론 in-flight 2 파이프라이닝 채택 및 캡처 지연 기반 발열 후퇴 도입`
+- **변경 내용**:
+  - **추론 디스패치 파이프라이닝(핸드오프 §5.14, 채택)**: `CameraView.tsx`의 `detectingRef`(boolean, in-flight 1)를 `inFlightRef`(카운터, 상한 `MAX_INFLIGHT_DETECTIONS=2`)로 교체. 기존에는 "직전 추론 완료(약 110ms) + `REAL_DETECT_MIN_INTERVAL_MS`(120ms)"를 모두 만족해야 다음 디스패치가 나가 실효 주기가 약 240ms(4.1/s)였으나, §5.13 실측상 네이티브 추론은 34.8ms이고 나머지는 브릿지 왕복·JS 스케줄링이라 가속기가 대부분 유휴였다.
+  - 파이프라이닝에 따른 결과 역전 대비로 `runDetectionResult` 입구에 `lastAppliedDetectTsRef` 가드를 추가해 오래된 프레임 결과가 최신 BBox·반사 판정을 덮지 않게 했다. JS 디코드 폴백(`requiresFloat32=true`)과 Mock은 추론이 JS 스레드를 실제로 점유하므로 in-flight 1을 유지한다. 네이티브 브릿지는 단일 HandlerThread 순차 실행이라 무변경(큐잉만 늘고 동시 실행은 없어 스크래치 버퍼 재사용 전제가 유지됨).
+  - **발열 후퇴(핸드오프 §5.15, §5.8 설계 공백 보완)**: 1차 선택지였던 ADPF는 **Xiaomi 12에서 `getThermalHeadroom`이 NaN을 반환해 무효**임을 실기기로 확인했다(`adb shell cmd thermalservice headroom 10` -> NaN, 앱 로그 `headroom=미지원`). `getCurrentThermalStatus`도 §5.8에서 스로틀링 중 0(NONE)이라 이 단말에는 쓸 수 있는 발열 API가 없다.
+  - ADPF 경로(`ThermalBridgeModule.kt`, `services/thermalBridge.ts` 신규)는 지원 단말용으로 유지하되(미지원 시 자동 비활성, iOS는 폴링 미실행), §5.8이 원래 제안했던 대체 신호를 함께 구현했다: `useCamera.ts`가 캡처 진입점에서 프레임 도착 간격을 관측해, 지시 간격 대비 1.4배면 175ms·1.8배면 200ms로 하한을 올리고 1.15배 미만 + 20초 dwell에서 해제한다. 실효 하한은 발열/캡처 두 신호 중 큰 값이다.
+  - 헤드룸 지원 여부를 1회 진단 로그로 남겨, 앞으로 "발열이 없어 조용한 것"과 "API가 죽어 기능이 없는 것"을 로그로 구분할 수 있게 했다.
+- **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/services/thermalBridge.ts`, `client/android/app/src/main/java/com/minchodan/app/ThermalBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
+- **검증 결과**: 실기기(Xiaomi 12, Tailscale adb) 30초 실측. **디스패치 4.1 -> 6.33/s(+54%)**, `total` 중앙 34.83 -> 34.70ms, **p90 69.6 -> 71.30ms(큐 적체 없음)**, 서버 `detection 수신` 243건/30초(8.1fps 유지), 동적 FPS 조절 0건. `npx tsc --noEmit` 통과, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
+- **비고**: 목표 8/s가 아닌 6.33/s인 이유는 상한이 프레임 공급(`handleFrame` 8.4~9.0/s)으로 넘어갔기 때문이다. `REAL_DETECT_MIN_INTERVAL_MS` 120 -> 110ms A/B는 **이득 없음(194 -> 196회/30초, 1%)** 으로 확인해 120ms를 유지했다. 두 값이 모두 약 6.5/s로 수렴하므로 상한은 이미 `minInterval`이 아니라 프레임 공급·도착 지터 쪽에 있다. 90ms 결정 실험은 단말 수신 전화로 중단. 측정 중 **발열 스로틀링이 실시간 재현**되어 §5.16에 기록했다(연속 25분 가동, SoC 69.1°C·cpu7 1.29GHz, total 34.7 -> 61.0ms). **배터리 온도는 32.2°C로 정상이었으므로 발열 판단에 쓰면 안 된다.** 이 구간에서 캡처 하한은 도착 간격 비율 1.21배로 임계 1.4에 못 미쳐 발동하지 않았다 - 임계 조정은 후퇴가 실제 냉각으로 이어지는지 측정한 뒤에만 할 것.

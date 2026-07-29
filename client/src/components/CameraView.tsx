@@ -73,6 +73,22 @@ const COLOR_OVERLAY_BG = "rgba(10, 13, 16, 0.85)";
 
 const MOCK_DETECT_MIN_INTERVAL_MS = 1000;
 const REAL_DETECT_MIN_INTERVAL_MS = 120;
+// 💡 [면접 대비 주석] 추론 in-flight 상한 = 파이프라이닝 깊이 (2026-07-29, 핸드오프 §5.4-1').
+// 이전에는 in-flight를 1개로 제한했다(detectingRef boolean). 그러면 다음 디스패치는
+// "직전 추론 완료(약 110ms) 이후 + REAL_DETECT_MIN_INTERVAL_MS(120ms) 경과" 두 조건을
+// 모두 만족해야 하므로 실효 주기가 약 240ms(4.1fps)로 고착됐다. 캡처·서버 전송은 이미
+// 8.1fps인데 온디바이스 반사 탐지만 그 절반으로 도는 상태였다.
+//
+// 네이티브 실측(핸드오프 §5.13)은 추론 자체가 total 34.8ms이고, 나머지 약 75ms는 브릿지
+// 왕복·JS 스케줄링이다. 즉 가속기는 대부분의 시간을 놀고 있었다. in-flight를 2로 올리면
+// 다음 작업이 이미 네이티브 큐(TFLiteInference HandlerThread)에 들어가 있어 인터프리터가
+// 유휴 구간 없이 이어 돌고, 디스패치 주기는 minInterval(120ms, 8.3fps)이 결정한다.
+//
+// 2로 제한하는 이유: 네이티브는 단일 HandlerThread라 3 이상은 큐 적체(= 결과 지연)만
+// 늘린다. 반사 경로는 처리량보다 신선도가 중요하므로 "실행 1 + 대기 1"이 상한이다.
+// 프레임 픽셀은 디스패치 시점에 ReflexFrameCache.snapshot()으로 확정되므로 대기 중인
+// 작업이 최신 프레임으로 바뀌지는 않는다.
+const MAX_INFLIGHT_DETECTIONS = 2;
 // 💡 [면접 대비 주석] 서버 생존 신호 타임아웃 (2026-07-28).
 // 정상 연결 시 서버는 프레임당 ack(~125ms 간격)와 heartbeat(5초 간격)를 보낸다.
 // 따라서 1500ms 동안 아무 메시지가 없으면 서버가 불응하거나 WS가 죽은 것으로 본다.
@@ -1095,7 +1111,11 @@ export function CameraView() {
   useEffect(() => { confThresholdRef.current = confThreshold; }, [confThreshold]);
   useEffect(() => { reportInferenceLatencyRef.current = reportInferenceLatency; }, [reportInferenceLatency]);
 
-  const detectingRef = useRef(false);
+  // 진행 중인 추론 개수(0..MAX_INFLIGHT_DETECTIONS). 이전 boolean detectingRef를 대체한다.
+  const inFlightRef = useRef(0);
+  // 파이프라이닝으로 결과가 뒤바뀌어 도착할 경우 오래된 결과가 최신 BBox/반사 판정을
+  // 덮어쓰지 않도록, 마지막으로 적용한 디스패치 시각을 기록한다.
+  const lastAppliedDetectTsRef = useRef(0);
   // 온디바이스 결과를 화면에 마지막으로 반영한 "실제 시각"(도착 기준).
   // 이 값이 최근이면 온디바이스가 살아 있다고 보고 서버 결과로 덮지 않는다(2026-07-28).
   const lastOnDeviceAppliedAtRef = useRef(0);
@@ -1202,24 +1222,38 @@ export function CameraView() {
         ? JS_DECODE_DETECT_MIN_INTERVAL_MS
         : REAL_DETECT_MIN_INTERVAL_MS;
 
-    if (detectingRef.current || now - lastDetectTsRef.current < minInterval) {
+    // JS 디코드 폴백(requiresFloat32=true)과 Mock은 추론이 JS 스레드를 실제로 점유하므로
+    // 파이프라이닝하면 스레드 포화만 심해진다. 네이티브 백그라운드 경로에서만 2로 연다.
+    const maxInFlight =
+      isMockModeRef.current || requiresFloat32Ref.current
+        ? 1
+        : MAX_INFLIGHT_DETECTIONS;
+
+    if (
+      inFlightRef.current >= maxInFlight ||
+      now - lastDetectTsRef.current < minInterval
+    ) {
       return;
     }
 
-    detectingRef.current = true;
+    inFlightRef.current += 1;
     lastDetectTsRef.current = now;
     // 💡 [면접 대비 주석] 추론을 fire-and-forget로 분리한 이유 (2026-07-28).
     // 이전에는 `await detectFrameRef.current(...)`로 handleFrame이 추론 완료(약 101.6ms)까지
     // 블로킹되었다. handleFrame은 handleStreamFrameBase64 -> onFrameRef로부터 JS 스레드에서
-    // 호출되므로, await 중에는 이 함수의 실행이 일시중단되고 detectingRef.current=true 인 상태로
-    // 머무른다. detectingRef 가드(위 if)가 후속 프레임의 추론을 전부 무시하므로, 결국 추론 한
+    // 호출되므로, await 중에는 이 함수의 실행이 일시중단되고 in-flight 카운터가 소진된 상태로
+    // 머무른다. in-flight 가드(위 if)가 후속 프레임의 추론을 전부 무시하므로, 결국 추론 한
     // 사이클(101.6ms) + REAL_DETECT_MIN_INTERVAL_MS(120ms) 대기 ≈ 215ms가 프레임 간격이 된다.
     //
     // 추론 자체는 이미 1단계(TFLiteInferenceBridgeModule HandlerThread 분리)로 네이티브
     // 백그라운드 스레드에서 돈다. 따라서 JS는 결과를 기다릴 필요 없이 즉시 리턴해 다음
     // 프레임의 캡처/서버 전송을 125ms 간격으로 계속 처리할 수 있다. 추론 결과 도착 시점에
-    // runDetectionResult(result, now)가 BBox/반사 게이트/경보를 처리한다. detectingRef로
-    // 추론 체인은 직렬화되어 있으므로 결과 순서가 보장된다.
+    // runDetectionResult(result, now)가 BBox/반사 게이트/경보를 처리한다.
+    //
+    // 2026-07-29: in-flight를 2로 열면서(MAX_INFLIGHT_DETECTIONS) 더 이상 추론 체인이
+    // 직렬화되지 않는다. 네이티브 HandlerThread는 순차 실행이라 결과도 순서대로 오는 것이
+    // 정상이지만, base64 폴백/JS 폴백이 섞이거나 Promise 해소 순서가 뒤바뀌는 경우를
+    // 대비해 runDetectionResult 입구에서 오래된 결과를 버린다.
     const detectTs = now;
     void detectFrameRef.current(frame.float32, frame.base64)
       .then((result: any) => {
@@ -1229,13 +1263,20 @@ export function CameraView() {
         console.error("[CameraView] 추론 오류:", err);
       })
       .finally(() => {
-        detectingRef.current = false;
+        inFlightRef.current = Math.max(0, inFlightRef.current - 1);
       });
   }, []); // 의존성 없음 - 모든 최신 상태를 ref 로 직접 참조
 
   // 추론 결과 처리: BBox 표시, 씬 판정, 반사 게이트, 경보. handleFrame에서 분리되어
-  // 비동기 콜백으로 실행된다. detectingRef가 추론 체인을 직렬화하므로 동시 실행되지 않는다.
+  // 비동기 콜백으로 실행된다. now는 이 결과를 만든 프레임의 디스패치 시각(detectTs)이다.
   const runDetectionResult = useCallback((result: any, now: number) => {
+    // 파이프라이닝(in-flight 2) 하에서 더 오래된 프레임의 결과가 뒤늦게 도착하면 버린다.
+    // 반사 경로는 최신 프레임의 판정만 유효하며, 오래된 BBox로 화면을 되돌리거나 이미
+    // 지나간 위험을 다시 경보하는 것을 막는다.
+    if (now < lastAppliedDetectTsRef.current) {
+      return;
+    }
+    lastAppliedDetectTsRef.current = now;
     const { seg = [], det = [], benchmark, scene } = result ?? {};
     // 2026-07-28: fire-and-forget 분리(fcbd77a) 이후 벽시계 폴백이 사라져 dt가 항상 0이었다.
     // now는 추론 디스패치 시각(detectTs)이므로 여기까지의 경과가 곧 종단 추론 지연이다.

@@ -15,6 +15,8 @@ class MinchodanCustomPackage : ReactPackage {
         modules.add(PhoneDialBridgeModule(reactContext))
         // iOS CoreMLInferenceBridge 대응 온디바이스 추론 브릿지 (2026-07-28).
         modules.add(TFLiteInferenceBridgeModule(reactContext))
+        // ADPF 발열 헤드룸 - 동적 FPS 컨트롤러 입력 (2026-07-29, 핸드오프 §5.8).
+        modules.add(ThermalBridgeModule(reactContext))
         return modules
     }
 

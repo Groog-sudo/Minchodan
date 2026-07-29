@@ -38,6 +38,10 @@ import {
   useFrameCaptureProvider,
   type FrameData,
 } from "../services/frameCaptureProvider";
+import {
+  isThermalMonitoringSupported,
+  readThermalState,
+} from "../services/thermalBridge";
 
 export type { FrameData };
 
@@ -53,6 +57,40 @@ const MAX_REFLEX_INTERVAL_MS = 200;
 // 2026-07-21 P0: 서버 busy ack의 suggest_reflex_interval_ms 상한(~3.3fps).
 const MAX_SERVER_BUSY_INTERVAL_MS = 300;
 const SERVER_BUSY_HOLD_MS = 1500;
+
+// 💡 [면접 대비 주석] 발열(ADPF) 기반 캡처 간격 하한 (2026-07-29, 핸드오프 §5.8).
+// §5.7에서 추론 지연을 캡처 컨트롤러 입력에서 분리하면서(blocksCapture=false), 캡처 경로
+// 자체가 느려질 때 물러설 장치가 사라졌다. 실사용은 장시간 보행이라 발열 스로틀링이
+// 재현될 조건이므로, 대리 지표(추론 지연) 대신 발열을 직접 읽어 하한을 건다.
+//
+// headroom 1.0이 스로틀링 임계다. 임계에 닿은 뒤 대응하면 이미 카메라 세션 fps가
+// 무너진 상태(§5.8: 30 -> 중앙 12.6)이므로, 0.85에서 한 단계 물러서고 1.0에서 상한까지
+// 내린다. 복귀는 0.7 이하에서만 허용해 임계 근처에서 간격이 진동하지 않게 한다.
+// 폴링 주기 10초는 플랫폼의 헤드룸 갱신 최소 간격에 맞춘 값이다(더 자주 불러도 같은 값).
+const THERMAL_POLL_INTERVAL_MS = 10000;
+const THERMAL_HEADROOM_SEVERE = 1.0;
+const THERMAL_HEADROOM_THROTTLE = 0.85;
+const THERMAL_HEADROOM_RECOVER = 0.7;
+
+// 💡 [면접 대비 주석] 캡처 지연 기반 하한 — ADPF가 없는 단말용 대체 신호 (2026-07-29).
+// 위 ADPF 경로는 Xiaomi 12(Snapdragon 8 Gen 1)에서 `getThermalHeadroom`이 NaN을 반환해
+// 무효였다(`cmd thermalservice headroom 10` -> NaN으로 실기기 확인). `getCurrentThermalStatus`도
+// §5.8 실측에서 스로틀링 중 0(NONE)이었으므로 이 단말에는 쓸 수 있는 발열 API가 없다.
+//
+// 그래서 §5.8이 원래 제안했던 대체 신호를 함께 구현한다: **캡처가 실제로 느려졌는지를 직접
+// 관측한다.** 스로틀링의 최종 증상은 카메라 세션 fps 붕괴(§5.8: 30 -> 중앙 12.6)이므로,
+// 프레임 도착 간격이 지시한 간격보다 크게 벌어지면 원인이 발열이든 무엇이든 물러서야 한다.
+// 발열 API가 유효한 단말에서는 두 신호 중 더 보수적인(큰) 하한이 적용된다.
+//
+// 비율로 판정하는 이유: 지시 간격 자체가 변하므로 절대값 임계는 의미가 없다. 지시 간격
+// 대비 1.4배(예: 125 -> 175ms 도착)면 한 단계, 1.8배면 상한까지 내린다. 회복은 1.15배
+// 미만에서만 허용하고, 하한을 올린 뒤 20초 안에는 낮추지 않아(dwell) 진동을 막는다.
+const CAPTURE_LAG_WINDOW = 24;
+const CAPTURE_LAG_EVAL_INTERVAL_MS = 5000;
+const CAPTURE_LAG_SEVERE_RATIO = 1.8;
+const CAPTURE_LAG_THROTTLE_RATIO = 1.4;
+const CAPTURE_LAG_RECOVER_RATIO = 1.15;
+const CAPTURE_FLOOR_DWELL_MS = 20000;
 
 export interface UseCameraReturn {
   cameraRef: React.RefObject<Camera | null>;
@@ -123,6 +161,26 @@ export function useCamera(
   const [currentReflexFps, setCurrentReflexFps] = useState(reflexFps);
   // 서버 busy 힌트가 유효한 시각(이 시각 전까지는 온디바이스 복구로 간격을 줄이지 않음)
   const serverBusyUntilRef = useRef(0);
+  // 캡처 간격 하한 2종. 실제 하한은 둘 중 큰 값이며, base면 제약 없음.
+  // - thermalFloorRef: ADPF 발열 헤드룸 기반(지원 단말 한정)
+  // - captureFloorRef: 프레임 도착 간격 실측 기반(전 단말 공통 대체 신호)
+  const thermalFloorRef = useRef(baseIntervalRef.current);
+  const captureFloorRef = useRef(baseIntervalRef.current);
+  // 하한을 마지막으로 올린 시각. 이 시각 + CAPTURE_FLOOR_DWELL_MS 전에는 낮추지 않는다.
+  const captureFloorRaisedAtRef = useRef(0);
+  // 프레임 도착 간격 링버퍼(최근 CAPTURE_LAG_WINDOW개)와 직전 도착 시각.
+  const captureGapsRef = useRef<number[]>([]);
+  const lastCaptureArrivalRef = useRef(0);
+  const lastCaptureEvalRef = useRef(0);
+
+  /** 두 하한과 base 중 가장 보수적인(큰) 값. */
+  const effectiveFloor = useCallback(() => {
+    return Math.max(
+      baseIntervalRef.current,
+      thermalFloorRef.current,
+      captureFloorRef.current,
+    );
+  }, []);
 
   // 프레임 프로세서(worklet) 경로용 SharedValue. worklet(별도 JS 컨텍스트)과 메인
   // JS 스레드 간 상태 공유는 SharedValue로만 안전하다(일반 useRef는 worklet에서
@@ -161,8 +219,11 @@ export function useCamera(
    *
    * 따라서 추론이 캡처를 막지 않는 경로(blocksCapture=false)에서는 상승 분기를 적용하지
    * 않는다. 하강(회복) 분기는 유지해야 서버 busy로 올라간 간격이 되돌아올 수 있다.
-   * 추론 폭주에 대한 역압력은 CameraView의 detectingRef(진행 중이면 디스패치 생략)가
-   * 이미 담당하므로 과부하 보호가 사라지는 것은 아니다.
+   * 추론 폭주에 대한 역압력은 CameraView의 in-flight 상한(MAX_INFLIGHT_DETECTIONS를 채우면
+   * 디스패치 생략)이 이미 담당하므로 과부하 보호가 사라지는 것은 아니다.
+   *
+   * 2026-07-29: 캡처 경로 자체가 느려지는 경우(발열 스로틀링)에 대한 물러섬은 발열 헤드룸
+   * 폴링이 담당한다(아래 useEffect, 핸드오프 §5.8).
    *
    * JS 디코드 폴백 경로(requiresFloat32=true)는 추론이 실제로 JS 스레드를 점유하므로
    * blocksCapture=true로 기존 동작을 그대로 유지한다.
@@ -170,13 +231,14 @@ export function useCamera(
   const reportInferenceLatency = useCallback(
     (latencyMs: number, blocksCapture: boolean = true) => {
       if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
-      const base = baseIntervalRef.current;
       const cur = currentIntervalRef.current;
+      // 발열/캡처 지연 하한이 걸려 있으면 회복은 그 하한까지만 허용한다(§5.8).
+      const floor = effectiveFloor();
       let next = cur;
 
       // 회복 가능 조건은 두 경로 공통으로 유지한다. 특히 serverBusyUntil 홀드를 건너뛰면
       // 서버 백프레셔가 무력화되므로 blocksCapture 여부와 무관하게 지킨다.
-      const canRecover = cur > base && Date.now() >= serverBusyUntilRef.current;
+      const canRecover = cur > floor && Date.now() >= serverBusyUntilRef.current;
 
       if (blocksCapture && latencyMs > cur * OVERLOAD_LATENCY_RATIO) {
         next = Math.min(MAX_REFLEX_INTERVAL_MS, cur + INTERVAL_INCREASE_STEP_MS);
@@ -184,14 +246,14 @@ export function useCamera(
         canRecover &&
         (!blocksCapture || latencyMs < cur * RECOVERY_LATENCY_RATIO)
       ) {
-        next = Math.max(base, cur - INTERVAL_DECREASE_STEP_MS);
+        next = Math.max(floor, cur - INTERVAL_DECREASE_STEP_MS);
       }
 
       if (next !== cur) {
         applyReflexInterval(next, `추론 지연=${latencyMs.toFixed(1)}ms`);
       }
     },
-    [applyReflexInterval],
+    [applyReflexInterval, effectiveFloor],
   );
 
   const reportServerLoad = useCallback(
@@ -211,6 +273,127 @@ export function useCamera(
       }
     },
     [applyReflexInterval],
+  );
+
+  /**
+   * 발열(ADPF) 폴링 — 캡처 간격 하한을 갱신한다 (2026-07-29, 핸드오프 §5.8 설계 공백 보완).
+   *
+   * 상수 정의부의 주석에 임계 근거를 적었다. 여기서는 적용 규칙만 둔다.
+   *  - 하한이 올라가면 즉시 반영한다(발열은 기다릴수록 나빠진다).
+   *  - 하한이 내려가면 즉시 되돌리지 않고 하한만 낮춘다. 실제 복귀는 기존 회복 분기
+   *    (reportInferenceLatency)가 20ms씩 점진 수행하므로 서버 백프레셔·추론 과부하로
+   *    올라가 있던 간격을 발열 회복이 한 번에 밀어내는 부작용이 없다.
+   */
+  useEffect(() => {
+    if (isMockMode || !isCapturing) return;
+    if (!isThermalMonitoringSupported()) return;
+
+    let cancelled = false;
+    // 첫 조회 결과는 하한 변화가 없어도 1회 로그로 남긴다. 이걸 찍지 않으면 "발열이 없어서
+    // 조용한 것"과 "헤드룸이 NaN이라 기능 자체가 죽은 것"을 로그로 구분할 수 없다
+    // (Xiaomi 12가 실제로 후자였다 - 상수 정의부 주석 참조).
+    let probeLogged = false;
+    const evaluate = async () => {
+      const state = await readThermalState(
+        Math.round(THERMAL_POLL_INTERVAL_MS / 1000),
+      );
+      if (cancelled) return;
+      if (!probeLogged) {
+        probeLogged = true;
+        console.log(
+          `[Camera] 발열 헤드룸 지원 여부: headroom=${state?.headroom ?? "미지원"} thermalStatus=${state?.status ?? "n/a"}${state?.reason ? ` (${state.reason})` : ""}`,
+        );
+      }
+      if (state?.headroom == null) return;
+
+      const headroom = state.headroom;
+      const base = baseIntervalRef.current;
+      const prevFloor = thermalFloorRef.current;
+      let floor = prevFloor;
+
+      if (headroom >= THERMAL_HEADROOM_SEVERE) {
+        floor = MAX_REFLEX_INTERVAL_MS;
+      } else if (headroom >= THERMAL_HEADROOM_THROTTLE) {
+        floor = Math.min(
+          MAX_REFLEX_INTERVAL_MS,
+          base + INTERVAL_INCREASE_STEP_MS,
+        );
+      } else if (headroom <= THERMAL_HEADROOM_RECOVER) {
+        floor = base;
+      }
+      // 0.7 초과 0.85 미만은 히스테리시스 구간이라 직전 하한을 그대로 유지한다.
+      if (floor === prevFloor) return;
+
+      thermalFloorRef.current = floor;
+      console.log(
+        `[Camera] 발열 헤드룸 ${headroom.toFixed(2)} (thermalStatus=${state.status ?? "n/a"}) - 캡처 간격 하한 ${prevFloor}ms -> ${floor}ms`,
+      );
+      if (floor > currentIntervalRef.current) {
+        applyReflexInterval(floor, `발열 헤드룸=${headroom.toFixed(2)}`);
+      }
+    };
+
+    void evaluate();
+    const timer = setInterval(() => {
+      void evaluate();
+    }, THERMAL_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isMockMode, isCapturing, applyReflexInterval]);
+
+  /**
+   * 프레임 도착 간격 실측 -> 캡처 간격 하한 (2026-07-29).
+   *
+   * ADPF가 없는 단말에서 §5.8 공백을 메우는 대체 신호다. 상수 정의부에 임계 근거를 적었다.
+   * 캡처 진입점(handleStreamFrameBase64)에서 매 프레임 호출되므로 비용은 배열 push + 5초에
+   * 한 번의 정렬(24개)뿐이다.
+   */
+  const observeCaptureArrival = useCallback(
+    (now: number) => {
+      const prev = lastCaptureArrivalRef.current;
+      lastCaptureArrivalRef.current = now;
+      if (prev <= 0) return;
+
+      const gaps = captureGapsRef.current;
+      gaps.push(now - prev);
+      if (gaps.length > CAPTURE_LAG_WINDOW) gaps.shift();
+      if (gaps.length < CAPTURE_LAG_WINDOW) return;
+      if (now - lastCaptureEvalRef.current < CAPTURE_LAG_EVAL_INTERVAL_MS) return;
+      lastCaptureEvalRef.current = now;
+
+      const sorted = [...gaps].sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      const cur = currentIntervalRef.current;
+      const base = baseIntervalRef.current;
+      const ratio = median / cur;
+      const prevFloor = captureFloorRef.current;
+      let floor = prevFloor;
+
+      if (ratio >= CAPTURE_LAG_SEVERE_RATIO) {
+        floor = MAX_REFLEX_INTERVAL_MS;
+      } else if (ratio >= CAPTURE_LAG_THROTTLE_RATIO) {
+        floor = Math.min(MAX_REFLEX_INTERVAL_MS, base + INTERVAL_INCREASE_STEP_MS);
+      } else if (
+        ratio < CAPTURE_LAG_RECOVER_RATIO &&
+        now - captureFloorRaisedAtRef.current >= CAPTURE_FLOOR_DWELL_MS
+      ) {
+        floor = base;
+      }
+      if (floor === prevFloor) return;
+
+      captureFloorRef.current = floor;
+      if (floor > prevFloor) captureFloorRaisedAtRef.current = now;
+      console.log(
+        `[Camera] 캡처 도착 간격 중앙 ${median}ms / 지시 ${cur}ms (x${ratio.toFixed(2)}) - 간격 하한 ${prevFloor}ms -> ${floor}ms`,
+      );
+      const target = effectiveFloor();
+      if (target > currentIntervalRef.current) {
+        applyReflexInterval(target, `캡처 지연 x${ratio.toFixed(2)}`);
+      }
+    },
+    [applyReflexInterval, effectiveFloor],
   );
 
   const effectivePermission = isMockMode ? true : hasPermission;
@@ -268,6 +451,8 @@ export function useCamera(
     if (capturePausedRef.current) return;
     if (!onFrameRef.current || !base64) return;
     streamFrameCounterRef.current++;
+    // 캡처 경로가 실제로 느려졌는지(발열 스로틀링 등) 관측하는 지점(§5.8 대체 신호).
+    observeCaptureArrival(Date.now());
 
     const jpegBytes = base64ToUint8(base64);
     // 💡 [면접 대비 주석] CoreML 정상 모드(requiresFloat32=false)에서는 JS JPEG 디코딩과
@@ -316,7 +501,7 @@ export function useCamera(
       // readFloat32 클로저를 공유하는 새 프레임 객체를 만들어 디코드 1회를 유지한다.
       onFrameRef.current(makeFrame("cognitive"));
     }
-  }, [reflexFps, cognitiveFps]);
+  }, [reflexFps, cognitiveFps, observeCaptureArrival]);
 
   const setCapturePaused = useCallback((paused: boolean) => {
     capturePausedRef.current = paused;
