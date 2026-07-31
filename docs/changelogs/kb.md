@@ -4607,3 +4607,29 @@
 - **관련 파일**: `client/src/components/CameraView.tsx`, `client/src/hooks/useCamera.ts`, `client/src/services/thermalBridge.ts`, `client/android/app/src/main/java/com/minchodan/app/ThermalBridgeModule.kt`, `client/android/app/src/main/java/com/minchodan/app/MinchodanCustomPackage.kt`, `docs/handoff/2026-07-28_android_frame_perf_handoff.md`
 - **검증 결과**: 실기기(Xiaomi 12, Tailscale adb) 30초 실측. **디스패치 4.1 -> 6.33/s(+54%)**, `total` 중앙 34.83 -> 34.70ms, **p90 69.6 -> 71.30ms(큐 적체 없음)**, 서버 `detection 수신` 243건/30초(8.1fps 유지), 동적 FPS 조절 0건. `npx tsc --noEmit` 통과, `./gradlew :app:assembleDebug` BUILD SUCCESSFUL.
 - **비고**: 목표 8/s가 아닌 6.33/s인 이유는 상한이 프레임 공급(`handleFrame` 8.4~9.0/s)으로 넘어갔기 때문이다. `REAL_DETECT_MIN_INTERVAL_MS` 120 -> 110ms A/B는 **이득 없음(194 -> 196회/30초, 1%)** 으로 확인해 120ms를 유지했다. 두 값이 모두 약 6.5/s로 수렴하므로 상한은 이미 `minInterval`이 아니라 프레임 공급·도착 지터 쪽에 있다. 90ms 결정 실험은 단말 수신 전화로 중단. 측정 중 **발열 스로틀링이 실시간 재현**되어 §5.16에 기록했다(연속 25분 가동, SoC 69.1°C·cpu7 1.29GHz, total 34.7 -> 61.0ms). **배터리 온도는 32.2°C로 정상이었으므로 발열 판단에 쓰면 안 된다.** 이 구간에서 캡처 하한은 도착 간격 비율 1.21배로 임계 1.4에 못 미쳐 발동하지 않았다 - 임계 조정은 후퇴가 실제 냉각으로 이어지는지 측정한 뒤에만 할 것.
+
+---
+
+### 2026-07-29 | 인프라 | android_lab_environment_orchestrator
+
+- **커밋**: `feat(scripts): Android 실기기 테스트 환경 오케스트레이터(android_lab.sh) 추가`
+- **변경 내용**:
+  - `scripts/android_lab.sh` 신규: Docker 스택(FastAPI/Redis/MariaDB/console) + Tailscale + Metro + adb 무선 디버깅 + Dev Client 딥링크 실행 + 로그 수집을 단일 진입점으로 묶은 Android 랩 오케스트레이터. 서브커맨드 `doctor|pair|connect|up|launch|status|logs|down`.
+  - 기존 통합 테스트 경로는 iOS 전용이었다(`metro_tailscale.sh launch`가 `xcrun devicectl` 고정). Metro 기동 정책(단일 인스턴스·Python double-fork detach)은 재사용하고, 단말 계층만 adb로 대칭 구현했다.
+  - 2026-07-29 세션에서 수작업으로 겪은 실패를 스크립트에 흡수: 무선 디버깅 포트 회전 시 `adb mdns services` 자동 재탐색, transport 중복 경고, MIUI `camera-is-restricted` 회피용 force-stop 선행 실행, adb/tailscale 바이너리 PATH 부재 시 표준 설치 경로 탐색.
+  - 호스트 LAN IP 변경 감지: `client/.env`의 `EXPO_PUBLIC_LAN_IP`와 기본 경로 인터페이스 IP(`route -n get default` 기반, en0/en1 무관)를 대조해 불일치를 경고한다. 장소 이동 후 단말이 옛 주소로 붙어 흰 화면이 되는 실패를 사전 차단한다.
+  - `client/.env`의 `EXPO_PUBLIC_LAN_IP`/`EXPO_PUBLIC_WIFI_HOST`를 현재 호스트 IP로 갱신(기존 값은 이전 네트워크 주소로 만료 상태였음).
+  - `docs/ops/android_lab_environment_guide.md` 신규 및 `docs/README.md` 인덱스 등재.
+- **관련 파일**: `scripts/android_lab.sh`, `docs/ops/android_lab_environment_guide.md`, `docs/README.md`, `client/.env`(비추적)
+- **검증 결과**: `bash -n` 구문 검사 통과. 실기동으로 fastapi/console/metro 모두 HTTP 200, MariaDB·Redis healthy, Metro가 호스트 IP로 응답(`172.30.x` 대역), `doctor`가 만료된 LAN IP를 정확히 경고. 단말 연결은 무선 디버깅이 꺼져 있어 미검증(`adb connect` Connection refused, mDNS 미도달 - Tailscale은 DERP 릴레이 경유로 pong 확인).
+- **비고**: 단말이 호스트와 다른 망이라 Tailscale이 직결에 실패하고 DERP 릴레이로 떨어진다. 이 상태에서는 2026-07-24에 실측한 Metro 에셋 로딩 지연이 재현되므로, 성능 측정은 반드시 단말을 같은 WiFi에 올린 LAN 모드에서 수행한다.
+
+---
+
+### 2026-07-31 | 1단계 | android_lab_environment_orchestrator
+
+- **커밋**: `(자동 커밋 완료)`
+- **변경 내용**:
+  - Android 실기기 테스트 환경 오케스트레이터(android_lab.sh) 및 가이드 추가
+- **관련 파일**: `.agents/skills/integration-test-orchestrator/SKILL.md`, `.claude/skills/integration-test-orchestrator/SKILL.md`, `docs/README.md`, `docs/changelogs/kb.md`, `docs/ops/android_lab_environment_guide.md`, `scripts/android_lab.sh`
+- **검증 결과**: 정적 검사(이중 경로 분리·금지 파일·react-doctor) 통과. 단계별 테스트는 미실행(--skip-test).

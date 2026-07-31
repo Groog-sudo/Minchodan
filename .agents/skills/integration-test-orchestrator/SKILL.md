@@ -14,6 +14,8 @@ description: |
 > **버전**: v1.3.1 (2026-07-20: `metro_tailscale.sh`를 Python double-fork+`os.setsid()` detach로 보강 — Cursor 에이전트 셸 종료 후에도 Metro 유지. 이전 v1.3.0: 외부 LTE/핫스팟 Tailscale 사전 검증·Metro 이중 헬스체크·console compose 통합)
 > **설계 기준**: `docs/ops/wireless_test_guide.md`, `docs/ops/test_specification.md`, `docs/ops/environment_variables.md`, `docs/db_tailscale_guide/README.md`, `docs/macOS_xcode_build/xcode_mcp_setup_guide.md`, `docs/macOS_xcode_build/ios_device_build_iteration_guide.md`
 > **관련 스킬**: [`xcode-build-management`](../xcode-build-management/SKILL.md) (iOS 빌드 세부 절차 전담), [`rpi-network-profile-switcher`](../rpi-network-profile-switcher/SKILL.md) (시연용 서버 기동·demo/test 네트워크 전환 1차 담당). 본 스킬은 통합 테스트 세션(Docker+DB+Metro+실기기 빌드·로그/모니터링) 오케스트레이션을 전담하며, 시연 토폴로지 기동만 필요하면 시연 스킬을 우선한다.
+>
+> **Android 실기기 세션 (2026-07-29 신설)**: 본 스킬의 §4·§6(실기기 연결·빌드-설치-실행)은 iOS 전용(`xcrun devicectl`)이다. 대상이 Android 단말이면 §1~§3(Docker·DB·Ollama)과 §5(Metro)는 그대로 따르되, 단말 계층은 [`scripts/android_lab.sh`](../../../scripts/android_lab.sh)와 [`docs/ops/android_lab_environment_guide.md`](../../../docs/ops/android_lab_environment_guide.md)를 사용한다(`doctor` -> `pair`/`connect` -> `up` -> `logs`). `android_lab.sh up` 한 줄이 Docker 기동부터 Dev Client 딥링크 실행까지 수행한다.
 
 ---
 

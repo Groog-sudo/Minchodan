@@ -153,6 +153,7 @@ docs/
 | **Android 빌드 및 무선 테스트 가이드** | [android_build_and_wireless_test_guide.md](ops/android_build_and_wireless_test_guide.md) | **Android 개발 빌드, adb reverse, 무선 연동 기본 절차** |
 | **Android WiFi/USB 이중 접속** | [android_wifi_usb_transport.md](ops/android_wifi_usb_transport.md) | **평상시 WiFi vs 개발 USB 토글, 노트북 핫스팟 `192.168.137.1` 실측** |
 | **Android 무선 테스트 가이드 v2** | [android_wireless_test_guide_v2.md](ops/android_wireless_test_guide_v2.md) | **실기기 테스트 중 Metro 연결 끊김, adb 데드락, reverse 복구 절차 상세판** |
+| **Android 실기기 테스트 환경 오케스트레이션** | [android_lab_environment_guide.md](ops/android_lab_environment_guide.md) | **`scripts/android_lab.sh` 단일 진입점: Docker+Tailscale+Metro+adb 무선 디버깅+딥링크 실행+로그 수집** |
 | **Android STT/실내 탐지 인식 문제 리포트** | [android_stt_recognition_issue_report.md](ops/android_stt_recognition_issue_report.md) | **STT 인식 실패 + 실내 탐지 저하 종합 원인 분석 및 개선 방향** |
 | **실기기 무선 연동 가이드** | [wireless_test_guide.md](ops/wireless_test_guide.md) | **실기기(LTE) 및 Docker 연동 구조, 터널링, 트러블슈팅 상세 가이드** |
 | **AI 모델 및 하드웨어 구성 지침** | [ai_model_hardware_setup.md](ops/ai_model_hardware_setup.md) | **GPU 요구사항(verify_gpu) 및 호스트 로컬 Ollama 모델(gemma4:e4b/nomic) 풀링 가이드** |
