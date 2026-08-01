@@ -30,13 +30,19 @@ def post(path, payload):
         base + path, data=data, headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(req, timeout=180) as r:
+        if payload.get("stream") is True:
+            final = {}
+            for line in r:
+                if line.strip():
+                    final = json.loads(line)
+            return final
         return json.load(r)
 
 print(f"[keepalive] pin {gemma} keep_alive=-1")
 post("/api/chat", {
     "model": gemma,
     "messages": [{"role": "user", "content": "ping"}],
-    "stream": False,
+    "stream": True,
     "keep_alive": -1,
     "think": False,
     "options": {"num_predict": 8, "temperature": 0},

@@ -38,7 +38,7 @@ function Layout({
     <main className="app-shell">
       <header className="topbar">
         <div className="topbar-left">
-          <img src="/gildang-logo.jpeg" alt="GILDANG Logo" className="gildang-logo" />
+          <img src="/gildang-wordmark.png" alt="길댕 브랜드 로고" className="gildang-logo" />
           <div>
             <p className="eyebrow">GILDANG Operator Console</p>
             <h1>스마트 가이드독 실시간 관제</h1>

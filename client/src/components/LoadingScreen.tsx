@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Image, StyleSheet, Text, View } from "react-native";
 
-// 콘솔(console/src/styles.css)의 "Tactical" 다크 테마를 앱 로딩 화면에도 맞춘다.
-const COLOR_BG = "#0A0D10";
-const COLOR_GILDANG_YELLOW = "#F9B700";
+const COLOR_BG = "#FFFFFF";
+const COLOR_GILDANG_TEAL = "#38C9BE";
+const COLOR_GILDANG_NAVY = "#123451";
 
 // Tailwind animate-bounce와 동일한 리듬(1s, cubic ease-in-out 왕복)의 상하 바운스.
 function useBounce(): Animated.Value {
@@ -44,10 +44,18 @@ export function LoadingScreen() {
     <View style={styles.container}>
       <Animated.View style={[styles.bounceGroup, { transform: [{ translateY }] }]}>
         <Image
-          source={require("../../assets/gildang-logo.jpeg")}
-          style={styles.logo}
+          source={require("../../assets/brand/gildang-mascot.jpg")}
+          style={styles.mascot}
+          resizeMode="contain"
+          accessibilityLabel="길댕 마스코트"
         />
-        <Text style={styles.loadingText}>Loading</Text>
+        <Image
+          source={require("../../assets/brand/gildang-wordmark.png")}
+          style={styles.wordmark}
+          resizeMode="contain"
+          accessibilityLabel="길댕"
+        />
+        <Text style={styles.loadingText}>시스템을 준비하고 있습니다</Text>
       </Animated.View>
     </View>
   );
@@ -63,24 +71,25 @@ const styles = StyleSheet.create({
   bounceGroup: {
     alignItems: "center",
   },
-  logo: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 2,
-    borderColor: COLOR_GILDANG_YELLOW,
-    shadowColor: COLOR_GILDANG_YELLOW,
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
+  mascot: {
+    width: 260,
+    height: 260,
+    shadowColor: COLOR_GILDANG_NAVY,
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
     shadowOffset: { width: 0, height: 0 },
-    elevation: 12,
+    elevation: 8,
+  },
+  wordmark: {
+    width: 190,
+    height: 100,
+    marginTop: -18,
   },
   loadingText: {
-    marginTop: 20,
-    color: COLOR_GILDANG_YELLOW,
-    fontSize: 20,
+    marginTop: 4,
+    color: COLOR_GILDANG_TEAL,
+    fontSize: 16,
     fontWeight: "700",
-    letterSpacing: 2,
-    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
 });

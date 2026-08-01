@@ -13,6 +13,9 @@ from contextlib import asynccontextmanager, suppress
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Reconfigure stdout for UTF-8 output formatting support (guide 3.1)
 if sys.stdout.encoding != "utf-8":
@@ -236,7 +239,7 @@ openapi_tags = [
 is_production = os.getenv("APP_ENV", "development").strip().lower() == "production"
 
 app = FastAPI(
-    title="Minchodan GPU Inference Server",
+    title="길댕 GILDANG GPU Inference Server",
     description=(
         "시각장애인 보행 보조 스마트 가이드독 AI 플랫폼 GPU 추론 및 관제 API 서버.\n\n"
         "- **WebSocket** `/ws/detect`: 단말 실시간 프레임 수신 및 반사/인지 경보 송신\n"
@@ -247,8 +250,8 @@ app = FastAPI(
     version="v1.0.0",
     openapi_tags=openapi_tags,
     lifespan=lifespan,
-    docs_url=None if is_production else "/docs",
-    redoc_url=None if is_production else "/redoc",
+    docs_url=None,
+    redoc_url=None,
     openapi_url=None if is_production else "/openapi.json",
 )
 
@@ -271,6 +274,38 @@ app.add_middleware(
     # 헤더만 노출하고 커스텀 헤더는 명시적으로 허용해야 함, 2026-07-12).
     expose_headers=["X-Total-Count"],
 )
+
+# 브라우저·API 문서·내비게이션 시뮬레이터가 동일한 길댕 브랜드 자산을 사용한다.
+brand_dir = os.path.join(current_dir, "static", "brand")
+app.mount("/brand", StaticFiles(directory=brand_dir), name="brand")
+
+
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+async def favicon() -> FileResponse:
+    return FileResponse(
+        os.path.join(brand_dir, "favicon.ico"),
+        media_type="image/x-icon",
+    )
+
+
+if not is_production:
+
+    @app.get("/docs", include_in_schema=False)
+    async def custom_swagger_ui():
+        return get_swagger_ui_html(
+            openapi_url=str(app.openapi_url),
+            title=f"{app.title} - Swagger UI",
+            swagger_favicon_url="/favicon.ico",
+        )
+
+    @app.get("/redoc", include_in_schema=False)
+    async def custom_redoc():
+        return get_redoc_html(
+            openapi_url=str(app.openapi_url),
+            title=f"{app.title} - ReDoc",
+            redoc_favicon_url="/favicon.ico",
+            with_google_fonts=False,
+        )
 
 
 @app.middleware("http")
@@ -343,8 +378,10 @@ if _nav_flag or _app_env != "production":
 @app.get("/")
 async def root():
     return {
-        "service": "Minchodan GPU Inference Server",
+        "service": "길댕 GILDANG GPU Inference Server",
         "status": "running",
+        "brand": "/brand/gildang-wordmark.png",
+        "favicon": "/favicon.ico",
         "health": "/health",
         "docs": "/docs",
         "websocket": "/ws/detect",

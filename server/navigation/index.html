@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VIP Assistant AI - 길안내 전용 시뮬레이터</title>
+    <title>길댕 - 보행 길안내 시뮬레이터</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
     <!-- Leaflet.js Maps Library -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -58,6 +60,14 @@
             text-align: center;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 16px;
+        }
+
+        .brand-wordmark {
+            display: block;
+            width: min(250px, 72vw);
+            height: auto;
+            margin: 0 auto 8px;
+            border-radius: 12px;
         }
 
         header h1 {
@@ -474,7 +484,8 @@
 
     <div class="app-container">
         <header>
-            <h1>VIP Assistant Navigation</h1>
+            <img class="brand-wordmark" src="/brand/gildang-wordmark.png" alt="길댕">
+            <h1>GILDANG Navigation</h1>
             <p>시각장애인 보행 길안내 특화 시뮬레이터</p>
         </header>
 

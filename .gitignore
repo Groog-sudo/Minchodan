@@ -186,6 +186,11 @@ tmp/
 !client/ios/**
 !client/android/**
 
+# 길댕 공식 브랜드 원본과 서버·운영 콘솔 파생 자산은 배포에 필요하므로 추적한다.
+!assets/brand/**
+!server/static/brand/**
+!console/public/gildang-*
+
 # 2026-07-19: !client/ios/** 예외가 Xcode DerivedData/로컬 빌드 산출물까지
 # 미추적으로 끌어올려 Cursor/git status에 수천~수만 파일이 잡힘.
 # Release/Debug 로컬 빌드 산출물은 절대 추적하지 않는다.
@@ -392,4 +397,3 @@ docker/docker-compose.subnet-override.local.yml
 
 .env.network.demo
 .env.network.test
-

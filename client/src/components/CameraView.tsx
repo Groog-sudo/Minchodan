@@ -64,6 +64,7 @@ const COLOR_BG_BASE = "#0A0D10";
 const COLOR_BG_SURFACE = "#12161A";
 const COLOR_BORDER_TACTICAL = "#222A30";
 const COLOR_GILDANG_YELLOW = "#F9B700";
+const COLOR_GILDANG_TEAL = "#38C9BE";
 const COLOR_OP_GREEN = "#39FF14";
 const COLOR_REFLEX_RED = "#FF3333";
 const COLOR_TECH_BLUE = "#00D2FF";
@@ -1484,6 +1485,17 @@ export function CameraView() {
           contentContainerStyle={styles.operatorPanelContent}
           scrollEnabled={false}
         >
+          <View style={styles.brandHeader}>
+            <Image
+              source={require("../../assets/brand/gildang-symbol-voice.png")}
+              style={styles.brandSymbol}
+              resizeMode="contain"
+            />
+            <View>
+              <Text style={styles.brandTitle}>길댕</Text>
+              <Text style={styles.brandSubtitle}>GILDANG SMART GUIDE DOG</Text>
+            </View>
+          </View>
           <ConnectionStatus status={status} />
           <View style={styles.operatorCard}>
             {debugInfo.map((line, i) => (
@@ -2047,6 +2059,28 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 120,
     gap: 8,
+  },
+  brandHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 4,
+  },
+  brandSymbol: {
+    width: 48,
+    height: 52,
+  },
+  brandTitle: {
+    color: COLOR_GILDANG_TEAL,
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  brandSubtitle: {
+    color: COLOR_TEXT_MUTED,
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 0.8,
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFill,

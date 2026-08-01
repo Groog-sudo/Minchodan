@@ -52,12 +52,12 @@
 }
 
 .login-logo {
-  height: 80px;
-  width: 80px;
-  border-radius: 50%;
-  border: 2px solid var(--color-gildang-yellow);
-  box-shadow: 0 0 15px rgba(249, 183, 0, 0.35);
-  object-fit: cover;
+  height: 118px;
+  width: 226px;
+  border-radius: 14px;
+  border: 2px solid rgba(56, 201, 190, 0.75);
+  box-shadow: 0 0 18px rgba(56, 201, 190, 0.28);
+  object-fit: contain;
 }
 
 .login-title {

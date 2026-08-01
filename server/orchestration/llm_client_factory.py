@@ -39,6 +39,22 @@ if os.path.exists(env_path):
     load_dotenv(dotenv_path=env_path)
 
 
+def _read_bool_env(name: str, default: bool) -> bool:
+    """환경 변수의 일반적인 불리언 표기를 안전하게 파싱합니다."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    logger.warning("%s 값이 올바른 불리언이 아니므로 기본값을 사용합니다.", name)
+    return default
+
+
 class LLMResponse:
     """
     LangChain의 AIMessage 응답 규격을 가상화한 경량 응답 객체.
@@ -53,12 +69,20 @@ class SimpleOllamaClient:
     Ollama 공식 SDK를 활용한 비동기 LLM 호출 클라이언트.
     """
 
-    def __init__(self, model_name: str, base_url: str):
+    def __init__(
+        self,
+        model_name: str,
+        base_url: str,
+        stream: bool = True,
+        split_by_sentence: bool = False,
+    ):
         # ollama 패키지 지연 import (시연 환경에서는 ollama 패키지 미설치 허용)
         import ollama
 
         self.model_name = model_name
         self.base_url = base_url
+        self.stream = stream
+        self.split_by_sentence = split_by_sentence
         # AsyncClient 인스턴스 생성 (CPU 환경의 Ollama Gemma4 추론 지연을 고려하여 타임아웃을 120초로 대폭 상향)
         self.client = ollama.AsyncClient(host=base_url, timeout=120.0)
 
@@ -77,17 +101,40 @@ class SimpleOllamaClient:
                 content = msg.get("content", "")
             formatted_messages.append({"role": role, "content": content})
 
-        logger.info(f"Ollama async chat invocation: model={self.model_name}")
+        logger.info(
+            "Ollama async chat invocation: model=%s, stream=%s, split_by_sentence=%s",
+            self.model_name,
+            self.stream,
+            self.split_by_sentence,
+        )
         # think=False: gemma4:e4b는 추론(thinking) 모드가 기본 활성화된 모델이라,
         # 이를 끄지 않으면 응답 토큰 예산(num_predict)을 내부 추론에서 전부 소진해
         # content가 항상 빈 문자열로 반환되는 문제가 있었다(2026-07-08 실측 확인).
-        response = await self.client.chat(
-            model=self.model_name,
-            messages=formatted_messages,
-            options={"temperature": 0.3, "num_predict": 100},
-            think=False,
-        )
-        content = response.get("message", {}).get("content", "").strip()
+        if self.stream:
+            response_stream = await self.client.chat(
+                model=self.model_name,
+                messages=formatted_messages,
+                options={"temperature": 0.3, "num_predict": 100},
+                think=False,
+                stream=True,
+            )
+            chunks: list[str] = []
+            async for part in response_stream:
+                chunk = part.get("message", {}).get("content", "")
+                if chunk:
+                    chunks.append(chunk)
+            # split_by_sentence=False 정책: SDK 청크를 문장 경계로 다시 나누지 않고
+            # 원래 순서 그대로 합쳐 기존 LLMResponse 계약을 유지합니다.
+            content = "".join(chunks).strip()
+        else:
+            response = await self.client.chat(
+                model=self.model_name,
+                messages=formatted_messages,
+                options={"temperature": 0.3, "num_predict": 100},
+                think=False,
+                stream=False,
+            )
+            content = response.get("message", {}).get("content", "").strip()
         return LLMResponse(content)
 
 
@@ -238,7 +285,12 @@ class LLMClientFactory:
             try:
                 base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
                 model_name = os.getenv("GEMMA_MODEL", "gemma4:e4b")
-                cls._ollama = SimpleOllamaClient(model_name=model_name, base_url=base_url)
+                cls._ollama = SimpleOllamaClient(
+                    model_name=model_name,
+                    base_url=base_url,
+                    stream=_read_bool_env("OLLAMA_STREAM", True),
+                    split_by_sentence=_read_bool_env("OLLAMA_SPLIT_BY_SENTENCE", False),
+                )
             except ImportError as e:
                 sys.stderr.write(
                     f"[ERROR] ollama 패키지 미설치: {e!s}. "

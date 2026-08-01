@@ -62,7 +62,7 @@ export function Login({ onLogin } : { onLogin: (token: string) => void}) {
     <div className="login-container">
       <form onSubmit={handleLogin} className="login-form">
         <div className="login-logo-container">
-          <img src="/gildang-logo.jpeg" alt="GILDANG Logo" className="login-logo" />
+          <img src="/gildang-wordmark.png" alt="길댕 브랜드 로고" className="login-logo" />
         </div>
         <h2 className="login-title">GILDANG Tactical Console</h2>
         <p className="login-subtitle">보행관제 오퍼레이터 인증이 필요합니다.</p>

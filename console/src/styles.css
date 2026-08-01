@@ -11,6 +11,8 @@
   --bg-tactical-surface: #12161A;
   --border-tactical: #2A323A;
   --color-gildang-yellow: #F9B700;
+  --color-gildang-teal: #38C9BE;
+  --color-gildang-navy: #123451;
   --color-op-green: #39FF14;
   --color-reflex-red: #FF3333;
   --color-tech-blue: #00D2FF;
@@ -72,12 +74,12 @@ button:hover {
 }
 
 .gildang-logo {
-  height: 52px;
-  width: 52px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-gildang-yellow);
-  box-shadow: 0 0 10px rgba(249, 183, 0, 0.25);
-  object-fit: cover;
+  height: 58px;
+  width: 112px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(56, 201, 190, 0.7);
+  box-shadow: 0 0 12px rgba(56, 201, 190, 0.22);
+  object-fit: contain;
 }
 
 .main-nav {

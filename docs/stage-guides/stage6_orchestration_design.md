@@ -1,7 +1,7 @@
 # 6단계 설계서 - 종합 회피 가이드 생성 (LangGraph 계층 LLM)
 
 > **작성일**: 2026-06-26
-> **버전**: v0.2.4 (2026-07-20 실외 필드 피드백 기반 패스트 레인 2차 수정: 다중객체 차단 조건을 주위험 객체 기준으로 완화, avoid_clock_direction 캐시 키 반영 정확성 수정, 노면 클래스 사전합성 클립 추가. 기존 v0.2.3: 7단계 TTS 서술 정합. 기존 v0.2.2: 패스트 레인 안내 템플릿·`avoid_clock_direction`)
+> **버전**: v0.2.5 (2026-07-29 Ollama 비동기 스트리밍 활성화 및 문장 단위 재분할 비활성화. 기존 v0.2.4 이력 유지)
 > **설계 기준**: [`docs/minchodan_design_note.md`](minchodan_design_note.md) 6단계, [`docs/architecture.md`](architecture.md) 5.6절
 > **코딩 패턴 기준**: [`docs/course_codebase_guide.md`](course_codebase_guide.md) 섹션 11, 12, 14, 17.2
 > **스킬 참조**: [`.agents/skills/llm-guidance-orchestrator/SKILL.md`](../.agents/skills/llm-guidance-orchestrator/SKILL.md)
@@ -401,6 +401,8 @@ def get_orchestrator():
 | `LLM_PROVIDER` | LLM 공급자 (`ollama` 또는 `openai`) | `ollama` |
 | `OLLAMA_BASE_URL` | Ollama 서버 주소 | `http://localhost:11434` |
 | `GEMMA_MODEL` | L2 가이드 생성 모델 | `gemma4-e4b` |
+| `OLLAMA_STREAM` | Ollama 응답 비동기 스트리밍 활성화 | `true` |
+| `OLLAMA_SPLIT_BY_SENTENCE` | 프로젝트 래퍼의 문장 단위 재분할 활성화 | `false` |
 | `OPENAI_API_KEY` | OpenAI 전환 시 필요 | (미설정) |
 
 ---

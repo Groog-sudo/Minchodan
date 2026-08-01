@@ -848,3 +848,29 @@
 - `tests/test_convenience_dial_resolver.py`를 공개 기관 연락처 기준으로 갱신하고 `tests/test_convenience_rag_sources.py`를 추가했습니다. 관련 회귀 테스트 18건과 클라이언트 TypeScript 검사가 통과했습니다.
 
 ---
+
+## 2026-07-29 Ollama 스트리밍 활성화 및 서비스 재기동
+
+- `SimpleOllamaClient`가 `OLLAMA_STREAM=true`를 읽어 Ollama 비동기 응답 청크를 수신하고, 기존 `LLMResponse` 문자열 계약을 유지하도록 순서대로 병합했습니다.
+- `OLLAMA_SPLIT_BY_SENTENCE=false`를 프로젝트 래퍼 설정으로 추가해 문장 경계 재분할 없이 원본 청크를 누적하도록 명시했습니다. 이 값은 Ollama REST API 필드가 아닙니다.
+- 루트 `.env`와 `.env.example`, 6단계 설계서, 환경 변수 명세서, Ollama 구현 참조 문서를 같은 기본값으로 정합화했습니다.
+- keepalive 워밍 요청도 `stream=true`로 전환하고 NDJSON 스트림의 마지막 응답까지 안전하게 소비하도록 수정했습니다.
+- FastAPI 컨테이너만 강제 재생성했으며 Redis, MariaDB, 운영 콘솔은 유지했습니다.
+- 호스트 Ollama는 사용자 systemd의 `minchodan-ollama.service`로 재기동해 셸 세션 종료 후에도 유지되도록 했습니다.
+- `tests/test_llm_client_factory.py` 6건, Ruff, mypy, 셸 문법, 스킬 미러 diff, `git diff --check`를 통과했습니다.
+- FastAPI 컨테이너에서 `stream=true`, `split_by_sentence=false`를 확인하고 실제 `gemma4:e4b` 스트리밍 응답 수신에 성공했습니다.
+
+---
+
+## 2026-08-01 길댕 마스코트·심볼 전 플랫폼 브랜드 적용
+
+- 제공받은 전신 마스코트, 위치·음성 심볼, 가로형 워드마크, 다중 해상도 파비콘을 `assets/brand/`에 원본 정본으로 보존했습니다.
+- FastAPI에 `/brand` 정적 자산과 `/favicon.ico`를 연결하고 Swagger UI·ReDoc·내비게이션 시뮬레이터가 길댕 파비콘과 워드마크를 사용하도록 변경했습니다.
+- 운영 콘솔의 로그인, 상단 헤더, 단말 UI 미러와 브라우저 16px·32px·180px·ICO 자산을 새 브랜드로 교체했습니다.
+- React Native 앱의 로딩 화면과 카메라 운영 패널에 길댕 마스코트·심볼을 반영하고 Expo 아이콘·스플래시 설정을 갱신했습니다.
+- iOS 1024px RGB 앱 아이콘과 1179x2556 시작 화면, Android 일반·원형·Adaptive·Monochrome 아이콘 및 5개 밀도별 시작 화면을 생성했습니다.
+- 전역 이미지 무시 규칙에서도 `assets/brand/`, `server/static/brand/`, `console/public/gildang-*`만 좁게 예외 처리해 새 checkout과 배포 이미지에 브랜드 자산이 누락되지 않도록 했습니다.
+- `tests/test_brand_assets.py`를 추가해 원본 보존, PNG 규격, iOS 앱 아이콘 무알파 계약, Android 밀도별 크기, 웹 파비콘 구성을 검증했습니다.
+- **검증 결과**: 브랜드 테스트 4건, Ruff, Python 컴파일, React Native TypeScript 검사, 콘솔 Vite 프로덕션 빌드가 통과했습니다. 현재 Linux 호스트에는 Xcode와 JDK가 없어 iOS `xcodebuild`와 Android Gradle 리소스 빌드는 실행하지 못했습니다.
+
+---

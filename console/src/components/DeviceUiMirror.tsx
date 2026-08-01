@@ -54,9 +54,12 @@ export function DeviceUiMirror({ imageUrl, latestDetections, connected, session,
 
             {/* App Header */}
             <div className="app-header">
-              <div className="app-title-group">
-                <span className="app-title">GILDANG</span>
-                <span className="app-subtitle">스마트 가이드독</span>
+              <div className="app-brand-group">
+                <img src="/gildang-symbol.png" alt="" className="app-brand-symbol" />
+                <div className="app-title-group">
+                  <span className="app-title">길댕</span>
+                  <span className="app-subtitle">GILDANG 스마트 가이드독</span>
+                </div>
               </div>
               <span className={`app-status-badge ${isOnline ? "online" : "offline"}`}>
                 {isOnline ? "CONNECTED" : "OFFLINE"}

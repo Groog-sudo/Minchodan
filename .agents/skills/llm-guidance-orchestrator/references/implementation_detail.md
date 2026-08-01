@@ -493,13 +493,17 @@ curl -X POST http://localhost:11434/api/generate \
   -d '{
     "model": "gemma4:e4b",
     "prompt": "시각장애인이 전방 포트홀을 피하는 10자 이내 안내를 작성해줘.",
-    "stream": false,
+    "stream": true,
     "options": {
       "temperature": 0.3,
       "num_predict": 50
     }
   }'
 ```
+
+`OLLAMA_SPLIT_BY_SENTENCE=false`는 Minchodan의 `SimpleOllamaClient`가 소비하는 프로젝트
+래퍼 설정이며 Ollama REST API 요청 필드가 아니다. 스트리밍 청크는 문장 단위로 재분할하지
+않고 수신 순서대로 누적한다.
 
 ---
 
