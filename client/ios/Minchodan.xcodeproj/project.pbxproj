@@ -207,7 +207,6 @@
 				LastUpgradeCheck = 1130;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
-						DevelopmentTeam = KPXW9Z2NDQ;
 						LastSwiftMigration = 1250;
 						ProvisioningStyle = Automatic;
 					};
@@ -413,7 +412,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KPXW9Z2NDQ;
+				DEVELOPMENT_TEAM = 7K8DYG4K99;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -433,7 +432,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.kb.dev;
+				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.jy.dev;
 				PRODUCT_NAME = Minchodan;
 				SWIFT_OBJC_BRIDGING_HEADER = "Minchodan/Minchodan-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -454,7 +453,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KPXW9Z2NDQ;
+				DEVELOPMENT_TEAM = 7K8DYG4K99;
 				INFOPLIST_FILE = Minchodan/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -469,7 +468,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.kb.dev;
+				PRODUCT_BUNDLE_IDENTIFIER = com.minchodan.app.jy.dev;
 				PRODUCT_NAME = Minchodan;
 				SWIFT_OBJC_BRIDGING_HEADER = "Minchodan/Minchodan-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
